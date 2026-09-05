@@ -5,6 +5,7 @@
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
 use std::{
+    array,
     cell::RefCell,
     sync::{Arc, Weak},
     time::Instant,
@@ -439,6 +440,148 @@ impl<'a> WorldGenRegion<'a> {
         })
     }
 
+    /// Reads several block states with one section lock acquisition per distinct
+    /// section, for predicate checks that query multiple nearby blocks.
+    ///
+    /// Positions outside chunk height resolve to air, matching [`Self::block_state`].
+    ///
+    /// # Panics
+    /// Panics if a position's chunk is outside this step's direct dependencies,
+    /// matching [`Self::block_state`].
+    #[must_use]
+    pub fn block_states_for<const N: usize>(&self, positions: [BlockPos; N]) -> [BlockStateId; N] {
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let min_y = self.min_y();
+        let height = self.height();
+
+        // Fast path: when every position falls into one section of one chunk,
+        // take that section's read lock directly and skip the grouping
+        // array/sort, which buys nothing for the common 2-position predicate
+        // checks whose positions share a section.
+        if let Some((chunk_x, chunk_z, section_index)) =
+            Self::single_section_batch(&positions, min_y, height)
+        {
+            let mut states = [air; N];
+            self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
+                let sections = chunk.chunk.sections();
+                if let Some(section) = sections.sections.get(section_index) {
+                    let guard = section.read();
+                    for (i, pos) in positions.iter().enumerate() {
+                        states[i] = guard.states.get(
+                            (pos.x() & 15) as usize,
+                            (pos.y() & 15) as usize,
+                            (pos.z() & 15) as usize,
+                        );
+                    }
+                }
+            });
+            return states;
+        }
+
+        let mut order: [(i32, i32, usize, usize); N] = array::from_fn(|i| {
+            let pos = &positions[i];
+            let section_index = if pos.y() < min_y || pos.y() >= min_y + height {
+                usize::MAX
+            } else {
+                usize::try_from((pos.y() - min_y) / 16).unwrap_or(usize::MAX)
+            };
+            (
+                SectionPos::block_to_section_coord(pos.x()),
+                SectionPos::block_to_section_coord(pos.z()),
+                section_index,
+                i,
+            )
+        });
+        // Grouping key first so same-section reads share one guard acquisition;
+        // the sort is stable, preserving deterministic read grouping.
+        order.sort_unstable_by_key(|&(cx, cz, sec, _)| (cx, cz, sec));
+
+        let mut states = [air; N];
+        let mut run_start = 0;
+        while run_start < N {
+            let (run_chunk_x, run_chunk_z, _, _) = order[run_start];
+            let mut run_end = run_start + 1;
+            while run_end < N {
+                let (cx, cz, _, _) = order[run_end];
+                if (cx, cz) != (run_chunk_x, run_chunk_z) {
+                    break;
+                }
+                run_end += 1;
+            }
+
+            self.with_cached_chunk(run_chunk_x, run_chunk_z, ChunkStatus::Empty, |chunk| {
+                let sections = chunk.chunk.sections();
+                let mut group_start = run_start;
+                while group_start < run_end {
+                    let (_, _, group_section, _) = order[group_start];
+                    if group_section == usize::MAX {
+                        // Out-of-height entries already resolved to air.
+                        group_start += 1;
+                        continue;
+                    }
+                    let mut group_end = group_start + 1;
+                    while group_end < run_end {
+                        let (_, _, sec, _) = order[group_end];
+                        if sec != group_section {
+                            break;
+                        }
+                        group_end += 1;
+                    }
+
+                    if let Some(section) = sections.sections.get(group_section) {
+                        let guard = section.read();
+                        for entry in &order[group_start..group_end] {
+                            let pos = &positions[entry.3];
+                            states[entry.3] = guard.states.get(
+                                (pos.x() & 15) as usize,
+                                (pos.y() & 15) as usize,
+                                (pos.z() & 15) as usize,
+                            );
+                        }
+                    }
+                    group_start = group_end;
+                }
+            });
+            run_start = run_end;
+        }
+
+        states
+    }
+
+    /// Returns the shared chunk coords and section index when every position
+    /// of the batch resolves inside one distinct section.
+    fn single_section_batch(
+        positions: &[BlockPos],
+        min_y: i32,
+        height: i32,
+    ) -> Option<(i32, i32, usize)> {
+        let first = &positions[0];
+        let (cx0, cz0) = (
+            SectionPos::block_to_section_coord(first.x()),
+            SectionPos::block_to_section_coord(first.z()),
+        );
+        if !positions.iter().all(|p| {
+            (
+                SectionPos::block_to_section_coord(p.x()),
+                SectionPos::block_to_section_coord(p.z()),
+            ) == (cx0, cz0)
+        }) {
+            return None;
+        }
+
+        let section_index_of = |pos: &BlockPos| -> Option<usize> {
+            if pos.y() < min_y || pos.y() >= min_y + height {
+                None
+            } else {
+                usize::try_from((pos.y() - min_y) / 16).ok()
+            }
+        };
+        let shared_section = section_index_of(first)?;
+        (positions
+            .iter()
+            .all(|p| section_index_of(p) == Some(shared_section)))
+        .then_some((cx0, cz0, shared_section))
+    }
     /// Gets a block entity through the region dependency contract.
     ///
     /// # Panics

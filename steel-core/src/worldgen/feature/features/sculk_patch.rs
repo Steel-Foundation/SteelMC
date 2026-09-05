@@ -600,18 +600,20 @@ impl FeatureDecorationRunner {
         source_pos: BlockPos,
         spread_pos: &SculkSpreadPos,
     ) -> bool {
-        let existing_state = region.block_state(spread_pos.pos);
+        let attach_pos = spread_pos.pos.relative(spread_pos.face);
+        let [existing_state, attach_state] = region.block_states_for([spread_pos.pos, attach_pos]);
         Self::sculk_patch_vein_state_can_be_replaced(
             region,
             source_pos,
             spread_pos.pos,
             spread_pos.face,
             existing_state,
+            attach_state,
         ) && Self::sculk_vein_is_valid_state_for_placement(
-            region,
             existing_state,
             spread_pos.pos,
             spread_pos.face,
+            attach_state,
         )
     }
 
@@ -621,8 +623,8 @@ impl FeatureDecorationRunner {
         placement_pos: BlockPos,
         placement_direction: Direction,
         existing_state: BlockStateId,
+        against_state: BlockStateId,
     ) -> bool {
-        let against_state = region.block_state(placement_pos.relative(placement_direction));
         if against_state.get_block() == &vanilla_blocks::SCULK
             || against_state.get_block() == &vanilla_blocks::SCULK_CATALYST
             || against_state.get_block() == &vanilla_blocks::MOVING_PISTON
@@ -668,7 +670,7 @@ impl FeatureDecorationRunner {
         placement_pos: BlockPos,
         placement_direction: Direction,
     ) -> Option<BlockStateId> {
-        if !Self::sculk_vein_is_valid_state_for_placement(
+        if !Self::sculk_vein_is_valid_state_for_placement_read(
             region,
             old_state,
             placement_pos,
@@ -692,11 +694,26 @@ impl FeatureDecorationRunner {
         Some(new_state)
     }
 
-    fn sculk_vein_is_valid_state_for_placement(
+    fn sculk_vein_is_valid_state_for_placement_read(
         region: &WorldGenRegion<'_>,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
+    ) -> bool {
+        let attach_state = region.block_state(placement_pos.relative(placement_direction));
+        Self::sculk_vein_is_valid_state_for_placement(
+            old_state,
+            placement_pos,
+            placement_direction,
+            attach_state,
+        )
+    }
+
+    fn sculk_vein_is_valid_state_for_placement(
+        old_state: BlockStateId,
+        placement_pos: BlockPos,
+        placement_direction: Direction,
+        attach_state: BlockStateId,
     ) -> bool {
         if old_state.get_block() == &vanilla_blocks::SCULK_VEIN
             && Self::sculk_vein_has_face(old_state, placement_direction)
@@ -704,7 +721,11 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        Self::can_attach_to_multiface(region, placement_pos, placement_direction)
+        Self::is_sturdy_multiface_support(
+            placement_pos.relative(placement_direction),
+            attach_state,
+            placement_direction,
+        )
     }
 
     fn sculk_vein_regrow(
