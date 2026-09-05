@@ -2833,6 +2833,7 @@ dependencies = [
  "serde",
  "serde_json",
  "simdnbt",
+ "smallvec",
  "steel-utils",
  "text_components",
  "tracing",
