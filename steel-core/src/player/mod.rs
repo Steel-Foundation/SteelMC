@@ -659,6 +659,7 @@ impl Player {
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
+        self.tick_inventory();
         self.detect_equipment_updates();
         self.ai_step();
 
@@ -1373,6 +1374,20 @@ impl Player {
             {
                 self.disconnect(translations::MULTIPLAYER_DISCONNECT_IDLING.msg());
             }
+        }
+    }
+
+    fn tick_inventory(&self) {
+        let world = self.get_world();
+        let mut inventory = self.inventory.lock();
+        let selected = inventory.get_selected_slot() as usize;
+        for slot in 0..inventory.get_container_size() {
+            let item_stack = &mut inventory.items_mut()[slot];
+            if item_stack.is_empty() {
+                continue;
+            }
+            let behavior = ITEM_BEHAVIORS.get_behavior(item_stack.item());
+            behavior.inventory_tick(item_stack, &world, self, slot, slot == selected);
         }
     }
 }

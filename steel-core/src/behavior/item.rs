@@ -184,6 +184,17 @@ pub trait ItemBehavior: Send + Sync {
     ) {
     }
 
+    /// Called every tick for each item stack in a player's inventory.
+    fn inventory_tick(
+        &self,
+        _stack: &mut ItemStack,
+        _world: &Arc<World>,
+        _player: &Player,
+        _slot: usize,
+        _selected: bool,
+    ) {
+    }
+
     /// Returns how much durability this weapon consumes after a successful entity hit.
     fn item_damage_per_attack(&self, stack: &ItemStack) -> Option<i32> {
         stack
