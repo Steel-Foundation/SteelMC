@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use std::borrow::Cow;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::data_components::Consumable;
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON, USE_REMAINDER,
@@ -12,7 +13,7 @@ use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_game_events};
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_game_events};
 use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
 
@@ -138,10 +139,15 @@ pub trait ItemBehavior: Send + Sync {
     fn on_use_tick(
         &self,
         _world: &Arc<World>,
-        _user: &dyn LivingEntity,
-        _stack: &mut ItemStack,
-        _ticks_remaining: i32,
+        user: &dyn LivingEntity,
+        stack: &mut ItemStack,
+        ticks_remaining: i32,
     ) {
+        if let Some(consumable) = stack.get(CONSUMABLE)
+            && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
+        {
+            emit_consume_particles_and_sounds(consumable, user);
+        }
     }
 
     /// Called when active use is released before completion.
@@ -220,6 +226,28 @@ pub trait ItemBehavior: Send + Sync {
     }
 }
 
+fn should_emit_consume_particles_and_sounds(consumable: &Consumable, ticks_remaining: i32) -> bool {
+    let consume_ticks = consumable.consume_ticks();
+    let ticks_used = consume_ticks - ticks_remaining;
+    let wait_ticks = (consume_ticks as f32 * 0.21875) as i32;
+    ticks_used > wait_ticks && ticks_remaining % 4 == 0
+}
+
+/// Mirrors vanilla `Consumable.emitParticlesAndSounds`
+fn emit_consume_particles_and_sounds(consumable: &Consumable, user: &dyn LivingEntity) {
+    // TODO: spawn item-crumb particles when `has_consume_particles()` is set.
+    let (volume, pitch) = if consumable.animation() == ItemUseAnimation::Drink {
+        (0.5, 0.9 + rand::random::<f32>() * 0.1)
+    } else {
+        let volume = if rand::random::<bool>() { 0.5 } else { 1.0 };
+        let pitch = 1.0 + 0.2 * (rand::random::<f32>() - rand::random::<f32>());
+        (volume, pitch)
+    };
+    if let Some(sound) = consumable.sound().registry_ref() {
+        user.play_sound(sound, volume, pitch);
+    }
+}
+
 /// Applies vanilla `Consumable.onConsume`'s shared tail: runs
 /// `on_consume_effects`, plays the consume sound, then shrinks the stack by
 /// one (creative mode leaves it untouched).
@@ -232,22 +260,41 @@ pub(crate) fn finish_consuming_stack(
         return apply_use_remainder(stack, stack.copy_with_count(stack.count()), user);
     };
 
-    if let Some(food) = stack.get(FOOD)
-        && let Some(player) = user.as_player()
-    {
-        player
-            .food_data
-            .lock()
-            .add_food(food.nutrition(), food.saturation());
+    emit_consume_particles_and_sounds(consumable, user);
+
+    if let Some(food) = stack.get(FOOD) {
+        if let Some(sound) = consumable.sound().registry_ref() {
+            world.play_sound_at(
+                sound,
+                SoundSource::Neutral,
+                user.position(),
+                1.0,
+                // Java `RandomSource.triangle(1.0, 0.4)`.
+                1.0 + 0.4 * (rand::random::<f32>() - rand::random::<f32>()),
+                None,
+            );
+        }
+        if let Some(player) = user.as_player() {
+            player
+                .food_data
+                .lock()
+                .add_food(food.nutrition(), food.saturation());
+            world.play_sound_at(
+                &sound_events::ENTITY_PLAYER_BURP,
+                SoundSource::Players,
+                player.position(),
+                0.5,
+                // Java `Mth.randomBetween(random, 0.9, 1.0)`.
+                0.9 + rand::random::<f32>() * 0.1,
+                None,
+            );
+        }
     }
 
     for effect in consumable.on_consume_effects() {
         apply_consume_effect(effect, world, user);
     }
 
-    if let Some(sound) = consumable.sound().registry_ref() {
-        user.play_sound(sound, 1.0, 1.0);
-    }
     let event = if consumable.animation() == ItemUseAnimation::Drink {
         &vanilla_game_events::DRINK
     } else {
