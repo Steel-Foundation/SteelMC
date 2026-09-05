@@ -981,6 +981,10 @@ impl ChunkMap {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keep lifecycle changes, generation retries, and readiness publication in boundary order"
+    )]
     fn commit_scheduling_epoch(
         self: &Arc<Self>,
         epoch: PreparedChunkSchedulingEpoch,
@@ -989,6 +993,7 @@ impl ChunkMap {
             mut ticket_manager,
             applied_revision,
             mut changes,
+            deferred_generation,
             timings,
         } = epoch;
         let mut timings = timings.into_scheduling_timings();
@@ -1032,7 +1037,7 @@ impl ChunkMap {
             )
         };
 
-        let holders_to_schedule = {
+        let mut holders_to_schedule: Vec<_> = {
             let _span = tracing::trace_span!("lifecycle_commit").entered();
             let start = Instant::now();
             let holders = changes
@@ -1049,6 +1054,16 @@ impl ChunkMap {
             timings.lifecycle_commit = start.elapsed();
             holders
         };
+
+        // The center's level need not change when its dependency revives. Retry against
+        // committed holders and levels so intervening unloads or demotions take effect.
+        holders_to_schedule.extend(deferred_generation.into_iter().filter_map(|pos| {
+            self.chunks
+                .read_sync(&pos, |_, holder| {
+                    holder.load_level().map(|level| (Arc::clone(holder), level))
+                })
+                .flatten()
+        }));
 
         let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(self);
         let readiness_result = {
@@ -1136,20 +1151,15 @@ impl ChunkMap {
         };
         let changes = ticket_manager.take_changes();
 
-        {
+        let deferred_generation = {
             let _span = tracing::trace_span!("schedule_generation").entered();
             let start = Instant::now();
-            timings.scheduled_count = holders_to_schedule
-                .iter()
-                .filter(|(holder, level)| {
-                    let Some(status) = generation_status(Some(*level)) else {
-                        return false;
-                    };
-                    holder.schedule_chunk_generation_task_b(status, self)
-                })
-                .count();
+            let (scheduled_count, deferred) =
+                self.schedule_generation_for_holders(&holders_to_schedule);
+            timings.scheduled_count = scheduled_count;
             timings.schedule_generation = start.elapsed();
-        }
+            deferred
+        };
 
         {
             let _span = tracing::trace_span!("run_generation").entered();
@@ -1177,6 +1187,7 @@ impl ChunkMap {
             ticket_manager,
             applied_revision,
             changes,
+            deferred_generation,
             timings,
         }
     }

@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use rustc_hash::FxHashSet;
 use steel_utils::{ChunkPos, locks::SyncMutex};
 
 use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketManager, LevelChange};
@@ -176,6 +177,8 @@ pub(crate) struct PreparedChunkSchedulingEpoch {
     pub ticket_manager: ChunkTicketManager,
     pub applied_revision: ChunkTicketRevision,
     pub changes: Vec<LevelChange>,
+    /// Centers waiting for a dependency holder to finish save preparation and revive.
+    pub deferred_generation: FxHashSet<ChunkPos>,
     pub timings: ChunkMapPreparationTimings,
 }
 
@@ -339,6 +342,7 @@ mod tests {
             ticket_manager,
             applied_revision: applied,
             changes,
+            deferred_generation: FxHashSet::default(),
             timings: ChunkMapPreparationTimings::default(),
         });
 

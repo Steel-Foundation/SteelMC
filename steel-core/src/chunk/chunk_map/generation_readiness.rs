@@ -4,11 +4,45 @@ use super::{
     FullPublication, FxHashMap, FxHashSet, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority,
     Instant, LevelChange, Ordering, PackedChunkPos, PostProcessGenerationError,
     ReadinessReconcileResult, RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot,
-    TickingReadiness, TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking,
-    is_full,
+    TickingReadiness, TickingReadinessCandidate, generation_status, instrument, is_block_ticking,
+    is_entity_ticking, is_full,
 };
 
 impl ChunkMap {
+    pub(super) fn schedule_generation_for_holders(
+        self: &Arc<Self>,
+        holders: &[(Arc<ChunkHolder>, ChunkTicketLevel)],
+    ) -> (usize, FxHashSet<ChunkPos>) {
+        // Holder membership stays fixed during the background epoch. Save completion
+        // only permits revival; the next lifecycle commit publishes it into `chunks`.
+        let revivals = self
+            .deferred_revivals
+            .lock()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        let mut deferred = FxHashSet::default();
+        let mut scheduled = 0;
+        for (holder, level) in holders {
+            let Some(status) = generation_status(Some(*level)) else {
+                continue;
+            };
+            if holder.try_chunk(status).is_some() {
+                continue;
+            }
+            let center = holder.get_pos();
+            let radius = ChunkGenerationTask::dependency_radius(status) as u32;
+            if revivals.iter().any(|pos| {
+                center.0.x.abs_diff(pos.0.x) <= radius && center.0.y.abs_diff(pos.0.y) <= radius
+            }) {
+                deferred.insert(center);
+                continue;
+            }
+            scheduled += usize::from(holder.schedule_chunk_generation_task_b(status, self));
+        }
+        (scheduled, deferred)
+    }
+
     /// Schedules a new generation task.
     #[inline]
     #[instrument(level = "trace", skip(self), fields(chunk = ?pos, target = ?target_status))]

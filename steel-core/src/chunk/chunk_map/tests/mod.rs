@@ -272,6 +272,7 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
     holder
 }
 
+mod deferred_generation;
 mod light_updates;
 mod persistence_unloads;
 mod player_tracking;
