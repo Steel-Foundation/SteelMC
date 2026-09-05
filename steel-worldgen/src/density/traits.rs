@@ -5,6 +5,7 @@
 //! density functions.
 
 use std::simd::f64x4;
+use std::simd::f64x8;
 
 use crate::BlockStateId;
 use crate::random::RandomSplitter;
@@ -160,6 +161,15 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// Whether vein functions have interpolation channels.
     fn vein_interp_enabled() -> bool;
 
+    /// Lane width the dimension's transpiled SIMD corner fill is emitted for.
+    /// The driver in `NoiseChunk` batches cell-corner Y values accordingly.
+    /// Dimensions default to the 4-lane form; a build-time setting may emit
+    /// an 8-lane override instead (see `fill_cell_corner_densities_8x`).
+    #[must_use]
+    fn simd_lanes() -> usize {
+        4
+    }
+
     /// Compute blended noise for an entire column of Y values.
     ///
     /// Called by `NoiseChunk::fill_slice` before iterating over Y corners.
@@ -211,6 +221,37 @@ pub trait DimensionNoises: Sized + Send + Sync {
         let ys_arr = ys.to_array();
         let blended_arr = blended_noise_values.to_array();
         for lane in 0..4 {
+            let dst = &mut out[lane * interp_count..(lane + 1) * interp_count];
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "block Y values are integer-valued f64s in cell-corner range"
+            )]
+            let y = ys_arr[lane] as i32;
+            self.fill_cell_corner_densities(cache, x, y, z, blended_arr[lane], dst);
+        }
+    }
+
+    /// SIMD form of [`fill_cell_corner_densities`] that batches 8 cell-corner
+    /// Y values at fixed `(x, z)`. Same lane-major `SoA` `out` layout as the
+    /// 4-lane form with `out.len() == 8 * interpolated_count()`.
+    ///
+    /// Default: scalar loop. Dimensions compiled with `SIMD_DENSITY_LANES=8`
+    /// override this with the transpiled 8-lane chain.
+    ///
+    /// [`fill_cell_corner_densities`]: Self::fill_cell_corner_densities
+    fn fill_cell_corner_densities_8x(
+        &self,
+        cache: &mut Self::ColumnCache,
+        x: i32,
+        ys: f64x8,
+        z: i32,
+        blended_noise_values: f64x8,
+        out: &mut [f64],
+    ) {
+        let interp_count = Self::interpolated_count();
+        let ys_arr = ys.to_array();
+        let blended_arr = blended_noise_values.to_array();
+        for lane in 0..8 {
             let dst = &mut out[lane * interp_count..(lane + 1) * interp_count];
             #[expect(
                 clippy::cast_possible_truncation,

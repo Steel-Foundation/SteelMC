@@ -1,7 +1,9 @@
 use proc_macro2::TokenStream;
+use quote::format_ident;
 use quote::quote;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::env;
 use std::path::Path;
 use std::string::String;
 use std::sync::Arc;
@@ -685,6 +687,7 @@ fn transpile_dimension(
     dimension: &str,
     prefix: &str,
     registry: &BTreeMap<String, DensityFunction>,
+    simd_lanes: usize,
 ) -> TokenStream {
     let settings = read_noise_settings(dimension);
     let router_entries = router_to_entries(&settings.noise_router);
@@ -696,9 +699,10 @@ fn transpile_dimension(
         prefix: prefix.to_string(),
         cell_width,
         legacy_random_source: settings.legacy_random_source,
+        simd_lanes,
     };
 
-    transpile(&input)
+    transpile(&input, simd_lanes)
 }
 
 /// Generate noise settings constants and trait impls for a dimension.
@@ -706,7 +710,7 @@ fn transpile_dimension(
     clippy::too_many_lines,
     reason = "generated noise settings include all trait glue in one quoted block"
 )]
-fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
+fn generate_noise_settings(dimension: &str, prefix: &str, simd_lanes: usize) -> TokenStream {
     let mut settings = read_noise_settings(dimension);
 
     let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
@@ -815,6 +819,38 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
     let default_block_ident = Ident::new(&default_block_upper, Span::call_site());
     let default_fluid_ident = Ident::new(&default_fluid_upper, Span::call_site());
+
+    let fill_corner_overrides: TokenStream = if simd_lanes == 8 {
+        quote! {
+            #[inline]
+            fn fill_cell_corner_densities_8x(
+                &self,
+                cache: &mut Self::ColumnCache,
+                x: i32,
+                ys: std::simd::f64x8,
+                z: i32,
+                blended_noise_values: std::simd::f64x8,
+                out: &mut [f64],
+            ) {
+                fill_cell_corner_densities_8x(self, cache, x, ys, z, blended_noise_values, out)
+            }
+        }
+    } else {
+        quote! {
+            #[inline]
+            fn fill_cell_corner_densities_4x(
+                &self,
+                cache: &mut Self::ColumnCache,
+                x: i32,
+                ys: std::simd::f64x4,
+                z: i32,
+                blended_noise_values: std::simd::f64x4,
+                out: &mut [f64],
+            ) {
+                fill_cell_corner_densities_4x(self, cache, x, ys, z, blended_noise_values, out)
+            }
+        }
+    };
 
     quote! {
         /// Noise settings for this dimension, parsed from the datapack.
@@ -988,6 +1024,10 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 VEIN_INTERP_ENABLED
             }
 
+            fn simd_lanes() -> usize {
+                SIMD_LANES
+            }
+
             #[inline]
             fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
                 self.blended_noise.compute_column(x, block_ys, z, out);
@@ -998,18 +1038,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 fill_cell_corner_densities(self, cache, x, y, z, blended_noise_value, out)
             }
 
-            #[inline]
-            fn fill_cell_corner_densities_4x(
-                &self,
-                cache: &mut Self::ColumnCache,
-                x: i32,
-                ys: std::simd::f64x4,
-                z: i32,
-                blended_noise_values: std::simd::f64x4,
-                out: &mut [f64],
-            ) {
-                fill_cell_corner_densities_4x(self, cache, x, ys, z, blended_noise_values, out)
-            }
+            #fill_corner_overrides
 
             #[inline]
             fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
@@ -1084,6 +1113,12 @@ pub(crate) struct DensityFunctionFiles {
 
 /// Generate density function code for all dimensions, split into one file per dimension.
 pub(crate) fn build() -> DensityFunctionFiles {
+    let simd_lanes: usize = env::var("STEEL_DENSITY_LANES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .map_or(4, |l| if l == 8 { 8 } else { 4 });
+    println!("cargo:rerun-if-env-changed=STEEL_DENSITY_LANES");
+
     let registry_json = read_density_function_registry();
 
     // Convert JSON registry to DensityFunction values (shared across dimensions)
@@ -1092,34 +1127,40 @@ pub(crate) fn build() -> DensityFunctionFiles {
         .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
 
-    let overworld_df = transpile_dimension("overworld", "Overworld", &registry);
-    let overworld_settings = generate_noise_settings("overworld", "Overworld");
-    let nether_df = transpile_dimension("nether", "Nether", &registry);
-    let nether_settings = generate_noise_settings("nether", "Nether");
-    let end_df = transpile_dimension("end", "End", &registry);
-    let end_settings = generate_noise_settings("end", "End");
+    let overworld_df = transpile_dimension("overworld", "Overworld", &registry, simd_lanes);
+    let overworld_settings = generate_noise_settings("overworld", "Overworld", simd_lanes);
+    let nether_df = transpile_dimension("nether", "Nether", &registry, simd_lanes);
+    let nether_settings = generate_noise_settings("nether", "Nether", simd_lanes);
+    let end_df = transpile_dimension("end", "End", &registry, simd_lanes);
+    let end_settings = generate_noise_settings("end", "End", simd_lanes);
 
     // Note: the transpiler already emits `use` imports in #overworld_df / #nether_df / #end_df.
+    let lane_alias_overworld = format_ident!("f64x{}", simd_lanes);
     let overworld = quote! {
         use steel_registry::RegistryExt;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
-
+        use std::simd;
+        use simd::#lane_alias_overworld as __LaneV;
         #overworld_df
         #overworld_settings
     };
 
+    let lane_alias_nether = format_ident!("f64x{}", simd_lanes);
     let nether = quote! {
         use steel_registry::RegistryExt;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
-
+        use std::simd;
+        use simd::#lane_alias_nether as __LaneV;
         #nether_df
         #nether_settings
     };
 
+    let lane_alias_end = format_ident!("f64x{}", simd_lanes);
     let end = quote! {
         use steel_registry::RegistryExt;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
-
+        use std::simd;
+        use simd::#lane_alias_end as __LaneV;
         #end_df
         #end_settings
     };
