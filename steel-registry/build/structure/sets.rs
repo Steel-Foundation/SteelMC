@@ -356,8 +356,23 @@ struct JigsawConfigData {
 enum StartHeightData {
     Constant(VerticalAnchorData),
     Uniform {
-        min: VerticalAnchorData,
-        max: VerticalAnchorData,
+        min_inclusive: VerticalAnchorData,
+        max_inclusive: VerticalAnchorData,
+    },
+    Trapezoid {
+        min_inclusive: VerticalAnchorData,
+        max_inclusive: VerticalAnchorData,
+        plateau: i32,
+    },
+    BiasedToBottom {
+        min_inclusive: VerticalAnchorData,
+        max_inclusive: VerticalAnchorData,
+        inner: i32,
+    },
+    VeryBiasedToBottom {
+        min_inclusive: VerticalAnchorData,
+        max_inclusive: VerticalAnchorData,
+        inner: i32,
     },
 }
 
@@ -462,8 +477,71 @@ fn parse_start_height_full(value: &serde_json::Value, context: &str) -> StartHei
                 ),
                 context,
             );
-            StartHeightData::Uniform { min, max }
+            StartHeightData::Uniform {
+                min_inclusive: min,
+                max_inclusive: max,
+            }
         }
+        Some("minecraft:trapezoid") => StartHeightData::Trapezoid {
+            min_inclusive: parse_vertical_anchor(
+                required_value(
+                    value.get("min_inclusive"),
+                    context,
+                    "start_height.min_inclusive",
+                ),
+                context,
+            ),
+            max_inclusive: parse_vertical_anchor(
+                required_value(
+                    value.get("max_inclusive"),
+                    context,
+                    "start_height.max_inclusive",
+                ),
+                context,
+            ),
+            plateau: value
+                .get("plateau")
+                .and_then(serde_json::Value::as_i64)
+                .map_or(0, |plateau| i64_to_i32(plateau, context)),
+        },
+        Some("minecraft:biased_to_bottom") => StartHeightData::BiasedToBottom {
+            min_inclusive: parse_vertical_anchor(
+                required_value(
+                    value.get("min_inclusive"),
+                    context,
+                    "start_height.min_inclusive",
+                ),
+                context,
+            ),
+            max_inclusive: parse_vertical_anchor(
+                required_value(
+                    value.get("max_inclusive"),
+                    context,
+                    "start_height.max_inclusive",
+                ),
+                context,
+            ),
+            inner: parse_positive_inner(value, context),
+        },
+        Some("minecraft:very_biased_to_bottom") => StartHeightData::VeryBiasedToBottom {
+            min_inclusive: parse_vertical_anchor(
+                required_value(
+                    value.get("min_inclusive"),
+                    context,
+                    "start_height.min_inclusive",
+                ),
+                context,
+            ),
+            max_inclusive: parse_vertical_anchor(
+                required_value(
+                    value.get("max_inclusive"),
+                    context,
+                    "start_height.max_inclusive",
+                ),
+                context,
+            ),
+            inner: parse_positive_inner(value, context),
+        },
         Some("minecraft:constant") => StartHeightData::Constant(parse_vertical_anchor(
             required_value(value.get("value"), context, "start_height.value"),
             context,
@@ -475,6 +553,15 @@ fn parse_start_height_full(value: &serde_json::Value, context: &str) -> StartHei
         None => StartHeightData::Constant(parse_vertical_anchor(value, context)),
         Some(other) => panic!("Unsupported jigsaw start_height provider {other} in {context}"),
     }
+}
+
+fn parse_positive_inner(value: &serde_json::Value, context: &str) -> i32 {
+    let inner = value
+        .get("inner")
+        .and_then(serde_json::Value::as_i64)
+        .map_or(1, |inner| i64_to_i32(inner, context));
+    assert!(inner >= 1, "Expected start_height.inner >= 1 in {context}");
+    inner
 }
 
 fn parse_vertical_anchor(value: &serde_json::Value, context: &str) -> VerticalAnchorData {
@@ -830,14 +917,52 @@ fn generate_spawn_overrides(overrides: &[SpawnOverrideData]) -> Vec<TokenStream>
 fn generate_start_height(height: &StartHeightData) -> TokenStream {
     match height {
         StartHeightData::Constant(anchor) => {
-            let anchor = generate_vertical_anchor(anchor);
-            quote! { StartHeight::Constant(#anchor) }
+            let anchor = generate_value_provider_anchor(anchor);
+            quote! { HeightProvider::Constant(#anchor) }
         }
-        StartHeightData::Uniform { min, max } => {
-            let min = generate_vertical_anchor(min);
-            let max = generate_vertical_anchor(max);
-            quote! { StartHeight::Uniform { min: #min, max: #max } }
+        StartHeightData::Uniform {
+            min_inclusive,
+            max_inclusive,
+        } => {
+            let min = generate_value_provider_anchor(min_inclusive);
+            let max = generate_value_provider_anchor(max_inclusive);
+            quote! { HeightProvider::Uniform { min_inclusive: #min, max_inclusive: #max } }
         }
+        StartHeightData::Trapezoid {
+            min_inclusive,
+            max_inclusive,
+            plateau,
+        } => {
+            let min = generate_value_provider_anchor(min_inclusive);
+            let max = generate_value_provider_anchor(max_inclusive);
+            quote! { HeightProvider::Trapezoid { min_inclusive: #min, max_inclusive: #max, plateau: #plateau } }
+        }
+        StartHeightData::BiasedToBottom {
+            min_inclusive,
+            max_inclusive,
+            inner,
+        } => {
+            let min = generate_value_provider_anchor(min_inclusive);
+            let max = generate_value_provider_anchor(max_inclusive);
+            quote! { HeightProvider::BiasedToBottom { min_inclusive: #min, max_inclusive: #max, inner: #inner } }
+        }
+        StartHeightData::VeryBiasedToBottom {
+            min_inclusive,
+            max_inclusive,
+            inner,
+        } => {
+            let min = generate_value_provider_anchor(min_inclusive);
+            let max = generate_value_provider_anchor(max_inclusive);
+            quote! { HeightProvider::VeryBiasedToBottom { min_inclusive: #min, max_inclusive: #max, inner: #inner } }
+        }
+    }
+}
+
+fn generate_value_provider_anchor(anchor: &VerticalAnchorData) -> TokenStream {
+    match anchor {
+        VerticalAnchorData::Absolute(y) => quote! { VerticalAnchor::Absolute(#y) },
+        VerticalAnchorData::AboveBottom(y) => quote! { VerticalAnchor::AboveBottom(#y) },
+        VerticalAnchorData::BelowTop(y) => quote! { VerticalAnchor::BelowTop(#y) },
     }
 }
 
@@ -1152,11 +1277,11 @@ pub(crate) fn build_structures() -> TokenStream {
         use crate::structure::{
             DimensionPadding, HeightProviderData, JigsawConfig, LiquidSettingsData,
             MineshaftTypeData, OceanRuinBiomeTempData, PoolAlias, RuinedPortalPlacementData,
-            RuinedPortalSetupData, StartHeight, StructureConfigData, StructureData,
+            RuinedPortalSetupData, StructureConfigData, StructureData,
             StructureGenerationStep, StructureRef, StructureRegistry, StructureSpawnBoundingBox,
             StructureSpawnOverrideData, StructureSpawnerData, TerrainAdjustment, VerticalAnchorData,
         };
-        use steel_utils::Identifier;
+        use steel_utils::{Identifier, value_providers::{HeightProvider, VerticalAnchor}};
         use std::sync::{LazyLock, OnceLock};
 
         #(#statics)*

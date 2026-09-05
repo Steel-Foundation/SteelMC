@@ -8,9 +8,7 @@ use std::{array, mem, ptr};
 
 use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
-use steel_registry::structure::{
-    JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData, VerticalAnchorData,
-};
+use steel_registry::structure::{JigsawConfig, LiquidSettingsData, PoolAlias, StructureData};
 use steel_registry::template_pool::{
     JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
 };
@@ -117,28 +115,13 @@ pub fn resolve_aliases(
     map
 }
 
-const fn resolve_vertical_anchor(anchor: &VerticalAnchorData, min_y: i32, height: i32) -> i32 {
-    match anchor {
-        VerticalAnchorData::Absolute(y) => *y,
-        VerticalAnchorData::AboveBottom(offset) => min_y + *offset,
-        VerticalAnchorData::BelowTop(offset) => min_y + height - 1 - *offset,
-    }
-}
-
 fn sample_start_height(
     config: &JigsawConfig,
     rng: &mut impl Random,
     min_y: i32,
     height: i32,
 ) -> i32 {
-    match &config.start_height {
-        StartHeight::Constant(anchor) => resolve_vertical_anchor(anchor, min_y, height),
-        StartHeight::Uniform { min, max } => {
-            let min = resolve_vertical_anchor(min, min_y, height);
-            let max = resolve_vertical_anchor(max, min_y, height);
-            rng.next_i32_between(min, max)
-        }
-    }
+    config.start_height.sample(rng, min_y, height)
 }
 
 /// Java integer midpoint used by vanilla jigsaw placement: `(min + max) / 2`.
@@ -1512,7 +1495,9 @@ mod tests {
             max_depth: 0,
             use_expansion_hack: false,
             project_start_to_heightmap: None,
-            start_height: StartHeight::Constant(VerticalAnchorData::Absolute(70)),
+            start_height: steel_utils::value_providers::HeightProvider::Constant(
+                steel_utils::value_providers::VerticalAnchor::Absolute(70),
+            ),
             max_distance_from_center: 80,
             start_jigsaw_name: Some(Identifier::vanilla_static("bottom")),
             dimension_padding: DimensionPadding { bottom: 0, top: 0 },

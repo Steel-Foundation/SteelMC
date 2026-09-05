@@ -8,7 +8,7 @@ use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
 use steel_registry::{
     REGISTRY, RegistryExt,
-    structure::{JigsawConfig, StartHeight, StructureData, VerticalAnchorData},
+    structure::{JigsawConfig, StructureData},
 };
 use steel_utils::Identifier;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -68,28 +68,13 @@ fn jigsaw_assets() -> (
     (pools, templates)
 }
 
-const fn resolve_vertical_anchor(anchor: &VerticalAnchorData, min_y: i32, height: i32) -> i32 {
-    match anchor {
-        VerticalAnchorData::Absolute(y) => *y,
-        VerticalAnchorData::AboveBottom(offset) => min_y + *offset,
-        VerticalAnchorData::BelowTop(offset) => min_y + height - 1 - *offset,
-    }
-}
-
 fn sample_start_height(
     config: &JigsawConfig,
     rng: &mut impl Random,
     min_y: i32,
     height: i32,
 ) -> i32 {
-    match &config.start_height {
-        StartHeight::Constant(anchor) => resolve_vertical_anchor(anchor, min_y, height),
-        StartHeight::Uniform { min, max } => {
-            let min = resolve_vertical_anchor(min, min_y, height);
-            let max = resolve_vertical_anchor(max, min_y, height);
-            rng.next_i32_between(min, max)
-        }
-    }
+    config.start_height.sample(rng, min_y, height)
 }
 
 fn run_assembly(
