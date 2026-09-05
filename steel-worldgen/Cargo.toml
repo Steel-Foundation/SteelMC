@@ -48,3 +48,4 @@ workspace = true
 
 [features]
 fmt = []
+benchmark-support = []

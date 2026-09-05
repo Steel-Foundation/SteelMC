@@ -16,8 +16,8 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::graph::{collect_interpolated_inners, is_flat_cached, unwrap_markers};
 use super::naming::{
-    named_fn_ident, named_fn_ident_4x, router_cache_field_ident, router_compute_fn_ident,
-    sanitize_name,
+    named_fn_ident, named_fn_ident_xz, named_fn_ident_y_simd, router_cache_field_ident,
+    router_compute_fn_ident, router_compute_fn_ident_xz, sanitize_name,
 };
 
 impl TranspileContext {
@@ -46,14 +46,35 @@ impl TranspileContext {
             });
         }
 
+        // Flat functions also get a generic X/Z SIMD form used to initialize
+        // the complete 5x5 quart grid in batches.
+        let mut fns_xz = Vec::new();
+        for name in self.topo_order.clone() {
+            if !self.flat_cached.contains(&name) {
+                continue;
+            }
+            let Some(df) = input.registry.get(&name) else {
+                continue;
+            };
+            let body = self.gen_expr_xz(unwrap_markers(df), input);
+            let fn_name = named_fn_ident_xz(&name);
+            let params = self.fn_params_xz();
+            fns_xz.push(quote! {
+                #[inline]
+                fn #fn_name<const N: usize>(#params) -> Simd<f64, N> {
+                    #body
+                }
+            });
+        }
+
         let spline_fns = mem::take(&mut self.spline_fns);
 
-        // SIMD (4-Y batched) parallel compute functions for non-flat named
+        // Generic Y-SIMD parallel compute functions for non-flat named
         // functions. Flat functions splat from the column cache, so they don't
         // need a 4x form. Some non-flat functions may only be reachable from
         // scalar paths (non-fill routers); the `dead_code` allow keeps those
         // cases warning-free.
-        let mut fns_4x = Vec::new();
+        let mut fns_y_simd = Vec::new();
         for name in self.topo_order.clone() {
             if self.flat_cached.contains(&name) {
                 continue;
@@ -62,30 +83,31 @@ impl TranspileContext {
                 continue;
             };
             let inner = unwrap_markers(df).clone();
-            let fn_name_4x = named_fn_ident_4x(&name);
+            let fn_name_y_simd = named_fn_ident_y_simd(&name);
 
             let body = self.gen_expr_simd(&inner, input, false);
 
             let params = self.fn_params_4x();
 
-            let doc = Literal::string(&format!("`{name}` (SIMD form, batches 4 Y values)"));
-            fns_4x.push(quote! {
+            let doc = Literal::string(&format!("`{name}` (Y-SIMD form)"));
+            fns_y_simd.push(quote! {
                 #[doc = #doc]
                 #[allow(dead_code)]
                 #[inline]
-                fn #fn_name_4x(#params) -> f64x4 {
+                fn #fn_name_y_simd<const N: usize>(#params) -> Simd<f64, N> {
                     #body
                 }
             });
         }
 
-        let spline_fns_4x = mem::take(&mut self.spline_fns);
+        let spline_fns_y_simd = mem::take(&mut self.spline_fns);
 
         quote! {
             #(#fns)*
             #(#spline_fns)*
-            #(#fns_4x)*
-            #(#spline_fns_4x)*
+            #(#fns_xz)*
+            #(#fns_y_simd)*
+            #(#spline_fns_y_simd)*
         }
     }
 
@@ -113,6 +135,16 @@ impl TranspileContext {
                     #[inline]
                     fn #compute_fn_name(#compute_params) -> f64 {
                         #compute_body
+                    }
+                });
+
+                let compute_fn_name_xz = router_compute_fn_ident_xz(name);
+                let compute_body_xz = self.gen_expr_xz(inner, input);
+                let compute_params_xz = self.fn_params_xz();
+                fns.push(quote! {
+                    #[inline]
+                    fn #compute_fn_name_xz<const N: usize>(#compute_params_xz) -> Simd<f64, N> {
+                        #compute_body_xz
                     }
                 });
 
@@ -333,6 +365,7 @@ impl TranspileContext {
                 blended_noise_value_v: f64x4,
                 out: &mut [f64],
             ) {
+                const N: usize = 4;
                 let x = cache.x as f64;
                 let z = cache.z as f64;
                 #(#inner_stmts_4x)*

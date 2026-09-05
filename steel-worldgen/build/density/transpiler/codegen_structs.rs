@@ -9,8 +9,9 @@ use quote::{format_ident, quote};
 use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::naming::{
-    grid_field_ident, named_fn_field_ident, named_fn_ident, noise_field_ident,
-    router_cache_field_ident, router_compute_fn_ident, router_grid_field_ident,
+    grid_field_ident, named_fn_field_ident, named_fn_ident, named_fn_ident_xz, noise_field_ident,
+    router_cache_field_ident, router_compute_fn_ident, router_compute_fn_ident_xz,
+    router_grid_field_ident,
 };
 
 impl TranspileContext {
@@ -166,7 +167,10 @@ impl TranspileContext {
         let grid_total = (grid_side * grid_side) as usize;
         let grid_side_lit = Literal::i32_unsuffixed(grid_side);
         let grid_total_lit = Literal::usize_unsuffixed(grid_total);
-
+        assert!(
+            grid_total <= 25,
+            "flat-cache X/Z SIMD supports grids up to 5x5"
+        );
         let flat_names: Vec<&String> = self
             .topo_order
             .iter()
@@ -179,6 +183,13 @@ impl TranspileContext {
             .map(|name| {
                 let field = named_fn_field_ident(name);
                 quote! { pub #field: f64 }
+            })
+            .collect();
+        let xz_cache_fields: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                quote! { #field: Simd<f64, N> }
             })
             .collect();
 
@@ -247,6 +258,14 @@ impl TranspileContext {
             .map(|name| {
                 let field = router_cache_field_ident(name);
                 quote! { pub #field: f64 }
+            })
+            .collect();
+        let xz_router_fields: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                quote! { #field: Simd<f64, N> }
             })
             .collect();
 
@@ -319,6 +338,84 @@ impl TranspileContext {
                 quote! { pub #field: f64 }
             })
             .collect();
+        let xz_inline_noise_fields: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                quote! { #field: Simd<f64, N> }
+            })
+            .collect();
+
+        let xz_cache_defaults: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                quote! { #field: Simd::splat(0.0) }
+            })
+            .collect();
+        let xz_router_defaults: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                quote! { #field: Simd::splat(0.0) }
+            })
+            .collect();
+        let xz_inline_defaults: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                quote! { #field: Simd::splat(0.0) }
+            })
+            .collect();
+
+        let xz_compute_stmts: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                let function = named_fn_ident_xz(name);
+                let grid = grid_field_ident(name);
+                quote! {
+                    xz_cache.#field = #function(noises, self, &xz_cache, xs, zs);
+                    self.#grid[batch_start..batch_start + N]
+                        .copy_from_slice(xz_cache.#field.as_array());
+                }
+            })
+            .collect();
+        let xz_router_compute_stmts: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                let function = router_compute_fn_ident_xz(name);
+                let grid = router_grid_field_ident(name);
+                quote! {
+                    xz_cache.#field = #function(noises, self, &xz_cache, xs, zs);
+                    self.#grid[batch_start..batch_start + N]
+                        .copy_from_slice(xz_cache.#field.as_array());
+                }
+            })
+            .collect();
+        let xz_inline_compute_stmts: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, noise_id, xz_scale)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                let noise = noise_field_ident(noise_id);
+                let scale = Literal::f64_unsuffixed(*xz_scale);
+                let grid = format_ident!("grid_inline_noise_{}", idx);
+                quote! {
+                    xz_cache.#field = noises.#noise.get_value_simd(
+                        xs * Simd::splat(#scale), Simd::splat(0.0),
+                        zs * Simd::splat(#scale),
+                    );
+                    self.#grid[batch_start..batch_start + N]
+                        .copy_from_slice(xz_cache.#field.as_array());
+                }
+            })
+            .collect();
 
         let inline_noise_grid_fields: Vec<TokenStream> = self
             .inline_flat_noises
@@ -384,7 +481,14 @@ impl TranspileContext {
 
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
+        let xz_cache = &self.xz_cache_ident;
         quote! {
+            struct #xz_cache<const N: usize> {
+                #(#xz_cache_fields,)*
+                #(#xz_router_fields,)*
+                #(#xz_inline_noise_fields,)*
+            }
+
             /// Column-level cache for flat-cached (xz-only) density function results.
             ///
             /// Supports two modes matching vanilla's `NoiseChunk.FlatCache`:
@@ -421,7 +525,6 @@ impl TranspileContext {
             impl #cache {
                 /// Grid side length (quart positions per axis).
                 const GRID_SIDE: i32 = #grid_side_lit;
-
                 /// Create a new column cache without a pre-computed grid.
                 #[must_use]
                 pub fn new() -> Self {
@@ -448,17 +551,30 @@ impl TranspileContext {
                 /// After this call, `ensure()` for in-bounds positions copies from
                 /// the grid (O(1)). Out-of-bounds positions fall back to on-the-fly
                 /// evaluation at raw (non-quantized) coordinates.
-                pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32,
-                                 noises: &#noises) {
+                pub fn init_grid(
+                    &mut self,
+                    chunk_block_x: i32,
+                    chunk_block_z: i32,
+                    noises: &#noises,
+                ) {
+                    #[cfg(all(
+                        any(target_arch = "x86", target_arch = "x86_64"),
+                        any(
+                            target_feature = "avx",
+                            target_feature = "avx2",
+                            target_feature = "avx512f",
+                        ),
+                    ))]
+                    {
+                        self.init_grid_simd::<8>(chunk_block_x, chunk_block_z, noises);
+                        return;
+                    }
+
                     self.grid_first_quart_x = chunk_block_x >> 2;
                     self.grid_first_quart_z = chunk_block_z >> 2;
                     self.has_grid = true;
                     self.valid = false;
 
-                    // Pre-compute all grid positions in topological order.
-                    // For each position, write to active fields first (so
-                    // dependent compute functions can read them), then copy
-                    // into the grid arrays.
                     for rel_z in 0..Self::GRID_SIDE {
                         for rel_x in 0..Self::GRID_SIDE {
                             let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
@@ -472,6 +588,61 @@ impl TranspileContext {
                             #(#inline_noise_ensure_stmts)*
                             #(#inline_noise_grid_store_stmts)*
                         }
+                    }
+                }
+
+                /// Pre-compute the flat-noise grid with `N` logical SIMD lanes.
+                ///
+                /// Full batches use SIMD; any remaining positions are evaluated
+                /// scalar so no inactive lanes are computed. This form permits
+                /// explicit-width performance measurement.
+                #[inline(always)]
+                pub fn init_grid_simd<const N: usize>(
+                    &mut self,
+                    chunk_block_x: i32,
+                    chunk_block_z: i32,
+                    noises: &#noises,
+                ) {
+                    self.grid_first_quart_x = chunk_block_x >> 2;
+                    self.grid_first_quart_z = chunk_block_z >> 2;
+                    self.has_grid = true;
+                    self.valid = false;
+
+                    assert!(N > 0, "grid SIMD width must be positive");
+                    let simd_end = #grid_total_lit - #grid_total_lit % N;
+                    let mut xz_cache = #xz_cache::<N> {
+                        #(#xz_cache_defaults,)*
+                        #(#xz_router_defaults,)*
+                        #(#xz_inline_defaults,)*
+                    };
+                    for batch_start in (0..simd_end).step_by(N) {
+                        let xs: Simd<f64, N> = Simd::from_array(std::array::from_fn(|lane| {
+                            let index = batch_start + lane;
+                            let rel_x = index as i32 % Self::GRID_SIDE;
+                            ((self.grid_first_quart_x + rel_x) << 2) as f64
+                        }));
+                        let zs: Simd<f64, N> = Simd::from_array(std::array::from_fn(|lane| {
+                            let index = batch_start + lane;
+                            let rel_z = index as i32 / Self::GRID_SIDE;
+                            ((self.grid_first_quart_z + rel_z) << 2) as f64
+                        }));
+                        #(#xz_compute_stmts)*
+                        #(#xz_router_compute_stmts)*
+                        #(#xz_inline_compute_stmts)*
+                    }
+
+                    for idx in simd_end..#grid_total_lit {
+                        let rel_x = idx as i32 % Self::GRID_SIDE;
+                        let rel_z = idx as i32 / Self::GRID_SIDE;
+                        let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                        let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
+
+                        #(#ensure_stmts)*
+                        #(#grid_store_stmts)*
+                        #(#router_ensure_stmts)*
+                        #(#router_grid_store_stmts)*
+                        #(#inline_noise_ensure_stmts)*
+                        #(#inline_noise_grid_store_stmts)*
                     }
                 }
 
@@ -554,12 +725,22 @@ impl TranspileContext {
         }
     }
 
-    /// Generate the SIMD (4-Y batched) parameter list for a non-flat density
-    /// function. Flat functions don't have a 4x form (callers splat from cache).
+    /// Generate the generic Y-SIMD parameter list for a non-flat density
+    /// function. Flat functions don't need this form because callers splat them.
     pub(super) fn fn_params_4x(&self) -> TokenStream {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
-        quote! { noises: &#noises, cache: &#cache, x: f64, ys: f64x4, z: f64 }
+        quote! { noises: &#noises, cache: &#cache, x: f64, ys: Simd<f64, N>, z: f64 }
+    }
+
+    pub(super) fn fn_params_xz(&self) -> TokenStream {
+        let noises = &self.noises_ident;
+        let cache = &self.cache_ident;
+        let xz_cache = &self.xz_cache_ident;
+        quote! {
+            noises: &#noises, cache: &mut #cache, xz_cache: &#xz_cache<N>,
+            xs: Simd<f64, N>, zs: Simd<f64, N>
+        }
     }
 
     /// Generate the function parameter list for a router entry point.
