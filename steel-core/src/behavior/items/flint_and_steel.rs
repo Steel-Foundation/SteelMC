@@ -4,6 +4,7 @@ use crate::behavior::blocks::FireBlock;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use steel_macros::item_behavior;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -88,7 +89,7 @@ impl ItemBehavior for FireChargeItem {
             &sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
-            context.inv.with_item(|item| item.shrink_one());
+            context.inv.with_item(ItemStack::shrink_one);
             return InteractionResult::Success;
         }
 
@@ -118,7 +119,7 @@ impl ItemBehavior for FireChargeItem {
             &GameEventContext::new(Some(context.player), None),
         );
 
-        context.inv.with_item(|item| item.shrink_one());
+        context.inv.with_item(ItemStack::shrink_one);
 
         InteractionResult::Success
     }

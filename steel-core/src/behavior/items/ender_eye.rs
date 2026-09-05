@@ -8,6 +8,7 @@ use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     REGISTRY, level_events, sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
@@ -87,7 +88,7 @@ impl ItemBehavior for EnderEyeItem {
             .world
             .level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
 
-        context.inv.with_item(|item| item.shrink_one());
+        context.inv.with_item(ItemStack::shrink_one);
 
         if let Some(portal_origin) = find_completed_end_portal_origin(context.world, clicked_pos) {
             spawn_end_portal(context.world, portal_origin);

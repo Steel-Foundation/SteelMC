@@ -1,4 +1,5 @@
 use steel_macros::item_behavior;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{
     REGISTRY, blocks::block_state_ext::BlockStateExt, level_events, vanilla_game_events,
 };
@@ -27,7 +28,7 @@ impl ItemBehavior for HoneycombItem {
         // Try block waxing first
         let old_block_state = context.world.get_block_state(pos);
         if let Some(waxed_block) = get_waxed_from_normal_variant(old_block_state.get_block()) {
-            context.inv.with_item(|item| item.shrink_one());
+            context.inv.with_item(ItemStack::shrink_one);
             // TODO: trigger CriteriaTriggers.ITEM_USED_ON_BLOCK advancement
             let waxed_state = REGISTRY
                 .blocks
@@ -70,7 +71,7 @@ impl ItemBehavior for HoneycombItem {
         }
 
         sign.set_changed();
-        context.inv.with_item(|item| item.shrink_one());
+        context.inv.with_item(ItemStack::shrink_one);
         context.world.level_event(
             level_events::PARTICLES_AND_SOUND_WAX_ON,
             pos,
