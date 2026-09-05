@@ -405,6 +405,56 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
+    /// Returns the living entity credited as this explosion's indirect source.
+    fn explosion_indirect_source(&self) -> Option<SharedEntity> {
+        self.projectile_owner()
+            .filter(|owner| owner.as_living_entity().is_some())
+    }
+
+    /// Returns the point used to calculate this entity's explosion direction.
+    fn explosion_damage_origin(&self) -> DVec3 {
+        let position = self.position();
+        DVec3::new(position.x, self.get_eye_y(), position.z)
+    }
+
+    /// Returns whether this entity is wholly ignored by an explosion.
+    fn ignore_explosion(&self, _explosion: &dyn Explosion) -> bool {
+        false
+    }
+
+    /// Lets an entity source modify effective block or fluid resistance.
+    #[expect(
+        unused_variables,
+        reason = "default implementation preserves resistance"
+    )]
+    fn block_explosion_resistance(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid: FluidState,
+        resistance: f32,
+    ) -> f32 {
+        resistance
+    }
+
+    /// Lets an entity source veto one affected block position.
+    #[expect(unused_variables, reason = "default implementation allows destruction")]
+    fn should_block_explode(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        power: f32,
+    ) -> bool {
+        true
+    }
+
+    /// Called after this entity is processed by an explosion.
+    fn on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {}
+
     /// Returns how vanilla lets this entity respond to piston movement.
     fn piston_push_reaction(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
@@ -472,6 +522,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// with unless a concrete entity type opts in.
     fn can_be_collided_with(&self, _other: Option<&dyn Entity>) -> bool {
         false
+    }
+
+    /// Returns whether this entity must participate in conservative hard-collision queries.
+    ///
+    /// Hard collisions are the entity shapes consulted by vanilla movement collision, not
+    /// ordinary entity pushing. Returning `false` is an immutable capability promise that this
+    /// entity can never return `true` from [`Self::can_be_collided_with`] for any source and that
+    /// its [`Self::can_collide_with`] implementation never broadens the default rule as a source.
+    /// Implementations are conservative by default so plugin-defined collision rules cannot be
+    /// omitted from the movement broad phase. The world entity manager may cache this capability
+    /// for the entity's registered lifetime, including chunk-unload retention.
+    fn is_hard_collision_relevant(&self) -> bool {
+        true
     }
 
     /// Returns whether projectile collision may interact with this entity.
@@ -1164,9 +1227,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.game_event(&vanilla_game_events::ENTITY_DIE);
     }
 
-    /// Caches a live owner reference after restoring persisted owner-linked
-    /// entities. Most entities do not store owner references.
-    fn restore_owner_reference(&self, _owner: &SharedEntity) {}
+    /// Caches a known live owner after restoring persisted owner-linked entities.
+    fn cache_owner_reference(&self, _owner: &SharedEntity) {}
+
+    /// Restores live entity references from the pre-transition entity.
+    ///
+    /// Vanilla copies subclass reference fields after recreating an entity in a
+    /// different dimension. Implement additional fields through
+    /// [`Entity::restore_additional_references_from`] so projectile ownership is
+    /// retained automatically.
+    fn restore_references_from(&self, previous: &dyn Entity) {
+        if let (Some(current), Some(previous)) = (self.as_projectile(), previous.as_projectile()) {
+            current.restore_owner_reference_from(previous);
+        }
+        self.restore_additional_references_from(previous);
+    }
+
+    /// Restores concrete entity-reference fields beyond the shared projectile owner.
+    fn restore_additional_references_from(&self, _previous: &dyn Entity) {}
+
+    /// Called after a teleport completes successfully.
+    fn on_teleported(&self) {}
 
     /// Sets the level callback for lifecycle events (movement, removal).
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
@@ -2126,16 +2207,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Refreshes cached fluid contact from this entity's current bounding box.
     fn refresh_fluid_contact(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(false)
+        self.scan_and_store_fluid_contact(false, false)
+    }
+
+    /// Refreshes cached fluid contact and applies currents without advancing
+    /// base-tick-only eye-water history.
+    fn refresh_fluid_contact_with_currents(&self) -> EntityFluidContact {
+        self.scan_and_store_fluid_contact(false, true)
     }
 
     /// Refreshes cached fluid contact with vanilla base-tick eye-water history.
     fn refresh_fluid_contact_for_base_tick(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(true)
+        self.scan_and_store_fluid_contact(true, true)
     }
 
     /// Scans current fluid contact and stores it on the entity base.
-    fn scan_and_store_fluid_contact(&self, advance_eye_water_history: bool) -> EntityFluidContact {
+    fn scan_and_store_fluid_contact(
+        &self,
+        advance_eye_water_history: bool,
+        include_currents: bool,
+    ) -> EntityFluidContact {
         let Some(world) = self.level() else {
             let contact = EntityFluidContact::default();
             if advance_eye_water_history {
@@ -2146,7 +2237,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return contact;
         };
 
-        let contact = if advance_eye_water_history {
+        let contact = if include_currents {
             EntityFluidContact::scan_with_currents(
                 &world,
                 self.position(),
@@ -2164,15 +2255,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         if advance_eye_water_history {
             self.base().set_fluid_contact_for_base_tick(contact);
-            self.apply_fluid_current_for_base_tick(&world, contact);
         } else {
             self.base().set_fluid_contact(contact);
+        }
+        if include_currents {
+            self.apply_fluid_current_impulses(&world, contact);
         }
         contact
     }
 
-    /// Applies vanilla water/lava current impulses from the base-tick fluid scan.
-    fn apply_fluid_current_for_base_tick(&self, world: &Arc<World>, contact: EntityFluidContact) {
+    /// Applies vanilla water/lava current impulses from a fluid interaction update.
+    fn apply_fluid_current_impulses(&self, world: &Arc<World>, contact: EntityFluidContact) {
         if !self.is_pushed_by_fluid() {
             return;
         }
@@ -2400,7 +2493,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         if let Some(position) = accepted.position {
             self.try_set_position(position)?;
-            self.refresh_fluid_contact();
         }
 
         self.set_rotation(accepted.rotation);
@@ -3213,7 +3305,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return None;
         }
         self.base().clear_collision_flags();
-        self.refresh_fluid_contact();
 
         Some(MoveResult {
             final_position,
@@ -3295,7 +3386,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
-        self.refresh_fluid_contact();
 
         if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
             return Some(result);
@@ -3403,6 +3493,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
+        // LivingEntity refreshes fluid interaction after movement, before it evaluates fall state.
+        if self.as_living_entity().is_some() && !self.is_in_water() {
+            self.refresh_fluid_contact_with_currents();
+            self.base().reset_fall_distance_in_water();
+        }
+
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }
@@ -3569,19 +3665,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns vanilla `DamageSource.isCreativePlayer`: whether the damage's
     /// causing entity is a player with infinite materials.
     fn source_is_creative_player(&self, source: &DamageSource) -> bool {
-        let Some(causing_entity_id) = source.causing_entity_id else {
-            return false;
-        };
         let Some(world) = self.level() else {
             return false;
         };
-        world
-            .get_entity_by_id(causing_entity_id)
-            .is_some_and(|entity| {
-                entity
-                    .as_player()
-                    .is_some_and(Player::has_infinite_materials)
-            })
+        source.causing_entity(&world).is_some_and(|entity| {
+            entity
+                .as_player()
+                .is_some_and(Player::has_infinite_materials)
+        })
     }
 
     /// Applies damage to this entity.

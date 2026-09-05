@@ -11,6 +11,7 @@ use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
+use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
@@ -25,7 +26,7 @@ use crate::entity::{
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -542,6 +543,10 @@ impl Entity for ItemEntity {
         self.entity_type
     }
 
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        !explosion.should_affect_blocklike_entities()
+    }
+
     fn tick(&self) {
         // Check if item is empty
         if self.get_item().is_empty() {
@@ -636,6 +641,12 @@ impl Entity for ItemEntity {
             self.merge_with_neighbors(&world);
         }
 
+        let fluid_contact = self.refresh_fluid_contact_with_currents();
+        self.base.reset_fall_distance_in_water();
+        if fluid_contact.water_height() > 0.0 || fluid_contact.lava_height() > 0.0 {
+            self.mark_velocity_sync();
+        }
+
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)
         // Vanilla: if (getDeltaMovement().subtract(oldMovement).lengthSqr() > 0.01) needsSync = true
         let new_movement = self.velocity();
@@ -701,8 +712,15 @@ impl Entity for ItemEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
+        if !world.get_game_rule(&MOB_GRIEFING)
+            && source
+                .causing_entity(world)
+                .is_some_and(|entity| entity.as_mob().is_some())
+        {
+            return false;
+        }
         if !self.get_item().can_be_hurt_by(source.damage_type) {
             return false;
         }
@@ -779,17 +797,19 @@ impl Entity for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
 
     use steel_registry::{
-        init_vanilla_registry, item_stack::ItemStack, vanilla_damage_types, vanilla_entities,
-        vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_damage_types,
+        vanilla_entities, vanilla_items,
     };
+    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
+    use crate::behavior::init_behaviors;
     use crate::entity::{Entity, damage::DamageSource};
-    use crate::test_support::test_world;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
     use crate::world::World;
 
     use super::ItemEntity;
@@ -845,6 +865,32 @@ mod tests {
         assert_eq!(velocity.y.to_bits(), 0.2_f64.to_bits());
         assert!(velocity.z >= -0.1);
         assert!(velocity.z < 0.1);
+    }
+
+    #[test]
+    fn item_tick_refreshes_fluid_after_movement() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("item_post_move_fluid_update");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        assert!(world.set_block(
+            BlockPos::new(8, 64, 8),
+            vanilla_blocks::WATER.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::new(8.5, 65.1, 8.5),
+            ItemStack::new(&vanilla_items::STONE),
+            Arc::downgrade(&world),
+        );
+        item.set_velocity(DVec3::new(0.0, -0.2, 0.0));
+
+        item.tick();
+
+        assert!(item.fluid_contact().water_height() > 0.0);
+        assert!(item.needs_velocity_sync());
     }
 
     #[test]

@@ -892,9 +892,7 @@ impl Player {
 
         // Difficulty scaling (vanilla: Player.hurtServer)
         let mut amount = amount;
-        let causing_entity = source
-            .causing_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id));
+        let causing_entity = source.causing_entity(world);
         if source.scales_with_difficulty(causing_entity.as_deref()) {
             let difficulty = world.level_data.read().data().difficulty;
             match difficulty {

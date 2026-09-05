@@ -163,7 +163,7 @@ impl ChunkSkyLightSources {
             }
 
             for y in (0..CHUNK_EDGE).rev() {
-                let bottom_state = section.states.get(x, y, z);
+                let bottom_state = section.states().get(x, y, z);
                 if Self::is_edge_occluded(top_state, bottom_state) {
                     return top_y;
                 }

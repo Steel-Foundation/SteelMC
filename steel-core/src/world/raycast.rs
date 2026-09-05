@@ -1,4 +1,7 @@
 use super::*;
+use crate::chunk::gameplay_chunk_lookup_cache::LocalFullChunkHolderCache;
+use crate::physics::block_has_extensible_collision_behavior;
+use steel_registry::blocks::BlockRef;
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -59,6 +62,609 @@ pub struct ClipHitResult {
     pub world_border_hit: bool,
 }
 
+const VANILLA_RAY_ENDPOINT_ADJUSTMENT: f64 = -1.0e-7;
+const MIN_SHAPE_CLIP_LENGTH_SQUARED: f64 = 1.0e-7;
+const SHAPE_INSIDE_PROBE_SCALE: f64 = 0.001;
+const AABB_CLIP_EPSILON: f64 = 1.0e-7;
+// Java's `Float.MIN_VALUE` is the smallest positive subnormal, unlike Rust's
+// `f32::MIN_POSITIVE`.
+const JAVA_FLOAT_MIN_VALUE: f32 = f32::from_bits(1);
+
+// Radius-four TNT exposure repeatedly visits a few hundred nearby positions. A 256-entry direct
+// cache retains almost all of that working set without heap allocation or cross-explosion lifetime.
+// Its size must remain a power of two because lookups wrap with a mask.
+const EXPLOSION_EXPOSURE_CACHE_SIZE: usize = 256;
+const EXPLOSION_EXPOSURE_CACHE_MASK: usize = EXPLOSION_EXPOSURE_CACHE_SIZE - 1;
+const EXPLOSION_EXPOSURE_FIBONACCI_HASH_MULTIPLIER: u64 = 0x9e37_79b9_7f4a_7c15;
+const EMPTY_EXPOSURE_CACHE_GENERATION: u32 = 0;
+const FIRST_EXPOSURE_CACHE_GENERATION: u32 = 1;
+
+// A normal radius-four explosion queries at most 19 positions on each axis. Two bits per position
+// fit inline, avoiding one heap allocation while unusual radii use the compatibility path.
+const EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE: usize = 19;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS: usize = 2;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD: usize =
+    u64::BITS as usize / EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_MASK: u64 =
+    (1 << EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS) - 1;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS: usize = EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE
+    * EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE
+    * EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS: usize =
+    EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS.div_ceil(EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum ExplosionExposureClearGridState {
+    Unresolved = 0,
+    StaticEmpty = 1,
+    RequiresExactCollision = 2,
+}
+
+const UNRESOLVED_EXPOSURE_GRID_WORD: u64 = ExplosionExposureClearGridState::Unresolved as u64;
+
+impl ExplosionExposureClearGridState {
+    const fn for_collision(is_empty: bool) -> Self {
+        if is_empty {
+            Self::StaticEmpty
+        } else {
+            Self::RequiresExactCollision
+        }
+    }
+
+    const fn from_encoded(encoded: u64) -> Self {
+        if encoded == Self::Unresolved as u64 {
+            Self::Unresolved
+        } else if encoded == Self::StaticEmpty as u64 {
+            Self::StaticEmpty
+        } else {
+            // The unused fourth encoding conservatively takes the exact path too.
+            Self::RequiresExactCollision
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ExplosionExposureClearGridBounds {
+    min: BlockPos,
+    size_x: usize,
+    size_y: usize,
+    size_z: usize,
+}
+
+struct ExplosionExposureClearGrid {
+    bounds: Option<ExplosionExposureClearGridBounds>,
+    // Each lookup reads one packed word instead of two bitsets.
+    states: [u64; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
+}
+
+impl ExplosionExposureClearGrid {
+    const fn new() -> Self {
+        Self {
+            bounds: None,
+            states: [UNRESOLVED_EXPOSURE_GRID_WORD; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
+        }
+    }
+
+    fn configure(&mut self, min: BlockPos, max: BlockPos) {
+        let Some(size_x) = inclusive_axis_size(min.x(), max.x()) else {
+            self.bounds = None;
+            return;
+        };
+        let Some(size_y) = inclusive_axis_size(min.y(), max.y()) else {
+            self.bounds = None;
+            return;
+        };
+        let Some(size_z) = inclusive_axis_size(min.z(), max.z()) else {
+            self.bounds = None;
+            return;
+        };
+        let Some(volume) = size_x
+            .checked_mul(size_y)
+            .and_then(|plane| plane.checked_mul(size_z))
+        else {
+            self.bounds = None;
+            return;
+        };
+        if volume > EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS {
+            self.bounds = None;
+            return;
+        }
+
+        self.bounds = Some(ExplosionExposureClearGridBounds {
+            min,
+            size_x,
+            size_y,
+            size_z,
+        });
+        self.states.fill(UNRESOLVED_EXPOSURE_GRID_WORD);
+    }
+
+    fn clear(&mut self) {
+        self.states.fill(UNRESOLVED_EXPOSURE_GRID_WORD);
+    }
+
+    fn index(&self, pos: BlockPos) -> Option<usize> {
+        let bounds = self.bounds?;
+        // Wrapping subtraction maps every below-min coordinate to a large unsigned value. Since
+        // the configured grid is tiny, the same range checks safely reject both underflow and
+        // coordinates above the maximum without three checked-subtraction branches.
+        let x = pos.x().wrapping_sub(bounds.min.x()) as u32 as usize;
+        let y = pos.y().wrapping_sub(bounds.min.y()) as u32 as usize;
+        let z = pos.z().wrapping_sub(bounds.min.z()) as u32 as usize;
+        if x >= bounds.size_x || y >= bounds.size_y || z >= bounds.size_z {
+            return None;
+        }
+        Some((y * bounds.size_z + z) * bounds.size_x + x)
+    }
+
+    const fn state(&self, index: usize) -> ExplosionExposureClearGridState {
+        let word = index / EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD;
+        let shift = (index % EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD)
+            * EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS;
+        let encoded = (self.states[word] >> shift) & EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_MASK;
+        ExplosionExposureClearGridState::from_encoded(encoded)
+    }
+
+    fn record(&mut self, index: usize, state: ExplosionExposureClearGridState) {
+        debug_assert_ne!(state, ExplosionExposureClearGridState::Unresolved);
+        let word = index / EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD;
+        let shift = (index % EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD)
+            * EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS;
+        let mask = EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_MASK << shift;
+        let value = (state as u64) << shift;
+        self.states[word] = (self.states[word] & !mask) | value;
+    }
+}
+
+fn inclusive_axis_size(min: i32, max: i32) -> Option<usize> {
+    let size = usize::try_from(max.checked_sub(min)?.checked_add(1)?).ok()?;
+    (size != 0).then_some(size)
+}
+
+#[derive(Clone, Copy)]
+struct ExplosionExposureCacheEntry {
+    pos: BlockPos,
+    collision: OffsetVoxelShape,
+    generation: u32,
+}
+
+impl ExplosionExposureCacheEntry {
+    const EMPTY: Self = Self {
+        pos: BlockPos::new(0, 0, 0),
+        collision: OffsetVoxelShape::without_offset(VoxelShape::EMPTY),
+        generation: EMPTY_EXPOSURE_CACHE_GENERATION,
+    };
+}
+
+#[derive(Clone, Copy)]
+struct ExplosionExposureBlockRead {
+    state: BlockStateId,
+    cacheable: bool,
+}
+
+/// Bounded cache for vanilla explosion exposure rays.
+///
+/// Missing chunks are never cached, allowing asynchronous Full publication to become visible
+/// while the synchronous gameplay callback is running. Dynamic and non-Vanilla collision shapes
+/// are resolved on every visit so live block entities and plugin callbacks retain their normal
+/// query semantics. Reuse across entities is only valid when the caller can prove that the
+/// intervening entity callbacks cannot mutate blocks; callers must clear the cache before invoking
+/// any other entity implementation.
+pub(crate) struct ExplosionExposureRaycast<'world> {
+    world: &'world World,
+    collision_context: BlockCollisionContext,
+    full_chunks: LocalFullChunkHolderCache,
+    entries: [ExplosionExposureCacheEntry; EXPLOSION_EXPOSURE_CACHE_SIZE],
+    clear_grid: ExplosionExposureClearGrid,
+    generation: u32,
+    #[cfg(test)]
+    stats: ExplosionExposureRaycastStats,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ExplosionExposureRaycastStats {
+    pub(crate) block_visits: usize,
+    pub(crate) cache_hits: usize,
+    pub(crate) state_lookups: usize,
+    pub(crate) collision_lookups: usize,
+    pub(crate) clear_grid_hits: usize,
+    pub(crate) clear_grid_resolutions: usize,
+    pub(crate) stable_air_queries: usize,
+    pub(crate) stable_air_hits: usize,
+}
+
+impl<'world> ExplosionExposureRaycast<'world> {
+    pub(crate) const fn new(
+        world: &'world World,
+        collision_context: BlockCollisionContext,
+    ) -> Self {
+        Self {
+            world,
+            collision_context,
+            full_chunks: LocalFullChunkHolderCache::new(),
+            entries: [ExplosionExposureCacheEntry::EMPTY; EXPLOSION_EXPOSURE_CACHE_SIZE],
+            clear_grid: ExplosionExposureClearGrid::new(),
+            generation: FIRST_EXPOSURE_CACHE_GENERATION,
+            #[cfg(test)]
+            stats: ExplosionExposureRaycastStats {
+                block_visits: 0,
+                cache_hits: 0,
+                state_lookups: 0,
+                collision_lookups: 0,
+                clear_grid_hits: 0,
+                clear_grid_resolutions: 0,
+                stable_air_queries: 0,
+                stable_air_hits: 0,
+            },
+        }
+    }
+
+    /// Configures a bounded, explosion-local cache of statically clear positions.
+    ///
+    /// Bounds that exceed the inline capacity disable the optimization and retain the exact
+    /// compatibility path.
+    pub(crate) fn configure_clear_grid(&mut self, min: BlockPos, max: BlockPos) {
+        self.clear_grid.configure(min, max);
+    }
+
+    /// Drops every retained static collision result.
+    pub(crate) fn clear(&mut self) {
+        self.clear_grid.clear();
+        if self.generation == u32::MAX {
+            self.entries.fill(ExplosionExposureCacheEntry::EMPTY);
+            self.generation = FIRST_EXPOSURE_CACHE_GENERATION;
+        } else {
+            self.generation += 1;
+        }
+    }
+
+    /// Selects the entity collision context used by subsequent exposure rays.
+    pub(crate) const fn set_collision_context(&mut self, collision_context: BlockCollisionContext) {
+        self.collision_context = collision_context;
+    }
+
+    /// Proves that an inclusive block box contains only immutable Vanilla air.
+    pub(crate) fn stable_air_box_is_clear(&mut self, bounds: BlockRegionBounds) -> bool {
+        #[cfg(test)]
+        {
+            self.stats.stable_air_queries += 1;
+        }
+        #[expect(
+            clippy::redundant_closure_for_method_calls,
+            reason = "the method item cannot satisfy the region callback's higher-ranked lifetime"
+        )]
+        let Some(clear) = self
+            .world
+            .try_with_block_region(bounds, |region| region.contains_only_stable_air())
+        else {
+            return false;
+        };
+        #[cfg(test)]
+        if clear {
+            self.stats.stable_air_hits += 1;
+        }
+        clear
+    }
+
+    /// Keeps cached shapes only across Steel-owned Vanilla collision behavior calls.
+    ///
+    /// Plugin behavior may mutate another block while answering a shape query. Clearing after its
+    /// callback makes the next Vanilla DDA visit read the same live state Vanilla would observe.
+    fn retain_cache_after_collision_query(&mut self, block: BlockRef) -> bool {
+        let retain = !block_has_extensible_collision_behavior(block);
+        if !retain {
+            self.clear();
+        }
+        retain
+    }
+
+    /// Returns whether a collider-only, fluid-free exposure ray misses every block.
+    pub(crate) fn is_path_clear(&mut self, from: DVec3, to: DVec3) -> bool {
+        is_collision_path_clear(from, to, |pos| self.block_intersects_ray(pos, from, to))
+    }
+
+    fn block_intersects_ray(&mut self, pos: BlockPos, from: DVec3, to: DVec3) -> bool {
+        #[cfg(test)]
+        {
+            self.stats.block_visits += 1;
+        }
+
+        let mut unresolved_grid_index = None;
+        if let Some(index) = self.clear_grid.index(pos) {
+            match self.clear_grid.state(index) {
+                ExplosionExposureClearGridState::StaticEmpty => {
+                    #[cfg(test)]
+                    {
+                        self.stats.clear_grid_hits += 1;
+                    }
+                    return false;
+                }
+                ExplosionExposureClearGridState::RequiresExactCollision => {}
+                ExplosionExposureClearGridState::Unresolved => {
+                    unresolved_grid_index = Some(index);
+                }
+            }
+        }
+
+        self.block_intersects_ray_exact(pos, from, to, unresolved_grid_index)
+    }
+
+    fn block_intersects_ray_exact(
+        &mut self,
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        unresolved_grid_index: Option<usize>,
+    ) -> bool {
+        let cache_index = explosion_exposure_cache_index(pos);
+        let entry = self.entries[cache_index];
+        if entry.generation == self.generation && entry.pos == pos {
+            #[cfg(test)]
+            {
+                self.stats.cache_hits += 1;
+            }
+            if let Some(index) = unresolved_grid_index {
+                let grid_state =
+                    ExplosionExposureClearGridState::for_collision(entry.collision.is_empty());
+                self.clear_grid.record(index, grid_state);
+                #[cfg(test)]
+                {
+                    self.stats.clear_grid_resolutions += 1;
+                }
+            }
+            return Self::static_collision_intersects(entry.collision, pos, from, to);
+        }
+
+        #[cfg(test)]
+        {
+            self.stats.state_lookups += 1;
+            self.stats.collision_lookups += 1;
+        }
+        let block_read = self
+            .world
+            .explosion_exposure_block_state(pos, &mut self.full_chunks);
+        let state = block_read.state;
+        let block = state.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        if block.config.dynamic_shape {
+            let boxes =
+                behavior.get_collision_boxes(state, self.world, pos, self.collision_context);
+            self.retain_cache_after_collision_query(block);
+            return boxes
+                .into_iter()
+                .any(|aabb| World::clip_local_aabb(pos, from, to, aabb).is_some());
+        }
+
+        let shape = behavior.get_collision_shape(state, self.world, pos, self.collision_context);
+        let offset = if shape.is_empty() {
+            DVec3::ZERO
+        } else {
+            behavior.get_collision_shape_offset(state, self.world, pos, self.collision_context)
+        };
+        let collision = OffsetVoxelShape::new(shape, offset);
+        let retain_cache = self.retain_cache_after_collision_query(block);
+        let intersects = Self::static_collision_intersects(collision, pos, from, to);
+        if block_read.cacheable && retain_cache {
+            let collision_is_empty = collision.is_empty();
+            let mut recorded_in_grid = false;
+            if let Some(index) = unresolved_grid_index {
+                let grid_state = ExplosionExposureClearGridState::for_collision(collision_is_empty);
+                self.clear_grid.record(index, grid_state);
+                recorded_in_grid = true;
+                #[cfg(test)]
+                {
+                    self.stats.clear_grid_resolutions += 1;
+                }
+            }
+            // Dense clear entries no longer need a large direct-cache slot. Retaining only
+            // potentially colliding shapes reduces destructive conflicts on the exact path.
+            if !recorded_in_grid || !collision_is_empty {
+                self.entries[cache_index] = ExplosionExposureCacheEntry {
+                    pos,
+                    collision,
+                    generation: self.generation,
+                };
+            }
+        }
+        intersects
+    }
+
+    fn static_collision_intersects(
+        collision: OffsetVoxelShape,
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+    ) -> bool {
+        collision
+            .iter()
+            .any(|aabb| World::clip_local_aabb(pos, from, to, aabb).is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn stats(&self) -> ExplosionExposureRaycastStats {
+        self.stats
+    }
+}
+
+#[inline]
+fn explosion_exposure_cache_index(pos: BlockPos) -> usize {
+    let tag = PackedBlockPos::from(pos).as_raw() as u64;
+    // Fibonacci multiplication followed by xor folding disperses nearby packed positions into
+    // the low bits used by the power-of-two cache.
+    let mut mixed = tag.wrapping_mul(EXPLOSION_EXPOSURE_FIBONACCI_HASH_MULTIPLIER);
+    mixed ^= mixed >> (u64::BITS / 2);
+    mixed ^= mixed >> (u64::BITS / 4);
+    (mixed as usize) & EXPLOSION_EXPOSURE_CACHE_MASK
+}
+
+#[inline]
+fn is_collision_path_clear(
+    start_pos: DVec3,
+    end_pos: DVec3,
+    mut blocks_ray: impl FnMut(BlockPos) -> bool,
+) -> bool {
+    if start_pos == end_pos {
+        return true;
+    }
+
+    let to = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end_pos, start_pos);
+    let from = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start_pos, end_pos);
+    let mut block = BlockPos::from(from);
+    if blocks_ray(block) {
+        return false;
+    }
+
+    let difference = to - from;
+    let step = glam::IVec3::new(
+        minecraft_sign(difference.x),
+        minecraft_sign(difference.y),
+        minecraft_sign(difference.z),
+    );
+    let delta = DVec3::new(
+        if step.x == 0 {
+            f64::MAX
+        } else {
+            f64::from(step.x) / difference.x
+        },
+        if step.y == 0 {
+            f64::MAX
+        } else {
+            f64::from(step.y) / difference.y
+        },
+        if step.z == 0 {
+            f64::MAX
+        } else {
+            f64::from(step.z) / difference.z
+        },
+    );
+    let mut next = DVec3::new(
+        delta.x
+            * if step.x > 0 {
+                1.0 - (from.x - from.x.floor())
+            } else {
+                from.x - from.x.floor()
+            },
+        delta.y
+            * if step.y > 0 {
+                1.0 - (from.y - from.y.floor())
+            } else {
+                from.y - from.y.floor()
+            },
+        delta.z
+            * if step.z > 0 {
+                1.0 - (from.z - from.z.floor())
+            } else {
+                from.z - from.z.floor()
+            },
+    );
+
+    while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
+        if next.x < next.y && next.x < next.z {
+            block.0.x += step.x;
+            next.x += delta.x;
+        } else if next.y < next.z {
+            block.0.y += step.y;
+            next.y += delta.y;
+        } else {
+            block.0.z += step.z;
+            next.z += delta.z;
+        }
+        if blocks_ray(block) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Returns the inclusive block-coordinate envelope visited by one axis of Vanilla's block DDA.
+///
+/// Axis crossing counts are independent of inter-axis tie order: the traversal cannot finish
+/// until every finite `next` value is greater than one. Replaying the scalar recurrence also
+/// retains the rare terminal step caused by floating-point rounding at `next == 1`.
+pub(crate) fn collision_path_axis_block_bounds(
+    start: f64,
+    end: f64,
+    max_steps: usize,
+) -> Option<(i32, i32)> {
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+
+    let to = vanilla_lerp(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end, start);
+    let from = vanilla_lerp(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start, end);
+    let can_initialize_block_traversal = to.is_finite()
+        && from.is_finite()
+        && from >= f64::from(i32::MIN)
+        && from < f64::from(i32::MAX) + 1.0;
+    if !can_initialize_block_traversal {
+        return None;
+    }
+
+    let mut block = from.floor() as i32;
+    let mut min = block;
+    let mut max = block;
+    let difference = to - from;
+    let step = minecraft_sign(difference);
+    let delta = if step == 0 {
+        f64::MAX
+    } else {
+        f64::from(step) / difference
+    };
+    let from_fraction = from - from.floor();
+    let mut next = delta
+        * if step > 0 {
+            1.0 - from_fraction
+        } else {
+            from_fraction
+        };
+    if !delta.is_finite() || !next.is_finite() {
+        return None;
+    }
+
+    let mut steps = 0;
+    while next <= 1.0 {
+        if steps == max_steps {
+            return None;
+        }
+        block = block.checked_add(step)?;
+        min = min.min(block);
+        max = max.max(block);
+        next += delta;
+        steps += 1;
+    }
+    Some((min, max))
+}
+
+#[inline]
+const fn minecraft_sign(number: f64) -> i32 {
+    if number == 0.0 {
+        0
+    } else if number > 0.0 {
+        1
+    } else {
+        -1
+    }
+}
+
+#[inline]
+fn vanilla_lerp(alpha: f64, start: f64, end: f64) -> f64 {
+    start + alpha * (end - start)
+}
+
+#[inline]
+fn vanilla_lerp_vec3(alpha: f64, start: DVec3, end: DVec3) -> DVec3 {
+    // `glam::DVec3::lerp` uses `start * (1 - alpha) + end * alpha`. Vanilla's
+    // `Mth.lerp` uses this operation order, which can round to a different block boundary.
+    DVec3::new(
+        vanilla_lerp(alpha, start.x, end.x),
+        vanilla_lerp(alpha, start.y, end.y),
+        vanilla_lerp(alpha, start.z, end.z),
+    )
+}
+
 impl ClipHitResult {
     /// Returns whether this clip missed all selected block and fluid shapes.
     #[must_use]
@@ -68,6 +674,32 @@ impl ClipHitResult {
 }
 
 impl World {
+    /// Reads exposure state while distinguishing stable Full data from an air
+    /// fallback caused by a chunk that may still publish asynchronously.
+    fn explosion_exposure_block_state(
+        &self,
+        pos: BlockPos,
+        full_chunks: &mut LocalFullChunkHolderCache,
+    ) -> ExplosionExposureBlockRead {
+        if !self.is_in_valid_bounds(pos) {
+            return ExplosionExposureBlockRead {
+                state: REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR),
+                cacheable: true,
+            };
+        }
+
+        full_chunks.block_state(&self.chunk_map, pos).map_or_else(
+            || ExplosionExposureBlockRead {
+                state: REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR),
+                cacheable: false,
+            },
+            |state| ExplosionExposureBlockRead {
+                state,
+                cacheable: true,
+            },
+        )
+    }
+
     /// Checks if a ray intersects with a block's selection box.
     pub fn ray_outline_check(
         &self,
@@ -97,9 +729,8 @@ impl World {
             return Self::clip_miss(start_pos, end_pos);
         }
 
-        let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(start_pos, adjust);
-        let from = start_pos.lerp(end_pos, adjust);
+        let to = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end_pos, start_pos);
+        let from = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start_pos, end_pos);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -114,7 +745,11 @@ impl World {
 
         let difference = to - from;
 
-        let step = difference.signum().as_ivec3();
+        let step = glam::IVec3::new(
+            minecraft_sign(difference.x),
+            minecraft_sign(difference.y),
+            minecraft_sign(difference.z),
+        );
 
         let delta = DVec3::new(
             if step.x == 0 {
@@ -175,6 +810,25 @@ impl World {
         }
 
         Self::clip_miss(start_pos, end_pos)
+    }
+
+    /// Returns whether a collider-only, fluid-free clip misses every block.
+    #[cfg(test)]
+    pub(crate) fn is_block_collision_path_clear(
+        &self,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        collision_context: BlockCollisionContext,
+    ) -> bool {
+        is_collision_path_clear(start_pos, end_pos, |pos| {
+            let state = self.get_block_state(pos);
+            let boxes = BLOCK_BEHAVIORS
+                .get_behavior(state.get_block())
+                .get_collision_boxes(state, self, pos, collision_context);
+            boxes
+                .into_iter()
+                .any(|aabb| Self::clip_local_aabb(pos, start_pos, end_pos, aabb).is_some())
+        })
     }
 
     /// Performs vanilla `CollisionGetter.clipIncludingBorder`.
@@ -364,7 +1018,7 @@ impl World {
             return None;
         }
 
-        if (to - from).length_squared() < 1.0e-7 {
+        if (to - from).length_squared() < MIN_SHAPE_CLIP_LENGTH_SQUARED {
             return None;
         }
 
@@ -373,7 +1027,7 @@ impl World {
             f64::from(block_pos.y()),
             f64::from(block_pos.z()),
         );
-        let inside_test_point = from + (to - from) * 0.001;
+        let inside_test_point = from + (to - from) * SHAPE_INSIDE_PROBE_SCALE;
         if Self::shape_contains_world_point(shape, block_vec, inside_test_point) {
             return Some(ClipHitResult {
                 location: inside_test_point,
@@ -420,7 +1074,7 @@ impl World {
             return None;
         }
 
-        if (to - from).length_squared() < 1.0e-7 {
+        if (to - from).length_squared() < MIN_SHAPE_CLIP_LENGTH_SQUARED {
             return None;
         }
 
@@ -429,7 +1083,7 @@ impl World {
             f64::from(block_pos.y()),
             f64::from(block_pos.z()),
         );
-        let inside_test_point = from + (to - from) * 0.001;
+        let inside_test_point = from + (to - from) * SHAPE_INSIDE_PROBE_SCALE;
         if Self::local_aabb_contains_world_point(aabb, block_vec, inside_test_point) {
             return Some(ClipHitResult {
                 location: inside_test_point,
@@ -477,11 +1131,11 @@ impl World {
         let local = point - block_vec;
         !aabb.is_empty()
             && local.x >= aabb.min_x()
-            && local.x <= aabb.max_x()
+            && local.x < aabb.max_x()
             && local.y >= aabb.min_y()
-            && local.y <= aabb.max_y()
+            && local.y < aabb.max_y()
             && local.z >= aabb.min_z()
-            && local.z <= aabb.max_z()
+            && local.z < aabb.max_z()
     }
 
     pub(super) fn clip_miss(from: DVec3, to: DVec3) -> ClipHitResult {
@@ -495,9 +1149,13 @@ impl World {
         }
     }
 
+    /// Mirrors Minecraft 26.2 `Direction.getApproximateNearest(double, double, double)`.
     pub(super) fn approximate_nearest_direction(vector: DVec3) -> Direction {
+        let dx = vector.x as f32;
+        let dy = vector.y as f32;
+        let dz = vector.z as f32;
         let mut result = Direction::North;
-        let mut highest_dot = 0.0;
+        let mut highest_dot = JAVA_FLOAT_MIN_VALUE;
         for direction in [
             Direction::Down,
             Direction::Up,
@@ -506,7 +1164,8 @@ impl World {
             Direction::West,
             Direction::East,
         ] {
-            let dot = vector.dot(direction.offset_vec().as_dvec3());
+            let normal = direction.offset_vec();
+            let dot = dx * normal.x as f32 + dy * normal.y as f32 + dz * normal.z as f32;
             if dot > highest_dot {
                 highest_dot = dot;
                 result = direction;
@@ -515,79 +1174,133 @@ impl World {
         result
     }
 
-    /// Ray-AABB intersection returning the entry t-parameter and the hit face.
-    ///
-    /// Returns `Some((tmin, direction))` where `tmin` is the ray parameter at entry
-    /// and `direction` is the face normal pointing away from the hit surface.
-    /// Returns `None` if the AABB is missed or entirely behind the ray origin.
-    ///
-    /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
-    /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behavior.
+    /// Mirrors Minecraft 26.2 `AABB.getDirection` for one block-local shape box.
     pub(super) fn intersects_aabb_with_t(
         start: DVec3,
         end: DVec3,
         min: DVec3,
         max: DVec3,
     ) -> Option<(f64, Direction)> {
-        let dir = end - start;
+        let delta = end - start;
+        let mut scale = 1.0;
+        let mut direction = None;
 
-        let mut tmin = f64::NEG_INFINITY;
-        let mut tmax = f64::INFINITY;
-        let mut hit_dir = None;
-
-        macro_rules! slab {
-            ($start:expr, $dir:expr, $min:expr, $max:expr, $neg:expr, $pos:expr) => {{
-                if $dir.abs() < 1e-8 {
-                    if $start < $min || $start > $max {
-                        return None;
-                    }
-                } else {
-                    let inv = 1.0 / $dir;
-                    let mut t1 = ($min - $start) * inv;
-                    let mut t2 = ($max - $start) * inv;
-
-                    let dir_hit = if t1 > t2 {
-                        std::mem::swap(&mut t1, &mut t2);
-                        $pos
-                    } else {
-                        $neg
-                    };
-
-                    if t1 > tmin {
-                        tmin = t1;
-                        hit_dir = Some(dir_hit);
-                    }
-
-                    tmax = tmax.min(t2);
-                    if tmin > tmax {
-                        return None;
-                    }
-                }
-            }};
+        if delta.x > AABB_CLIP_EPSILON {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                delta,
+                start,
+                min.x,
+                [min.y, max.y, min.z, max.z],
+                Direction::West,
+            );
+        } else if delta.x < -AABB_CLIP_EPSILON {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                delta,
+                start,
+                max.x,
+                [min.y, max.y, min.z, max.z],
+                Direction::East,
+            );
         }
 
-        slab!(
-            start.x,
-            dir.x,
-            min.x,
-            max.x,
-            Direction::West,
-            Direction::East
-        );
-        slab!(start.y, dir.y, min.y, max.y, Direction::Down, Direction::Up);
-        slab!(
-            start.z,
-            dir.z,
-            min.z,
-            max.z,
-            Direction::North,
-            Direction::South
-        );
+        let y_delta = DVec3::new(delta.y, delta.z, delta.x);
+        let y_start = DVec3::new(start.y, start.z, start.x);
+        if delta.y > AABB_CLIP_EPSILON {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                y_delta,
+                y_start,
+                min.y,
+                [min.z, max.z, min.x, max.x],
+                Direction::Down,
+            );
+        } else if delta.y < -AABB_CLIP_EPSILON {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                y_delta,
+                y_start,
+                max.y,
+                [min.z, max.z, min.x, max.x],
+                Direction::Up,
+            );
+        }
 
-        if tmax < 0.0 {
-            None
-        } else {
-            hit_dir.map(|d| (tmin, d))
+        let z_delta = DVec3::new(delta.z, delta.x, delta.y);
+        let z_start = DVec3::new(start.z, start.x, start.y);
+        if delta.z > AABB_CLIP_EPSILON {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                z_delta,
+                z_start,
+                min.z,
+                [min.x, max.x, min.y, max.y],
+                Direction::North,
+            );
+        } else if delta.z < -AABB_CLIP_EPSILON {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                z_delta,
+                z_start,
+                max.z,
+                [min.x, max.x, min.y, max.y],
+                Direction::South,
+            );
+        }
+
+        direction.map(|direction| (scale, direction))
+    }
+
+    #[inline]
+    fn clip_aabb_face(
+        scale: &mut f64,
+        direction: &mut Option<Direction>,
+        delta: DVec3,
+        start: DVec3,
+        face: f64,
+        side_bounds: [f64; 4],
+        new_direction: Direction,
+    ) {
+        let candidate_scale = (face - start.x) / delta.x;
+        let side_b = start.y + candidate_scale * delta.y;
+        let side_c = start.z + candidate_scale * delta.z;
+        if 0.0 < candidate_scale
+            && candidate_scale < *scale
+            && side_bounds[0] - AABB_CLIP_EPSILON < side_b
+            && side_b < side_bounds[1] + AABB_CLIP_EPSILON
+            && side_bounds[2] - AABB_CLIP_EPSILON < side_c
+            && side_c < side_bounds[3] + AABB_CLIP_EPSILON
+        {
+            *scale = candidate_scale;
+            *direction = Some(new_direction);
+        }
+    }
+
+    fn raytrace_block_hit<F>(
+        &self,
+        block: BlockPos,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        block_direction: Option<Direction>,
+        hit_check: &F,
+    ) -> Option<(BlockPos, Option<Direction>)>
+    where
+        F: Fn(BlockPos, &Self) -> RaytraceAction,
+    {
+        match hit_check(block, self) {
+            RaytraceAction::ImmediateHit => Some((block, block_direction)),
+            RaytraceAction::CheckShape => {
+                let (hit, face) = self.ray_outline_check(block, start_pos, end_pos);
+                hit.then_some((block, face))
+            }
+            RaytraceAction::Pass => None,
         }
     }
 
@@ -607,9 +1320,8 @@ impl World {
             return (None, None);
         }
 
-        let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(start_pos, adjust);
-        let from = start_pos.lerp(end_pos, adjust);
+        let to = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end_pos, start_pos);
+        let from = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start_pos, end_pos);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -617,20 +1329,19 @@ impl World {
             from.z.floor() as i32,
         );
 
-        match hit_check(block, self) {
-            RaytraceAction::ImmediateHit => return (Some(block), None),
-            RaytraceAction::CheckShape => {
-                let (hit, face) = self.ray_outline_check(block, start_pos, end_pos);
-                if hit {
-                    return (Some(block), face);
-                }
-            }
-            RaytraceAction::Pass => {}
+        if let Some((hit, direction)) =
+            self.raytrace_block_hit(block, start_pos, end_pos, None, &hit_check)
+        {
+            return (Some(hit), direction);
         }
 
         let difference = to - from;
 
-        let step = difference.signum().as_ivec3();
+        let step = glam::IVec3::new(
+            minecraft_sign(difference.x),
+            minecraft_sign(difference.y),
+            minecraft_sign(difference.z),
+        );
 
         let delta = DVec3::new(
             if step.x == 0 {
@@ -672,10 +1383,7 @@ impl World {
         );
 
         while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
-            // Vanilla parity: traverseBlocks tie-breaking — Z wins on any tie.
-            // X wins only when strictly less than both Y and Z.
-            // Y wins only when strictly less than both X and Z.
-            // Everything else (including all ties) goes to Z.
+            // Vanilla's nested comparisons make Y win only the X = Y < Z tie.
             let block_direction = if next.x < next.y && next.x < next.z {
                 block.0.x += step.x;
                 next.x += delta.x;
@@ -684,7 +1392,7 @@ impl World {
                 } else {
                     Direction::East
                 }
-            } else if next.y < next.x && next.y < next.z {
+            } else if next.y < next.z {
                 block.0.y += step.y;
                 next.y += delta.y;
                 if step.y > 0 {
@@ -702,20 +1410,463 @@ impl World {
                 }
             };
 
-            match hit_check(block, self) {
-                RaytraceAction::ImmediateHit => {
-                    return (Some(block), Some(block_direction));
-                }
-                RaytraceAction::CheckShape => {
-                    let (hit, face) = self.ray_outline_check(block, start_pos, end_pos);
-                    if hit {
-                        return (Some(block), face);
-                    }
-                }
-                RaytraceAction::Pass => {}
+            if let Some((hit, direction)) = self.raytrace_block_hit(
+                block,
+                start_pos,
+                end_pos,
+                Some(block_direction),
+                &hit_check,
+            ) {
+                return (Some(hit), direction);
             }
         }
 
         (None, None)
+    }
+}
+
+#[cfg(test)]
+mod voxel_shape_clip_tests {
+    use super::*;
+
+    fn axis_point(axis: usize, primary: f64, side_b: f64, side_c: f64) -> DVec3 {
+        match axis {
+            0 => DVec3::new(primary, side_b, side_c),
+            1 => DVec3::new(side_c, primary, side_b),
+            2 => DVec3::new(side_b, side_c, primary),
+            _ => unreachable!("the fixture only defines the three coordinate axes"),
+        }
+    }
+
+    fn axis_bounds(axis: usize, primary_min: f64, primary_max: f64) -> (DVec3, DVec3) {
+        (
+            axis_point(axis, primary_min, 0.0, 0.0),
+            axis_point(axis, primary_max, 1.0, 1.0),
+        )
+    }
+
+    fn primary_component(vector: DVec3, axis: usize) -> f64 {
+        match axis {
+            0 => vector.x,
+            1 => vector.y,
+            2 => vector.z,
+            _ => unreachable!("the fixture only defines the three coordinate axes"),
+        }
+    }
+
+    #[test]
+    fn voxel_shape_inside_probe_is_lower_inclusive_and_upper_exclusive() {
+        let full_block = BlockLocalAabb::FULL_BLOCK;
+        let block_origin = DVec3::ZERO;
+
+        assert!(World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(0.0, 0.5, 0.5),
+        ));
+        assert!(!World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(1.0, 0.5, 0.5),
+        ));
+        assert!(!World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(0.5, 1.0, 0.5),
+        ));
+        assert!(!World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(0.5, 0.5, 1.0),
+        ));
+    }
+
+    #[test]
+    fn voxel_shape_clip_matches_java_full_cube_at_exact_opposite_boundaries() {
+        let shape = OffsetVoxelShape::without_offset(VoxelShape::FULL_BLOCK);
+
+        // Minecraft 26.2's VoxelShape.clip probes 0.001 along the segment. For a
+        // CubeVoxelShape the resulting x=1 index is outside, while x=0 is inside.
+        assert!(
+            World::clip_shape(
+                BlockPos::ZERO,
+                DVec3::new(0.0, 0.5, 0.5),
+                DVec3::new(1000.0, 0.5, 0.5),
+                shape,
+            )
+            .is_none()
+        );
+
+        let Some(hit) = World::clip_shape(
+            BlockPos::ZERO,
+            DVec3::new(1.0, 0.5, 0.5),
+            DVec3::new(-999.0, 0.5, 0.5),
+            shape,
+        ) else {
+            panic!("the lower-bound probe should start inside the full cube");
+        };
+        assert!(hit.inside);
+        assert_eq!(hit.location, DVec3::new(0.0, 0.5, 0.5));
+        assert_eq!(hit.direction, Direction::East);
+    }
+
+    #[test]
+    fn aabb_clip_matches_java_faces_in_every_axis_and_direction() {
+        let expected_scale = 1.0_f64 / 3.0;
+        for (axis, positive_direction, negative_direction) in [
+            (0, Direction::West, Direction::East),
+            (1, Direction::Down, Direction::Up),
+            (2, Direction::North, Direction::South),
+        ] {
+            let (min, max) = axis_bounds(axis, 0.0, 1.0);
+            let Some((positive_scale, positive_hit)) = World::intersects_aabb_with_t(
+                axis_point(axis, -1.0, 0.5, 0.5),
+                axis_point(axis, 2.0, 0.5, 0.5),
+                min,
+                max,
+            ) else {
+                panic!("positive Java clip fixture missed axis {axis}");
+            };
+            assert_eq!(positive_hit, positive_direction);
+            assert_eq!(positive_scale.to_bits(), expected_scale.to_bits());
+
+            let Some((negative_scale, negative_hit)) = World::intersects_aabb_with_t(
+                axis_point(axis, 2.0, 0.5, 0.5),
+                axis_point(axis, -1.0, 0.5, 0.5),
+                min,
+                max,
+            ) else {
+                panic!("negative Java clip fixture missed axis {axis}");
+            };
+            assert_eq!(negative_hit, negative_direction);
+            assert_eq!(negative_scale.to_bits(), expected_scale.to_bits());
+        }
+    }
+
+    #[test]
+    fn aabb_clip_matches_java_strict_side_epsilon_in_every_axis() {
+        for (axis, positive_direction) in [
+            (0, Direction::West),
+            (1, Direction::Down),
+            (2, Direction::North),
+        ] {
+            let (min, max) = axis_bounds(axis, 0.0, 1.0);
+            let Some((_, direction)) = World::intersects_aabb_with_t(
+                axis_point(axis, -1.0, 1.0 + 0.5e-7, -0.5e-7),
+                axis_point(axis, 2.0, 1.0 + 0.5e-7, -0.5e-7),
+                min,
+                max,
+            ) else {
+                panic!("Java's side epsilon should accept axis {axis}");
+            };
+            assert_eq!(direction, positive_direction);
+
+            assert!(
+                World::intersects_aabb_with_t(
+                    axis_point(axis, -1.0, 1.0 + AABB_CLIP_EPSILON, 0.5),
+                    axis_point(axis, 2.0, 1.0 + AABB_CLIP_EPSILON, 0.5),
+                    min,
+                    max,
+                )
+                .is_none(),
+                "Java's upper side epsilon is strict on axis {axis}",
+            );
+            assert!(
+                World::intersects_aabb_with_t(
+                    axis_point(axis, -1.0, 0.5, -AABB_CLIP_EPSILON),
+                    axis_point(axis, 2.0, 0.5, -AABB_CLIP_EPSILON),
+                    min,
+                    max,
+                )
+                .is_none(),
+                "Java's lower side epsilon is strict on axis {axis}",
+            );
+        }
+    }
+
+    #[test]
+    fn aabb_clip_matches_java_direction_threshold_in_every_axis() {
+        let threshold = AABB_CLIP_EPSILON;
+        let above_threshold = f64::from_bits(threshold.to_bits() + 1);
+        for (axis, positive_direction, negative_direction) in [
+            (0, Direction::West, Direction::East),
+            (1, Direction::Down, Direction::Up),
+            (2, Direction::North, Direction::South),
+        ] {
+            let exact_positive_from = axis_point(axis, -threshold / 2.0, 0.5, 0.5);
+            let exact_positive_to = axis_point(axis, threshold / 2.0, 0.5, 0.5);
+            assert_eq!(
+                primary_component(exact_positive_to - exact_positive_from, axis).to_bits(),
+                threshold.to_bits(),
+            );
+            let (positive_min, positive_max) = axis_bounds(axis, 0.0, 1.0);
+            assert!(
+                World::intersects_aabb_with_t(
+                    exact_positive_from,
+                    exact_positive_to,
+                    positive_min,
+                    positive_max,
+                )
+                .is_none(),
+                "Java does not test a positive face at exactly +1e-7 on axis {axis}",
+            );
+
+            let above_positive_from = axis_point(axis, -above_threshold / 2.0, 0.5, 0.5);
+            let above_positive_to = axis_point(axis, above_threshold / 2.0, 0.5, 0.5);
+            let Some((_, direction)) = World::intersects_aabb_with_t(
+                above_positive_from,
+                above_positive_to,
+                positive_min,
+                positive_max,
+            ) else {
+                panic!("Java tests a positive face above +1e-7 on axis {axis}");
+            };
+            assert_eq!(direction, positive_direction);
+
+            let exact_negative_from = axis_point(axis, threshold / 2.0, 0.5, 0.5);
+            let exact_negative_to = axis_point(axis, -threshold / 2.0, 0.5, 0.5);
+            assert_eq!(
+                primary_component(exact_negative_to - exact_negative_from, axis).to_bits(),
+                (-threshold).to_bits(),
+            );
+            let (negative_min, negative_max) = axis_bounds(axis, -1.0, 0.0);
+            assert!(
+                World::intersects_aabb_with_t(
+                    exact_negative_from,
+                    exact_negative_to,
+                    negative_min,
+                    negative_max,
+                )
+                .is_none(),
+                "Java does not test a negative face at exactly -1e-7 on axis {axis}",
+            );
+
+            let above_negative_from = axis_point(axis, above_threshold / 2.0, 0.5, 0.5);
+            let above_negative_to = axis_point(axis, -above_threshold / 2.0, 0.5, 0.5);
+            let Some((_, direction)) = World::intersects_aabb_with_t(
+                above_negative_from,
+                above_negative_to,
+                negative_min,
+                negative_max,
+            ) else {
+                panic!("Java tests a negative face below -1e-7 on axis {axis}");
+            };
+            assert_eq!(direction, negative_direction);
+        }
+    }
+
+    #[test]
+    fn aabb_clip_preserves_java_axis_order_for_equal_corner_hits() {
+        let Some((_, direction)) = World::intersects_aabb_with_t(
+            DVec3::new(-1.0, -1.0, 0.5),
+            DVec3::new(2.0, 2.0, 0.5),
+            DVec3::ZERO,
+            DVec3::ONE,
+        ) else {
+            panic!("the corner fixture should hit the full cube");
+        };
+        assert_eq!(direction, Direction::West);
+    }
+
+    #[test]
+    fn approximate_nearest_direction_uses_java_float_arithmetic() {
+        let java_min_value = f64::from(JAVA_FLOAT_MIN_VALUE);
+        assert_eq!(
+            World::approximate_nearest_direction(DVec3::new(java_min_value, 0.0, 0.0)),
+            Direction::North,
+        );
+        assert_eq!(
+            World::approximate_nearest_direction(DVec3::new(java_min_value * 2.0, 0.0, 0.0)),
+            Direction::East,
+        );
+
+        // Java narrows the components to float before comparing the direction dot products.
+        assert_eq!(
+            World::approximate_nearest_direction(DVec3::new(1.0 + f64::EPSILON, 0.0, -1.0)),
+            Direction::North,
+        );
+    }
+}
+
+#[cfg(test)]
+mod explosion_exposure_cache_tests {
+    use std::cell::RefCell;
+
+    use super::*;
+    use crate::test_support::fresh_test_world;
+    use steel_registry::{
+        blocks::{Block, behavior::BlockConfig},
+        vanilla_blocks,
+    };
+
+    const TEST_DDA_MAX_STEPS: usize = 64;
+
+    #[test]
+    fn scalar_axis_envelope_matches_full_vanilla_dda_visits() {
+        for (start, end) in [
+            (DVec3::splat(0.5), DVec3::new(5.5, 2.5, -3.5)),
+            (DVec3::new(1.0, 2.0, 3.0), DVec3::new(0.0, 2.0, 3.0)),
+            (DVec3::splat(-0.5), DVec3::new(-4.5, -4.5, -1.5)),
+            (DVec3::splat(0.5), DVec3::splat(4.5)),
+        ] {
+            let mut visits = Vec::new();
+            assert!(is_collision_path_clear(start, end, |pos| {
+                visits.push(pos);
+                false
+            }));
+            for axis in 0..3 {
+                let (expected_min, expected_max) = visits
+                    .iter()
+                    .map(|pos| pos.0[axis])
+                    .fold((i32::MAX, i32::MIN), |(min, max), value| {
+                        (min.min(value), max.max(value))
+                    });
+                assert_eq!(
+                    collision_path_axis_block_bounds(start[axis], end[axis], TEST_DDA_MAX_STEPS),
+                    Some((expected_min, expected_max)),
+                    "axis={axis}, start={start:?}, end={end:?}, visits={visits:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_axis_envelope_rejects_non_finite_reciprocal() {
+        assert_eq!(
+            collision_path_axis_block_bounds(0.0, -f64::from_bits(1), TEST_DDA_MAX_STEPS),
+            None
+        );
+    }
+
+    #[test]
+    fn raytrace_matches_vanilla_axis_tie_breaking() {
+        let world = fresh_test_world("raytrace_axis_tie_breaking");
+        let start = DVec3::splat(0.5);
+
+        for (end, expected_pos, expected_direction) in [
+            (
+                DVec3::new(1.5, 1.5, 0.75),
+                BlockPos::new(0, 1, 0),
+                Direction::Down,
+            ),
+            (
+                DVec3::new(1.5, 0.75, 1.5),
+                BlockPos::new(0, 0, 1),
+                Direction::North,
+            ),
+            (
+                DVec3::new(0.75, 1.5, 1.5),
+                BlockPos::new(0, 0, 1),
+                Direction::North,
+            ),
+            (DVec3::splat(1.5), BlockPos::new(0, 0, 1), Direction::North),
+        ] {
+            let (hit, direction) = world.raytrace(start, end, |pos, _| {
+                if pos == BlockPos::ZERO {
+                    RaytraceAction::Pass
+                } else {
+                    RaytraceAction::ImmediateHit
+                }
+            });
+
+            assert_eq!(hit, Some(expected_pos), "end={end:?}");
+            assert_eq!(direction, Some(expected_direction), "end={end:?}");
+        }
+    }
+
+    #[test]
+    fn block_dda_preserves_vanilla_lerp_rounding_at_integer_boundaries() {
+        let start = DVec3::new(1.0, 0.5, 0.5);
+        let end = DVec3::new(1.000_000_001, 0.5, 0.5);
+        let adjusted_start = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start, end);
+        assert!(adjusted_start.x < 1.0);
+
+        let expected = [BlockPos::new(0, 0, 0), BlockPos::new(1, 0, 0)];
+        let mut collision_visits = Vec::new();
+        assert!(is_collision_path_clear(start, end, |pos| {
+            collision_visits.push(pos);
+            false
+        }));
+        assert_eq!(collision_visits, expected);
+
+        let world = fresh_test_world("raytrace_vanilla_lerp_rounding");
+        let raytrace_visits = RefCell::new(Vec::new());
+        assert_eq!(
+            world.raytrace(start, end, |pos, _| {
+                raytrace_visits.borrow_mut().push(pos);
+                RaytraceAction::Pass
+            }),
+            (None, None)
+        );
+        assert_eq!(*raytrace_visits.borrow(), expected);
+    }
+
+    #[test]
+    fn collision_path_clear_preserves_zero_axis_callback_order() {
+        let from = DVec3::new(0.0, 0.25, 0.25);
+        let to = DVec3::new(0.0, 2.25, 0.25);
+        let start = BlockPos::new(0, 0, 0);
+        let expected = [start, start, BlockPos::new(0, 1, 0), BlockPos::new(0, 2, 0)];
+        let mut visited = Vec::new();
+
+        assert!(is_collision_path_clear(from, to, |pos| {
+            visited.push(pos);
+            false
+        }));
+        assert_eq!(visited, expected);
+
+        let mut visited = Vec::new();
+        let mut start_visits = 0;
+        assert!(!is_collision_path_clear(from, to, |pos| {
+            visited.push(pos);
+            if pos != start {
+                return false;
+            }
+            start_visits += 1;
+            start_visits == 2
+        }));
+        assert_eq!(visited, [start, start]);
+    }
+
+    #[test]
+    fn extensible_collision_query_invalidates_every_exposure_cache() {
+        static PLUGIN_BLOCK: Block = Block::new(
+            Identifier::new_static("exposure_test", "mutating_shape"),
+            BlockConfig::new(),
+            &[],
+        );
+
+        let world = fresh_test_world("extensible_exposure_cache_boundary");
+        let mut raycast =
+            ExplosionExposureRaycast::new(world.as_ref(), BlockCollisionContext::empty());
+        let pos = BlockPos::new(0, 64, 0);
+        raycast.configure_clear_grid(pos, pos);
+        let Some(grid_index) = raycast.clear_grid.index(pos) else {
+            panic!("the configured position should be represented in the clear grid");
+        };
+        raycast
+            .clear_grid
+            .record(grid_index, ExplosionExposureClearGridState::StaticEmpty);
+        let direct_index = explosion_exposure_cache_index(pos);
+        raycast.entries[direct_index] = ExplosionExposureCacheEntry {
+            pos,
+            collision: OffsetVoxelShape::without_offset(VoxelShape::EMPTY),
+            generation: raycast.generation,
+        };
+
+        let initial_generation = raycast.generation;
+        assert!(raycast.retain_cache_after_collision_query(&vanilla_blocks::STONE));
+        assert_eq!(raycast.generation, initial_generation);
+        assert_eq!(
+            raycast.clear_grid.state(grid_index),
+            ExplosionExposureClearGridState::StaticEmpty,
+        );
+        assert!(!raycast.retain_cache_after_collision_query(&PLUGIN_BLOCK));
+        assert_ne!(raycast.generation, initial_generation);
+        assert_eq!(
+            raycast.clear_grid.state(grid_index),
+            ExplosionExposureClearGridState::Unresolved,
+        );
+        assert_ne!(raycast.entries[direct_index].generation, raycast.generation);
     }
 }

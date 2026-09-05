@@ -1066,7 +1066,7 @@ impl Chunk {
             let scan_local_y = ((scan_y - min_y) % 16) as usize;
             sections.sections[scan_section_index]
                 .read()
-                .states
+                .states()
                 .get(lx, scan_local_y, lz)
         };
 
@@ -1101,7 +1101,7 @@ impl Chunk {
             let scan_local_y = ((scan_y - min_y) % 16) as usize;
             sections.sections[scan_section_index]
                 .read()
-                .states
+                .states()
                 .get(lx, scan_local_y, lz)
         };
 
@@ -1138,7 +1138,7 @@ impl Chunk {
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        section_guard.states.get(local_x, local_y, local_z)
+        section_guard.states().get(local_x, local_y, local_z)
     }
 
     fn with_locked_block_state<R>(&self, pos: BlockPos, f: impl FnOnce(BlockStateId) -> R) -> R {
@@ -1148,7 +1148,7 @@ impl Chunk {
         }
 
         let section = self.sections.sections[self.get_section_index(y)].read();
-        let state = section.states.get(
+        let state = section.states().get(
             (pos.x() & 15) as usize,
             (y & 15) as usize,
             (pos.z() & 15) as usize,

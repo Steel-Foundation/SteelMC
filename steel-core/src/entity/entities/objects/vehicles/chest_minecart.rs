@@ -8,6 +8,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::Identifier;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
@@ -18,7 +19,7 @@ use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
 };
 use crate::portal::portal_shape::PortalShape;
-use crate::world::World;
+use crate::world::{Explosion, World};
 
 /// Chest minecart entity state used by mineshaft generation.
 ///
@@ -106,6 +107,13 @@ impl Entity for ChestMinecartEntity {
 
     fn blocks_building(&self) -> bool {
         true
+    }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        !explosion.world().get_game_rule(&MOB_GRIEFING)
+            && explosion
+                .indirect_source_entity()
+                .is_some_and(|entity| entity.as_mob().is_some())
     }
 
     fn dimension_changing_delay(&self) -> i32 {

@@ -9,7 +9,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -305,9 +305,7 @@ impl Entity for LeashFenceKnotEntity {
             return false;
         }
 
-        let causing_entity = source
-            .causing_entity_id
-            .and_then(|id| world.get_entity_by_id(id));
+        let causing_entity = source.causing_entity(world);
 
         if !world.get_game_rule(&MOB_GRIEFING)
             && let Some(causing_entity) = causing_entity
@@ -323,6 +321,13 @@ impl Entity for LeashFenceKnotEntity {
         }
 
         true
+    }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        explosion
+            .direct_source_entity()
+            .is_some_and(Entity::is_in_water)
+            || !explosion.should_affect_blocklike_entities()
     }
 }
 

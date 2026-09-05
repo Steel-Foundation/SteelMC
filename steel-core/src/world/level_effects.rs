@@ -1,10 +1,9 @@
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
-    GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext, NetworkConnection,
-    ParticleData, Player, REGISTRY, RegistryExt, SectionPos, SoundEventRef, SoundSource,
-    UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
-    vanilla_blocks, vanilla_game_events,
+    GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, NetworkConnection, ParticleData,
+    Player, REGISTRY, RegistryExt, SectionPos, SoundEventRef, SoundSource, UpdateFlags, World,
+    WorldEntityManager, fluid_state_to_block, level_events, vanilla_blocks, vanilla_game_events,
 };
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 
@@ -369,20 +368,7 @@ impl World {
         };
 
         let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng)
-            .with_luck(context.luck())
-            .with_block_state(state)
-            .with_origin(
-                f64::from(context.pos().x()),
-                f64::from(context.pos().y()),
-                f64::from(context.pos().z()),
-            );
-        if let Some(tool) = context.tool() {
-            ctx = ctx.with_tool(tool);
-        }
-        if let Some(entity) = context.entity() {
-            ctx = ctx.with_this_entity(entity_loot_ref(entity));
-        }
+        let mut ctx = context.create_loot_context(state, &mut rng);
 
         loot_table.get_random_items(&mut ctx)
     }

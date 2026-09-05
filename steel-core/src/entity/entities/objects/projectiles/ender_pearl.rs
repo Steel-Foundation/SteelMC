@@ -271,7 +271,7 @@ impl Entity for EnderPearlEntity {
         self.get_owner().map_or(0, |owner| owner.id())
     }
 
-    fn restore_owner_reference(&self, owner: &SharedEntity) {
+    fn cache_owner_reference(&self, owner: &SharedEntity) {
         self.cache_owner_entity(owner);
     }
 
@@ -313,7 +313,7 @@ impl Projectile for EnderPearlEntity {
         let mut damage =
             DamageSource::environment(&vanilla_damage_types::THROWN).with_direct_entity(self.id());
         if let Some(owner) = self.get_owner() {
-            damage = damage.with_causing_entity(owner.id());
+            damage = damage.with_causing_entity_reference(&owner);
         }
         if let Some(world) = entity.level() {
             entity.hurt(&world, &damage, 0.0);

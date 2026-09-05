@@ -54,7 +54,6 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, GameRuleValueType};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
-use steel_registry::loot_table::LootContext;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -94,7 +93,6 @@ use crate::{
         InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
         WorldEntityManager,
         entities::{ExperienceOrbEntity, ItemEntity},
-        entity_loot_ref,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{LevelDataManager, RespawnData, WorldGenerationSettings},
@@ -109,9 +107,11 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod domain_entity_directory;
 mod entity_management;
 mod environment;
 mod events;
+pub mod explosion;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
 pub mod game_event;
 mod level_effects;
@@ -137,14 +137,20 @@ pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use block_event::BlockEventQueue;
-pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
+pub(crate) use block_region::{BlockRegionBounds, BlockRegionRead, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
+pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
 use entity_management::nearest_player_distance_in_range;
+pub use explosion::{
+    BlockInteraction, DefaultExplosionDamageCalculator, EntityBasedExplosionDamageCalculator,
+    Explosion, ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions, ExplosionOutcome,
+};
+pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculator};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
@@ -248,6 +254,8 @@ pub struct World {
     pub level_data: SyncRwLock<LevelDataManager>,
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
+    /// Vanilla's live per-level random source.
+    random: SyncMutex<RandomSource>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Vanilla sleeping player counts for night-skip checks.
@@ -275,6 +283,8 @@ pub struct World {
     neighbor_updater: CollectingNeighborUpdater,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
+    /// Other loaded worlds whose entities are visible to references in this domain.
+    domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
     /// Physical entries retained by this world's chunk-owned game-event registries.
@@ -302,6 +312,16 @@ pub struct World {
 }
 
 impl World {
+    /// Runs an operation against Vanilla's live per-level random source.
+    pub(crate) fn with_random<T>(&self, operation: impl FnOnce(&mut RandomSource) -> T) -> T {
+        operation(&mut self.random.lock())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_random_seed_for_test(&self, seed: i64) {
+        *self.random.lock() = RandomSource::Legacy(LegacyRandom::from_seed(seed as u64));
+    }
+
     /// Creates a new world with custom configuration.
     ///
     /// This allows specifying storage backend (disk or RAM-only) and other options.
@@ -416,6 +436,9 @@ impl World {
                 dimension_type,
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
+                random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
+                    rand::random::<u64>(),
+                ))),
                 world_border: SyncMutex::new(world_border),
                 sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
@@ -429,6 +452,7 @@ impl World {
                 block_events: SyncMutex::new(BlockEventQueue::default()),
                 neighbor_updater: CollectingNeighborUpdater::new(max_chained_neighbor_updates),
                 entity_manager: WorldEntityManager::new(),
+                domain_entity_directory: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
@@ -478,6 +502,21 @@ impl World {
     #[must_use]
     pub fn domain(&self) -> &str {
         self.key.namespace.as_ref()
+    }
+
+    pub(crate) fn set_domain_entity_directory(&self, directory: Arc<DomainEntityDirectory>) {
+        *self.domain_entity_directory.write() = Some(directory);
+    }
+
+    /// Gets a live entity by UUID from any loaded world in this Steel domain.
+    #[must_use]
+    pub fn get_entity_in_domain_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
+        self.get_entity_by_uuid(uuid).or_else(|| {
+            self.domain_entity_directory
+                .read()
+                .as_ref()
+                .and_then(|directory| directory.get_entity_by_uuid(uuid))
+        })
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),

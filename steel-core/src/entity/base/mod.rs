@@ -18,13 +18,13 @@ pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
 use std::{
-    collections::VecDeque,
     mem,
     sync::{Arc, Weak},
 };
 
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
+use smallvec::SmallVec;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
@@ -84,29 +84,27 @@ pub(crate) struct EntityPhysicsStateInput {
 
 #[derive(Debug, Default)]
 struct EntityMovementTrace {
-    movement_this_tick: VecDeque<EntityMovement>,
-    final_movements_this_tick: Vec<EntityMovement>,
+    // One segment is the common per-tick case. `EntityMovement` is large and both buffers live on
+    // every entity, so larger inline capacities would optimize uncommon multi-movement ticks at a
+    // persistent per-entity memory cost.
+    movement_this_tick: SmallVec<[EntityMovement; 1]>,
+    final_movements_this_tick: SmallVec<[EntityMovement; 1]>,
 }
 
 impl EntityMovementTrace {
     fn record(&mut self, movement: EntityMovement) {
         if self.movement_this_tick.len() >= MOVEMENT_TRACE_LIMIT {
-            let first = self.movement_this_tick.pop_front();
-            let second = self.movement_this_tick.pop_front();
-            match (first, second) {
-                (Some(first), Some(second)) => self
-                    .movement_this_tick
-                    .push_front(EntityMovement::new(first.from(), second.to())),
-                (Some(first), None) => self.movement_this_tick.push_front(first),
-                (None, _) => {}
-            }
+            let first = self.movement_this_tick.remove(0);
+            let second = self.movement_this_tick.remove(0);
+            self.movement_this_tick
+                .insert(0, EntityMovement::new(first.from(), second.to()));
         }
 
-        self.movement_this_tick.push_back(movement);
+        self.movement_this_tick.push(movement);
     }
 
     fn remove_latest_recording(&mut self) {
-        self.movement_this_tick.pop_back();
+        self.movement_this_tick.pop();
     }
 
     fn reset(&mut self) {
@@ -118,7 +116,7 @@ impl EntityMovementTrace {
         &mut self,
         old_position: DVec3,
         position: DVec3,
-    ) -> Vec<EntityMovement> {
+    ) -> SmallVec<[EntityMovement; 1]> {
         self.final_movements_this_tick.clear();
         self.final_movements_this_tick
             .extend(self.movement_this_tick.drain(..));
@@ -134,11 +132,11 @@ impl EntityMovementTrace {
                 .push(EntityMovement::new(old_position, position));
         }
 
-        self.final_movements_this_tick.as_slice().to_vec()
+        self.final_movements_this_tick.iter().copied().collect()
     }
 
-    fn last_for_block_effects(&self) -> Vec<EntityMovement> {
-        self.final_movements_this_tick.as_slice().to_vec()
+    fn last_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
+        self.final_movements_this_tick.iter().copied().collect()
     }
 }
 
@@ -1203,7 +1201,7 @@ impl EntityBase {
     }
 
     /// Takes and finalizes this tick's movement segments for block-contact effects.
-    pub fn take_movements_for_block_effects(&self) -> Vec<EntityMovement> {
+    pub fn take_movements_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
         let (old_position, position) = {
             let state = self.state.lock();
             (state.old_position, state.position)
@@ -1215,7 +1213,7 @@ impl EntityBase {
     }
 
     /// Returns the last finalized movement segments for vanilla block-contact effects.
-    pub fn last_movements_for_block_effects(&self) -> Vec<EntityMovement> {
+    pub fn last_movements_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
         self.movement_trace.lock().last_for_block_effects()
     }
 

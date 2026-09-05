@@ -19,6 +19,7 @@ mod c_cooldown;
 mod c_damage_event;
 mod c_entity_event;
 mod c_entity_position_sync;
+mod c_explode;
 mod c_game_event;
 mod c_hurt_animation;
 mod c_level_event;
@@ -121,6 +122,9 @@ pub use c_cooldown::CCooldown;
 pub use c_damage_event::CDamageEvent;
 pub use c_entity_event::CEntityEvent;
 pub use c_entity_position_sync::CEntityPositionSync;
+pub use c_explode::{
+    CExplode, ExplosionParticleInfo, ExplosionParticlePalette, ExplosionParticleWeightError,
+};
 pub use c_game_event::CGameEvent;
 pub use c_game_event::GameEventType;
 pub use c_hurt_animation::CHurtAnimation;

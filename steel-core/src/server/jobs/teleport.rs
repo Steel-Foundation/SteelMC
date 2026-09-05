@@ -969,7 +969,7 @@ fn restore_ender_pearl_for_player(
 
     let owner: SharedEntity = player.clone();
     for entity in &entities {
-        entity.restore_owner_reference(&owner);
+        entity.cache_owner_reference(&owner);
     }
 
     if let Err(error) = world.register_loaded_entity_tree(&entities) {
