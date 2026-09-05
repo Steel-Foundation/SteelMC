@@ -3,7 +3,6 @@ mod button_block;
 mod copper_bulb_block;
 mod daylight_detector_block;
 mod diode;
-mod face_attached_horizontal_directional_block;
 mod java_hash;
 mod lever_block;
 mod note_block;

@@ -3,6 +3,7 @@
 mod anvil_slots;
 mod armor_slot;
 mod crafting_slots;
+mod grindstone_slots;
 mod normal_slot;
 mod restricted_slot;
 mod result_handler;
@@ -12,6 +13,7 @@ pub mod slot;
 pub use anvil_slots::*;
 pub use armor_slot::ArmorSlot;
 pub use crafting_slots::CraftingHandler;
+pub use grindstone_slots::*;
 pub use normal_slot::NormalSlot;
 pub use restricted_slot::*;
 pub use result_handler::ResultHandler;
