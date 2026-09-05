@@ -132,10 +132,10 @@ impl BlockBehavior for CampfireBlock {
         }
 
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return InteractionResult::Consume;
+            return InteractionResult::TryEmptyHandInteraction;
         };
         let Some(campfire) = block_entity.downcast_ref::<CampfireBlockEntity>() else {
-            return InteractionResult::Consume;
+            return InteractionResult::TryEmptyHandInteraction;
         };
         let item = inv.with_item(|stack| stack.copy_with_count(1));
         if !campfire.place_food(player, item) {
