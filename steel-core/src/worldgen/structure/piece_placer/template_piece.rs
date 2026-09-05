@@ -22,6 +22,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::fluid::FluidStateExt as _;
+use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
     StructureDataMarker, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
@@ -475,7 +476,7 @@ impl StructurePiecePlacer {
             Self::place_end_city_marker_chest(region, marker.pos.below(), random);
             return;
         }
-        if !Self::is_in_spawnable_bounds(marker.pos) {
+        if !World::is_in_spawnable_bounds(marker.pos) {
             return;
         }
         if marker.metadata.starts_with("Sentry") {
@@ -626,15 +627,6 @@ impl StructurePiecePlacer {
         nbt.insert("LootTable", loot_table);
         nbt.insert("LootTableSeed", seed);
         nbt
-    }
-
-    const fn is_in_spawnable_bounds(pos: BlockPos) -> bool {
-        pos.y() >= -20_000_000
-            && pos.y() < 20_000_000
-            && pos.x() >= -30_000_000
-            && pos.z() >= -30_000_000
-            && pos.x() < 30_000_000
-            && pos.z() < 30_000_000
     }
 
     fn template_placement_clip(

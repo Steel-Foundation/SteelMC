@@ -2,7 +2,6 @@
 #![feature(thread_id_value)]
 
 use std::backtrace::{Backtrace, BacktraceStatus};
-use std::num::NonZero;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
@@ -20,7 +19,9 @@ use steel_core::player::player_inventory::MenuRemovalStatus;
 use steel_core::server::Server;
 use steel_registry::vanilla_custom_stats;
 use steel_utils::text::DisplayResolutor;
-use steel_utils::threading::worker_threads_for_available;
+#[cfg(all(windows, debug_assertions))]
+use steel_utils::threading::DEBUG_STACK_SIZE;
+use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use text_components::fmt::set_display_resolutor;
 use tokio::runtime::{Builder, Runtime};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -125,7 +126,7 @@ fn main() {
     {
         thread::Builder::new()
             .name("steel-main".to_owned())
-            .stack_size(8 * 1024 * 1024)
+            .stack_size(DEBUG_STACK_SIZE)
             .spawn(steel_main)
             .expect("failed to spawn steel-main bootstrap thread")
             .join()
@@ -162,8 +163,14 @@ fn steel_main() {
         }
     };
 
-    let main_worker_threads = configured_worker_threads(steel_config.server.threads.main_runtime);
-    let chunk_worker_threads = configured_worker_threads(steel_config.server.threads.chunk_runtime);
+    let main_worker_threads = worker_threads_for_available(
+        steel_config.server.threads.main_runtime,
+        available_worker_threads(),
+    );
+    let chunk_worker_threads = worker_threads_for_available(
+        steel_config.server.threads.chunk_runtime,
+        available_worker_threads(),
+    );
 
     let chunk_runtime = Arc::new(
         Builder::new_multi_thread()
@@ -185,14 +192,6 @@ fn steel_main() {
 
     drop(main_runtime);
     drop(chunk_runtime);
-}
-
-fn configured_worker_threads(configured_threads: Option<usize>) -> usize {
-    worker_threads_for_available(configured_threads, available_worker_threads())
-}
-
-fn available_worker_threads() -> usize {
-    thread::available_parallelism().map_or(4, NonZero::get)
 }
 
 async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {

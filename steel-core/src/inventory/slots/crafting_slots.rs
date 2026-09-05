@@ -34,12 +34,6 @@ impl CraftingHandler {
         }
     }
 
-    /// Whether the grid size of the crafting container is a 2x2
-    #[must_use]
-    pub const fn is_2x2(&self) -> bool {
-        self.grid_size == 2
-    }
-
     /// The `ContainerId` of the crafting container
     #[must_use]
     pub fn crafting_id(&self) -> ContainerId {
@@ -69,12 +63,13 @@ impl ResultHandler for CraftingHandler {
     }
 
     fn update_result(&self, guard: &mut ContainerLockGuard) {
+        // TODO: Enforce limited crafting and retain the recipe once player recipe books exist.
         let crafting = guard
             .get_typed::<CraftingContainer>(self.crafting_id())
             .expect("crafting container not locked");
 
-        let result_stack = recipe_manager::find_recipe(crafting, self.is_2x2())
-            .map_or_else(ItemStack::empty, |r| r.assemble());
+        let result_stack =
+            recipe_manager::assemble_for_container(crafting).unwrap_or_else(ItemStack::empty);
 
         let result_container = guard
             .get_typed_mut::<ResultContainer>(self.result_id())
@@ -88,13 +83,14 @@ impl ResultHandler for CraftingHandler {
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Unlock the recipe and trigger RECIPE_CRAFTED once their foundations exist.
         let mut remainder_overflow: Vec<ItemStack> = Vec::new();
 
         let remainders_and_positioned = {
             let crafting = guard
                 .get_typed::<CraftingContainer>(self.crafting_id())
                 .expect("crafting container not locked");
-            recipe_manager::get_remaining_items(crafting, self.is_2x2())
+            recipe_manager::get_remaining_items(crafting)
         };
 
         let Some((remainders, positioned)) = remainders_and_positioned else {
@@ -171,10 +167,10 @@ impl ResultHandler for CraftingHandler {
             return false;
         };
 
-        let Some(recipe) = recipe_manager::find_recipe(crafting, self.is_2x2()) else {
+        let Some(assembled) = recipe_manager::assemble_for_container(crafting) else {
             return false;
         };
 
-        ItemStack::matches(result_item, &recipe.assemble())
+        ItemStack::matches(result_item, &assembled)
     }
 }
