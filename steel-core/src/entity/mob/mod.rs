@@ -53,7 +53,6 @@ use crate::entity::{
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
 
 const MOB_FLAG_NO_AI: i8 = 1;
@@ -512,14 +511,8 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         let interaction_result = self.mob_interact(player, hand);
-        if interaction_result.consumes_action()
-            && let Some(world) = self.level()
-        {
-            world.game_event(
-                &vanilla_game_events::ENTITY_INTERACT,
-                self.block_position(),
-                &GameEventContext::new(Some(player), None),
-            );
+        if interaction_result.consumes_action() {
+            self.game_event_with_source_entity(&vanilla_game_events::ENTITY_INTERACT, Some(player));
         }
 
         interaction_result

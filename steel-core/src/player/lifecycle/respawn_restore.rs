@@ -18,7 +18,7 @@ impl Player {
         transfer_inventory: bool,
         spawn_block_valid: bool,
     ) -> Arc<Self> {
-        let replacement = Arc::new(Self::new(
+        let mut replacement = Self::new(
             self.gameprofile.clone(),
             Arc::clone(&self.connection),
             Arc::clone(&self.session),
@@ -27,7 +27,10 @@ impl Player {
             Arc::clone(&self.config),
             self.base.id(),
             self.client_information(),
-        ));
+        );
+        // Vanilla ServerPlayer.restoreFrom retains the same ender chest container.
+        replacement.ender_chest_inventory = Arc::clone(&self.ender_chest_inventory);
+        let replacement = Arc::new(replacement);
 
         replacement.restore_respawn_state_from(
             self,
@@ -148,6 +151,32 @@ mod tests {
     };
 
     const ENTITY_ID: i32 = 17;
+
+    #[test]
+    fn replacement_retains_ender_chest_for_death_and_end_respawns() {
+        init_vanilla_registry();
+        let world = fresh_test_world("respawn_restore_ender_chest");
+        let old_player =
+            TestPlayerBuilder::new(Arc::clone(&world), "Respawning", ENTITY_ID).build();
+        old_player
+            .ender_chest_inventory
+            .lock()
+            .set_item(0, ItemStack::with_count(&vanilla_items::DIAMOND, 4));
+
+        for restore_all in [false, true] {
+            let replacement =
+                old_player.new_respawn_replacement(Arc::clone(&world), restore_all, false, true);
+
+            assert!(Arc::ptr_eq(
+                &replacement.ender_chest_inventory,
+                &old_player.ender_chest_inventory,
+            ));
+            assert_eq!(
+                replacement.ender_chest_inventory.lock().get_item(0).count(),
+                4
+            );
+        }
+    }
 
     #[test]
     fn replacement_is_fresh_detached_entity_in_same_session() {
