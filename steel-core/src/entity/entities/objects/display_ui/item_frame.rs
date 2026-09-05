@@ -4,7 +4,7 @@ use std::sync::Weak;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_type::EntityTypeRef;
@@ -14,22 +14,27 @@ use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
 
+use crate::entity::block_attached_entity::{BlockAttachedEntity, BlockAttachedEntityBase};
+use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, ItemFrame,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntitySyncedData,
+    ItemFrame,
 };
+use crate::physics::{MoveResult, MoverType};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
 ///
 /// This intentionally implements only placement, synced item/facing data,
-/// persistence, and comparator integration. Interaction, drops, map tracking,
-/// and support checks belong to the full item-frame entity implementation.
+/// persistence, and comparator integration.
+///
+/// TODO: Add interaction, drops, map tracking, and support checks.
 #[entity_behavior(class = "ItemFrame")]
 pub struct ItemFrameEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<ItemFrameEntityData>,
-    block_pos: SyncMutex<BlockPos>,
+    block_attached_entity_base: BlockAttachedEntityBase,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ItemFrameEntity`.
@@ -76,7 +81,7 @@ impl ItemFrameEntity {
             ),
             entity_type,
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
-            block_pos: SyncMutex::new(block_pos),
+            block_attached_entity_base: BlockAttachedEntityBase::new(block_pos),
         };
         entity
             .entity_data
@@ -95,7 +100,7 @@ impl ItemFrameEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
-            block_pos: SyncMutex::new(BlockPos::new(
+            block_attached_entity_base: BlockAttachedEntityBase::new(BlockPos::new(
                 position.x.floor() as i32,
                 position.y.floor() as i32,
                 position.z.floor() as i32,
@@ -114,9 +119,12 @@ impl ItemFrameEntity {
             item.set_count(1);
         }
         self.entity_data.lock().item.set(item);
-        self.recalculate_position();
+        self.recalculate_position_or_warn();
         if update_comparators && let Some(world) = self.level() {
-            world.update_neighbor_for_output_signal(*self.block_pos.lock(), &vanilla_blocks::AIR);
+            world.update_neighbor_for_output_signal(
+                self.block_attached_entity_base.pos(),
+                &vanilla_blocks::AIR,
+            );
         }
     }
 
@@ -128,24 +136,30 @@ impl ItemFrameEntity {
             .set(direction);
         self.base
             .set_rotation(Self::rotation_for_direction(direction));
-        self.recalculate_position();
+        self.recalculate_position_or_warn();
     }
 
-    fn recalculate_position(&self) {
-        let block_pos = *self.block_pos.lock();
+    fn try_recalculate_position(&self) -> Result<(), EntityMoveError> {
+        let block_pos = self.block_attached_entity_base.pos();
         let direction = *self.entity_data.lock().hanging_entity.direction.get();
         let position = Self::frame_center(block_pos, direction);
-        if let Err(error) = self.base.try_set_position(position) {
-            panic!(
-                "failed to commit item frame {} position recalculation: {error}",
-                self.base.id()
-            );
-        }
+        self.base.try_set_position(position)?;
         self.base.set_bounding_box(Self::frame_bounding_box(
             block_pos,
             direction,
             self.has_framed_map(),
         ));
+
+        Ok(())
+    }
+
+    fn recalculate_position_or_warn(&self) {
+        if let Err(error) = self.try_recalculate_position() {
+            log::warn!(
+                "failed to commit item frame {} position recalculation: {error}",
+                self.base.id()
+            );
+        }
     }
 
     fn has_framed_map(&self) -> bool {
@@ -232,7 +246,7 @@ impl Entity for ItemFrameEntity {
     }
 
     fn spawn_position(&self) -> DVec3 {
-        let block_pos = *self.block_pos.lock();
+        let block_pos = self.block_attached_entity_base.pos();
         DVec3::new(
             f64::from(block_pos.x()),
             f64::from(block_pos.y()),
@@ -240,20 +254,44 @@ impl Entity for ItemFrameEntity {
         )
     }
 
-    fn is_pickable(&self) -> bool {
-        true
-    }
-
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
 
+    fn tick(&self) {
+        self.tick_block_attached_entity();
+    }
+
+    fn is_pickable(&self) -> bool {
+        self.is_pickable_block_attached_entity()
+    }
+
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        self.hurt_block_attached_entity(world, source, amount)
+    }
+
+    fn skip_attack_interaction(&self, source: &dyn Entity) -> bool {
+        self.skip_attack_interaction_block_attached_entity(source)
+    }
+
+    fn push_impulse(&self, impulse: DVec3) {
+        self.push_impulse_block_attached_entity(impulse);
+    }
+
+    fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+        self.move_entity_block_attached_entity(mover_type, delta)
+    }
+
+    fn refresh_dimensions(&self) {
+        self.refresh_dimensions_block_attached_entity();
+    }
+
+    fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position_block_attached_entity(pos)
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        let block_pos = *self.block_pos.lock();
-        nbt.insert(
-            "block_pos",
-            NbtTag::IntArray(vec![block_pos.x(), block_pos.y(), block_pos.z()]),
-        );
+        self.save_block_attached_entity(nbt);
 
         let entity_data = self.entity_data.lock();
         let item = entity_data.item.get();
@@ -271,11 +309,7 @@ impl Entity for ItemFrameEntity {
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        if let Some(block_pos) = nbt.int_array("block_pos")
-            && block_pos.len() == 3
-        {
-            *self.block_pos.lock() = BlockPos::new(block_pos[0], block_pos[1], block_pos[2]);
-        }
+        self.load_block_attached_entity(nbt);
 
         if let Some(item_tag) = nbt.compound("Item")
             && let Some(item) = ItemStack::from_borrowed_compound(&item_tag)
@@ -298,7 +332,23 @@ impl Entity for ItemFrameEntity {
             self.set_direction(direction);
         }
 
-        self.recalculate_position();
+        self.recalculate_position_or_warn();
+    }
+}
+
+impl BlockAttachedEntity for ItemFrameEntity {
+    fn block_attached_entity_base(&self) -> &BlockAttachedEntityBase {
+        &self.block_attached_entity_base
+    }
+
+    fn survives(&self) -> bool {
+        true
+    }
+
+    fn drop_item(&self, _caused_by: Option<&dyn Entity>) {}
+
+    fn recalculate_bounding_box(&self) -> Result<(), EntityMoveError> {
+        self.try_recalculate_position()
     }
 }
 

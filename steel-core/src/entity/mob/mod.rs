@@ -1699,14 +1699,14 @@ fn position_shape_top(pos: BlockPos, local_y: f64) -> f64 {
     f64::from(pos.y()) + local_y
 }
 
-fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
+pub fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
     let dx = f64::from(a.x() - b.x());
     let dy = f64::from(a.y() - b.y());
     let dz = f64::from(a.z() - b.z());
     dx.mul_add(dx, dy.mul_add(dy, dz * dz))
 }
 
-fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
+pub fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
     let (x, y, z) = pos.get_center();
     DVec3::new(x, y, z).distance_squared(target)
 }

@@ -2440,8 +2440,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
+    ///
+    /// For the base method, see [`Entity::try_set_position_base`]
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position_base(pos)
+    }
+
+    /// The base method to set the entity's position through world lifecycle validation.
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
+    fn try_set_position_base(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
     }
 
