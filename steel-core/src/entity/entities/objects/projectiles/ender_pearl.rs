@@ -21,18 +21,19 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::EnderPearlEntityData;
-use steel_registry::vanilla_game_rules::ENDER_PEARLS_VANISH_ON_DEATH;
-use steel_registry::{sound_events, vanilla_damage_types, vanilla_items};
+use steel_registry::vanilla_game_rules::{ENDER_PEARLS_VANISH_ON_DEATH, SPAWN_MOBS};
+use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::EndermiteEntity;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
-    ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
-    change_entity_world,
+    ENTITIES, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile,
+    ProjectileBase, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
+    ThrowableProjectile, change_entity_world, next_entity_id,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -40,6 +41,9 @@ use crate::world::World;
 
 /// Fall-style damage dealt to the teleporting owner (vanilla `enderPearl()`, 5.0).
 const TELEPORT_DAMAGE: f32 = 5.0;
+
+/// Spawn chance for an endermite on impact (5% in vanilla `ThrownEnderpearl`).
+const ENDERMITE_SPAWN_CHANCE: f32 = 0.05;
 
 /// A thrown ender pearl.
 #[entity_behavior(class = "ThrownEnderpearl")]
@@ -170,7 +174,21 @@ impl EnderPearlEntity {
         player: &Player,
         teleport_pos: DVec3,
     ) {
-        // TODO: 5% endermite spawn (Endermite entity not implemented).
+        if world.get_game_rule(&SPAWN_MOBS) && rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE {
+            let endermite = ENTITIES.create(
+                &vanilla_entities::ENDERMITE,
+                next_entity_id(),
+                teleport_pos,
+                Arc::downgrade(world),
+            );
+            if let Some(endermite) = endermite {
+                if let Some(endermite_entity) = endermite.as_ref().downcast_ref::<EndermiteEntity>()
+                {
+                    endermite_entity.set_player_spawned(true);
+                }
+                let _ = world.try_add_entity(endermite);
+            }
+        }
         if self.is_on_portal_cooldown() {
             player.reset_portal_cooldown();
         }
@@ -271,11 +289,6 @@ impl Entity for EnderPearlEntity {
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
-    }
-
-    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
-        // Vanilla `Projectile.hurtServer` marks hurt but never takes damage.
-        false
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

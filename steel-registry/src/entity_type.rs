@@ -4,6 +4,8 @@ use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{RegistryTags, blocks::behavior::PushReaction};
 
+const DEFAULT_EYE_HEIGHT_FACTOR: f32 = 0.85;
+
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobCategory {
@@ -215,6 +217,17 @@ impl EntityDimensions {
         }
     }
 
+    /// Creates new entity dimensions with a default eye height.
+    #[must_use]
+    pub const fn with_default_eye_height(width: f32, height: f32) -> Self {
+        Self {
+            width,
+            height,
+            eye_height: Self::default_eye_height(height),
+            attachments: EntityAttachments::fallback(),
+        }
+    }
+
     /// Scale dimensions by a factor (for baby entities, etc.)
     #[must_use]
     pub fn scale(&self, factor: f32) -> Self {
@@ -230,6 +243,12 @@ impl EntityDimensions {
     #[must_use]
     pub fn half_width(&self) -> f32 {
         self.width / 2.0
+    }
+
+    /// Gets the default eye height for a given entity height.
+    #[must_use]
+    const fn default_eye_height(height: f32) -> f32 {
+        height * DEFAULT_EYE_HEIGHT_FACTOR
     }
 }
 
@@ -284,6 +303,10 @@ pub struct EntityType {
     pub is_projectile: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractArrow`.
     pub is_abstract_arrow: bool,
+    /// Whether vanilla class hierarchy makes this entity an `AbstractHorse`.
+    pub is_abstract_horse: bool,
+    /// Whether vanilla class hierarchy makes this entity an `AbstractNautilus`.
+    pub is_abstract_nautilus: bool,
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,

@@ -1,10 +1,32 @@
 //! Helpers shared by item behavior implementations.
 
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::item::BlockHitResult;
 
 use crate::behavior::UseItemContext;
 use crate::inventory::lock::ContainerId;
+use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
+use crate::world::{ClipBlockShape, ClipFluid, World};
+
+/// Vanilla `Item.getPlayerPOVHitResult`.
+#[must_use]
+pub(crate) fn get_player_pov_hit_result(
+    world: &World,
+    player: &Player,
+    fluid: ClipFluid,
+) -> BlockHitResult {
+    let (from, to) = player.get_ray_endpoints();
+    let hit = world.clip(from, to, ClipBlockShape::Outline, fluid);
+    BlockHitResult {
+        location: hit.location,
+        direction: hit.direction,
+        block_pos: hit.block_pos,
+        miss: hit.miss,
+        inside: hit.inside,
+        world_border_hit: hit.world_border_hit,
+    }
+}
 
 /// Applies vanilla `ItemUtils.createFilledResult`.
 pub(crate) fn create_filled_result(

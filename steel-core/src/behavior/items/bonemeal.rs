@@ -54,7 +54,7 @@ impl BoneMealItem {
 
     fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
         let state = world.get_block_state(pos);
-        if state.get_block() != &vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
+        if state.get_block() != &vanilla_blocks::WATER || !state.get_fluid_state().is_full() {
             return false;
         }
 
@@ -96,7 +96,7 @@ impl BoneMealItem {
             if behavior.can_survive(new_state, world, new_pos) {
                 let current_state = world.get_block_state(new_pos);
                 if current_state.get_block() == &vanilla_blocks::WATER
-                    && current_state.get_fluid_state().amount == 8
+                    && current_state.get_fluid_state().is_full()
                 {
                     world.set_block(new_pos, new_state, UpdateFlags::UPDATE_ALL);
                 } else if current_state.get_block() == &vanilla_blocks::SEAGRASS

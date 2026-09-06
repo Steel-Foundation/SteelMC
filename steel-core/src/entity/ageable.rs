@@ -17,6 +17,7 @@ use crate::world::World;
 
 const BABY_START_AGE: i32 = -24_000;
 const AGE_LOCK_COOLDOWN_TICKS: i32 = 40;
+const FORCED_AGE_PARTICLE_TICKS: i32 = 40;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AgeableMobState {
@@ -221,7 +222,7 @@ pub trait AgeableMob: Mob {
         if forced {
             self.ageable_base().add_forced_age(delta);
             if self.forced_age_timer() == 0 {
-                self.set_forced_age_timer(40);
+                self.set_forced_age_timer(FORCED_AGE_PARTICLE_TICKS);
             }
         }
 

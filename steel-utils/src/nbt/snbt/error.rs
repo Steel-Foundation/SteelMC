@@ -210,7 +210,7 @@ impl SnbtErrorKind {
             }
             // The shipped assets consistently use Mojang's misspelled `undescore` key.
             Self::InvalidUnderscore => {
-                TextComponent::from(&translations::SNBT_PARSER_UNDESCORE_NOT_ALLOWED)
+                TextComponent::from(&translations::SNBT_PARSER_UNDERSCORE_NOT_ALLOWED)
             }
             Self::LeadingZero => {
                 TextComponent::from(&translations::SNBT_PARSER_LEADING_ZERO_NOT_ALLOWED)

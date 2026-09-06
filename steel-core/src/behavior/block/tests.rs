@@ -7,6 +7,40 @@ use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
 use steel_registry::init_vanilla_registry;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_items;
+
+use crate::behavior::init_behaviors;
+
+#[test]
+fn clone_item_stack_uses_registered_block_item_association() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    for (block, expected_item) in [
+        (&vanilla_blocks::REDSTONE_WIRE, &*vanilla_items::REDSTONE),
+        (&vanilla_blocks::WALL_TORCH, &*vanilla_items::TORCH),
+        (
+            &vanilla_blocks::BIG_DRIPLEAF_STEM,
+            &*vanilla_items::BIG_DRIPLEAF,
+        ),
+    ] {
+        let clone_item = BLOCK_BEHAVIORS
+            .get_behavior(block)
+            .get_clone_item_stack(block, block.default_state(), false)
+            .map(|stack| stack.item());
+
+        assert_eq!(clone_item, Some(expected_item));
+    }
+
+    let block = &vanilla_blocks::FIRE;
+    let clone_item = BLOCK_BEHAVIORS.get_behavior(block).get_clone_item_stack(
+        block,
+        block.default_state(),
+        false,
+    );
+
+    assert!(clone_item.is_some_and(|stack| stack.is_empty()));
+}
 
 #[test]
 fn drained_waterlogged_state_clears_waterlogged_property() {
