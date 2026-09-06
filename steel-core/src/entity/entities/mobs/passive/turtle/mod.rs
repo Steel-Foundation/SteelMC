@@ -82,6 +82,18 @@ const CLIMB_SPEED_SHARE: f64 = 0.1;
 /// Distance below which a turtle treats itself as having arrived.
 const ARRIVED_DISTANCE: f64 = 1.0e-5;
 
+/// How far a turtle travels between step sounds. Shorter than the usual one
+/// block, so a turtle shuffles rather than plodding.
+const NEXT_STEP_DISTANCE: f32 = 0.15;
+/// How much louder a turtle's swimming is than other entities'.
+const SWIM_SOUND_VOLUME_SCALE: f32 = 1.5;
+/// Ticks between idle turtle noises, so 10 seconds. Quieter than most mobs,
+/// which idle every 6 seconds.
+const AMBIENT_SOUND_INTERVAL: i32 = 200;
+/// Score a turtle gives ground it would rather walk to. Anything it likes gets
+/// the same top score, so water and sand are equally attractive.
+const PREFERRED_WALK_TARGET_VALUE: f32 = 10.0;
+
 #[entity_behavior(class = "Turtle")]
 /// Vanilla turtle entity.
 pub struct TurtleEntity {
