@@ -49,7 +49,7 @@ fn as_turtle(mob: &dyn PathfinderMob) -> Option<&TurtleEntity> {
 }
 
 /// Vanilla `BlockPos.closerToCenterThan`: squared distance from the block center.
-fn closer_to_center_than(block: BlockPos, position: DVec3, distance: f64) -> bool {
+pub(super) fn closer_to_center_than(block: BlockPos, position: DVec3, distance: f64) -> bool {
     let (x, y, z) = block.get_center();
     DVec3::new(x, y, z).distance_squared(position) < distance * distance
 }
