@@ -7,6 +7,7 @@
 
 use crate::shared_structs::deserialize_tag_identifier;
 pub use crate::shared_structs::{BlockStateData, FluidStateData};
+use crate::structure::ProcessorsJson;
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 use steel_utils::{
@@ -14,9 +15,94 @@ use steel_utils::{
     value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
 };
 
+fn deserialize_vanilla_i32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
+    let value = Value::deserialize(deserializer)?;
+    let Some(number) = value.as_f64() else {
+        return Err(D::Error::custom("expected numeric value"));
+    };
+
+    if !number.is_finite() || number < i32::MIN as f64 || number > i32::MAX as f64 {
+        return Err(D::Error::custom(format!(
+            "integer value out of range: {number}"
+        )));
+    }
+
+    Ok(number as i32)
+}
+
+fn normalize_loose_identifier(raw: &str) -> String {
+    Identifier::parse_or_vanilla(raw)
+        .unwrap_or_else(|error| panic!("invalid loose feature identifier {raw}: {error}"))
+        .to_string()
+}
+
+fn normalize_loose_identifier_value(value: &mut Value) {
+    if let Value::String(name) = value {
+        *name = normalize_loose_identifier(name);
+    }
+}
+
+fn normalize_loose_identifier_or_tag(raw: &str) -> String {
+    if let Some(tag) = raw.strip_prefix('#') {
+        format!("#{}", normalize_loose_identifier(tag))
+    } else {
+        normalize_loose_identifier(raw)
+    }
+}
+
+fn normalize_block_reference(value: &mut Value) {
+    match value {
+        Value::String(name) => *name = normalize_loose_identifier_or_tag(name),
+        Value::Array(items) => {
+            for item in items {
+                normalize_block_reference(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_datapack_type_fields(value: &mut Value) {
+    const TYPE_KEYS: &[&str] = &["type", "feature_type", "predicate_type", "processor_type"];
+
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if TYPE_KEYS.contains(&key.as_str()) || key == "Name" {
+                    normalize_loose_identifier_value(child);
+                } else if matches!(key.as_str(), "blocks" | "block") {
+                    normalize_block_reference(child);
+                }
+                normalize_datapack_type_fields(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                normalize_datapack_type_fields(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn parse_configured_feature_json(registry_id: &str, content: &str) -> ConfiguredFeatureKind {
+    let mut value: Value = serde_json::from_str(content)
+        .unwrap_or_else(|err| panic!("failed to parse configured feature {registry_id}: {err}"));
+    normalize_datapack_type_fields(&mut value);
+    serde_json::from_value(value)
+        .unwrap_or_else(|err| panic!("failed to parse configured feature {registry_id}: {err}"))
+}
+
+pub fn parse_placed_feature_json(registry_id: &str, content: &str) -> PlacedFeatureData {
+    let mut value: Value = serde_json::from_str(content)
+        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"));
+    normalize_datapack_type_fields(&mut value);
+    serde_json::from_value(value)
+        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"))
+}
+
 /// A configured feature reference, either a registry key or an inline configured feature.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum ConfiguredFeatureRef {
     /// Registry-backed configured feature.
     Reference(Identifier),
@@ -25,13 +111,42 @@ pub enum ConfiguredFeatureRef {
 }
 
 /// A placed feature reference, either a registry key or an inline placed feature.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+impl<'de> Deserialize<'de> for ConfiguredFeatureRef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        if let Some(id) = value.as_str() {
+            return Identifier::parse_or_vanilla(id)
+                .map(Self::Reference)
+                .map_err(D::Error::custom);
+        }
+        serde_json::from_value(value)
+            .map(Box::new)
+            .map(Self::Inline)
+            .map_err(D::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum PlacedFeatureRef {
     /// Registry-backed placed feature.
     Reference(Identifier),
     /// Inline placed feature.
     Inline(Box<PlacedFeatureData>),
+}
+
+impl<'de> Deserialize<'de> for PlacedFeatureRef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        if let Some(id) = value.as_str() {
+            return Identifier::parse_or_vanilla(id)
+                .map(Self::Reference)
+                .map_err(D::Error::custom);
+        }
+        serde_json::from_value(value)
+            .map(Box::new)
+            .map(Self::Inline)
+            .map_err(D::Error::custom)
+    }
 }
 
 /// A placed feature: configured feature plus ordered placement modifiers.
@@ -88,10 +203,12 @@ pub enum ConfiguredFeatureKind {
     MultifaceGrowth(MultifaceGrowthConfiguration),
     NetherForestVegetation(NetherForestVegetationConfiguration),
     NetherrackReplaceBlobs(NetherrackReplaceBlobsConfiguration),
+    NoOp,
     Ore(OreConfiguration),
     PointedDripstone(PointedDripstoneConfiguration),
     RandomBooleanSelector(RandomBooleanSelectorConfiguration),
     RandomSelector(RandomSelectorConfiguration),
+    ReplaceSingleBlock(ReplaceBlockConfiguration),
     RootSystem(RootSystemConfiguration),
     ScatteredOre(OreConfiguration),
     SculkPatch(SculkPatchConfiguration),
@@ -212,6 +329,7 @@ fn deserialize_configured_feature_kind(
         "minecraft:netherrack_replace_blobs" => ConfiguredFeatureKind::NetherrackReplaceBlobs(
             parse!(NetherrackReplaceBlobsConfiguration)?,
         ),
+        "minecraft:no_op" => ConfiguredFeatureKind::NoOp,
         "minecraft:ore" => ConfiguredFeatureKind::Ore(parse!(OreConfiguration)?),
         "minecraft:pointed_dripstone" => {
             ConfiguredFeatureKind::PointedDripstone(parse!(PointedDripstoneConfiguration)?)
@@ -221,6 +339,9 @@ fn deserialize_configured_feature_kind(
         ),
         "minecraft:random_selector" => {
             ConfiguredFeatureKind::RandomSelector(parse!(RandomSelectorConfiguration)?)
+        }
+        "minecraft:replace_single_block" => {
+            ConfiguredFeatureKind::ReplaceSingleBlock(parse!(ReplaceBlockConfiguration)?)
         }
         "minecraft:weighted_random_selector" => ConfiguredFeatureKind::WeightedRandomSelector(
             parse!(WeightedRandomFeatureConfiguration)?,
@@ -276,29 +397,16 @@ fn deserialize_configured_feature_kind(
     })
 }
 
-/// Identifier list that accepts vanilla's single-or-list codec shape.
-#[derive(Debug, Clone)]
-pub struct IdentifierList(pub Vec<Identifier>);
-
-impl<'de> Deserialize<'de> for IdentifierList {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Single(Identifier),
-            Many(Vec<Identifier>),
-        }
-
-        Ok(match Raw::deserialize(deserializer)? {
-            Raw::Single(value) => Self(vec![value]),
-            Raw::Many(values) => Self(values),
-        })
-    }
-}
-
 /// Vanilla holder set for blocks, preserving tag-vs-entry semantics.
 #[derive(Debug, Clone)]
 pub enum BlockHolderSet {
+    Tag(Identifier),
+    Entries(Vec<Identifier>),
+}
+
+/// Vanilla holder set for fluids, preserving tag-vs-entry semantics.
+#[derive(Debug, Clone)]
+pub enum FluidHolderSet {
     Tag(Identifier),
     Entries(Vec<Identifier>),
 }
@@ -309,20 +417,56 @@ impl<'de> Deserialize<'de> for BlockHolderSet {
         #[serde(untagged)]
         enum Raw {
             Single(String),
-            Many(Vec<Identifier>),
+            Many(Vec<String>),
         }
 
         match Raw::deserialize(deserializer)? {
             Raw::Single(value) => {
                 if let Some(tag) = value.strip_prefix('#') {
-                    let tag = tag.parse().map_err(D::Error::custom)?;
+                    let tag = Identifier::parse_or_vanilla(tag).map_err(D::Error::custom)?;
                     Ok(Self::Tag(tag))
                 } else {
-                    let entry = value.parse().map_err(D::Error::custom)?;
+                    let entry = Identifier::parse_or_vanilla(&value).map_err(D::Error::custom)?;
                     Ok(Self::Entries(vec![entry]))
                 }
             }
-            Raw::Many(values) => Ok(Self::Entries(values)),
+            Raw::Many(values) => {
+                let entries = values
+                    .iter()
+                    .map(|value| Identifier::parse_or_vanilla(value).map_err(D::Error::custom))
+                    .collect::<Result<_, _>>()?;
+                Ok(Self::Entries(entries))
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FluidHolderSet {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Single(String),
+            Many(Vec<String>),
+        }
+
+        match Raw::deserialize(deserializer)? {
+            Raw::Single(value) => {
+                if let Some(tag) = value.strip_prefix('#') {
+                    let tag = Identifier::parse_or_vanilla(tag).map_err(D::Error::custom)?;
+                    Ok(Self::Tag(tag))
+                } else {
+                    let entry = Identifier::parse_or_vanilla(&value).map_err(D::Error::custom)?;
+                    Ok(Self::Entries(vec![entry]))
+                }
+            }
+            Raw::Many(values) => {
+                let entries = values
+                    .iter()
+                    .map(|value| Identifier::parse_or_vanilla(value).map_err(D::Error::custom))
+                    .collect::<Result<_, _>>()?;
+                Ok(Self::Entries(entries))
+            }
         }
     }
 }
@@ -383,13 +527,13 @@ pub enum BlockPredicate {
     },
     #[serde(rename = "minecraft:matching_blocks")]
     MatchingBlocks {
-        blocks: IdentifierList,
+        blocks: BlockHolderSet,
         #[serde(default = "default_offset")]
         offset: Offset,
     },
     #[serde(rename = "minecraft:matching_fluids")]
     MatchingFluids {
-        fluids: IdentifierList,
+        fluids: FluidHolderSet,
         #[serde(default = "default_offset")]
         offset: Offset,
     },
@@ -479,7 +623,6 @@ pub struct FeatureNoiseParameters {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NoiseProvider {
     pub noise: FeatureNoiseParameters,
     pub scale: f32,
@@ -509,7 +652,7 @@ pub struct DualNoiseProvider {
     pub slow_noise: FeatureNoiseParameters,
     pub slow_scale: f32,
     pub states: Vec<BlockStateData>,
-    pub variety: [i32; 2],
+    pub variety: UniformIntProvider,
 }
 
 /// Feature placement modifiers.
@@ -773,8 +916,8 @@ pub struct FallenTreeConfiguration {
 pub struct FossilConfiguration {
     pub fossil_structures: Vec<Identifier>,
     pub overlay_structures: Vec<Identifier>,
-    pub fossil_processors: Identifier,
-    pub overlay_processors: Identifier,
+    pub fossil_processors: ProcessorsJson,
+    pub overlay_processors: ProcessorsJson,
     pub max_empty_corners_allowed: i32,
 }
 
@@ -840,7 +983,10 @@ pub struct GeodeCrackSettings {
     pub generate_crack_chance: f64,
     #[serde(default = "default_geode_base_crack_size")]
     pub base_crack_size: f64,
-    #[serde(default = "default_geode_crack_point_offset")]
+    #[serde(
+        default = "default_geode_crack_point_offset",
+        deserialize_with = "deserialize_vanilla_i32"
+    )]
     pub crack_point_offset: i32,
 }
 
@@ -983,7 +1129,7 @@ pub struct MultifaceGrowthConfiguration {
     pub can_place_on_wall: bool,
     #[serde(default = "default_multiface_chance_of_spreading")]
     pub chance_of_spreading: f32,
-    pub can_be_placed_on: Vec<Identifier>,
+    pub can_be_placed_on: BlockHolderSet,
 }
 
 const fn default_multiface_search_range() -> i32 {
@@ -1021,6 +1167,12 @@ pub struct OreConfiguration {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ReplaceBlockConfiguration {
+    pub targets: Vec<OreTarget>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OreTarget {
     pub target: RuleTest,
     pub state: BlockStateData,
@@ -1028,9 +1180,17 @@ pub struct OreTarget {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "predicate_type")]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variant names mirror vanilla rule test names"
+)]
 pub enum RuleTest {
     #[serde(rename = "minecraft:block_match")]
     BlockMatch { block: Identifier },
+    #[serde(rename = "minecraft:blockstate_match")]
+    BlockStateMatch { block_state: BlockStateData },
+    #[serde(rename = "minecraft:random_block_match")]
+    RandomBlockMatch { block: Identifier, probability: f32 },
     #[serde(rename = "minecraft:tag_match")]
     TagMatch { tag: Identifier },
 }
@@ -1236,7 +1396,6 @@ const fn default_spring_hole_count() -> i32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct TreeConfiguration {
     pub trunk_provider: BlockStateProvider,
     pub below_trunk_provider: BlockStateProvider,
@@ -1248,6 +1407,7 @@ pub struct TreeConfiguration {
     pub decorators: Vec<TreeDecorator>,
     #[serde(default)]
     pub root_placer: Option<RootPlacer>,
+    #[serde(default)]
     pub ignore_vines: bool,
 }
 
@@ -1288,8 +1448,13 @@ pub struct BendingTrunkPlacer {
     pub base_height: i32,
     pub height_rand_a: i32,
     pub height_rand_b: i32,
+    #[serde(default = "default_bending_trunk_min_height_for_leaves")]
     pub min_height_for_leaves: i32,
     pub bend_length: IntProvider,
+}
+
+const fn default_bending_trunk_min_height_for_leaves() -> i32 {
+    1
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1345,7 +1510,6 @@ pub enum FoliagePlacer {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct FoliagePlacerBase {
     pub radius: IntProvider,
     pub offset: IntProvider,
@@ -1388,7 +1552,7 @@ pub struct MegaPineFoliagePlacer {
 pub struct RandomSpreadFoliagePlacer {
     pub radius: IntProvider,
     pub offset: IntProvider,
-    pub foliage_height: i32,
+    pub foliage_height: IntProvider,
     pub leaf_placement_attempts: i32,
 }
 
@@ -1459,7 +1623,8 @@ pub enum RootPlacer {
 pub struct MangroveRootPlacer {
     pub trunk_offset_y: IntProvider,
     pub root_provider: BlockStateProvider,
-    pub above_root_placement: AboveRootPlacement,
+    #[serde(default)]
+    pub above_root_placement: Option<AboveRootPlacement>,
     pub mangrove_root_placement: MangroveRootPlacement,
 }
 
@@ -1473,9 +1638,8 @@ pub struct AboveRootPlacement {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MangroveRootPlacement {
-    #[serde(deserialize_with = "deserialize_tag_identifier")]
-    pub can_grow_through: Identifier,
-    pub muddy_roots_in: Vec<Identifier>,
+    pub can_grow_through: BlockHolderSet,
+    pub muddy_roots_in: BlockHolderSet,
     pub muddy_roots_provider: BlockStateProvider,
     pub max_root_width: i32,
     pub max_root_length: i32,

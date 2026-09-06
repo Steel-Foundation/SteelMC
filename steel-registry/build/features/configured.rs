@@ -217,8 +217,10 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
         ConfiguredFeatureKind::Fossil(config) => {
             let fossil_structures = generate_vec(&config.fossil_structures, generate_identifier);
             let overlay_structures = generate_vec(&config.overlay_structures, generate_identifier);
-            let fossil_processors = generate_identifier(&config.fossil_processors);
-            let overlay_processors = generate_identifier(&config.overlay_processors);
+            let fossil_processors =
+                crate::structure::gen_processors(Some(&config.fossil_processors), "fossil");
+            let overlay_processors =
+                crate::structure::gen_processors(Some(&config.overlay_processors), "fossil");
             let max_empty_corners_allowed = config.max_empty_corners_allowed;
             quote! {
                 ConfiguredFeatureKind::Fossil(FossilConfiguration {
@@ -346,7 +348,7 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
             let can_place_on_ceiling = config.can_place_on_ceiling;
             let can_place_on_wall = config.can_place_on_wall;
             let chance_of_spreading = config.chance_of_spreading;
-            let can_be_placed_on = generate_vec(&config.can_be_placed_on, generate_block_ref);
+            let can_be_placed_on = generate_block_holder_set(&config.can_be_placed_on);
             quote! {
                 ConfiguredFeatureKind::MultifaceGrowth(MultifaceGrowthConfiguration {
                     block: #block,
@@ -383,6 +385,7 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
                 })
             }
         }
+        ConfiguredFeatureKind::NoOp => quote! { ConfiguredFeatureKind::NoOp },
         ConfiguredFeatureKind::Ore(config) => {
             let targets = generate_vec(&config.targets, generate_ore_target);
             let size = config.size;
@@ -426,6 +429,14 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
                 ConfiguredFeatureKind::RandomSelector(RandomSelectorConfiguration {
                     features: #features,
                     default: #default,
+                })
+            }
+        }
+        ConfiguredFeatureKind::ReplaceSingleBlock(config) => {
+            let targets = generate_vec(&config.targets, generate_ore_target);
+            quote! {
+                ConfiguredFeatureKind::ReplaceSingleBlock(ReplaceBlockConfiguration {
+                    targets: #targets,
                 })
             }
         }

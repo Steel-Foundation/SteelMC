@@ -8,7 +8,7 @@ use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
 use steel_registry::{
     REGISTRY, RegistryExt,
-    structure::{JigsawConfig, StartHeight, StructureData},
+    structure::{JigsawConfig, StructureData},
 };
 use steel_utils::Identifier;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -68,11 +68,13 @@ fn jigsaw_assets() -> (
     (pools, templates)
 }
 
-fn sample_start_height(config: &JigsawConfig, rng: &mut impl Random) -> i32 {
-    match config.start_height {
-        StartHeight::Constant(y) => y,
-        StartHeight::Uniform { min, max } => rng.next_i32_between(min, max),
-    }
+fn sample_start_height(
+    config: &JigsawConfig,
+    rng: &mut impl Random,
+    min_y: i32,
+    height: i32,
+) -> i32 {
+    config.start_height.sample(rng, min_y, height)
 }
 
 fn run_assembly(
@@ -93,7 +95,7 @@ fn run_assembly(
 
     let mut alias_position_rng = LegacyRandom::from_seed(0);
     alias_position_rng.set_large_feature_seed(SEED, case.chunk_x, case.chunk_z);
-    let start_y = sample_start_height(config, &mut alias_position_rng);
+    let start_y = sample_start_height(config, &mut alias_position_rng, min_y, max_y - min_y);
     let mut alias_source = LegacyRandom::from_seed(SEED as u64);
     let mut alias_rng =
         alias_source

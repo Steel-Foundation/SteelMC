@@ -8,6 +8,7 @@
 use super::{ConfiguredFeatureEntryRef, PlacedFeatureEntryRef};
 use crate::blocks::BlockRef;
 use crate::fluid::FluidRef;
+use crate::template_pool::ProcessorList;
 use glam::IVec3;
 use steel_utils::{
     Direction, Identifier, Rotation,
@@ -84,10 +85,12 @@ pub enum ConfiguredFeatureKind {
     MultifaceGrowth(MultifaceGrowthConfiguration),
     NetherForestVegetation(NetherForestVegetationConfiguration),
     NetherrackReplaceBlobs(NetherrackReplaceBlobsConfiguration),
+    NoOp,
     Ore(OreConfiguration),
     PointedDripstone(PointedDripstoneConfiguration),
     RandomBooleanSelector(RandomBooleanSelectorConfiguration),
     RandomSelector(RandomSelectorConfiguration),
+    ReplaceSingleBlock(ReplaceBlockConfiguration),
     RootSystem(RootSystemConfiguration),
     ScatteredOre(OreConfiguration),
     SculkPatch(SculkPatchConfiguration),
@@ -125,6 +128,34 @@ pub struct FluidRefList(pub Vec<FluidRef>);
 pub enum BlockHolderSet {
     Tag(Identifier),
     Entries(Vec<BlockRef>),
+}
+
+impl BlockHolderSet {
+    /// Check if this holder set contains a block.
+    pub fn contains(&self, block: BlockRef) -> bool {
+        match self {
+            BlockHolderSet::Tag(tag) => block.has_tag(tag),
+            BlockHolderSet::Entries(entries) => entries.contains(&block),
+        }
+    }
+}
+
+/// Fluid holder set decoded from vanilla's holder-set codec shape at build time.
+#[derive(Debug, Clone)]
+pub enum FluidHolderSet {
+    Tag(Identifier),
+    Entries(Vec<FluidRef>),
+}
+
+impl FluidHolderSet {
+    /// Check if this holder set contains a fluid.
+    #[must_use]
+    pub fn contains(&self, fluid: FluidRef) -> bool {
+        match self {
+            FluidHolderSet::Tag(tag) => fluid.has_tag(tag),
+            FluidHolderSet::Entries(entries) => entries.contains(&fluid),
+        }
+    }
 }
 
 /// Block state data emitted by the feature generator without baking a state id.
@@ -166,11 +197,11 @@ pub enum BlockPredicate {
         offset: Offset,
     },
     MatchingBlocks {
-        blocks: BlockRefList,
+        blocks: BlockHolderSet,
         offset: Offset,
     },
     MatchingFluids {
-        fluids: FluidRefList,
+        fluids: FluidHolderSet,
         offset: Offset,
     },
     Solid {
@@ -467,8 +498,8 @@ pub struct FallenTreeConfiguration {
 pub struct FossilConfiguration {
     pub fossil_structures: Vec<Identifier>,
     pub overlay_structures: Vec<Identifier>,
-    pub fossil_processors: Identifier,
-    pub overlay_processors: Identifier,
+    pub fossil_processors: ProcessorList,
+    pub overlay_processors: ProcessorList,
     pub max_empty_corners_allowed: i32,
 }
 
@@ -565,7 +596,7 @@ pub struct MultifaceGrowthConfiguration {
     pub can_place_on_ceiling: bool,
     pub can_place_on_wall: bool,
     pub chance_of_spreading: f32,
-    pub can_be_placed_on: Vec<BlockRef>,
+    pub can_be_placed_on: BlockHolderSet,
 }
 
 #[derive(Debug, Clone)]
@@ -590,14 +621,25 @@ pub struct OreConfiguration {
 }
 
 #[derive(Debug, Clone)]
+pub struct ReplaceBlockConfiguration {
+    pub targets: Vec<OreTarget>,
+}
+
+#[derive(Debug, Clone)]
 pub struct OreTarget {
     pub target: RuleTest,
     pub state: BlockStateData,
 }
 
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variant names mirror vanilla rule test names"
+)]
 pub enum RuleTest {
     BlockMatch { block: BlockRef },
+    BlockStateMatch { block_state: BlockStateData },
+    RandomBlockMatch { block: BlockRef, probability: f32 },
     TagMatch { tag: Identifier },
 }
 
@@ -844,7 +886,7 @@ pub struct MegaPineFoliagePlacer {
 pub struct RandomSpreadFoliagePlacer {
     pub radius: IntProvider,
     pub offset: IntProvider,
-    pub foliage_height: i32,
+    pub foliage_height: IntProvider,
     pub leaf_placement_attempts: i32,
 }
 
@@ -892,7 +934,7 @@ pub enum RootPlacer {
 pub struct MangroveRootPlacer {
     pub trunk_offset_y: IntProvider,
     pub root_provider: BlockStateProvider,
-    pub above_root_placement: AboveRootPlacement,
+    pub above_root_placement: Option<AboveRootPlacement>,
     pub mangrove_root_placement: MangroveRootPlacement,
 }
 
@@ -904,8 +946,8 @@ pub struct AboveRootPlacement {
 
 #[derive(Debug, Clone)]
 pub struct MangroveRootPlacement {
-    pub can_grow_through: Identifier,
-    pub muddy_roots_in: Vec<Identifier>,
+    pub can_grow_through: BlockHolderSet,
+    pub muddy_roots_in: BlockHolderSet,
     pub muddy_roots_provider: BlockStateProvider,
     pub max_root_width: i32,
     pub max_root_length: i32,

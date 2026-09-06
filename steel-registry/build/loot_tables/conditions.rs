@@ -1,11 +1,18 @@
 use super::{
     EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson, TokenStream,
     generate_damage_source_predicate, generate_entity_predicate, generate_location_predicate,
-    generate_loot_context_entity, generate_tool_predicate, quote,
+    generate_loot_context_entity, generate_number_provider, generate_number_provider_range,
+    generate_static_identifier_from_str, generate_tool_predicate, number_provider_constant, quote,
 };
 
 pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
-    match condition.condition.as_str() {
+    let condition_name = if condition.condition.contains(':') {
+        condition.condition.clone()
+    } else {
+        format!("minecraft:{}", condition.condition)
+    };
+
+    match condition_name.as_str() {
         "minecraft:survives_explosion" => {
             quote! { LootCondition::SurvivesExplosion }
         }
@@ -97,7 +104,13 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             quote! { LootCondition::AllOf(&[#(#terms),*]) }
         }
         "minecraft:random_chance" => {
-            let chance = condition.chance.unwrap_or(0.5);
+            let chance = match &condition.chance {
+                Some(chance) => {
+                    // Score-backed chances need scoreboard context support. Until then, fail closed.
+                    number_provider_constant(chance).unwrap_or(0.0)
+                }
+                None => 0.5,
+            };
             quote! { LootCondition::RandomChance(#chance) }
         }
         "minecraft:random_chance_with_enchanted_bonus" => {
@@ -148,30 +161,18 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let entity = condition.entity.as_deref().unwrap_or("this");
             let entity_variant = generate_loot_context_entity(entity);
 
-            let predicate = if let Some(pred) = &condition.predicate {
-                if let PredicateJson::Entity(e) = pred {
-                    generate_entity_predicate(e)
-                } else {
+            let predicate = match &condition.predicate {
+                Some(PredicateJson::Entity(entity)) => generate_entity_predicate(entity),
+                _ => {
                     quote! {
-                        EntityPredicate {
-                            entity_type: None,
-                            flags: None,
-                            equipment: None,
-                            sheep_color: None,
-                            sheep_sheared: None,
-                            chicken_variant: None,
-                        }
-                    }
-                }
-            } else {
-                quote! {
-                    EntityPredicate {
-                        entity_type: None,
-                        flags: None,
-                        equipment: None,
-                        sheep_color: None,
-                        sheep_sheared: None,
-                        chicken_variant: None,
+                            EntityPredicate {
+                                entity_type: None,
+                                flags: None,
+                                equipment: None,
+                                sheep_color: None,
+                                sheep_sheared: None,
+                                chicken_variant: None,
+                            }
                     }
                 }
             };
@@ -184,10 +185,11 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             }
         }
         "minecraft:damage_source_properties" => {
-            let predicate = if let Some(pred) = &condition.predicate {
-                if let PredicateJson::DamageSource(ds) = pred {
-                    generate_damage_source_predicate(ds)
-                } else {
+            let predicate = match &condition.predicate {
+                Some(PredicateJson::DamageSource(source)) => {
+                    generate_damage_source_predicate(source)
+                }
+                _ => {
                     quote! {
                         DamageSourcePredicate {
                             tags: &[],
@@ -195,15 +197,6 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                             direct_entity: None,
                             is_direct: None,
                         }
-                    }
-                }
-            } else {
-                quote! {
-                    DamageSourcePredicate {
-                        tags: &[],
-                        source_entity: None,
-                        direct_entity: None,
-                        is_direct: None,
                     }
                 }
             };
@@ -219,20 +212,13 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let offset_y = condition.offset_y.unwrap_or(0);
             let offset_z = condition.offset_z.unwrap_or(0);
 
-            let predicate = if let Some(pred) = &condition.predicate {
-                if let PredicateJson::Location(l) = pred {
-                    generate_location_predicate(l)
-                } else {
+            let predicate = match &condition.predicate {
+                Some(PredicateJson::Location(location)) => generate_location_predicate(location),
+                _ => {
                     quote! {
                         LocationPredicate {
                             block: None,
                         }
-                    }
-                }
-            } else {
-                quote! {
-                    LocationPredicate {
-                        block: None,
                     }
                 }
             };
@@ -243,6 +229,32 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                     offset_y: #offset_y,
                     offset_z: #offset_z,
                     predicate: #predicate,
+                }
+            }
+        }
+        "minecraft:reference" => {
+            let name = condition
+                .name
+                .as_deref()
+                .unwrap_or_else(|| panic!("reference loot condition missing name"));
+            let name = generate_static_identifier_from_str(name, "loot condition");
+            quote! { LootCondition::Reference(#name) }
+        }
+        "minecraft:value_check" => {
+            let value = condition
+                .value
+                .as_ref()
+                .map(generate_number_provider)
+                .unwrap_or_else(|| quote! { NumberProvider::Constant(0.0) });
+            let range = condition
+                .range
+                .as_ref()
+                .map(generate_number_provider_range)
+                .unwrap_or_else(|| quote! { NumberProviderRange::exact(0.0) });
+            quote! {
+                LootCondition::ValueCheck {
+                    value: #value,
+                    range: #range,
                 }
             }
         }

@@ -136,8 +136,8 @@ pub struct JigsawBlock {
     pub pool: Identifier,
     /// Joint type.
     pub joint: JointType,
-    /// Block state to replace jigsaw with after placement.
-    pub final_state: Identifier,
+    /// Block state string to replace jigsaw with after placement.
+    pub final_state: String,
     /// Priority for selecting this jigsaw among siblings in a piece (higher = tried first).
     pub selection_priority: i32,
     /// Priority for BFS queue ordering when placing children (higher = processed first).

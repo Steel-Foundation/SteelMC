@@ -25,6 +25,7 @@ pub enum LootEntry {
     /// Inline loot table (embedded pools directly in entry).
     InlineLootTable {
         pools: &'static [LootPool],
+        table_functions: &'static [ConditionalLootFunction],
         weight: i32,
         quality: i32,
         conditions: &'static [LootCondition],
@@ -170,7 +171,7 @@ impl LootEntry {
 #[derive(Debug, Clone)]
 pub struct LootPool {
     pub rolls: NumberProvider,
-    pub bonus_rolls: f32,
+    pub bonus_rolls: NumberProvider,
     pub entries: &'static [LootEntry],
     pub conditions: &'static [LootCondition],
     pub functions: &'static [ConditionalLootFunction],
@@ -243,7 +244,10 @@ impl LootPool {
         let start_index = result.len();
 
         // Calculate number of rolls
-        let roll_count = self.rolls.get_int(ctx.rng) + (self.bonus_rolls * ctx.luck).floor() as i32;
+        let ctx_ref = super::LootContextRef { tool: ctx.tool };
+        let rolls = self.rolls.get_int(ctx.rng);
+        let bonus = self.bonus_rolls.get(ctx.rng, Some(&ctx_ref));
+        let roll_count = rolls + (bonus * ctx.luck).floor() as i32;
 
         for _ in 0..roll_count {
             self.add_random_item(ctx, result);
@@ -357,14 +361,25 @@ impl LootEntry {
                 }
             }
             LootEntry::InlineLootTable {
-                pools, functions, ..
+                pools,
+                table_functions,
+                functions,
+                ..
             } => {
                 // Process inline loot table pools directly
                 let mut items = Vec::new();
                 for pool in *pools {
                     pool.add_random_items(ctx, &mut items);
                 }
-                // Apply functions to all items from the inline table
+                // Apply inline table-level functions
+                for item in &mut items {
+                    for cond_func in *table_functions {
+                        if cond_func.conditions.iter().all(|c| c.test(ctx)) {
+                            cond_func.function.apply(item, ctx);
+                        }
+                    }
+                }
+                // Apply entry-level functions to all items from the inline table
                 for item in &mut items {
                     for cond_func in *functions {
                         if cond_func.conditions.iter().all(|c| c.test(ctx)) {

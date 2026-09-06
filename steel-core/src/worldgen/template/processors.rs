@@ -152,7 +152,54 @@ impl StructureTemplate {
             StructureProcessorKind::BlackstoneReplace => {
                 Some(Self::process_blackstone_replace(registry, current))
             }
+            StructureProcessorKind::BlockIgnore { blocks } => {
+                let block = Self::block_for_state(registry, current.state);
+                let ignored = blocks.iter().any(|block_state| {
+                    registry
+                        .blocks
+                        .by_key(&block_state.name)
+                        .is_some_and(|ignore_block| block == ignore_block)
+                });
+                (!ignored).then_some(current)
+            }
+            StructureProcessorKind::Gravity { heightmap, offset } => Some(Self::process_gravity(
+                region, original, current, *heightmap, *offset,
+            )),
             StructureProcessorKind::Capped { .. } => Some(current),
+            StructureProcessorKind::JigsawReplacement => {
+                Self::replace_jigsaw_block(registry, current)
+            }
+        }
+    }
+
+    fn process_gravity(
+        region: &WorldGenRegion<'_>,
+        original: &ProcessedBlockInfo,
+        current: ProcessedBlockInfo,
+        heightmap: StructureProcessorHeightmap,
+        offset: i32,
+    ) -> ProcessedBlockInfo {
+        let heightmap_type = Self::processor_heightmap_type(heightmap);
+        let x = current.world_pos.x();
+        let z = current.world_pos.z();
+        let height = region.height_at(heightmap_type, x, z) + offset;
+        let new_y = height + original.template_pos.y();
+        ProcessedBlockInfo {
+            world_pos: BlockPos::new(x, new_y, z),
+            ..current
+        }
+    }
+
+    const fn processor_heightmap_type(heightmap: StructureProcessorHeightmap) -> HeightmapType {
+        match heightmap {
+            StructureProcessorHeightmap::WorldSurface => HeightmapType::WorldSurface,
+            StructureProcessorHeightmap::MotionBlocking => HeightmapType::MotionBlocking,
+            StructureProcessorHeightmap::MotionBlockingNoLeaves => {
+                HeightmapType::MotionBlockingNoLeaves
+            }
+            StructureProcessorHeightmap::OceanFloor => HeightmapType::OceanFloor,
+            StructureProcessorHeightmap::WorldSurfaceWg => HeightmapType::WorldSurfaceWg,
+            StructureProcessorHeightmap::OceanFloorWg => HeightmapType::OceanFloorWg,
         }
     }
 
@@ -723,6 +770,18 @@ impl StructureTemplate {
                         "structure processor block-state predicate",
                     )
             }
+            StructureRuleTestData::RandomBlockStateMatch {
+                block_state,
+                probability,
+            } => {
+                state
+                    == WorldgenStateResolver::block_state_from_data(
+                        registry,
+                        block_state,
+                        "structure processor random block-state predicate",
+                    )
+                    && random.next_f32() < *probability
+            }
         }
     }
 
@@ -778,7 +837,26 @@ impl StructureTemplate {
                 nbt.insert("LootTableSeed", NbtTag::Long(random.next_i64()));
                 Some(nbt)
             }
+            RuleBlockEntityModifierData::AppendStatic { data } => {
+                let mut nbt = current.nbt.unwrap_or_default();
+                Self::merge_nbt_compound(&mut nbt, data);
+                Some(nbt)
+            }
         };
         current
+    }
+
+    fn merge_nbt_compound(target: &mut NbtCompound, source: &NbtCompound) {
+        for (key, source_value) in source.iter() {
+            let key = key.to_string();
+            if let Some(NbtTag::Compound(target_child)) = target.get_mut(&key)
+                && let NbtTag::Compound(source_child) = source_value
+            {
+                Self::merge_nbt_compound(target_child, source_child);
+                continue;
+            }
+            let _ = target.remove(&key);
+            target.insert(key, source_value.clone());
+        }
     }
 }

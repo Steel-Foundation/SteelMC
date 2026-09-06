@@ -1,8 +1,8 @@
 use super::{
     BlockPredicate, ConfiguredFeatureRef, FeatureHeightmap, PlacedFeatureData, PlacedFeatureRef,
-    PlacementModifier, TokenStream, generate_block_ref_list, generate_block_state_data,
+    PlacementModifier, TokenStream, generate_block_holder_set, generate_block_state_data,
     generate_box, generate_configured_feature_entry_ref, generate_configured_feature_kind,
-    generate_direction, generate_fluid_ref_list, generate_height_provider, generate_identifier,
+    generate_direction, generate_fluid_holder_set, generate_height_provider, generate_identifier,
     generate_int_provider, generate_offset, generate_option, generate_placed_feature_entry_ref,
     generate_vec, quote,
 };
@@ -28,12 +28,12 @@ pub(super) fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStrea
             quote! { BlockPredicate::MatchingBlockTag { tag: #tag, offset: #offset } }
         }
         BlockPredicate::MatchingBlocks { blocks, offset } => {
-            let blocks = generate_block_ref_list(blocks);
+            let blocks = generate_block_holder_set(blocks);
             let offset = generate_offset(offset);
             quote! { BlockPredicate::MatchingBlocks { blocks: #blocks, offset: #offset } }
         }
         BlockPredicate::MatchingFluids { fluids, offset } => {
-            let fluids = generate_fluid_ref_list(fluids);
+            let fluids = generate_fluid_holder_set(fluids);
             let offset = generate_offset(offset);
             quote! { BlockPredicate::MatchingFluids { fluids: #fluids, offset: #offset } }
         }

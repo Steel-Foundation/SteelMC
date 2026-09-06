@@ -2,6 +2,7 @@
 
 use std::fs;
 
+use crate::generator_functions::{registry_entry_ident, resource_name, sorted_json_files};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -19,11 +20,10 @@ mod providers;
 mod structures;
 
 use common::{
-    generate_block_holder_set, generate_block_ref, generate_block_ref_list,
-    generate_block_state_data, generate_box, generate_configured_feature_entry_ref,
-    generate_direction, generate_fluid_ref_list, generate_fluid_state_data, generate_identifier,
-    generate_offset, generate_option, generate_placed_feature_entry_ref, generate_rotation,
-    generate_vec, generate_vertical_anchor, resource_name, sorted_json_files,
+    generate_block_holder_set, generate_block_ref, generate_block_state_data, generate_box,
+    generate_configured_feature_entry_ref, generate_direction, generate_fluid_holder_set,
+    generate_fluid_state_data, generate_identifier, generate_offset, generate_option,
+    generate_placed_feature_entry_ref, generate_rotation, generate_vec, generate_vertical_anchor,
 };
 use configured::generate_configured_feature_kind;
 use placement::{
@@ -46,32 +46,46 @@ use data::{
     AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, BlockHolderSet, BlockPredicate,
     BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
     DualNoiseProvider, EndSpike, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
-    FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings,
-    GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement,
+    FluidHolderSet, FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings,
+    GeodeCrackSettings, GeodeLayerSettings, HugeMushroomConfiguration, MangroveRootPlacement,
     NoiseProvider, NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef,
     PlacementModifier, RootPlacer, RuleBasedStateProviderRule, RuleTest, TemplateEntry,
     TreeDecorator, TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
     WeightedBlockState, WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
 };
+use data::{parse_configured_feature_json, parse_placed_feature_json};
+
+fn sorted_json_registry_entries(dir: &str) -> Vec<(String, String)> {
+    sorted_json_files(dir)
+        .into_iter()
+        .map(|path| {
+            let name = resource_name(&path);
+            let content = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+            (name, content)
+        })
+        .collect()
+}
 
 pub(crate) fn build_configured() -> TokenStream {
     let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
-        let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let kind = serde_json::from_str::<ConfiguredFeatureKind>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse configured feature {name}: {err}"));
-        entries.push((name, generate_configured_feature_kind(&kind)));
+    for (registry_id, content) in sorted_json_registry_entries(dir) {
+        let kind = parse_configured_feature_json(&registry_id, &content);
+        entries.push((registry_id, generate_configured_feature_kind(&kind)));
     }
 
     let mut stream = TokenStream::new();
     stream.extend(quote! {
         use crate::{feature::*, vanilla_blocks, vanilla_fluids};
+        use crate::structure_processor::{
+            PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
+            StructureProcessorHeightmap, StructureProcessorKind, StructureRuleTestData,
+        };
+        use crate::template_pool::ProcessorList;
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         use steel_utils::value_providers::{
             FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
             WeightedIntProvider,
@@ -82,12 +96,16 @@ pub(crate) fn build_configured() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, kind) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, kind) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
+            panic!("invalid configured feature registry id {registry_id}: {err}")
+        });
+        let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<ConfiguredFeature> = LazyLock::new(|| {
                 ConfiguredFeature {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     kind: #kind,
                     id: OnceLock::new(),
                 }
@@ -114,11 +132,10 @@ pub(crate) fn build_placed() -> TokenStream {
     let mut entries = Vec::new();
     for entry in sorted_json_files(dir) {
         let name = resource_name(&entry);
-        let path = entry.path();
+        let path = entry.as_path();
         let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let data = serde_json::from_str::<PlacedFeatureData>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse placed feature {name}: {err}"));
+            fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+        let data = parse_placed_feature_json(&name, &content);
         entries.push((name, generate_placed_feature_data(&data)));
     }
 
@@ -135,12 +152,16 @@ pub(crate) fn build_placed() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, data) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, data) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
+            panic!("invalid placed feature registry id {registry_id}: {err}")
+        });
+        let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<PlacedFeature> = LazyLock::new(|| {
                 PlacedFeature {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     data: #data,
                     id: OnceLock::new(),
                 }

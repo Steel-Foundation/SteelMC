@@ -1193,7 +1193,7 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) -> bool {
-        if !Self::tree_valid_pos_or_tag(region, pos, can_grow_through) {
+        if !Self::tree_valid_pos_or_tag_id(region, pos, can_grow_through) {
             return false;
         }
 

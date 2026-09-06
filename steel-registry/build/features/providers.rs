@@ -256,7 +256,8 @@ pub(super) fn generate_dual_noise_provider(provider: &DualNoiseProvider) -> Toke
     let slow_noise = generate_feature_noise_parameters(&provider.slow_noise);
     let slow_scale = provider.slow_scale;
     let states = generate_vec(&provider.states, generate_block_state_data);
-    let [variety_min, variety_max] = provider.variety;
+    let variety_min = provider.variety.min_inclusive;
+    let variety_max = provider.variety.max_inclusive;
     quote! {
         DualNoiseProvider {
             noise: #noise,

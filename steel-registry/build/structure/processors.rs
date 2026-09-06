@@ -2,56 +2,27 @@
 
 use std::fs;
 
-use heck::ToShoutySnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
+use crate::generator_functions::{
+    generate_static_identifier as generate_identifier, generate_static_identifier_from_str,
+    registry_entry_ident, resource_name, sorted_json_files,
+};
+use crate::nbt::generate_nbt_compound;
+use proc_macro2::TokenStream;
 use quote::quote;
-use steel_utils::{Identifier, value_providers::IntProvider};
+use steel_utils::value_providers::IntProvider;
 
-#[expect(
-    dead_code,
-    reason = "imported processor data contains variants not emitted by current vanilla assets"
-)]
 #[path = "../../src/structure/processor/data.rs"]
 mod structure_processor_data;
 
 use crate::shared_structs::BlockStateData;
 use structure_processor_data::{
     PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
-    StructureProcessorKind, StructureProcessorListData, StructureRuleTestData,
+    StructureProcessorHeightmap, StructureProcessorKind, StructureProcessorListData,
+    StructureRuleTestData,
 };
 
-fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
-    let mut files: Vec<_> = fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("{dir} missing: {err}"))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    files.sort_by_key(std::fs::DirEntry::file_name);
-    files
-}
-
-fn resource_name(entry: &fs::DirEntry) -> String {
-    entry
-        .path()
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_else(|| {
-            panic!(
-                "invalid structure processor-list file name: {:?}",
-                entry.path()
-            )
-        })
-        .to_owned()
-}
-
-fn generate_identifier(identifier: &Identifier) -> TokenStream {
-    let namespace = identifier.namespace.as_ref();
-    let path = identifier.path.as_ref();
-    if namespace == Identifier::VANILLA_NAMESPACE {
-        quote! { Identifier::vanilla_static(#path) }
-    } else {
-        quote! { Identifier::new_static(#namespace, #path) }
-    }
+fn generate_registry_key(registry_id: &str) -> TokenStream {
+    generate_static_identifier_from_str(registry_id, "structure processor-list registry")
 }
 
 fn generate_option<T>(value: &Option<T>, f: impl Fn(&T) -> TokenStream) -> TokenStream {
@@ -85,7 +56,7 @@ fn generate_block_state_data(data: &BlockStateData) -> TokenStream {
     };
 
     quote! {
-        BlockStateData {
+        crate::shared_structs::BlockStateData {
             name: #name,
             properties: #properties,
         }
@@ -225,6 +196,18 @@ fn generate_rule_test(data: &StructureRuleTestData) -> TokenStream {
             let block_state = generate_block_state_data(block_state);
             quote! { StructureRuleTestData::BlockStateMatch { block_state: #block_state } }
         }
+        StructureRuleTestData::RandomBlockStateMatch {
+            block_state,
+            probability,
+        } => {
+            let block_state = generate_block_state_data(block_state);
+            quote! {
+                StructureRuleTestData::RandomBlockStateMatch {
+                    block_state: #block_state,
+                    probability: #probability,
+                }
+            }
+        }
     }
 }
 
@@ -236,6 +219,10 @@ fn generate_block_entity_modifier(data: &RuleBlockEntityModifierData) -> TokenSt
         RuleBlockEntityModifierData::AppendLoot { loot_table } => {
             let loot_table = generate_identifier(loot_table);
             quote! { RuleBlockEntityModifierData::AppendLoot { loot_table: #loot_table } }
+        }
+        RuleBlockEntityModifierData::AppendStatic { data } => {
+            let data = generate_nbt_compound(data);
+            quote! { RuleBlockEntityModifierData::AppendStatic { data: #data } }
         }
     }
 }
@@ -258,7 +245,30 @@ fn generate_processor_rule(data: &ProcessorRuleData) -> TokenStream {
     }
 }
 
-fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
+fn generate_processor_heightmap(heightmap: StructureProcessorHeightmap) -> TokenStream {
+    match heightmap {
+        StructureProcessorHeightmap::WorldSurface => {
+            quote! { StructureProcessorHeightmap::WorldSurface }
+        }
+        StructureProcessorHeightmap::MotionBlocking => {
+            quote! { StructureProcessorHeightmap::MotionBlocking }
+        }
+        StructureProcessorHeightmap::MotionBlockingNoLeaves => {
+            quote! { StructureProcessorHeightmap::MotionBlockingNoLeaves }
+        }
+        StructureProcessorHeightmap::OceanFloor => {
+            quote! { StructureProcessorHeightmap::OceanFloor }
+        }
+        StructureProcessorHeightmap::WorldSurfaceWg => {
+            quote! { StructureProcessorHeightmap::WorldSurfaceWg }
+        }
+        StructureProcessorHeightmap::OceanFloorWg => {
+            quote! { StructureProcessorHeightmap::OceanFloorWg }
+        }
+    }
+}
+
+pub(crate) fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
     match data {
         StructureProcessorKind::BlockRot {
             rottable_blocks,
@@ -286,8 +296,24 @@ fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
         StructureProcessorKind::LavaSubmergedBlock => {
             quote! { StructureProcessorKind::LavaSubmergedBlock }
         }
+        StructureProcessorKind::JigsawReplacement => {
+            quote! { StructureProcessorKind::JigsawReplacement }
+        }
         StructureProcessorKind::BlackstoneReplace => {
             quote! { StructureProcessorKind::BlackstoneReplace }
+        }
+        StructureProcessorKind::BlockIgnore { blocks } => {
+            let blocks = generate_vec(blocks, generate_block_state_data);
+            quote! { StructureProcessorKind::BlockIgnore { blocks: #blocks } }
+        }
+        StructureProcessorKind::Gravity { heightmap, offset } => {
+            let heightmap = generate_processor_heightmap(*heightmap);
+            quote! {
+                StructureProcessorKind::Gravity {
+                    heightmap: #heightmap,
+                    offset: #offset,
+                }
+            }
         }
         StructureProcessorKind::Capped { delegate, limit } => {
             let delegate = generate_box(delegate.as_ref(), generate_processor_kind);
@@ -309,9 +335,9 @@ pub(crate) fn build() -> TokenStream {
     let mut entries = Vec::new();
     for entry in sorted_json_files(dir) {
         let name = resource_name(&entry);
-        let path = entry.path();
+        let path = entry.as_path();
         let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+            fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<StructureProcessorListData>(&content)
             .unwrap_or_else(|err| panic!("failed to parse structure processor list {name}: {err}"));
         entries.push((name, data));
@@ -331,13 +357,14 @@ pub(crate) fn build() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, data) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, data) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let key = generate_registry_key(registry_id);
         let data = generate_processor_list_data(data);
         stream.extend(quote! {
             pub static #ident: LazyLock<StructureProcessorList> = LazyLock::new(|| {
                 StructureProcessorList {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     data: #data,
                     id: OnceLock::new(),
                 }
