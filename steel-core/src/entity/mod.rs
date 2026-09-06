@@ -820,7 +820,7 @@ pub use projectile::{
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
-pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
+pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, FoxGroupData, SpawnGroupData};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{
