@@ -9,6 +9,9 @@ use super::clock::WorldClockManager;
 
 const SKY_LIGHT_LEVEL_ATTRIBUTE: &str = "minecraft:gameplay/sky_light_level";
 const SUN_ANGLE_ATTRIBUTE: &str = "minecraft:visual/sun_angle";
+/// Vanilla `EnvironmentAttributes.MONSTERS_BURN`, the boolean environment
+/// attribute the overworld's `day` timeline keeps true during daylight.
+const MONSTERS_BURN_ATTRIBUTE: &str = "minecraft:gameplay/monsters_burn";
 const DEFAULT_SKY_LIGHT_LEVEL: f32 = 15.0;
 const DEFAULT_SUN_ANGLE: f32 = 0.0;
 const MIN_SKY_LIGHT_LEVEL: f32 = 0.0;
@@ -65,25 +68,144 @@ fn apply_timeline_float_attribute(
     clock_manager: &WorldClockManager,
     attribute: &str,
 ) -> f32 {
+    for_each_timeline(dimension_type, |timeline| {
+        value = apply_timeline_float_track(value, timeline, clock_manager, attribute);
+    });
+    value
+}
+
+/// Returns vanilla `EnvironmentAttributes.MONSTERS_BURN` for a dimension.
+///
+/// The environment attribute defaults to `false`; the overworld's `day`
+/// timeline turns it on during daylight through its boolean `or`-modified
+/// track, so dimensions outside that timeline never burn undead mobs.
+#[must_use]
+pub(super) fn monsters_burn(
+    dimension_type: DimensionTypeRef,
+    clock_manager: &WorldClockManager,
+) -> bool {
+    let mut value = false;
+    for_each_timeline(dimension_type, |timeline| {
+        value = apply_timeline_bool_track(value, timeline, clock_manager, MONSTERS_BURN_ATTRIBUTE);
+    });
+    value
+}
+
+/// Runs `visit` over every timeline the dimension references, whether a single
+/// timeline key or a `#`-prefixed timeline tag.
+fn for_each_timeline(dimension_type: DimensionTypeRef, mut visit: impl FnMut(TimelineRef)) {
     let Some(timelines) = dimension_type.timelines else {
-        return value;
+        return;
     };
     if let Some(tag) = timelines.strip_prefix('#') {
         let Ok(tag) = Identifier::from_str(tag) else {
-            return value;
+            return;
         };
         for timeline in REGISTRY.timelines.iter_tag(&tag) {
-            value = apply_timeline_float_track(value, timeline, clock_manager, attribute);
+            visit(timeline);
         }
-        return value;
+        return;
     }
 
     let Ok(key) = Identifier::from_str(timelines) else {
+        return;
+    };
+    if let Some(timeline) = REGISTRY.timelines.by_key(&key) {
+        visit(timeline);
+    }
+}
+
+fn apply_timeline_bool_track(
+    value: bool,
+    timeline: TimelineRef,
+    clock_manager: &WorldClockManager,
+    attribute: &str,
+) -> bool {
+    let Some(track) = timeline.tracks.iter().find(|track| track.name == attribute) else {
         return value;
     };
-    REGISTRY.timelines.by_key(&key).map_or(value, |timeline| {
-        apply_timeline_float_track(value, timeline, clock_manager, attribute)
-    })
+    let Some(total_ticks) = clock_manager.total_ticks(timeline.clock) else {
+        return value;
+    };
+    let Some(sample) = sample_bool_track(track, timeline.period_ticks.map(i64::from), total_ticks)
+    else {
+        return value;
+    };
+    match track.modifier {
+        Some("or") => value || sample,
+        Some("and") => value && sample,
+        None => sample,
+        _ => value,
+    }
+}
+
+/// Samples a boolean timeline track.
+///
+/// Vanilla registers boolean environment attributes as non-interpolated
+/// (`AttributeType.ofNotInterpolated`), whose constant lerp returns the segment
+/// start until the destination keyframe tick is reached exactly. The easing is
+/// therefore irrelevant: the value holds and then snaps at each keyframe.
+fn sample_bool_track(track: &Track, period_ticks: Option<i64>, ticks: i64) -> Option<bool> {
+    let keyframes = track.keyframes;
+    match keyframes.len() {
+        0 => return None,
+        1 => return keyframe_bool_value(&keyframes[0].value),
+        _ => {}
+    }
+
+    let sample_ticks = period_ticks.map_or(ticks, |period| ticks.rem_euclid(period));
+    let first = &keyframes[0];
+    let last = &keyframes[keyframes.len() - 1];
+
+    if let Some(period) = period_ticks
+        && sample_ticks < first.ticks
+    {
+        return step_bool_segment(
+            last.ticks - period,
+            &last.value,
+            first.ticks,
+            &first.value,
+            sample_ticks,
+        );
+    }
+
+    for segment in keyframes.windows(2) {
+        let from = &segment[0];
+        let to = &segment[1];
+        if sample_ticks < to.ticks {
+            return step_bool_segment(from.ticks, &from.value, to.ticks, &to.value, sample_ticks);
+        }
+    }
+
+    if let Some(period) = period_ticks {
+        return step_bool_segment(
+            last.ticks,
+            &last.value,
+            first.ticks + period,
+            &first.value,
+            sample_ticks,
+        );
+    }
+
+    keyframe_bool_value(&last.value)
+}
+
+fn step_bool_segment(
+    from_ticks: i64,
+    from_value: &KeyframeValue,
+    to_ticks: i64,
+    to_value: &KeyframeValue,
+    sample_ticks: i64,
+) -> Option<bool> {
+    let from = keyframe_bool_value(from_value)?;
+    let to = keyframe_bool_value(to_value)?;
+    if sample_ticks <= from_ticks {
+        return Some(from);
+    }
+    if sample_ticks >= to_ticks {
+        return Some(to);
+    }
+    Some(from)
 }
 
 fn apply_timeline_float_track(
@@ -273,6 +395,13 @@ const fn keyframe_float_value(value: &KeyframeValue) -> Option<f32> {
     }
 }
 
+const fn keyframe_bool_value(value: &KeyframeValue) -> Option<bool> {
+    match value {
+        KeyframeValue::Bool(value) => Some(*value),
+        _ => None,
+    }
+}
+
 fn apply_weather_sky_light_level(mut value: f32, rain_level: f32, thunder_level: f32) -> f32 {
     let thunder_level = thunder_level.clamp(0.0, 1.0);
     let rain_level = (rain_level - thunder_level).clamp(0.0, 1.0);
@@ -440,5 +569,43 @@ mod tests {
         assert_eq!(sky_darkening(15.0), 0);
         assert_eq!(sky_darkening(11.5625), 3);
         assert_eq!(sky_darkening(4.0), 11);
+    }
+
+    #[test]
+    fn monsters_burn_follows_the_generated_daylight_window() {
+        init_vanilla_registry();
+
+        // The overworld `day` timeline's `monsters_burn` track snaps true at
+        // sunrise (23460) and false at sunset (12542), so it holds true across
+        // the whole daylight stretch including the period wrap at midnight.
+        for ticks in [0, 6_000, 12_000, 12_541, 23_460, 23_999] {
+            assert!(
+                monsters_burn(&OVERWORLD, &clock_manager_at(ticks)),
+                "monsters_burn should hold at tick {ticks}"
+            );
+        }
+        for ticks in [12_542, 18_000, 23_000, 23_459] {
+            assert!(
+                !monsters_burn(&OVERWORLD, &clock_manager_at(ticks)),
+                "monsters_burn should be off at tick {ticks}"
+            );
+        }
+    }
+
+    #[test]
+    fn monsters_burn_snaps_at_keyframes_instead_of_interpolating() {
+        init_vanilla_registry();
+
+        // Boolean environment attributes are non-interpolated: the value holds
+        // until the destination keyframe tick is reached exactly, then snaps.
+        assert!(!monsters_burn(&OVERWORLD, &clock_manager_at(23_459)));
+        assert!(monsters_burn(&OVERWORLD, &clock_manager_at(23_460)));
+    }
+
+    #[test]
+    fn monsters_burn_is_off_in_dimensions_without_the_day_timeline() {
+        init_vanilla_registry();
+
+        assert!(!monsters_burn(&THE_NETHER, &clock_manager_at(6_000)));
     }
 }

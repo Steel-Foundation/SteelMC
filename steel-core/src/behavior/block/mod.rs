@@ -47,6 +47,11 @@ use crate::world::{
 };
 use steel_registry::vanilla_fluids;
 
+/// Maximum light emission a block may emit while still allowing mobs to spawn
+/// on it, mirroring vanilla `BlockBehaviour`'s default `isValidSpawn` predicate
+/// (`state.getLightEmission() < 14`).
+pub(crate) const MAX_MOB_SPAWN_LIGHT_EMISSION: u8 = 14;
+
 /// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
@@ -219,6 +224,25 @@ pub trait BlockBehavior: Send + Sync {
     /// (torches, buttons, candles, cactus, etc.).
     fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
+    }
+
+    /// Returns whether this block accepts a mob spawning on or inside it.
+    ///
+    /// Vanilla parity: `BlockState.isValidSpawn(BlockGetter, BlockPos, EntityType)`, whose
+    /// default requires a full UP support face and light emission below
+    /// [`MAX_MOB_SPAWN_LIGHT_EMISSION`]. Blocks override it for special spawn surfaces
+    /// (soul sand accepts everything, magma only fire-immune mobs, ...). Consulted by
+    /// `Mob.checkMobSpawnRules`.
+    fn is_valid_spawn(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        _entity_type: EntityTypeRef,
+    ) -> bool {
+        // Vanilla evaluation order: full UP support first, then the light-emission gate.
+        world.is_face_sturdy_for(state, pos, Direction::Up, SupportType::Full)
+            && state.get_light_emission() < MAX_MOB_SPAWN_LIGHT_EMISSION
     }
 
     /// Returns whether this block can be occupied by a forced respawn position

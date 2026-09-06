@@ -570,6 +570,77 @@ fn clip_local_aabb_supports_runtime_fluid_heights() {
 }
 
 #[test]
+fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("can_see_sky_light");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+
+    // 26.2 stores sky light un-dimmed: open air holds full sky light, so the
+    // position sees the sky regardless of the time of day.
+    assert!(world.can_see_sky(pos));
+
+    // A solid roof attenuates the sky layer below full: no longer sky-visible.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    // The world tick loop drains queued light updates; tests must do so manually.
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky(pos));
+}
+
+#[test]
+fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("precipitation_sky_exposure");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+
+    // Open sky: vanilla `precipitationAt` gates (light-based canSeeSky plus
+    // the motion-blocking heightmap) both pass.
+    assert!(world.can_see_sky_for_precipitation(pos));
+
+    // A solid roof is rejected by the light gate.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky_for_precipitation(pos));
+
+    // A light-transmitting glass roof keeps full sky light but still fails the
+    // motion-blocking heightmap gate.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::GLASS.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(world.can_see_sky(pos));
+    assert!(!world.can_see_sky_for_precipitation(pos));
+
+    // Water attenuates sky light below full: the light gate rejects the
+    // position even though the heightmap column stays unobstructed.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::AIR.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky_for_precipitation(pos));
+}
+
+#[test]
 fn fluid_clip_height_treats_source_and_flowing_variants_as_same_fluid_above() {
     init_vanilla_registry();
     init_behaviors();
