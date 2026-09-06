@@ -59,7 +59,7 @@ const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
 const MOB_FLAG_AGGRESSIVE: i8 = 4;
 const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
-const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
+pub(crate) const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
 /// Vanilla bias subtracted from the roll before comparing against a slot's drop
 /// chance when a mob swaps out worn gear it picked something better up over.
@@ -1716,7 +1716,10 @@ fn home_radius_sqr(radius: i32) -> f64 {
     radius * radius
 }
 
-fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
+/// Turns `a` toward `b` by at most `max` degrees, mirroring vanilla
+/// `MoveControl.rotlerp`. Entities with their own move control need this to steer
+/// the same way the shared one does.
+pub(crate) fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
     let mut diff = wrap_degrees(b - a);
     if diff > max {
         diff = max;
