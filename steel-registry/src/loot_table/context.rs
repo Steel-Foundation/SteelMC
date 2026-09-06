@@ -294,6 +294,8 @@ pub struct EntityRef<'a> {
     /// Vanilla `minecraft:type_specific/sheep.sheared`. `None` when the entity is
     /// not a sheep, matching vanilla `SheepPredicate.matches`' non-sheep rejection.
     pub sheep_sheared: Option<bool>,
+    /// Vanilla `minecraft:components.chicken/variant` entity data component key.
+    pub chicken_variant: Option<&'a Identifier>,
 }
 
 /// Entity flags for predicate checking.

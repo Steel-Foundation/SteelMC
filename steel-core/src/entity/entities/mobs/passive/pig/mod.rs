@@ -371,7 +371,7 @@ impl LivingEntity for PigEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = Mob::mob_ai_step(self);
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
         result

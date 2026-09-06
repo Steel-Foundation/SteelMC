@@ -1,5 +1,4 @@
 use super::{block_breaking::BlockBreakAction, *};
-use steel_utils::translations;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -64,14 +63,12 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         let world = self.get_world();
 
         if pos.y() >= world.max_build_height() {
-            self.send_message(
-                &translations::BUILD_TOO_HIGH
-                    .message([TextComponent::plain(world.max_build_height().to_string())])
-                    .component(),
-            );
+            self.send_build_limit_too_high_message(world.get_max_y());
             self.send_block_updates(pos, direction);
             return;
         }
@@ -100,6 +97,8 @@ impl Player {
         if !self.has_client_loaded() {
             return;
         }
+
+        self.reset_last_action_time();
 
         let world = self.get_world();
         match packet.action {
@@ -206,18 +205,27 @@ impl Player {
 
         let mut inventory = self.inventory.lock();
 
-        let slot_with_item = inventory.find_slot_matching_item(&item_stack);
+        match inventory.find_slot_matching_item_with_same_components(&item_stack) {
+            Some(slot_with_item) => {
+                if PlayerInventory::is_hotbar_slot(slot_with_item) {
+                    inventory.set_selected_slot(slot_with_item);
+                } else {
+                    let slot = inventory.get_suitable_hotbar_slot();
 
-        if slot_with_item != -1 {
-            if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
-                inventory.set_selected_slot(slot_with_item as u8);
-            } else {
-                inventory.pick_slot(slot_with_item);
+                    inventory.set_selected_slot(slot);
+                    inventory.pick_slot(slot_with_item);
+                }
             }
-        } else if self.has_infinite_materials() {
-            inventory.add_and_pick_item(item_stack);
-        } else {
-            return;
+            None => {
+                if self.has_infinite_materials() {
+                    let slot = inventory.get_suitable_hotbar_slot();
+
+                    inventory.set_selected_slot(slot);
+                    inventory.add_and_pick_item(item_stack);
+                } else {
+                    return;
+                }
+            }
         }
 
         self.send_packet(CSetHeldSlot {
@@ -236,6 +244,8 @@ impl Player {
         if !self.is_within_block_interaction_range(packet.pos) {
             return;
         }
+
+        self.reset_last_action_time();
 
         let world = self.get_world();
 
