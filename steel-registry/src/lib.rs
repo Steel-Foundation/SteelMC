@@ -19,6 +19,7 @@
     clippy::unused_self,
     reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
 )]
+pub mod activity;
 pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;
@@ -105,6 +106,11 @@ pub use resolvable_profile::{
     PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
     ResolvableProfileContents, StoredGameProfile,
 };
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_activities.rs"]
+pub mod vanilla_activities;
 
 #[expect(warnings)]
 #[rustfmt::skip]

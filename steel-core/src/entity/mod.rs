@@ -772,6 +772,9 @@ use crate::portal::{
     TeleportTransition, WorldChangeRequest, portal_shape::PortalShape,
 };
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
+/// Brain AI is public API: memories are an open set that owners outside this
+/// crate extend, unlike the crate-internal goal AI beside it.
+pub use ai::brain;
 pub(crate) use animal::{Animal, AnimalBase};
 pub use base::{
     DEFAULT_MAX_AIR_SUPPLY, DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityAmethystStepSound, EntityBase,
