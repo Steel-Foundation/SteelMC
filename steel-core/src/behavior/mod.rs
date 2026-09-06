@@ -26,11 +26,13 @@
 
 mod block;
 pub mod blocks;
+mod consume_effect;
 mod context;
 pub mod fluid;
 mod item;
 pub(crate) mod item_utils;
 pub mod items;
+mod mob_effect;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -69,6 +71,7 @@ pub use block::{
 };
 pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;
+pub use consume_effect::{CONSUME_EFFECT_BEHAVIORS, ConsumeEffectBehaviorRegistry};
 pub use context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
     PlacementSource, UseItemContext, UseOnContext,
@@ -81,14 +84,26 @@ pub use items::{
     HangingSignItem, ScaffoldingBlockItem, ShovelItem, SignItem, SolidBucketItem,
     StandingAndWallBlockItem,
 };
+pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::consume_effect::vanilla_consume_effect_types;
 use steel_registry::vanilla_fluids;
+use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
 
 use crate::entity::ai::path::PathComputationType;
+use crate::entity::consume_effect::{
+    ApplyEffectsBehavior, ClearAllEffectsBehavior, ConsumeEffectBehavior, PlaySoundBehavior,
+    RemoveEffectsBehavior, TeleportRandomlyBehavior,
+};
+use crate::entity::mob_effect::{
+    AbsorptionBehavior, BadOmenBehavior, HealOrHarmBehavior, HungerBehavior, InfestedBehavior,
+    MobEffectBehavior, OozingBehavior, PoisonBehavior, RaidOmenBehavior, RegenerationBehavior,
+    SaturationBehavior, WeavingBehavior, WindChargedBehavior, WitherBehavior,
+};
 use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
@@ -215,5 +230,88 @@ pub fn init_behaviors() {
         let mut item_behaviors = ItemBehaviorRegistry::new();
         register_item_behaviors(&mut item_behaviors);
         item_behaviors
+    });
+
+    CONSUME_EFFECT_BEHAVIORS.0.get_or_init(|| {
+        let mut consume_effect_behaviors = ConsumeEffectBehaviorRegistry::new();
+
+        let apply_effects: Box<dyn ConsumeEffectBehavior> = Box::new(ApplyEffectsBehavior);
+        consume_effect_behaviors
+            .set_behavior(&vanilla_consume_effect_types::APPLY_EFFECTS, apply_effects);
+
+        let remove_effects: Box<dyn ConsumeEffectBehavior> = Box::new(RemoveEffectsBehavior);
+        consume_effect_behaviors.set_behavior(
+            &vanilla_consume_effect_types::REMOVE_EFFECTS,
+            remove_effects,
+        );
+
+        let clear_all_effects: Box<dyn ConsumeEffectBehavior> = Box::new(ClearAllEffectsBehavior);
+        consume_effect_behaviors.set_behavior(
+            &vanilla_consume_effect_types::CLEAR_ALL_EFFECTS,
+            clear_all_effects,
+        );
+
+        let play_sound: Box<dyn ConsumeEffectBehavior> = Box::new(PlaySoundBehavior);
+        consume_effect_behaviors
+            .set_behavior(&vanilla_consume_effect_types::PLAY_SOUND, play_sound);
+
+        let teleport_randomly: Box<dyn ConsumeEffectBehavior> = Box::new(TeleportRandomlyBehavior);
+        consume_effect_behaviors.set_behavior(
+            &vanilla_consume_effect_types::TELEPORT_RANDOMLY,
+            teleport_randomly,
+        );
+
+        consume_effect_behaviors
+    });
+
+    MOB_EFFECT_BEHAVIORS.0.get_or_init(|| {
+        let mut mob_effect_behaviors = MobEffectBehaviorRegistry::new();
+
+        // HealOrHarmMobEffect backs both Instant Health and Instant Damage.
+        let instant_health: Box<dyn MobEffectBehavior> =
+            Box::new(HealOrHarmBehavior { is_harm: false });
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::INSTANT_HEALTH, instant_health);
+
+        let instant_damage: Box<dyn MobEffectBehavior> =
+            Box::new(HealOrHarmBehavior { is_harm: true });
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::INSTANT_DAMAGE, instant_damage);
+
+        let saturation: Box<dyn MobEffectBehavior> = Box::new(SaturationBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::SATURATION, saturation);
+
+        let wither: Box<dyn MobEffectBehavior> = Box::new(WitherBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::WITHER, wither);
+
+        let poison: Box<dyn MobEffectBehavior> = Box::new(PoisonBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::POISON, poison);
+
+        let regeneration: Box<dyn MobEffectBehavior> = Box::new(RegenerationBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::REGENERATION, regeneration);
+
+        let hunger: Box<dyn MobEffectBehavior> = Box::new(HungerBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::HUNGER, hunger);
+
+        let absorption: Box<dyn MobEffectBehavior> = Box::new(AbsorptionBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::ABSORPTION, absorption);
+
+        let bad_omen: Box<dyn MobEffectBehavior> = Box::new(BadOmenBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::BAD_OMEN, bad_omen);
+
+        let raid_omen: Box<dyn MobEffectBehavior> = Box::new(RaidOmenBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::RAID_OMEN, raid_omen);
+
+        let oozing: Box<dyn MobEffectBehavior> = Box::new(OozingBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::OOZING, oozing);
+
+        let weaving: Box<dyn MobEffectBehavior> = Box::new(WeavingBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::WEAVING, weaving);
+
+        let wind_charged: Box<dyn MobEffectBehavior> = Box::new(WindChargedBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::WIND_CHARGED, wind_charged);
+
+        let infested: Box<dyn MobEffectBehavior> = Box::new(InfestedBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::INFESTED, infested);
+
+        mob_effect_behaviors
     });
 }

@@ -17,8 +17,8 @@ pub mod vegetation;
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BrushableBlock,
     BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, ConduitBlock, DoorBlock,
-    DropExperienceBlock, FenceBlock, FenceGateBlock, GlazedTerracottaBlock, HayBlock,
-    HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
+    DropExperienceBlock, FenceBlock, FenceGateBlock, FrostedIceBlock, GlazedTerracottaBlock,
+    HayBlock, HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
     LayeredCauldronBlock, MagmaBlock, MudBlock, NetherrackBlock, PotentSulfurBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
     SoulSandBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
@@ -28,7 +28,8 @@ pub use building::{
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
-    AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock,
+    AnvilBlock, BarrelBlock, BeehiveBlock, BlastFurnaceBlock, ChiseledBookShelfBlock,
+    CraftingTableBlock, EnderChestBlock, FurnaceBlock, SmokerBlock,
 };
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
