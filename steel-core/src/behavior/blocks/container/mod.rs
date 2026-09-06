@@ -5,6 +5,7 @@ mod beehive_block;
 mod chiseled_bookshelf_block;
 mod crafting_table_block;
 mod ender_chest_block;
+mod furnace_block;
 
 pub use anvil_block::AnvilBlock;
 pub use barrel_block::BarrelBlock;
@@ -13,3 +14,4 @@ pub use beehive_block::BeehiveBlock;
 pub use chiseled_bookshelf_block::ChiseledBookShelfBlock;
 pub use crafting_table_block::CraftingTableBlock;
 pub use ender_chest_block::EnderChestBlock;
+pub use furnace_block::{BlastFurnaceBlock, FurnaceBlock, SmokerBlock};

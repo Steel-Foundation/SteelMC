@@ -1370,6 +1370,108 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
 }
 
 #[test]
+fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_has_room");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .any(|item| item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert!(dropped.is_empty());
+}
+
+#[test]
+fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_full");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+    }
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .all(|item| !item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+/// Regression test: drinking a honey bottle from a full inventory, through
+/// the real tick loop, must not lose the glass bottle remainder to the
+/// emptied hand slot being seen as free room and then overwritten.
+#[test]
+fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tick_loop() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5));
+    }
+
+    player.start_using_item(InteractionHand::MainHand);
+    for _ in 0..40 {
+        player.tick_active_item_use();
+    }
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(hand_item.is(&vanilla_items::HONEY_BOTTLE));
+    assert_eq!(hand_item.count(), 4);
+
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+#[test]
 fn throttle_player_dropping_items_from_creative_menu() {
     const DROPS_ALLOWED_BEFORE_THROTTLE: i32 =
         DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP;
