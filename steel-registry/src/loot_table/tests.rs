@@ -342,6 +342,47 @@ fn nested_uniform_get_int_evaluates_bounds_as_integers() {
 }
 
 #[test]
+fn loot_pool_samples_rolls_before_bonus_rolls() {
+    static ENTRIES: [LootEntry; 1] = [LootEntry::Item {
+        name: Identifier::vanilla_static("stone"),
+        weight: 1,
+        quality: 0,
+        conditions: &[],
+        functions: &[],
+    }];
+    static POOLS: [LootPool; 1] = [LootPool {
+        rolls: NumberProvider::Uniform { min: 1.0, max: 3.0 },
+        bonus_rolls: NumberProvider::Uniform { min: 0.0, max: 2.0 },
+        entries: &ENTRIES,
+        conditions: &[],
+        functions: &[],
+    }];
+    let table = LootTable {
+        key: Identifier::vanilla_static("test_roll_order"),
+        loot_type: LootType::Chest,
+        pools: &POOLS,
+        functions: &[],
+        random_sequence: None,
+    };
+
+    init_test_registries();
+    for seed in 0..32 {
+        let mut expected_rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let rolls = POOLS[0].rolls.get_int(&mut expected_rng);
+        let bonus = POOLS[0].bonus_rolls.get(&mut expected_rng, None);
+        let expected_count = rolls + bonus.floor() as i32;
+        let expected_next = expected_rng.random::<u64>();
+
+        let mut actual_rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let mut ctx = LootContext::new(&mut actual_rng).with_luck(1.0);
+        let items = table.get_random_items(&mut ctx);
+
+        assert_eq!(items.len(), expected_count as usize, "seed {seed}");
+        assert_eq!(actual_rng.random::<u64>(), expected_next, "seed {seed}");
+    }
+}
+
+#[test]
 fn test_explosion_decay_function() {
     // Test the explosion_decay function directly
     init_test_registries();

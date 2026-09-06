@@ -245,8 +245,9 @@ impl LootPool {
 
         // Calculate number of rolls
         let ctx_ref = super::LootContextRef { tool: ctx.tool };
+        let rolls = self.rolls.get_int(ctx.rng);
         let bonus = self.bonus_rolls.get(ctx.rng, Some(&ctx_ref));
-        let roll_count = self.rolls.get_int(ctx.rng) + (bonus * ctx.luck).floor() as i32;
+        let roll_count = rolls + (bonus * ctx.luck).floor() as i32;
 
         for _ in 0..roll_count {
             self.add_random_item(ctx, result);
