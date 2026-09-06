@@ -298,8 +298,9 @@ impl BeaconBlockEntity {
         };
 
         let range = f64::from(levels) * EFFECT_RANGE_PER_LEVEL + BASE_EFFECT_RANGE;
-        let base_amplifier =
-            i32::from(levels >= 4 && secondary.is_some_and(|s| s.key == primary.key));
+        let base_amplifier = i32::from(
+            levels >= MAX_LEVELS && secondary.is_some_and(|s| s.key == primary.key),
+        );
         let duration = (9 + levels * 2) * 20;
 
         // Vanilla: `new AABB(pos).inflate(range).expandTowards(0, level.getHeight(), 0)`.
@@ -328,7 +329,9 @@ impl BeaconBlockEntity {
                     .with_visible(true),
             );
 
-            if let Some(secondary) = secondary.filter(|s| levels >= 4 && s.key != primary.key) {
+            if let Some(secondary) =
+                secondary.filter(|s| levels >= MAX_LEVELS && s.key != primary.key)
+            {
                 player.add_mob_effect(
                     MobEffectInstance::with_duration(secondary, duration, 0)
                         .with_ambient(true)
