@@ -318,8 +318,8 @@ pub fn init_behaviors() {
     });
 }
 
-/// Each scenario is a tiny behavior bound to a vanilla item that has no real
-/// behavior, so a test selects its scenario by the item it holds in hand.
+/// Binds a vanilla item with no real behavior to a hook, so a test selects its
+/// scenario by the item it holds in hand.
 #[cfg(test)]
 pub(crate) mod test_item_use {
     use std::sync::Arc;
@@ -338,9 +338,7 @@ pub(crate) mod test_item_use {
         registry.set_behavior(&vanilla_items::STICK, Box::new(ShrinkOnUseTick));
         registry.set_behavior(&vanilla_items::IRON_INGOT, Box::new(TamperOnUseTick));
         registry.set_behavior(&vanilla_items::PAPER, Box::new(ShrinkAndStopUse));
-        registry.set_behavior(&vanilla_items::COAL, Box::new(FinishReplacesItem));
         registry.set_behavior(&vanilla_items::BOWL, Box::new(TamperOnFinish));
-        registry.set_behavior(&vanilla_items::BONE, Box::new(FinishShrink));
         registry.set_behavior(&vanilla_items::FLINT, Box::new(ShrinkOnRelease));
         registry.set_behavior(&vanilla_items::LEATHER, Box::new(TamperOnRelease));
     }
@@ -418,24 +416,6 @@ pub(crate) mod test_item_use {
         }
     }
 
-    /// Returns a glass bottle instead of the used stack, mimicking honey bottle
-    struct FinishReplacesItem;
-
-    impl ItemBehavior for FinishReplacesItem {
-        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
-            1
-        }
-
-        fn finish_using(
-            &self,
-            _stack: &mut ItemStack,
-            _world: &Arc<World>,
-            _user: &dyn LivingEntity,
-        ) -> ItemStack {
-            ItemStack::new(&vanilla_items::GLASS_BOTTLE)
-        }
-    }
-
     /// Swaps the hand to DIAMOND during `finish_using` and returns a glass bottle.
     struct TamperOnFinish;
 
@@ -452,26 +432,6 @@ pub(crate) mod test_item_use {
         ) -> ItemStack {
             tamper_hand(user);
             ItemStack::new(&vanilla_items::GLASS_BOTTLE)
-        }
-    }
-
-    /// Shrinks in `finish_using` and returns the mutated stack, mimicking a consumable like a
-    /// Cookie
-    struct FinishShrink;
-
-    impl ItemBehavior for FinishShrink {
-        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
-            1
-        }
-
-        fn finish_using(
-            &self,
-            stack: &mut ItemStack,
-            _world: &Arc<World>,
-            _user: &dyn LivingEntity,
-        ) -> ItemStack {
-            stack.shrink(1);
-            stack.clone()
         }
     }
 

@@ -1567,14 +1567,14 @@ fn assert_use_finished(player: &Player) {
     );
 }
 
-fn player_using_test_item(world: Arc<World>, item: ItemRef) -> Arc<Player> {
+fn player_using_test_item(world: Arc<World>, item: ItemRef, count: i32) -> Arc<Player> {
     init_vanilla_registry();
     init_behaviors();
     let player = test_player(world);
-    player
-        .inventory
-        .lock()
-        .set_item_in_hand(InteractionHand::MainHand, ItemStack::new(item));
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::MainHand,
+        ItemStack::with_count(item, count),
+    );
     player.start_using_item(InteractionHand::MainHand);
     assert!(
         player.active_item_use_hand().is_some(),
@@ -1587,10 +1587,24 @@ fn player_using_test_item(world: Arc<World>, item: ItemRef) -> Arc<Player> {
     player
 }
 
+/// Drives `tick_active_item_use` until the use finishes. Set stack sizes are
+/// chosen so eating/drinking completes within the bound.
+fn tick_until_use_finished(player: &Player) {
+    for _ in 0..64 {
+        player.tick_active_item_use();
+        if player.active_item_use_hand().is_none() {
+            break;
+        }
+    }
+    assert_use_finished(player);
+}
+
+// Covers a vanilla-accurate branch that no vanilla item can replicate: a
+// behavior shrinks the hand stack during `on_use_tick` without stopping the use.
 #[test]
 fn tick_active_item_use_writes_back_shrunk_stack() {
     let world = fresh_test_world("tick_shrink");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::STICK);
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::STICK, 1);
     let original_count = hand_stack(&player).count();
 
     player.tick_active_item_use();
@@ -1602,19 +1616,12 @@ fn tick_active_item_use_writes_back_shrunk_stack() {
     );
 }
 
+// Covers a vanilla-accurate branch that no vanilla item can replicate: a
+// behavior shrinks the hand stack during `on_use_tick`.
 #[test]
 fn tick_active_item_use_keeps_using_mid_use() {
-    init_vanilla_registry();
-    init_behaviors();
     let world = fresh_test_world("tick_mid_use");
-    let player = test_player(world);
-    let mut stack = ItemStack::new(&vanilla_items::STICK);
-    stack.set_count(3);
-    player
-        .inventory
-        .lock()
-        .set_item_in_hand(InteractionHand::MainHand, stack);
-    player.start_using_item(InteractionHand::MainHand);
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::STICK, 3);
 
     let original_count = hand_stack(&player).count();
     player.tick_active_item_use();
@@ -1640,7 +1647,7 @@ fn tick_active_item_use_keeps_using_mid_use() {
 #[test]
 fn tick_active_item_use_does_not_overwrite_tampered_hand() {
     let world = fresh_test_world("tick_tamper");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::IRON_INGOT);
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::IRON_INGOT, 1);
 
     player.tick_active_item_use();
 
@@ -1650,10 +1657,12 @@ fn tick_active_item_use_does_not_overwrite_tampered_hand() {
     );
 }
 
+// Covers a vanilla-accurate branch that no vanilla item can replicate: the use
+// stops mid-tick while the hand stack was mutated.
 #[test]
 fn tick_active_item_use_preserves_mutations_on_early_stop() {
     let world = fresh_test_world("tick_early_stop");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::PAPER);
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::PAPER, 1);
     let original_count = hand_stack(&player).count();
 
     player.tick_active_item_use();
@@ -1666,59 +1675,61 @@ fn tick_active_item_use_preserves_mutations_on_early_stop() {
     assert_use_finished(&player);
 }
 
-// Mimics Honey Bottle behavior; to be replaced by a real bottle/food test once
-// food and drink behaviors land (#411).
+// Honey bottle: drinking a single bottle must finish the use and replace
+// the hand stack with the glass bottle remainder.
 #[test]
-fn tick_active_item_use_finish_replaces_item() {
-    let world = fresh_test_world("tick_finish");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::COAL);
+fn tick_active_item_use_drinking_honey_replaces_with_glass_bottle() {
+    let world = fresh_test_world("tick_finish_honey");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::HONEY_BOTTLE, 1);
+
+    tick_until_use_finished(&player);
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::GLASS_BOTTLE),
+        "the emptied honey bottle should leave the glass bottle remainder in hand"
+    );
+}
+
+// No vanilla item can swap the hand mid-`finish_using`, but a mod can. Vanilla
+// `completeUsingItem` writes the finish result via `setItemInHand(hand, result)`
+// without re-checking the hand, so that swap must be clobbered.
+#[test]
+fn tick_active_item_use_finish_clobbers_behavior_hand_swap() {
+    let world = fresh_test_world("tick_finish_tamper");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::BOWL, 1);
 
     player.tick_active_item_use();
 
     assert!(
         hand_stack(&player).is(&vanilla_items::GLASS_BOTTLE),
-        "finish_using returned GLASS_BOTTLE; the hand should now hold it"
+        "finish_using result must overwrite the hand even when the behavior swapped it"
     );
     assert_use_finished(&player);
 }
 
-// Doesn't mimic any vanilla behavior, but mods can do this
+// Cookie: eating one cookie out of a stack of three must finish the use
+// and leave two in hand.
 #[test]
-fn tick_active_item_use_finish_does_not_overwrite_tampered_hand() {
-    let world = fresh_test_world("tick_finish_tamper");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::BOWL);
-
-    player.tick_active_item_use();
-
-    assert!(
-        hand_stack(&player).is(&vanilla_items::DIAMOND),
-        "finish_using tampered with the hand; the GLASS_BOTTLE result must not overwrite it"
-    );
-    assert_use_finished(&player);
-}
-
-// Mimics a consumable, like Cookies; to be replaced by a real food test once
-// food behaviors land (#411).
-#[test]
-fn tick_active_item_use_shrink_finish_is_not_discarded() {
-    let world = fresh_test_world("shrink_finish_no_discard");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::BONE);
+fn tick_active_item_use_eating_cookie_decrements_the_stack() {
+    let world = fresh_test_world("tick_finish_cookie");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::COOKIE, 3);
     let original_count = hand_stack(&player).count();
 
-    player.tick_active_item_use();
+    tick_until_use_finished(&player);
 
     assert_eq!(
         hand_stack(&player).count(),
         original_count - 1,
-        "shrink on finish decreases stack count; the shrink should not be discarded"
+        "eating a cookie should shrink the stack by one"
     );
-    assert_use_finished(&player);
 }
 
+// Covers a vanilla-accurate branch that no vanilla item can replicate: a behavior
+// shrinks the hand stack during `release_using`
 #[test]
 fn release_using_item_writes_back_shrunk_stack() {
     let world = fresh_test_world("release_shrink");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::FLINT);
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::FLINT, 1);
     let original_count = hand_stack(&player).count();
 
     player.release_using_item();
@@ -1733,7 +1744,7 @@ fn release_using_item_writes_back_shrunk_stack() {
 #[test]
 fn release_using_item_does_not_overwrite_tampered_hand() {
     let world = fresh_test_world("release_tamper");
-    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::LEATHER);
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::LEATHER, 1);
 
     player.release_using_item();
 

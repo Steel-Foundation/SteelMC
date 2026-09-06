@@ -408,8 +408,7 @@ impl Player {
             }
         }
 
-        // TODO: Vanilla decides this via Item.useOnRelease, like in tick_active_item_use.
-        // implemented in PR #469
+        // Vanilla decides this via Item.useOnRelease, which is still not implemented
         if use_on_release {
             self.tick_active_item_use();
         }
@@ -438,20 +437,13 @@ impl Player {
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
 
-        // Vanilla rebinds the useItem to the hand stack each tick
-        // if isSameItem
-        // Here snapshot the full stack and treat any external hand change as tampering,
-        // discarding the tick changes. Behavior-hook changes happen on the clone and are applied at write back.
-        let tampered = {
+        {
             let mut inventory = self.inventory.lock();
             let current_stack = inventory.get_item_in_hand_mut(hand);
             if *current_stack == original_stack {
                 *current_stack = item.clone();
-                false
-            } else {
-                true
             }
-        };
+        }
 
         if self.active_item_use_hand() != Some(hand) {
             self.stop_using_item(); // can't guarantee the item clears the flag
@@ -462,19 +454,15 @@ impl Player {
             return;
         };
 
-        // TODO: Vanilla checks !useOnRelease here.
-        // implemented in PR #469
+        // Vanilla checks (&& !useOnRelease) here.
         if active.remaining_ticks() <= 0 {
             let pre_finish = self.inventory.lock().get_item_in_hand(hand).clone();
-            if !tampered && !item.is_empty() && item == pre_finish {
+            if !item.is_empty() && item == pre_finish {
                 let stack_before_finish = item.clone();
                 let result = behavior.finish_using(&mut item, &world, self);
                 self.apply_item_use_cooldown(&stack_before_finish);
                 let mut inventory = self.inventory.lock();
-                let current_stack = inventory.get_item_in_hand_mut(hand);
-                if *current_stack == pre_finish {
-                    *current_stack = result;
-                }
+                *inventory.get_item_in_hand_mut(hand) = result;
                 drop(inventory);
                 self.stop_using_item();
             } else {
