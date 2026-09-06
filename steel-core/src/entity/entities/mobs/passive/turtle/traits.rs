@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::SoundSource;
@@ -16,15 +17,19 @@ use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::{BABY_SCALE, DEFAULT_STEP_HEIGHT, TurtleEntity};
+use super::{
+    ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE, DEFAULT_STEP_HEIGHT, SPEED_LERP, SWIM_DRAG,
+    SWIM_PUSH, SWIM_SINK_HOME_DISTANCE, SWIM_SINK_SPEED, TurtleEntity, closer_to_center_than,
+};
 use crate::behavior::InteractionResult;
+use crate::entity::ai::control::MoveControlOperation;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, MOVE_CONTROL_MAX_TURN,
+    Mob, MobBase, PathfinderMob, SpawnGroupData, rotlerp,
 };
-use crate::physics::MoveResult;
+use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::World;
 
@@ -159,6 +164,42 @@ impl LivingEntity for TurtleEntity {
         self.tick_laying_egg();
         result
     }
+
+    /// Vanilla `Turtle.travelInWater`: turtles swim under their own rules rather
+    /// than the shared water travel, which is why they are quick in water and
+    /// slow everywhere else.
+    ///
+    /// The push and the drag are flat values, so swimming speed does not follow
+    /// the movement-speed attribute the way walking does. Vanilla also skips the
+    /// shared path's fluid-falling adjustment and its jump out of water, so the
+    /// gravity and surface arguments go unused here.
+    fn travel_in_water(
+        &self,
+        input: DVec3,
+        _base_gravity: f64,
+        _is_falling: bool,
+        _old_y: f64,
+    ) -> Option<MoveResult> {
+        self.move_relative(SWIM_PUSH, input);
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let mut velocity = self.velocity() * SWIM_DRAG;
+
+        // A turtle with somewhere to be holds its depth. One that is just
+        // drifting settles slowly toward the sea floor.
+        let drifting = Mob::target(self).is_none()
+            && (!self.going_home()
+                || !closer_to_center_than(
+                    self.home_pos(),
+                    self.position(),
+                    SWIM_SINK_HOME_DISTANCE,
+                ));
+        if drifting {
+            velocity.y -= SWIM_SINK_SPEED;
+        }
+        self.set_velocity(velocity);
+
+        Some(result)
+    }
 }
 
 impl AgeableMob for TurtleEntity {
@@ -219,6 +260,55 @@ impl Mob for TurtleEntity {
 
     fn custom_server_ai_step(&self) {
         Animal::custom_server_ai_step_animal(self);
+    }
+
+    /// Vanilla `Turtle.TurtleMoveControl`: a turtle steers itself rather than
+    /// using the shared move control, which is what makes it lumber on land and
+    /// glide in water.
+    ///
+    /// Three things differ from the shared one. Speed is trimmed every tick by
+    /// [`Self::trim_turtle_speed`] before anything else. It eases toward its
+    /// target speed instead of snapping to it, so it takes a moment to get going.
+    /// And it steers until its path is finished rather than for a single tick,
+    /// with no jumping, because a turtle swims over obstacles instead of hopping
+    /// them.
+    fn tick_move_control(&self) {
+        self.trim_turtle_speed();
+
+        let move_control = self.mob_base().controls().lock().move_control;
+        let steering = matches!(move_control.operation(), MoveControlOperation::MoveTo)
+            && !self.mob_base().navigation().lock().is_done();
+        if !steering {
+            self.set_mob_speed(0.0);
+            return;
+        }
+
+        let delta = move_control.wanted_position() - self.position();
+        let distance = delta.length();
+        if distance < ARRIVED_DISTANCE {
+            self.set_mob_speed(0.0);
+            return;
+        }
+
+        let y_rot = (delta.z.atan2(delta.x) as f32).to_degrees() - 90.0;
+        let (yaw, pitch) = self.rotation();
+        self.set_rotation((rotlerp(yaw, y_rot, MOVE_CONTROL_MAX_TURN), pitch));
+
+        let movement_speed = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MOVEMENT_SPEED);
+        let target_speed = (move_control.speed_modifier() * movement_speed) as f32;
+        let speed = self
+            .get_speed()
+            .mul_add(1.0 - SPEED_LERP, SPEED_LERP * target_speed);
+        self.set_mob_speed(speed);
+
+        // Climb or dive toward the target, since a swimming turtle cannot jump
+        // its way up to one.
+        let mut velocity = self.velocity();
+        velocity.y += f64::from(speed) * (delta.y / distance) * CLIMB_SPEED_SHARE;
+        self.set_velocity(velocity);
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {

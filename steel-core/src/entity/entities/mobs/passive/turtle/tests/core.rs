@@ -7,6 +7,7 @@ use crate::entity::ai::goal::Goal;
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::turtle::goals::TurtleLayEggGoal;
 use crate::entity::{AgeableMob, next_entity_id};
+use crate::physics::MoverType;
 
 #[test]
 fn turtle_registers_vanilla_goal_priorities() {
@@ -165,4 +166,104 @@ fn turtle_from(shared: &SharedEntity) -> &TurtleEntity {
     shared
         .downcast_ref::<TurtleEntity>()
         .expect("shared entity should be a turtle")
+}
+
+/// Puts a turtle in a loaded world at `position`, without any fluid around it,
+/// since the water travel is driven directly rather than through the dispatcher.
+fn turtle_in_world(key: &'static str, position: DVec3) -> (Arc<World>, Arc<TurtleEntity>) {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world(key);
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let turtle = Arc::new(TurtleEntity::new(
+        &vanilla_entities::TURTLE,
+        next_entity_id(),
+        position,
+        Arc::downgrade(&world),
+    ));
+    turtle.set_old_position_to_current();
+    world
+        .try_add_entity(Arc::clone(&turtle) as SharedEntity)
+        .expect("turtle should attach to the loaded test chunk");
+    (world, turtle)
+}
+
+#[test]
+fn a_swimming_turtle_pushes_off_at_its_own_pace() {
+    let (_world, turtle) = turtle_in_world("turtle_swim_push", DVec3::new(8.5, 64.0, 8.5));
+    turtle.set_rotation((0.0, 0.0));
+
+    // Yaw 0 faces south, so a forward push shows up on Z.
+    turtle.travel_in_water(DVec3::new(0.0, 0.0, 1.0), 0.0, false, 64.0);
+
+    // The push and the drag are flat, so this does not depend on the turtle's
+    // movement speed attribute the way walking does.
+    let expected = f64::from(SWIM_PUSH) * SWIM_DRAG;
+    assert!(
+        (turtle.velocity().z - expected).abs() < 1e-9,
+        "expected {expected} on z, got {}",
+        turtle.velocity().z
+    );
+}
+
+#[test]
+fn a_swimming_turtle_with_nowhere_to_be_drifts_down() {
+    let (_world, turtle) = turtle_in_world("turtle_swim_drift", DVec3::new(8.5, 64.0, 8.5));
+    turtle.set_home_pos(BlockPos::new(8, 64, 8));
+
+    turtle.travel_in_water(DVec3::ZERO, 0.0, false, 64.0);
+
+    assert!(
+        (turtle.velocity().y + SWIM_SINK_SPEED).abs() < 1e-9,
+        "a drifting turtle sinks slowly, got {}",
+        turtle.velocity().y
+    );
+}
+
+#[test]
+fn a_turtle_heading_home_holds_its_depth() {
+    let (_world, turtle) = turtle_in_world("turtle_swim_homing", DVec3::new(8.5, 64.0, 8.5));
+    turtle.set_home_pos(BlockPos::new(8, 64, 8));
+    turtle.set_going_home(true);
+
+    turtle.travel_in_water(DVec3::ZERO, 0.0, false, 64.0);
+
+    assert!(
+        turtle.velocity().y.abs() < 1e-9,
+        "a turtle on its way home keeps its depth, got {}",
+        turtle.velocity().y
+    );
+}
+
+#[test]
+fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
+    let (world, turtle) = turtle_in_world("turtle_land_trim", DVec3::new(8.5, 65.0, 8.5));
+    assert!(world.set_block(
+        BlockPos::new(8, 63, 8),
+        vanilla_blocks::SAND.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    // Drop it onto the sand so it is standing on the ground.
+    turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
+    assert!(turtle.on_ground(), "the turtle should have landed");
+
+    turtle.set_mob_speed(1.0);
+    turtle.trim_turtle_speed();
+
+    assert!(
+        (turtle.get_speed() - 0.5).abs() < f32::EPSILON,
+        "walking speed is halved, got {}",
+        turtle.get_speed()
+    );
+
+    // Repeated trimming settles at the floor rather than dropping to nothing.
+    for _ in 0..20 {
+        turtle.trim_turtle_speed();
+    }
+    assert!(
+        (turtle.get_speed() - LAND_MIN_SPEED).abs() < f32::EPSILON,
+        "the land speed floor holds, got {}",
+        turtle.get_speed()
+    );
 }
