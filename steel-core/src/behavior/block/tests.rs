@@ -7,9 +7,46 @@ use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
 use steel_registry::init_vanilla_registry;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_items;
 
 use crate::behavior::init_behaviors;
+
+#[test]
+fn default_spawn_rule_requires_full_up_support_and_low_light_emission() {
+    init_vanilla_registry();
+    init_behaviors();
+    let level = TestLevel::default();
+    let pos = BlockPos::new(3, 64, 5);
+    let entity_type = &vanilla_entities::ZOMBIE;
+
+    // Stone is a full support surface with no light emission: mobs may spawn.
+    let stone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::STONE);
+    assert!(stone.is_valid_spawn(
+        vanilla_blocks::STONE.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+
+    // Glowstone is full-support but emits light at or above the gate: blocked.
+    let glowstone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::GLOWSTONE);
+    assert!(!glowstone.is_valid_spawn(
+        vanilla_blocks::GLOWSTONE.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+
+    // A torch has no full UP support face: blocked even though it is dark.
+    let torch = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TORCH);
+    assert!(!torch.is_valid_spawn(
+        vanilla_blocks::TORCH.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+}
 
 #[test]
 fn clone_item_stack_uses_registered_block_item_association() {

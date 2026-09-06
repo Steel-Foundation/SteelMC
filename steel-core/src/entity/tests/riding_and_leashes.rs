@@ -1,4 +1,7 @@
 use super::*;
+use crate::entity::leash::{DELAYED_LEASH_DROP_TICKS, LeashAttachment};
+use crate::entity::mob::Mob;
+use crate::entity::next_entity_id;
 
 #[test]
 fn living_ride_tick_resets_fall_distance() {
@@ -44,6 +47,79 @@ fn start_riding_entities_links_passenger_and_vehicle() {
     assert!(vehicle.has_passenger(passenger.as_ref()));
     assert_eq!(vehicle.first_passenger().map(|entity| entity.id()), Some(1));
     assert_eq!(passenger.pose(), EntityPose::Standing);
+}
+
+#[test]
+fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
+    // Vanilla `restoreLeashFromSave` clears the leash data directly when the
+    // delayed holder cannot be resolved, without invoking `onLeashRemoved` — so
+    // the home restriction pinned by save data must survive the failed restore.
+    init_vanilla_registry();
+    let world = fresh_test_world("leash_save_restore_failure");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&mob) as SharedEntity)
+        .expect("test entity should attach to the loaded chunk");
+    let leashable = mob
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
+
+    mob.set_home_to(BlockPos::new(8, 65, 8), 5);
+    leashable.set_delayed_leash_attachment(LeashAttachment::Entity(Uuid::nil()));
+    for _ in 0..=DELAYED_LEASH_DROP_TICKS {
+        mob.advance_tick_count();
+    }
+
+    leashable.tick_leash();
+
+    assert!(
+        !leashable.is_leashed(),
+        "an unresolvable save-leash is dropped after 100 ticks"
+    );
+    assert!(
+        mob.has_home(),
+        "the failed restore must keep the saved home restriction"
+    );
+}
+
+#[test]
+fn mob_start_riding_drops_attached_leash() {
+    // Vanilla `Mob.startRiding`: starting to ride drops the leash.
+    init_vanilla_registry();
+
+    let passenger: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Weak::new(),
+    ));
+    let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
+    let leash_holder: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        3,
+        DVec3::new(5.0, 0.0, 0.0),
+        Weak::new(),
+    ));
+    let mob = passenger
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
+    assert!(mob.set_leashed_to(&leash_holder));
+    assert!(mob.is_leashed());
+
+    assert!(start_riding_entities(&passenger, &vehicle));
+
+    assert!(passenger.is_passenger());
+    assert!(
+        !mob.is_leashed(),
+        "a leashed mob that starts riding must drop its leash"
+    );
 }
 
 #[test]

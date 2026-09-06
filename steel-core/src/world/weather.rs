@@ -17,6 +17,8 @@ use super::{
     obfuscate_biome_seed, vanilla_dimension_types,
 };
 
+use crate::chunk::light::MAX_LIGHT_LEVEL;
+
 static BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1234));
     PerlinSimplexNoise::new(&mut random, &[0])
@@ -257,6 +259,12 @@ impl World {
         environment::sun_angle_degrees(self.dimension_type, level_data.world_clocks())
     }
 
+    /// Returns the current vanilla `MONSTERS_BURN` environment attribute.
+    pub fn monsters_burn(&self) -> bool {
+        let level_data = self.level_data.read();
+        environment::monsters_burn(self.dimension_type, level_data.world_clocks())
+    }
+
     /// Returns sky-layer light after the current sky darkening is subtracted.
     ///
     /// Mirrors vanilla `LevelReader.getEffectiveSkyBrightness` without allowing
@@ -286,20 +294,27 @@ impl World {
             && self.dimension_type.key != vanilla_dimension_types::THE_END.key
     }
 
-    /// Returns whether the position has unobstructed sky exposure.
-    ///
-    /// Live worlds use the motion-blocking heightmap until Steel has a full
-    /// live sky-light engine.
+    /// Returns vanilla `BlockAndLightGetter.canSeeSky`: the sky layer at `pos`
+    /// holds full light. 26.2 stores sky light un-dimmed (time-of-day darkening
+    /// applies at read time), so this is true in the open at any time of day
+    /// and false under roofs that attenuate sky light.
     pub fn can_see_sky(&self, pos: BlockPos) -> bool {
-        if !self.dimension_type.has_skylight {
+        self.light_value_at(LightLayer::Sky, pos) >= MAX_LIGHT_LEVEL
+    }
+
+    /// Returns whether the position is exposed to the sky for precipitation.
+    ///
+    /// Mirrors vanilla `Level.precipitationAt`: light-based `canSeeSky` and the
+    /// motion-blocking heightmap gate must both pass. The light gate rejects
+    /// positions whose sky light is attenuated by non-motion-blocking blocks
+    /// (e.g. underwater); the heightmap gate rejects positions under roofs that
+    /// transmit light, such as glass.
+    pub(super) fn can_see_sky_for_precipitation(&self, pos: BlockPos) -> bool {
+        if !self.can_see_sky(pos) {
             return false;
         }
         self.height_at(HeightmapType::MotionBlocking, pos.x(), pos.z())
             .is_some_and(|height| height <= pos.y())
-    }
-
-    pub(super) fn can_see_sky_for_precipitation(&self, pos: BlockPos) -> bool {
-        self.can_see_sky(pos)
     }
 
     pub(crate) fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
