@@ -3104,3 +3104,21 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     }
     loot_table.get_random_items(&mut context)
 }
+
+/// Runs vanilla `LivingEntity.dropFromGiftLootTable` for `loot_table`, returning the
+/// drops resolved with the vanilla gift loot params (origin and entity). Used for
+/// non-death gifts such as the scute a turtle sheds when it grows up.
+pub(crate) fn gift_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+    entity: &E,
+    loot_table: LootTableRef,
+    rng: &mut R,
+) -> Vec<ItemStack> {
+    let position = entity.position();
+    let mut context = LootContext::new(rng)
+        .with_origin(position.x, position.y, position.z)
+        .with_this_entity(living_entity_loot_ref(entity));
+    if let Some(level) = entity.level() {
+        context = context.with_game_time(level.game_time());
+    }
+    loot_table.get_random_items(&mut context)
+}

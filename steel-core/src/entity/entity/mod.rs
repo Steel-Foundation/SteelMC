@@ -6,6 +6,9 @@ use crate::entity::leash::Leashable;
 const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
 /// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
 const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
+/// How far either side of its base pitch a swim sound is varied, so repeated
+/// strokes do not sound identical.
+const SWIM_SOUND_PITCH_SPREAD: f32 = 0.4;
 
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2991,7 +2994,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Plays this entity's swim sound at the given volume.
     fn play_swim_sound(&self, volume: f32) {
-        let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
+        self.default_play_swim_sound(volume);
+    }
+
+    /// The shared swim sound, so an entity that only wants to change the volume
+    /// can defer to it the way vanilla calls `super.playSwimSound`.
+    fn default_play_swim_sound(&self, volume: f32) {
+        let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * SWIM_SOUND_PITCH_SPREAD;
         self.play_sound(self.swim_sound(), volume, pitch);
     }
 
