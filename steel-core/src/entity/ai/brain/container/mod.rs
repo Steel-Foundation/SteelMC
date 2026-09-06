@@ -366,7 +366,8 @@ impl Brain {
         active_activities.push(activity);
     }
 
-    /// Vanilla `Brain.eraseMemoriesForOtherActivitesThan`.
+    /// What vanilla does when switching activity, instead of stopping the
+    /// leaving activity's behaviors.
     fn erase_memories_for_other_activities_than(&mut self, activity: ActivityRef) {
         let Self {
             memories,
