@@ -10,16 +10,20 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::{
-    ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE, DEFAULT_STEP_HEIGHT, SPEED_LERP, SWIM_DRAG,
-    SWIM_PUSH, SWIM_SINK_HOME_DISTANCE, SWIM_SINK_SPEED, TurtleEntity, closer_to_center_than,
+    AMBIENT_SOUND_INTERVAL, ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE, DEFAULT_STEP_HEIGHT,
+    NEXT_STEP_DISTANCE, PREFERRED_WALK_TARGET_VALUE, SPEED_LERP, SWIM_DRAG, SWIM_PUSH,
+    SWIM_SINK_HOME_DISTANCE, SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TurtleEntity,
+    closer_to_center_than,
 };
 use crate::behavior::InteractionResult;
 use crate::entity::ai::control::MoveControlOperation;
@@ -29,9 +33,10 @@ use crate::entity::{
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, MOVE_CONTROL_MAX_TURN,
     Mob, MobBase, PathfinderMob, SpawnGroupData, rotlerp,
 };
+use crate::fluid::FluidStateExt as _;
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader as _, World};
 
 impl Entity for TurtleEntity {
     fn base(&self) -> &EntityBase {
@@ -83,6 +88,28 @@ impl Entity for TurtleEntity {
             &sound_events::ENTITY_TURTLE_SHAMBLE
         };
         self.play_sound(sound, 0.15, 1.0);
+    }
+
+    /// Vanilla `Turtle.isPushedByFluid`: a turtle holds its own course in a
+    /// current instead of being carried along by it.
+    fn is_pushed_by_fluid(&self) -> bool {
+        false
+    }
+
+    /// Vanilla `Turtle.nextStep`: turtles take shorter strides than the shared
+    /// one-block stride, so their shuffle is heard more often.
+    fn next_step(&self) -> f32 {
+        self.base().movement_progress().move_dist() + NEXT_STEP_DISTANCE
+    }
+
+    fn swim_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_TURTLE_SWIM
+    }
+
+    /// Vanilla `Turtle.playSwimSound`: the same sound as everything else, just
+    /// louder.
+    fn play_swim_sound(&self, volume: f32) {
+        self.default_play_swim_sound(volume * SWIM_SOUND_VOLUME_SCALE);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -316,6 +343,10 @@ impl Mob for TurtleEntity {
             .then_some(&sound_events::ENTITY_TURTLE_AMBIENT_LAND)
     }
 
+    fn ambient_sound_interval(&self) -> i32 {
+        AMBIENT_SOUND_INTERVAL
+    }
+
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
@@ -339,4 +370,27 @@ impl Mob for TurtleEntity {
     }
 }
 
-impl PathfinderMob for TurtleEntity {}
+impl PathfinderMob for TurtleEntity {
+    /// Vanilla `Turtle.getWalkTargetValue`: a turtle would rather be in water,
+    /// unless it is heading home to lay, and would rather be on sand than
+    /// anywhere else. Everything else falls back to the shared light-level cost.
+    fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
+        let Some(world) = self.level() else {
+            return 0.0;
+        };
+
+        if !self.going_home() && world.get_block_state(pos).get_fluid_state().is_water() {
+            return PREFERRED_WALK_TARGET_VALUE;
+        }
+
+        if world
+            .get_block_state(pos.below())
+            .get_block()
+            .has_tag(&BlockTag::SAND)
+        {
+            PREFERRED_WALK_TARGET_VALUE
+        } else {
+            world.pathfinding_cost_from_light_levels(pos)
+        }
+    }
+}
