@@ -185,7 +185,7 @@ impl ItemEntity {
         }
     }
 
-    fn default_spawn_velocity() -> DVec3 {
+    pub(crate) fn default_spawn_velocity() -> DVec3 {
         DVec3::new(
             rand::random::<f64>() * 0.2 - 0.1,
             0.2,
@@ -596,9 +596,9 @@ impl Entity for ItemEntity {
                         && let Some(block_pos) = self.block_pos_below_that_affects_movement()
                     {
                         let block_state = world.get_block_state(block_pos);
-                        f64::from(block_state.get_block().config.friction) * 0.98
+                        f64::from(block_state.get_block().config.friction) * AIR_DRAG
                     } else {
-                        0.98 // Air friction
+                        AIR_DRAG
                     };
 
                     let mut velocity = self.velocity();
