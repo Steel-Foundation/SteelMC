@@ -3,6 +3,35 @@ use steel_registry::{DyeColor, vanilla_custom_stats};
 use super::*;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
+/// Friction of a block that has no friction of its own. Movement speed is tuned
+/// around this value, so ground at or below it does not change how fast an
+/// entity walks. Matches vanilla `BlockBehaviour.Properties.friction`.
+const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
+/// Speed scale that cancels out the default ground friction, so an entity walks
+/// at its plain movement speed on ordinary ground. This is the cube of
+/// [`DEFAULT_BLOCK_FRICTION`], kept as the literal vanilla inlines so the
+/// arithmetic matches bit for bit.
+const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
+/// Drag applied to horizontal movement each tick while not in a fluid. Vanilla
+/// `LivingEntity.BASE_HORIZONTAL_AIR_DRAG`.
+const BASE_HORIZONTAL_AIR_DRAG: f32 = 0.91;
+/// Drag applied to vertical movement each tick while not in a fluid. Vanilla
+/// uses the horizontal drag instead for entities that move freely in all
+/// directions, such as flying animals.
+const BASE_VERTICAL_AIR_DRAG: f32 = 0.98;
+/// Modifier value that leaves a friction or air-drag value untouched. Used when
+/// an entity type does not declare the attribute, since Steel's extracted entity
+/// data only lists the attributes a type overrides.
+const NO_FRICTION_MODIFIER: f64 = 1.0;
+
+/// Applies an entity's friction or air-drag modifier attribute to a base
+/// friction value. Mirrors vanilla `LivingEntity.computeModifiedFriction`: a
+/// modifier of 1 leaves the value alone, larger values make the surface more
+/// slippery, and 0 removes the slipperiness entirely.
+fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
+    (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
+}
+
 /// A trait for living entities that can take damage, heal, and die.
 ///
 /// This trait provides the core functionality for entities that have health,
@@ -2358,18 +2387,44 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla `LivingEntity.getFrictionInfluencedSpeed()`.
+    ///
+    /// Slippery ground is compensated for so an entity keeps roughly its walking
+    /// speed on ice, but ground that grips more than normal does not slow it
+    /// down: below the default friction vanilla returns the plain speed.
     fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
-        if self.on_ground() {
-            self.get_speed() * (0.216_000_02 / (block_friction * block_friction * block_friction))
-        } else {
-            self.get_flying_speed()
+        if !self.on_ground() {
+            return self.get_flying_speed();
         }
+        if block_friction <= DEFAULT_BLOCK_FRICTION {
+            return self.get_speed();
+        }
+
+        let cubed = block_friction * block_friction * block_friction;
+        self.get_speed() * (DEFAULT_FRICTION_SPEED_SCALE / cubed)
+    }
+
+    /// Returns the entity's air-drag modifier attribute, which scales how much
+    /// drag the air applies to it each tick.
+    fn air_drag_modifier(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::AIR_DRAG_MODIFIER)
+            .unwrap_or(NO_FRICTION_MODIFIER) as f32
+    }
+
+    /// Returns the entity's friction modifier attribute, which scales how
+    /// slippery the ground under it feels.
+    fn friction_modifier(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::FRICTION_MODIFIER)
+            .unwrap_or(NO_FRICTION_MODIFIER) as f32
     }
 
     /// Returns the vertical friction used by `travelInAir`.
     fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
         // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-        0.98
+        compute_modified_friction(BASE_VERTICAL_AIR_DRAG, self.air_drag_modifier())
     }
 
     /// Applies vanilla `LivingEntity.handleOnClimbable()`.
@@ -2435,11 +2490,15 @@ pub trait LivingEntity: Entity {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
-            world.get_block_state(pos_below).get_block().config.friction
+            compute_modified_friction(
+                world.get_block_state(pos_below).get_block().config.friction,
+                self.friction_modifier(),
+            )
         } else {
             1.0
         };
-        let horizontal_friction = block_friction * 0.91;
+        let horizontal_friction = block_friction
+            * compute_modified_friction(BASE_HORIZONTAL_AIR_DRAG, self.air_drag_modifier());
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -3103,4 +3162,167 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
         context = context.with_game_time(level.game_time());
     }
     loot_table.get_random_items(&mut context)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::blocks::BlockRef;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
+    use steel_utils::types::UpdateFlags;
+    use steel_utils::{BlockPos, ChunkPos};
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::entity::{ENTITIES, init_entities, next_entity_id};
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    /// Ticks spent letting a mob reach its steady walking speed before measuring.
+    const WARMUP_TICKS: usize = 40;
+    /// Ticks the walk is averaged over.
+    const MEASURED_TICKS: usize = 20;
+    /// Slack for comparing speeds that were built up over many ticks.
+    const SPEED_TOLERANCE: f64 = 1e-4;
+
+    /// What a walk across one kind of ground looked like.
+    struct WalkMeasurement {
+        /// Blocks moved per tick once the walking speed has settled.
+        per_tick: f64,
+        /// Blocks still covered after the mob stops walking.
+        coasted: f64,
+    }
+
+    /// Walks a pig in a straight line across a floor of `floor`, then lets it
+    /// coast to a stop.
+    fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+
+        let world = fresh_test_world(key);
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let floor_state = floor.default_state();
+        for z in 0..16 {
+            for x in 6..11 {
+                assert!(world.set_block(
+                    BlockPos::new(x, 63, z),
+                    floor_state,
+                    UpdateFlags::UPDATE_NONE
+                ));
+            }
+        }
+
+        let pig = ENTITIES
+            .create(
+                &vanilla_entities::PIG,
+                next_entity_id(),
+                DVec3::new(8.5, 64.0, 2.5),
+                Arc::downgrade(&world),
+            )
+            .expect("pig factory should produce an entity");
+        pig.set_old_position_to_current();
+        assert!(world.try_add_entity(Arc::clone(&pig)).is_ok());
+        let mob = pig.as_mob().expect("a pig is a mob");
+
+        // Stands in for the move control: vanilla `Mob.setSpeed` sets the cached
+        // speed and the forward travel input to the same value every tick.
+        let walk_one_tick = || {
+            mob.set_mob_speed(
+                mob.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32,
+            );
+            let input = mob.travel_input();
+            mob.travel(DVec3::new(
+                f64::from(input.sideways()),
+                f64::from(input.vertical()),
+                f64::from(input.forward()),
+            ));
+        };
+
+        for _ in 0..WARMUP_TICKS {
+            walk_one_tick();
+        }
+        let start = pig.position();
+        for _ in 0..MEASURED_TICKS {
+            walk_one_tick();
+        }
+        let end = pig.position();
+        let per_tick = (end - start).with_y(0.0).length() / MEASURED_TICKS as f64;
+
+        // Then stop walking and let it coast, which is where slippery ground
+        // shows itself: the same top speed, but it takes far longer to stop.
+        let coast_start = pig.position();
+        for _ in 0..MEASURED_TICKS {
+            mob.set_mob_speed(0.0);
+            mob.travel(DVec3::ZERO);
+        }
+        let coasted = (pig.position() - coast_start).with_y(0.0).length();
+
+        WalkMeasurement { per_tick, coasted }
+    }
+
+    #[test]
+    fn a_modifier_of_one_leaves_friction_alone() {
+        assert!((compute_modified_friction(0.6, 1.0) - 0.6).abs() < f32::EPSILON);
+        assert!((compute_modified_friction(0.98, 1.0) - 0.98).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_modifier_of_zero_removes_all_slipperiness() {
+        assert!((compute_modified_friction(0.98, 0.0) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_large_modifier_is_clamped_to_a_usable_friction() {
+        let friction = compute_modified_friction(0.98, 2048.0);
+        assert!(
+            (0.0..=1.0).contains(&friction),
+            "friction stays in range, got {friction}"
+        );
+    }
+
+    #[test]
+    fn ground_that_grips_more_than_normal_does_not_slow_walking() {
+        // No vanilla block is grippier than the default, but vanilla still
+        // guards this case rather than speeding the entity up.
+        let speed = 0.25_f32;
+        let scaled = speed * (DEFAULT_FRICTION_SPEED_SCALE / (0.3 * 0.3 * 0.3));
+        assert!(
+            scaled > speed,
+            "without the guard, grippy ground would speed an entity up"
+        );
+    }
+
+    #[test]
+    fn a_pig_walks_at_the_vanilla_speed_on_ordinary_ground() {
+        let walk = walking_speed_on("pig_walk_grass", &vanilla_blocks::GRASS_BLOCK);
+
+        // Vanilla equilibrium for a 0.25 movement-speed mob on default friction:
+        // it gains 0.25 * 0.25 each tick and keeps 0.6 * 0.91 of its speed.
+        let expected = 0.25 * 0.25 / (1.0 - 0.6 * 0.91);
+        assert!(
+            (walk.per_tick - expected).abs() < SPEED_TOLERANCE,
+            "expected about {expected} blocks per tick, got {}",
+            walk.per_tick
+        );
+    }
+
+    #[test]
+    fn a_pig_slides_much_further_on_ice_than_on_grass() {
+        let on_grass = walking_speed_on("pig_walk_grass_compare", &vanilla_blocks::GRASS_BLOCK);
+        let on_ice = walking_speed_on("pig_walk_ice", &vanilla_blocks::ICE);
+
+        // Vanilla compensates for a slippery surface in the speed it feeds the
+        // mob, so the top speed barely changes. What changes is how long it
+        // takes to stop, which is what makes ice feel like ice.
+        assert!(
+            on_ice.coasted > on_grass.coasted * 5.0,
+            "ice should keep the pig sliding, got {} against {}",
+            on_ice.coasted,
+            on_grass.coasted
+        );
+    }
 }
