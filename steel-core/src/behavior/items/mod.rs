@@ -41,6 +41,7 @@ mod standing_and_wall_block_item;
 mod throwable_potion;
 mod tipped_arrow;
 
+mod fishing_rod;
 mod flint_and_steel;
 mod lead;
 
@@ -59,6 +60,7 @@ pub use egg::EggItem;
 pub use ender_eye::EnderEyeItem;
 pub use ender_pearl::EnderPearlItem;
 pub use firework_rocket::FireworkRocketItem;
+pub use fishing_rod::FishingRodItem;
 pub use flint_and_steel::{FireChargeItem, FlintAndSteelItem};
 pub use food_on_a_stick::FoodOnAStickItem;
 pub use hoe::HoeItem;

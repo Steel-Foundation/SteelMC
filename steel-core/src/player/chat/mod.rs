@@ -7,7 +7,6 @@ pub mod message_chain;
 mod message_validator;
 pub mod profile_key;
 mod signature_cache;
-mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
@@ -29,9 +28,12 @@ use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
 use crate::player::Player;
+use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
-use spam_throttler::TickThrottler;
+
+/// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
+const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
 
 /// All chat-related state for a player.
 ///
@@ -111,11 +113,14 @@ impl ChatState {
 }
 
 impl Player {
-    /// Decays the per player chat and command spam counters once per server tick
-    pub fn tick_spam_throttlers(&self) {
+    /// Decays the throttlers of the player once per server tick.
+    pub fn tick_throttlers(&self) {
         let mut chat = self.chat.lock();
         chat.chat_spam_throttler.tick();
         chat.command_spam_throttler.tick();
+        drop(chat);
+
+        self.drop_spam_throttler.lock().tick();
     }
 
     const fn should_disconnect_for_rate_spam(
@@ -164,8 +169,6 @@ impl Player {
         &self,
         packet: &SChat,
     ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
-        const MESSAGE_EXPIRES_AFTER: Duration = Duration::from_mins(5);
-
         let mut chat = self.chat.lock();
         let session = chat.chat_session.clone().ok_or("No chat session")?;
         let signature = packet.signature.as_ref().ok_or("No signature present")?;
@@ -192,10 +195,11 @@ impl Player {
             .duration_since(timestamp)
             .unwrap_or(Duration::from_secs(0));
 
-        if message_age > MESSAGE_EXPIRES_AFTER {
+        if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
             return Err(format!(
-                "Message expired (age: {}s, max: 300s)",
-                message_age.as_secs()
+                "Message expired (age: {}s, max: {}s)",
+                message_age.as_secs(),
+                MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
             ));
         }
 

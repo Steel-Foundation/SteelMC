@@ -93,6 +93,17 @@ impl SoundEventHolder {
         Self::Registry(sound)
     }
 
+    /// Returns the vanilla playback range for this sound holder.
+    #[must_use]
+    pub fn range(&self, volume: f32) -> f32 {
+        match self {
+            Self::Registry(sound) => sound.range(volume),
+            Self::Direct { fixed_range, .. } => {
+                fixed_range.unwrap_or(if volume > 1.0 { 16.0 * volume } else { 16.0 })
+            }
+        }
+    }
+
     #[must_use]
     pub const fn registry_ref(&self) -> Option<SoundEventRef> {
         match self {
@@ -315,5 +326,21 @@ mod tests {
 
         assert_eq!(direct(f32::NAN), direct(f32::NAN));
         assert_ne!(direct(0.0), direct(-0.0));
+    }
+
+    #[test]
+    fn sound_holder_range_matches_variable_and_fixed_ranges() {
+        let variable = SoundEventHolder::Direct {
+            sound_id: Identifier::vanilla_static("test"),
+            fixed_range: None,
+        };
+        let fixed = SoundEventHolder::Direct {
+            sound_id: Identifier::vanilla_static("test"),
+            fixed_range: Some(4.0),
+        };
+
+        assert_eq!(variable.range(1.0), 16.0);
+        assert_eq!(variable.range(2.0), 32.0);
+        assert_eq!(fixed.range(2.0), 4.0);
     }
 }

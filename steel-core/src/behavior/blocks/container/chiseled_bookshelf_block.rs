@@ -180,9 +180,8 @@ impl BlockBehavior for ChiseledBookShelfBlock {
         if !bookshelf.insert_book(slot, inserted) {
             return InteractionResult::Pass;
         }
-        if !player.has_infinite_materials() {
-            inv.with_item(|item| item.shrink(Self::BOOKS_PER_INTERACTION));
-        }
+        let has_infinite_materials = player.has_infinite_materials();
+        inv.with_item(|item| item.consume(Self::BOOKS_PER_INTERACTION, has_infinite_materials));
         world.play_block_sound(
             insert_sound,
             pos,
