@@ -25,7 +25,6 @@ pub fn build(entities: &[EntityClass]) -> String {
     let pattern = format!("{manifest_dir}/src/entity/entities/**/*.rs");
     let discovered = scan_object_behaviors_with_pattern(&pattern, "entity_behavior");
 
-    let mut type_imports = BTreeSet::new();
     let mut enum_imports: BTreeMap<String, String> = BTreeMap::new();
     let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
     let mut registrations = Vec::new();
@@ -41,8 +40,6 @@ pub fn build(entities: &[EntityClass]) -> String {
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let entity_type_ident = to_block_ident(&entity.name);
 
-        type_imports.insert(info.struct_name.clone());
-
         for field in &info.fields {
             match &field.kind {
                 JsonArgKind::Enum {
@@ -51,8 +48,6 @@ pub fn build(entities: &[EntityClass]) -> String {
                 } => {
                     if let Some(path) = module_path {
                         enum_imports.insert(type_name.clone(), path.clone());
-                    } else {
-                        type_imports.insert(type_name.clone());
                     }
                 }
                 JsonArgKind::Registry(module) => {
@@ -98,11 +93,6 @@ pub fn build(entities: &[EntityClass]) -> String {
         );
     }
 
-    let entity_type_imports: Vec<_> = type_imports
-        .iter()
-        .map(|name| Ident::new(name, Span::call_site()))
-        .collect();
-
     let enum_import_tokens: Vec<_> = enum_imports
         .iter()
         .map(|(type_name, module_path)| {
@@ -129,7 +119,11 @@ pub fn build(entities: &[EntityClass]) -> String {
         use std::sync::Arc;
         use steel_registry::{vanilla_entities #(#registry_import_tokens)*};
         use crate::entity::{EntityRegistry, SharedEntity};
-        use crate::entity::entities::{#(#entity_type_imports),*};
+        #[expect(
+            clippy::wildcard_imports,
+            reason = "the registry intentionally imports every entity implementation"
+        )]
+        use crate::entity::entities::*;
         #(#enum_import_tokens)*
 
         pub fn register_entity_factories(registry: &mut EntityRegistry) {

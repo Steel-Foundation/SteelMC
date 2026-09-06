@@ -22,8 +22,10 @@ pub mod player_inventory;
 mod profile;
 mod sleep;
 mod sleep_state;
+mod spam_throttler;
 pub mod stats_counter;
 mod tick_state;
+mod title;
 
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
@@ -31,7 +33,7 @@ pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
 use connection::NetworkConnection as _;
 pub use connection::{ClientInformation, PlayerConnection};
 use container_counter::ContainerCounter;
-use food_data::FoodData;
+use food_data::{FoodData, food_constants};
 use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
 use health_sync::HealthSyncState;
@@ -49,7 +51,7 @@ pub use profile::{
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::mem::replace;
+use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -95,10 +97,10 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMoveError,
+    EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
+    apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -140,8 +142,14 @@ use crate::inventory::container::Container;
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
+const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
+const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::entities::objects::projectiles::FishingHookEntity;
+use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::chunk_sender::ChunkSender;
+use crate::player::spam_throttler::TickThrottler;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
@@ -197,6 +205,9 @@ pub struct Player {
 
     /// Logical inventory slots that must be resent directly to this player's client.
     inventory_sync: SyncMutex<PlayerInventorySyncState>,
+
+    /// The player's ender chest inventory.
+    pub ender_chest_inventory: SyncPlayerEnderChest,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
     last_item_in_main_hand: SyncMutex<ItemStack>,
@@ -261,11 +272,16 @@ pub struct Player {
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
 
+    /// Active fishing hook, kept weakly because the world owns live entities.
+    pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
+
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+    /// Throttles the player dropping items from the Creative Menu.
+    drop_spam_throttler: SyncMutex<TickThrottler>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -371,9 +387,13 @@ impl Player {
             self.stop_using_item();
             return;
         }
+        // Read a copy rather than clearing the slot,
+        // so any inventory-touching side effect from
+        // `release_using` never sees the hand as vacant.
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
@@ -403,8 +423,9 @@ impl Player {
             return;
         }
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
@@ -419,7 +440,9 @@ impl Player {
             return;
         };
         if active.remaining_ticks() <= 0 {
+            let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, self);
+            self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
         }
 
@@ -458,11 +481,7 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let block_interaction_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let block_interaction_range = self.block_interaction_range();
         let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
@@ -503,6 +522,7 @@ impl Player {
     ) -> Self {
         // Create a single shared inventory container used by both the player and inventory menu
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
+        let ender_chest_inventory = Arc::new(SyncMutex::new(PlayerEnderChestContainer::new()));
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
@@ -546,6 +566,7 @@ impl Player {
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
+            ender_chest_inventory,
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
             inventory_menu: SyncMutex::new(inventory_menu(inventory)),
             open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
@@ -567,8 +588,40 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            drop_spam_throttler: SyncMutex::new(TickThrottler::new(
+                DROP_SPAM_THROTTLER_INCREMENT_STEP,
+                DROP_SPAM_THROTTLER_THRESHOLD,
+            )),
+        }
+    }
+
+    /// Returns the active fishing hook, clearing a stale reference after removal.
+    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
+        let mut fishing = self.fishing.lock();
+        let hook = fishing.as_ref().and_then(Weak::upgrade);
+        if hook.is_none() {
+            *fishing = None;
+        }
+        hook
+    }
+
+    /// Records the hook currently owned by this player.
+    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
+        *self.fishing.lock() = Some(Arc::downgrade(hook));
+    }
+
+    /// Clears `hook` if it is still this player's active fishing hook.
+    pub fn clear_fishing_hook(&self, hook: &FishingHookEntity) {
+        let mut fishing = self.fishing.lock();
+        if fishing
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|active| ptr::eq(active.as_ref(), hook))
+        {
+            *fishing = None;
         }
     }
 
@@ -582,7 +635,7 @@ impl Player {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
-        self.tick_spam_throttlers();
+        self.tick_throttlers();
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
@@ -1430,6 +1483,11 @@ impl Entity for Player {
         ));
     }
 
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        let (yaw, pitch) = self.rotation();
+        self.teleport(pos, yaw, pitch)
+    }
+
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -1933,6 +1991,13 @@ impl LivingEntity for Player {
         Player::has_infinite_materials(self)
     }
 
+    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+        let leftover = self.inventory.lock().add_or_return(extra);
+        if !leftover.is_empty() {
+            let _ = self.drop_item(leftover, false, false);
+        }
+    }
+
     fn get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
@@ -1969,9 +2034,9 @@ impl LivingEntity for Player {
         self.default_jump_from_ground();
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
-            self.cause_food_exhaustion(0.2);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
         } else {
-            self.cause_food_exhaustion(0.05);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
         }
     }
 

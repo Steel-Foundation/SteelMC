@@ -14,9 +14,10 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
+use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::world::game_event::GameEventContext;
 
-const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
+use super::World;
 
 /// Read-only level access needed by block behavior and worldgen predicates.
 pub trait LevelReader {
@@ -57,7 +58,7 @@ pub trait LevelReader {
 
     /// Returns vanilla `BlockAndLightGetter.canSeeSky`.
     fn can_see_sky(&self, pos: BlockPos) -> bool {
-        self.raw_brightness(pos, 0) >= 15
+        self.raw_brightness(pos, 0) >= MAX_LIGHT_LEVEL
     }
 
     /// Returns this dimension's vanilla ambient light factor.
@@ -83,12 +84,8 @@ pub trait LevelReader {
 
     /// Returns vanilla `LevelReader.getMaxLocalRawBrightness`.
     fn max_local_raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
-        if pos.x() < -VANILLA_HORIZONTAL_LIMIT
-            || pos.z() < -VANILLA_HORIZONTAL_LIMIT
-            || pos.x() >= VANILLA_HORIZONTAL_LIMIT
-            || pos.z() >= VANILLA_HORIZONTAL_LIMIT
-        {
-            return 15;
+        if !World::is_in_world_bounds_horizontal(pos) {
+            return MAX_LIGHT_LEVEL;
         }
 
         self.raw_brightness(pos, sky_darkening)
@@ -96,7 +93,7 @@ pub trait LevelReader {
 
     /// Returns vanilla `LevelReader.getLightLevelDependentMagicValue`.
     fn light_level_dependent_magic_value(&self, pos: BlockPos) -> f32 {
-        let value = f32::from(self.max_local_raw_brightness(pos, 0)) / 15.0;
+        let value = f32::from(self.max_local_raw_brightness(pos, 0)) / f32::from(MAX_LIGHT_LEVEL);
         let curved_value = value / value.mul_add(-3.0, 4.0);
         curved_value + self.ambient_light() * (1.0 - curved_value)
     }
