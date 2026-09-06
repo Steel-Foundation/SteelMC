@@ -5,6 +5,13 @@ use super::{
 };
 
 impl World {
+    /// Vanilla `Level.MAX_LEVEL_SIZE`.
+    pub const MAX_LEVEL_SIZE: i32 = 30_000_000;
+    /// Vanilla `Level.MAX_ENTITY_SPAWN_Y`.
+    pub const MAX_ENTITY_SPAWN_Y: i32 = 20_000_000;
+    /// Vanilla `Level.MIN_ENTITY_SPAWN_Y`.
+    pub const MIN_ENTITY_SPAWN_Y: i32 = -20_000_000;
+
     /// Returns whether this world uses the vanilla End dimension type.
     ///
     /// Steel world keys are domain-scoped, so End gameplay semantics cannot rely on the
@@ -77,14 +84,14 @@ impl World {
     }
 
     pub(super) const fn is_in_world_bounds_horizontal(block_pos: BlockPos) -> bool {
-        block_pos.0.x >= -30_000_000
-            && block_pos.0.z >= -30_000_000
-            && block_pos.0.x < 30_000_000
-            && block_pos.0.z < 30_000_000
+        block_pos.0.x >= -Self::MAX_LEVEL_SIZE
+            && block_pos.0.z >= -Self::MAX_LEVEL_SIZE
+            && block_pos.0.x < Self::MAX_LEVEL_SIZE
+            && block_pos.0.z < Self::MAX_LEVEL_SIZE
     }
 
     pub(super) const fn is_outside_spawnable_height(y: i32) -> bool {
-        y < -20_000_000 || y >= 20_000_000
+        y < Self::MIN_ENTITY_SPAWN_Y || y >= Self::MAX_ENTITY_SPAWN_Y
     }
 
     /// Returns the maximum build height (one above the highest placeable block).

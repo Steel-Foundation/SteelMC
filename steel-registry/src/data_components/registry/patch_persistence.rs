@@ -6,6 +6,21 @@ use super::{
 };
 
 impl DataComponentPatch {
+    /// Computes the persistent map hash for one build-time validated component
+    /// without consulting the not-yet-published global registry.
+    pub(crate) fn compute_single_extracted_hash<T: HashComponent>(
+        key: &Identifier,
+        value: &T,
+    ) -> i32 {
+        let entry = hash_entry(key.to_string().compute_hash(), value.compute_hash());
+        let mut hasher = ComponentHasher::new();
+        hasher.start_map();
+        hasher.put_raw_bytes(&entry.key_bytes);
+        hasher.put_raw_bytes(&entry.value_bytes);
+        hasher.end_map();
+        hasher.finish()
+    }
+
     /// Computes Vanilla's `HashOps` value for the persistent patch codec.
     pub fn compute_persistent_hash(&self) -> Result<i32> {
         use crate::{REGISTRY, RegistryExt};
