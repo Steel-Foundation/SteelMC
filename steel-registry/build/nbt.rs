@@ -1,66 +1,8 @@
-//! Shared NBT parsing and code generation for registry build scripts.
+//! Shared NBT code generation for registry build scripts.
 
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-
-pub fn parse_lenient_compound(value: &serde_json::Value, context: &str) -> NbtCompound {
-    match value {
-        serde_json::Value::String(value) => steel_utils::nbt::parse_snbt_compound(value)
-            .unwrap_or_else(|error| panic!("failed to parse {context} SNBT: {error}")),
-        serde_json::Value::Object(_) => json_value_to_nbt_compound(value, context),
-        _ => panic!("{context} must be an object or flattened SNBT string"),
-    }
-}
-
-fn json_value_to_nbt_compound(value: &serde_json::Value, context: &str) -> NbtCompound {
-    let Some(object) = value.as_object() else {
-        panic!("{context} must be an object");
-    };
-    let mut compound = NbtCompound::new();
-    for (key, value) in object {
-        compound.insert(key.as_str(), json_value_to_nbt_tag(value, context));
-    }
-    compound
-}
-
-fn json_value_to_nbt_tag(value: &serde_json::Value, context: &str) -> NbtTag {
-    match value {
-        serde_json::Value::Null => panic!("{context} cannot contain null values"),
-        serde_json::Value::Bool(value) => NbtTag::Byte(i8::from(*value)),
-        serde_json::Value::Number(value) => json_number_to_nbt_tag(value, context),
-        serde_json::Value::String(value) => NbtTag::String(value.clone().into()),
-        serde_json::Value::Array(values) => NbtTag::List(NbtList::from(
-            values
-                .iter()
-                .map(|value| json_value_to_nbt_tag(value, context))
-                .collect::<Vec<_>>(),
-        )),
-        serde_json::Value::Object(_) => {
-            NbtTag::Compound(json_value_to_nbt_compound(value, context))
-        }
-    }
-}
-
-fn json_number_to_nbt_tag(value: &serde_json::Number, context: &str) -> NbtTag {
-    if let Some(value) = value.as_i64() {
-        return i32::try_from(value)
-            .map(NbtTag::Int)
-            .unwrap_or_else(|_| NbtTag::Long(value));
-    }
-    if let Some(value) = value.as_u64() {
-        if let Ok(value) = i32::try_from(value) {
-            return NbtTag::Int(value);
-        }
-        return i64::try_from(value).map(NbtTag::Long).unwrap_or_else(|_| {
-            panic!("{context} integer value {value} does not fit in an NBT long")
-        });
-    }
-    let Some(value) = value.as_f64() else {
-        panic!("invalid {context} number: {value}");
-    };
-    NbtTag::Double(value)
-}
 
 pub fn generate_nbt_compound(compound: &NbtCompound) -> TokenStream {
     let entries = compound.iter().map(|(key, value)| {

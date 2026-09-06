@@ -68,10 +68,7 @@ pub enum LootFunction {
     /// Set the damage of the item (0.0 = broken, 1.0 = full durability).
     SetDamage { damage: NumberProvider, add: bool },
     /// Enchant the item randomly with enchantments from options.
-    EnchantRandomly {
-        options: EnchantmentOptions,
-        only_compatible: bool,
-    },
+    EnchantRandomly { options: EnchantmentOptions },
     /// Enchant the item as if using an enchanting table at the specified level.
     EnchantWithLevels {
         levels: NumberProvider,
@@ -101,7 +98,6 @@ pub enum LootFunction {
         decoration: Identifier,
         zoom: i32,
         skip_existing_chunks: bool,
-        search_radius: i32,
     },
     /// Set the custom name of the item.
     SetName {
@@ -381,10 +377,7 @@ impl LootFunction {
             LootFunction::SetDamage { damage, add } => {
                 item.set_damage_fraction(damage.get_simple(ctx.rng), *add);
             }
-            LootFunction::EnchantRandomly {
-                options,
-                only_compatible: _,
-            } => {
+            LootFunction::EnchantRandomly { options } => {
                 // TODO: Implement when enchantment system is ready
                 item.enchant_randomly(options, ctx.rng);
             }
@@ -416,16 +409,9 @@ impl LootFunction {
                 decoration,
                 zoom,
                 skip_existing_chunks,
-                search_radius,
             } => {
                 // TODO: Implement exploration map creation
-                item.create_exploration_map(
-                    destination,
-                    decoration,
-                    *zoom,
-                    *skip_existing_chunks,
-                    *search_radius,
-                );
+                item.create_exploration_map(destination, decoration, *zoom, *skip_existing_chunks);
             }
             LootFunction::SetName { name, target } => {
                 // TODO: Implement name setting

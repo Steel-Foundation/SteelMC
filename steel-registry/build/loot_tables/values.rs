@@ -1,91 +1,14 @@
 use super::{
-    AttributeModifierJson, BannerPatternJson, BlockPredicateJson, DamageSourcePredicateJson,
-    EnchantmentOptionsJson, EntityEquipmentJson, EntityFlagsJson, EntityPredicateJson,
-    EquipmentSlotJson, FromStr, Ident, Identifier, LocationPredicateJson, NumberProviderJson,
-    NumberProviderRangeJson, PredicateJson, ScoreboardTargetJson, Span, ToShoutySnakeCase,
-    TokenStream, ToolPredicateJson, ToolPredicatesJson, generate_option,
-    generate_static_identifier_from_str, quote,
+    BlockPredicateJson, DamageSourcePredicateJson, EnchantmentOptionsJson, EntityEquipmentJson,
+    EntityFlagsJson, EntityPredicateJson, EquipmentSlotJson, FromStr, Ident, Identifier,
+    LocationPredicateJson, NumberProviderJson, PredicateJson, Span, ToShoutySnakeCase, TokenStream,
+    quote,
 };
-use crate::nbt::{generate_nbt_compound, parse_lenient_compound};
-
-pub(super) fn number_provider_constant(value: &NumberProviderJson) -> Option<f32> {
-    match value {
-        NumberProviderJson::Constant(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn generate_uniform_number_provider(
-    min: &NumberProviderJson,
-    max: &NumberProviderJson,
-) -> TokenStream {
-    if let (Some(min), Some(max)) = (number_provider_constant(min), number_provider_constant(max)) {
-        return quote! { NumberProvider::Uniform { min: #min, max: #max } };
-    }
-
-    let min = generate_number_provider(min);
-    let max = generate_number_provider(max);
-    quote! {
-        NumberProvider::UniformProvider {
-            min: &#min,
-            max: &#max,
-        }
-    }
-}
-
-fn generate_scoreboard_target(target: Option<&ScoreboardTargetJson>) -> TokenStream {
-    match target {
-        Some(ScoreboardTargetJson::Name(name)) => match name.as_str() {
-            "this" => quote! { ScoreboardTarget::This },
-            "killer" => quote! { ScoreboardTarget::Killer },
-            "direct_killer" => quote! { ScoreboardTarget::DirectKiller },
-            "killer_player" => quote! { ScoreboardTarget::KillerPlayer },
-            fixed => quote! { ScoreboardTarget::Fixed(#fixed) },
-        },
-        Some(ScoreboardTargetJson::Object { target_type, name }) => match target_type.as_str() {
-            "minecraft:this" | "this" => quote! { ScoreboardTarget::This },
-            "minecraft:killer" | "killer" => quote! { ScoreboardTarget::Killer },
-            "minecraft:direct_killer" | "direct_killer" => {
-                quote! { ScoreboardTarget::DirectKiller }
-            }
-            "minecraft:killer_player" | "killer_player" => {
-                quote! { ScoreboardTarget::KillerPlayer }
-            }
-            "minecraft:fixed" | "fixed" => {
-                let name = name
-                    .as_deref()
-                    .unwrap_or_else(|| panic!("fixed scoreboard target missing name"));
-                quote! { ScoreboardTarget::Fixed(#name) }
-            }
-            other => panic!("Unknown scoreboard target type: {other}"),
-        },
-        None => quote! { ScoreboardTarget::This },
-    }
-}
-
-pub(super) fn generate_number_provider_range(range: &NumberProviderRangeJson) -> TokenStream {
-    match range {
-        NumberProviderRangeJson::Exact(value) => quote! { NumberProviderRange::exact(#value) },
-        NumberProviderRangeJson::Range { min, max } => {
-            let min = generate_option(min, generate_number_provider);
-            let max = generate_option(max, generate_number_provider);
-            quote! {
-                NumberProviderRange {
-                    min: #min,
-                    max: #max,
-                }
-            }
-        }
-    }
-}
 
 pub(super) fn generate_number_provider(value: &NumberProviderJson) -> TokenStream {
     match value {
         NumberProviderJson::Constant(v) => {
             quote! { NumberProvider::Constant(#v) }
-        }
-        NumberProviderJson::UniformRange(range) => {
-            generate_uniform_number_provider(&range.min, &range.max)
         }
         NumberProviderJson::Object {
             provider_type,
@@ -94,35 +17,16 @@ pub(super) fn generate_number_provider(value: &NumberProviderJson) -> TokenStrea
             max,
             n,
             p,
-            target,
-            score,
-            scale,
         } => match provider_type.as_str() {
             "minecraft:uniform" => {
-                let default_min = NumberProviderJson::Constant(0.0);
-                let default_max = NumberProviderJson::Constant(1.0);
-                let min = min.as_deref().unwrap_or(&default_min);
-                let max = max.as_deref().unwrap_or(&default_max);
-                generate_uniform_number_provider(min, max)
+                let min = min.unwrap_or(0.0);
+                let max = max.unwrap_or(1.0);
+                quote! { NumberProvider::Uniform { min: #min, max: #max } }
             }
             "minecraft:binomial" => {
                 let n = n.unwrap_or(1.0) as i32;
                 let p = p.unwrap_or(0.5);
                 quote! { NumberProvider::Binomial { n: #n, p: #p } }
-            }
-            "minecraft:score" => {
-                let target = generate_scoreboard_target(target.as_ref());
-                let score = score
-                    .as_deref()
-                    .unwrap_or_else(|| panic!("score number provider missing score"));
-                let scale = scale.unwrap_or(1.0);
-                quote! {
-                    NumberProvider::Score {
-                        target: #target,
-                        score: #score,
-                        scale: #scale,
-                    }
-                }
             }
             _ => {
                 let v = value.unwrap_or(1.0);
@@ -132,7 +36,7 @@ pub(super) fn generate_number_provider(value: &NumberProviderJson) -> TokenStrea
     }
 }
 
-/// Generate the LootContextEntity enum variant at build time.
+/// Generate the `LootContextEntity` enum variant at build time.
 pub(super) fn generate_loot_context_entity(entity: &str) -> TokenStream {
     match entity {
         "this" => quote! { LootContextEntity::This },
@@ -145,7 +49,11 @@ pub(super) fn generate_loot_context_entity(entity: &str) -> TokenStream {
 }
 
 /// Generate the `EquipmentSlotGroup` enum variant at build time.
-fn generate_equipment_slot_group(slot: &str) -> TokenStream {
+#[expect(
+    dead_code,
+    reason = "loot table generator keeps slot helper for extracted predicate coverage"
+)]
+pub(super) fn generate_equipment_slot_group(slot: &str) -> TokenStream {
     match slot {
         "any" => quote! { EquipmentSlotGroup::Any },
         "mainhand" | "main_hand" => quote! { EquipmentSlotGroup::MainHand },
@@ -161,44 +69,8 @@ fn generate_equipment_slot_group(slot: &str) -> TokenStream {
     }
 }
 
-fn generate_attribute_operation(operation: &str) -> TokenStream {
-    match operation {
-        "add_value" => quote! { AttributeOperation::AddValue },
-        "add_multiplied_base" => quote! { AttributeOperation::AddMultipliedBase },
-        "add_multiplied_total" => quote! { AttributeOperation::AddMultipliedTotal },
-        other => panic!("Unknown attribute modifier operation: {other}"),
-    }
-}
-
-pub(super) fn generate_attribute_modifier(modifier: &AttributeModifierJson) -> TokenStream {
-    let attribute = generate_static_identifier_from_str(&modifier.attribute, "attribute modifier");
-    let operation = generate_attribute_operation(&modifier.operation);
-    let amount = generate_number_provider(&modifier.amount);
-    let id = generate_static_identifier_from_str(&modifier.id, "attribute modifier");
-    let slot = generate_equipment_slot_group(&modifier.slot);
-    quote! {
-        AttributeModifier {
-            attribute: #attribute,
-            operation: #operation,
-            amount: #amount,
-            id: #id,
-            slot: #slot,
-        }
-    }
-}
-
-pub(super) fn generate_banner_pattern(pattern: &BannerPatternJson) -> TokenStream {
-    let pattern_id = generate_static_identifier_from_str(&pattern.pattern, "banner pattern");
-    let color = generate_dye_color(&pattern.color);
-    quote! {
-        BannerPattern {
-            pattern: #pattern_id,
-            color: #color,
-        }
-    }
-}
-
-fn generate_dye_color(color: &str) -> TokenStream {
+/// Generate the `DyeColor` enum variant at build time.
+pub(super) fn generate_dye_color(color: &str) -> TokenStream {
     match color {
         "white" => quote! { DyeColor::White },
         "orange" => quote! { DyeColor::Orange },
@@ -220,26 +92,9 @@ fn generate_dye_color(color: &str) -> TokenStream {
     }
 }
 
-pub(super) fn generate_firework_shape(shape: &str) -> TokenStream {
-    match shape {
-        "small_ball" => quote! { FireworkShape::SmallBall },
-        "large_ball" => quote! { FireworkShape::LargeBall },
-        "star" => quote! { FireworkShape::Star },
-        "creeper" => quote! { FireworkShape::Creeper },
-        "burst" => quote! { FireworkShape::Burst },
-        other => panic!("Unknown firework explosion shape: {other}"),
-    }
-}
-
-/// Generate the LootType enum variant at build time.
+/// Generate the `LootType` enum variant at build time.
 pub(super) fn generate_loot_type(loot_type: &str) -> TokenStream {
-    let loot_type = if loot_type.contains(':') {
-        loot_type.to_string()
-    } else {
-        format!("minecraft:{loot_type}")
-    };
-
-    match loot_type.as_str() {
+    match loot_type {
         "minecraft:block" => quote! { LootType::Block },
         "minecraft:entity" => quote! { LootType::Entity },
         "minecraft:chest" => quote! { LootType::Chest },
@@ -257,64 +112,6 @@ pub(super) fn generate_loot_type(loot_type: &str) -> TokenStream {
     }
 }
 
-fn generate_tool_predicate_from_predicates(predicates: &ToolPredicatesJson) -> Option<TokenStream> {
-    if let Some(enchants) = &predicates.enchantments
-        && let Some(first) = enchants.first()
-        && let Some(enchant_name) = &first.enchantments
-    {
-        let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
-            enchant_name
-                .strip_prefix("minecraft:")
-                .unwrap_or(enchant_name),
-        );
-        let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
-        return Some(quote! {
-            ToolPredicate::HasEnchantment {
-                enchantment: Identifier::vanilla_static(#enchant_name),
-                min_level: #min_level,
-            }
-        });
-    }
-
-    if let Some(custom_data) = &predicates.custom_data {
-        let tag = parse_lenient_compound(custom_data, "custom_data predicate");
-        let tag = generate_nbt_compound(&tag);
-        return Some(quote! {
-            ToolPredicate::CustomData {
-                tag: || {
-                    let Some(data) = crate::data_components::CustomData::try_from_compound(#tag) else {
-                        panic!("generated custom_data predicate is invalid");
-                    };
-                    data
-                },
-            }
-        });
-    }
-
-    None
-}
-
-pub(super) fn generate_tool_predicate_from_item_predicate(pred: &ToolPredicateJson) -> TokenStream {
-    if let Some(item_str) = &pred.items {
-        if item_str.starts_with('#') {
-            let tag = item_str
-                .strip_prefix("#minecraft:")
-                .unwrap_or(item_str.strip_prefix('#').unwrap_or(item_str));
-            return quote! { ToolPredicate::Tag(Identifier::vanilla_static(#tag)) };
-        }
-        let item = generate_static_identifier_from_str(item_str, "loot");
-        return quote! { ToolPredicate::Item(#item) };
-    }
-
-    if let Some(predicates) = &pred.predicates
-        && let Some(generated) = generate_tool_predicate_from_predicates(predicates)
-    {
-        return generated;
-    }
-
-    quote! { ToolPredicate::Any }
-}
-
 pub(super) fn generate_tool_predicate(predicate: &Option<PredicateJson>) -> TokenStream {
     let Some(pred) = predicate else {
         return quote! { ToolPredicate::Any };
@@ -328,7 +125,41 @@ pub(super) fn generate_tool_predicate(predicate: &Option<PredicateJson>) -> Toke
         PredicateJson::Entity(_) => return quote! { ToolPredicate::Any },
     };
 
-    generate_tool_predicate_from_item_predicate(pred)
+    // Check for items field (can be a string or tag reference)
+    if let Some(item_str) = &pred.items {
+        if item_str.starts_with('#') {
+            // Tag reference like "#minecraft:pickaxes"
+            let tag = item_str
+                .strip_prefix("#minecraft:")
+                .unwrap_or(item_str.strip_prefix('#').unwrap_or(item_str));
+            return quote! { ToolPredicate::Tag(Identifier::vanilla_static(#tag)) };
+        }
+        let item = item_str.strip_prefix("minecraft:").unwrap_or(item_str);
+        return quote! { ToolPredicate::Item(Identifier::vanilla_static(#item)) };
+    }
+
+    // Check for enchantment predicates
+    if let Some(predicates) = &pred.predicates
+        && let Some(enchants) = &predicates.enchantments
+        && let Some(first) = enchants.first()
+        && let Some(enchant_name) = &first.enchantments
+    {
+        let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
+            enchant_name
+                .strip_prefix("minecraft:")
+                .unwrap_or(enchant_name),
+        );
+        let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
+
+        return quote! {
+            ToolPredicate::HasEnchantment {
+                enchantment: Identifier::vanilla_static(#enchant_name),
+                min_level: #min_level,
+            }
+        };
+    }
+
+    quote! { ToolPredicate::Any }
 }
 
 pub(super) fn generate_enchantment_options(
@@ -435,28 +266,40 @@ pub(super) fn generate_entity_flags(flags: &Option<EntityFlagsJson>) -> TokenStr
 }
 
 pub(super) fn generate_equipment_slot_predicate(slot: &Option<EquipmentSlotJson>) -> TokenStream {
-    match slot {
-        Some(s) => {
-            if let Some(items) = &s.items {
-                if items.starts_with('#') {
-                    let tag = items
-                        .strip_prefix("#minecraft:")
-                        .unwrap_or(items.strip_prefix('#').unwrap_or(items));
-                    return quote! { Some(ToolPredicate::Tag(Identifier::vanilla_static(#tag))) };
-                }
-                let item = generate_static_identifier_from_str(items, "loot");
-                return quote! { Some(ToolPredicate::Item(#item)) };
+    if let Some(s) = slot {
+        if let Some(items) = &s.items {
+            if items.starts_with('#') {
+                let tag = items
+                    .strip_prefix("#minecraft:")
+                    .unwrap_or(items.strip_prefix('#').unwrap_or(items));
+                return quote! { Some(ToolPredicate::Tag(Identifier::vanilla_static(#tag))) };
             }
-
-            if let Some(predicates) = &s.predicates
-                && let Some(generated) = generate_tool_predicate_from_predicates(predicates)
-            {
-                return quote! { Some(#generated) };
-            }
-
-            quote! { Some(ToolPredicate::Any) }
+            let item = items.strip_prefix("minecraft:").unwrap_or(items);
+            return quote! { Some(ToolPredicate::Item(Identifier::vanilla_static(#item))) };
         }
-        None => quote! { None },
+
+        if let Some(predicates) = &s.predicates
+            && let Some(enchants) = &predicates.enchantments
+            && let Some(first) = enchants.first()
+            && let Some(enchant_name) = &first.enchantments
+        {
+            let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
+                enchant_name
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(enchant_name),
+            );
+            let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
+            return quote! {
+                Some(ToolPredicate::HasEnchantment {
+                    enchantment: Identifier::vanilla_static(#enchant_name),
+                    min_level: #min_level,
+                })
+            };
+        }
+
+        quote! { Some(ToolPredicate::Any) }
+    } else {
+        quote! { None }
     }
 }
 
@@ -617,12 +460,11 @@ pub(super) fn generate_block_predicate(predicate: &BlockPredicateJson) -> TokenS
 }
 
 pub(super) fn generate_location_predicate(predicate: &LocationPredicateJson) -> TokenStream {
-    let block = match &predicate.block {
-        Some(b) => {
-            let block_pred = generate_block_predicate(b);
-            quote! { Some(#block_pred) }
-        }
-        None => quote! { None },
+    let block = if let Some(b) = &predicate.block {
+        let block_pred = generate_block_predicate(b);
+        quote! { Some(#block_pred) }
+    } else {
+        quote! { None }
     };
 
     quote! {

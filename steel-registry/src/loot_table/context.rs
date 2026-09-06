@@ -41,10 +41,6 @@ pub enum NumberProvider {
         min: f32,
         max: f32,
     },
-    UniformProvider {
-        min: &'static NumberProvider,
-        max: &'static NumberProvider,
-    },
     Binomial {
         n: i32,
         p: f32,
@@ -87,11 +83,6 @@ impl NumberProvider {
         match self {
             Self::Constant(v) => *v,
             Self::Uniform { min, max } => rng.random_range(*min..=*max),
-            Self::UniformProvider { min, max } => {
-                let min = min.get(rng, ctx);
-                let max = max.get(rng, ctx);
-                rng.random_range(min..=max)
-            }
             Self::Binomial { n, p } => {
                 let mut count = 0;
                 for _ in 0..*n {
@@ -122,11 +113,6 @@ impl NumberProvider {
         match self {
             Self::Constant(v) => *v,
             Self::Uniform { min, max } => rng.random_range(*min..=*max),
-            Self::UniformProvider { min, max } => {
-                let min = min.get_simple(rng);
-                let max = max.get_simple(rng);
-                rng.random_range(min..=max)
-            }
             Self::Binomial { n, p } => {
                 let mut count = 0;
                 for _ in 0..*n {
@@ -145,11 +131,6 @@ impl NumberProvider {
     pub fn get_int(&self, rng: &mut impl rand::Rng) -> i32 {
         match self {
             Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
-            Self::UniformProvider { min, max } => {
-                let min = min.get_int(rng);
-                let max = max.get_int(rng);
-                uniform_int(rng, min, max)
-            }
             other => math_round(other.get_simple(rng)),
         }
     }
@@ -162,11 +143,6 @@ impl NumberProvider {
     ) -> i32 {
         match self {
             Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
-            Self::UniformProvider { min, max } => {
-                let min = min.get_int_with_ctx(rng, ctx);
-                let max = max.get_int_with_ctx(rng, ctx);
-                uniform_int(rng, min, max)
-            }
             other => math_round(other.get(rng, ctx)),
         }
     }

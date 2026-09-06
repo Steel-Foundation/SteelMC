@@ -1,36 +1,10 @@
 use super::{
-    LimitJson, ListOperationJson, LootFunctionJson, TokenStream, generate_attribute_modifier,
-    generate_banner_pattern, generate_condition, generate_enchantment_options,
-    generate_firework_shape, generate_instrument_options, generate_number_provider,
-    generate_static_identifier_from_str, generate_tool_predicate_from_item_predicate, quote,
+    LimitJson, LootFunctionJson, TokenStream, generate_condition, generate_enchantment_options,
+    generate_instrument_options, generate_number_provider, quote,
 };
-use crate::nbt::{generate_nbt_compound, parse_lenient_compound};
 
 pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
-    let func_body = generate_function_body(function);
-
-    let conditions: Vec<TokenStream> = function
-        .conditions
-        .as_ref()
-        .map(|conditions| conditions.iter().map(generate_condition).collect())
-        .unwrap_or_default();
-
-    quote! {
-        ConditionalLootFunction {
-            function: #func_body,
-            conditions: &[#(#conditions),*],
-        }
-    }
-}
-
-fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
-    let function_name = if function.function.contains(':') {
-        function.function.clone()
-    } else {
-        format!("minecraft:{}", function.function)
-    };
-
-    match function_name.as_str() {
+    let func_body = match function.function.as_str() {
         "minecraft:set_count" => {
             let count = function.count.as_ref().map_or_else(
                 || quote! { NumberProvider::Constant(1.0) },
@@ -148,13 +122,7 @@ fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
         }
         "minecraft:enchant_randomly" => {
             let options = generate_enchantment_options(&function.options);
-            let only_compatible = function.only_compatible;
-            quote! {
-                LootFunction::EnchantRandomly {
-                    options: #options,
-                    only_compatible: #only_compatible,
-                }
-            }
+            quote! { LootFunction::EnchantRandomly { options: #options } }
         }
         "minecraft:enchant_with_levels" => {
             let levels = function.levels.as_ref().map_or_else(
@@ -222,117 +190,31 @@ fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
                 .map_or_else(|| "{}".to_string(), std::string::ToString::to_string);
             quote! { LootFunction::SetComponents { components: #components_str } }
         }
-        "minecraft:set_custom_data" => {
-            let tag = function
-                .tag
-                .as_ref()
-                .unwrap_or_else(|| panic!("set_custom_data loot function is missing its tag"));
-            let tag = parse_lenient_compound(tag, "set_custom_data tag");
-            let tag = generate_nbt_compound(&tag);
-            quote! {
-                LootFunction::SetCustomData {
-                    tag: || {
-                        let Some(data) = crate::data_components::CustomData::try_from_compound(#tag) else {
-                            panic!("generated set_custom_data tag is invalid");
-                        };
-                        data
-                    },
-                }
-            }
-        }
-        "minecraft:set_attributes" => {
-            let modifiers: Vec<TokenStream> = function
-                .modifiers
-                .iter()
-                .map(generate_attribute_modifier)
-                .collect();
-            let replace = function.replace;
-            quote! {
-                LootFunction::SetAttributes {
-                    modifiers: &[#(#modifiers),*],
-                    replace: #replace,
-                }
-            }
-        }
-        "minecraft:set_banner_pattern" => {
-            let patterns: Vec<TokenStream> = function
-                .patterns
-                .iter()
-                .map(generate_banner_pattern)
-                .collect();
-            let append = function.append;
-            quote! {
-                LootFunction::SetBannerPattern {
-                    patterns: &[#(#patterns),*],
-                    append: #append,
-                }
-            }
-        }
         "minecraft:furnace_smelt" => {
             let use_input_count = function.use_input_count.unwrap_or(true);
             quote! { LootFunction::FurnaceSmelt { use_input_count: #use_input_count } }
         }
         "minecraft:exploration_map" => {
-            let destination = generate_static_identifier_from_str(
-                function
-                    .destination
-                    .as_deref()
-                    .unwrap_or("minecraft:on_treasure_maps"),
-                "loot",
-            );
-            let decoration = generate_static_identifier_from_str(
-                function
-                    .decoration
-                    .as_deref()
-                    .unwrap_or("minecraft:mansion"),
-                "loot",
-            );
+            let destination = function
+                .destination
+                .as_deref()
+                .unwrap_or("minecraft:buried_treasure");
+            let destination = destination
+                .strip_prefix("minecraft:")
+                .unwrap_or(destination);
+
+            let decoration = function.decoration.as_deref().unwrap_or("minecraft:red_x");
+            let decoration = decoration.strip_prefix("minecraft:").unwrap_or(decoration);
 
             let zoom = function.zoom.unwrap_or(2);
             let skip_existing_chunks = function.skip_existing_chunks.unwrap_or(true);
-            let search_radius = function.search_radius.unwrap_or(50);
 
             quote! {
                 LootFunction::ExplorationMap {
-                    destination: #destination,
-                    decoration: #decoration,
+                    destination: Identifier::vanilla_static(#destination),
+                    decoration: Identifier::vanilla_static(#decoration),
                     zoom: #zoom,
                     skip_existing_chunks: #skip_existing_chunks,
-                    search_radius: #search_radius,
-                }
-            }
-        }
-        "minecraft:set_fireworks" => {
-            let flight_duration = match function.flight_duration {
-                Some(duration) => quote! { Some(#duration) },
-                None => quote! { None },
-            };
-            quote! {
-                LootFunction::SetFireworks {
-                    explosions: None,
-                    flight_duration: #flight_duration,
-                }
-            }
-        }
-        "minecraft:set_firework_explosion" => {
-            let shape = function
-                .shape
-                .as_deref()
-                .map(generate_firework_shape)
-                .unwrap_or_else(|| quote! { FireworkShape::SmallBall });
-            let colors = &function.colors;
-            let fade_colors = &function.fade_colors;
-            let has_trail = function.has_trail;
-            let has_twinkle = function.has_twinkle;
-            quote! {
-                LootFunction::SetFireworkExplosion {
-                    explosion: FireworkExplosion {
-                        shape: #shape,
-                        colors: &[#(#colors),*],
-                        fade_colors: &[#(#fade_colors),*],
-                        has_trail: #has_trail,
-                        has_twinkle: #has_twinkle,
-                    },
                 }
             }
         }
@@ -352,17 +234,6 @@ fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
                 LootFunction::SetName {
                     name: #name_str,
                     target: #target,
-                }
-            }
-        }
-        "minecraft:set_lore" => {
-            let lore: Vec<String> = function.lore.iter().map(ToString::to_string).collect();
-            let mode = generate_list_operation(function.mode.as_ref());
-
-            quote! {
-                LootFunction::SetLore {
-                    lore: &[#(#lore),*],
-                    mode: #mode,
                 }
             }
         }
@@ -430,68 +301,22 @@ fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
                 }
             }
         }
-        "minecraft:reference" => {
-            let Some(name) = function.name.as_ref().and_then(|value| value.as_str()) else {
-                panic!("reference loot function missing name");
-            };
-            let name = generate_static_identifier_from_str(name, "loot");
-            quote! { LootFunction::Reference(#name) }
-        }
-        "minecraft:filtered" => {
-            let item_filter = function
-                .item_filter
-                .as_ref()
-                .map(generate_tool_predicate_from_item_predicate)
-                .unwrap_or_else(|| quote! { ToolPredicate::Any });
-
-            let modifier_source = function.modifier.as_ref().or(function.on_pass.as_ref());
-            let modifier_func = modifier_source
-                .map(|modifier| generate_function_body(modifier))
-                .unwrap_or_else(|| {
-                    quote! { LootFunction::SetCount { count: NumberProvider::Constant(1.0), add: false } }
-                });
-
-            quote! {
-                LootFunction::Filtered {
-                    item_filter: #item_filter,
-                    modifier: &ConditionalLootFunction {
-                        function: #modifier_func,
-                        conditions: &[],
-                    },
-                }
-            }
-        }
         other => {
             panic!("Unknown loot function type: {other}");
         }
-    }
-}
-
-fn generate_list_operation(mode: Option<&ListOperationJson>) -> TokenStream {
-    let Some(mode) = mode else {
-        return quote! { ListOperation::Append };
     };
 
-    let (mode, offset, size) = match mode {
-        ListOperationJson::Mode(mode) => (mode.as_str(), None, None),
-        ListOperationJson::Object { mode, offset, size } => (mode.as_str(), *offset, *size),
-    };
+    // Wrap the function with conditions
+    let conditions: Vec<TokenStream> = function
+        .conditions
+        .as_ref()
+        .map(|conds| conds.iter().map(generate_condition).collect())
+        .unwrap_or_default();
 
-    match mode {
-        "append" => quote! { ListOperation::Append },
-        "insert" => {
-            let offset = offset.unwrap_or(0);
-            quote! { ListOperation::InsertBefore { offset: #offset } }
+    quote! {
+        ConditionalLootFunction {
+            function: #func_body,
+            conditions: &[#(#conditions),*],
         }
-        "replace_all" => quote! { ListOperation::ReplaceAll },
-        "replace_section" => {
-            let offset = offset.unwrap_or(0);
-            let size = match size {
-                Some(size) => quote! { Some(#size) },
-                None => quote! { None },
-            };
-            quote! { ListOperation::ReplaceSection { offset: #offset, size: #size } }
-        }
-        other => panic!("Unknown list operation mode: {other}"),
     }
 }

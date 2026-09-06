@@ -1,7 +1,4 @@
-use crate::data_components::{
-    CustomData,
-    vanilla_components::{CUSTOM_DATA, INSTRUMENT},
-};
+use crate::data_components::vanilla_components::INSTRUMENT;
 use crate::vanilla_instrument_tags::InstrumentTag;
 use crate::vanilla_items;
 use crate::{init_vanilla_registry, vanilla_loot_tables};
@@ -298,35 +295,6 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
 }
 
 #[test]
-fn custom_data_tool_predicate_matches_expected_nbt_subset() {
-    fn expected_custom_data() -> CustomData {
-        let mut nested = simdnbt::owned::NbtCompound::new();
-        nested.insert("expected", 7);
-        let mut tag = simdnbt::owned::NbtCompound::new();
-        tag.insert("nested", nested);
-        CustomData::try_from_compound(tag).expect("test custom data should be valid")
-    }
-
-    init_test_registries();
-    let mut nested = simdnbt::owned::NbtCompound::new();
-    nested.insert("expected", 7);
-    nested.insert("extra", 9);
-    let mut tag = simdnbt::owned::NbtCompound::new();
-    tag.insert("nested", nested);
-    tag.insert("unrelated", "value");
-    let custom_data = CustomData::try_from_compound(tag).expect("test custom data should be valid");
-    let mut tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
-    tool.set(CUSTOM_DATA, custom_data);
-    let mut rng = test_rng();
-    let ctx = LootContext::new(&mut rng);
-    let predicate = ToolPredicate::CustomData {
-        tag: expected_custom_data,
-    };
-
-    assert!(predicate.test(&tool, &ctx));
-}
-
-#[test]
 fn test_uniform_get_int_reaches_inclusive_max() {
     // Vanilla UniformGenerator.getInt uses Mth.nextInt(rand, min, max), which
     // samples the integer range inclusively; a uniform 1..3 count must yield 3.
@@ -341,77 +309,6 @@ fn test_uniform_get_int_reaches_inclusive_max() {
         seen[1] && seen[2] && seen[3],
         "uniform 1..=3 must produce 1, 2 and 3, saw {seen:?}"
     );
-}
-
-#[test]
-fn nested_uniform_get_int_evaluates_bounds_as_integers() {
-    static MIN: NumberProvider = NumberProvider::Uniform { min: 1.0, max: 3.0 };
-    static MAX: NumberProvider = NumberProvider::Uniform { min: 7.0, max: 9.0 };
-    let provider = NumberProvider::UniformProvider {
-        min: &MIN,
-        max: &MAX,
-    };
-
-    for seed in 0..32 {
-        let mut expected_rng = rand::rngs::StdRng::seed_from_u64(seed);
-        let expected_min = MIN.get_int(&mut expected_rng);
-        let expected_max = MAX.get_int(&mut expected_rng);
-        let expected = expected_rng.random_range(expected_min..=expected_max);
-        let expected_next = expected_rng.random::<u64>();
-
-        let mut simple_rng = rand::rngs::StdRng::seed_from_u64(seed);
-        assert_eq!(provider.get_int(&mut simple_rng), expected, "seed {seed}");
-        assert_eq!(simple_rng.random::<u64>(), expected_next, "seed {seed}");
-
-        let mut context_rng = rand::rngs::StdRng::seed_from_u64(seed);
-        assert_eq!(
-            provider.get_int_with_ctx(&mut context_rng, None),
-            expected,
-            "seed {seed}"
-        );
-        assert_eq!(context_rng.random::<u64>(), expected_next, "seed {seed}");
-    }
-}
-
-#[test]
-fn loot_pool_samples_rolls_before_bonus_rolls() {
-    static ENTRIES: [LootEntry; 1] = [LootEntry::Item {
-        name: Identifier::vanilla_static("stone"),
-        weight: 1,
-        quality: 0,
-        conditions: &[],
-        functions: &[],
-    }];
-    static POOLS: [LootPool; 1] = [LootPool {
-        rolls: NumberProvider::Uniform { min: 1.0, max: 3.0 },
-        bonus_rolls: NumberProvider::Uniform { min: 0.0, max: 2.0 },
-        entries: &ENTRIES,
-        conditions: &[],
-        functions: &[],
-    }];
-    let table = LootTable {
-        key: Identifier::vanilla_static("test_roll_order"),
-        loot_type: LootType::Chest,
-        pools: &POOLS,
-        functions: &[],
-        random_sequence: None,
-    };
-
-    init_test_registries();
-    for seed in 0..32 {
-        let mut expected_rng = rand::rngs::StdRng::seed_from_u64(seed);
-        let rolls = POOLS[0].rolls.get_int(&mut expected_rng);
-        let bonus = POOLS[0].bonus_rolls.get(&mut expected_rng, None);
-        let expected_count = rolls + bonus.floor() as i32;
-        let expected_next = expected_rng.random::<u64>();
-
-        let mut actual_rng = rand::rngs::StdRng::seed_from_u64(seed);
-        let mut ctx = LootContext::new(&mut actual_rng).with_luck(1.0);
-        let items = table.get_random_items(&mut ctx);
-
-        assert_eq!(items.len(), expected_count as usize, "seed {seed}");
-        assert_eq!(actual_rng.random::<u64>(), expected_next, "seed {seed}");
-    }
 }
 
 #[test]
