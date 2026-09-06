@@ -1,8 +1,8 @@
 //! Snowball item behavior (`SnowballItem`).
 //!
 //! Throwing a snowball spawns a [`SnowballEntity`] from the player's eye, shot
-//! along their look direction, and consumes one snowball (creative-mode count
-//! restoration is handled by the caller). Mirrors vanilla `SnowballItem.use`.
+//! along their look direction, and consumes one snowball unless the player
+//! has infinite materials. Mirrors vanilla `SnowballItem.use`.
 
 use std::sync::Arc;
 
@@ -67,9 +67,10 @@ impl ItemBehavior for SnowballItem {
         };
 
         player.award_stat(&vanilla_stat_types::ITEM_USED, thrown_item.item);
-        if !player.has_infinite_materials() {
-            context.inv.with_item(|item| item.shrink(1));
-        }
+        let has_infinite_materials = player.has_infinite_materials();
+        context
+            .inv
+            .with_item(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }

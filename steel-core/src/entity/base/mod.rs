@@ -42,6 +42,7 @@ use crate::physics::EntityPhysicsState;
 use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
 use crate::world::World;
 
+const BOARDING_COOLDOWN: i32 = 60;
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
 const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
 const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
@@ -211,6 +212,7 @@ pub struct EntityAmethystStepSound {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityBaseState {
     tick_count: i32,
+    first_tick: bool,
     position: DVec3,
     old_position: DVec3,
     last_known_position: Option<DVec3>,
@@ -243,6 +245,7 @@ impl EntityBaseState {
         require_finite_position(position, "position");
         Self {
             tick_count: 0,
+            first_tick: true,
             position,
             old_position: position,
             last_known_position: None,
@@ -509,6 +512,18 @@ impl EntityBase {
     #[inline]
     pub fn tick_count(&self) -> i32 {
         self.state.lock().tick_count
+    }
+
+    /// Returns whether the entity has not completed its first tick.
+    #[inline]
+    pub fn is_first_tick(&self) -> bool {
+        self.state.lock().first_tick
+    }
+
+    /// Sets whether the entity has not completed its first tick.
+    #[inline]
+    pub fn set_first_tick(&self, first_tick: bool) {
+        self.state.lock().first_tick = first_tick;
     }
 
     /// Gets the entity's current bounding box.
@@ -1034,7 +1049,7 @@ impl EntityBase {
 
         if let Some(vehicle) = vehicle {
             vehicle.base().remove_passenger_id(self.id);
-            self.set_boarding_cooldown(60);
+            self.set_boarding_cooldown(BOARDING_COOLDOWN);
         }
     }
 
@@ -1048,7 +1063,7 @@ impl EntityBase {
 
         for passenger in passengers {
             if passenger.base().clear_vehicle_if(self.id) {
-                passenger.base().set_boarding_cooldown(60);
+                passenger.base().set_boarding_cooldown(BOARDING_COOLDOWN);
             }
         }
     }
@@ -1630,7 +1645,7 @@ impl EntityBase {
     /// Applies vanilla base-tick fall-distance damping while touching lava.
     pub fn dampen_fall_distance_in_lava(&self) {
         let mut state = self.state.lock();
-        if state.fluid_contact.lava_height() > 0.0 {
+        if !state.first_tick && state.fluid_contact.lava_height() > 0.0 {
             state.fall_distance *= 0.5;
         }
     }
@@ -1671,6 +1686,13 @@ impl EntityBase {
     /// Stores the current vanilla fluid contact snapshot.
     pub fn set_fluid_contact(&self, fluid_contact: EntityFluidContact) {
         self.state.lock().fluid_contact = fluid_contact;
+    }
+
+    /// Returns whether the entity is currently touching lava.
+    #[inline]
+    pub fn is_in_lava(&self) -> bool {
+        let state = self.state.lock();
+        !state.first_tick && state.fluid_contact.lava_height() > 0.0
     }
 
     /// Stores fluid contact for a vanilla base-tick refresh.

@@ -68,7 +68,13 @@ fn find_air_position(mob: &dyn PathfinderMob) {
     let destination_pos = mob
         .level()
         .and_then(|world| first_air_position(world.as_ref(), position))
-        .unwrap_or_else(|| BlockPos::containing(position.x, position.y + 8.0, position.z));
+        .unwrap_or_else(|| {
+            BlockPos::containing(
+                position.x,
+                position.y + AIR_SEARCH_VERTICAL_ABOVE,
+                position.z,
+            )
+        });
 
     mob.move_to_pos(
         DVec3::new(

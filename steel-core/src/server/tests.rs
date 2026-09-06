@@ -19,7 +19,10 @@ use steel_protocol::packets::game::CRemovePlayerInfo;
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::packets::play::{C_ADD_ENTITY, C_PLAYER_INFO_UPDATE, C_SYSTEM_CHAT};
+use steel_registry::packets::play::{
+    C_ADD_ENTITY, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT,
+    C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT,
+};
 use steel_registry::{
     vanilla_blocks, vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS,
     vanilla_items,
@@ -1227,6 +1230,10 @@ fn apply_non_default_domain_data(player: &Player) {
     source_data.experience_total = 300;
     source_data.score = 42;
     source_data.seen_credits = true;
+    source_data.ender_items = vec![PersistentSlot {
+        slot: 3,
+        item: ItemStack::new(&vanilla_items::STICK),
+    }];
     source_data.apply_to_player_without_location(player);
 }
 
@@ -1250,6 +1257,7 @@ fn assert_default_domain_data(player: &Player) {
         0.1_f32.to_bits()
     );
     assert!(target_data.inventory.is_empty());
+    assert!(target_data.ender_items.is_empty());
     assert_eq!(target_data.selected_slot, 0);
     assert_eq!(target_data.food_level, 20);
     assert_eq!(
@@ -2097,6 +2105,22 @@ fn decode_system_chat(packet: &EncodedPacket) -> TextComponent {
     component
 }
 
+/// Parses `command` for `source` and runs it to completion on `server`.
+fn run_command(server: &Server, source: CommandSource, command: &str) {
+    let chain = {
+        let dispatcher = server.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source.clone());
+        dispatcher.context_chain(parse)
+    };
+    let chain = match chain {
+        Ok(chain) => chain,
+        Err(error) => panic!("{command} should parse: {error}"),
+    };
+    let mut execution = CommandExecutionContext::for_source(&source);
+    execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+    assert!(matches!(execution.run(), ExecutionStop::Completed));
+}
+
 fn packet_id(packet: &EncodedPacket) -> i32 {
     let mut cursor = Cursor::new(packet.encoded_data.as_slice());
     assert!(
@@ -2107,6 +2131,37 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
         Ok(packet_id) => packet_id.0,
         Err(error) => panic!("packet id should decode: {error}"),
     }
+}
+
+fn packet_payload(packet: &EncodedPacket, expected_id: i32) -> Vec<u8> {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    assert!(
+        VarInt::read(&mut cursor).is_ok(),
+        "packet length should decode"
+    );
+    let Ok(packet_id) = VarInt::read(&mut cursor) else {
+        panic!("packet id should decode");
+    };
+    assert_eq!(packet_id.0, expected_id);
+    packet.encoded_data.as_slice()[cursor.position() as usize..].to_vec()
+}
+
+fn packet_payloads(packets: &SyncMutex<Vec<EncodedPacket>>, expected_id: i32) -> Vec<Vec<u8>> {
+    packets
+        .lock()
+        .iter()
+        .filter(|packet| packet_id(packet) == expected_id)
+        .map(|packet| packet_payload(packet, expected_id))
+        .collect()
+}
+
+fn decode_text_component(payload: &[u8]) -> TextComponent {
+    let mut cursor = Cursor::new(payload);
+    let Ok(component) = TextComponent::read(&mut cursor) else {
+        panic!("title component should decode");
+    };
+    assert_eq!(cursor.position() as usize, payload.len());
+    component
 }
 
 fn decode_initial_player_info_hat(packet: &EncodedPacket) -> (Uuid, bool) {
@@ -3088,20 +3143,11 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         attacker.set_client_loaded(true);
 
         let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
-        let command = "damage Victim 1 minecraft:player_attack by Attacker";
-        let chain = {
-            let dispatcher = server.command_dispatcher.read();
-            let parse = dispatcher.parse(command, source.clone());
-            dispatcher.context_chain(parse)
-        };
-        let chain = match chain {
-            Ok(chain) => chain,
-            Err(error) => panic!("damage command should parse: {error}"),
-        };
-
-        let mut execution = CommandExecutionContext::for_source(&source);
-        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-        assert!(matches!(execution.run(), ExecutionStop::Completed));
+        run_command(
+            &server,
+            source,
+            "damage Victim 1 minecraft:player_attack by Attacker",
+        );
 
         assert_eq!(
             target.last_hurt_by_player_uuid(),
@@ -3110,7 +3156,166 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         );
 
         drop((target, attacker));
-        drop(execution);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn title_command_delivers_vanilla_packets_to_recorded_connections() {
+    let world = fresh_test_world("title-command");
+    let storage_root = test_storage_root("title-command");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let (alice, alice_packets) =
+            test_player_with_packets(&server, Arc::clone(&world), "Alice", 1);
+        let (bob, bob_packets) = test_player_with_packets(&server, Arc::clone(&world), "Bob", 2);
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&bob), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        assert!(server.online_players.insert(Arc::clone(&bob)));
+        let _ = alice.mark_joined_world();
+        let _ = bob.mark_joined_world();
+        alice.set_client_loaded(true);
+        bob.set_client_loaded(true);
+
+        let execute = |command: &str, source_entity: Option<SharedEntity>| -> (bool, i32) {
+            let result = Arc::new(SyncMutex::new(None));
+            let result_for_callback = Arc::clone(&result);
+            let callback = CommandResultCallback::new(move |success, value| {
+                *result_for_callback.lock() = Some((success, value));
+            });
+            let mut source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+            if let Some(source_entity) = source_entity {
+                source = source.with_entity(source_entity);
+            }
+            run_command(&server, source.with_callback(callback), command);
+
+            let Some(result) = *result.lock() else {
+                panic!("title command should report a result");
+            };
+            result
+        };
+
+        assert_eq!(
+            execute(
+                "title @a title {text:\"Hello \",extra:[{selector:\"@s\"}]}",
+                Some(Arc::clone(&alice) as SharedEntity),
+            ),
+            (true, 2)
+        );
+        let mut titles = packet_payloads(&alice_packets, C_SET_TITLE_TEXT)
+            .into_iter()
+            .chain(packet_payloads(&bob_packets, C_SET_TITLE_TEXT))
+            .map(|payload| decode_text_component(&payload).to_plain(&DisplayResolutor))
+            .collect::<Vec<_>>();
+        titles.sort_unstable();
+        assert_eq!(titles, ["Hello Alice", "Hello Alice"]);
+
+        assert_eq!(
+            execute("title Alice subtitle {text:\"Sub\"}", None),
+            (true, 1)
+        );
+        let subtitle = packet_payloads(&alice_packets, C_SET_SUBTITLE_TEXT);
+        assert_eq!(subtitle.len(), 1);
+        assert_eq!(
+            decode_text_component(&subtitle[0]).to_plain(&DisplayResolutor),
+            "Sub"
+        );
+
+        assert_eq!(
+            execute("title Bob actionbar {text:\"Bar\"}", None),
+            (true, 1)
+        );
+        let actionbar = packet_payloads(&bob_packets, C_SET_ACTION_BAR_TEXT);
+        assert_eq!(actionbar.len(), 1);
+        assert_eq!(
+            decode_text_component(&actionbar[0]).to_plain(&DisplayResolutor),
+            "Bar"
+        );
+
+        assert_eq!(execute("title @a times 1.5s 2t 3t", None), (true, 2));
+        let expected_times = [0, 0, 0, 30, 0, 0, 0, 2, 0, 0, 0, 3];
+        let alice_times = packet_payloads(&alice_packets, C_SET_TITLES_ANIMATION);
+        let bob_times = packet_payloads(&bob_packets, C_SET_TITLES_ANIMATION);
+        assert_eq!(alice_times, [expected_times]);
+        assert_eq!(bob_times, [expected_times]);
+
+        assert_eq!(execute("title Alice clear", None), (true, 1));
+        assert_eq!(packet_payloads(&alice_packets, C_CLEAR_TITLES), [vec![0]]);
+        assert_eq!(execute("title Bob reset", None), (true, 1));
+        assert_eq!(packet_payloads(&bob_packets, C_CLEAR_TITLES), [vec![1]]);
+
+        drop((alice, bob, server));
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
+    use crate::block_entity::init_block_entities;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::init_vanilla_registry;
+
+    init_vanilla_registry();
+    init_behaviors();
+    init_block_entities();
+    let world = fresh_test_world("setblock-command");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let storage_root = test_storage_root("setblock-command");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let run = |command: &str| {
+            let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+            run_command(&server, source, command);
+        };
+
+        let pos = BlockPos::new(8, 64, 8);
+        run("setblock 8 64 8 minecraft:stone");
+        assert_eq!(
+            world.get_block_state(pos).get_block(),
+            &vanilla_blocks::STONE,
+            "setblock must place the requested block"
+        );
+
+        run("setblock 8 64 8 minecraft:dirt keep");
+        assert_eq!(
+            world.get_block_state(pos).get_block(),
+            &vanilla_blocks::STONE,
+            "keep mode must not replace an occupied position"
+        );
+
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");

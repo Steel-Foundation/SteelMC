@@ -15,12 +15,14 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity,
-    ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
-    EndGatewayBlockEntity, EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
-    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
-};
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::wildcard_imports,
+        reason = "the registry intentionally imports every block entity implementation"
+    )
+)]
+use super::entities::*;
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -223,6 +225,24 @@ pub fn init_block_entities() {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
         });
 
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(
+            &vanilla_block_entity_types::BLAST_FURNACE,
+            |level, pos, state| Arc::new(BlastFurnaceBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(&vanilla_block_entity_types::SMOKER, |level, pos, state| {
+            Arc::new(SmokerBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(
+            &vanilla_block_entity_types::CAMPFIRE,
+            |level, pos, state| Arc::new(CampfireBlockEntity::new(level, pos, state)),
+        );
+
         registry.register(
             &vanilla_block_entity_types::CHISELED_BOOKSHELF,
             |level, pos, state| Arc::new(ChiseledBookShelfBlockEntity::new(level, pos, state)),
@@ -272,6 +292,12 @@ pub fn init_block_entities() {
         registry.register(
             &vanilla_block_entity_types::END_PORTAL,
             |level, pos, state| Arc::new(EndPortalBlockEntity::new(level, pos, state)),
+        );
+
+        // Register ender chest block entity factory
+        registry.register(
+            &vanilla_block_entity_types::ENDER_CHEST,
+            |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
         );
 
         // Register potent sulfur block entity factory

@@ -7,6 +7,7 @@ use super::{
     World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
+use crate::player::food_data::food_constants;
 use std::ops::Add;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
@@ -359,7 +360,7 @@ impl Player {
 
         self.item_attack_interaction(entity, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
-        self.cause_food_exhaustion(0.1);
+        self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
     }
 
@@ -444,7 +445,7 @@ impl Player {
             );
             self.item_attack_interaction(entity, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
-            self.cause_food_exhaustion(0.1);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         }
 
         let world = self.get_world();
