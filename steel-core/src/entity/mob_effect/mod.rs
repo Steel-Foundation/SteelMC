@@ -15,6 +15,8 @@ mod weaving;
 mod wind_charged;
 mod wither;
 
+#[cfg(test)]
+pub(crate) use absorption::ABSORPTION_PER_LEVEL;
 pub use absorption::AbsorptionBehavior;
 pub use bad_omen::BadOmenBehavior;
 pub use heal_or_harm::HealOrHarmBehavior;

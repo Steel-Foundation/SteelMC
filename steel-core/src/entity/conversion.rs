@@ -88,10 +88,17 @@ impl ConversionType {
 /// shared conversion state, runs `after_conversion`, adds the new mob to the
 /// world, and discards `from` for single-mob conversions.
 ///
+/// Steel registers the new entity *before* transferring state. Vanilla runs
+/// `ConversionType.convert` and `AfterConversion` first and then discards the
+/// source unconditionally after `addFreshEntity`, with no failure path; Steel
+/// instead keeps `from` alive when the world rejects the new entity, which only
+/// holds if nothing on `from` (its passengers, vehicle, and leash) has been
+/// moved onto `to` yet (documented divergence).
+///
 /// Returns `None` when `from` is removed, the world is gone, `entity_type` is
 /// not allowed on the current difficulty (vanilla `EntityType.canSpawn`), has no
 /// registered factory, the created entity is not a mob, or the world rejects the
-/// new entity; the source mob is left untouched in those cases.
+/// new entity; `from` is left untouched in all of those cases.
 pub(crate) fn convert_to(
     from: &dyn Mob,
     entity_type: EntityTypeRef,
@@ -132,11 +139,9 @@ pub(crate) fn convert_to(
         return None;
     };
 
-    params.conversion_type.convert(from, &to, params);
-    if let Some(after_conversion) = after_conversion {
-        after_conversion(to_mob);
-    }
-
+    // Register `to` before moving any of `from`'s state onto it, so a world
+    // that rejects the new entity leaves the source (passengers, vehicle, and
+    // leash included) fully untouched.
     if let Err(error) = world.try_add_entity(to.clone()) {
         log::error!(
             "failed to add converted {} for {}: {error}",
@@ -144,6 +149,11 @@ pub(crate) fn convert_to(
             from.entity_type().key
         );
         return None;
+    }
+
+    params.conversion_type.convert(from, &to, params);
+    if let Some(after_conversion) = after_conversion {
+        after_conversion(to_mob);
     }
 
     if params.conversion_type.should_discard_after_conversion() {
@@ -226,11 +236,11 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     to.set_absorption_amount(from.living_base().absorption_amount());
 
     for effect in from.active_mob_effects() {
-        // Vanilla transfers active effects as data without re-running
-        // `MobEffect.onEffectStarted`, so converted mobs inherit the effects
-        // and they resume ticking on their own (absorption hearts, for
-        // example, are restored over effect ticks, not granted at conversion).
-        to.living_base().add_mob_effect(effect);
+        // Vanilla `ConversionType.convertCommon` re-adds each effect with
+        // `Mob.addEffect`, so the converted mob re-runs `onEffectStarted` (the
+        // ABSORPTION effect, for example, grants fresh hearts again after the
+        // absorption amount copy above).
+        to.add_mob_effect(effect);
     }
 
     // Vanilla `Mob.setBaby` is a no-op for non-ageable mobs; Steel mirrors that
@@ -315,6 +325,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
     use crate::entity::entities::PigEntity;
+    use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
     use crate::entity::{
         AgeableMob, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
     };
@@ -432,11 +443,16 @@ mod tests {
         assert!(cow_mob.is_silent());
         assert!(cow_mob.tags().contains(&"audit_tag".to_owned()));
         assert!(cow_mob.can_pick_up_loot());
-        // Vanilla `convertCommon` copies absorption before the effects, so the
-        // target's pre-effect max absorption (0 for a cow) clamps the copy; the
-        // ABSORPTION effect is still transferred and restores absorption over
-        // its effect ticks, exactly as in vanilla.
-        assert_eq!(cow_mob.living_base().absorption_amount(), 0.0);
+        // Vanilla `convertCommon` copies absorption before re-adding the
+        // effects, so the copied amount is clamped away by the cow's pre-effect
+        // max absorption (0); the re-added ABSORPTION effect then applies its
+        // MAX_ABSORPTION modifier and `onEffectStarted` grants
+        // `4 * (1 + amplifier)` fresh hearts, exactly as in vanilla.
+        assert_eq!(
+            cow_mob.living_base().absorption_amount(),
+            ABSORPTION_PER_LEVEL * 2.0,
+            "the re-added absorption effect must grant its onEffectStarted hearts"
+        );
         let effects = cow_mob.active_mob_effects();
         assert!(effects.contains(&MobEffectInstance::new(vanilla_mob_effects::SPEED, 1)));
         assert!(effects.contains(&MobEffectInstance::new(vanilla_mob_effects::ABSORPTION, 1)));
@@ -534,6 +550,106 @@ mod tests {
         assert!(
             !pig.is_removed(),
             "failed conversions leave the source untouched"
+        );
+    }
+
+    #[test]
+    fn refused_conversion_keeps_the_source_passenger_mounted() {
+        init_vanilla_registry();
+        init_entities();
+        let world = conversion_world();
+        let source = add_pig(&world);
+        let passenger = add_pig(&world);
+        assert!(
+            passenger.start_riding(&source),
+            "the passenger should ride the source"
+        );
+
+        let converted = source
+            .downcast_ref::<PigEntity>()
+            .expect("pig is concrete")
+            .convert_to(
+                &vanilla_entities::ZOMBIE,
+                ConversionParams::single(true, true),
+                None,
+            );
+
+        assert!(converted.is_none());
+        assert!(
+            !source.is_removed(),
+            "refused conversions leave the source alive"
+        );
+        assert_eq!(
+            source.first_passenger().map(|entity| entity.id()),
+            Some(passenger.id()),
+            "a refused conversion must not dismount the source's passenger"
+        );
+    }
+
+    #[test]
+    fn refused_conversion_keeps_the_source_on_its_vehicle() {
+        init_vanilla_registry();
+        init_entities();
+        let world = conversion_world();
+        let source = add_pig(&world);
+        let vehicle = add_pig(&world);
+        assert!(
+            source.start_riding(&vehicle),
+            "the source should ride its vehicle"
+        );
+
+        let converted = source
+            .downcast_ref::<PigEntity>()
+            .expect("pig is concrete")
+            .convert_to(
+                &vanilla_entities::ZOMBIE,
+                ConversionParams::single(true, true),
+                None,
+            );
+
+        assert!(converted.is_none());
+        assert!(
+            !source.is_removed(),
+            "refused conversions leave the source alive"
+        );
+        assert_eq!(
+            source.vehicle().map(|entity| entity.id()),
+            Some(vehicle.id()),
+            "a refused conversion must not dismount the source from its vehicle"
+        );
+    }
+
+    #[test]
+    fn refused_conversion_keeps_the_source_leash() {
+        init_vanilla_registry();
+        init_entities();
+        let world = conversion_world();
+        let source = add_pig(&world);
+        let holder = add_pig(&world);
+        let source_mob = source.as_mob().expect("pig is a mob");
+        assert!(
+            source_mob.set_leashed_to(&holder),
+            "the test pig should leash to the holder"
+        );
+
+        let converted = source
+            .downcast_ref::<PigEntity>()
+            .expect("pig is concrete")
+            .convert_to(
+                &vanilla_entities::ZOMBIE,
+                ConversionParams::single(true, true),
+                None,
+            );
+
+        assert!(converted.is_none());
+        assert!(
+            !source.is_removed(),
+            "refused conversions leave the source alive"
+        );
+        assert_eq!(
+            source_mob.leash_holder().map(|entity| entity.id()),
+            Some(holder.id()),
+            "a refused conversion must not steal the source's leash"
         );
     }
 

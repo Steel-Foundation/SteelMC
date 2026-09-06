@@ -9,6 +9,7 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::BlockPos;
 use steel_utils::random::Random;
+use steel_utils::types::Difficulty;
 
 use crate::chunk::light::LightLayer;
 use crate::entity::damage::DamageSource;
@@ -119,8 +120,9 @@ pub trait Monster: PathfinderMob + Enemy {
     /// Vanilla `Monster.aiStep`: advance the swing timer, apply light-based
     /// no-action-time growth, then the standard mob `aiStep`.
     ///
-    /// Vanilla `LivingEntity.updateSwingTime` has no other caller, so hostile
-    /// mobs are the only living entities whose swing animation advances.
+    /// Vanilla advances `LivingEntity.updateSwingTime` from `Monster.aiStep`
+    /// (and from `Player` and `Mannequin`); passive mobs never swing their
+    /// animation, so hostile mobs are the only mobs that do.
     fn monster_ai_step(&self) -> Option<MoveResult> {
         self.update_swing_time();
         self.update_no_action_time();
@@ -196,8 +198,9 @@ pub trait Monster: PathfinderMob + Enemy {
     where
         Self: Sized,
     {
-        (spawn_reason.ignores_light_requirements()
-            || Self::is_dark_enough_to_spawn(level, pos, random))
+        is_spawn_allowed_on_difficulty(entity_type, level)
+            && (spawn_reason.ignores_light_requirements()
+                || Self::is_dark_enough_to_spawn(level, pos, random))
             && <Self as Mob>::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
     }
 
@@ -211,7 +214,8 @@ pub trait Monster: PathfinderMob + Enemy {
     where
         Self: Sized,
     {
-        <Self as Mob>::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
+        is_spawn_allowed_on_difficulty(entity_type, level)
+            && <Self as Mob>::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
     }
 
     /// Vanilla `Monster.checkSurfaceMonstersSpawnRules`.
@@ -228,6 +232,18 @@ pub trait Monster: PathfinderMob + Enemy {
         Self::check_monster_spawn_rules(entity_type, level, spawn_reason, pos, random)
             && (spawn_reason.is_spawner() || level.can_see_sky(pos))
     }
+}
+
+/// Steel-level peaceful clause mirroring vanilla `EntityType.canSpawn`.
+///
+/// Vanilla never asks `Monster.checkMonsterSpawnRules` for hostile types on
+/// Peaceful: `EntityType.canSpawn`/`create` refuses those spawns and the
+/// natural spawner skips hostile categories. Steel has no `canSpawn` gate or
+/// natural spawner yet, so the spawn-rule helpers enforce the clause
+/// themselves; drop it once a spawn-rule invocation mirrors vanilla's
+/// `EntityType.create` (documented divergence).
+fn is_spawn_allowed_on_difficulty(entity_type: EntityTypeRef, level: &World) -> bool {
+    entity_type.allowed_in_peaceful || level.difficulty() != Difficulty::Peaceful
 }
 
 /// Samples the dimension's vanilla `monster_spawn_light_test` int provider.

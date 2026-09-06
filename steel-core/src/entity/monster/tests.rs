@@ -13,7 +13,7 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSource};
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{Difficulty, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 
 use super::DEFAULT_XP_REWARD;
@@ -460,6 +460,83 @@ fn monster_surface_spawn_rules_require_sky_visibility_or_spawner() {
         overworld_pos,
         &mut random,
     ));
+}
+
+#[test]
+fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("monster_peaceful_spawn_rules");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+    assert!(world.set_block(
+        pos.below(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(0));
+
+    // Spawner reasons skip the light and surface checks, so only the
+    // difficulty clause can refuse the spawn on Peaceful.
+    assert!(TestMonster::check_monster_spawn_rules(
+        &vanilla_entities::ZOMBIE,
+        &world,
+        EntitySpawnReason::TrialSpawner,
+        pos,
+        &mut random,
+    ));
+
+    world.set_difficulty(Difficulty::Peaceful);
+    assert!(
+        !TestMonster::check_monster_spawn_rules(
+            &vanilla_entities::ZOMBIE,
+            &world,
+            EntitySpawnReason::TrialSpawner,
+            pos,
+            &mut random,
+        ),
+        "spawn rules must refuse types that cannot exist on Peaceful"
+    );
+    assert!(
+        !TestMonster::check_any_light_monster_spawn_rules(
+            &vanilla_entities::ZOMBIE,
+            &world,
+            EntitySpawnReason::TrialSpawner,
+            pos,
+        ),
+        "any-light spawn rules must also refuse hostile types on Peaceful"
+    );
+    assert!(
+        !TestMonster::check_surface_monsters_spawn_rules(
+            &vanilla_entities::ZOMBIE,
+            &world,
+            EntitySpawnReason::Spawner,
+            pos,
+            &mut random,
+        ),
+        "surface spawn rules delegate to the same difficulty clause"
+    );
+    assert!(
+        TestMonster::check_any_light_monster_spawn_rules(
+            &vanilla_entities::COW,
+            &world,
+            EntitySpawnReason::TrialSpawner,
+            pos,
+        ),
+        "the clause mirrors vanilla `allowed_in_peaceful`, not a blanket refusal"
+    );
+
+    world.set_difficulty(Difficulty::Normal);
+    assert!(
+        TestMonster::check_monster_spawn_rules(
+            &vanilla_entities::ZOMBIE,
+            &world,
+            EntitySpawnReason::TrialSpawner,
+            pos,
+            &mut random,
+        ),
+        "the same spawn passes once difficulty leaves Peaceful"
+    );
 }
 
 #[test]
