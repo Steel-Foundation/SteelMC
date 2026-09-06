@@ -18,16 +18,13 @@
     clippy::match_wild_err_arm,
     clippy::missing_const_for_fn,
     clippy::nonminimal_bool,
-    clippy::redundant_closure_for_method_calls,
     clippy::ref_option,
     clippy::similar_names,
     clippy::single_match_else,
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
     clippy::unreadable_literal,
     clippy::unwrap_used,
-    clippy::wildcard_imports,
     reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
 )]
 

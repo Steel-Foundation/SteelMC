@@ -161,30 +161,18 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let entity = condition.entity.as_deref().unwrap_or("this");
             let entity_variant = generate_loot_context_entity(entity);
 
-            let predicate = if let Some(pred) = &condition.predicate {
-                if let PredicateJson::Entity(e) = pred {
-                    generate_entity_predicate(e)
-                } else {
+            let predicate = match &condition.predicate {
+                Some(PredicateJson::Entity(entity)) => generate_entity_predicate(entity),
+                _ => {
                     quote! {
-                        EntityPredicate {
-                            entity_type: None,
-                            flags: None,
-                            equipment: None,
-                            sheep_color: None,
-                            sheep_sheared: None,
-                            chicken_variant: None,
-                        }
-                    }
-                }
-            } else {
-                quote! {
-                    EntityPredicate {
-                        entity_type: None,
-                        flags: None,
-                        equipment: None,
-                        sheep_color: None,
-                        sheep_sheared: None,
-                        chicken_variant: None,
+                            EntityPredicate {
+                                entity_type: None,
+                                flags: None,
+                                equipment: None,
+                                sheep_color: None,
+                                sheep_sheared: None,
+                                chicken_variant: None,
+                            }
                     }
                 }
             };
@@ -197,10 +185,11 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             }
         }
         "minecraft:damage_source_properties" => {
-            let predicate = if let Some(pred) = &condition.predicate {
-                if let PredicateJson::DamageSource(ds) = pred {
-                    generate_damage_source_predicate(ds)
-                } else {
+            let predicate = match &condition.predicate {
+                Some(PredicateJson::DamageSource(source)) => {
+                    generate_damage_source_predicate(source)
+                }
+                _ => {
                     quote! {
                         DamageSourcePredicate {
                             tags: &[],
@@ -208,15 +197,6 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                             direct_entity: None,
                             is_direct: None,
                         }
-                    }
-                }
-            } else {
-                quote! {
-                    DamageSourcePredicate {
-                        tags: &[],
-                        source_entity: None,
-                        direct_entity: None,
-                        is_direct: None,
                     }
                 }
             };
@@ -232,20 +212,13 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let offset_y = condition.offset_y.unwrap_or(0);
             let offset_z = condition.offset_z.unwrap_or(0);
 
-            let predicate = if let Some(pred) = &condition.predicate {
-                if let PredicateJson::Location(l) = pred {
-                    generate_location_predicate(l)
-                } else {
+            let predicate = match &condition.predicate {
+                Some(PredicateJson::Location(location)) => generate_location_predicate(location),
+                _ => {
                     quote! {
                         LocationPredicate {
                             block: None,
                         }
-                    }
-                }
-            } else {
-                quote! {
-                    LocationPredicate {
-                        block: None,
                     }
                 }
             };
