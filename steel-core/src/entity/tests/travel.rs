@@ -128,9 +128,11 @@ fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
 fn living_travel_fluid_predicate_matches_vanilla_hooks() {
     init_vanilla_registry();
     let water = FluidState::source(&vanilla_fluids::WATER);
+    let lava_entity = LivingFluidTestEntity::new(0.0, 0.4, true);
+    lava_entity.set_first_tick(false);
 
     assert!(LivingFluidTestEntity::new(0.4, 0.0, true).should_travel_in_fluid(water));
-    assert!(LivingFluidTestEntity::new(0.0, 0.4, true).should_travel_in_fluid(water));
+    assert!(lava_entity.should_travel_in_fluid(water));
     assert!(!LivingFluidTestEntity::new(0.0, 0.0, true).should_travel_in_fluid(water));
     assert!(!LivingFluidTestEntity::new(0.4, 0.0, false).should_travel_in_fluid(water));
     assert!(

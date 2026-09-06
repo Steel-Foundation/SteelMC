@@ -1,4 +1,5 @@
 use glam::DVec3;
+use smallvec::{SmallVec, smallvec};
 use steel_utils::{BlockLocalAabb, axis::Axis};
 
 /// Vanilla shape boolean operation.
@@ -1007,6 +1008,9 @@ struct FaceRect {
 
 const FACE_EPSILON: f64 = 1.0e-6;
 
+type FaceRectList = SmallVec<[FaceRect; 8]>;
+type EdgeList = SmallVec<[f64; 18]>;
+
 #[must_use]
 pub fn face_rectangles_cover(
     shape: VoxelShape,
@@ -1034,7 +1038,7 @@ fn block_local_face_rectangles_cover(
     target_min_b: f64,
     target_max_b: f64,
 ) -> bool {
-    let mut rects = Vec::new();
+    let mut rects = FaceRectList::new();
     for &aabb in boxes {
         let Some(rect) = face_rect_for_aabb(aabb, direction) else {
             continue;
@@ -1072,7 +1076,7 @@ pub fn offset_face_rectangles_cover(
     target_min_b: f64,
     target_max_b: f64,
 ) -> bool {
-    let mut rects = Vec::new();
+    let mut rects = FaceRectList::new();
     for aabb in shape.iter() {
         let Some(rect) = face_rect_for_aabb(aabb, direction) else {
             continue;
@@ -1102,7 +1106,7 @@ pub fn offset_face_rectangles_cover(
 }
 
 fn face_rects_cover_target(
-    rects: Vec<FaceRect>,
+    rects: FaceRectList,
     target_min_a: f64,
     target_max_a: f64,
     target_min_b: f64,
@@ -1112,8 +1116,8 @@ fn face_rects_cover_target(
         return false;
     }
 
-    let mut a_edges = vec![target_min_a, target_max_a];
-    let mut b_edges = vec![target_min_b, target_max_b];
+    let mut a_edges: EdgeList = smallvec![target_min_a, target_max_a];
+    let mut b_edges: EdgeList = smallvec![target_min_b, target_max_b];
     for rect in &rects {
         a_edges.push(rect.min_a);
         a_edges.push(rect.max_a);
@@ -1211,7 +1215,7 @@ fn face_rect_for_aabb(aabb: BlockLocalAabb, direction: Direction) -> Option<Face
     Some(rect)
 }
 
-fn sort_and_dedup_edges(edges: &mut Vec<f64>) {
+fn sort_and_dedup_edges(edges: &mut EdgeList) {
     edges.sort_by(f64::total_cmp);
     edges.dedup_by(|a, b| (*a - *b).abs() <= FACE_EPSILON);
 }
