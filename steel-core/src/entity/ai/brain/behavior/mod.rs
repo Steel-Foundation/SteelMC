@@ -12,7 +12,6 @@ pub use control::{BehaviorControl, BehaviorExt, BehaviorStatus, TimedBehavior};
 use super::context::BrainContext;
 use super::memory::{MemoryModuleTypeRef, MemoryStatus};
 
-
 /// How long one activation of a behavior may last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BehaviorDuration {
