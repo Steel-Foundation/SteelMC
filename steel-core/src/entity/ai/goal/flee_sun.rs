@@ -22,7 +22,10 @@ impl FleeSunGoal {
         }
     }
 
-    fn set_wanted_pos(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
+    /// Picks a shaded position and stores it as the goal's move target, returning
+    /// whether one was found. Exposed so a composing goal (the fox's shelter goal)
+    /// can drive the flee-sun hide search from its own `can_use`.
+    pub(crate) fn set_wanted_pos(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
         let Some(pos) = get_hide_pos(mob, level) else {
             return false;
         };
