@@ -104,13 +104,10 @@ pub fn use_item_on(
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
 
-        // Restore count for creative mode (infinite materials)
+        // Restored in both directions: `use_on` can also grow the held stack when
+        // its result merges back into the slot it came from.
         if player.has_infinite_materials() {
-            context.inv.with_item(|item| {
-                if item.count < original_count {
-                    item.count = original_count;
-                }
-            });
+            context.inv.with_item(|item| item.count = original_count);
         }
 
         return result;
@@ -129,8 +126,8 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
     }
 
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref, stack_before_use) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
+    let (is_empty, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.item, item.clone()));
 
     if !is_empty {
         if player.is_item_on_cooldown(&stack_before_use) {
@@ -144,18 +141,11 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
 
+        let is_instantly_used = item_behavior.get_use_duration(&stack_before_use, player) <= 0;
+
         let result = item_behavior.use_item(&mut context);
 
-        // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() {
-            context.inv.with_item(|item| {
-                if item.count < original_count {
-                    item.count = original_count;
-                }
-            });
-        }
-
-        if result.should_apply_item_use_side_effects() {
+        if is_instantly_used && result.should_apply_item_use_side_effects() {
             player.apply_item_use_cooldown(&stack_before_use);
         }
 
@@ -223,7 +213,8 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use crate::behavior::init_behaviors;
+    use super::use_item;
+    use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
     use crate::player::connection::NetworkConnection as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
@@ -257,5 +248,47 @@ mod tests {
             assert_eq!(player.rotation(), expected);
         }
         assert!(!player.connection.closed());
+    }
+
+    /// A player at full hunger cannot start eating a normal food item —
+    /// vanilla `Consumable.canConsume` fails and returns `Fail` without
+    /// starting active use.
+    #[test]
+    fn use_item_refuses_normal_food_at_full_hunger() {
+        let world = fresh_test_world("use_item_full_hunger_normal_food");
+        init_behaviors();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::APPLE));
+
+        let result = use_item(&player, &world, InteractionHand::MainHand);
+
+        assert_eq!(result, InteractionResult::Fail);
+        assert_eq!(player.active_item_use_hand(), None);
+    }
+
+    /// An always-edible food item (e.g. golden apple) can still be eaten at
+    /// full hunger, matching vanilla `FoodProperties.canAlwaysEat`.
+    #[test]
+    fn use_item_allows_always_edible_food_at_full_hunger() {
+        let world = fresh_test_world("use_item_full_hunger_always_edible_food");
+        init_behaviors();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::GOLDEN_APPLE));
+
+        let result = use_item(&player, &world, InteractionHand::MainHand);
+
+        assert_eq!(result, InteractionResult::Consume);
+        assert_eq!(
+            player.active_item_use_hand(),
+            Some(InteractionHand::MainHand)
+        );
     }
 }
