@@ -24,6 +24,16 @@ fn identifier_parsing_matches_vanilla_default_namespace_rules() {
 }
 
 #[test]
+fn parse_or_vanilla_matches_vanilla_default_namespace_rules() {
+    for raw in ["stone", ":stone", "minecraft:stone"] {
+        assert_eq!(
+            Identifier::parse_or_vanilla(raw).expect("identifier should parse"),
+            Identifier::vanilla_static("stone")
+        );
+    }
+}
+
+#[test]
 fn identifier_parsing_rejects_vanilla_invalid_names() {
     for raw in ["..:stone", "Minecraft:stone", "minecraft:bad:path"] {
         assert!(raw.parse::<Identifier>().is_err(), "{raw}");
