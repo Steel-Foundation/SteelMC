@@ -226,7 +226,11 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     to.set_absorption_amount(from.living_base().absorption_amount());
 
     for effect in from.active_mob_effects() {
-        to.add_mob_effect(effect);
+        // Vanilla transfers active effects as data without re-running
+        // `MobEffect.onEffectStarted`, so converted mobs inherit the effects
+        // and they resume ticking on their own (absorption hearts, for
+        // example, are restored over effect ticks, not granted at conversion).
+        to.living_base().add_mob_effect(effect);
     }
 
     // Vanilla `Mob.setBaby` is a no-op for non-ageable mobs; Steel mirrors that
@@ -308,6 +312,7 @@ mod tests {
     use text_components::TextComponent;
 
     use super::{ConversionParams, ConversionType};
+    use crate::behavior::init_behaviors;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
     use crate::entity::entities::PigEntity;
     use crate::entity::{
@@ -340,6 +345,7 @@ mod tests {
     fn single_conversion_transfers_shared_state_and_discards_source() {
         init_vanilla_registry();
         init_entities();
+        init_behaviors();
         let world = conversion_world();
         let pig = add_pig(&world);
         let pig_mob = pig.as_mob().expect("pig is a mob");
