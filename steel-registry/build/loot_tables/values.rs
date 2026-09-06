@@ -6,6 +6,7 @@ use super::{
     TokenStream, ToolPredicateJson, ToolPredicatesJson, generate_option,
     generate_static_identifier_from_str, quote,
 };
+use crate::nbt::{generate_nbt_compound, parse_lenient_compound};
 
 pub(super) fn number_provider_constant(value: &NumberProviderJson) -> Option<f32> {
     match value {
@@ -276,9 +277,17 @@ fn generate_tool_predicate_from_predicates(predicates: &ToolPredicatesJson) -> O
     }
 
     if let Some(custom_data) = &predicates.custom_data {
-        let tag = custom_data.to_string();
+        let tag = parse_lenient_compound(custom_data, "custom_data predicate");
+        let tag = generate_nbt_compound(&tag);
         return Some(quote! {
-            ToolPredicate::CustomData { tag: #tag }
+            ToolPredicate::CustomData {
+                tag: || {
+                    let Some(data) = crate::data_components::CustomData::try_from_compound(#tag) else {
+                        panic!("generated custom_data predicate is invalid");
+                    };
+                    data
+                },
+            }
         });
     }
 

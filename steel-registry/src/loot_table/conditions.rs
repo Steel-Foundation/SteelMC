@@ -3,6 +3,7 @@ use super::{
     Identifier, ItemStack, LootContext, LootContextEntity, NumberProvider, NumberProviderRange,
     REGISTRY, RegistryExt, RngExt, TaggedRegistryExt,
 };
+use crate::data_components::{CustomData, vanilla_components::CUSTOM_DATA};
 
 /// A property check for block state conditions.
 #[derive(Debug, Clone)]
@@ -117,7 +118,7 @@ pub enum ToolPredicate {
     /// Match items in a tag.
     Tag(Identifier),
     /// Match items whose `custom_data` component contains the expected NBT subset.
-    CustomData { tag: &'static str },
+    CustomData { tag: fn() -> CustomData },
     /// Always matches (no predicate specified).
     Any,
 }
@@ -332,7 +333,13 @@ impl ToolPredicate {
                 // Check if the tool's item is in the specified tag
                 REGISTRY.items.is_in_tag(tool.item, tag)
             }
-            ToolPredicate::CustomData { tag: _tag } => false,
+            ToolPredicate::CustomData { tag } => {
+                let expected = tag();
+                tool.get(CUSTOM_DATA).map_or_else(
+                    || expected.is_empty(),
+                    |actual| actual.matched_by(expected.as_compound()),
+                )
+            }
             ToolPredicate::Any => true,
         }
     }

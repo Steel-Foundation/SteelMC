@@ -1,4 +1,7 @@
-use crate::data_components::vanilla_components::INSTRUMENT;
+use crate::data_components::{
+    CustomData,
+    vanilla_components::{CUSTOM_DATA, INSTRUMENT},
+};
 use crate::vanilla_instrument_tags::InstrumentTag;
 use crate::vanilla_items;
 use crate::{init_vanilla_registry, vanilla_loot_tables};
@@ -292,6 +295,35 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         Identifier::vanilla_static("cooked_porkchop")
     );
     assert!((1..=3).contains(&items[0].count));
+}
+
+#[test]
+fn custom_data_tool_predicate_matches_expected_nbt_subset() {
+    fn expected_custom_data() -> CustomData {
+        let mut nested = simdnbt::owned::NbtCompound::new();
+        nested.insert("expected", 7);
+        let mut tag = simdnbt::owned::NbtCompound::new();
+        tag.insert("nested", nested);
+        CustomData::try_from_compound(tag).expect("test custom data should be valid")
+    }
+
+    init_test_registries();
+    let mut nested = simdnbt::owned::NbtCompound::new();
+    nested.insert("expected", 7);
+    nested.insert("extra", 9);
+    let mut tag = simdnbt::owned::NbtCompound::new();
+    tag.insert("nested", nested);
+    tag.insert("unrelated", "value");
+    let custom_data = CustomData::try_from_compound(tag).expect("test custom data should be valid");
+    let mut tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
+    tool.set(CUSTOM_DATA, custom_data);
+    let mut rng = test_rng();
+    let ctx = LootContext::new(&mut rng);
+    let predicate = ToolPredicate::CustomData {
+        tag: expected_custom_data,
+    };
+
+    assert!(predicate.test(&tool, &ctx));
 }
 
 #[test]
