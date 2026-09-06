@@ -3,8 +3,7 @@
 //! Places sign blocks and opens the sign editor after placement.
 //! Handles both standing signs (on ground) and wall signs (on walls).
 //!
-//! **Vanilla reference:** `SignItem` extends `StandingAndWallBlockItem` and only
-//! overrides `updateCustomBlockEntityTag` to open the sign editor after placement.
+//! Wall and standing signs are handled by `StandingAndWallBlockItem`, not here.
 
 use std::sync::Arc;
 use steel_macros::item_behavior;
@@ -15,102 +14,14 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
-use steel_utils::types::{SignTextSlot, UpdateFlags};
+use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::entity::Entity;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader as _, World};
-
-/// Behavior for sign items that place sign blocks and open the editor.
-///
-/// In vanilla, `SignItem` extends `StandingAndWallBlockItem` and only overrides
-/// `updateCustomBlockEntityTag` to open the sign editor after placement.
-///
-/// The `_standing_block`, `_wall_block`, and `_attachment_direction` fields are read by the
-/// build script via `#[json_arg]` to generate constructor calls from `classes.json`.
-/// The actual values are forwarded into `inner` — the fields themselves are not used at runtime.
-pub struct SignItem {
-    // #[json_arg(vanilla_blocks, json = "block")]
-    _standing_block: BlockRef,
-    // #[json_arg(vanilla_blocks, json = "wall_block")]
-    _wall_block: BlockRef,
-    // #[json_arg(
-    //     r#enum = "Direction",
-    //     module = "steel_registry::blocks::properties",
-    //     json = "attachment_direction"
-    // )]
-    _attachment_direction: Direction,
-    /// Placement logic delegate (vanilla: `SignItem extends StandingAndWallBlockItem`).
-    inner: StandingAndWallBlockItem,
-}
-
-impl SignItem {
-    /// Creates a new sign item behavior for the given sign blocks.
-    #[must_use]
-    pub const fn new(
-        standing_block: BlockRef,
-        wall_block: BlockRef,
-        attachment_direction: Direction,
-    ) -> Self {
-        Self {
-            _standing_block: standing_block,
-            _wall_block: wall_block,
-            _attachment_direction: attachment_direction,
-            inner: StandingAndWallBlockItem::new(standing_block, wall_block, attachment_direction),
-        }
-    }
-}
-
-impl ItemBehavior for SignItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let has_infinite_materials = context.player.has_infinite_materials();
-        let mut place_context = context.build_place_context();
-        if !place_context.can_place() {
-            return InteractionResult::Fail;
-        }
-        let place_pos = place_context.place_pos();
-
-        let Some(new_state) = self.inner.get_placement_state(&place_context) else {
-            return InteractionResult::Fail;
-        };
-
-        if !context
-            .world
-            .set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-        {
-            return InteractionResult::Fail;
-        }
-        let placed_state = context.world.get_block_state(place_pos);
-
-        let block = self.inner.get_block_for_state(new_state);
-        let sound_type = &block.config.sound_type;
-        context.world.play_block_sound(
-            sound_type.place_sound,
-            place_pos,
-            sound_type.volume,
-            sound_type.pitch,
-            Some(context.player.id()),
-        );
-        context.world.game_event(
-            &vanilla_game_events::BLOCK_PLACE,
-            place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
-        );
-
-        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
-
-        // Sign-specific: Open the sign editor for the player (front text by default)
-        context
-            .player
-            .open_sign_editor(place_pos, SignTextSlot::Front);
-
-        InteractionResult::Success
-    }
-}
 
 /// Behavior for hanging sign items that place hanging sign blocks.
 ///
@@ -256,7 +167,15 @@ impl ItemBehavior for HangingSignItem {
         {
             return InteractionResult::Fail;
         }
+
         let placed_state = context.world.get_block_state(place_pos);
+        let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
+        placed_behavior.set_placed_by(
+            placed_state,
+            context.world,
+            place_pos,
+            place_context.source(),
+        );
 
         if let Some(block) = placed_block {
             let sound_type = &block.config.sound_type;
@@ -275,11 +194,6 @@ impl ItemBehavior for HangingSignItem {
         );
 
         place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
-
-        // Sign-specific: Open the sign editor for the player (front text by default)
-        context
-            .player
-            .open_sign_editor(place_pos, SignTextSlot::Front);
 
         InteractionResult::Success
     }

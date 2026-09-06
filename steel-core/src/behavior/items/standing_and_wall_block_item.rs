@@ -158,7 +158,15 @@ impl ItemBehavior for StandingAndWallBlockItem {
         {
             return InteractionResult::Fail;
         }
+
         let placed_state = context.world.get_block_state(place_pos);
+        let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
+        placed_behavior.set_placed_by(
+            placed_state,
+            context.world,
+            place_pos,
+            place_context.source(),
+        );
 
         let block = self.get_block_for_state(new_state);
         let sound_type = &block.config.sound_type;

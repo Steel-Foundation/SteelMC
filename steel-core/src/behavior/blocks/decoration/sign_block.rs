@@ -18,11 +18,11 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, types::SignTextSlot};
 
-use crate::behavior::InventoryAccess;
 use crate::behavior::block::{
     BlockBehavior, BlockEntityCreation, schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
 use crate::player::Player;
@@ -353,6 +353,18 @@ impl BlockBehavior for StandingSignBlock {
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
     }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            try_open_sign_editor(state, world, pos, player);
+        }
+    }
 }
 
 /// Behavior for wall sign blocks (attached to walls).
@@ -448,6 +460,18 @@ impl BlockBehavior for WallSignBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            try_open_sign_editor(state, world, pos, player);
+        }
     }
 }
 
@@ -580,6 +604,18 @@ impl BlockBehavior for CeilingHangingSignBlock {
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
     }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            try_open_sign_editor(state, world, pos, player);
+        }
+    }
 }
 
 /// Converts a rotation segment (0-15) to a cardinal direction, if applicable.
@@ -693,6 +729,18 @@ impl BlockBehavior for WallHangingSignBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            try_open_sign_editor(state, world, pos, player);
+        }
     }
 }
 

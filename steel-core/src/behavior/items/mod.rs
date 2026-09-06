@@ -70,7 +70,7 @@ pub use potion::PotionItem;
 pub use scaffolding_block_item::ScaffoldingBlockItem;
 pub use shears::ShearsItem;
 pub use shield::ShieldItem;
-pub use sign_item::{HangingSignItem, SignItem};
+pub use sign_item::HangingSignItem;
 pub use snowball::SnowballItem;
 pub use solid_bucket_item::SolidBucketItem;
 pub use spyglass::SpyglassItem;
