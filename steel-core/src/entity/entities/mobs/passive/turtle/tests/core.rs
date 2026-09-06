@@ -3,6 +3,7 @@ use steel_utils::WorldAabb;
 
 use super::*;
 use crate::behavior::init_behaviors;
+use crate::entity::PathfinderMob;
 use crate::entity::ai::goal::Goal;
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::turtle::goals::TurtleLayEggGoal;
@@ -265,5 +266,65 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
         (turtle.get_speed() - LAND_MIN_SPEED).abs() < f32::EPSILON,
         "the land speed floor holds, got {}",
         turtle.get_speed()
+    );
+}
+
+#[test]
+fn a_turtle_holds_its_course_against_a_current() {
+    let turtle = detached_turtle();
+
+    assert!(
+        !turtle.is_pushed_by_fluid(),
+        "a turtle is not carried along by flowing water"
+    );
+}
+
+#[test]
+fn a_turtle_shuffles_rather_than_plods() {
+    let turtle = detached_turtle();
+
+    // The shared stride rounds up to the next whole block; a turtle's is short
+    // enough that it makes several steps within one.
+    assert!(
+        turtle.next_step() < 1.0,
+        "a turtle steps more often than once per block, got {}",
+        turtle.next_step()
+    );
+    assert_eq!(turtle.ambient_sound_interval(), AMBIENT_SOUND_INTERVAL);
+}
+
+#[test]
+fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
+    let (world, turtle) = turtle_in_world("turtle_walk_target", DVec3::new(8.5, 65.0, 8.5));
+    let water_pos = BlockPos::new(4, 64, 4);
+    let sand_pos = BlockPos::new(6, 64, 6);
+    let plain_pos = BlockPos::new(10, 64, 10);
+    assert!(world.set_block(
+        water_pos,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    assert!(world.set_block(
+        sand_pos.below(),
+        vanilla_blocks::SAND.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    assert_eq!(
+        turtle.get_walk_target_value(water_pos),
+        PREFERRED_WALK_TARGET_VALUE
+    );
+    assert_eq!(
+        turtle.get_walk_target_value(sand_pos),
+        PREFERRED_WALK_TARGET_VALUE
+    );
+    assert!(turtle.get_walk_target_value(plain_pos) < PREFERRED_WALK_TARGET_VALUE);
+
+    // A turtle on its way home to lay stops finding open water attractive.
+    turtle.set_going_home(true);
+    assert!(turtle.get_walk_target_value(water_pos) < PREFERRED_WALK_TARGET_VALUE);
+    assert_eq!(
+        turtle.get_walk_target_value(sand_pos),
+        PREFERRED_WALK_TARGET_VALUE
     );
 }
