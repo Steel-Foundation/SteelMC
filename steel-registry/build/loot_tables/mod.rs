@@ -162,7 +162,6 @@ struct StewEffectJson {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
 struct LootTableJson {
     #[serde(rename = "type")]
     loot_type: Option<String>,
@@ -172,8 +171,6 @@ struct LootTableJson {
     functions: Vec<LootFunctionJson>,
     #[serde(default)]
     random_sequence: Option<String>,
-    #[serde(default, rename = "__smithed__")]
-    _smithed: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
