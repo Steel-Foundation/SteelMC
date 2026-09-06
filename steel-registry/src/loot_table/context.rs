@@ -145,6 +145,11 @@ impl NumberProvider {
     pub fn get_int(&self, rng: &mut impl rand::Rng) -> i32 {
         match self {
             Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
+            Self::UniformProvider { min, max } => {
+                let min = min.get_int(rng);
+                let max = max.get_int(rng);
+                uniform_int(rng, min, max)
+            }
             other => math_round(other.get_simple(rng)),
         }
     }
@@ -157,6 +162,11 @@ impl NumberProvider {
     ) -> i32 {
         match self {
             Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
+            Self::UniformProvider { min, max } => {
+                let min = min.get_int_with_ctx(rng, ctx);
+                let max = max.get_int_with_ctx(rng, ctx);
+                uniform_int(rng, min, max)
+            }
             other => math_round(other.get(rng, ctx)),
         }
     }

@@ -312,6 +312,36 @@ fn test_uniform_get_int_reaches_inclusive_max() {
 }
 
 #[test]
+fn nested_uniform_get_int_evaluates_bounds_as_integers() {
+    static MIN: NumberProvider = NumberProvider::Uniform { min: 1.0, max: 3.0 };
+    static MAX: NumberProvider = NumberProvider::Uniform { min: 7.0, max: 9.0 };
+    let provider = NumberProvider::UniformProvider {
+        min: &MIN,
+        max: &MAX,
+    };
+
+    for seed in 0..32 {
+        let mut expected_rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let expected_min = MIN.get_int(&mut expected_rng);
+        let expected_max = MAX.get_int(&mut expected_rng);
+        let expected = expected_rng.random_range(expected_min..=expected_max);
+        let expected_next = expected_rng.random::<u64>();
+
+        let mut simple_rng = rand::rngs::StdRng::seed_from_u64(seed);
+        assert_eq!(provider.get_int(&mut simple_rng), expected, "seed {seed}");
+        assert_eq!(simple_rng.random::<u64>(), expected_next, "seed {seed}");
+
+        let mut context_rng = rand::rngs::StdRng::seed_from_u64(seed);
+        assert_eq!(
+            provider.get_int_with_ctx(&mut context_rng, None),
+            expected,
+            "seed {seed}"
+        );
+        assert_eq!(context_rng.random::<u64>(), expected_next, "seed {seed}");
+    }
+}
+
+#[test]
 fn test_explosion_decay_function() {
     // Test the explosion_decay function directly
     init_test_registries();
