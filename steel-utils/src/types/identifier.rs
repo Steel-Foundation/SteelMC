@@ -79,11 +79,11 @@ impl Identifier {
     ///
     /// Minecraft datapack JSON frequently omits `minecraft:` for vanilla ids.
     pub fn parse_or_vanilla(s: &str) -> Result<Self, &'static str> {
-        let (namespace, path) = s
-            .split_once(':')
-            .map_or((Self::VANILLA_NAMESPACE, s), |(namespace, path)| {
-                (namespace, path)
-            });
+        let (namespace, path) = match s.split_once(':') {
+            Some(("", path)) => (Self::VANILLA_NAMESPACE, path),
+            Some((namespace, path)) => (namespace, path),
+            None => (Self::VANILLA_NAMESPACE, s),
+        };
 
         Self::new_validated(namespace, path)
     }
