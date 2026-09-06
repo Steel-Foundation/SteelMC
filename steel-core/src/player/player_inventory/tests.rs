@@ -27,8 +27,8 @@ use steel_protocol::{
     packets::game::{ClickType, HashedStack, SContainerClick, SSetCreativeModeSlot},
 };
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
-    vanilla_menu_types,
+    RegistryEntry, init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
+    vanilla_menu_types, vanilla_mob_effects,
 };
 use steel_utils::{
     ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, WorldAabb,
@@ -1895,4 +1895,26 @@ fn creative_crafting_grid_updates_the_result_slot() {
             .expect("result container is registered with the menu");
         assert!(result.get_item(0).is_empty());
     }
+}
+
+/// Vanilla decodes the set-beacon effect ids with `byIdOrThrow`, so "absent" and "unknown" must
+/// stay distinguishable. Collapsing an unknown id to `None` would let a crafted packet pass
+/// effect validation, consume the payment, and silently clear the configured effects.
+#[test]
+fn resolve_beacon_effect_separates_absent_from_unknown_ids() {
+    init_vanilla_registry();
+
+    assert_eq!(Player::resolve_beacon_effect(None), Ok(None));
+
+    let speed_id = vanilla_mob_effects::SPEED.id() as i32;
+    assert_eq!(
+        Player::resolve_beacon_effect(Some(speed_id))
+            .expect("known id resolves")
+            .map(|effect| effect.key.clone()),
+        Some(vanilla_mob_effects::SPEED.key.clone())
+    );
+
+    assert_eq!(Player::resolve_beacon_effect(Some(9999)), Err(()));
+    // A signed VarInt can carry a negative id; `as usize` would wrap it into a huge index.
+    assert_eq!(Player::resolve_beacon_effect(Some(-1)), Err(()));
 }

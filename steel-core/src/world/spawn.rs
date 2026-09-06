@@ -201,7 +201,7 @@ impl World {
         self.heightmap_pos(HeightmapType::MotionBlockingNoLeaves, spawn_suggestion)
     }
 
-    pub(super) fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+    pub(crate) fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
         if !Self::is_in_world_bounds_horizontal(BlockPos::new(x, 0, z)) {
             return self.sea_level + 1;
         }

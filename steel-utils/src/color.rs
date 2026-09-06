@@ -109,6 +109,24 @@ impl ArgbColor {
     pub const fn rgb(self) -> RgbColor {
         RgbColor::new(self.0)
     }
+
+    /// Returns the per-channel mean of two colors.
+    ///
+    /// Vanilla parity: `ARGB.average`. Each channel is averaged independently with integer
+    /// division, so the result is truncated exactly as Vanilla's is.
+    #[must_use]
+    pub const fn average(self, other: Self) -> Self {
+        Self(
+            ((Self::average_channel(self.alpha(), other.alpha()) << 24)
+                | (Self::average_channel(self.red(), other.red()) << 16)
+                | (Self::average_channel(self.green(), other.green()) << 8)
+                | Self::average_channel(self.blue(), other.blue())) as i32,
+        )
+    }
+
+    const fn average_channel(lhs: u8, rhs: u8) -> u32 {
+        u32::midpoint(lhs as u32, rhs as u32)
+    }
 }
 
 impl WriteTo for ArgbColor {
@@ -126,6 +144,21 @@ impl ReadFrom for ArgbColor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn argb_average_matches_vanilla_per_channel_mean() {
+        let lhs = ArgbColor::new(0xff00_0000_u32 as i32);
+        let rhs = ArgbColor::new(0x00ff_ffff);
+
+        // Vanilla `ARGB.average` averages each channel independently with integer division.
+        assert_eq!(lhs.average(rhs).raw(), 0x7f7f_7f7f);
+        assert_eq!(
+            ArgbColor::new(0xffff_0000_u32 as i32)
+                .average(ArgbColor::new(0xff00_00ff_u32 as i32))
+                .raw(),
+            0xff7f_007f_u32 as i32
+        );
+    }
 
     #[test]
     fn rgb_preserves_ignored_upper_byte() {

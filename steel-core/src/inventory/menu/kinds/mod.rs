@@ -2,6 +2,7 @@
 
 mod anvil_menu;
 mod basic_menu;
+mod beacon_menu;
 mod chest_menu;
 mod crafting_menu;
 mod ender_chest_menu;
@@ -10,6 +11,7 @@ mod inventory_menu;
 
 pub use anvil_menu::{AnvilKind, anvil};
 pub use basic_menu::BasicKind;
+pub use beacon_menu::{BeaconKind, beacon};
 pub use chest_menu::{ChestKind, chest};
 pub use crafting_menu::{CraftingKind, crafting};
 pub use ender_chest_menu::{EnderChestKind, ender_chest};
