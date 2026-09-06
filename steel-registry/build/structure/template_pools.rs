@@ -234,9 +234,7 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
 // ── Code generation helpers ──
 
 fn gen_identifier(id: &str) -> TokenStream {
-    if id.is_empty() {
-        panic!("Cannot generate an empty identifier");
-    }
+    assert!(!id.is_empty(), "Cannot generate an empty identifier");
     let id = Identifier::parse_or_vanilla(id)
         .unwrap_or_else(|error| panic!("invalid template pool identifier {id}: {error}"));
     let namespace = id.namespace.as_ref();

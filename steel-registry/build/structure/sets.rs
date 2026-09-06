@@ -1062,11 +1062,10 @@ fn generate_pool_aliases(aliases: &[serde_json::Value], context: &str) -> Vec<To
                                         format!("{group_context}.data[{binding_index}]");
                                     let binding_type =
                                         required_str(binding, &binding_context, "type");
-                                    if binding_type != "minecraft:direct" {
-                                        panic!(
-                                            "Unsupported random_group binding type {binding_type} in {binding_context}"
-                                        );
-                                    }
+                                    assert!(
+                                        binding_type == "minecraft:direct",
+                                        "Unsupported random_group binding type {binding_type} in {binding_context}"
+                                    );
                                     let a = generate_owned_identifier_from_str(
                                         required_str(binding, &binding_context, "alias"),
                                         "structure",
@@ -1332,18 +1331,20 @@ pub(crate) fn build() -> TokenStream {
 
     for (set_id, set) in &sets {
         let key = generate_owned_identifier_from_str(set_id, "structure");
-        if set.structures.is_empty() {
-            panic!("Structure set {set_id} must have at least one structure");
-        }
+        assert!(
+            !set.structures.is_empty(),
+            "Structure set {set_id} must have at least one structure"
+        );
 
         let structures: Vec<TokenStream> = set
             .structures
             .iter()
             .enumerate()
             .map(|(entry_index, entry)| {
-                if entry.weight <= 0 {
-                    panic!("Structure set {set_id} entry {entry_index} has non-positive weight");
-                }
+                assert!(
+                    entry.weight > 0,
+                    "Structure set {set_id} entry {entry_index} has non-positive weight"
+                );
                 let structure = generate_owned_identifier_from_str(&entry.structure, "structure");
                 let weight = entry.weight;
 
@@ -1357,9 +1358,10 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         let freq = set.placement.frequency;
-        if !freq.is_finite() || !(0.0..=1.0).contains(&freq) {
-            panic!("Structure set {set_id} has invalid placement frequency {freq}");
-        }
+        assert!(
+            freq.is_finite() && (0.0..=1.0).contains(&freq),
+            "Structure set {set_id} has invalid placement frequency {freq}"
+        );
         let freq_method = generate_frequency_method(&set.placement.frequency_reduction_method);
         let [locate_x, locate_y, locate_z] = set.placement.locate_offset.unwrap_or([0, 0, 0]);
 
@@ -1367,27 +1369,27 @@ pub(crate) fn build() -> TokenStream {
             "minecraft:random_spread" => {
                 let spacing = required(set.placement.spacing, set_id, "placement.spacing");
                 let separation = required(set.placement.separation, set_id, "placement.separation");
-                if spacing <= 0 {
-                    panic!("Structure set {set_id} has non-positive spacing {spacing}");
-                }
-                if separation < 0 {
-                    panic!("Structure set {set_id} has negative separation {separation}");
-                }
-                if spacing <= separation {
-                    panic!(
-                        "Structure set {set_id} has spacing {spacing} <= separation {separation}"
-                    );
-                }
+                assert!(
+                    spacing > 0,
+                    "Structure set {set_id} has non-positive spacing {spacing}"
+                );
+                assert!(
+                    separation >= 0,
+                    "Structure set {set_id} has negative separation {separation}"
+                );
+                assert!(
+                    spacing > separation,
+                    "Structure set {set_id} has spacing {spacing} <= separation {separation}"
+                );
                 let salt = set.placement.salt;
                 let spread_type = generate_spread_type(&set.placement.spread_type);
 
                 let exclusion = if let Some(ez) = &set.placement.exclusion_zone {
-                    if ez.chunk_count < 0 {
-                        panic!(
-                            "Structure set {set_id} has negative exclusion chunk_count {}",
-                            ez.chunk_count
-                        );
-                    }
+                    assert!(
+                        ez.chunk_count >= 0,
+                        "Structure set {set_id} has negative exclusion chunk_count {}",
+                        ez.chunk_count
+                    );
                     let other = generate_owned_identifier_from_str(&ez.other_set, "structure");
                     let count = ez.chunk_count;
                     quote! {
@@ -1417,15 +1419,18 @@ pub(crate) fn build() -> TokenStream {
                 let distance = required(set.placement.distance, set_id, "placement.distance");
                 let spread = required(set.placement.spread, set_id, "placement.spread");
                 let count = required(set.placement.count, set_id, "placement.count");
-                if distance <= 0 {
-                    panic!("Structure set {set_id} has non-positive ring distance {distance}");
-                }
-                if spread <= 0 {
-                    panic!("Structure set {set_id} has non-positive ring spread {spread}");
-                }
-                if count < 0 {
-                    panic!("Structure set {set_id} has negative ring count {count}");
-                }
+                assert!(
+                    distance > 0,
+                    "Structure set {set_id} has non-positive ring distance {distance}"
+                );
+                assert!(
+                    spread > 0,
+                    "Structure set {set_id} has non-positive ring spread {spread}"
+                );
+                assert!(
+                    count >= 0,
+                    "Structure set {set_id} has negative ring count {count}"
+                );
                 let salt = set.placement.salt;
 
                 // Resolve preferred biomes from tag reference (e.g., "#minecraft:stronghold_biased_to")
