@@ -58,7 +58,10 @@ use crate::{
     poi::PoiTypeRegistry,
     position_source::PositionSourceTypeRegistry,
     potion::PotionRegistry,
-    recipe::RecipeRegistry,
+    recipe::{
+        RecipeBookCategoryRegistry, RecipeRegistry, RecipeTypeRegistry,
+        vanilla_recipe_book_categories, vanilla_recipe_types,
+    },
     sound_event::SoundEventRegistry,
     sound_events,
     structure::StructureRegistry,
@@ -267,6 +270,8 @@ pub struct Registry {
     pub potions: PotionRegistry,
     pub zombie_nautilus_variants: ZombieNautilusVariantRegistry,
     pub timelines: TimelineRegistry,
+    pub recipe_types: RecipeTypeRegistry,
+    pub recipe_book_categories: RecipeBookCategoryRegistry,
     pub recipes: RecipeRegistry,
     pub entity_types: EntityTypeRegistry,
     pub loot_tables: LootTableRegistry,
@@ -378,6 +383,8 @@ impl Registry {
         );
         vanilla_timelines::register_timelines(&mut registry.timelines);
         vanilla_timeline_tags::TimelineTag::register_timeline_tags(&mut registry.timelines);
+        vanilla_recipe_types::register(&mut registry.recipe_types);
+        vanilla_recipe_book_categories::register(&mut registry.recipe_book_categories);
         vanilla_recipes::register_recipes(&mut registry.recipes);
         vanilla_entities::register_entity_types(&mut registry.entity_types);
         vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
@@ -462,7 +469,9 @@ impl Registry {
         self.potions.freeze();
         self.zombie_nautilus_variants.freeze();
         self.timelines.freeze();
-        self.recipes.freeze();
+        self.recipe_types.freeze();
+        self.recipe_book_categories.freeze();
+        self.recipes.freeze(&self.recipe_types);
         self.entity_types.freeze();
         self.loot_tables.freeze();
         self.block_entity_types.freeze();
@@ -720,6 +729,8 @@ impl Registry {
             potions: PotionRegistry::new(),
             zombie_nautilus_variants: ZombieNautilusVariantRegistry::new(),
             timelines: TimelineRegistry::new(),
+            recipe_types: RecipeTypeRegistry::new(),
+            recipe_book_categories: RecipeBookCategoryRegistry::new(),
             recipes: RecipeRegistry::new(),
             entity_types: EntityTypeRegistry::new(),
             loot_tables: LootTableRegistry::new(),

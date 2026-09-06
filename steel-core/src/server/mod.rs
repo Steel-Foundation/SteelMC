@@ -78,10 +78,8 @@ use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
-    num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
-    thread,
     time::{Duration, Instant},
 };
 use steel_crypto::{key_store::KeyStore, signature::ProfileKeyValidator};
@@ -102,6 +100,7 @@ use steel_utils::{
     BlockPos, ChunkPos, Identifier,
     locks::{AsyncMutex, SyncMutex, SyncRwLock},
     text::DisplayResolutor,
+    threading::{DEBUG_STACK_SIZE, available_worker_threads},
     translations,
 };
 use text_components::{Modifier, TextComponent, format::Color};
@@ -169,32 +168,12 @@ fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Optio
     cap_positive_thread_count(configured_threads, available_worker_threads())
 }
 
-fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
-    packet_workers_for_available(configured_workers, available_worker_threads())
-}
-
-fn available_worker_threads() -> usize {
-    thread::available_parallelism().map_or(4, NonZero::get)
-}
-
 fn cap_positive_thread_count(
     configured_threads: Option<usize>,
     available_threads: usize,
 ) -> Option<usize> {
     let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
     Some(configured_threads.min(available_threads.max(1)))
-}
-
-fn packet_workers_for_available(
-    configured_workers: Option<usize>,
-    available_threads: usize,
-) -> usize {
-    let available_threads = available_threads.max(1);
-    if let Some(configured_workers) = configured_workers.filter(|&workers| workers > 0) {
-        return configured_workers.min(available_threads);
-    }
-
-    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 #[cfg(test)]
@@ -257,10 +236,6 @@ fn is_end_return_transition(
 
 fn is_nether_dimension_type(world: &World) -> bool {
     world.dimension_type == &vanilla_dimension_types::THE_NETHER
-}
-
-fn is_end_dimension_type(world: &World) -> bool {
-    world.dimension_type == &vanilla_dimension_types::THE_END
 }
 
 fn can_entity_return_from_end_to_overworld(
@@ -604,7 +579,7 @@ impl Server {
             }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
-                builder = builder.stack_size(8 * 1024 * 1024);
+                builder = builder.stack_size(DEBUG_STACK_SIZE);
             }
             builder
                 .build()

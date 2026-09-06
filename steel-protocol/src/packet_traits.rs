@@ -63,15 +63,22 @@ pub struct CompressionInfo {
     pub level: i32,
 }
 
+impl CompressionInfo {
+    /// Vanilla default compression threshold in bytes.
+    pub const DEFAULT_THRESHOLD: u32 = 256;
+    /// Steel's default zlib compression level.
+    pub const DEFAULT_LEVEL: i32 = 4;
+}
+
 impl Default for CompressionInfo {
     #[expect(
         clippy::unwrap_used,
-        reason = "256 is a known nonzero compression threshold"
+        reason = "the default threshold is a known nonzero compression threshold"
     )]
     fn default() -> Self {
         Self {
-            threshold: NonZeroU32::new(256).unwrap(),
-            level: 4,
+            threshold: NonZeroU32::new(Self::DEFAULT_THRESHOLD).unwrap(),
+            level: Self::DEFAULT_LEVEL,
         }
     }
 }
