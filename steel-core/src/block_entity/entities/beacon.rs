@@ -298,9 +298,8 @@ impl BeaconBlockEntity {
         };
 
         let range = f64::from(levels) * EFFECT_RANGE_PER_LEVEL + BASE_EFFECT_RANGE;
-        let base_amplifier = i32::from(
-            levels >= MAX_LEVELS && secondary.is_some_and(|s| s.key == primary.key),
-        );
+        let base_amplifier =
+            i32::from(levels >= MAX_LEVELS && secondary.is_some_and(|s| s.key == primary.key));
         let duration = (9 + levels * 2) * 20;
 
         // Vanilla: `new AABB(pos).inflate(range).expandTowards(0, level.getHeight(), 0)`.
