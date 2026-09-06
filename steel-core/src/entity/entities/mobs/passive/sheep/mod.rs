@@ -12,7 +12,7 @@ use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::recipe::CraftingInput;
+use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_biome_tags;
 use steel_registry::vanilla_entity_data::SheepEntityData;
@@ -38,10 +38,10 @@ use crate::entity::{
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
     PathfinderMob, SpawnGroupData,
 };
+use crate::inventory::recipe_manager;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
 
 const SHEEP_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5625, 0.0)];
@@ -278,6 +278,7 @@ impl SheepEntity {
     /// colors, falling back to a random parent when no mix recipe exists.
     #[must_use]
     pub fn get_mixed_color(color1: DyeColor, color2: DyeColor) -> DyeColor {
+        // TODO: add this function to DyeColor
         Self::find_color_mix_in_recipes(color1, color2).unwrap_or_else(|| {
             if rand::random::<bool>() {
                 color1
@@ -288,6 +289,7 @@ impl SheepEntity {
     }
 
     fn find_color_mix_in_recipes(color1: DyeColor, color2: DyeColor) -> Option<DyeColor> {
+        // TODO: add this function to DyeColor
         let dye1: Vec<_> = REGISTRY
             .items
             .iter()
@@ -312,10 +314,16 @@ impl SheepEntity {
                     1,
                     vec![ItemStack::new(dye1_item), ItemStack::new(dye2_item)],
                 );
-                let Some(recipe) = REGISTRY.recipes.find_crafting_recipe_2x2(&input) else {
+                let Some(recipe) = REGISTRY
+                    .recipes
+                    .find_match(&vanilla_recipe_types::CRAFTING, &input)
+                else {
                     continue;
                 };
-                if let Some(color) = recipe.assemble().get(DYE).copied() {
+                if let Some(color) = recipe_manager::assemble_recipe(recipe, &input)
+                    .get(DYE)
+                    .copied()
+                {
                     return Some(color);
                 }
             }
@@ -446,7 +454,7 @@ impl LivingEntity for SheepEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -562,11 +570,7 @@ impl Mob for SheepEntity {
             };
             self.shear(world.as_ref(), &item_stack);
             // Vanilla `Sheep.mobInteract` sources the shear game event to the player.
-            world.game_event_at(
-                &vanilla_game_events::SHEAR,
-                self.position(),
-                &GameEventContext::new(Some(player as &dyn Entity), None),
-            );
+            self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
             player
                 .inventory
                 .lock()

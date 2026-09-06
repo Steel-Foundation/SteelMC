@@ -112,13 +112,18 @@ impl StatsCounter {
     /// Returns the number of stats currently being tracked for this player.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.stats.len()
+        self.stats
+            .iter()
+            .filter(|(_, (_, state))| *state != StatState::Reset)
+            .count()
     }
 
     /// Returns whether there are no stats are currently being tracked or not.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.stats.is_empty()
+        self.stats
+            .iter()
+            .all(|(_, (_, state))| *state == StatState::Reset)
     }
 }
 
@@ -174,6 +179,11 @@ impl Player {
     pub fn reset_stat(&self, stat: Stat) {
         self.stats.lock().set(stat, 0);
         // TODO: Reset score of the objectives having the criterion of this stat for the player.
+    }
+
+    /// Resets the counter of a custom stat from this player to zero.
+    pub fn reset_custom_stat(&self, stat: CustomStatRef) {
+        self.reset_stat(vanilla_stat_types::CUSTOM.get(stat));
     }
 
     /// Marks all the stat counters of this player to be dirty. This means that the next time
@@ -324,6 +334,16 @@ mod tests {
         );
 
         stats_counter.reset();
+
+        assert_eq!(
+            stats_counter.len(),
+            0,
+            "reset stat entries should not be counted"
+        );
+        assert!(
+            stats_counter.is_empty(),
+            "reset stat entries should not be counted"
+        );
 
         assert_eq!(
             stats_counter.get_dirty_and_clear(),

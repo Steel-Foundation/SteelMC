@@ -13,6 +13,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::items::item::BlockHitResult;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
 };
@@ -117,7 +118,7 @@ impl BlockBehavior for PumpkinBlock {
             &GameEventContext::new(Some(player), None),
         );
 
-        // TODO: Award statistic ITEM_USED with SHEARS.
+        player.award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::SHEARS);
 
         InteractionResult::Success
     }

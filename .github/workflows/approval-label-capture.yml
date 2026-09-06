@@ -1,0 +1,25 @@
+name: Approval label (capture)
+
+# Unprivileged half of the approval-label pair. pull_request_review is one of
+# the events GitHub forces GITHUB_TOKEN to read-only for when the PR comes
+# from a fork, no matter what `permissions:` declares — so this job does no
+# writes at all. It just records which PR the review belongs to; the actual
+# labeling happens in approval-label.yml, triggered via workflow_run, which
+# always runs with normal (non-fork-restricted) token permissions.
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+
+permissions: {}
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Save PR number
+        run: echo "${{ github.event.pull_request.number }}" > pr_number.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr_number
+          path: pr_number.txt

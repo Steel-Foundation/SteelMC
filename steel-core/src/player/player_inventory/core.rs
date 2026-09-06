@@ -55,7 +55,7 @@ impl PlayerInventory {
     /// Number of logical container slots, including equipment.
     pub const CONTAINER_SIZE: usize = 43;
     /// Number of hotbar slots.
-    pub const SELECTION_SIZE: usize = 9;
+    pub const SELECTION_SIZE: u8 = 9;
     /// Slot index for offhand.
     pub const SLOT_OFFHAND: usize = 40;
     /// Hotbar container indices.
@@ -77,7 +77,7 @@ impl PlayerInventory {
 
     /// Returns true if the given slot index is a hotbar slot (0-8).
     #[must_use]
-    pub const fn is_hotbar_slot(slot: usize) -> bool {
+    pub const fn is_hotbar_slot(slot: u8) -> bool {
         slot < Self::SELECTION_SIZE
     }
 
@@ -113,7 +113,7 @@ impl PlayerInventory {
     ///
     /// Panics if the slot is not a valid hotbar slot (must be 0-8).
     pub fn set_selected_slot(&mut self, slot: u8) {
-        if Self::is_hotbar_slot(slot as usize) {
+        if Self::is_hotbar_slot(slot) {
             if self.selected != slot {
                 self.selected = slot;
             }
@@ -133,7 +133,7 @@ impl PlayerInventory {
         let Ok(slot) = u8::try_from(slot) else {
             return Err(InvalidHotbarSlot);
         };
-        if !Self::is_hotbar_slot(slot as usize) {
+        if !Self::is_hotbar_slot(slot) {
             return Err(InvalidHotbarSlot);
         }
 
@@ -212,32 +212,60 @@ impl PlayerInventory {
         items
     }
 
-    /// Finds the first empty slot in the inventory, or -1 if full.
+    /// Finds the first empty slot in the inventory, or `None` if full.
     #[must_use]
-    pub fn get_free_slot(&self) -> i32 {
-        for i in 0..Self::INVENTORY_SIZE {
-            if self.items[i].is_empty() {
-                return i as i32;
+    pub fn get_free_slot(&self) -> Option<u8> {
+        (0..Self::INVENTORY_SIZE)
+            .find(|&i| self.items[i].is_empty())
+            .map(|i| i as u8)
+    }
+
+    /// Finds next empty slot in hotbar (and returns)
+    /// if none, then
+    ///     it finds the next slot with a non-enchanted item (and returns)
+    /// if none, then
+    ///     returns the current slot
+    #[must_use]
+    pub fn get_suitable_hotbar_slot(&self) -> u8 {
+        for slot in 0..Self::SELECTION_SIZE {
+            let index = (self.selected + slot) % Self::SELECTION_SIZE;
+            if self.items[usize::from(index)].is_empty() {
+                return index;
             }
         }
-        -1
+
+        for slot in 0..Self::SELECTION_SIZE {
+            let index = (self.selected + slot) % Self::SELECTION_SIZE;
+            if !self.items[usize::from(index)].is_enchanted() {
+                return index;
+            }
+        }
+
+        self.selected
     }
 
     /// Finds a slot containing an item matching the given stack (same item type).
-    /// Returns -1 if not found.
     #[must_use]
-    pub fn find_slot_matching_item(&self, stack: &ItemStack) -> i32 {
-        for i in 0..Self::INVENTORY_SIZE {
-            if !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack) {
-                return i as i32;
-            }
-        }
-        -1
+    pub fn find_slot_matching_item(&self, stack: &ItemStack) -> Option<u8> {
+        (0..Self::INVENTORY_SIZE)
+            .find(|&i| !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack))
+            .map(|i| i as u8)
+    }
+
+    /// Finds a slot containing an item matching the exact given stack (same item type).
+    #[must_use]
+    pub fn find_slot_matching_item_with_same_components(&self, stack: &ItemStack) -> Option<u8> {
+        (0..Self::INVENTORY_SIZE)
+            .find(|&i| {
+                !self.items[i].is_empty()
+                    && ItemStack::is_same_item_same_components(&self.items[i], stack)
+            })
+            .map(|i| i as u8)
     }
 
     /// Swaps items between selected hotbar slot and the given slot.
     /// Used for pick block when item is in main inventory but not hotbar.
-    pub fn pick_slot(&mut self, slot: i32) {
+    pub fn pick_slot(&mut self, slot: u8) {
         let slot = slot as usize;
         if slot >= Self::INVENTORY_SIZE {
             return;
@@ -252,9 +280,10 @@ impl PlayerInventory {
     pub fn add_and_pick_item(&mut self, stack: ItemStack) -> bool {
         // Find first empty hotbar slot
         for i in 0..Self::SELECTION_SIZE {
-            if self.items[i].is_empty() {
-                self.items[i] = stack;
-                self.selected = i as u8;
+            let j = usize::from(i);
+            if self.items[j].is_empty() {
+                self.items[j] = stack;
+                self.selected = i;
                 self.set_changed();
                 return true;
             }

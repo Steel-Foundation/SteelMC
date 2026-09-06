@@ -93,6 +93,7 @@ impl Slot for ResultSlot {
         _stack: &ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Track the crafted count and run ITEM_CRAFTED/item callbacks.
         self.handler.on_result_taken(guard, player)
     }
 
