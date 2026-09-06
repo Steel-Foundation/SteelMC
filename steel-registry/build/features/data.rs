@@ -623,18 +623,11 @@ pub struct FeatureNoiseParameters {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NoiseProvider {
     pub noise: FeatureNoiseParameters,
     pub scale: f32,
     pub seed: i64,
     pub states: Vec<BlockStateData>,
-    #[serde(default, rename = "slow_noise")]
-    pub _slow_noise: Option<serde_json::Value>,
-    #[serde(default, rename = "slow_scale")]
-    pub _slow_scale: Option<serde_json::Value>,
-    #[serde(default, rename = "variety")]
-    pub _variety: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1403,10 +1396,8 @@ const fn default_spring_hole_count() -> i32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct TreeConfiguration {
     pub trunk_provider: BlockStateProvider,
-    #[serde(alias = "dirt_provider")]
     pub below_trunk_provider: BlockStateProvider,
     pub foliage_provider: BlockStateProvider,
     pub trunk_placer: TrunkPlacer,
@@ -1418,8 +1409,6 @@ pub struct TreeConfiguration {
     pub root_placer: Option<RootPlacer>,
     #[serde(default)]
     pub ignore_vines: bool,
-    #[serde(default, rename = "force_dirt")]
-    pub _force_dirt: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1521,14 +1510,9 @@ pub enum FoliagePlacer {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct FoliagePlacerBase {
     pub radius: IntProvider,
     pub offset: IntProvider,
-    #[serde(default, rename = "foliage_height")]
-    pub _foliage_height: Option<serde_json::Value>,
-    #[serde(default, rename = "leaf_placement_attempts")]
-    pub _leaf_placement_attempts: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
