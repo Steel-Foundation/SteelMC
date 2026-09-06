@@ -6,12 +6,14 @@ use steel_registry::init_vanilla_registry;
 
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
+use crate::entity::ai::brain::init_brain_registries;
 use crate::entity::init_entities;
 
 fn fill_behavior_registries() {
     init_behaviors();
     init_block_entities();
     init_entities();
+    init_brain_registries();
     log::info!("Behavior registries initialized");
 }
 

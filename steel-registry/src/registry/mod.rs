@@ -15,6 +15,7 @@ use crate::stat::custom::CustomStatRegistry;
 use crate::stat::{StatTypeRegistry, vanilla_stat_types};
 use crate::world_clock::WorldClockRegistry;
 use crate::{
+    activity::ActivityRegistry,
     attribute::AttributeRegistry,
     banner_pattern::BannerPatternRegistry,
     biome::BiomeRegistry,
@@ -70,9 +71,9 @@ use crate::{
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
-    vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns, vanilla_biome_tags,
-    vanilla_biomes, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
-    vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
+    vanilla_activities, vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns,
+    vanilla_biome_tags, vanilla_biomes, vanilla_block_entity_types, vanilla_block_tags,
+    vanilla_blocks, vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
     vanilla_chicken_sound_variants, vanilla_chicken_variants, vanilla_configured_carvers,
     vanilla_configured_features, vanilla_cow_sound_variants, vanilla_cow_variants,
     vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
@@ -231,6 +232,7 @@ pub const CUSTOM_STAT_REGISTRY: Identifier = Identifier::vanilla_static("custom_
 pub const STAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("stat_type");
 
 pub struct Registry {
+    pub activities: ActivityRegistry,
     pub attributes: AttributeRegistry,
     pub blocks: BlockRegistry,
     pub items: ItemRegistry,
@@ -305,6 +307,7 @@ impl Registry {
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
 
+        vanilla_activities::register_activities(&mut registry.activities);
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
@@ -430,6 +433,7 @@ impl Registry {
     pub fn freeze(&mut self) {
         self.validate_references();
 
+        self.activities.freeze();
         self.attributes.freeze();
         self.blocks.freeze();
         self.data_components.freeze();
@@ -690,6 +694,7 @@ impl Registry {
     #[must_use]
     pub fn new_empty() -> Self {
         Self {
+            activities: ActivityRegistry::new(),
             attributes: AttributeRegistry::new(),
             blocks: BlockRegistry::new(),
             data_components: DataComponentRegistry::new(),
