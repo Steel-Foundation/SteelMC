@@ -5,7 +5,7 @@
 
 use std::fs;
 
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use crate::generator_functions::generate_owned_identifier_from_str;
 use proc_macro2::TokenStream;
@@ -190,18 +190,21 @@ enum TagValueJson {
     Optional { id: String, required: Option<bool> },
 }
 
-fn tag_value_strings(values: Vec<TagValueJson>) -> Vec<String> {
+#[derive(Debug)]
+struct TagValue {
+    id: String,
+    required: bool,
+}
+
+fn tag_values(values: Vec<TagValueJson>) -> Vec<TagValue> {
     values
         .into_iter()
-        .filter_map(|value| match value {
-            TagValueJson::Plain(id) => Some(id),
-            TagValueJson::Optional { id, required } => {
-                if required == Some(false) {
-                    None
-                } else {
-                    Some(id)
-                }
-            }
+        .map(|value| match value {
+            TagValueJson::Plain(id) => TagValue { id, required: true },
+            TagValueJson::Optional { id, required } => TagValue {
+                id,
+                required: required.unwrap_or(true),
+            },
         })
         .collect()
 }
@@ -210,23 +213,44 @@ fn tag_value_strings(values: Vec<TagValueJson>) -> Vec<String> {
 /// then recursively resolves tag references to flat biome lists.
 fn load_biome_tags() -> HashMap<String, Vec<String>> {
     let tag_base = "../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome";
+    let biome_base = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/biome";
 
     // First pass: load raw tag definitions (may contain #tag references)
-    let mut raw_tags: HashMap<String, Vec<String>> = HashMap::default();
+    let mut raw_tags: HashMap<String, Vec<TagValue>> = HashMap::default();
     load_tags_from_dir(tag_base, "", &mut raw_tags);
+    let biomes = load_biome_ids(biome_base);
 
     // Second pass: resolve all tag references recursively
     let keys: Vec<String> = raw_tags.keys().cloned().collect();
     let mut resolved: HashMap<String, Vec<String>> = HashMap::default();
     for key in &keys {
-        let biomes = resolve_tag(key, &raw_tags, &mut resolved, &mut Vec::new());
-        resolved.insert(key.clone(), biomes);
+        let values = resolve_tag(key, &raw_tags, &biomes, &mut resolved, &mut Vec::new());
+        resolved.insert(key.clone(), values);
     }
 
     resolved
 }
 
-fn load_tags_from_dir(dir: &str, prefix: &str, tags: &mut HashMap<String, Vec<String>>) {
+fn load_biome_ids(dir: &str) -> HashSet<String> {
+    fs::read_dir(dir)
+        .unwrap_or_else(|error| panic!("Failed to read biome directory {dir}: {error}"))
+        .filter_map(|entry| {
+            let entry = entry.unwrap_or_else(|error| {
+                panic!("Failed to read an entry in biome directory {dir}: {error}")
+            });
+            let path = entry.path();
+            (path.extension().and_then(|extension| extension.to_str()) == Some("json")).then(|| {
+                let name = path
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_else(|| panic!("Biome path is not valid UTF-8: {}", path.display()));
+                format!("minecraft:{name}")
+            })
+        })
+        .collect()
+}
+
+fn load_tags_from_dir(dir: &str, prefix: &str, tags: &mut HashMap<String, Vec<TagValue>>) {
     let entries = fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("Failed to read biome tag directory {dir}: {e}"));
     for entry in entries {
@@ -250,14 +274,15 @@ fn load_tags_from_dir(dir: &str, prefix: &str, tags: &mut HashMap<String, Vec<St
             let content = fs::read_to_string(&path).unwrap();
             let tag: TagJson = serde_json::from_str(&content)
                 .unwrap_or_else(|e| panic!("Failed to parse biome tag {full_name}: {e}"));
-            tags.insert(full_name, tag_value_strings(tag.values));
+            tags.insert(full_name, tag_values(tag.values));
         }
     }
 }
 
 fn resolve_tag(
     tag_name: &str,
-    raw_tags: &HashMap<String, Vec<String>>,
+    raw_tags: &HashMap<String, Vec<TagValue>>,
+    biomes: &HashSet<String>,
     cache: &mut HashMap<String, Vec<String>>,
     stack: &mut Vec<String>,
 ) -> Vec<String> {
@@ -279,18 +304,35 @@ fn resolve_tag(
 
     let mut result = Vec::new();
     for value in values {
-        if let Some(referenced_tag) = value.strip_prefix('#') {
+        if let Some(referenced_tag) = value.id.strip_prefix('#') {
             // Recursive tag reference
             let referenced_tag = Identifier::parse_or_vanilla(referenced_tag)
                 .unwrap_or_else(|error| {
                     panic!("invalid nested biome tag {referenced_tag}: {error}")
                 })
                 .to_string();
-            let resolved = resolve_tag(&referenced_tag, raw_tags, cache, stack);
+            if !raw_tags.contains_key(&referenced_tag) {
+                if value.required {
+                    stack.pop();
+                    panic!("Missing biome tag {referenced_tag} referenced by tag {tag_name}");
+                }
+                continue;
+            }
+            let resolved = resolve_tag(&referenced_tag, raw_tags, biomes, cache, stack);
             result.extend(resolved);
         } else {
             // Direct biome identifier
-            result.push(value.clone());
+            let biome = Identifier::parse_or_vanilla(&value.id)
+                .unwrap_or_else(|error| {
+                    panic!("invalid biome {} in tag {tag_name}: {error}", value.id)
+                })
+                .to_string();
+            if biomes.contains(&biome) {
+                result.push(biome);
+            } else if value.required {
+                stack.pop();
+                panic!("Missing biome {biome} referenced by tag {tag_name}");
+            }
         }
     }
 
