@@ -414,16 +414,19 @@ impl Player {
                 .set_remote_slot_known(slot_index, &item_stack);
             menu.behavior_mut().broadcast_changes(&self.connection);
         } else if drop && valid_data {
-            // TODO: Implement drop spam throttling
-            // For now, just drop the item
-            if !item_stack.is_empty() {
-                // TODO: Actually drop the item into the world
-                log::debug!(
-                    "Player {} would drop {:?} in creative mode",
-                    self.gameprofile.name,
-                    item_stack
-                );
+            {
+                let mut throttler = self.drop_spam_throttler.lock();
+                if throttler.is_under_threshold() {
+                    throttler.increment();
+                } else {
+                    log::warn!(
+                        "Player {} was dropping items too fast in creative mode; ignoring",
+                        self.gameprofile.name,
+                    );
+                    return;
+                }
             }
+            let _ = self.drop_item(item_stack, false, true);
         }
     }
 

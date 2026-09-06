@@ -49,7 +49,8 @@ const MAX_ENTITY_HIT_MARGIN: f64 = 0.3;
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
 
 /// Mirrors vanilla `RandomSource.triangle(mode, deviation)`.
-fn triangle_random(mode: f64, deviation: f64) -> f64 {
+#[must_use]
+pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
@@ -339,7 +340,14 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Returns vanilla `Projectile.canHitEntity`.
+    /// Use this if you don't need to override.
     fn can_hit_entity(&self, entity: &dyn Entity) -> bool {
+        self.base_can_hit_entity(entity)
+    }
+
+    /// Returns vanilla `Projectile.canHitEntity`.
+    /// We had to split this up, because Rust doesn't allow for calling super trait fns (without causing unbounded recursion) for overrides, so otherwise vanilla behavior would not be achievable.
+    fn base_can_hit_entity(&self, entity: &dyn Entity) -> bool {
         if !entity.can_be_hit_by_projectile() {
             return false;
         }
@@ -443,9 +451,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Casts the move vector and returns the nearest block/entity hit (vanilla
     /// `ProjectileUtil.getHitResultOnMoveVector` with `this::canHitEntity`).
     fn get_hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
+        const EPSILON: f64 = 1.0e-12;
         let world = self.level()?;
         let from = self.position();
         let delta = self.velocity();
+        if delta.length_squared() < EPSILON {
+            return None;
+        }
         let to = from + delta;
 
         let block_hit =
@@ -609,14 +621,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
-            if let Some(world) = self.level() {
-                let owner = self.get_owner();
-                world.game_event_at(
-                    &vanilla_game_events::PROJECTILE_SHOOT,
-                    self.position(),
-                    &GameEventContext::new(owner.as_deref(), None),
-                );
-            }
+            let owner = self.get_owner();
+            self.game_event_with_source_entity(
+                &vanilla_game_events::PROJECTILE_SHOOT,
+                owner.as_deref(),
+            );
             self.set_has_been_shot(true);
         }
         self.check_left_owner();
