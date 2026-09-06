@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -17,17 +18,26 @@ use steel_registry::{
     vanilla_items, vanilla_world_clocks,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use crate::behavior::block::{
     BlockBehavior, EntityFallDamage, EntityFallOnContext, default_can_be_replaced,
 };
 use crate::behavior::context::BlockPlaceContext;
 use crate::block_entity::SharedBlockEntity;
-use crate::entity::Entity;
+use crate::entity::entities::TurtleEntity;
+use crate::entity::{AgeableMob, ENTITIES, Entity, next_entity_id};
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
+
+/// Offset of a hatchling inside the nest block, from vanilla
+/// `TurtleEggBlock.randomTick`. Applied to both X and Z so a lone baby stands
+/// near the middle of the block rather than on its corner.
+const HATCHLING_NEST_OFFSET: f64 = 0.3;
+/// Extra X spacing per egg, so the babies of a full cluster do not all spawn on
+/// one point.
+const HATCHLING_SPACING: f64 = 0.2;
 
 /// Cracking stages a turtle egg passes through before it hatches.
 const MAX_HATCH_LEVEL: u8 = 2;
@@ -181,6 +191,45 @@ impl TurtleEggBlock {
             );
         }
     }
+
+    /// Spawns one freshly hatched baby turtle in the nest block, matching vanilla
+    /// `TurtleEggBlock.randomTick`. The turtle starts fully aged down and treats
+    /// the block it hatched from as its home beach. `index` fans the eggs of a
+    /// cluster out so they do not stack on one spot.
+    ///
+    /// Vanilla's `snapTo(x, y, z, 0.0F, 0.0F)` also zeroes the rotation, which is
+    /// why hatchlings always face due south. Steel's factory starts entities at
+    /// that same zero rotation, so only the position has to be given here.
+    fn hatch_baby_turtle(world: &Arc<World>, pos: BlockPos, index: u8) {
+        let spawn_pos = DVec3::new(
+            f64::from(pos.x()) + HATCHLING_NEST_OFFSET + f64::from(index) * HATCHLING_SPACING,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + HATCHLING_NEST_OFFSET,
+        );
+        let Some(baby) = ENTITIES.create(
+            &vanilla_entities::TURTLE,
+            next_entity_id(),
+            spawn_pos,
+            Arc::downgrade(world),
+        ) else {
+            log::error!("turtle entity factory produced no entity for the nest at {pos:?}");
+            return;
+        };
+
+        let Some(turtle) = baby.downcast_ref::<TurtleEntity>() else {
+            log::error!("turtle entity factory produced a non-turtle for the nest at {pos:?}");
+            return;
+        };
+        // Vanilla writes `setAge(-24000)` here, which is the same value as
+        // `AgeableMob.getBabyStartAge` and so the same thing as asking for a baby.
+        turtle.set_baby(true);
+        turtle.set_home_pos(pos);
+        baby.set_old_position_to_current();
+
+        if let Err(error) = world.try_add_entity(baby) {
+            log::error!("failed to add a hatched turtle at {pos:?} to the world: {error}");
+        }
+    }
 }
 
 impl BlockBehavior for TurtleEggBlock {
@@ -264,17 +313,14 @@ impl BlockBehavior for TurtleEggBlock {
             );
 
             let eggs = state.get_value(EGGS);
-            for _ in 0..eggs {
+            for index in 0..eggs {
                 world.level_event(
                     level_events::PARTICLES_DESTROY_BLOCK,
                     pos,
                     level_events::encode_block_state_data(u32::from(state.0)),
                     None,
                 );
-                // TODO(turtle-entity): spawn one baby Turtle per egg here once the
-                // Turtle entity lands. Vanilla creates it with age -24000, calls
-                // setHomePos(pos), snaps it just above the nest, and adds it to the
-                // world. Wired up in the follow-up entity PR.
+                Self::hatch_baby_turtle(world, pos, index);
             }
         }
     }
@@ -329,19 +375,43 @@ impl BlockBehavior for TurtleEggBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_world_clocks};
-    use steel_utils::ChunkPos;
+    use steel_utils::{ChunkPos, WorldAabb};
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
+    use crate::entity::{SharedEntity, init_entities};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     /// A day-time tick inside the pre-dawn window where eggs always advance, so
     /// random ticks are deterministic in tests.
     const ALWAYS_HATCH_DAY_TIME: i64 = 21_500;
 
+    /// How far either side of the nest the tests look for hatched turtles. One
+    /// block of slack covers the cluster fan-out and the turtle's own size.
+    const HATCH_SEARCH_SLACK: f64 = 1.0;
+
+    /// Collects the turtles hatched at a nest, searching the block and its
+    /// neighbors since a cluster fans its babies out slightly.
+    fn hatched_turtles(world: &Arc<World>, pos: BlockPos) -> Vec<SharedEntity> {
+        let aabb = WorldAabb::new(
+            f64::from(pos.x()) - HATCH_SEARCH_SLACK,
+            f64::from(pos.y()) - HATCH_SEARCH_SLACK,
+            f64::from(pos.z()) - HATCH_SEARCH_SLACK,
+            f64::from(pos.x()) + 1.0 + HATCH_SEARCH_SLACK,
+            f64::from(pos.y()) + 1.0 + HATCH_SEARCH_SLACK,
+            f64::from(pos.z()) + 1.0 + HATCH_SEARCH_SLACK,
+        );
+        world
+            .get_entities_in_aabb(&aabb)
+            .into_iter()
+            .filter(|entity| entity.downcast_ref::<TurtleEntity>().is_some())
+            .collect()
+    }
+
     fn prepare(key: &'static str) -> (Arc<World>, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
+        init_entities();
         let world = fresh_test_world(key);
         let pos = BlockPos::new(8, 64, 8);
         insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
@@ -370,11 +440,63 @@ mod tests {
         behavior.random_tick(world.get_block_state(pos), &world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 2);
 
-        // Final advance hatches the egg and removes the block. Spawning the baby
-        // turtle is stubbed until the Turtle entity lands, so only the removal is
-        // asserted here.
+        // Final advance hatches the egg, removes the block, and spawns a baby
+        // turtle that homes on the nest.
         behavior.random_tick(world.get_block_state(pos), &world, pos);
         assert!(world.get_block_state(pos).is_air());
+
+        let babies = hatched_turtles(&world, pos);
+        assert_eq!(babies.len(), 1, "one egg hatches into one baby turtle");
+        let baby = babies[0]
+            .downcast_ref::<TurtleEntity>()
+            .expect("hatched entity should be a turtle");
+        assert_eq!(
+            baby.get_age(),
+            baby.get_baby_start_age(),
+            "a hatched turtle starts at the vanilla baby age"
+        );
+        assert_eq!(baby.home_pos(), pos, "a hatched turtle homes on its nest");
+    }
+
+    #[test]
+    fn full_cluster_hatches_one_baby_per_egg() {
+        /// Eggs in the test cluster. Any count above one exercises the fan-out.
+        const CLUSTER_EGGS: u8 = 3;
+        /// Slack for comparing spawn coordinates that were built by addition.
+        const POSITION_TOLERANCE: f64 = 1e-9;
+
+        let (world, pos) = prepare("turtle_egg_cluster_hatch");
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::SAND.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let ready_to_hatch = vanilla_blocks::TURTLE_EGG
+            .default_state()
+            .set_value(HATCH, MAX_HATCH_LEVEL)
+            .set_value(EGGS, CLUSTER_EGGS);
+        assert!(world.set_block(pos, ready_to_hatch, UpdateFlags::UPDATE_NONE));
+        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TURTLE_EGG);
+
+        behavior.random_tick(world.get_block_state(pos), &world, pos);
+
+        assert!(world.get_block_state(pos).is_air());
+        let babies = hatched_turtles(&world, pos);
+        assert_eq!(
+            babies.len(),
+            usize::from(CLUSTER_EGGS),
+            "each egg in the cluster hatches into its own baby turtle"
+        );
+
+        // The babies are spaced along X, so no two of them share a spot.
+        let mut spawn_x: Vec<f64> = babies.iter().map(|baby| baby.position().x).collect();
+        spawn_x.sort_by(f64::total_cmp);
+        for pair in spawn_x.windows(2) {
+            assert!(
+                (pair[1] - pair[0] - HATCHLING_SPACING).abs() < POSITION_TOLERANCE,
+                "cluster babies are spaced one gap apart, got {spawn_x:?}"
+            );
+        }
     }
 
     #[test]
