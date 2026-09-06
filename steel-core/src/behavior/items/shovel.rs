@@ -87,7 +87,6 @@ impl ItemBehavior for ShovelItem {
                 0,
                 None,
             );
-            // TODO: CampfireBlock::dowse() — eject cooking items
             let updated_state = block_state.set_value(&LIT_PROPERTY, false);
             context.world.set_block(
                 context.hit_result.block_pos,

@@ -1,7 +1,7 @@
 use glam::{DVec3, IVec3};
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_SOUND;
-use steel_registry::sound_event::SoundEventRef;
+use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 
 /// Sound source categories (matches vanilla `SoundSource` enum order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +21,24 @@ pub enum SoundSource {
 }
 
 impl SoundSource {
+    /// Returns the vanilla command literal for this category.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Master => "master",
+            Self::Music => "music",
+            Self::Records => "record",
+            Self::Weather => "weather",
+            Self::Blocks => "block",
+            Self::Hostile => "hostile",
+            Self::Neutral => "neutral",
+            Self::Players => "player",
+            Self::Ambient => "ambient",
+            Self::Voice => "voice",
+            Self::Ui => "ui",
+        }
+    }
+
     /// Returns the `VarInt` value for the enum.
     #[must_use]
     pub const fn as_varint(self) -> i32 {
@@ -35,12 +53,8 @@ impl SoundSource {
 #[derive(WriteTo, ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_SOUND)]
 pub struct CSound {
-    /// The holder-encoded sound event ID (`VarInt`).
-    ///
-    /// Vanilla reserves `0` for direct sound events, so registered sound events
-    /// are encoded as `registry_id + 1`.
-    #[write(as = VarInt)]
-    pub sound_id: i32,
+    /// The holder-encoded sound event.
+    pub sound: SoundEventHolder,
     /// The sound source category (`VarInt`).
     #[write(as = VarInt)]
     pub source: i32,
@@ -73,8 +87,28 @@ impl CSound {
         pitch: f32,
         seed: i64,
     ) -> Self {
+        Self::new_holder(
+            SoundEventHolder::registry(sound),
+            source,
+            pos,
+            volume,
+            pitch,
+            seed,
+        )
+    }
+
+    /// Creates a sound packet from a registered or direct sound holder.
+    #[must_use]
+    pub fn new_holder(
+        sound: SoundEventHolder,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        seed: i64,
+    ) -> Self {
         Self {
-            sound_id: sound.packet_holder_id(),
+            sound,
             source: source.as_varint(),
             pos: IVec3::new(
                 (pos.x * 8.0) as i32,
@@ -140,6 +174,10 @@ mod tests {
             sound_events::BLOCK_WOODEN_BUTTON_CLICK_ON.packet_holder_id(),
             expected_holder_id
         );
-        assert_eq!(packet.sound_id, expected_holder_id);
+        assert!(matches!(
+            packet.sound,
+            steel_registry::sound_event::SoundEventHolder::Registry(sound)
+                if sound.packet_holder_id() == expected_holder_id
+        ));
     }
 }

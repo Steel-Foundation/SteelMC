@@ -33,7 +33,7 @@ pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
 use connection::NetworkConnection as _;
 pub use connection::{ClientInformation, PlayerConnection};
 use container_counter::ContainerCounter;
-use food_data::FoodData;
+use food_data::{FoodData, food_constants};
 use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
 use health_sync::HealthSyncState;
@@ -51,7 +51,6 @@ pub use profile::{
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::mem::replace;
 use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -98,10 +97,10 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMoveError,
+    EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
+    apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -388,9 +387,13 @@ impl Player {
             self.stop_using_item();
             return;
         }
+        // Read a copy rather than clearing the slot,
+        // so any inventory-touching side effect from
+        // `release_using` never sees the hand as vacant.
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
@@ -420,8 +423,9 @@ impl Player {
             return;
         }
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
@@ -436,7 +440,9 @@ impl Player {
             return;
         };
         if active.remaining_ticks() <= 0 {
+            let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, self);
+            self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
         }
 
@@ -1477,6 +1483,11 @@ impl Entity for Player {
         ));
     }
 
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        let (yaw, pitch) = self.rotation();
+        self.teleport(pos, yaw, pitch)
+    }
+
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -1980,6 +1991,13 @@ impl LivingEntity for Player {
         Player::has_infinite_materials(self)
     }
 
+    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+        let leftover = self.inventory.lock().add_or_return(extra);
+        if !leftover.is_empty() {
+            let _ = self.drop_item(leftover, false, false);
+        }
+    }
+
     fn get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
@@ -2016,9 +2034,9 @@ impl LivingEntity for Player {
         self.default_jump_from_ground();
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
-            self.cause_food_exhaustion(0.2);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
         } else {
-            self.cause_food_exhaustion(0.05);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
         }
     }
 
