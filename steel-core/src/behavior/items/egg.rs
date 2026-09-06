@@ -1,8 +1,8 @@
 //! Egg item behavior (`EggItem`).
 //!
 //! Throwing an egg spawns a [`ThrownEggEntity`] from the player's eye, shot
-//! along their look direction, and consumes one egg (creative-mode count
-//! restoration is handled by the caller). Mirrors vanilla `EggItem.use`.
+//! along their look direction, and consumes one egg unless the player
+//! has infinite materials. Mirrors vanilla `EggItem.use`.
 
 use std::sync::Arc;
 
@@ -67,9 +67,10 @@ impl ItemBehavior for EggItem {
         };
 
         player.award_stat(&vanilla_stat_types::ITEM_USED, thrown_item.item);
-        if !player.has_infinite_materials() {
-            context.inv.with_item(|item| item.shrink(1));
-        }
+        let has_infinite_materials = player.has_infinite_materials();
+        context
+            .inv
+            .with_item(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }

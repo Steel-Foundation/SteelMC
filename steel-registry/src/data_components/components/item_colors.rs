@@ -10,6 +10,7 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 use super::rgb_color::decode_rgb_color;
+use crate::DyeColor;
 
 /// RGB color applied to dyeable items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,47 @@ impl DyedItemColor {
     pub const fn rgb(self) -> i32 {
         self.rgb
     }
+
+    /// Applies Vanilla's intensity-preserving dye blend.
+    #[must_use]
+    pub fn apply_dyes(current: Option<Self>, dyes: &[DyeColor]) -> Self {
+        let mut red_total = 0;
+        let mut green_total = 0;
+        let mut blue_total = 0;
+        let mut intensity_total = 0;
+        let mut color_count = 0;
+
+        if let Some(current) = current {
+            let (red, green, blue) = rgb_channels(current.rgb);
+            intensity_total += red.max(green).max(blue);
+            red_total += red;
+            green_total += green;
+            blue_total += blue;
+            color_count += 1;
+        }
+        for dye in dyes {
+            let (red, green, blue) = rgb_channels(dye.texture_diffuse_color());
+            intensity_total += red.max(green).max(blue);
+            red_total += red;
+            green_total += green;
+            blue_total += blue;
+            color_count += 1;
+        }
+
+        let mut red = red_total / color_count;
+        let mut green = green_total / color_count;
+        let mut blue = blue_total / color_count;
+        let average_intensity = intensity_total as f32 / color_count as f32;
+        let result_intensity = red.max(green).max(blue) as f32;
+        red = (red as f32 * average_intensity / result_intensity) as i32;
+        green = (green as f32 * average_intensity / result_intensity) as i32;
+        blue = (blue as f32 * average_intensity / result_intensity) as i32;
+        Self::new((red << 16) | (green << 8) | blue)
+    }
+}
+
+const fn rgb_channels(color: i32) -> (i32, i32, i32) {
+    ((color >> 16) & 255, (color >> 8) & 255, color & 255)
 }
 
 impl WriteTo for DyedItemColor {

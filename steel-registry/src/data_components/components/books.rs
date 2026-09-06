@@ -242,6 +242,18 @@ impl WrittenBookContent {
         self.generation
     }
 
+    /// Returns the signed-book content created by one crafting copy.
+    #[must_use]
+    pub fn craft_copy(&self) -> Self {
+        Self {
+            title: self.title.clone(),
+            author: self.author.clone(),
+            generation: self.generation + 1,
+            pages: self.pages.clone(),
+            resolved: self.resolved,
+        }
+    }
+
     #[must_use]
     pub fn pages(&self) -> &[Filterable<TextComponent>] {
         &self.pages
