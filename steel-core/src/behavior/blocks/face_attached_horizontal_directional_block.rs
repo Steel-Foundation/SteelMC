@@ -47,10 +47,6 @@ impl FaceAttachedHorizontalDirectionalBlock {
         Self::can_attach(level, pos, Self::connected_direction(state).opposite())
     }
 
-    /// Vanilla's placement and neighbor updates call the virtual `state.canSurvive`
-    /// rather than this class's own, and subclasses override it — `GrindstoneBlock`
-    /// always survives. Dispatch through the block's behavior so those overrides
-    /// are honored instead of forcing the attachment rule on every subclass.
     fn block_can_survive(state: BlockStateId, level: &dyn LevelReader, pos: BlockPos) -> bool {
         BLOCK_BEHAVIORS
             .get_behavior(state.get_block())
