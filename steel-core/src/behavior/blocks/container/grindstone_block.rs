@@ -36,9 +36,6 @@ impl BlockBehavior for GrindstoneBlock {
         self.face_attached.state_for_placement(context)
     }
 
-    /// Vanilla `GrindstoneBlock.canSurvive` overrides the face-attached rule and
-    /// always returns true, so a grindstone needs no sturdy support and never pops
-    /// off — it can be placed on anything, including another grindstone.
     fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
     }

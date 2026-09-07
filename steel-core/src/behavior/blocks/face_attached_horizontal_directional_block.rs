@@ -16,17 +16,17 @@ const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FAC
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 /// Shared behavior inherited from vanilla's `FaceAttachedHorizontalDirectionalBlock`.
-pub(in crate::behavior::blocks) struct FaceAttachedHorizontalDirectionalBlock {
-    pub(in crate::behavior::blocks) block: BlockRef,
+pub(crate) struct FaceAttachedHorizontalDirectionalBlock {
+    pub(crate) block: BlockRef,
 }
 
 impl FaceAttachedHorizontalDirectionalBlock {
     #[must_use]
-    pub(in crate::behavior::blocks) const fn new(block: BlockRef) -> Self {
+    pub(crate) const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 
-    pub(in crate::behavior::blocks) fn connected_direction(state: BlockStateId) -> Direction {
+    pub(crate) fn connected_direction(state: BlockStateId) -> Direction {
         match state.get_value(ATTACH_FACE) {
             AttachFace::Ceiling => Direction::Down,
             AttachFace::Floor => Direction::Up,
@@ -34,11 +34,7 @@ impl FaceAttachedHorizontalDirectionalBlock {
         }
     }
 
-    pub(in crate::behavior::blocks) fn can_attach(
-        level: &dyn LevelReader,
-        pos: BlockPos,
-        direction: Direction,
-    ) -> bool {
+    pub(crate) fn can_attach(level: &dyn LevelReader, pos: BlockPos, direction: Direction) -> bool {
         let support_pos = pos.relative(direction);
         level.is_face_sturdy(
             level.get_block_state(support_pos),
@@ -47,11 +43,7 @@ impl FaceAttachedHorizontalDirectionalBlock {
         )
     }
 
-    pub(in crate::behavior::blocks) fn can_survive(
-        state: BlockStateId,
-        level: &dyn LevelReader,
-        pos: BlockPos,
-    ) -> bool {
+    pub(crate) fn can_survive(state: BlockStateId, level: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::can_attach(level, pos, Self::connected_direction(state).opposite())
     }
 
@@ -65,7 +57,7 @@ impl FaceAttachedHorizontalDirectionalBlock {
             .can_survive(state, level, pos)
     }
 
-    pub(in crate::behavior::blocks) fn state_for_placement(
+    pub(crate) fn state_for_placement(
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<BlockStateId> {
@@ -96,7 +88,7 @@ impl FaceAttachedHorizontalDirectionalBlock {
         None
     }
 
-    pub(in crate::behavior::blocks) fn update_shape(
+    pub(crate) fn update_shape(
         state: BlockStateId,
         level: &dyn LevelReader,
         pos: BlockPos,
