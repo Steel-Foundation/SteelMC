@@ -149,6 +149,7 @@ impl StandingAndWallBlockItem {
     }
 
     /// Returns whether this item can be placed at a certain location with a block state.
+    /// This assumes that `can_survive` has already returned `true`.
     pub(crate) const fn can_place(
         _world: &Arc<World>,
         _state: BlockStateId,

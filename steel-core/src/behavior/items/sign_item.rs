@@ -103,6 +103,8 @@ fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: Blo
 ///
 /// This matches vanilla's `HangingSignItem.canPlace` override which adds
 /// an additional check for `WallHangingSignBlock.canPlace`.
+///
+/// This assumes that `can_survive` has already returned `true`.
 fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos) -> bool {
     let block = REGISTRY.blocks.by_state_id(state);
 
