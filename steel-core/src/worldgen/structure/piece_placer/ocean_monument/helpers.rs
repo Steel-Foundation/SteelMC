@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::Entity;
 
 pub(super) fn generate_water_box(
     placer: &mut ScatteredFeaturePlacer<'_, '_>,

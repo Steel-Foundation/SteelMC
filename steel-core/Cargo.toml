@@ -97,5 +97,10 @@ name = "worldgen"
 harness = false
 required-features = ["benchmark-support"]
 
+[[bench]]
+name = "chunk_sender"
+harness = false
+required-features = ["benchmark-support"]
+
 [lints]
 workspace = true
