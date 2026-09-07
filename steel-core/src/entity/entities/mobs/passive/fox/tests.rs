@@ -1,7 +1,11 @@
 use std::io::Cursor;
 
 use simdnbt::borrow::read_compound as read_borrowed_compound;
-use steel_registry::{init_vanilla_registry, vanilla_attributes, vanilla_entities, vanilla_items};
+use steel_registry::{
+    REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_entities,
+    vanilla_items,
+};
+use steel_utils::BlockStateId;
 
 use crate::behavior::init_behaviors;
 use crate::entity::SharedEntity;
@@ -522,4 +526,68 @@ fn fox_does_not_eat_while_asleep_in_the_air_or_chasing_something() {
         .expect("pig should attach to the loaded chunk");
     assert!(Mob::set_target(fox.as_ref(), Some(&(pig as SharedEntity))));
     assert_still_holding_berries("a fox chasing something does not eat");
+}
+
+/// A bare level that answers only what the spawn rule asks of it: what is under
+/// the fox, and how bright it is.
+struct SpawnRuleLevel {
+    below_state: BlockStateId,
+    raw_brightness: u8,
+}
+
+impl LevelReader for SpawnRuleLevel {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        if pos == SPAWN_POS.below() {
+            return self.below_state;
+        }
+
+        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+    }
+
+    fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+        self.raw_brightness
+    }
+
+    fn min_y(&self) -> i32 {
+        -64
+    }
+
+    fn height(&self) -> i32 {
+        384
+    }
+}
+
+/// Where the candidate fox stands in the spawn-rule test.
+const SPAWN_POS: BlockPos = BlockPos::new(0, 64, 0);
+
+fn fox_spawns_on(below_state: BlockStateId, raw_brightness: u8) -> bool {
+    let level = SpawnRuleLevel {
+        below_state,
+        raw_brightness,
+    };
+    <FoxEntity as Animal>::check_animal_spawn_rules(&level, EntitySpawnReason::Natural, SPAWN_POS)
+}
+
+/// Vanilla `Fox.checkFoxSpawnRules`: foxes are pickier about their ground than
+/// animals in general, and the light check holds whatever asked for the spawn.
+#[test]
+fn foxes_only_spawn_on_their_own_ground() {
+    init_vanilla_registry();
+
+    assert!(fox_spawns_on(vanilla_blocks::PODZOL.default_state(), 9));
+    assert!(fox_spawns_on(vanilla_blocks::SNOW_BLOCK.default_state(), 9));
+
+    // Sand carries the general animal tag but not the fox one.
+    assert!(!fox_spawns_on(vanilla_blocks::SAND.default_state(), 9));
+
+    assert!(!fox_spawns_on(vanilla_blocks::PODZOL.default_state(), 8));
+    let dark = SpawnRuleLevel {
+        below_state: vanilla_blocks::PODZOL.default_state(),
+        raw_brightness: 8,
+    };
+    assert!(!<FoxEntity as Animal>::check_animal_spawn_rules(
+        &dark,
+        EntitySpawnReason::TrialSpawner,
+        SPAWN_POS
+    ));
 }

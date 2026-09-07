@@ -9,6 +9,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef, MobCategory,
@@ -17,6 +18,7 @@ use steel_registry::entity_variant::FoxVariant;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_biome_tags::BiomeTag;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::FoxEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
@@ -25,7 +27,7 @@ use steel_registry::{
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{GameType, InteractionHand};
-use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, UuidExt};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
@@ -44,7 +46,7 @@ use crate::entity::{
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
@@ -798,6 +800,23 @@ impl Animal for FoxEntity {
         {
             offspring.add_trusted(partner_cause);
         }
+    }
+
+    /// Vanilla `Fox.checkFoxSpawnRules`: foxes want their own ground, the snow,
+    /// grass and podzol of the forests they live in, rather than the wider set
+    /// every other animal will spawn on.
+    /// Like the turtle and unlike the shared animal rule, the light check has no
+    /// exemption for spawners.
+    fn check_animal_spawn_rules(
+        level: &dyn LevelReader,
+        _spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+    ) -> bool {
+        level
+            .get_block_state(pos.below())
+            .get_block()
+            .has_tag(&BlockTag::FOXES_SPAWNABLE_ON)
+            && Self::is_bright_enough_to_spawn(level, pos)
     }
 }
 
