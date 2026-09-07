@@ -116,7 +116,7 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
         return false;
     }
 
-    // All hanging signs need canSurvive check (handled by get_state_for_placement)
+    // Defer to super function
     StandingAndWallBlockItem::can_place(world, state, pos)
 }
 
