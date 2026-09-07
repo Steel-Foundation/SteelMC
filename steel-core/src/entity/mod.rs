@@ -11,6 +11,7 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
@@ -52,7 +53,6 @@ use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
-    wrap_degrees,
 };
 use text_components::{
     Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,

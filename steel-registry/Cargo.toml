@@ -8,6 +8,7 @@ build = "build/build.rs"
 
 [dependencies]
 # Internal crates
+steel-math.workspace = true
 steel-utils.workspace = true
 
 # UUID

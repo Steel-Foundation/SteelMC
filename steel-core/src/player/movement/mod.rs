@@ -12,6 +12,7 @@ pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
 use glam::{DVec3, Vec3Swizzles};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
@@ -60,18 +61,6 @@ pub fn clamp_horizontal(value: f64) -> f64 {
 #[must_use]
 pub fn clamp_vertical(value: f64) -> f64 {
     value.clamp(-CLAMP_VERTICAL, CLAMP_VERTICAL)
-}
-
-#[must_use]
-pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[must_use]
