@@ -224,7 +224,7 @@ impl GrindstoneKind {
 
         let mut repair_cost = 0;
 
-        for _i in 0..new_enchantments.len() {
+        for _ in 0..new_enchantments.len() {
             repair_cost = AnvilKind::calculate_increased_repair_cost(repair_cost);
         }
 
