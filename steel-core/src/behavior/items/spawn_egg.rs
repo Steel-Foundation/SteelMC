@@ -17,7 +17,10 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, ITEM_BEHAVIORS,
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
-use crate::entity::{add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity, AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, LivingEntity, Mob, SharedEntity};
+use crate::entity::{
+    AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
+    add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
+};
 use crate::player::Player;
 use crate::world::ClipFluid;
 use crate::world::World;
