@@ -743,6 +743,7 @@ pub mod entities;
     reason = "the entity module mirrors vanilla's Entity class and groups its implementation"
 )]
 mod entity;
+pub mod entity_selector;
 mod fluid_contact;
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -796,9 +797,10 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
-    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
-    MobEffectSyncChange, MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
+    HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
+    LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
+    sync_dirty_mob_effects,
 };
 pub use living_entity::LivingEntity;
 pub use manager::{
