@@ -2,12 +2,13 @@ use std::{io::Cursor, sync::Arc};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
+use steel_math::wrap_degrees;
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_utils::nbt::merge_nbt_compounds;
-use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty, wrap_degrees};
+use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty};
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};

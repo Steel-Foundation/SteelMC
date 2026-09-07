@@ -17,10 +17,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, ITEM_BEHAVIORS,
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
-use crate::entity::{
-    AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
-    add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
-};
+use crate::entity::{add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity, AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, LivingEntity, Mob, SharedEntity};
 use crate::player::Player;
 use crate::world::ClipFluid;
 use crate::world::World;
@@ -65,9 +62,7 @@ impl SpawnEggItem {
             return InteractionResult::Fail;
         }
 
-        if !player.has_infinite_materials() {
-            inventory.with_item(|item| item.shrink(1));
-        }
+        inventory.with_item(|item| item.consume_one(player.has_infinite_materials()));
         world.game_event(
             &vanilla_game_events::ENTITY_PLACE,
             spawn_pos,
@@ -92,9 +87,7 @@ impl SpawnEggItem {
         if Self::spawn_offspring(stack, parent).is_none() {
             return InteractionResult::Pass;
         }
-        if !player.has_infinite_materials() {
-            stack.shrink(1);
-        }
+        stack.consume_one(player.has_infinite_materials());
         InteractionResult::SuccessServer
     }
 

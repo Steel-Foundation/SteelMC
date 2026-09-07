@@ -54,6 +54,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
+use crate::world::game_event::GameEventContext;
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
