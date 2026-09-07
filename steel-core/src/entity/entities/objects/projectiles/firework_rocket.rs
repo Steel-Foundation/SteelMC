@@ -29,7 +29,6 @@ use crate::entity::{
     RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
-use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
 const INITIAL_VERTICAL_VELOCITY: f64 = 0.05;
@@ -307,11 +306,7 @@ impl FireworkRocketEntity {
     fn explode(&self, world: &Arc<World>) {
         self.broadcast_entity_event(EntityStatus::FireworksExplode);
         let owner = self.get_owner();
-        world.game_event_at(
-            &vanilla_game_events::EXPLODE,
-            self.position(),
-            &GameEventContext::new(owner.as_deref(), None),
-        );
+        self.game_event_with_source_entity(&vanilla_game_events::EXPLODE, owner.as_deref());
         self.deal_explosion_damage(world);
         self.set_removed(RemovalReason::Discarded);
     }

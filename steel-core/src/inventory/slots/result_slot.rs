@@ -22,7 +22,6 @@ unsafe impl DowncastType for ResultSlot {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:slot/result");
 }
 
-// TODO: Award stat & advancement criterion for crafting
 impl ResultSlot {
     /// Creates a new `ResultSlot` backed by the handler's result container.
     pub fn new(handler: impl ResultHandler + 'static) -> Self {
@@ -94,6 +93,7 @@ impl Slot for ResultSlot {
         _stack: &ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Track the crafted count and run ITEM_CRAFTED/item callbacks.
         self.handler.on_result_taken(guard, player)
     }
 

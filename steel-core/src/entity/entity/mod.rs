@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::entity::leash::Leashable;
+use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -987,6 +988,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().dampen_fall_distance_in_lava();
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
+        self.set_first_tick(false);
         // Vanilla checks `this instanceof Leashable` inside `Entity.baseTick`.
         if let Some(mob) = self.as_leashable() {
             mob.tick_leash();
@@ -1153,27 +1155,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_removed(reason);
     }
 
-    /// Emits a vanilla game event from this entity's exact position.
-    fn game_event(&self, event: GameEventRef) {
+    /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
+    fn game_event_with_source_entity(
+        &self,
+        event: GameEventRef,
+        source_entity: Option<&dyn Entity>,
+    ) {
         let Some(world) = self.level() else {
             return;
         };
+
         world.game_event_at(
             event,
             self.position(),
-            &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            &GameEventContext::new(source_entity, None),
         );
     }
 
-    /// Emits a vanilla game event from this entity's exact position with a player.
-    fn game_event_with_player(&self, event: GameEventRef, player: &Player) {
-        if let Some(world) = self.level() {
-            world.game_event_at(
-                event,
-                self.position(),
-                &GameEventContext::new(Some(player), None),
-            );
-        }
+    /// Emits a vanilla game event from this entity's exact position.
+    fn game_event(&self, event: GameEventRef) {
+        self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
     /// Kills this entity using vanilla's living/non-living class split.
@@ -1267,14 +1268,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         }
 
-        if let Some(world) = self.level() {
-            let source_entity = player.map(|player| player as &dyn Entity);
-            world.game_event(
-                &vanilla_game_events::SHEAR,
-                self.block_position(),
-                &GameEventContext::new(source_entity, None),
-            );
-        }
+        let source_entity = player.map(|player| player as &dyn Entity);
+        self.game_event_with_source_entity(&vanilla_game_events::SHEAR, source_entity);
         true
     }
 
@@ -1338,13 +1333,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             mob.set_guaranteed_drop(slot);
             mob.set_persistence_required();
 
-            if let Some(world) = self.level() {
-                world.game_event(
-                    &vanilla_game_events::SHEAR,
-                    self.block_position(),
-                    &GameEventContext::new(Some(player), None),
-                );
-            }
+            self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
             if let Some(shearing_sound) = shearing_sound {
                 self.play_sound(shearing_sound, 1.0, 1.0);
             }
@@ -1431,13 +1420,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     mob.drop_leash();
                 }
 
-                if let Some(world) = self.level() {
-                    world.game_event(
-                        &vanilla_game_events::ENTITY_INTERACT,
-                        self.block_position(),
-                        &GameEventContext::new(Some(player), None),
-                    );
-                }
+                self.game_event_with_source_entity(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    Some(player),
+                );
                 self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
                 return InteractionResult::Success;
             }
@@ -1731,6 +1717,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().tick_count()
     }
 
+    /// Returns whether this entity has not completed its first tick.
+    fn is_first_tick(&self) -> bool {
+        self.base().is_first_tick()
+    }
+
+    /// Sets whether this entity has not completed its first tick.
+    fn set_first_tick(&self, first_tick: bool) {
+        self.base().set_first_tick(first_tick);
+    }
+
     /// Advances vanilla `Entity.tickCount`.
     fn advance_tick_count(&self) {
         self.base().advance_tick_count();
@@ -2022,7 +2018,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             4.0,
         ) && self.should_play_lava_hurt_sound()
         {
-            let pitch = 2.0 + rand::random::<f32>() * 0.4;
+            let pitch = rand::random_range(2.0..2.4);
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
@@ -2137,7 +2133,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns true if this entity is currently touching lava.
     fn is_in_lava(&self) -> bool {
-        self.fluid_contact().lava_height() > 0.0
+        self.base().is_in_lava()
     }
 
     /// Returns true if this entity's eyes are currently inside water.
@@ -2359,7 +2355,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 is_shape_full_block(collision_shape)
             });
 
-        let speed = f64::from(rand::random::<f32>().mul_add(0.2, 0.1));
+        let speed = f64::from(rand::random_range(0.1f32..0.3));
         let step = direction_step(closest_direction);
         let scaled_velocity = self.velocity() * 0.75;
         let next_velocity = match closest_direction.axis() {
@@ -2479,6 +2475,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
+    }
+
+    /// Moves this entity to `pos`, keeping its current rotation. Mirrors
+    /// vanilla `Entity.teleportTo(x, y, z)`
+    // TODO: Recursively reposition this entity's passengers (vanilla
+    // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position(pos)
     }
 
     /// Sets the vanilla movement-trace old position to the current position.
@@ -2632,14 +2637,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let new_dimensions = self.dimensions_for_pose(pose);
         self.base().set_pose_and_dimensions(pose, new_dimensions);
 
-        // Vanilla fudges the position when growth would push the entity into
-        // neighboring blocks, and only for small, non-player entities. Vanilla
-        // also requires the entity to have ticked once (`!firstTick`), which
-        // Steel does not track; no current entity grows on its first tick, so
-        // the omission is not observable.
         let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
             && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
-        if self.level().is_some()
+        if !self.is_first_tick()
+            && self.level().is_some()
             && !self.no_physics()
             && is_small
             && (new_dimensions.width > old_dimensions.width
@@ -3041,14 +3042,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.on_flap();
-        if self.movement_emission().emits_events()
-            && let Some(world) = self.level()
-        {
-            world.game_event_at(
-                &vanilla_game_events::FLAP,
-                self.position(),
-                &GameEventContext::new(Some(self.as_entity_event_source()), None),
-            );
+        if self.movement_emission().emits_events() {
+            self.game_event(&vanilla_game_events::FLAP);
         }
     }
 
@@ -3105,11 +3100,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     self.water_swim_sound();
                 }
                 if emission.emits_events() {
-                    world.game_event_at(
-                        &vanilla_game_events::SWIM,
-                        self.position(),
-                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
-                    );
+                    self.game_event(&vanilla_game_events::SWIM);
                 }
             }
         } else if supporting_state.get_block() == &vanilla_blocks::AIR {
@@ -3749,6 +3740,33 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         living.hurt_server(world, source, amount)
     }
 
+    // This already exists for structures and AABB whatever that might be, but I also need it for entities, I hope this is the right spot to put it.
+    /// Calculates the squared Euclidean distance from this entity's position to the given position.
+    fn distance_to_sqr(&self, pos: DVec3) -> f64 {
+        let dx = self.position().x - pos.x;
+        let dy = self.position().y - pos.y;
+        let dz = self.position().z - pos.z;
+
+        dx * dx + dy * dy + dz * dz
+    }
+
+    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the active world entity manager rejects the snap position. This is an invariant
+    /// failure for loaded entities.
+    fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
+        if let Err(error) = self.try_set_position(position) {
+            panic!(
+                "failed to commit entity {} snap position: {error}",
+                self.id()
+            );
+        }
+        self.set_rotation((yaw, pitch));
+        self.set_old_position_to_current();
+    }
+
     /// Runs when this entity causes another entity to die.
     /// The entity provided is the entity who was killed.
     fn killed_entity(
@@ -3799,20 +3817,9 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
     let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_look_at_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
-    let yaw = wrap_look_at_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - 90.0);
+    let pitch = wrap_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
+    let yaw = wrap_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90);
     (yaw, pitch)
-}
-
-fn wrap_look_at_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]

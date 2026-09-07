@@ -141,6 +141,7 @@ impl StandingAndWallBlockItem {
 
 impl ItemBehavior for StandingAndWallBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        let has_infinite_materials = context.player.has_infinite_materials();
         let mut place_context = context.build_place_context();
         if !place_context.can_place() {
             return InteractionResult::Fail;
@@ -174,7 +175,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }

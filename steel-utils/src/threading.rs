@@ -1,5 +1,20 @@
 //! Thread-count selection helpers.
 
+use std::num::NonZero;
+use std::thread;
+
+/// Assumed parallelism when `available_parallelism` is unavailable.
+pub const AVAILABLE_PARALLELISM_FALLBACK: usize = 4;
+
+/// Stack size for debug-build threads with deep density-function call chains.
+pub const DEBUG_STACK_SIZE: usize = 8 * 1024 * 1024;
+
+/// Returns the host's available parallelism, or [`AVAILABLE_PARALLELISM_FALLBACK`].
+#[must_use]
+pub fn available_worker_threads() -> usize {
+    thread::available_parallelism().map_or(AVAILABLE_PARALLELISM_FALLBACK, NonZero::get)
+}
+
 /// Caps an explicit positive worker count to available parallelism, or uses
 /// half the available threads with a minimum target of two.
 #[must_use]
