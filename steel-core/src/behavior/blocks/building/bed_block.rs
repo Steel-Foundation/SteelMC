@@ -6,9 +6,9 @@ use crate::{
         EntityFallDamage, EntityFallOnContext, EntityLandingContext, InteractionResult,
         InventoryAccess, PlacementSource,
     },
-    entity::{Entity, ai::path::PathComputationType, dismount_helper},
+    entity::{Entity, ai::path::PathComputationType, damage::DamageSource, dismount_helper},
     player::Player,
-    world::{ScheduledTickAccess, World},
+    world::{ScheduledTickAccess, World, explosion::ExplosionInteraction},
 };
 use glam::DVec3;
 use steel_macros::block_behavior;
@@ -21,15 +21,14 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
 
+/// Radius of the blast a bed makes where it cannot be slept in.
+const EXPLOSION_RADIUS: f32 = 5.0;
 const BED_BOUNCE_SCALE: f64 = 0.660_000_026_226_043_7;
 const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 /// Behavior for beds
 ///
-/// TODO: Mirror vanilla `BedBlock.useWithoutItem` invalid-dimension explosion
-/// once Steel has a strict `World::explode` foundation: show the bed-rule error
-/// message, remove both bed halves, and use bad-respawn-point explosion damage.
 /// TODO: Mirror vanilla `BedBlock.kickVillagerOutOfBed` once villager sleeping
 /// entities exist.
 #[block_behavior]
@@ -61,6 +60,45 @@ impl BedBlock {
             -context.velocity.y * BED_BOUNCE_SCALE * entity_factor,
             context.velocity.z,
         )
+    }
+
+    /// Blows the bed up, as sleeping in the wrong dimension does.
+    ///
+    /// Mirrors the `bedRule.explodes()` branch of vanilla `BedBlock.useWithoutItem`.
+    /// Both halves are removed first so the blast does not have to break them, and the
+    /// damage carries no entity, since the bed itself is to blame.
+    fn explode(
+        &self,
+        world: &Arc<World>,
+        head_state: BlockStateId,
+        head_pos: BlockPos,
+        player: &Player,
+    ) {
+        if let Some(key) = world.dimension_type.bed_rule.error_message_key {
+            player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
+                key: key.into(),
+                fallback: None,
+                args: None,
+            }));
+        }
+
+        world.remove_block(head_pos, false);
+        let foot_pos = head_state.get_value(FACING).opposite().relative(head_pos);
+        if world.get_block_state(foot_pos).get_block() == self.block {
+            world.remove_block(foot_pos, false);
+        }
+
+        let (x, y, z) = head_pos.get_center();
+        let center = DVec3::new(x, y, z);
+        world.explode(
+            None,
+            Some(DamageSource::bad_respawn_point(center)),
+            None,
+            center,
+            EXPLOSION_RADIUS,
+            true,
+            ExplosionInteraction::Block,
+        );
     }
 
     fn head_state_and_pos(
@@ -359,7 +397,7 @@ impl BlockBehavior for BedBlock {
         };
 
         if world.dimension_type.bed_rule.explodes {
-            // TODO: When WOrld::explode foundation exists display the bedrule error remove both halves and create the bad respawn point explosion
+            self.explode(world, head_state, head_pos, player);
             return InteractionResult::SuccessServer;
         }
 

@@ -942,3 +942,36 @@ mod tests {
         );
     }
 }
+
+/// One entry of an explosion's block-particle spread.
+///
+/// Mirrors vanilla `ExplosionParticleInfo`. The scaling and speed default to `1.0` in
+/// the data codec, but the wire form always carries both.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExplosionParticleInfo {
+    pub particle: ParticleData,
+    pub scaling: f32,
+    pub speed: f32,
+}
+
+impl ExplosionParticleInfo {
+    /// The scaling and speed vanilla's codec falls back to.
+    pub const DEFAULT_FACTOR: f32 = 1.0;
+
+    #[must_use]
+    pub const fn new(particle: ParticleData, scaling: f32, speed: f32) -> Self {
+        Self {
+            particle,
+            scaling,
+            speed,
+        }
+    }
+}
+
+impl WriteTo for ExplosionParticleInfo {
+    fn write(&self, writer: &mut impl Write) -> Result<()> {
+        self.particle.write(writer)?;
+        self.scaling.write(writer)?;
+        self.speed.write(writer)
+    }
+}

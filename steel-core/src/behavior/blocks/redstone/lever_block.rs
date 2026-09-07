@@ -6,6 +6,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{sound_events, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -16,6 +17,7 @@ use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
 use crate::player::Player;
+use crate::world::explosion::Explosion;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, SignalQueryContext, World};
 
@@ -152,8 +154,27 @@ impl BlockBehavior for LeverBlock {
         }
     }
 
-    // Client-local interaction/ambient dust particles are omitted. Explosion
-    // toggling awaits Steel's shared block-explosion callback foundation.
+    /// Mirrors vanilla `LeverBlock.onExplosionHit`.
+    ///
+    /// A blast that only nudges blocks flips the lever; every other kind falls through
+    /// to the default, which breaks it. The two never both happen, because the default body
+    /// returns early for exactly the interaction `can_trigger_blocks` reports.
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &Explosion,
+        on_drop: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        if explosion.can_trigger_blocks() {
+            self.pull(state, world, pos);
+        }
+
+        self.default_on_explosion_hit(state, world, pos, explosion, on_drop);
+    }
+
+    // Client-local interaction/ambient dust particles are omitted.
 }
 
 #[cfg(test)]

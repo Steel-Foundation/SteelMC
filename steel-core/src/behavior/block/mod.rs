@@ -40,6 +40,7 @@ use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, en
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
+use crate::world::explosion::{BlockInteraction, Explosion};
 use crate::world::game_event::SharedGameEventListener;
 use crate::world::{
     ClipHitResult, ConditionalBlockSetResult, LevelAccessor, LevelReader, ScheduledTickAccess,
@@ -340,6 +341,100 @@ pub trait BlockBehavior: Send + Sync {
     fn destroy(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
     }
+
+    /// Reacts to being caught in a blast.
+    ///
+    /// Vanilla parity: `BlockBehaviour.onExplosionHit`. This is the dispatch point for
+    /// everything an explosion does to a block, so an override that only wants to add
+    /// a reaction (a lever flipping, TNT priming) should call
+    /// [`Self::default_on_explosion_hit`] afterwards, the way vanilla calls `super`.
+    ///
+    /// `on_drop` collects the block's loot; the explosion merges the stacks before
+    /// spawning them, so a crater does not produce one item entity per block.
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &Explosion,
+        on_drop: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        self.default_on_explosion_hit(state, world, pos, explosion, on_drop);
+    }
+
+    /// The shared body of [`Self::on_explosion_hit`].
+    ///
+    /// Rust has no `super`, so an override that extends rather than replaces the
+    /// vanilla behaviour calls this. Mirrors the `hurt_server`/`default_hurt_server`
+    /// split elsewhere in the codebase.
+    ///
+    /// Note this clears the block with a plain `set_block` rather than
+    /// `destroy_block`: vanilla's explosion produces no break particles and no
+    /// recursion limit, and it resolves its own loot so it can apply explosion decay.
+    fn default_on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &Explosion,
+        on_drop: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        if state.is_air() || explosion.block_interaction() == BlockInteraction::TriggerBlock {
+            return;
+        }
+
+        if self.drop_from_explosion(explosion) {
+            let mut context = BlockLootContext::new(world, pos)
+                .with_entity(explosion.direct_source_entity().map(AsRef::as_ref));
+            // Only a decaying blast tells the loot table it was an explosion, which is
+            // what makes `Destroy` keep every drop and `DestroyWithDecay` eat most.
+            if explosion.block_interaction() == BlockInteraction::DestroyWithDecay {
+                context = context.with_explosion(explosion.radius());
+            }
+
+            self.spawn_after_break(
+                state,
+                world,
+                pos,
+                &ItemStack::empty(),
+                explosion.is_caused_by_player(),
+            );
+            for stack in context.get_drops(state) {
+                on_drop(stack, pos);
+            }
+        }
+
+        // Steel has no block-entity pre-remove hook yet, so the container spill that
+        // vanilla gets for free from `setBlockState` is asked for explicitly.
+        world.drop_container_contents(pos);
+        world.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        self.was_exploded(world, pos, explosion);
+    }
+
+    /// Whether this block yields its loot when blown up.
+    ///
+    /// Vanilla parity: `Block.dropFromExplosion`. TNT returns `false`, because it
+    /// becomes a primed entity instead of dropping itself.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn drop_from_explosion(&self, explosion: &Explosion) -> bool {
+        true
+    }
+
+    /// Runs once a blast has cleared this block away.
+    ///
+    /// Vanilla parity: `Block.wasExploded`. This is what chain-detonates TNT.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn was_exploded(&self, world: &Arc<World>, pos: BlockPos, explosion: &Explosion) {}
 
     /// Overrides the loot generated for this block state.
     ///

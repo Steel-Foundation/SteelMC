@@ -1,5 +1,7 @@
 use super::*;
 use crate::entity::leash::Leashable;
+use crate::world::explosion::Explosion;
+use steel_registry::fluid::FluidState;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -315,6 +317,44 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// placement unless a concrete entity type opts in.
     fn blocks_building(&self) -> bool {
         false
+    }
+
+    /// Whether explosions pass straight through this entity.
+    ///
+    /// Mirrors vanilla `Entity.ignoreExplosion`.
+    fn ignore_explosion(&self, _explosion: &Explosion) -> bool {
+        false
+    }
+
+    /// Lets the entity that caused a blast soften a block's resistance to it.
+    ///
+    /// Mirrors vanilla `Entity.getBlockExplosionResistance`, which returns the
+    /// resistance it was handed unless a subclass lowers it. No Steel entity overrides
+    /// this yet; vanilla's are the wither skull and the TNT minecart, neither of which
+    /// exists here, but the hook is what an explosion's entity-based damage calculator
+    /// dispatches through.
+    fn block_explosion_resistance(
+        &self,
+        _explosion: &Explosion,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        _fluid: FluidState,
+        resistance: f32,
+    ) -> f32 {
+        resistance
+    }
+
+    /// Lets the entity that caused a blast spare a block entirely.
+    ///
+    /// Mirrors vanilla `Entity.shouldBlockExplode`.
+    fn should_block_explode(
+        &self,
+        _explosion: &Explosion,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        _power: f32,
+    ) -> bool {
+        true
     }
 
     /// Returns whether this entity can be targeted by picking and interaction raycasts.

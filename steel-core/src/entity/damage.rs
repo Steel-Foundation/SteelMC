@@ -3,7 +3,7 @@
 use glam::DVec3;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, damage_type::DamageScaling, damage_type::DamageType,
-    vanilla_damage_type_tags,
+    vanilla_damage_type_tags, vanilla_damage_types,
 };
 
 use crate::entity::Entity;
@@ -45,6 +45,15 @@ impl DamageSource {
     pub const fn with_direct_entity(mut self, entity_id: i32) -> Self {
         self.direct_entity_id = Some(entity_id);
         self
+    }
+
+    /// The blast a bed or respawn anchor makes where it cannot be used.
+    ///
+    /// Mirrors vanilla `DamageSources.badRespawnPointExplosion`, which likewise carries
+    /// only a position, since the block itself is to blame, not any entity.
+    #[must_use]
+    pub const fn bad_respawn_point(center: DVec3) -> Self {
+        Self::environment(&vanilla_damage_types::BAD_RESPAWN_POINT).with_source_position(center)
     }
 
     /// Adds the vanilla source position used by damage events and knockback.

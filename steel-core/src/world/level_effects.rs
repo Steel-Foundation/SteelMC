@@ -72,12 +72,24 @@ impl World {
     }
 
     pub(super) fn recipient_within_64_blocks(player_pos: DVec3, event_pos: BlockPos) -> bool {
+        Self::recipient_within_64_blocks_of(
+            player_pos,
+            DVec3::new(
+                f64::from(event_pos.x()),
+                f64::from(event_pos.y()),
+                f64::from(event_pos.z()),
+            ),
+        )
+    }
+
+    /// The same 64-block cut-off against an exact position rather than a block.
+    ///
+    /// Explosions are centered mid-block, and vanilla expresses their cut-off as
+    /// `distanceToSqr(center) < 4096.0`, the same radius squared.
+    pub(super) fn recipient_within_64_blocks_of(player_pos: DVec3, event_pos: DVec3) -> bool {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
-        let dx = f64::from(event_pos.x()) - player_pos.x;
-        let dy = f64::from(event_pos.y()) - player_pos.y;
-        let dz = f64::from(event_pos.z()) - player_pos.z;
-        dx * dx + dy * dy + dz * dz < MAX_DISTANCE_SQ
+        player_pos.distance_squared(event_pos) < MAX_DISTANCE_SQ
     }
 
     /// Sends a particle distribution to every player within Vanilla's normal
@@ -312,21 +324,11 @@ impl World {
             // TODO: This only covers the `drop_items` path. In vanilla, container
             // content dropping runs unconditionally on any block-entity removal
             // (BlockEntity.preRemoveSideEffects via LevelChunk.setBlockState) —
-            // independent of drop_items — so explosions, pistons, etc. still need
-            // a similar hook once Steel's block-update pipeline has one.
-            if let Some(block_entity) = self.get_block_entity(pos)
-                && let Some(container_ref) = ContainerRef::from_block_entity(block_entity)
-            {
-                let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
-                if let Some(container) = guard.get_mut(container_ref.container_id()) {
-                    for slot in 0..container.get_container_size() {
-                        let item = container.remove_item_no_update(slot);
-                        if !item.is_empty() {
-                            self.pop_resource(pos, item);
-                        }
-                    }
-                }
-            }
+            // independent of drop_items, so pistons and anything else that clears a
+            // block still need a similar hook once Steel's block-update pipeline has
+            // one. Explosions call `drop_container_contents` directly for the same
+            // reason.
+            self.drop_container_contents(pos);
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
@@ -342,6 +344,31 @@ impl World {
             );
         }
         destroyed
+    }
+
+    /// Spills whatever a container at `pos` is holding onto the ground.
+    ///
+    /// Vanilla does this from `BlockEntity.preRemoveSideEffects`, so it happens on any
+    /// block-entity removal. Steel has no such hook yet, so every caller that clears a
+    /// block has to ask for it, which is why this is shared rather than inlined.
+    pub(crate) fn drop_container_contents(self: &Arc<Self>, pos: BlockPos) {
+        let Some(block_entity) = self.get_block_entity(pos) else {
+            return;
+        };
+        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+            return;
+        };
+
+        let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        let Some(container) = guard.get_mut(container_ref.container_id()) else {
+            return;
+        };
+        for slot in 0..container.get_container_size() {
+            let item = container.remove_item_no_update(slot);
+            if !item.is_empty() {
+                self.pop_resource(pos, item);
+            }
+        }
     }
 
     /// Drops the loot for a block using its loot table.
@@ -406,6 +433,9 @@ impl World {
         }
         if let Some(entity) = context.entity() {
             ctx = ctx.with_this_entity(entity_loot_ref(entity));
+        }
+        if let Some(radius) = context.explosion_radius() {
+            ctx = ctx.with_explosion(radius);
         }
 
         loot_table.get_random_items(&mut ctx)
