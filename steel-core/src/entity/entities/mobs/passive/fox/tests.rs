@@ -751,3 +751,55 @@ fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
         Some(attacker.uuid())
     );
 }
+
+/// Pins the fox's goal priorities against vanilla `Fox.registerGoals`. The list
+/// is short of vanilla's because several goals wait on mobs and systems that are
+/// not in the tree yet; each of those is a TODO at the priority it belongs at,
+/// so a goal appearing here is a goal that is actually wired up.
+#[test]
+fn fox_registers_its_goals_at_the_vanilla_priorities() {
+    init_vanilla_registry();
+    let fox = new_fox();
+
+    let selector = fox.mob_base().goal_selector().lock();
+    assert_eq!(
+        selector.available_goal_priorities(),
+        vec![0, 0, 2, 3, 5, 6, 7, 7, 8, 10, 11, 11, 12, 13],
+        "the leap comes in at 10, between following a parent and strolling"
+    );
+}
+
+/// Vanilla `Fox.registerGoals` gives the fox a `LeapAtTargetGoal`, which is what
+/// makes it hop the last couple of blocks onto something it is hunting rather
+/// than walking into it.
+#[test]
+fn a_hunting_fox_leaps_the_last_stretch_at_its_prey() {
+    let (world, fox) = world_with_fox("fox_leap");
+    fox.set_on_ground(true);
+
+    let prey = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(10.5, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&prey) as SharedEntity)
+        .expect("prey should attach to the loaded chunk");
+    assert!(Mob::set_target(fox.as_ref(), Some(&(prey as SharedEntity))));
+
+    // The goal only rolls its leap on some ticks, so give it several chances.
+    let mut goal = LeapAtTargetGoal::new(LEAP_AT_TARGET_HEIGHT);
+    let leapt = (0..LEAP_ATTEMPTS).any(|_| goal.can_use(fox.as_ref()));
+    assert!(leapt, "a fox on the ground within a few blocks should leap");
+
+    goal.start(fox.as_ref());
+    assert!(
+        fox.velocity().y > 0.0,
+        "leaping should push the fox off the ground, got {}",
+        fox.velocity().y
+    );
+}
+
+/// Rolls allowed for the leap goal's own random cadence.
+const LEAP_ATTEMPTS: u32 = 40;

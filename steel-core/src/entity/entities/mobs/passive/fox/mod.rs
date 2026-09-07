@@ -33,7 +33,8 @@ use uuid::Uuid;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
-    ClimbOnTopOfPowderSnowGoal, NearestAttackableTargetGoal, WaterAvoidingRandomStrollGoal,
+    ClimbOnTopOfPowderSnowGoal, LeapAtTargetGoal, NearestAttackableTargetGoal,
+    WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
@@ -54,6 +55,7 @@ use goals::{
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
+const LEAP_AT_TARGET_HEIGHT: f32 = 0.4;
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
 const FOX_BABY_HEIGHT: f32 = 0.7 * BABY_SCALE;
@@ -170,7 +172,7 @@ impl FoxEntity {
             // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
             // TODO(fox-goals): 10 FoxEatBerriesGoal (needs berry picking off a sweet
             // berry bush and off cave vines)
-            // TODO(fox-goals): 10 LeapAtTargetGoal (needs an attack target)
+            goal_selector.add_goal(10, LeapAtTargetGoal::new(LEAP_AT_TARGET_HEIGHT));
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(11, FoxSearchForItemsGoal);
             goal_selector.add_goal(12, FoxLookAtPlayerGoal::new(24.0));
