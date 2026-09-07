@@ -95,7 +95,7 @@ impl BlockItem {
             return InteractionResult::Fail;
         };
 
-        let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
+        let behavior = BLOCK_BEHAVIORS.get_behavior(new_state.get_block());
         if matches!(survival_check, SurvivalCheck::Required)
             && !behavior.can_survive(new_state, context.world.as_ref(), place_pos)
         {
