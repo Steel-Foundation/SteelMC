@@ -15,7 +15,8 @@ use uuid::Uuid;
 use super::entities::RawEntity;
 use super::generated_entities::register_entity_factories;
 use super::{
-    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, SharedEntity, next_entity_id,
+    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, EntityIdBlock, SharedEntity,
+    reserve_entity_ids,
 };
 use crate::world::World;
 
@@ -56,11 +57,15 @@ pub struct EntityLoadRequest {
 }
 
 impl EntityLoadRequest {
-    fn into_base_load(self) -> (EntityTypeRef, EntityBaseLoad) {
+    /// Converts the request into base load state using an already-reserved ID.
+    ///
+    /// The caller reserves the ID through [`EntityRegistry::reserve_id`] so a
+    /// multipart mob loaded from disk also claims the IDs its parts need.
+    fn into_base_load(self, id: i32) -> (EntityTypeRef, EntityBaseLoad) {
         (
             self.entity_type,
             EntityBaseLoad {
-                id: next_entity_id(),
+                id,
                 position: self.position,
                 uuid: self.uuid,
                 velocity: self.velocity,
@@ -81,6 +86,10 @@ struct EntityEntry {
     factory: Option<EntityFactory>,
     /// Factory function to load instances from disk.
     load_factory: Option<EntityLoadFactory>,
+    /// How many sub-entity IDs an instance reserves after its own.
+    ///
+    /// Zero for everything but multipart mobs; see [`EntityIdBlock`].
+    part_count: u32,
 }
 
 /// Registry for entity factories.
@@ -114,10 +123,29 @@ impl EntityRegistry {
             .map(|_| EntityEntry {
                 factory: None,
                 load_factory: None,
+                part_count: 0,
             })
             .collect();
 
         Self { entries }
+    }
+
+    /// Declares how many sub-entities an entity type owns.
+    ///
+    /// Mirrors the fixed length of a multipart mob's parts array, such as
+    /// `EnderDragon.subEntities`. The parts take the IDs immediately after their
+    /// parent's, so every spawn of this type must reserve `part_count + 1` IDs.
+    pub fn register_parts(&mut self, entity_type: EntityTypeRef, part_count: u32) {
+        self.entries[entity_type.id()].part_count = part_count;
+    }
+
+    /// Reserves the block of entity IDs a fresh instance of `entity_type` needs.
+    ///
+    /// Always use this instead of [`next_entity_id`] when the type is not statically
+    /// known, so that a multipart mob also claims the IDs its parts will use.
+    #[must_use]
+    pub fn reserve_id(&self, entity_type: EntityTypeRef) -> EntityIdBlock {
+        reserve_entity_ids(self.entries[entity_type.id()].part_count + 1)
     }
 
     /// Registers a factory function for an entity type.
@@ -177,7 +205,8 @@ impl EntityRegistry {
         request: EntityLoadRequest,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> SharedEntity {
-        let (entity_type, load) = request.into_base_load();
+        let entity_id = self.reserve_id(request.entity_type).first();
+        let (entity_type, load) = request.into_base_load(entity_id);
         let id = entity_type.id();
         if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
             let entity = load_factory(entity_type, load);

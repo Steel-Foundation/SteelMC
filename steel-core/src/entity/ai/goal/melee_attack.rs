@@ -4,6 +4,7 @@ use steel_utils::types::InteractionHand;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
+use crate::entity::entity_selector;
 use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 
 const ATTACK_INTERVAL_TICKS: i32 = 20;
@@ -169,7 +170,7 @@ impl Goal for MeleeAttackGoal {
             return false;
         }
 
-        is_no_creative_or_spectator(&target)
+        entity_selector::no_creative_or_spectator(target.as_ref())
     }
 
     fn start(&mut self, mob: &dyn PathfinderMob) {
@@ -187,7 +188,7 @@ impl Goal for MeleeAttackGoal {
         if mob
             .target()
             .as_ref()
-            .is_some_and(|target| !is_no_creative_or_spectator(target))
+            .is_some_and(|target| !entity_selector::no_creative_or_spectator(target.as_ref()))
         {
             mob.set_target(None);
         }
@@ -221,12 +222,6 @@ impl Goal for MeleeAttackGoal {
         self.ticks_until_next_attack = (self.ticks_until_next_attack - 1).max(0);
         self.check_and_perform_attack(mob, &target);
     }
-}
-
-fn is_no_creative_or_spectator(entity: &SharedEntity) -> bool {
-    !entity
-        .as_player()
-        .is_some_and(|player| entity.is_spectator() || player.has_infinite_materials())
 }
 
 #[cfg(test)]

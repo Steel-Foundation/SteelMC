@@ -20,6 +20,10 @@ pub struct EntityClass {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one linear pass over the discovered entity structs"
+)]
 pub fn build(entities: &[EntityClass]) -> String {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let pattern = format!("{manifest_dir}/src/entity/entities/**/*.rs");
@@ -62,7 +66,16 @@ pub fn build(entities: &[EntityClass]) -> String {
             args.push(common::generate_arg(field, &entity.extra, &entity.name));
         }
 
+        // Multipart mobs must reserve the IDs their parts take after their own.
+        let parts_registration = (info.part_count > 0).then(|| {
+            let part_count = info.part_count;
+            quote! {
+                registry.register_parts(&vanilla_entities::#entity_type_ident, #part_count);
+            }
+        });
+
         let registration = quote! {
+            #parts_registration
             registry.register(
                 &vanilla_entities::#entity_type_ident,
                 |entity_type, id, pos, world| {

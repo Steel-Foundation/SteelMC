@@ -1457,6 +1457,31 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn ItemFrame>(self)
     }
 
+    /// Returns this entity as a multipart sub-entity when it is one.
+    ///
+    /// Mirrors vanilla's `instanceof EnderDragonPart` branches, routed through
+    /// [`PartEntity`] so engine code supports any multipart mob.
+    fn as_part_entity(&self) -> Option<&dyn PartEntity> {
+        try_as_dyn::<Self, dyn PartEntity>(self)
+    }
+
+    /// Returns this entity's multipart sub-entities, or an empty slice.
+    ///
+    /// Mirrors vanilla `EnderDragon.getSubEntities`, hoisted onto `Entity` (as
+    /// `NeoForge` does with `Entity.getParts`) because this vanilla version has no
+    /// shared multipart base for engine code to match on.
+    fn parts(&self) -> &[Arc<dyn PartEntity>] {
+        &[]
+    }
+
+    /// Returns whether `other` is this entity.
+    ///
+    /// Mirrors vanilla `Entity.is`: identity, except that a multipart sub-entity
+    /// also reports its parent as itself.
+    fn is_same_entity(&self, other: &dyn Entity) -> bool {
+        self.id() == other.id()
+    }
+
     /// Returns this entity as a player when it is the concrete server player.
     fn as_player(&self) -> Option<&Player> {
         self.downcast_ref::<Player>()

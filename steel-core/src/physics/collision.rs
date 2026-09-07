@@ -739,7 +739,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         self.world
             .get_entity_bounding_boxes_in_aabb_matching(&query, |entity| match self.source {
                 Some(source) => {
-                    entity.id() != source.id()
+                    !entity.is_same_entity(source)
                         && !entity.is_removed()
                         && !entity.is_spectator()
                         && source.can_collide_with(entity)
@@ -764,7 +764,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         self.world
             .has_entity_in_aabb_matching(&query, |entity| match self.source {
                 Some(source) => {
-                    entity.id() != source.id()
+                    !entity.is_same_entity(source)
                         && !entity.is_removed()
                         && !entity.is_spectator()
                         && source.can_collide_with(entity)
