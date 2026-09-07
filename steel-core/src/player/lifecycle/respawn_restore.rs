@@ -139,6 +139,7 @@ mod tests {
     use steel_utils::{BlockPos, Identifier, types::GameType};
 
     use crate::{
+        behavior::init_behaviors,
         entity::{
             Entity as _, LivingEntity as _, MobEffectInstance,
             attribute::{AttributeModifier, AttributeModifierOperation},
@@ -225,6 +226,7 @@ mod tests {
     )]
     fn restore_all_copies_vanilla_restore_state_without_mutating_source() {
         init_vanilla_registry();
+        init_behaviors();
         let source_world = fresh_test_world("respawn_restore_all_source");
         let target_world = fresh_test_world("respawn_restore_all_target");
         let old_player = TestPlayerBuilder::new(source_world, "Credits", ENTITY_ID).build();
@@ -343,6 +345,7 @@ mod tests {
     #[test]
     fn death_restore_keeps_fresh_state_unless_inventory_transfer_is_requested() {
         init_vanilla_registry();
+        init_behaviors();
         let source_world = fresh_test_world("respawn_restore_death_source");
         let target_world = fresh_test_world("respawn_restore_death_target");
         let old_player = TestPlayerBuilder::new(source_world, "Death", ENTITY_ID).build();

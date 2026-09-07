@@ -734,6 +734,7 @@ mod base;
 mod block_effects;
 mod callback;
 mod combat_rules;
+pub mod consume_effect;
 pub mod damage;
 pub(crate) mod dismount_helper;
 pub mod entities;
@@ -756,7 +757,9 @@ mod living_base;
 mod living_entity;
 mod manager;
 mod mob;
+pub mod mob_effect;
 mod movement_sync;
+mod potion_contents;
 pub mod projectile;
 mod registry;
 mod spawn;
@@ -812,6 +815,7 @@ pub use movement_sync::{
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
+pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
