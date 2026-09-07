@@ -162,6 +162,39 @@ pub trait LivingEntity: Entity {
         self.drain_dirty_living_equipment()
     }
 
+    /// Saves equipment slots to NBT.
+    fn save_equipment(&self, nbt: &mut NbtCompound) {
+        let mut equipment = NbtCompound::new();
+        for slot in EquipmentSlot::ALL {
+            self.with_equipment_slot(slot, &mut |item| {
+                if !item.is_empty() {
+                    equipment.insert(slot.name(), item.to_nbt_tag_ref());
+                }
+            });
+        }
+        if !equipment.is_empty() {
+            nbt.insert("equipment", NbtTag::Compound(equipment));
+        }
+    }
+
+    /// Loads equipment slots from NBT.
+    fn load_equipment(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        if let Some(equipment_tag) = nbt.compound("equipment") {
+            let mut equipment = self.living_base().equipment().lock();
+            for slot in EquipmentSlot::ALL {
+                let item = equipment_tag
+                    .get(slot.name())
+                    .and_then(|tag| tag.compound())
+                    .and_then(|comp| ItemStack::from_borrowed_compound(&comp))
+                    .unwrap_or_else(ItemStack::empty);
+                equipment.set(slot, item);
+            }
+        }
+        for slot in EquipmentSlot::ALL {
+            self.refresh_equipment_attribute_modifiers(slot);
+        }
+    }
+
     /// Appends vanilla-shaped living state used by command NBT predicates.
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
@@ -226,16 +259,8 @@ pub trait LivingEntity: Entity {
             );
         }
 
-        let mut equipment = NbtCompound::new();
-        for slot in EquipmentSlot::ALL {
-            self.with_equipment_slot(slot, &mut |item| {
-                if !item.is_empty() {
-                    equipment.insert(slot.name(), item.to_nbt_tag_ref());
-                }
-            });
-        }
-        if !equipment.is_empty() {
-            nbt.insert("equipment", NbtTag::Compound(equipment));
+        if self.as_mob().is_none() {
+            self.save_equipment(nbt);
         }
     }
 

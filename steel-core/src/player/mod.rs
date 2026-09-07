@@ -1472,6 +1472,7 @@ impl Entity for Player {
     fn stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();
+        self.base.set_boarding_cooldown(0);
         let Some(old_vehicle) = old_vehicle else {
             return;
         };
