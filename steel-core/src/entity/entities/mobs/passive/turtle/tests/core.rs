@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_utils::WorldAabb;
 
@@ -6,7 +8,7 @@ use crate::behavior::init_behaviors;
 use crate::entity::PathfinderMob;
 use crate::entity::ai::goal::Goal;
 use crate::entity::entities::ItemEntity;
-use crate::entity::entities::mobs::passive::turtle::goals::TurtleLayEggGoal;
+use crate::entity::entities::mobs::passive::turtle::goals::{TurtleLayEggGoal, TurtleTravelGoal};
 use crate::entity::{AgeableMob, next_entity_id};
 use crate::physics::MoverType;
 
@@ -163,6 +165,22 @@ fn growing_up_drops_a_scute() {
     assert_eq!(scutes, 1, "growing up should drop exactly one turtle scute");
 }
 
+/// Sand under the whole square of block coordinates, so a test turtle has ground
+/// to stand on and somewhere its goals can path to.
+fn lay_sand_floor(world: &Arc<World>, span: RangeInclusive<i32>) {
+    const FLOOR_Y: i32 = 63;
+
+    for x in span.clone() {
+        for z in span.clone() {
+            world.set_block(
+                BlockPos::new(x, FLOOR_Y, z),
+                vanilla_blocks::SAND.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            );
+        }
+    }
+}
+
 fn turtle_from(shared: &SharedEntity) -> &TurtleEntity {
     shared
         .downcast_ref::<TurtleEntity>()
@@ -269,6 +287,49 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
     );
 }
 
+/// Vanilla `TurtleTravelGoal.tick` throws away a swim target whose surroundings
+/// are not generated yet. A turtle picks targets up to 512 blocks away, so this
+/// is what keeps it from setting off toward terrain that does not exist.
+#[test]
+fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
+    /// Tries allowed for the goal to find any candidate position at all.
+    const ACCEPT_ATTEMPTS: u32 = 20;
+
+    let (world, turtle) = turtle_in_world("turtle_travel_unloaded", DVec3::new(8.5, 64.0, 8.5));
+    lay_sand_floor(&world, 0..=15);
+    turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
+    turtle.set_travel_pos(Some(BlockPos::new(8, 64, 24)));
+
+    let mut goal = TurtleTravelGoal::new(1.0);
+    goal.tick(turtle.as_ref());
+    assert!(
+        goal.is_stuck(),
+        "only the turtle's own chunk exists, so nothing near it is safe to head for"
+    );
+
+    // With the surrounding chunks generated, the same target is accepted.
+    for chunk_x in -3..=3 {
+        for chunk_z in -3..=3 {
+            if (chunk_x, chunk_z) != (0, 0) {
+                insert_ready_full_chunk(&world, ChunkPos::new(chunk_x, chunk_z));
+            }
+        }
+    }
+    lay_sand_floor(&world, -24..=40);
+
+    // The candidate position is drawn at random and sometimes there is none to
+    // be had, which is a separate reason to give up, so take the best of several.
+    let accepted = (0..ACCEPT_ATTEMPTS).any(|_| {
+        let mut goal = TurtleTravelGoal::new(1.0);
+        goal.tick(turtle.as_ref());
+        !goal.is_stuck()
+    });
+    assert!(
+        accepted,
+        "a target surrounded by generated world should be accepted"
+    );
+}
+
 #[test]
 fn a_turtle_holds_its_course_against_a_current() {
     let turtle = detached_turtle();
@@ -277,6 +338,51 @@ fn a_turtle_holds_its_course_against_a_current() {
         !turtle.is_pushed_by_fluid(),
         "a turtle is not carried along by flowing water"
     );
+}
+
+/// Vanilla `TurtleMoveControl.tick` swings the body round with the steering, so
+/// a turning turtle faces where it is going instead of drifting sideways.
+#[test]
+fn a_steering_turtle_turns_its_whole_body() {
+    let (world, turtle) = turtle_in_world("turtle_body_turn", DVec3::new(8.5, 65.0, 8.5));
+    lay_sand_floor(&world, 0..=15);
+    turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
+    assert!(turtle.on_ground(), "the turtle should have landed");
+
+    // Facing south, with somewhere to be off to the east.
+    turtle.set_rotation((0.0, 0.0));
+    turtle.set_y_body_rot(0.0);
+
+    let target = DVec3::new(13.5, 65.0, 8.5);
+    assert!(
+        turtle.move_to_pos(target, 1.0),
+        "the turtle should find a path along the sand"
+    );
+    turtle.set_wanted_position(target, 1.0);
+    turtle.tick_move_control();
+
+    let (yaw, _) = turtle.rotation();
+    assert!(
+        yaw.abs() > f32::EPSILON,
+        "steering toward the target should have turned the turtle, got {yaw}"
+    );
+    assert!(
+        (turtle.y_body_rot() - yaw).abs() < f32::EPSILON,
+        "the body should face the same way as the steering, got {} against {yaw}",
+        turtle.y_body_rot()
+    );
+}
+
+/// Vanilla `Turtle.getAgeScale`. The shared default would make a baby half the
+/// size of an adult; a turtle hatchling is far smaller than that.
+#[test]
+fn a_baby_turtle_is_far_smaller_than_its_parent() {
+    let turtle = detached_turtle();
+
+    assert_eq!(turtle.get_age_scale(), ADULT_SCALE);
+
+    turtle.set_baby(true);
+    assert_eq!(turtle.get_age_scale(), BABY_SCALE);
 }
 
 #[test]

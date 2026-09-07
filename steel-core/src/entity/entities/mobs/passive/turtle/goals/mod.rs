@@ -7,19 +7,14 @@
 //! grouped by theme: [`breeding`] (breed and lay egg), [`water`] (panic, go to
 //! water, travel), and [`land`] (go home, stroll).
 //!
-//! Two vanilla mechanisms are approximated because Steel has no equivalent yet,
-//! and both are called out in the pull request for review:
+//! One vanilla mechanism is approximated because Steel has no equivalent yet,
+//! and it is called out in the pull request for review:
 //!
-//! * TODO(amphibious-navigation): vanilla turtles swim with a custom
-//!   `TurtleMoveControl` (water buoyancy and reduced land speed) and an
-//!   `AmphibiousPathNavigation`. Steel exposes neither a per-entity move control
-//!   nor an amphibious navigator, so the turtle uses the default control and
-//!   navigation together with a `WATER` pathfinding malus of `0.0`. Water motion
-//!   is therefore not pixel-perfect until the shared navigator lands.
-//! * `TurtleTravelGoal` in vanilla rejects a swim target whose destination chunks
-//!   are not loaded. Steel has no loaded-area query available to a goal, so that
-//!   guard is omitted; an unreachable target simply leaves the navigation idle and
-//!   the goal stops through `can_continue_to_use`.
+//! * TODO(amphibious-navigation): vanilla turtles swim with an
+//!   `AmphibiousPathNavigation`. Steel has no amphibious navigator, so the turtle
+//!   uses the default navigation together with a `WATER` pathfinding malus of
+//!   `0.0`. Water motion is therefore not pixel-perfect until the shared
+//!   navigator lands.
 
 mod breeding;
 mod land;
