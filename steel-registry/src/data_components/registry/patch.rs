@@ -139,6 +139,16 @@ impl DataComponentPatch {
         self.entries.iter()
     }
 
+    /// Applies another patch after this one, giving the added patch precedence.
+    pub fn apply(&mut self, added: &Self) {
+        self.entries.extend(
+            added
+                .entries
+                .iter()
+                .map(|(key, entry)| (key.clone(), entry.clone())),
+        );
+    }
+
     pub(crate) fn sanitize_against(&mut self, prototype: &DataComponentMap) {
         self.entries.retain(|key, entry| {
             let default = prototype.get_raw(key);
