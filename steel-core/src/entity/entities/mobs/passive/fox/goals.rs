@@ -1,20 +1,30 @@
 //! Bespoke fox behaviour goals.
 
 use std::f64::consts::TAU;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_utils::{BlockPos, Downcast as _};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, IntProperty};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{
+    sound_events, vanilla_blocks, vanilla_game_events, vanilla_game_rules, vanilla_items,
+};
+use steel_utils::types::UpdateFlags;
+use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use super::FoxEntity;
+use crate::behavior::blocks::vegetation::CaveVinesBlock;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, PanicGoal,
-    reduced_tick_delay,
+    BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, MoveToBlockGoal,
+    PanicGoal, reduced_tick_delay,
 };
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob};
 use crate::inventory::equipment::EquipmentSlot;
-use crate::world::World;
+use crate::world::game_event::GameEventContext;
+use crate::world::{LevelReader as _, World};
 
 const SEARCH_RANGE: f64 = 8.0;
 const SEARCH_CHECK_TICKS: i32 = 10;
@@ -27,6 +37,48 @@ const PERCH_MIN_LOOK_TICKS: i32 = 80;
 const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
+/// Vanilla `Fox.registerGoals`: how far a fox looks for berries, and how far up
+/// and down, when it goes hunting for a bush.
+const BERRY_SEARCH_RANGE: i32 = 12;
+const BERRY_VERTICAL_SEARCH_RANGE: i32 = 1;
+/// Vanilla `FoxEatBerriesGoal.acceptedDistance`: a fox eats from an arm's length
+/// away rather than standing on the bush.
+const BERRY_ACCEPTED_DISTANCE: f64 = 2.0;
+/// Vanilla `FoxEatBerriesGoal.shouldRecalculatePath`: ticks between fresh paths
+/// while it walks over.
+const BERRY_RECALCULATE_INTERVAL: i32 = 100;
+/// Vanilla `FoxEatBerriesGoal.WAIT_TICKS`: how long a fox noses around the bush
+/// before it takes anything, so two seconds.
+const BERRY_WAIT_TICKS: i32 = 40;
+/// Vanilla `FoxEatBerriesGoal.tick`: chance each tick of a sniff on the way over.
+const BERRY_SNIFF_CHANCE: f32 = 0.05;
+/// Berries a fox takes from a bush, before the bonus for a fully grown one.
+const BERRIES_PER_PICK: RangeInclusive<i32> = 1..=2;
+/// Growth stage a sweet berry bush has to reach before a fox is interested.
+const SWEET_BERRY_RIPE_AGE: u8 = 2;
+/// Growth stage a fox is interested in that also yields the extra berry.
+const SWEET_BERRY_MAX_AGE: u8 = 3;
+/// Growth stage a picked bush is left at, so it grows back rather than dying.
+const SWEET_BERRY_PICKED_AGE: u8 = 1;
+const SWEET_BERRY_AGE: &IntProperty = &BlockStateProperties::AGE_3;
+/// Whether a cave vine is currently carrying glow berries.
+const BERRIES: &BoolProperty = &BlockStateProperties::BERRIES;
+
+/// Vanilla `CaveVines.hasGlowBerries`: a vine only counts while it is actually
+/// carrying berries, and any other block never does.
+fn has_glow_berries(state: BlockStateId) -> bool {
+    state.try_get_value(BERRIES).unwrap_or(false)
+}
+
+/// Vanilla `FoxEatBerriesGoal.isValidTarget`: a ripe sweet berry bush, or a vine
+/// with glow berries on it.
+fn is_ripe_berry_block(state: BlockStateId) -> bool {
+    (state.get_block() == &vanilla_blocks::SWEET_BERRY_BUSH
+        && state.get_value(SWEET_BERRY_AGE) >= SWEET_BERRY_RIPE_AGE)
+        || has_glow_berries(state)
+}
+
+/// Randomized delay, in ticks, before a fox may fall asleep (vanilla 140).
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
@@ -465,6 +517,136 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
+    }
+}
+
+/// Vanilla `Fox.FoxEatBerriesGoal`: a fox that spots a ripe sweet berry bush or a
+/// vine hung with glow berries walks over, noses around it a while, and helps
+/// itself.
+pub(crate) struct FoxEatBerriesGoal {
+    inner: MoveToBlockGoal,
+    ticks_waited: i32,
+}
+
+impl FoxEatBerriesGoal {
+    pub(crate) fn new(speed_modifier: f64) -> Self {
+        Self {
+            inner: MoveToBlockGoal::with_vertical_search_range(
+                speed_modifier,
+                BERRY_SEARCH_RANGE,
+                BERRY_VERTICAL_SEARCH_RANGE,
+                |level, pos| is_ripe_berry_block(level.get_block_state(pos)),
+            )
+            .with_accepted_distance(BERRY_ACCEPTED_DISTANCE)
+            .with_recalculate_path_interval(BERRY_RECALCULATE_INTERVAL),
+            ticks_waited: 0,
+        }
+    }
+
+    /// Vanilla `FoxEatBerriesGoal.onReachedTarget`: take the berries, unless the
+    /// server has told mobs to leave the world alone.
+    ///
+    /// This runs on every tick once the wait is over, but picking leaves the bush
+    /// below the age the goal looks for and strips a vine of its berries, so the
+    /// shared goal stops on its next check and a fox only ever takes one helping.
+    fn on_reached_target(&self, mob: &dyn PathfinderMob) {
+        let (Some(fox), Some(world)) = (as_fox(mob), mob.level()) else {
+            return;
+        };
+        if !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING) {
+            return;
+        }
+
+        let pos = self.inner.block_pos();
+        let state = world.get_block_state(pos);
+        if state.get_block() == &vanilla_blocks::SWEET_BERRY_BUSH {
+            Self::pick_sweet_berries(fox, &world, pos, state);
+        } else if has_glow_berries(state) {
+            CaveVinesBlock::use_block(fox, state, &world, pos);
+        }
+    }
+
+    /// Vanilla `FoxEatBerriesGoal.pickSweetBerries`: one berry goes in the mouth
+    /// if it is free, the rest drop by the bush, and the bush is left picked.
+    fn pick_sweet_berries(fox: &FoxEntity, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+        let age = state.get_value(SWEET_BERRY_AGE);
+        // A fully grown bush gives one berry more than a merely ripe one.
+        let mut count =
+            rand::random_range(BERRIES_PER_PICK) + i32::from(age == SWEET_BERRY_MAX_AGE);
+
+        let mut mouth_is_empty = false;
+        fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            mouth_is_empty = item_stack.is_empty();
+        });
+        if mouth_is_empty {
+            fox.living_base().equipment().lock().set(
+                EquipmentSlot::MainHand,
+                ItemStack::new(&vanilla_items::SWEET_BERRIES),
+            );
+            count -= 1;
+        }
+
+        if count > 0 {
+            world.pop_resource(
+                pos,
+                ItemStack::with_count(&vanilla_items::SWEET_BERRIES, count),
+            );
+        }
+
+        fox.play_sound(&sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES, 1.0, 1.0);
+        let picked = state.set_value(SWEET_BERRY_AGE, SWEET_BERRY_PICKED_AGE);
+        world.set_block(pos, picked, UpdateFlags::UPDATE_CLIENTS);
+        world.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(Some(fox), None),
+        );
+    }
+}
+
+impl Goal for FoxEatBerriesGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn requires_update_every_tick(&self) -> bool {
+        self.inner.requires_update_every_tick()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        !as_fox(mob).is_some_and(FoxEntity::is_sleeping) && self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        self.ticks_waited = 0;
+        if let Some(fox) = as_fox(mob) {
+            fox.set_sitting(false);
+        }
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        if self.inner.is_reached_target() {
+            if self.ticks_waited >= BERRY_WAIT_TICKS {
+                self.on_reached_target(mob);
+            } else {
+                self.ticks_waited += 1;
+            }
+        } else if rand::random::<f32>() < BERRY_SNIFF_CHANCE
+            && let Some(fox) = as_fox(mob)
+        {
+            fox.play_sound(&sound_events::ENTITY_FOX_SNIFF, 1.0, 1.0);
+        }
+
         self.inner.tick(mob);
     }
 }
