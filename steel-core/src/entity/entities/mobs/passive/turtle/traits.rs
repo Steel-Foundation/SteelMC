@@ -23,7 +23,8 @@ use super::{
     ADULT_SCALE, AMBIENT_SOUND_INTERVAL, ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE,
     DEFAULT_STEP_HEIGHT, NEXT_STEP_DISTANCE, PREFERRED_WALK_TARGET_VALUE,
     SPAWN_HEIGHT_ABOVE_SEA_LEVEL, SPEED_LERP, SWIM_DRAG, SWIM_PUSH, SWIM_SINK_HOME_DISTANCE,
-    SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TurtleEntity, closer_to_center_than,
+    SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TURTLE_BABY_DIMENSIONS, TurtleEntity,
+    closer_to_center_than,
 };
 use crate::behavior::InteractionResult;
 use crate::behavior::blocks::vegetation::TurtleEggBlock;
@@ -55,7 +56,7 @@ impl Entity for TurtleEntity {
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
         if AgeableMob::is_baby(self) {
-            self.entity_type.dimensions.scale(BABY_SCALE * scale)
+            TURTLE_BABY_DIMENSIONS.scale(BABY_SCALE * scale)
         } else if self.entity_type.fixed {
             self.entity_type.dimensions
         } else {
@@ -162,10 +163,6 @@ impl LivingEntity for TurtleEntity {
             .living_entity_mut()
             .health
             .set(clamped);
-    }
-
-    fn sound_volume(&self) -> f32 {
-        0.4
     }
 
     /// Vanilla `Turtle.getAgeScale`: a hatchling is much smaller next to its

@@ -12,7 +12,9 @@ use std::sync::Weak;
 use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::entity_type::{
+    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
+};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::TurtleEntityData;
@@ -43,6 +45,21 @@ use crate::world::game_event::GameEventContext;
 const BABY_SCALE: f32 = 0.3;
 /// Grown turtles are the size the model was built at.
 const ADULT_SCALE: f32 = 1.0;
+/// Where a passenger sits on a baby turtle, before the baby scaling. Vanilla
+/// moves the point up to the adult's full height and back a quarter of a block,
+/// so a rider sits on the shell rather than sunk into it.
+const TURTLE_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
+    [EntityAttachmentPoint::new(0.0, 0.4, -0.25)];
+/// Vanilla `Turtle.BABY_DIMENSIONS`: the adult size with that passenger point,
+/// which is then scaled down by [`BABY_SCALE`]. The adult figures are repeated
+/// here because the passenger point has to be replaced before the scaling, and
+/// the generated entity type cannot be read while building a constant.
+const TURTLE_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
+    1.2,
+    0.4,
+    0.34,
+    EntityAttachments::new(&TURTLE_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
+);
 const DEFAULT_STEP_HEIGHT: f32 = 1.0;
 /// Vanilla `Turtle.aiStep`: while laying, kick up sand particles every fifth tick.
 const LAYING_EGG_EMIT_INTERVAL: i32 = 5;
@@ -312,8 +329,6 @@ impl TurtleEntity {
         }
     }
 
-    /// Emits the vanilla sand-kicking particles and game event every five ticks
-    /// while an egg is being laid, matching `Turtle.aiStep`.
     /// Vanilla `TurtleMoveControl.updateSpeed`: trims the speed a turtle carries
     /// into this tick, and floats it while it swims.
     ///
@@ -342,6 +357,8 @@ impl TurtleEntity {
         }
     }
 
+    /// Emits the vanilla sand-kicking particles and game event every five ticks
+    /// while an egg is being laid, matching `Turtle.aiStep`.
     fn tick_laying_egg(&self) {
         if !LivingEntity::is_alive(self)
             || !self.is_laying_egg()
