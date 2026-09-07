@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_utils::WorldAabb;
+use steel_utils::{BlockStateId, WorldAabb};
 
 use super::*;
 use crate::behavior::init_behaviors;
@@ -9,8 +9,9 @@ use crate::entity::PathfinderMob;
 use crate::entity::ai::goal::Goal;
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::turtle::goals::{TurtleLayEggGoal, TurtleTravelGoal};
-use crate::entity::{AgeableMob, next_entity_id};
+use crate::entity::{AgeableMob, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
+use crate::world::LevelReader;
 
 #[test]
 fn turtle_registers_vanilla_goal_priorities() {
@@ -371,6 +372,87 @@ fn a_steering_turtle_turns_its_whole_body() {
         "the body should face the same way as the steering, got {} against {yaw}",
         turtle.y_body_rot()
     );
+}
+
+/// A bare level that answers only what the spawn rule asks of it: what is under
+/// the turtle, how bright it is, and where the water line sits.
+struct SpawnRuleLevel {
+    below_state: BlockStateId,
+    raw_brightness: u8,
+    sea_level: i32,
+}
+
+impl LevelReader for SpawnRuleLevel {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        if pos == SPAWN_POS.below() {
+            return self.below_state;
+        }
+
+        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+    }
+
+    fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+        self.raw_brightness
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
+
+    fn min_y(&self) -> i32 {
+        -64
+    }
+
+    fn height(&self) -> i32 {
+        384
+    }
+}
+
+/// Where the candidate turtle stands in the spawn-rule tests.
+const SPAWN_POS: BlockPos = BlockPos::new(0, 64, 0);
+
+fn turtle_spawns_at(level: &SpawnRuleLevel, pos: BlockPos) -> bool {
+    <TurtleEntity as Animal>::check_animal_spawn_rules(level, EntitySpawnReason::Natural, pos)
+}
+
+/// Vanilla `Turtle.checkTurtleSpawnRules`: sand, daylight, and near the water
+/// line, which is what keeps turtles on beaches instead of inland deserts.
+#[test]
+fn turtles_only_spawn_on_a_bright_beach() {
+    init_vanilla_registry();
+
+    let beach = SpawnRuleLevel {
+        below_state: vanilla_blocks::SAND.default_state(),
+        raw_brightness: 9,
+        sea_level: SPAWN_POS.y() - 1,
+    };
+    assert!(turtle_spawns_at(&beach, SPAWN_POS));
+
+    // The water line is read from the level, not assumed: drop it far enough and
+    // the same beach is now too high up.
+    let inland = SpawnRuleLevel {
+        sea_level: SPAWN_POS.y() - SPAWN_HEIGHT_ABOVE_SEA_LEVEL,
+        ..beach
+    };
+    assert!(!turtle_spawns_at(&inland, SPAWN_POS));
+
+    let stone = SpawnRuleLevel {
+        below_state: vanilla_blocks::STONE.default_state(),
+        ..beach
+    };
+    assert!(!turtle_spawns_at(&stone, SPAWN_POS));
+
+    // Unlike the shared animal rule, a dark beach stays empty even for a spawner.
+    let night = SpawnRuleLevel {
+        raw_brightness: 8,
+        ..beach
+    };
+    assert!(!turtle_spawns_at(&night, SPAWN_POS));
+    assert!(!<TurtleEntity as Animal>::check_animal_spawn_rules(
+        &night,
+        EntitySpawnReason::TrialSpawner,
+        SPAWN_POS
+    ));
 }
 
 /// Vanilla `Turtle.getAgeScale`. The shared default would make a baby half the

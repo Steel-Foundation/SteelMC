@@ -21,11 +21,12 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::{
     ADULT_SCALE, AMBIENT_SOUND_INTERVAL, ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE,
-    DEFAULT_STEP_HEIGHT, NEXT_STEP_DISTANCE, PREFERRED_WALK_TARGET_VALUE, SPEED_LERP, SWIM_DRAG,
-    SWIM_PUSH, SWIM_SINK_HOME_DISTANCE, SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TurtleEntity,
-    closer_to_center_than,
+    DEFAULT_STEP_HEIGHT, NEXT_STEP_DISTANCE, PREFERRED_WALK_TARGET_VALUE,
+    SPAWN_HEIGHT_ABOVE_SEA_LEVEL, SPEED_LERP, SWIM_DRAG, SWIM_PUSH, SWIM_SINK_HOME_DISTANCE,
+    SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TurtleEntity, closer_to_center_than,
 };
 use crate::behavior::InteractionResult;
+use crate::behavior::blocks::vegetation::TurtleEggBlock;
 use crate::entity::ai::control::MoveControlOperation;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -36,7 +37,7 @@ use crate::entity::{
 use crate::fluid::FluidStateExt as _;
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
-use crate::world::{LevelReader as _, World};
+use crate::world::{LevelReader, World};
 
 impl Entity for TurtleEntity {
     fn base(&self) -> &EntityBase {
@@ -90,6 +91,10 @@ impl Entity for TurtleEntity {
         self.play_sound(sound, 0.15, 1.0);
     }
 
+    // TODO(lightning): vanilla `Turtle.thunderHit` kills a struck turtle outright
+    // rather than dealing the shared lightning damage and setting it alight.
+    // Steel has no lightning bolt entity and no thunder-hit hook to override, so
+    // there is nothing to attach this to yet.
     /// Vanilla `Turtle.isPushedByFluid`: a turtle holds its own course in a
     /// current instead of being carried along by it.
     fn is_pushed_by_fluid(&self) -> bool {
@@ -279,6 +284,20 @@ impl Animal for TurtleEntity {
 
     fn can_fall_in_love(&self) -> bool {
         self.in_love_time() <= 0 && !self.has_egg()
+    }
+
+    /// Vanilla `Turtle.checkTurtleSpawnRules`: turtles hatch onto beaches, so
+    /// they only appear on sand at or near the water line, in daylight.
+    /// Unlike the shared animal rule, this one has no exemption for spawners:
+    /// vanilla checks the light here whatever asked for the turtle.
+    fn check_animal_spawn_rules(
+        level: &dyn LevelReader,
+        _spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+    ) -> bool {
+        pos.y() < level.sea_level() + SPAWN_HEIGHT_ABOVE_SEA_LEVEL
+            && TurtleEggBlock::on_sand(level, pos)
+            && Self::is_bright_enough_to_spawn(level, pos)
     }
 }
 

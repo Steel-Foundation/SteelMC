@@ -92,6 +92,9 @@ const SWIM_SOUND_VOLUME_SCALE: f32 = 1.5;
 /// Ticks between idle turtle noises, so 10 seconds. Quieter than most mobs,
 /// which idle every 6 seconds.
 const AMBIENT_SOUND_INTERVAL: i32 = 200;
+/// Vanilla `Turtle.checkTurtleSpawnRules`: how far above the water line a turtle
+/// will still spawn, so they appear on the beach rather than inland.
+const SPAWN_HEIGHT_ABOVE_SEA_LEVEL: i32 = 4;
 /// Score a turtle gives ground it would rather walk to. Anything it likes gets
 /// the same top score, so water and sand are equally attractive.
 const PREFERRED_WALK_TARGET_VALUE: f32 = 10.0;
@@ -202,7 +205,10 @@ impl TurtleEntity {
     // one once it lands; frogs, axolotls, and dolphins will want it too. The
     // matching move control and water travel are ported, in
     // `TurtleEntity::trim_turtle_speed` and `Mob::tick_move_control` /
-    // `LivingEntity::travel_in_water` on this entity.
+    // `LivingEntity::travel_in_water` on this entity. Still missing with it is
+    // the turtle's own `isStableDestination`: while it has a travel target the
+    // destination has to be water, and otherwise the block below it must not be
+    // air.
     fn initialize_turtle_pathfinding_malus(mob_base: &MobBase) {
         let mut malus = mob_base.pathfinding_malus().lock();
         malus.set(PathType::Water, 0.0);
