@@ -130,8 +130,8 @@ impl BlockBehavior for PotentSulfurBlock {
         );
     }
 
-    // TODO: Implement vanilla animateTick once Steel has client-side ambient tick/particle support:
-    // sulfur bubbles above non-dry states and occasional noxious gas ambient sound.
+    // `animateTick` only creates client-local dust particles; the server has no
+    // corresponding work to perform.
 
     fn trigger_event(
         &self,
