@@ -13,5 +13,5 @@ pub use beehive_block::BeehiveBlock;
 pub use chiseled_bookshelf_block::ChiseledBookShelfBlock;
 pub use crafting_table_block::CraftingTableBlock;
 pub use ender_chest_block::EnderChestBlock;
-pub use grindstone_block::GrindstoneBlock;
 pub use furnace_block::{BlastFurnaceBlock, FurnaceBlock, SmokerBlock};
+pub use grindstone_block::GrindstoneBlock;
