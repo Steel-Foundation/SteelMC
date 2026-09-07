@@ -1,6 +1,7 @@
 use std::ops::RangeInclusive;
 
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::entity_type::EntityAttachment;
 use steel_utils::{BlockStateId, WorldAabb};
 
 use super::*;
@@ -9,7 +10,7 @@ use crate::entity::PathfinderMob;
 use crate::entity::ai::goal::Goal;
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::turtle::goals::{TurtleLayEggGoal, TurtleTravelGoal};
-use crate::entity::{AgeableMob, EntitySpawnReason, next_entity_id};
+use crate::entity::{AgeableMob, EntityPose, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
 
@@ -465,6 +466,45 @@ fn a_baby_turtle_is_far_smaller_than_its_parent() {
 
     turtle.set_baby(true);
     assert_eq!(turtle.get_age_scale(), BABY_SCALE);
+}
+
+/// Vanilla `Turtle.BABY_DIMENSIONS` puts a rider on top of a hatchling's shell
+/// rather than where the adult carries one, which is a good deal further down
+/// once everything is scaled to baby size.
+#[test]
+fn a_baby_turtle_carries_a_rider_on_its_shell() {
+    init_vanilla_registry();
+    let turtle = detached_turtle();
+    turtle.set_baby(true);
+
+    let baby = turtle.dimensions_for_pose(EntityPose::Standing);
+    let adult = vanilla_entities::TURTLE.dimensions;
+    assert!((baby.height - adult.height * BABY_SCALE).abs() < f32::EPSILON);
+
+    let seat =
+        baby.attachments
+            .get_clamped(EntityAttachment::Passenger, 0, turtle.rotation().0, baby);
+    // The adult's own seat, shrunk, would sit noticeably higher than this.
+    let adult_seat_scaled =
+        adult
+            .attachments
+            .get_clamped(EntityAttachment::Passenger, 0, turtle.rotation().0, adult)
+            * f64::from(BABY_SCALE);
+    assert!(
+        seat.y < adult_seat_scaled.y,
+        "a hatchling's seat should sit lower than the adult's scaled down, got {} against {}",
+        seat.y,
+        adult_seat_scaled.y
+    );
+}
+
+/// Vanilla does not give the turtle a quieter voice than anything else; only a
+/// handful of mobs override that, and the turtle is not one of them.
+#[test]
+fn a_turtle_is_no_quieter_than_any_other_mob() {
+    let turtle = detached_turtle();
+
+    assert!((turtle.sound_volume() - 1.0).abs() < f32::EPSILON);
 }
 
 #[test]

@@ -38,6 +38,17 @@ const LAY_EGG_DURATION: i32 = 200;
 /// Vanilla `TurtleLayEggGoal`: love cooldown applied to the turtle once it has
 /// laid (`setInLoveTime(600)`).
 const POST_LAY_LOVE_TIME: i32 = 600;
+/// Vanilla `BreedGoal.tick`: how fast a courting turtle may turn its head toward
+/// its partner, in degrees per tick.
+const LOOK_AT_PARTNER_SPEED: f32 = 10.0;
+/// Vanilla `TurtleLayEggGoal`: most eggs a single laying can leave behind.
+const MAX_EGGS_LAID: u8 = 4;
+/// Vanilla `TurtleLayEggGoal`: how loud the laying is, and the pitch it is
+/// played at. The pitch is picked from a small range so repeated layings do not
+/// sound identical.
+const LAY_EGG_SOUND_VOLUME: f32 = 0.3;
+const LAY_EGG_PITCH_BASE: f32 = 0.9;
+const LAY_EGG_PITCH_SPREAD: f32 = 0.2;
 
 /// Vanilla `Turtle.TurtleBreedGoal`: breeding gives the mother an egg to lay
 /// instead of spawning a baby, and both parents grow back to adulthood.
@@ -171,7 +182,7 @@ impl Goal for TurtleBreedGoal {
         let partner_position = partner.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
             DVec3::new(partner_position.x, partner.get_eye_y(), partner_position.z),
-            10.0,
+            LOOK_AT_PARTNER_SPEED,
             mob.max_head_x_rot(),
         );
         mob.move_to_pos(partner_position, self.speed_modifier);
@@ -216,7 +227,7 @@ impl TurtleLayEggGoal {
         };
 
         let egg_pos = self.inner.block_pos().above();
-        let count = rand::random_range(1..=4u8);
+        let count = rand::random_range(1..=MAX_EGGS_LAID);
         let egg_state = vanilla_blocks::TURTLE_EGG
             .default_state()
             .set_value(EGGS, count);
@@ -225,8 +236,8 @@ impl TurtleLayEggGoal {
             &sound_events::ENTITY_TURTLE_LAY_EGG,
             SoundSource::Blocks,
             mob.block_position(),
-            0.3,
-            0.9 + rand::random::<f32>() * 0.2,
+            LAY_EGG_SOUND_VOLUME,
+            LAY_EGG_PITCH_BASE + rand::random::<f32>() * LAY_EGG_PITCH_SPREAD,
             None,
         );
         world.set_block(egg_pos, egg_state, UpdateFlags::UPDATE_ALL);
