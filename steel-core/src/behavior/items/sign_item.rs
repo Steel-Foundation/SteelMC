@@ -117,7 +117,7 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
     }
 
     // All hanging signs need canSurvive check (handled by get_state_for_placement)
-    true
+    StandingAndWallBlockItem::can_place(world, state, pos)
 }
 
 impl ItemBehavior for HangingSignItem {
