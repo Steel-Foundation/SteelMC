@@ -220,7 +220,7 @@ impl FullChunkRef<'_> {
                 let (local_x, local_y, local_z) = random_positions.next_local();
                 let state = section_guard
                     .get_or_insert_with(|| section.read())
-                    .states
+                    .states()
                     .get(local_x, local_y, local_z);
                 let Some((tick_block, tick_fluid)) = random_tick_kinds(state) else {
                     continue;
@@ -1417,7 +1417,7 @@ impl FullChunkRef<'_> {
         let state = if section.is_empty() {
             REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR)
         } else {
-            section.states.get(
+            section.states().get(
                 (pos.x() & 15) as usize,
                 (y & 15) as usize,
                 (pos.z() & 15) as usize,
@@ -1609,7 +1609,7 @@ impl FullChunkRef<'_> {
         let mut keep_block_entity_decision = None;
         let (old_state, was_empty, is_empty, detached_block_entity) = loop {
             let mut section_guard = section.write();
-            let observed_state = section_guard.states.get(local_x, local_y, local_z);
+            let observed_state = section_guard.states().get(local_x, local_y, local_z);
             if expected_state.is_some_and(|expected| observed_state != expected) {
                 return Some(FullChunkBlockSetResult::Stale(observed_state));
             }
@@ -1663,7 +1663,7 @@ impl FullChunkRef<'_> {
                 let scan_local_y = ((scan_y - min_y) % 16) as usize;
                 sections.sections[scan_section_index]
                     .read()
-                    .states
+                    .states()
                     .get(lx, scan_local_y, lz)
             });
 
@@ -1738,7 +1738,7 @@ impl FullChunkRef<'_> {
 
             // Removal callbacks may synchronously replace this position. Vanilla does not run
             // placement callbacks for the stale request.
-            let current_state = section.read().states.get(local_x, local_y, local_z);
+            let current_state = section.read().states().get(local_x, local_y, local_z);
             if current_state.get_block() != new_block {
                 return Some(FullChunkBlockSetResult::Stale(current_state));
             }
@@ -1821,7 +1821,7 @@ impl FullChunkRef<'_> {
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        section_guard.states.get(local_x, local_y, local_z)
+        section_guard.states().get(local_x, local_y, local_z)
     }
 
     /// Mirrors vanilla `ChunkAccess.getHighestFilledSectionIndex`.

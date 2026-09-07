@@ -590,7 +590,7 @@ impl ChunkStorage {
         // the Building variant.
         for section_holder in &chunk.sections().sections {
             let mut guard = section_holder.write();
-            if matches!(&guard.states, PalettedContainer::Building(_)) {
+            if matches!(guard.states(), PalettedContainer::Building(_)) {
                 guard.recalculate_counts();
             }
         }

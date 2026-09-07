@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::entity::living_entity::damage_event_packet;
+
 #[test]
 fn generic_living_hurt_applies_health_damage() {
     init_vanilla_registry();
@@ -9,6 +11,47 @@ fn generic_living_hurt_applies_health_damage() {
     assert!(entity.hurt(test_world(), &source, 4.0));
 
     assert_f32_close(entity.get_health(), 16.0);
+}
+
+#[test]
+fn entity_backed_damage_packet_keeps_ids_and_omits_effective_position() {
+    init_vanilla_registry();
+    let direct: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        41,
+        DVec3::new(1.0, 64.0, 2.0),
+        Arc::downgrade(test_world()),
+    ));
+    let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
+        .with_direct_entity_reference(&direct)
+        .with_causing_entity_reference(&direct);
+
+    assert_eq!(
+        source.effective_source_position(test_world()),
+        Some(direct.position()),
+    );
+    let packet = damage_event_packet(42, &source);
+    assert_eq!(packet.entity_id, 42);
+    assert_eq!(packet.source_cause_id, direct.id() + 1);
+    assert_eq!(packet.source_direct_id, direct.id() + 1);
+    assert_eq!(packet.source_position, None);
+}
+
+#[test]
+fn explicitly_positioned_damage_packet_retains_raw_position() {
+    init_vanilla_registry();
+    let position = DVec3::new(3.0, 65.0, 4.0);
+    let source = DamageSource::environment(&vanilla_damage_types::BAD_RESPAWN_POINT)
+        .with_source_position(position);
+
+    assert_eq!(
+        source.effective_source_position(test_world()),
+        Some(position)
+    );
+    let packet = damage_event_packet(43, &source);
+    assert_eq!(packet.source_cause_id, 0);
+    assert_eq!(packet.source_direct_id, 0);
+    assert_eq!(packet.source_position, Some(position));
 }
 
 #[test]

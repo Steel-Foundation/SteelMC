@@ -42,8 +42,8 @@ use crate::physics::collide;
 use crate::player::Player;
 use crate::world::game_event::SharedGameEventListener;
 use crate::world::{
-    ClipHitResult, ConditionalBlockSetResult, LevelAccessor, LevelReader, ScheduledTickAccess,
-    SignalQueryContext, World,
+    BlockInteraction, ClipHitResult, ConditionalBlockSetResult, Explosion, LevelAccessor,
+    LevelReader, ScheduledTickAccess, SignalQueryContext, World,
 };
 use steel_registry::vanilla_fluids;
 
@@ -377,6 +377,79 @@ pub trait BlockBehavior: Send + Sync {
         tool: &ItemStack,
         drop_experience: bool,
     ) {
+    }
+
+    /// Applies Vanilla's default block response to an explosion.
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
+    }
+
+    /// Applies the default response from an overriding explosion hook.
+    fn default_on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        if state.is_air() {
+            return;
+        }
+
+        if self.drop_from_explosion(explosion) {
+            let empty_tool = ItemStack::empty();
+            let block_entity = if state.has_block_entity() {
+                world.get_block_entity(pos)
+            } else {
+                None
+            };
+            let context = BlockLootContext::new(world, pos)
+                .with_block_entity(block_entity.as_ref())
+                .with_entity(explosion.direct_source_entity())
+                .with_tool(&empty_tool);
+            let context = if explosion.block_interaction() == BlockInteraction::DestroyWithDecay {
+                context.with_explosion(explosion.radius())
+            } else {
+                context
+            };
+            let drop_experience = explosion
+                .indirect_source_entity()
+                .is_some_and(|entity| entity.as_player().is_some());
+            self.spawn_after_break(state, world, pos, &empty_tool, drop_experience);
+            for stack in World::block_drops(state, &context) {
+                on_hit(stack, pos);
+            }
+        }
+
+        world.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        self.was_exploded(state, world, pos, explosion);
+    }
+
+    /// Called after this block is removed by an explosion.
+    fn was_exploded(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _explosion: &dyn Explosion,
+    ) {
+    }
+
+    /// Returns whether this block contributes normal explosion loot.
+    fn drop_from_explosion(&self, _explosion: &dyn Explosion) -> bool {
+        true
     }
 
     /// Called after this block is removed from the world, to affect neighbors.

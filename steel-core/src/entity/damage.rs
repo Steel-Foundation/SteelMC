@@ -6,7 +6,8 @@ use steel_registry::{
     vanilla_damage_type_tags,
 };
 
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityReference, SharedEntity};
+use crate::world::World;
 
 /// Describes how an entity was damaged.
 #[derive(Debug, Clone)]
@@ -15,9 +16,15 @@ pub struct DamageSource {
     pub damage_type: &'static DamageType,
     /// The entity ultimately responsible (e.g. the shooter for projectiles).
     pub causing_entity_id: Option<i32>,
+    /// Domain-stable live reference for the causing entity when one is available.
+    causing_entity_reference: Option<EntityReference>,
     /// The entity that directly dealt the damage (e.g. the projectile itself).
     pub direct_entity_id: Option<i32>,
-    /// Source position (for explosions, etc.).
+    /// Domain-stable live reference for the direct entity when one is available.
+    direct_entity_reference: Option<EntityReference>,
+    /// Last known direct-entity position for sources whose entity can be removed before damage.
+    direct_entity_position: Option<DVec3>,
+    /// Explicit raw source position (for `/damage ... at`, bad respawn points, etc.).
     pub source_position: Option<DVec3>,
 }
 
@@ -28,30 +35,96 @@ impl DamageSource {
         Self {
             damage_type,
             causing_entity_id: None,
+            causing_entity_reference: None,
             direct_entity_id: None,
+            direct_entity_reference: None,
+            direct_entity_position: None,
             source_position: None,
         }
     }
 
     /// Adds the entity ultimately responsible for the damage.
     #[must_use]
-    pub const fn with_causing_entity(mut self, entity_id: i32) -> Self {
+    pub fn with_causing_entity(mut self, entity_id: i32) -> Self {
         self.causing_entity_id = Some(entity_id);
+        self.causing_entity_reference = None;
         self
+    }
+
+    /// Adds the live entity ultimately responsible for the damage.
+    #[must_use]
+    pub fn with_causing_entity_reference(mut self, entity: &SharedEntity) -> Self {
+        self.causing_entity_id = Some(entity.id());
+        self.causing_entity_reference = Some(EntityReference::from_entity(entity));
+        self
+    }
+
+    /// Resolves the entity ultimately responsible for the damage.
+    #[must_use]
+    pub fn causing_entity(&self, world: &World) -> Option<SharedEntity> {
+        match &self.causing_entity_reference {
+            Some(reference) => reference.get_damage_source_entity(world),
+            None => self
+                .causing_entity_id
+                .and_then(|entity_id| world.get_entity_by_id(entity_id)),
+        }
     }
 
     /// Adds the direct entity that delivered the damage.
     #[must_use]
-    pub const fn with_direct_entity(mut self, entity_id: i32) -> Self {
+    pub fn with_direct_entity(mut self, entity_id: i32) -> Self {
         self.direct_entity_id = Some(entity_id);
+        self.direct_entity_reference = None;
+        self.direct_entity_position = None;
         self
     }
 
-    /// Adds the vanilla source position used by damage events and knockback.
+    /// Adds the live direct entity that delivered the damage.
+    #[must_use]
+    pub fn with_direct_entity_reference(mut self, entity: &SharedEntity) -> Self {
+        self.direct_entity_id = Some(entity.id());
+        self.direct_entity_reference = Some(EntityReference::from_entity(entity));
+        self.direct_entity_position = Some(entity.position());
+        self
+    }
+
+    /// Adds a last-known direct-entity position without making it an explicit positional source.
+    #[must_use]
+    pub(crate) const fn with_direct_entity_position(mut self, position: DVec3) -> Self {
+        self.direct_entity_position = Some(position);
+        self
+    }
+
+    /// Resolves the entity that directly delivered the damage.
+    #[must_use]
+    pub fn direct_entity(&self, world: &World) -> Option<SharedEntity> {
+        match &self.direct_entity_reference {
+            Some(reference) => reference.get_damage_source_entity(world),
+            None => self
+                .direct_entity_id
+                .and_then(|entity_id| world.get_entity_by_id(entity_id)),
+        }
+    }
+
+    /// Adds Vanilla's explicit raw source position used by damage events and knockback.
     #[must_use]
     pub const fn with_source_position(mut self, source_position: DVec3) -> Self {
         self.source_position = Some(source_position);
         self
+    }
+
+    /// Returns Vanilla's effective `DamageSource.getSourcePosition()`.
+    #[must_use]
+    pub fn effective_source_position(&self, world: &World) -> Option<DVec3> {
+        self.source_position
+            .or_else(|| self.direct_entity(world).map(|entity| entity.position()))
+            .or(self.direct_entity_position)
+    }
+
+    /// Returns Vanilla's raw source position serialized in damage-event packets.
+    #[must_use]
+    pub const fn source_position_raw(&self) -> Option<DVec3> {
+        self.source_position
     }
 
     /// Whether this damage bypasses creative/spectator invulnerability.
@@ -84,7 +157,7 @@ impl DamageSource {
 
     /// Whether this damage scales with world difficulty for the resolved causing entity.
     ///
-    /// `causing_entity` is `None` when the source has no cause or its stored entity ID no
+    /// `causing_entity` is `None` when the source has no cause or its stored reference no
     /// longer resolves. Both cases fail Vanilla's living non-player type check.
     #[must_use]
     pub fn scales_with_difficulty(&self, causing_entity: Option<&dyn Entity>) -> bool {

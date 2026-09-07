@@ -538,10 +538,7 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        let Some(entity_id) = source.causing_entity_id else {
-            return;
-        };
-        let Some(entity) = world.get_entity_by_id(entity_id) else {
+        let Some(entity) = source.causing_entity(world) else {
             return;
         };
         if entity.is_living_entity() {
@@ -551,10 +548,7 @@ pub trait LivingEntity: Entity {
 
     /// Resolves vanilla `LivingEntity.resolvePlayerResponsibleForDamage`.
     fn resolve_player_responsible_for_damage(&self, world: &World, source: &DamageSource) {
-        let Some(entity_id) = source.causing_entity_id else {
-            return;
-        };
-        let Some(entity) = world.get_entity_by_id(entity_id) else {
+        let Some(entity) = source.causing_entity(world) else {
             return;
         };
         if entity.entity_type() == &vanilla_entities::PLAYER {
@@ -769,9 +763,8 @@ pub trait LivingEntity: Entity {
                         &vanilla_custom_stats::DAMAGE_RESISTED,
                         stats_to_award,
                     );
-                } else if let Some(damage_causer) = source
-                    .causing_entity_id
-                    .and_then(|id| self.level().and_then(|world| world.get_entity_by_id(id)))
+                } else if let Some(damage_causer) =
+                    self.level().and_then(|world| source.causing_entity(&world))
                     && let Some(player) = damage_causer.as_player()
                 {
                     player.award_custom_stat_with_count(
@@ -812,9 +805,7 @@ pub trait LivingEntity: Entity {
 
         let absorbed_damage = original_damage - damage;
         if (0.0..f32::MAX).contains(&absorbed_damage)
-            && let Some(damage_causer) = source
-                .causing_entity_id
-                .and_then(|id| world.get_entity_by_id(id))
+            && let Some(damage_causer) = source.causing_entity(world)
             && let Some(player) = damage_causer.as_player()
         {
             player.award_custom_stat_with_count(
@@ -843,18 +834,20 @@ pub trait LivingEntity: Entity {
 
     /// Returns the horizontal direction used by vanilla damage knockback.
     fn damage_knockback_direction(&self, source: &DamageSource) -> (f64, f64) {
-        if let Some(direct_entity_id) = source.direct_entity_id
-            && let Some(world) = self.level()
-            && let Some(direct_entity) = world.get_entity_by_id(direct_entity_id)
-            && let Some(projectile) = direct_entity.as_projectile()
-            && let Some(hurt_entity) = self.as_living_entity()
-        {
-            let (xd, zd) =
-                projectile.calculate_horizontal_hurt_knockback_direction(hurt_entity, source);
-            return (-xd, -zd);
-        }
-
-        let Some(source_position) = source.source_position else {
+        let source_position = if let Some(world) = self.level() {
+            if let Some(direct_entity) = source.direct_entity(&world)
+                && let Some(projectile) = direct_entity.as_projectile()
+                && let Some(hurt_entity) = self.as_living_entity()
+            {
+                let (xd, zd) =
+                    projectile.calculate_horizontal_hurt_knockback_direction(hurt_entity, source);
+                return (-xd, -zd);
+            }
+            source.effective_source_position(&world)
+        } else {
+            source.source_position_raw()
+        };
+        let Some(source_position) = source_position else {
             return (0.0, 0.0);
         };
 
@@ -910,13 +903,7 @@ pub trait LivingEntity: Entity {
     fn broadcast_damage_event(&self, world: &World, source: &DamageSource) {
         world.broadcast_to_nearby(
             self.hurt_broadcast_chunk(),
-            CDamageEvent {
-                entity_id: self.id(),
-                source_type_id: source.damage_type.id() as i32,
-                source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
-                source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
-                source_position: source.source_position,
-            },
+            damage_event_packet(self.id(), source),
             None,
         );
     }
@@ -948,9 +935,7 @@ pub trait LivingEntity: Entity {
         if let Some(world) = self.level()
             && let Some(self_entity) = self.as_living_entity()
         {
-            let source_entity = source
-                .causing_entity_id
-                .and_then(|id| world.get_entity_by_id(id));
+            let source_entity = source.causing_entity(&world);
             if source_entity.is_none_or(|entity| entity.killed_entity(&world, self_entity, source))
             {
                 self.game_event(&vanilla_game_events::ENTITY_DIE);
@@ -3039,6 +3024,16 @@ fn random_teleport_ground_y(world: &Arc<World>, x: f64, y: f64, z: f64) -> Optio
     None
 }
 
+pub(super) fn damage_event_packet(entity_id: i32, source: &DamageSource) -> CDamageEvent {
+    CDamageEvent {
+        entity_id,
+        source_type_id: source.damage_type.id() as i32,
+        source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
+        source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
+        source_position: source.source_position_raw(),
+    }
+}
+
 fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
@@ -3047,16 +3042,12 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     killed_by_player: bool,
     rng: &mut R,
 ) -> Vec<ItemStack> {
-    let causing_entity = source
-        .causing_entity_id
-        .and_then(|entity_id| world.get_entity_by_id(entity_id));
-    let direct_entity = source
-        .direct_entity_id
-        .and_then(|entity_id| world.get_entity_by_id(entity_id));
+    let causing_entity = source.causing_entity(world);
+    let direct_entity = source.direct_entity(world);
     let last_damage_player = if killed_by_player {
         entity
             .last_hurt_by_player_uuid()
-            .and_then(|uuid| world.get_entity_by_uuid(&uuid))
+            .and_then(|uuid| world.get_entity_in_domain_by_uuid(&uuid))
     } else {
         None
     };

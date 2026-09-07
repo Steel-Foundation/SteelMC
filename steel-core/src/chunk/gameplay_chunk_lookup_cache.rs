@@ -4,11 +4,18 @@
 //! cache retains holder identity (including map absence), but never generation
 //! permission or published status; those remain live per lookup.
 
-use std::{cell::RefCell, marker::PhantomData, ptr, rc::Rc, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+    num::NonZeroU64,
+    ptr,
+    rc::Rc,
+    sync::Arc,
+};
 
-use steel_utils::ChunkPos;
+use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 
-use super::{chunk_holder::ChunkHolder, chunk_map::ChunkMap};
+use super::{chunk_holder::ChunkHolder, chunk_map::ChunkMap, status::ChunkStatus};
 
 // Vanilla's ServerChunkCache also keeps four recent synchronous lookups. Steel
 // caches holders rather than a status-specific chunk view so concurrent publication stays visible.
@@ -52,6 +59,7 @@ struct CacheEntry {
 
 struct ActiveCache {
     owner: CacheOwner,
+    scope_id: Option<NonZeroU64>,
     entries: [Option<CacheEntry>; CACHE_ENTRY_COUNT],
     stats: GameplayChunkLookupCacheStats,
 }
@@ -62,9 +70,10 @@ enum CacheEntryProbe {
 }
 
 impl ActiveCache {
-    fn new(owner: CacheOwner) -> Self {
+    fn new(owner: CacheOwner, scope_id: Option<NonZeroU64>) -> Self {
         Self {
             owner,
+            scope_id,
             entries: [const { None }; CACHE_ENTRY_COUNT],
             stats: GameplayChunkLookupCacheStats::default(),
         }
@@ -125,6 +134,15 @@ impl ActiveCache {
 
 thread_local! {
     static ACTIVE_CACHE: RefCell<Option<ActiveCache>> = const { RefCell::new(None) };
+    static NEXT_SCOPE_ID: Cell<u64> = const { Cell::new(1) };
+}
+
+fn next_scope_id() -> Option<NonZeroU64> {
+    NEXT_SCOPE_ID.with(|next| {
+        let current = NonZeroU64::new(next.get())?;
+        next.set(current.get().checked_add(1).unwrap_or(0));
+        Some(current)
+    })
 }
 
 enum CacheProbe {
@@ -156,7 +174,8 @@ impl<'map> GameplayChunkLookupCacheScope<'map> {
     }
 
     fn enter_key(owner: CacheOwner) -> Self {
-        let previous = ACTIVE_CACHE.with(|cache| cache.replace(Some(ActiveCache::new(owner))));
+        let previous = ACTIVE_CACHE
+            .with(|cache| cache.replace(Some(ActiveCache::new(owner, next_scope_id()))));
         Self {
             previous,
             active: true,
@@ -177,6 +196,147 @@ impl<'map> GameplayChunkLookupCacheScope<'map> {
         self.active = false;
         ACTIVE_CACHE.with(|cache| cache.replace(self.previous.take()))
     }
+}
+
+/// A tiny holder cache for repeated, live Full-chunk block-state reads.
+///
+/// Entries are usable only inside the exact gameplay lookup-cache scope that populated them. That
+/// scope is the proof that active-map membership is stable. The holder's current Full permission
+/// and publication are rechecked for every read, and the block section itself is locked only long
+/// enough to copy the state. Missing and unpublished chunks are never retained.
+pub(crate) struct LocalFullChunkHolderCache {
+    scope_id: Option<NonZeroU64>,
+    entries: [Option<LocalFullChunkHolderCacheEntry>; CACHE_ENTRY_COUNT],
+    #[cfg(test)]
+    stats: LocalFullChunkHolderCacheStats,
+}
+
+struct LocalFullChunkHolderCacheEntry {
+    pos: ChunkPos,
+    holder: Arc<ChunkHolder>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LocalFullChunkHolderCacheStats {
+    pub(crate) holder_hits: usize,
+    pub(crate) active_holder_lookups: usize,
+    pub(crate) fallback_reads: usize,
+}
+
+impl LocalFullChunkHolderCache {
+    pub(crate) const fn new() -> Self {
+        Self {
+            scope_id: None,
+            entries: [const { None }; CACHE_ENTRY_COUNT],
+            #[cfg(test)]
+            stats: LocalFullChunkHolderCacheStats {
+                holder_hits: 0,
+                active_holder_lookups: 0,
+                fallback_reads: 0,
+            },
+        }
+    }
+
+    /// Reads the current state without retaining a section guard or a missing chunk result.
+    pub(crate) fn block_state(
+        &mut self,
+        chunk_map: &ChunkMap,
+        pos: BlockPos,
+    ) -> Option<BlockStateId> {
+        let owner = CacheOwner::for_chunk_map(chunk_map);
+        let active_scope_id = active_scope_id(owner);
+        if active_scope_id != self.scope_id {
+            self.entries.fill_with(|| None);
+            self.scope_id = active_scope_id;
+        }
+
+        let chunk_pos = ChunkPos::from_block_pos(pos);
+        let Some(_) = active_scope_id else {
+            #[cfg(test)]
+            {
+                self.stats.fallback_reads += 1;
+            }
+            return chunk_map.with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos));
+        };
+
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|entry| entry.as_ref().is_some_and(|entry| entry.pos == chunk_pos))
+        {
+            let state = {
+                let entry = self.entries[index].as_ref()?;
+                live_full_block_state(&entry.holder, pos)
+            };
+            let Some(state) = state else {
+                self.remove(index);
+                return None;
+            };
+            #[cfg(test)]
+            {
+                self.stats.holder_hits += 1;
+            }
+            self.promote(index);
+            return Some(state);
+        }
+
+        #[cfg(test)]
+        {
+            self.stats.active_holder_lookups += 1;
+        }
+        let holder = chunk_map.active_full_chunk_holder(chunk_pos)?;
+        let state = live_full_block_state(&holder, pos)?;
+        self.insert(chunk_pos, holder);
+        Some(state)
+    }
+
+    fn insert(&mut self, pos: ChunkPos, holder: Arc<ChunkHolder>) {
+        for index in (1..CACHE_ENTRY_COUNT).rev() {
+            self.entries[index] = self.entries[index - 1].take();
+        }
+        self.entries[0] = Some(LocalFullChunkHolderCacheEntry { pos, holder });
+    }
+
+    fn promote(&mut self, index: usize) {
+        if index == 0 {
+            return;
+        }
+        let entry = self.entries[index].take();
+        for target in (1..=index).rev() {
+            self.entries[target] = self.entries[target - 1].take();
+        }
+        self.entries[0] = entry;
+    }
+
+    fn remove(&mut self, index: usize) {
+        for target in index..CACHE_ENTRY_COUNT - 1 {
+            self.entries[target] = self.entries[target + 1].take();
+        }
+        self.entries[CACHE_ENTRY_COUNT - 1] = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn stats(&self) -> LocalFullChunkHolderCacheStats {
+        self.stats
+    }
+}
+
+fn active_scope_id(owner: CacheOwner) -> Option<NonZeroU64> {
+    ACTIVE_CACHE.with(|cache| {
+        let cache = cache.borrow();
+        let cache = cache.as_ref()?;
+        (cache.owner == owner).then_some(cache.scope_id).flatten()
+    })
+}
+
+fn live_full_block_state(holder: &ChunkHolder, pos: BlockPos) -> Option<BlockStateId> {
+    if holder.is_status_disallowed(ChunkStatus::Full) {
+        return None;
+    }
+    holder
+        .try_full_chunk()
+        .map(|chunk| chunk.get_block_state(pos))
 }
 
 impl Drop for GameplayChunkLookupCacheScope<'_> {
@@ -245,7 +405,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::{blocks::BlockRef, vanilla_blocks};
+    use steel_utils::types::UpdateFlags;
+
+    use crate::behavior::init_behaviors;
+    use crate::chunk::Chunk;
     use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+    use crate::chunk::section::{ChunkSection, Sections};
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::world::World;
 
     fn holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         Arc::new(ChunkHolder::new(
@@ -255,6 +423,10 @@ mod tests {
             0,
             16,
         ))
+    }
+
+    fn set_test_block(world: &Arc<World>, pos: BlockPos, block: BlockRef) {
+        assert!(world.set_block(pos, block.default_state(), UpdateFlags::UPDATE_NONE));
     }
 
     #[test]
@@ -431,5 +603,202 @@ mod tests {
         assert_eq!(loads, 2);
         assert_eq!(stats.foreign_map_bypasses, 2);
         assert_eq!(stats.scc_lookups, 0);
+    }
+
+    #[test]
+    fn local_full_holder_cache_reuses_one_active_lookup_for_same_chunk() {
+        let world = fresh_test_world("local_full_holder_cache_same_chunk");
+        init_behaviors();
+        let chunk_pos = ChunkPos::new(2, -1);
+        insert_ready_full_chunk(&world, chunk_pos);
+        let first = BlockPos::new(32, 64, -16);
+        let second = BlockPos::new(47, 64, -1);
+        set_test_block(&world, first, &vanilla_blocks::STONE);
+        set_test_block(&world, second, &vanilla_blocks::DIRT);
+
+        let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        let mut local = LocalFullChunkHolderCache::new();
+        assert_eq!(
+            local.block_state(&world.chunk_map, first),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+        assert_eq!(
+            local.block_state(&world.chunk_map, second),
+            Some(vanilla_blocks::DIRT.default_state())
+        );
+
+        assert_eq!(
+            local.stats(),
+            LocalFullChunkHolderCacheStats {
+                holder_hits: 1,
+                active_holder_lookups: 1,
+                fallback_reads: 0,
+            }
+        );
+        let scope_stats = scope.finish();
+        assert_eq!(scope_stats.scc_lookups, 1);
+        assert_eq!(scope_stats.holder_hits, 0);
+    }
+
+    #[test]
+    fn local_full_holder_cache_observes_live_block_mutation() {
+        let world = fresh_test_world("local_full_holder_cache_live_mutation");
+        init_behaviors();
+        let pos = BlockPos::new(3, 64, 7);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        set_test_block(&world, pos, &vanilla_blocks::STONE);
+
+        let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        let mut local = LocalFullChunkHolderCache::new();
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+        set_test_block(&world, pos, &vanilla_blocks::DIRT);
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::DIRT.default_state())
+        );
+        drop(scope);
+    }
+
+    #[test]
+    fn local_full_holder_cache_rechecks_full_permission() {
+        let world = fresh_test_world("local_full_holder_cache_permission");
+        init_behaviors();
+        let pos = BlockPos::new(3, 64, 7);
+        let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        set_test_block(&world, pos, &vanilla_blocks::STONE);
+
+        let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        let mut local = LocalFullChunkHolderCache::new();
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+
+        holder.update_highest_allowed_status(None);
+        assert_eq!(local.block_state(&world.chunk_map, pos), None);
+
+        holder.update_highest_allowed_status(Some(ChunkTicketLevel::FULL_CHUNK));
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+        assert_eq!(local.stats().active_holder_lookups, 2);
+        drop(scope);
+    }
+
+    #[test]
+    fn local_full_holder_cache_does_not_retain_unpublished_data() {
+        let world = fresh_test_world("local_full_holder_cache_publication");
+        let chunk_pos = ChunkPos::new(-2, 3);
+        let pos = BlockPos::new(-31, 64, 49);
+        let min_y = world.chunk_map.world_gen_context.min_y();
+        let height = world.chunk_map.world_gen_context.height();
+        let holder = Arc::new(ChunkHolder::new(
+            chunk_pos,
+            ChunkTicketLevel::FULL_CHUNK,
+            None,
+            min_y,
+            height,
+        ));
+        let _ = world
+            .chunk_map
+            .chunks
+            .insert_sync(chunk_pos, Arc::clone(&holder));
+        let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        let mut local = LocalFullChunkHolderCache::new();
+
+        assert_eq!(local.block_state(&world.chunk_map, pos), None);
+
+        let sections = (0..height / 16)
+            .map(|_| ChunkSection::new_empty())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let chunk = Chunk::new(
+            Sections::from_owned(sections),
+            chunk_pos,
+            min_y,
+            height,
+            Arc::downgrade(&world),
+        );
+        assert!(
+            chunk
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    pos,
+                    vanilla_blocks::STONE.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                )
+                .is_some()
+        );
+        drop(chunk.promote_to_full());
+        holder.insert_chunk(chunk, ChunkStatus::Full);
+
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+        assert_eq!(local.stats().holder_hits, 0);
+        assert_eq!(local.stats().active_holder_lookups, 2);
+        drop(scope);
+    }
+
+    #[test]
+    fn local_full_holder_cache_falls_back_without_stable_scope() {
+        let world = fresh_test_world("local_full_holder_cache_fallback");
+        init_behaviors();
+        let pos = BlockPos::new(5, 64, 5);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        set_test_block(&world, pos, &vanilla_blocks::STONE);
+        let mut local = LocalFullChunkHolderCache::new();
+
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+        set_test_block(&world, pos, &vanilla_blocks::DIRT);
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::DIRT.default_state())
+        );
+        assert_eq!(local.stats().fallback_reads, 2);
+        assert_eq!(local.stats().holder_hits, 0);
+        assert_eq!(local.stats().active_holder_lookups, 0);
+    }
+
+    #[test]
+    fn local_full_holder_cache_does_not_cross_scope_boundaries() {
+        let world = fresh_test_world("local_full_holder_cache_scope_boundary");
+        init_behaviors();
+        let pos = BlockPos::new(5, 64, 5);
+        let chunk_pos = ChunkPos::from_block_pos(pos);
+        insert_ready_full_chunk(&world, chunk_pos);
+        set_test_block(&world, pos, &vanilla_blocks::STONE);
+        let mut local = LocalFullChunkHolderCache::new();
+
+        let first_scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::STONE.default_state())
+        );
+        drop(first_scope);
+
+        let Some((_, old_holder)) = world.chunk_map.chunks.remove_sync(&chunk_pos) else {
+            panic!("fixture holder should remain active");
+        };
+        drop(old_holder);
+        world.unregister_full_chunk_ticks(chunk_pos);
+        insert_ready_full_chunk(&world, chunk_pos);
+        set_test_block(&world, pos, &vanilla_blocks::DIRT);
+
+        let second_scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        assert_eq!(
+            local.block_state(&world.chunk_map, pos),
+            Some(vanilla_blocks::DIRT.default_state())
+        );
+        assert_eq!(local.stats().active_holder_lookups, 2);
+        drop(second_scope);
     }
 }

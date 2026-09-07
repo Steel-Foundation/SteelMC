@@ -5,12 +5,21 @@ use smallvec::SmallVec;
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos};
 
-use crate::chunk::{chunk_holder::ChunkHolder, section::ChunkSection, status::ChunkStatus};
+use crate::chunk::{
+    chunk_holder::ChunkHolder, paletted_container::BlockPalette, section::ChunkSection,
+    status::ChunkStatus,
+};
 
 use super::World;
 
 /// Maximum combined chunk-holder and section slots acquired by one bulk region read.
 pub(crate) const MAX_BLOCK_REGION_WORKSET_SLOTS: usize = 64;
+const SECTION_EDGE_BLOCKS: i32 = BlockPalette::SIZE as i32;
+const SECTION_LOCAL_COORDINATE_MASK: i32 = SECTION_EDGE_BLOCKS - 1;
+
+const fn section_local_coordinate(block_coordinate: i32) -> usize {
+    (block_coordinate & SECTION_LOCAL_COORDINATE_MASK) as usize
+}
 
 /// Inclusive block bounds for one scoped region read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,6 +36,12 @@ impl BlockRegionBounds {
             min: BlockPos::min(first, second),
             max: BlockPos::max(first, second),
         }
+    }
+
+    /// Returns the inclusive minimum and maximum block corners.
+    #[must_use]
+    pub(crate) const fn corners(self) -> (BlockPos, BlockPos) {
+        (self.min, self.max)
     }
 
     #[must_use]
@@ -160,11 +175,24 @@ impl BlockSectionRead<'_> {
         if SectionPos::from_block_pos(pos) != self.section_pos {
             return None;
         }
-        Some(self.section.states.get(
-            (pos.x() & 15) as usize,
-            (pos.y() & 15) as usize,
-            (pos.z() & 15) as usize,
+        Some(self.section.states().get(
+            section_local_coordinate(pos.x()),
+            section_local_coordinate(pos.y()),
+            section_local_coordinate(pos.z()),
         ))
+    }
+
+    fn stable_air_box_is_clear(&self, min: BlockPos, max: BlockPos) -> bool {
+        debug_assert_eq!(SectionPos::from_block_pos(min), self.section_pos);
+        debug_assert_eq!(SectionPos::from_block_pos(max), self.section_pos);
+        self.section.stable_air_box_is_clear(
+            section_local_coordinate(min.x()),
+            section_local_coordinate(max.x()),
+            section_local_coordinate(min.y()),
+            section_local_coordinate(max.y()),
+            section_local_coordinate(min.z()),
+            section_local_coordinate(max.z()),
+        )
     }
 }
 
@@ -208,6 +236,91 @@ impl BlockRegionRead<'_> {
             return Some(self.air);
         };
         section.get_block_state(pos)
+    }
+
+    /// Returns whether every in-height section in this bounded snapshot came from a Full chunk.
+    #[must_use]
+    pub(crate) fn has_complete_data(&self) -> bool {
+        self.sections.iter().all(Option::is_some)
+    }
+
+    /// Returns whether any retained section may require expanded block-collision boundaries.
+    #[must_use]
+    pub(crate) fn maybe_has_special_colliding_blocks(&self) -> bool {
+        self.sections
+            .iter()
+            .flatten()
+            .any(|section| section.maybe_has_special_colliding_blocks())
+    }
+
+    /// Returns whether any retained section requires live collision-state reads around callbacks.
+    #[must_use]
+    pub(crate) fn maybe_has_extensible_collision_behavior(&self) -> bool {
+        self.sections
+            .iter()
+            .flatten()
+            .any(|section| section.maybe_has_extensible_collision_behavior())
+    }
+
+    /// Returns whether the bounded, in-world snapshot contains only immutable Vanilla air.
+    ///
+    /// Missing Full data is never accepted: publication or a live mutation must remain visible to
+    /// the exact fallback query.
+    #[must_use]
+    pub(crate) fn contains_only_stable_air(&self) -> bool {
+        if !self.has_complete_data() {
+            return false;
+        }
+
+        let (bounds_min, bounds_max) = self.bounds.corners();
+        let min_y = bounds_min.y().max(self.world_min_y);
+        let max_y = bounds_max.y().min(self.world_max_y);
+        let min_section_x =
+            SectionPos::block_to_section_coord(bounds_min.x()).max(-ChunkPos::MAX_COORDINATE_VALUE);
+        let max_section_x =
+            SectionPos::block_to_section_coord(bounds_max.x()).min(ChunkPos::MAX_COORDINATE_VALUE);
+        let min_section_z =
+            SectionPos::block_to_section_coord(bounds_min.z()).max(-ChunkPos::MAX_COORDINATE_VALUE);
+        let max_section_z =
+            SectionPos::block_to_section_coord(bounds_max.z()).min(ChunkPos::MAX_COORDINATE_VALUE);
+        if min_y > max_y || min_section_x > max_section_x || min_section_z > max_section_z {
+            return true;
+        }
+
+        let min_section_y = SectionPos::block_to_section_coord(min_y);
+        let max_section_y = SectionPos::block_to_section_coord(max_y);
+        for section_x in min_section_x..=max_section_x {
+            for section_z in min_section_z..=max_section_z {
+                for section_y in min_section_y..=max_section_y {
+                    let section_pos = SectionPos::new(section_x, section_y, section_z);
+                    let Some(section) = self.section(section_pos) else {
+                        return false;
+                    };
+                    let section_min = BlockPos::new(
+                        section_x * SECTION_EDGE_BLOCKS,
+                        section_y * SECTION_EDGE_BLOCKS,
+                        section_z * SECTION_EDGE_BLOCKS,
+                    );
+                    let section_max = BlockPos::new(
+                        section_min.x() + SECTION_LOCAL_COORDINATE_MASK,
+                        section_min.y() + SECTION_LOCAL_COORDINATE_MASK,
+                        section_min.z() + SECTION_LOCAL_COORDINATE_MASK,
+                    );
+                    let clipped_min = BlockPos::max(
+                        BlockPos::new(bounds_min.x(), min_y, bounds_min.z()),
+                        section_min,
+                    );
+                    let clipped_max = BlockPos::min(
+                        BlockPos::new(bounds_max.x(), max_y, bounds_max.z()),
+                        section_max,
+                    );
+                    if !section.stable_air_box_is_clear(clipped_min, clipped_max) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 
     /// Returns a prelocked section view, or `None` for an unloaded or uncached section.
@@ -275,7 +388,59 @@ mod tests {
         test_support::{fresh_test_world, insert_ready_full_chunk},
     };
 
-    use super::{BlockRegionBounds, BlockRegionWorkset};
+    use super::{BlockRegionBounds, BlockRegionWorkset, SECTION_EDGE_BLOCKS};
+
+    #[test]
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "the method pointer cannot satisfy the region callback's higher-ranked lifetime"
+    )]
+    fn stable_air_region_requires_full_data_and_tracks_live_block_writes() {
+        let world = fresh_test_world("stable_air_region");
+        init_behaviors();
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(&world, ChunkPos::new(1, 0));
+        let first_chunk_max_x = SECTION_EDGE_BLOCKS - 1;
+        let second_chunk_min_x = SECTION_EDGE_BLOCKS;
+        let missing_chunk_min_x = SECTION_EDGE_BLOCKS * 2;
+        let test_y = 64;
+        let bounds = BlockRegionBounds::from_corners(
+            BlockPos::new(first_chunk_max_x, test_y, 0),
+            BlockPos::new(second_chunk_min_x, test_y, 0),
+        );
+
+        assert_eq!(
+            world.try_with_block_region(bounds, |region| region.contains_only_stable_air()),
+            Some(true)
+        );
+        assert!(world.set_block(
+            BlockPos::new(second_chunk_min_x, test_y, 0),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert_eq!(
+            world.try_with_block_region(bounds, |region| region.contains_only_stable_air()),
+            Some(false)
+        );
+        assert!(world.set_block(
+            BlockPos::new(second_chunk_min_x, test_y, 0),
+            vanilla_blocks::CAVE_AIR.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert_eq!(
+            world.try_with_block_region(bounds, |region| region.contains_only_stable_air()),
+            Some(true)
+        );
+
+        let missing = BlockRegionBounds::from_corners(
+            BlockPos::new(first_chunk_max_x, test_y, 0),
+            BlockPos::new(missing_chunk_min_x, test_y, 0),
+        );
+        assert_eq!(
+            world.try_with_block_region(missing, |region| region.contains_only_stable_air()),
+            Some(false)
+        );
+    }
 
     #[test]
     fn region_reuses_section_reads_across_chunk_and_section_boundaries() {
@@ -314,6 +479,8 @@ mod tests {
                     region.get_block_state(missing_chunk),
                     Some(vanilla_blocks::AIR.default_state())
                 );
+                assert!(!region.has_complete_data());
+                assert!(!region.maybe_has_special_colliding_blocks());
                 assert_eq!(
                     region.get_block_state(below_world),
                     Some(vanilla_blocks::VOID_AIR.default_state())

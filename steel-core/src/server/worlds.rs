@@ -7,7 +7,7 @@ use small_map::FxSmallMap;
 use steel_utils::Identifier;
 
 use crate::config::{ResolvedDomainConfig, ResolvedWorldConfig};
-use crate::world::World;
+use crate::world::{DomainEntityDirectory, World};
 
 pub(crate) const OVERWORLD_WORLD_NAME: &str = "overworld";
 pub(crate) const NETHER_WORLD_NAME: &str = "the_nether";
@@ -20,6 +20,7 @@ pub struct WorldMap {
     default_worlds: FxHashMap<String, Identifier>,
     nether_portal_targets: FxHashMap<Identifier, Identifier>,
     end_portal_targets: FxHashMap<Identifier, Identifier>,
+    entity_directories: FxHashMap<String, Arc<DomainEntityDirectory>>,
 }
 
 impl WorldMap {
@@ -50,12 +51,24 @@ impl WorldMap {
             default_worlds,
             nether_portal_targets,
             end_portal_targets,
+            entity_directories: FxHashMap::default(),
         }
     }
 
     /// Inserts a loaded world.
     pub fn insert(&mut self, key: Identifier, world: Arc<World>) {
-        self.worlds.insert(key, world);
+        if let Some(replaced) = self.worlds.insert(key, Arc::clone(&world))
+            && let Some(directory) = self.entity_directories.get(replaced.domain())
+        {
+            directory.remove_world(&replaced);
+        }
+
+        let directory = self
+            .entity_directories
+            .entry(world.domain().to_owned())
+            .or_insert_with(|| Arc::new(DomainEntityDirectory::new()));
+        directory.add_world(&world);
+        world.set_domain_entity_directory(Arc::clone(directory));
     }
 
     /// Returns a world by loaded world identifier.
@@ -192,7 +205,49 @@ fn end_entry_portal_target_world_name(source_world_name: &str) -> Option<&'stati
 
 #[cfg(test)]
 mod tests {
-    use super::{end_entry_portal_target_world_name, nether_portal_target_world_name};
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
+    use steel_utils::ChunkPos;
+    use uuid::Uuid;
+
+    use crate::config::ResolvedDomainConfig;
+    use crate::entity::{Entity, EntityBase, EntityReference, SharedEntity};
+    use crate::test_support::{fresh_test_world_in_domain, insert_ready_full_chunk};
+    use crate::world::World;
+
+    use super::{WorldMap, end_entry_portal_target_world_name, nether_portal_target_world_name};
+
+    struct LookupTestEntity {
+        base: EntityBase,
+    }
+
+    impl LookupTestEntity {
+        fn shared(world: &Arc<World>, id: i32, uuid: Uuid) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::with_uuid(
+                    id,
+                    uuid,
+                    DVec3::ZERO,
+                    vanilla_entities::ITEM.dimensions,
+                    Arc::downgrade(world),
+                ),
+            })
+        }
+    }
+
+    crate::entity::impl_test_downcast_type!(LookupTestEntity);
+
+    impl Entity for LookupTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+    }
 
     #[test]
     fn nether_portal_target_names_follow_vanilla_level_keys() {
@@ -212,5 +267,52 @@ mod tests {
             Some("the_end")
         );
         assert_eq!(end_entry_portal_target_world_name("the_end"), None);
+    }
+
+    #[test]
+    fn entity_references_resolve_within_but_not_across_domains() {
+        let alpha_source = fresh_test_world_in_domain("alpha", "overworld");
+        let alpha_target = fresh_test_world_in_domain("alpha", "the_nether");
+        let beta_target = fresh_test_world_in_domain("beta", "overworld");
+        let domains = [
+            ResolvedDomainConfig {
+                name: "alpha".to_owned(),
+                default_world: alpha_source.key.clone(),
+                worlds: vec![alpha_source.key.clone(), alpha_target.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "beta".to_owned(),
+                default_world: beta_target.key.clone(),
+                worlds: vec![beta_target.key.clone()],
+            },
+        ];
+        let mut worlds = WorldMap::new("alpha".to_owned(), &domains, &[]);
+        for world in [&alpha_source, &alpha_target, &beta_target] {
+            worlds.insert(world.key.clone(), Arc::clone(world));
+        }
+
+        insert_ready_full_chunk(&alpha_target, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(&beta_target, ChunkPos::new(0, 0));
+        let alpha_uuid = Uuid::from_u128(1);
+        let beta_uuid = Uuid::from_u128(2);
+        let alpha_entity = LookupTestEntity::shared(&alpha_target, 1, alpha_uuid);
+        let beta_entity = LookupTestEntity::shared(&beta_target, 2, beta_uuid);
+        let Ok(()) = alpha_target.try_add_entity(Arc::clone(&alpha_entity)) else {
+            panic!("same-domain lookup entity should register");
+        };
+        let Ok(()) = beta_target.try_add_entity(Arc::clone(&beta_entity)) else {
+            panic!("cross-domain lookup entity should register");
+        };
+
+        let same_domain = EntityReference::from_uuid(alpha_uuid);
+        let Some(resolved) = same_domain.get_entity(&alpha_source) else {
+            panic!("entity reference should resolve in another same-domain world");
+        };
+        assert!(Arc::ptr_eq(&resolved, &alpha_entity));
+
+        let unresolved_cross_domain = EntityReference::from_uuid(beta_uuid);
+        assert!(unresolved_cross_domain.get_entity(&alpha_source).is_none());
+        let cached_cross_domain = EntityReference::from_entity(&beta_entity);
+        assert!(cached_cross_domain.get_entity(&alpha_source).is_none());
     }
 }

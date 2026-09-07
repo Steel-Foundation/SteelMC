@@ -1,5 +1,5 @@
 use super::*;
-use crate::chunk::Chunk;
+use crate::chunk::{Chunk, gameplay_chunk_lookup_cache::LocalFullChunkHolderCache};
 
 mod neighbor_updater;
 
@@ -23,6 +23,22 @@ impl World {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
+    /// Gets a live block state while locally retaining Full holder identity when the enclosing
+    /// gameplay lookup scope guarantees stable active-map membership.
+    pub(crate) fn get_block_state_with_local_holder_cache(
+        &self,
+        pos: BlockPos,
+        cache: &mut LocalFullChunkHolderCache,
+    ) -> BlockStateId {
+        if !self.is_in_valid_bounds(pos) {
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
+        }
+
+        cache
+            .block_state(&self.chunk_map, pos)
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
