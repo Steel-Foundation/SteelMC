@@ -20,6 +20,7 @@ serde_json.workspace = true
 # Data structures
 glam.workspace = true
 rustc-hash.workspace = true
+smallvec.workspace = true
 
 # Logging
 log.workspace = true
