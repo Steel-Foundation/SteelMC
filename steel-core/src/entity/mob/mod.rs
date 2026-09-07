@@ -930,6 +930,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn save_mob(&self, nbt: &mut NbtCompound) {
+        self.save_equipment(nbt);
         nbt.insert("CanPickUpLoot", i8::from(self.can_pick_up_loot()));
         nbt.insert(
             "PersistenceRequired",
@@ -967,6 +968,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        self.load_equipment(nbt);
         self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
         *self.mob_base().persistence_required().lock() = nbt
             .byte("PersistenceRequired")
