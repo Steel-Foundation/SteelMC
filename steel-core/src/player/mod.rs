@@ -33,7 +33,7 @@ pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
 use connection::NetworkConnection as _;
 pub use connection::{ClientInformation, PlayerConnection};
 use container_counter::ContainerCounter;
-use food_data::FoodData;
+use food_data::{FoodData, food_constants};
 use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
 use health_sync::HealthSyncState;
@@ -51,7 +51,6 @@ pub use profile::{
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::mem::replace;
 use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -100,10 +99,10 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMoveError,
+    EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
+    apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -133,7 +132,6 @@ use steel_protocol::packets::{
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
-use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
@@ -377,27 +375,6 @@ impl Player {
             .set(flags & !Self::USING_ITEM_FLAG);
     }
 
-    /// Applies vanilla `ItemStack.applyAfterUseComponentSideEffects`.
-    fn apply_after_use_component_side_effects(
-        &self,
-        stack: &mut ItemStack,
-        stack_before_using: &ItemStack,
-    ) {
-        if !self.has_infinite_materials()
-            && stack.count() < stack_before_using.count()
-            && let Some(use_remainder) = stack_before_using.get(USE_REMAINDER)
-        {
-            let remainder = use_remainder.convert_into().create();
-            if stack.is_empty() {
-                *stack = remainder;
-            } else {
-                self.add_item_or_drop(remainder);
-            }
-        }
-
-        self.apply_item_use_cooldown(stack_before_using);
-    }
-
     /// Releases the currently used item and invokes its release hook.
     pub fn release_using_item(&self) {
         let Some(active) = self.living_base.active_item_use() else {
@@ -420,17 +397,21 @@ impl Player {
             self.stop_using_item();
             return;
         }
+        // Read a copy rather than clearing the slot,
+        // so any inventory-touching side effect from
+        // `release_using` never sees the hand as vacant.
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let stack_before_using = item.copy_with_count(item.count());
         let world = self.get_world();
-        let apply_after_use_effects =
+        let apply_use_cooldown =
             behavior.release_using(&mut item, &world, self, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
-        if apply_after_use_effects {
-            self.apply_after_use_component_side_effects(&mut item, &stack_before_using);
+        if apply_use_cooldown {
+            self.apply_item_use_cooldown(&stack_before_using);
         }
         self.inventory.lock().set_item_in_hand(hand, item);
         if use_on_release {
@@ -461,8 +442,9 @@ impl Player {
             return;
         }
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
@@ -477,9 +459,9 @@ impl Player {
         };
         let use_on_release = behavior.use_on_release(&item);
         if active.remaining_ticks() == 0 && !use_on_release {
-            let stack_before_using = item.copy_with_count(item.count());
+            let stack_before_finish = item.copy_with_count(item.count());
             item = behavior.finish_using(&mut item, &world, self);
-            self.apply_after_use_component_side_effects(&mut item, &stack_before_using);
+            self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
         }
 
@@ -518,11 +500,7 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let block_interaction_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let block_interaction_range = self.block_interaction_range();
         let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
@@ -1513,6 +1491,7 @@ impl Entity for Player {
     fn stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();
+        self.base.set_boarding_cooldown(0);
         let Some(old_vehicle) = old_vehicle else {
             return;
         };
@@ -1522,6 +1501,11 @@ impl Entity for Player {
             old_vehicle.id(),
             Self::passenger_ids_for_packet(old_vehicle.as_ref()),
         ));
+    }
+
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        let (yaw, pitch) = self.rotation();
+        self.teleport(pos, yaw, pitch)
     }
 
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
@@ -2027,6 +2011,13 @@ impl LivingEntity for Player {
         Player::has_infinite_materials(self)
     }
 
+    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+        let leftover = self.inventory.lock().add_or_return(extra);
+        if !leftover.is_empty() {
+            let _ = self.drop_item(leftover, false, false);
+        }
+    }
+
     fn get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
@@ -2063,9 +2054,9 @@ impl LivingEntity for Player {
         self.default_jump_from_ground();
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
-            self.cause_food_exhaustion(0.2);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
         } else {
-            self.cause_food_exhaustion(0.05);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
         }
     }
 
