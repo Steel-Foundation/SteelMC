@@ -75,7 +75,6 @@ pub trait ThrowableProjectile: Projectile {
         }
     }
 
-    /// Vanilla `ThrowableProjectile.handleFirstTickBubbleColumn`.
     fn handle_first_tick_bubble_column(&self) {
         if !self.is_first_tick() {
             return;
