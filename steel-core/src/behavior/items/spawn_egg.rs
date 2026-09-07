@@ -151,7 +151,7 @@ impl ItemBehavior for SpawnEggItem {
         let clicked_pos = context.hit_result.block_pos;
         let clicked_state = context.world.get_block_state(clicked_pos);
         if clicked_state.get_block() == &vanilla_blocks::SPAWNER {
-            // TODO: Use spawn eggs on a spawner block.
+            // TODO: Use spawn eggs on a spawner block and also check if the condition is correct
             // Spawner block-entity mutation is a separate foundation; do not
             // incorrectly create a mob beside a spawner in its place.
             return InteractionResult::Fail;
