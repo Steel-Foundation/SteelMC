@@ -6,6 +6,7 @@ use steel_registry::{
     vanilla_items,
 };
 use steel_utils::BlockStateId;
+use steel_utils::types::UpdateFlags;
 
 use crate::behavior::init_behaviors;
 use crate::entity::SharedEntity;
@@ -590,4 +591,47 @@ fn foxes_only_spawn_on_their_own_ground() {
         EntitySpawnReason::TrialSpawner,
         SPAWN_POS
     ));
+}
+
+/// Vanilla `Fox.tick`: a sleeping fox is woken by anything worth reacting to,
+/// and it cannot stay sat down in water or once it has dozed off.
+///
+/// The third thing that method does, kicking up the block a faceplanted fox is
+/// stuck in, is a particle effect that only reaches a watching client, so it is
+/// driven here but cannot be asserted on.
+#[test]
+fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
+    let (world, fox) = world_with_fox("fox_wake");
+    assert!(world.set_block(
+        fox.block_position(),
+        vanilla_blocks::SAND.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    // Nothing happening, so a sleeping fox stays asleep, but it does stop
+    // sitting up while it is asleep.
+    fox.set_sleeping(true);
+    fox.set_sitting(true);
+    fox.set_faceplanted(true);
+    fox.tick_fox_posture();
+    assert!(fox.is_sleeping(), "a quiet night does not wake the fox");
+    assert!(
+        !fox.is_sitting(),
+        "a fox that has dozed off is not sitting up as well"
+    );
+
+    // Something to chase wakes it.
+    let prey = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(9.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&prey) as SharedEntity)
+        .expect("prey should attach to the loaded chunk");
+    assert!(Mob::set_target(fox.as_ref(), Some(&(prey as SharedEntity))));
+    fox.set_sleeping(true);
+    fox.tick_fox_posture();
+    assert!(!fox.is_sleeping(), "prey nearby wakes the fox");
 }
