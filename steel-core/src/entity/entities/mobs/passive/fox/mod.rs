@@ -22,12 +22,13 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities, vanilla_items,
 };
+use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{GameType, InteractionHand};
 use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
-use crate::behavior::InteractionResult;
+use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
     BreedGoal, ClimbOnTopOfPowderSnowGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal,
     PanicGoal, WaterAvoidingRandomStrollGoal,
@@ -78,6 +79,15 @@ const FLAG_DEFENDING: i8 = 1 << 7;
 const FOX_SPIT_PICKUP_DELAY: i32 = 40;
 /// Height above the fox, in blocks, a spat-out item spawns (vanilla `getY() + 1.0`).
 const FOX_SPIT_SPAWN_HEIGHT: f64 = 1.0;
+
+/// Ticks a fox holds food in its mouth before it swallows it (vanilla `Fox.aiStep`,
+/// 30 seconds).
+const FOX_EAT_TICKS: i32 = 600;
+/// Ticks a fox holds food before it starts chewing over it, two seconds before it
+/// swallows (vanilla `Fox.aiStep`, 28 seconds).
+const FOX_CHEW_TICKS: i32 = 560;
+/// Chance per tick of a chewing noise while a fox finishes its food.
+const FOX_CHEW_SOUND_CHANCE: f32 = 0.1;
 
 /// Chance, per ambient-sound roll at night with nobody near, of the fox screech.
 const FOX_SCREECH_CHANCE: f32 = 0.1;
@@ -155,8 +165,8 @@ impl FoxEntity {
             //
             // The goals vanilla registers that Steel cannot support yet are listed as
             // TODOs at the priority they belong at, each blocked on a foundation that
-            // is not in the tree today (a missing mob, a control hook, or the held-item
-            // eating path).
+            // is not in the tree today (a missing mob, a control hook, or a block the
+            // fox has to interact with).
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
             goal_selector.add_goal(0, ClimbOnTopOfPowderSnowGoal::new());
@@ -173,7 +183,8 @@ impl FoxEntity {
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FollowParentGoal::new(1.25));
             // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
-            // TODO(fox-goals): 10 FoxEatBerriesGoal (deferred with the held-item eating path)
+            // TODO(fox-goals): 10 FoxEatBerriesGoal (needs berry picking off a sweet
+            // berry bush and off cave vines)
             // TODO(fox-goals): 10 LeapAtTargetGoal (needs an attack target)
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(11, FoxSearchForItemsGoal);
@@ -481,16 +492,70 @@ impl FoxEntity {
         ItemStack::new(item)
     }
 
-    /// Advances the vanilla `Fox.ticksSinceEaten` timer that gates item swapping.
-    ///
-    /// Only the timer runs for now, so a fox picks up and holds food without eating it.
-    // TODO(fox-eating): finish eating held food here (vanilla consumes the item and
-    // applies its on-use effects, e.g. a chorus fruit teleports the fox) once Steel
-    // has a mob consume path.
-    fn advance_feeding_timer(&self) {
-        if Entity::is_alive(self) {
-            *self.ticks_since_eaten.lock() += 1;
+    /// Vanilla `Fox.canEat`: a fox only eats out of its mouth while it is awake,
+    /// standing on the ground, and not chasing anything.
+    fn can_eat(&self) -> bool {
+        let mut holds_food = false;
+        self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            holds_food = Self::is_consumable_food(item_stack);
+        });
+        holds_food && Mob::target(self).is_none() && self.on_ground() && !self.is_sleeping()
+    }
+
+    /// Vanilla `Fox.aiStep`'s eating block: age the timer since the fox last ate,
+    /// then chew over its food and eventually swallow it.
+    fn tick_eating(&self) {
+        if !Entity::is_alive(self) || !self.is_effective_ai() {
+            return;
         }
+
+        let ticks_since_eaten = {
+            let mut ticks_since_eaten = self.ticks_since_eaten.lock();
+            *ticks_since_eaten += 1;
+            *ticks_since_eaten
+        };
+        if !self.can_eat() {
+            return;
+        }
+
+        if ticks_since_eaten > FOX_EAT_TICKS {
+            self.swallow_mouth_item();
+        } else if ticks_since_eaten > FOX_CHEW_TICKS
+            && rand::random::<f32>() < FOX_CHEW_SOUND_CHANCE
+        {
+            Animal::play_eating_sound(self);
+            self.broadcast_entity_event(EntityStatus::FoxEat);
+        }
+    }
+
+    /// Vanilla `Fox.aiStep`: finish the food in the fox's mouth, applying its
+    /// effects (a chorus fruit teleports the fox) and leaving any container behind,
+    /// such as a bottle or a bowl, in its place.
+    fn swallow_mouth_item(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        // The food leaves the mouth first because finishing it runs the item's
+        // consume effects, which can move the fox and touch its equipment, so the
+        // slot must not be locked while that happens. The item behavior returns the
+        // stack the slot ends up with, so that result goes back into the mouth
+        // whether it is empty or a leftover container. Vanilla consumes the held
+        // stack in place and so only writes the leftover back.
+        let mut item_in_mouth = self
+            .living_base()
+            .equipment()
+            .lock()
+            .take(EquipmentSlot::MainHand);
+        let remainder = ITEM_BEHAVIORS
+            .get_behavior(item_in_mouth.item())
+            .finish_using(&mut item_in_mouth, &world, self);
+        self.living_base()
+            .equipment()
+            .lock()
+            .set(EquipmentSlot::MainHand, remainder);
+
+        *self.ticks_since_eaten.lock() = 0;
     }
 }
 
@@ -658,7 +723,7 @@ impl LivingEntity for FoxEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        self.advance_feeding_timer();
+        self.tick_eating();
         let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);

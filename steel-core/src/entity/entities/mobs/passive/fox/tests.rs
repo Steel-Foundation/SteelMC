@@ -412,3 +412,114 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
         .any(|stack| stack.is(&vanilla_items::SWEET_BERRIES));
     assert!(dropped, "the mouth item is dropped into the world");
 }
+
+/// Puts a fox in the state vanilla requires before it will eat: awake, on the
+/// ground, and holding `item` in its mouth.
+fn fox_holding(name: &'static str, item: ItemStack) -> (Arc<World>, Arc<FoxEntity>) {
+    let (world, fox) = world_with_fox(name);
+    fox.set_on_ground(true);
+    fox.living_base()
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::MainHand, item);
+    (world, fox)
+}
+
+fn mouth_item(fox: &FoxEntity) -> ItemStack {
+    let mut held = ItemStack::empty();
+    fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        held = item_stack.clone();
+    });
+    held
+}
+
+#[test]
+fn fox_swallows_the_food_in_its_mouth_once_the_timer_runs_out() {
+    let (_world, fox) = fox_holding("fox_eat", ItemStack::new(&vanilla_items::SWEET_BERRIES));
+    *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS - 1;
+
+    // On the tick the timer reaches the threshold the fox is still chewing.
+    fox.tick_eating();
+    assert!(
+        mouth_item(&fox).is(&vanilla_items::SWEET_BERRIES),
+        "the fox holds its food until the timer passes the threshold"
+    );
+
+    fox.tick_eating();
+    assert!(mouth_item(&fox).is_empty(), "the fox swallows the berries");
+    assert_eq!(
+        *fox.ticks_since_eaten.lock(),
+        0,
+        "swallowing restarts the timer"
+    );
+}
+
+#[test]
+fn fox_is_left_holding_the_empty_bottle() {
+    let (_world, fox) = fox_holding(
+        "fox_eat_remainder",
+        ItemStack::new(&vanilla_items::HONEY_BOTTLE),
+    );
+    *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS;
+
+    fox.tick_eating();
+
+    assert!(
+        mouth_item(&fox).is(&vanilla_items::GLASS_BOTTLE),
+        "drinking leaves the bottle in the fox's mouth"
+    );
+}
+
+#[test]
+fn fox_holds_an_item_that_is_not_food_forever() {
+    let (_world, fox) = fox_holding("fox_eat_non_food", ItemStack::new(&vanilla_items::EMERALD));
+    *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS;
+
+    fox.tick_eating();
+
+    assert!(
+        mouth_item(&fox).is(&vanilla_items::EMERALD),
+        "a fox never eats something that is not food"
+    );
+    assert!(
+        *fox.ticks_since_eaten.lock() > FOX_EAT_TICKS,
+        "the timer keeps running even when the fox cannot eat"
+    );
+}
+
+#[test]
+fn fox_does_not_eat_while_asleep_in_the_air_or_chasing_something() {
+    let (world, fox) = fox_holding(
+        "fox_eat_gated",
+        ItemStack::new(&vanilla_items::SWEET_BERRIES),
+    );
+
+    let assert_still_holding_berries = |reason: &str| {
+        *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS;
+        fox.tick_eating();
+        assert!(
+            mouth_item(&fox).is(&vanilla_items::SWEET_BERRIES),
+            "{reason}"
+        );
+    };
+
+    fox.set_sleeping(true);
+    assert_still_holding_berries("a sleeping fox does not eat");
+    fox.set_sleeping(false);
+
+    fox.set_on_ground(false);
+    assert_still_holding_berries("a fox in mid-air does not eat");
+    fox.set_on_ground(true);
+
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(9.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&pig) as SharedEntity)
+        .expect("pig should attach to the loaded chunk");
+    assert!(Mob::set_target(fox.as_ref(), Some(&(pig as SharedEntity))));
+    assert_still_holding_berries("a fox chasing something does not eat");
+}
