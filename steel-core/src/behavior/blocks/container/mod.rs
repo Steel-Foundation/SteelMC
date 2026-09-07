@@ -4,8 +4,8 @@ mod beehive_block;
 mod chiseled_bookshelf_block;
 mod crafting_table_block;
 mod ender_chest_block;
-mod grindstone_block;
 mod furnace_block;
+mod grindstone_block;
 
 pub use anvil_block::AnvilBlock;
 pub use barrel_block::BarrelBlock;
