@@ -31,6 +31,11 @@ const GO_TO_WATER_RECALC_INTERVAL: i32 = 160;
 /// from, horizontally and vertically (`random.nextInt(1025) - 512`, `nextInt(9) - 4`).
 const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
+/// Vanilla `TurtleTravelGoal.tick`: how far around a candidate swim position the
+/// world has to be generated already before the turtle will head for it. A far
+/// target is often out past the edge of the generated world, and this keeps the
+/// turtle from setting off toward terrain that does not exist yet.
+const TRAVEL_LOADED_MARGIN: i32 = 34;
 
 /// Vanilla `Turtle.TurtlePanicGoal`: always try to reach water when panicking,
 /// not only while on fire, then fall back to a random escape position.
@@ -107,6 +112,10 @@ pub(crate) struct TurtleGoToWaterGoal {
 }
 
 impl TurtleGoToWaterGoal {
+    /// Vanilla asks for a fixed speed of 2.0 here when the turtle is a baby, but
+    /// goals are registered while the turtle is still being built, before its age
+    /// is known, so that check is never true and the speed passed in is always
+    /// the one used. Deliberately not reproduced.
     pub(crate) fn new(speed_modifier: f64) -> Self {
         Self {
             inner: MoveToBlockGoal::new(speed_modifier, GO_TO_WATER_SEARCH_RANGE, |level, pos| {
@@ -170,6 +179,12 @@ impl TurtleTravelGoal {
             speed_modifier,
             stuck: false,
         }
+    }
+
+    /// True once the goal has given up on the target it was heading for.
+    #[cfg(test)]
+    pub(crate) const fn is_stuck(&self) -> bool {
+        self.stuck
     }
 }
 
@@ -256,6 +271,19 @@ impl Goal for TurtleTravelGoal {
             self.stuck = true;
             return;
         };
+
+        let Some(world) = mob.level() else {
+            return;
+        };
+        let next_block = BlockPos::containing(next.x, next.y, next.z);
+        if !world.are_full_chunks_loaded_at(
+            next_block.offset(-TRAVEL_LOADED_MARGIN, 0, -TRAVEL_LOADED_MARGIN),
+            next_block.offset(TRAVEL_LOADED_MARGIN, 0, TRAVEL_LOADED_MARGIN),
+        ) {
+            self.stuck = true;
+            return;
+        }
+
         mob.move_to_pos(next, self.speed_modifier);
     }
 }

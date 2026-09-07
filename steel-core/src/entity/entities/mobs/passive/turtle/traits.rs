@@ -20,9 +20,9 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::{
-    AMBIENT_SOUND_INTERVAL, ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE, DEFAULT_STEP_HEIGHT,
-    NEXT_STEP_DISTANCE, PREFERRED_WALK_TARGET_VALUE, SPEED_LERP, SWIM_DRAG, SWIM_PUSH,
-    SWIM_SINK_HOME_DISTANCE, SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TurtleEntity,
+    ADULT_SCALE, AMBIENT_SOUND_INTERVAL, ARRIVED_DISTANCE, BABY_SCALE, CLIMB_SPEED_SHARE,
+    DEFAULT_STEP_HEIGHT, NEXT_STEP_DISTANCE, PREFERRED_WALK_TARGET_VALUE, SPEED_LERP, SWIM_DRAG,
+    SWIM_PUSH, SWIM_SINK_HOME_DISTANCE, SWIM_SINK_SPEED, SWIM_SOUND_VOLUME_SCALE, TurtleEntity,
     closer_to_center_than,
 };
 use crate::behavior::InteractionResult;
@@ -163,6 +163,16 @@ impl LivingEntity for TurtleEntity {
         0.4
     }
 
+    /// Vanilla `Turtle.getAgeScale`: a hatchling is much smaller next to its
+    /// parent than the usual half-size baby.
+    fn get_age_scale(&self) -> f32 {
+        if AgeableMob::is_baby(self) {
+            BABY_SCALE
+        } else {
+            ADULT_SCALE
+        }
+    }
+
     fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
         Some(if AgeableMob::is_baby(self) {
             &sound_events::ENTITY_TURTLE_HURT_BABY
@@ -293,12 +303,12 @@ impl Mob for TurtleEntity {
     /// using the shared move control, which is what makes it lumber on land and
     /// glide in water.
     ///
-    /// Three things differ from the shared one. Speed is trimmed every tick by
+    /// Four things differ from the shared one. Speed is trimmed every tick by
     /// [`Self::trim_turtle_speed`] before anything else. It eases toward its
     /// target speed instead of snapping to it, so it takes a moment to get going.
-    /// And it steers until its path is finished rather than for a single tick,
-    /// with no jumping, because a turtle swims over obstacles instead of hopping
-    /// them.
+    /// It turns the turtle's body along with its steering. And it steers until
+    /// its path is finished rather than for a single tick, with no jumping,
+    /// because a turtle swims over obstacles instead of hopping them.
     fn tick_move_control(&self) {
         self.trim_turtle_speed();
 
@@ -319,7 +329,11 @@ impl Mob for TurtleEntity {
 
         let y_rot = (delta.z.atan2(delta.x) as f32).to_degrees() - 90.0;
         let (yaw, pitch) = self.rotation();
-        self.set_rotation((rotlerp(yaw, y_rot, MOVE_CONTROL_MAX_TURN), pitch));
+        let steered_yaw = rotlerp(yaw, y_rot, MOVE_CONTROL_MAX_TURN);
+        self.set_rotation((steered_yaw, pitch));
+        // The shell swings round with the steering instead of lagging behind it,
+        // so a turning turtle never looks like it is swimming sideways.
+        self.set_y_body_rot(steered_yaw);
 
         let movement_speed = self
             .attributes()

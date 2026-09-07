@@ -41,6 +41,8 @@ use crate::world::game_event::GameEventContext;
 
 /// Baby turtles render and collide at 0.3 of the adult size.
 const BABY_SCALE: f32 = 0.3;
+/// Grown turtles are the size the model was built at.
+const ADULT_SCALE: f32 = 1.0;
 const DEFAULT_STEP_HEIGHT: f32 = 1.0;
 /// Vanilla `Turtle.aiStep`: while laying, kick up sand particles every fifth tick.
 const LAYING_EGG_EMIT_INTERVAL: i32 = 5;
