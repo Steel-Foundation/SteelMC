@@ -1,10 +1,12 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
-use steel_utils::BlockStateId;
+use steel_registry::entity_type::EntityTypeRef;
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext},
     entity::ai::path::PathComputationType,
+    world::LevelReader,
 };
 
 /// Soul sand. Mobs will not pathfind through this block.
@@ -24,6 +26,18 @@ impl SoulSandBlock {
 impl BlockBehavior for SoulSandBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    /// Vanilla soul sand uses `Blocks::always` for `isValidSpawn`: any mob may
+    /// spawn on it (wither skeletons, nether mobs).
+    fn is_valid_spawn(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+        _entity_type: EntityTypeRef,
+    ) -> bool {
+        true
     }
 
     fn is_pathfindable(

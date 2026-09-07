@@ -664,6 +664,10 @@ impl LevelReader for World {
             .is_face_sturdy(state, self, pos, direction, support_type)
     }
 
+    fn sky_darkening(&self) -> u8 {
+        World::sky_darkening(self)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.dimension_type.has_skylight {
             self.light_value_at(LightLayer::Sky, pos)
@@ -714,6 +718,10 @@ impl LevelReader for Arc<World> {
     ) -> bool {
         self.as_ref()
             .is_face_sturdy_for(state, pos, direction, support_type)
+    }
+
+    fn sky_darkening(&self) -> u8 {
+        self.as_ref().sky_darkening()
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {

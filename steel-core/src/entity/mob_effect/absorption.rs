@@ -9,7 +9,7 @@ use crate::world::World;
 pub struct AbsorptionBehavior;
 
 /// Absorption HP granted per amplifier level (vanilla `4.0F`).
-const ABSORPTION_PER_LEVEL: f32 = 4.0;
+pub(crate) const ABSORPTION_PER_LEVEL: f32 = 4.0;
 
 impl MobEffectBehavior for AbsorptionBehavior {
     fn should_apply_effect_tick_this_tick(&self, _tick_count: i32, _amplifier: i32) -> bool {
