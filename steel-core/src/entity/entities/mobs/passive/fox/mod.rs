@@ -22,7 +22,8 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::FoxEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities, vanilla_items,
+    REGISTRY, TaggedRegistryExt, level_events, sound_events, vanilla_attributes, vanilla_entities,
+    vanilla_items,
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
@@ -49,6 +50,9 @@ use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
 
+/// Vanilla `Fox.tick`: how often a fox stuck face-down in the ground kicks up
+/// another puff of it, so roughly once every five ticks.
+const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
@@ -504,6 +508,40 @@ impl FoxEntity {
         holds_food && Mob::target(self).is_none() && self.on_ground() && !self.is_sleeping()
     }
 
+    /// Vanilla `Fox.tick`, the half a server has to run: a fox does not stay
+    /// asleep or sat down through anything worth reacting to, and one lying
+    /// face-down keeps kicking up the ground it landed in.
+    ///
+    /// The interest and crouch angles vanilla eases in the same method are only
+    /// used for drawing the fox, so they stay on the client.
+    fn tick_fox_posture(&self) {
+        if !self.is_effective_ai() {
+            return;
+        }
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        let in_water = self.is_in_water();
+        if in_water || Mob::target(self).is_some() || world.is_thundering() {
+            self.set_sleeping(false);
+        }
+
+        if in_water || self.is_sleeping() {
+            self.set_sitting(false);
+        }
+
+        if self.is_faceplanted() && rand::random::<f32>() < FACEPLANT_PARTICLE_CHANCE {
+            let pos = self.block_position();
+            world.level_event(
+                level_events::PARTICLES_DESTROY_BLOCK,
+                pos,
+                level_events::encode_block_state_data(u32::from(world.get_block_state(pos).0)),
+                None,
+            );
+        }
+    }
+
     /// Vanilla `Fox.aiStep`'s eating block: age the timer since the fox last ate,
     /// then chew over its food and eventually swallow it.
     fn tick_eating(&self) {
@@ -600,6 +638,11 @@ impl Entity for FoxEntity {
 
     fn base_tick(&self) {
         Mob::base_tick_mob(self);
+    }
+
+    fn tick(&self) {
+        LivingEntity::tick_living_entity(self);
+        self.tick_fox_posture();
     }
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
