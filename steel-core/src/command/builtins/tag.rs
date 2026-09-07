@@ -21,17 +21,9 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tag").then(
         argument("targets", SteelArgumentType::entities())
+            .then(literal("add").then(argument("name", ArgumentType::word()).executes(add_tag)))
             .then(
-                literal("add").then(
-                    argument("name", ArgumentType::word())
-                        .executes(add_tag),
-                ),
-            )
-            .then(
-                literal("remove").then(
-                    argument("name", ArgumentType::word())
-                        .executes(remove_tag),
-                ),
+                literal("remove").then(argument("name", ArgumentType::word()).executes(remove_tag)),
             )
             .then(literal("list").executes(list_tags)),
     )
@@ -155,13 +147,7 @@ fn list_tags(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
         .message([
             TextComponent::plain(targets.len().to_string()),
             TextComponent::plain(tag_count.to_string()),
-            TextComponent::plain(
-                all_tags
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ),
+            TextComponent::plain(all_tags.iter().cloned().collect::<Vec<_>>().join(", ")),
         ])
         .component();
 
