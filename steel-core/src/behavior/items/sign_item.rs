@@ -13,14 +13,11 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_game_events;
-use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::{InteractionResult, UseOnContext};
-use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
-use crate::entity::Entity;
-use crate::world::game_event::GameEventContext;
+use crate::behavior::items::block_item::SurvivalCheck;
+use crate::behavior::{BlockItem, ItemBehavior, StandingAndWallBlockItem};
 use crate::world::{LevelReader as _, World};
 
 /// Behavior for hanging sign items that place hanging sign blocks.
@@ -34,6 +31,8 @@ pub struct HangingSignItem {
     /// The wall hanging sign block.
     #[json_arg(vanilla_blocks, json = "wall_block")]
     pub wall_block: BlockRef,
+
+    base: StandingAndWallBlockItem,
 }
 
 impl HangingSignItem {
@@ -43,6 +42,7 @@ impl HangingSignItem {
         Self {
             ceiling_block,
             wall_block,
+            base: StandingAndWallBlockItem::new(ceiling_block, wall_block, Direction::Up),
         }
     }
 }
@@ -120,81 +120,16 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
 
 impl ItemBehavior for HangingSignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let has_infinite_materials = context.player.has_infinite_materials();
-        let mut place_context = context.build_place_context();
-        if !place_context.can_place() {
-            return InteractionResult::Fail;
-        }
-        let place_pos = place_context.place_pos();
-
-        let block_behaviors = &*BLOCK_BEHAVIORS;
-
-        // Try ceiling hanging sign first if clicked from below, otherwise try wall
-        let blocks_to_try = if context.hit_result.direction == Direction::Down {
-            [self.ceiling_block, self.wall_block]
-        } else {
-            [self.wall_block, self.ceiling_block]
-        };
-
-        let mut new_state = None;
-        let mut placed_block = None;
-        for block in blocks_to_try {
-            let behavior = block_behaviors.get_behavior(block);
-            let Some(state) = behavior.get_state_for_placement(&place_context) else {
-                continue;
-            };
-
-            // Vanilla's HangingSignItem.canPlace has additional check for wall hanging signs
-            if !can_place_hanging_sign(context.world, state, place_pos) {
-                continue;
-            }
-
-            let collision_shape = state.get_collision_shape_at(place_pos);
-            if context.world.is_unobstructed(collision_shape, place_pos) {
-                new_state = Some(state);
-                placed_block = Some(block);
-                break;
-            }
-        }
-
-        let Some(state) = new_state else {
-            return InteractionResult::Fail;
-        };
-
-        if !context
-            .world
-            .set_block(place_pos, state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-        {
-            return InteractionResult::Fail;
-        }
-
-        let placed_state = context.world.get_block_state(place_pos);
-        let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-        placed_behavior.set_placed_by(
-            placed_state,
-            context.world,
-            place_pos,
-            place_context.source(),
-        );
-
-        if let Some(block) = placed_block {
-            let sound_type = &block.config.sound_type;
-            context.world.play_block_sound(
-                sound_type.place_sound,
-                place_pos,
-                sound_type.volume,
-                sound_type.pitch,
-                Some(context.player.id()),
-            );
-        }
-        context.world.game_event(
-            &vanilla_game_events::BLOCK_PLACE,
-            place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
-        );
-
-        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
-
-        InteractionResult::Success
+        self.base.base.place_with_policy(
+            context.build_place_context(),
+            Some,
+            SurvivalCheck::Required,
+            BlockItem::place_block,
+            self.ceiling_block.config.sound_type.place_sound,
+            |context| {
+                self.base
+                    .get_placement_state(context, can_place_hanging_sign)
+            },
+        )
     }
 }

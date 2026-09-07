@@ -33,6 +33,7 @@ impl ScaffoldingBlockItem {
             SurvivalCheck::Skipped,
             BlockItem::place_block,
             self.block.config.sound_type.place_sound,
+            |context| self.base.get_state_for_placement(context),
         )
     }
 

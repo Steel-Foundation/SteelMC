@@ -9,17 +9,17 @@
 //! direction (skipping the opposite of `attachmentDirection`), using the standing block
 //! when direction matches `attachmentDirection` and wall block otherwise.
 
+use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
+use crate::behavior::items::block_item::SurvivalCheck;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockItem, ItemBehavior};
+use crate::world::World;
+use std::sync::Arc;
 use steel_macros::item_behavior;
+use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::{REGISTRY, vanilla_game_events};
-use steel_utils::types::UpdateFlags;
-
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
-use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
-use crate::entity::Entity;
-use crate::world::game_event::GameEventContext;
+use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for items that place either a standing or wall variant of a block.
 ///
@@ -46,6 +46,9 @@ pub struct StandingAndWallBlockItem {
         json = "attachment_direction"
     )]
     pub attachment_direction: Direction,
+
+    /// The block that this item normally places. This is usually the standing block.
+    pub base: BlockItem,
 }
 
 impl StandingAndWallBlockItem {
@@ -65,6 +68,7 @@ impl StandingAndWallBlockItem {
             standing_block,
             wall_block,
             attachment_direction,
+            base: BlockItem::new(standing_block),
         }
     }
 
@@ -76,7 +80,8 @@ impl StandingAndWallBlockItem {
     pub fn get_placement_state(
         &self,
         place_context: &BlockPlaceContext<'_>,
-    ) -> Option<steel_utils::BlockStateId> {
+        can_place: impl Fn(&Arc<World>, BlockStateId, BlockPos) -> bool,
+    ) -> Option<BlockStateId> {
         let block_behaviors = &*BLOCK_BEHAVIORS;
 
         // Cache wall state once (vanilla does this before the loop)
@@ -86,6 +91,7 @@ impl StandingAndWallBlockItem {
 
         let directions = place_context.get_nearest_looking_directions();
         let skip_direction = self.attachment_direction.opposite();
+        let place_pos = place_context.place_pos();
 
         for direction in directions {
             // Skip the opposite of attachment direction
@@ -108,6 +114,10 @@ impl StandingAndWallBlockItem {
             let Some(state) = possible_state else {
                 continue;
             };
+
+            if !can_place(place_context.world, state, place_pos) {
+                continue;
+            }
 
             // Vanilla's canPlace checks canSurvive (already done in get_state_for_placement)
             // Then checks isUnobstructed
@@ -137,54 +147,27 @@ impl StandingAndWallBlockItem {
             self.wall_block
         }
     }
+
+    /// Returns whether this item can be placed at a certain location with a block state.
+    pub(crate) const fn can_place(
+        _world: &Arc<World>,
+        _state: BlockStateId,
+        _pos: BlockPos,
+    ) -> bool {
+        // The canSurvive check is already handled by get_state_for_placement.
+        true
+    }
 }
 
 impl ItemBehavior for StandingAndWallBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let has_infinite_materials = context.player.has_infinite_materials();
-        let mut place_context = context.build_place_context();
-        if !place_context.can_place() {
-            return InteractionResult::Fail;
-        }
-        let place_pos = place_context.place_pos();
-
-        let Some(new_state) = self.get_placement_state(&place_context) else {
-            return InteractionResult::Fail;
-        };
-
-        if !context
-            .world
-            .set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-        {
-            return InteractionResult::Fail;
-        }
-
-        let placed_state = context.world.get_block_state(place_pos);
-        let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-        placed_behavior.set_placed_by(
-            placed_state,
-            context.world,
-            place_pos,
-            place_context.source(),
-        );
-
-        let block = self.get_block_for_state(new_state);
-        let sound_type = &block.config.sound_type;
-        context.world.play_block_sound(
-            sound_type.place_sound,
-            place_pos,
-            sound_type.volume,
-            sound_type.pitch,
-            Some(context.player.id()),
-        );
-        context.world.game_event(
-            &vanilla_game_events::BLOCK_PLACE,
-            place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
-        );
-
-        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
-
-        InteractionResult::Success
+        self.base.place_with_policy(
+            context.build_place_context(),
+            Some,
+            SurvivalCheck::Required,
+            BlockItem::place_block,
+            self.standing_block.config.sound_type.place_sound,
+            |context| self.get_placement_state(context, Self::can_place),
+        )
     }
 }

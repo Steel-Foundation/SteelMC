@@ -50,6 +50,7 @@ impl BlockItem {
             SurvivalCheck::Required,
             place_block,
             self.block.config.sound_type.place_sound,
+            |place_context| self.get_state_for_placement(place_context),
         )
     }
 
@@ -65,6 +66,7 @@ impl BlockItem {
             SurvivalCheck::Required,
             place_block,
             place_sound,
+            |place_context| self.get_state_for_placement(place_context),
         )
     }
 
@@ -79,6 +81,7 @@ impl BlockItem {
         survival_check: SurvivalCheck,
         place_block: impl FnOnce(&BlockPlaceContext<'a>, BlockStateId) -> bool,
         place_sound: SoundEventRef,
+        get_state_for_placement: impl FnOnce(&BlockPlaceContext<'a>) -> Option<BlockStateId>,
     ) -> InteractionResult {
         if !context.can_place() {
             return InteractionResult::Fail;
@@ -88,11 +91,11 @@ impl BlockItem {
         };
         let place_pos = context.place_pos();
 
-        let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
-        let Some(new_state) = behavior.get_state_for_placement(&context) else {
+        let Some(new_state) = get_state_for_placement(&context) else {
             return InteractionResult::Fail;
         };
 
+        let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
         if matches!(survival_check, SurvivalCheck::Required)
             && !behavior.can_survive(new_state, context.world.as_ref(), place_pos)
         {
@@ -128,7 +131,7 @@ impl BlockItem {
         }
 
         let placed_state = context.world.get_block_state(place_pos);
-        if placed_state.get_block() == self.block {
+        if placed_state.get_block() == new_state.get_block() {
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
@@ -165,6 +168,14 @@ impl BlockItem {
         context
             .world
             .set_block(context.place_pos(), state, Self::PLACE_BLOCK_FLAGS)
+    }
+
+    pub(super) fn get_state_for_placement(
+        &self,
+        context: &BlockPlaceContext<'_>,
+    ) -> Option<BlockStateId> {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
+        behavior.get_state_for_placement(context)
     }
 }
 
