@@ -35,6 +35,8 @@ pub(super) struct TranspileContext {
     pub(super) noises_ident: Ident,
     /// Generated ident for the column cache struct (e.g., `OverworldColumnCache`).
     pub(super) cache_ident: Ident,
+    /// Generated 25-lane X/Z cache used while initializing a flat-cache grid.
+    pub(super) xz_cache_ident: Ident,
     /// `BlendedNoise` configuration (if any density function uses it).
     pub(super) blended_noise_config: Option<BlendedNoiseConfig>,
     /// Whether this dimension uses legacy random source (Java LCG).
@@ -60,10 +62,10 @@ pub(super) struct TranspileContext {
     /// name instead of recomputing. Covers `Reference`, `Noise`,
     /// `ShiftedNoise`, and other expensive nodes.
     pub(super) cse_bindings: FxHashMap<u64, Ident>,
-    /// CSE bindings for the SIMD (`_4x`) codegen path. Kept separate from
-    /// `cse_bindings` because SIMD bindings hold `f64x4` values: if the scalar
+    /// CSE bindings for the Y-SIMD codegen path. Kept separate from
+    /// `cse_bindings` because SIMD bindings hold vector values: if the scalar
     /// 4×-lane fallback (`gen_simd_scalar_fallback`) looked one up it would emit
-    /// an `f64x4` where an `f64` is expected. Same fingerprint keys, disjoint
+    /// a vector where an `f64` is expected. Same fingerprint keys, disjoint
     /// codegen scopes.
     pub(super) cse_bindings_simd: FxHashMap<u64, Ident>,
     /// Counter for generating unique CSE variable names.
@@ -87,6 +89,7 @@ impl TranspileContext {
             spline_fns: Vec::new(),
             noises_ident: format_ident!("{prefix}Noises"),
             cache_ident: format_ident!("{prefix}ColumnCache"),
+            xz_cache_ident: format_ident!("{prefix}ColumnCacheXz"),
             blended_noise_config: None,
             legacy_random_source: false,
             uses_end_islands: false,

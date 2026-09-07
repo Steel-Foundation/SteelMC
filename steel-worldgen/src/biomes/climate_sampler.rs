@@ -106,6 +106,19 @@ impl OverworldClimateSampler {
         cache.init_grid(chunk_block_x, chunk_block_z, &self.noises);
     }
 
+    /// Initialize a column grid with `N` logical SIMD lanes.
+    ///
+    /// [`Self::init_column_grid`] selects the width appropriate for normal use;
+    /// this form permits explicit-width performance measurement.
+    pub fn init_column_grid_simd<const N: usize>(
+        &self,
+        cache: &mut OverworldColumnCache,
+        chunk_block_x: i32,
+        chunk_block_z: i32,
+    ) {
+        cache.init_grid_simd::<N>(chunk_block_x, chunk_block_z, &self.noises);
+    }
+
     /// Finds the climate-biased overworld spawn origin.
     ///
     /// This mirrors vanilla's `Climate.Sampler.findSpawnPosition()` with

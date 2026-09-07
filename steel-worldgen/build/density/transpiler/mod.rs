@@ -92,6 +92,9 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     // when wrapped in a module by the caller.
     quote! {
         use std::simd::f64x4;
+        use std::simd::Simd;
+        use std::simd::SimdCast;
+        use std::simd::StdFloat;
         use std::simd::Select;
         use std::simd::cmp::SimdPartialOrd;
         use std::simd::num::SimdFloat;
@@ -99,6 +102,7 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
         use steel_worldgen::density::spline_eval;
         use steel_worldgen::density::RarityValueMapper;
         use steel_math::{clamp, map_clamped};
+        use steel_utils::SIMD_REGISTER_F64_SIZE;
         use steel_worldgen::noise::NormalNoise;
         use steel_worldgen::random::{PositionalRandom, RandomSplitter};
 
