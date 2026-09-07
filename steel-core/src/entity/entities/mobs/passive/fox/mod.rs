@@ -32,10 +32,7 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 use uuid::Uuid;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
-use crate::entity::ai::goal::{
-    BreedGoal, ClimbOnTopOfPowderSnowGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal,
-    PanicGoal, WaterAvoidingRandomStrollGoal,
-};
+use crate::entity::ai::goal::{ClimbOnTopOfPowderSnowGoal, WaterAvoidingRandomStrollGoal};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -48,7 +45,10 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
-use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
+use goals::{
+    FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
+    FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+};
 
 /// Vanilla `Fox.tick`: how often a fox stuck face-down in the ground kicks up
 /// another puff of it, so roughly once every five ticks.
@@ -165,20 +165,18 @@ impl FoxEntity {
         living_base.initialize_synced_data(&mut entity_data);
 
         {
-            // Fox goals at their vanilla priorities. The stock float, panic, breed,
-            // follow-parent, and look-at-player goals stand in for the fox-specific
-            // variants, which differ only in threat- and trust-driven behaviour.
+            // Fox goals at their vanilla priorities.
             //
             // The goals vanilla registers that Steel cannot support yet are listed as
             // TODOs at the priority they belong at, each blocked on a foundation that
             // is not in the tree today (a missing mob, a control hook, or a block the
             // fox has to interact with).
             let mut goal_selector = mob_base.goal_selector().lock();
-            goal_selector.add_goal(0, FloatGoal::new(&mob_base));
+            goal_selector.add_goal(0, FoxFloatGoal::new(&mob_base));
             goal_selector.add_goal(0, ClimbOnTopOfPowderSnowGoal::new());
             // TODO(fox-goals): 1 FaceplantGoal (needs faceplant physics via a custom FoxMoveControl)
-            goal_selector.add_goal(2, PanicGoal::new(2.2));
-            goal_selector.add_goal(3, BreedGoal::new(1.0));
+            goal_selector.add_goal(2, FoxPanicGoal::new(2.2));
+            goal_selector.add_goal(3, FoxBreedGoal::new(1.0));
             // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
@@ -187,14 +185,14 @@ impl FoxEntity {
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
-            goal_selector.add_goal(8, FollowParentGoal::new(1.25));
+            goal_selector.add_goal(8, FoxFollowParentGoal::new(1.25));
             // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
             // TODO(fox-goals): 10 FoxEatBerriesGoal (needs berry picking off a sweet
             // berry bush and off cave vines)
             // TODO(fox-goals): 10 LeapAtTargetGoal (needs an attack target)
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(11, FoxSearchForItemsGoal);
-            goal_selector.add_goal(12, LookAtPlayerGoal::new(24.0));
+            goal_selector.add_goal(12, FoxLookAtPlayerGoal::new(24.0));
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
 
             // Target-selector goals, none registered yet:
@@ -323,6 +321,17 @@ impl FoxEntity {
     }
 
     /// Returns vanilla `Fox.canMove`: not sleeping, sitting, or faceplanted.
+    /// Vanilla `Fox.clearStates`: drops everything a fox might be in the middle
+    /// of, so it starts whatever it is about to do from a standing, awake pose.
+    pub(crate) fn clear_states(&self) {
+        self.set_interested(false);
+        self.set_crouching(false);
+        self.set_sitting(false);
+        self.set_sleeping(false);
+        self.set_defending(false);
+        self.set_faceplanted(false);
+    }
+
     pub(crate) fn can_move(&self) -> bool {
         !self.is_sleeping() && !self.is_sitting() && !self.is_faceplanted()
     }

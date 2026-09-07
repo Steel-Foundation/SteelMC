@@ -9,9 +9,10 @@ use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
 use crate::behavior::init_behaviors;
-use crate::entity::SharedEntity;
-use crate::entity::ai::goal::Goal;
+use crate::entity::ai::goal::{FloatGoal, Goal};
 use crate::entity::entities::PigEntity;
+use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
+use crate::entity::{EntityFluidContact, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
 use super::*;
@@ -634,4 +635,86 @@ fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
     fox.set_sleeping(true);
     fox.tick_fox_posture();
     assert!(!fox.is_sleeping(), "prey nearby wakes the fox");
+}
+
+/// Vanilla `Fox.clearStates`, which several fox goals call as they start.
+#[test]
+fn clearing_a_foxs_states_drops_everything_it_was_in_the_middle_of() {
+    init_vanilla_registry();
+    let fox = new_fox();
+    fox.set_interested(true);
+    fox.set_crouching(true);
+    fox.set_sitting(true);
+    fox.set_sleeping(true);
+    fox.set_defending(true);
+    fox.set_faceplanted(true);
+
+    fox.clear_states();
+
+    assert!(!fox.is_interested());
+    assert!(!fox.is_crouching());
+    assert!(!fox.is_sitting());
+    assert!(!fox.is_sleeping());
+    assert!(!fox.is_defending());
+    assert!(!fox.is_faceplanted());
+}
+
+/// Vanilla `Fox.FoxFloatGoal` swims at a shallower depth than the shared goal,
+/// which waits for water up to the mob's jump threshold.
+#[test]
+fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
+    let (_world, fox) = world_with_fox("fox_float_depth");
+    let depth = f64::midpoint(FOX_FLOAT_WATER_DEPTH, fox.get_fluid_jump_threshold());
+    fox.base()
+        .set_fluid_contact(EntityFluidContact::from_parts(depth, 0.0, false, false));
+
+    let mut shared = FloatGoal::new(fox.mob_base());
+    assert!(
+        !shared.can_use(fox.as_ref()),
+        "this is too shallow for the shared float goal, which is the point"
+    );
+
+    let mut goal = FoxFloatGoal::new(fox.mob_base());
+    assert!(goal.can_use(fox.as_ref()), "a fox swims in it anyway");
+
+    // Starting to swim drops whatever the fox was doing.
+    fox.set_sleeping(true);
+    fox.set_sitting(true);
+    goal.start(fox.as_ref());
+    assert!(!fox.is_sleeping());
+    assert!(!fox.is_sitting());
+}
+
+/// Vanilla gates the fox's panic and follow-parent goals on not defending, so a
+/// fox standing up for something it trusts neither bolts nor wanders off after
+/// its parent.
+#[test]
+fn a_defending_fox_neither_panics_nor_follows_its_parent() {
+    let (_world, fox) = world_with_fox("fox_defending_gates");
+    fox.set_defending(true);
+
+    assert!(!FoxPanicGoal::new(2.2).can_use(fox.as_ref()));
+    assert!(!FoxFollowParentGoal::new(1.25).can_use(fox.as_ref()));
+    assert!(!FoxFollowParentGoal::new(1.25).can_continue_to_use(fox.as_ref()));
+
+    // Following a parent again means settling down first.
+    fox.set_defending(false);
+    fox.set_sleeping(true);
+    FoxFollowParentGoal::new(1.25).start(fox.as_ref());
+    assert!(!fox.is_sleeping());
+}
+
+/// Vanilla `Fox.FoxLookAtPlayerGoal`: a fox already fixed on prey, or lying
+/// face-down, does not break off to watch a player.
+#[test]
+fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
+    let (_world, fox) = world_with_fox("fox_look_gates");
+
+    fox.set_interested(true);
+    assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
+    assert!(!FoxLookAtPlayerGoal::new(24.0).can_continue_to_use(fox.as_ref()));
+
+    fox.set_interested(false);
+    fox.set_faceplanted(true);
+    assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
 }

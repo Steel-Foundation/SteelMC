@@ -25,6 +25,11 @@ impl BreedGoal {
         }
     }
 
+    /// The animal this goal has paired up with, once it has found one.
+    pub(crate) const fn partner(&self) -> Option<&SharedEntity> {
+        self.partner.as_ref()
+    }
+
     fn get_free_partner(mob: &dyn PathfinderMob, animal: &dyn Animal) -> Option<SharedEntity> {
         let world = mob.level()?;
         let search_box = mob.bounding_box().inflate(PARTNER_SEARCH_RANGE);
