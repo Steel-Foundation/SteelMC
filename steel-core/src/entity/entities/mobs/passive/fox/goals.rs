@@ -10,9 +10,12 @@ use glam::DVec3;
 use steel_utils::{BlockPos, Downcast as _};
 
 use super::FoxEntity;
-use crate::entity::ai::goal::{Goal, GoalControls, reduced_tick_delay};
+use crate::entity::ai::goal::{
+    BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, PanicGoal,
+    reduced_tick_delay,
+};
 use crate::entity::entities::objects::items::ItemEntity;
-use crate::entity::{Entity, LivingEntity, Mob, PathfinderMob};
+use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
@@ -32,6 +35,9 @@ const PERCH_EXTRA_LOOKS: i32 = 3;
 const PERCH_MIN_LOOK_TICKS: i32 = 80;
 const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
+/// Vanilla `Fox.FoxFloatGoal`: depth of water a fox starts swimming in. Shallower
+/// than the shared jump threshold, so a fox floats sooner than most mobs.
+pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
 /// Randomized delay, in ticks, before a fox may fall asleep (vanilla 140).
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
@@ -252,5 +258,239 @@ impl Goal for FoxSleepGoal {
             fox.set_sleeping(false);
             fox.set_sitting(false);
         }
+    }
+}
+
+/// Vanilla `Fox.FoxFloatGoal`: a fox starts swimming in shallower water than
+/// most mobs, and drops whatever it was doing when it does.
+pub(crate) struct FoxFloatGoal {
+    inner: FloatGoal,
+}
+
+impl FoxFloatGoal {
+    pub(crate) fn new(mob_base: &MobBase) -> Self {
+        Self {
+            inner: FloatGoal::new(mob_base),
+        }
+    }
+}
+
+impl Goal for FoxFloatGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn requires_update_every_tick(&self) -> bool {
+        self.inner.requires_update_every_tick()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        (mob.is_in_water() && mob.fluid_contact().water_height() > FOX_FLOAT_WATER_DEPTH)
+            || mob.is_in_lava()
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.start(mob);
+        if let Some(fox) = as_fox(mob) {
+            fox.clear_states();
+        }
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
+    }
+}
+
+/// Vanilla `Fox.FoxPanicGoal`: a fox standing up for something it trusts holds
+/// its ground instead of bolting.
+pub(crate) struct FoxPanicGoal {
+    inner: PanicGoal,
+}
+
+impl FoxPanicGoal {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            inner: PanicGoal::new(speed_modifier),
+        }
+    }
+}
+
+impl Goal for FoxPanicGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn is_panic_goal(&self) -> bool {
+        self.inner.is_panic_goal()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        // Vanilla gates this inside `shouldPanic`, which the shared goal tests
+        // first thing in `canUse`, so testing it here comes to the same thing.
+        !as_fox(mob).is_some_and(FoxEntity::is_defending) && self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
+    }
+}
+
+/// Vanilla `Fox.FoxBreedGoal`: both foxes settle down before courting.
+pub(crate) struct FoxBreedGoal {
+    inner: BreedGoal,
+}
+
+impl FoxBreedGoal {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            inner: BreedGoal::new(speed_modifier),
+        }
+    }
+}
+
+impl Goal for FoxBreedGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.clear_states();
+        }
+        if let Some(partner) = self
+            .inner
+            .partner()
+            .and_then(|partner| partner.downcast_ref::<FoxEntity>())
+        {
+            partner.clear_states();
+        }
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
+    }
+}
+
+/// Vanilla `Fox.FoxFollowParentGoal`: a kit standing up for something it trusts
+/// stays where it is rather than trailing its parent.
+pub(crate) struct FoxFollowParentGoal {
+    inner: FollowParentGoal,
+}
+
+impl FoxFollowParentGoal {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            inner: FollowParentGoal::new(speed_modifier),
+        }
+    }
+}
+
+impl Goal for FoxFollowParentGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn requires_update_every_tick(&self) -> bool {
+        self.inner.requires_update_every_tick()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        !as_fox(mob).is_some_and(FoxEntity::is_defending) && self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        !as_fox(mob).is_some_and(FoxEntity::is_defending) && self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.clear_states();
+        }
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
+    }
+}
+
+/// Vanilla `Fox.FoxLookAtPlayerGoal`: a fox already fixed on something, or lying
+/// face-down in the ground, does not turn to watch a player.
+pub(crate) struct FoxLookAtPlayerGoal {
+    inner: LookAtPlayerGoal,
+}
+
+impl FoxLookAtPlayerGoal {
+    pub(crate) fn new(look_distance: f64) -> Self {
+        Self {
+            inner: LookAtPlayerGoal::new(look_distance),
+        }
+    }
+
+    fn is_distracted(mob: &dyn PathfinderMob) -> bool {
+        as_fox(mob).is_some_and(|fox| fox.is_faceplanted() || fox.is_interested())
+    }
+}
+
+impl Goal for FoxLookAtPlayerGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn requires_update_every_tick(&self) -> bool {
+        self.inner.requires_update_every_tick()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_use(mob) && !Self::is_distracted(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob) && !Self::is_distracted(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
     }
 }
