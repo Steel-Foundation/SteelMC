@@ -29,7 +29,7 @@ pub use building::{
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
-    AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock,
+    AnvilBlock, BarrelBlock, BeehiveBlock, BlastFurnaceBlock, ChiseledBookShelfBlock, CraftingTableBlock,
     EnderChestBlock, FurnaceBlock, GrindstoneBlock, SmokerBlock,
 };
 pub use decoration::{
