@@ -1,3 +1,5 @@
+use std::ptr;
+
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
@@ -7,6 +9,7 @@ use super::{
     vanilla_blocks, vanilla_game_events,
 };
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use steel_registry::sound_event::SoundEventHolder;
 
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
@@ -15,6 +18,27 @@ pub(super) fn sound_is_within_range(
 ) -> bool {
     let range = f64::from(sound.range(volume));
     distance_squared < range * range
+}
+
+fn sound_packet_for_player(
+    pos: DVec3,
+    player_pos: DVec3,
+    max_distance_squared: f64,
+    volume: f32,
+    min_volume: f32,
+) -> Option<(DVec3, f32)> {
+    let delta = pos - player_pos;
+    let distance_squared = delta.length_squared();
+    if distance_squared <= max_distance_squared {
+        return Some((pos, volume));
+    }
+    if min_volume <= 0.0 {
+        return None;
+    }
+    Some((
+        player_pos + delta / distance_squared.sqrt() * 2.0,
+        min_volume,
+    ))
 }
 
 impl World {
@@ -224,9 +248,9 @@ impl World {
     /// Sends destruction particles (skipping fire blocks), optionally drops
     /// resources via loot table, then replaces with air.
     ///
-    /// Defaults to recursion limit of 512
+    /// Defaults to [`Self::UPDATE_LIMIT`].
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
-        self.destroy_block_with_limit(pos, drop_items, 512)
+        self.destroy_block_with_limit(pos, drop_items, Self::UPDATE_LIMIT)
     }
 
     /// Replaces a block with its fluid state's legacy block.
@@ -249,7 +273,7 @@ impl World {
         drop_items: bool,
         entity: &dyn Entity,
     ) -> bool {
-        self.destroy_block_with_limit_and_entity(pos, drop_items, 512, Some(entity))
+        self.destroy_block_with_limit_and_entity(pos, drop_items, Self::UPDATE_LIMIT, Some(entity))
     }
 
     /// Destroys a block at the given position, optionally dropping its loot.
@@ -468,6 +492,55 @@ impl World {
         }
     }
 
+    /// Plays a sound for explicit player targets using vanilla's range fallback.
+    ///
+    /// Returns the players that received a packet, in target order.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps the vanilla playsound parameters explicit"
+    )]
+    pub fn play_sound_to_players(
+        &self,
+        sound: &SoundEventHolder,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        min_volume: f32,
+        targets: &[Arc<Player>],
+    ) -> Vec<Arc<Player>> {
+        let max_distance = sound.range(volume);
+        let max_distance_squared = f64::from(max_distance * max_distance);
+        let seed = rand::random::<i64>();
+        let mut played_for = Vec::new();
+
+        for player in targets {
+            let player_world = player.get_world();
+            if !ptr::eq(self, player_world.as_ref()) {
+                continue;
+            }
+
+            let player_pos = player.position();
+            let Some((packet_pos, packet_volume)) =
+                sound_packet_for_player(pos, player_pos, max_distance_squared, volume, min_volume)
+            else {
+                continue;
+            };
+
+            player.send_packet(CSound::new_holder(
+                sound.clone(),
+                source,
+                packet_pos,
+                packet_volume,
+                pitch,
+                seed,
+            ));
+            played_for.push(Arc::clone(player));
+        }
+
+        played_for
+    }
+
     /// Plays a block sound at a specific position.
     ///
     /// Convenience method that uses the BLOCKS sound source and applies
@@ -494,5 +567,28 @@ impl World {
     #[must_use]
     pub(crate) const fn entity_manager(&self) -> &WorldEntityManager {
         &self.entity_manager
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::sound_packet_for_player;
+
+    #[test]
+    fn sound_range_fallback_matches_vanilla_boundary_and_relocation() {
+        assert_eq!(
+            sound_packet_for_player(DVec3::ZERO, DVec3::new(16.0, 0.0, 0.0), 256.0, 1.0, 0.0),
+            Some((DVec3::ZERO, 1.0))
+        );
+        assert_eq!(
+            sound_packet_for_player(DVec3::ZERO, DVec3::new(17.0, 0.0, 0.0), 256.0, 1.0, 0.0),
+            None
+        );
+        assert_eq!(
+            sound_packet_for_player(DVec3::ZERO, DVec3::new(17.0, 0.0, 0.0), 256.0, 1.0, 0.25),
+            Some((DVec3::new(15.0, 0.0, 0.0), 0.25))
+        );
     }
 }

@@ -13,6 +13,15 @@ const fn default_max_chained_neighbor_updates() -> i32 {
     1_000_000
 }
 
+/// Steel config minimum for packet compression threshold, in bytes.
+/// Independent of vanilla's default (`CompressionInfo::DEFAULT_THRESHOLD`).
+const MIN_COMPRESSION_THRESHOLD: u32 = 256;
+/// Steel config minimum for zlib compression level.
+/// Independent of zlib's minimum (0); flate2 accepts 0.
+const MIN_COMPRESSION_LEVEL: i32 = 1;
+/// Steel config maximum for zlib compression level.
+const MAX_COMPRESSION_LEVEL: i32 = 9;
+
 /// The full server configuration as deserialized from TOML.
 ///
 /// Contains both creation-time values (seed, world generator, storage)
@@ -164,10 +173,10 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
         return Err("Simulation distance must be less than or equal to view distance");
     }
     if let Some(compression) = config.compression {
-        if compression.threshold.get() < 256 {
+        if compression.threshold.get() < MIN_COMPRESSION_THRESHOLD {
             return Err("Compression threshold must be greater than or equal to 256");
         }
-        if !(1..=9).contains(&compression.level) {
+        if !(MIN_COMPRESSION_LEVEL..=MAX_COMPRESSION_LEVEL).contains(&compression.level) {
             return Err("Compression level must be between 1 and 9");
         }
     }

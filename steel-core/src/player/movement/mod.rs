@@ -12,6 +12,7 @@ pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
 use glam::{DVec3, Vec3Swizzles};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
@@ -63,18 +64,6 @@ pub fn clamp_vertical(value: f64) -> f64 {
 }
 
 #[must_use]
-pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
-}
-
-#[must_use]
 pub(crate) fn custom_stat_from_riding_vehicle(
     vehicle_entity_type: EntityTypeRef,
 ) -> Option<CustomStatRef> {
@@ -97,6 +86,8 @@ pub(crate) fn custom_stat_from_riding_vehicle(
     }
 }
 
+const FLOATING_Y_THRESHOLD: f64 = -0.03125;
+
 #[derive(Debug, Clone, Copy)]
 struct PlayerFloatingValidation {
     y_dist: f64,
@@ -110,7 +101,7 @@ struct PlayerFloatingValidation {
 
 impl PlayerFloatingValidation {
     fn can_violate(self) -> bool {
-        self.y_dist >= -0.03125
+        self.y_dist >= FLOATING_Y_THRESHOLD
             && !self.player_stands_on_something
             && !self.is_spectator
             && !self.server_allows_flight
@@ -681,7 +672,7 @@ impl Player {
         y_dist: f64,
         vehicle_rests_on_something: bool,
     ) {
-        let client_is_floating = y_dist >= -0.03125
+        let client_is_floating = y_dist >= FLOATING_Y_THRESHOLD
             && !vehicle_rests_on_something
             && !self.config.allow_flight
             && !vehicle.is_flying_vehicle()

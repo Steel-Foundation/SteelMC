@@ -820,6 +820,7 @@ fn apply_wither_rose_effect(world: &Arc<World>, entity: &dyn Entity) {
 #[test]
 fn wither_rose_effect_ticks_vanilla_wither_damage() {
     let world = test_world();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
 
     apply_wither_rose_effect(world, &entity);
@@ -849,6 +850,7 @@ fn wither_rose_effect_ticks_vanilla_wither_damage() {
 #[test]
 fn wither_effect_only_damages_on_its_vanilla_interval() {
     let world = test_world();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
     assert!(entity.add_mob_effect(MobEffectInstance::with_duration(
         vanilla_mob_effects::WITHER,
@@ -927,6 +929,95 @@ fn default_mob_effect_eligibility_uses_vanilla_entity_type_tags() {
         20,
         0,
     )));
+}
+
+/// Undead-like mobs are hurt by Instant Health and healed by Instant Damage,
+/// per vanilla `HealOrHarmMobEffect`'s inverted-heal-harm check.
+#[test]
+fn heal_or_harm_behavior_inverts_for_undead_mobs() {
+    use crate::entity::mob_effect::{HealOrHarmBehavior, MobEffectBehavior};
+
+    init_vanilla_registry();
+    let world = fresh_test_world("heal_or_harm_inversion");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::PIG)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &living, 0);
+    assert_eq!(
+        living.get_health(),
+        14.0,
+        "instant health heals a living mob"
+    );
+
+    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::ZOMBIE)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &zombie, 0);
+    assert_eq!(
+        zombie.get_health(),
+        4.0,
+        "instant health hurts an inverted (undead) mob"
+    );
+
+    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::PIG)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &living, 0);
+    assert_eq!(
+        living.get_health(),
+        4.0,
+        "instant damage hurts a living mob"
+    );
+
+    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::ZOMBIE)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &zombie, 0);
+    assert_eq!(
+        zombie.get_health(),
+        14.0,
+        "instant damage heals an inverted (undead) mob"
+    );
+}
+
+/// Granting the Absorption effect (e.g. eating a golden apple) must actually
+/// set the absorption hearts, not just the icon/attribute-modifier bump.
+#[test]
+fn adding_absorption_effect_grants_absorption_hearts() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    assert_eq!(entity.get_absorption_amount(), 0.0);
+
+    entity.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::ABSORPTION,
+        2400,
+        0,
+    ));
+    assert_eq!(
+        entity.get_absorption_amount(),
+        4.0,
+        "amplifier 0 grants 4 absorption hearts, clamped against the effect's own MAX_ABSORPTION bump"
+    );
+
+    // Re-adding the same amplifier must not stack additively.
+    entity.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::ABSORPTION,
+        2400,
+        0,
+    ));
+    assert_eq!(entity.get_absorption_amount(), 4.0);
+
+    // A higher amplifier raises the max, matching vanilla's `Math.max`.
+    entity.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::ABSORPTION,
+        2400,
+        1,
+    ));
+    assert_eq!(entity.get_absorption_amount(), 8.0);
 }
 
 struct ControlledVehicleTestEntity {
