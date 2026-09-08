@@ -1593,8 +1593,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns true when vanilla `ServerEntity` should force velocity sync for fall flying.
+    ///
+    /// Mirrors vanilla's `entity instanceof LivingEntity livingEntity && livingEntity.isFallFlying()`:
+    /// any gliding living entity keeps its velocity synced, not only players.
     fn forces_fall_flying_velocity_sync(&self) -> bool {
-        false
+        self.as_living_entity()
+            .is_some_and(LivingEntity::is_fall_flying)
     }
 
     /// Returns true when movement is driven by serverbound movement packets.

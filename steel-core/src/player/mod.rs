@@ -1536,10 +1536,6 @@ impl Entity for Player {
         !self.is_removed() && self.get_health() > 0.0
     }
 
-    fn forces_fall_flying_velocity_sync(&self) -> bool {
-        self.is_fall_flying()
-    }
-
     fn blocks_building(&self) -> bool {
         true
     }
