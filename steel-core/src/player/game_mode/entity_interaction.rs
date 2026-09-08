@@ -575,7 +575,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
+        let Some(target) = world.get_accessible_entity_or_part_by_id(packet.entity_id) else {
             return;
         };
 
@@ -655,7 +655,7 @@ impl Player {
 
         let world = self.get_world();
         self.reset_last_action_time();
-        let target = world.get_accessible_entity_by_id(packet.entity_id);
+        let target = world.get_accessible_entity_or_part_by_id(packet.entity_id);
         self.set_crouching(packet.using_secondary_action);
         let Some(target) = target else {
             return;

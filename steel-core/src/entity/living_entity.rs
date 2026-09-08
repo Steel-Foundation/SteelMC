@@ -200,6 +200,10 @@ pub trait LivingEntity: Entity {
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
         nbt.insert(
+            "HurtTime",
+            NbtTag::Short(self.living_base().hurt_time() as i16),
+        );
+        nbt.insert(
             "DeathTime",
             NbtTag::Short(self.living_base().death_time() as i16),
         );
@@ -618,6 +622,15 @@ pub trait LivingEntity: Entity {
     /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
     /// intentionally differ from the entity's attached world.
     fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        self.default_hurt_server(world, source, amount)
+    }
+
+    /// Runs the base `LivingEntity.hurtServer` body.
+    ///
+    /// Overrides of [`Self::hurt_server`] call this where vanilla calls
+    /// `super.hurtServer`; the Ender Dragon routes its per-part damage scaling
+    /// through here.
+    fn default_hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_invulnerable_to(world, source) {
             return false;
         }
@@ -662,6 +675,9 @@ pub trait LivingEntity: Entity {
 
         self.before_actually_hurt(source, effective_amount);
         self.actually_hurt(world, source, effective_amount);
+        if took_full_damage {
+            self.living_base().begin_hurt_animation();
+        }
         self.resolve_mob_responsible_for_damage(world, source);
         self.resolve_player_responsible_for_damage(world, source);
 
@@ -867,7 +883,16 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies vanilla `LivingEntity.knockback`.
-    fn knockback(&self, mut power: f64, mut xd: f64, mut zd: f64) {
+    fn knockback(&self, power: f64, xd: f64, zd: f64) {
+        self.default_knockback(power, xd, zd);
+    }
+
+    /// The shared body of [`Self::knockback`].
+    ///
+    /// Rust has no `super`, so an override that only conditionally takes knockback
+    /// (the Ender Dragon ignores it while perched) calls this instead. Mirrors the
+    /// [`Self::hurt_server`] / [`Self::default_hurt_server`] split.
+    fn default_knockback(&self, mut power: f64, mut xd: f64, mut zd: f64) {
         power *= 1.0 - self.knockback_resistance();
         if power <= 0.0 {
             return;
@@ -940,9 +965,14 @@ pub trait LivingEntity: Entity {
         if self.is_removed() {
             return;
         }
+        // Vanilla guards on `!this.dead` and sets the flag inside `handleKillingBlow`.
+        // Steel ticks worlds in parallel, so the test and the set stay one atomic
+        // step here and the hook keeps only the subclass-visible side effects.
         if !self.living_base().mark_death_processed() {
             return;
         }
+
+        self.handle_killing_blow();
 
         // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
         // Using a function meant for getting &dyn LivingEntity directly works well here.
@@ -963,6 +993,14 @@ pub trait LivingEntity: Entity {
         self.broadcast_entity_event(EntityStatus::Death);
         self.set_pose(EntityPose::Dying);
     }
+
+    /// Runs vanilla `LivingEntity.handleKillingBlow`.
+    ///
+    /// Vanilla's body is `this.dead = true`, which [`Self::die`] has already done
+    /// atomically by the time this runs. The hook exists for the subclasses that
+    /// replace it: bosses playing a death animation clamp their health and enter a
+    /// dying state here instead of falling over.
+    fn handle_killing_blow(&self) {}
 
     /// Returns vanilla `LivingEntity.shouldDropLoot`.
     fn should_drop_loot(&self, world: &World) -> bool {
@@ -1865,15 +1903,19 @@ pub trait LivingEntity: Entity {
     /// The default `Entity::tick` dispatches living entities here.
     fn tick_living_entity(&self) {
         self.default_tick();
+        self.living_base().decrement_hurt_time();
         self.living_base().decrement_invulnerable_time();
-        self.tick_mob_effects();
-        self.detect_equipment_updates();
 
+        // Vanilla runs `tickDeath` from `baseTick`, before `tickEffects`, and keeps
+        // running `aiStep` from `tick` gated only on `isRemoved`. What stops while
+        // dying is the AI: `isImmobile` returns `isDeadOrDying`, so `aiStep` skips
+        // `serverAiStep`. Death animations depend on still being moved.
         if self.is_dead_or_dying() {
             self.tick_death();
-            self.tick_living_state();
-            return;
         }
+
+        self.tick_mob_effects();
+        self.detect_equipment_updates();
 
         if !self.is_removed() {
             self.ai_step();
@@ -2059,6 +2101,14 @@ pub trait LivingEntity: Entity {
     /// Decrements vanilla jump cooldown once per living AI step.
     fn tick_no_jump_delay(&self) {
         self.living_base().tick_no_jump_delay();
+    }
+
+    /// Returns vanilla `LivingEntity.hurtTime`.
+    ///
+    /// Counts down from `HURT_DURATION_TICKS` after the entity takes full damage;
+    /// entities such as the Ender Dragon gate melee sweeps on it being zero.
+    fn hurt_time(&self) -> i32 {
+        self.living_base().hurt_time()
     }
 
     /// Returns vanilla `LivingEntity.isImmobile()`.

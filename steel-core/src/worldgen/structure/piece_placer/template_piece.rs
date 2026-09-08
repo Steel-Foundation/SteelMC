@@ -17,7 +17,7 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, type
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
-    Entity,
+    ENTITIES, Entity,
     entities::{ItemFrameEntity, RawEntity},
     next_entity_id,
 };
@@ -612,7 +612,7 @@ impl StructurePiecePlacer {
     ) {
         let entity_pos = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
         let entity = Arc::new(RawEntity::new(
-            next_entity_id(),
+            ENTITIES.reserve_id(entity_type).first(),
             entity_pos,
             region.weak_world(),
             entity_type,

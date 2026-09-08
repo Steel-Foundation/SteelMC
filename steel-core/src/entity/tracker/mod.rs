@@ -135,6 +135,14 @@ impl EntityTracker {
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
+        // Mirrors vanilla `ChunkMap.addEntity`, which skips `EnderDragonPart` before
+        // anything else. The guard is load-bearing: a part reports its parent's entity
+        // type, so it inherits a live tracking range and nothing else would keep it
+        // off the wire.
+        if entity.as_part_entity().is_some() {
+            return;
+        }
+
         assert!(
             !entity.is_removed(),
             "cannot add removed entity {} to tracker",

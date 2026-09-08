@@ -20,7 +20,6 @@ use crate::entity::ai::path::PathType;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, ENTITIES, EntitySpawnReason, Mob, MobBase, SharedEntity,
-    next_entity_id,
 };
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -253,7 +252,7 @@ pub trait Animal: AgeableMob {
     fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
         ENTITIES.create(
             self.entity_type(),
-            next_entity_id(),
+            ENTITIES.reserve_id(self.entity_type()).first(),
             self.position(),
             Arc::downgrade(world),
         )

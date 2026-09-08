@@ -53,6 +53,12 @@ pub(crate) struct DiscoveredObject {
     pub(crate) struct_name: String,
     pub(crate) class_name: String,
     pub(crate) fields: Vec<JsonArgField>,
+    /// How many sub-entities the type owns, from `parts = N` on the attribute.
+    ///
+    /// Only meaningful for entities. This is a property of the Rust implementation
+    /// (how many part fields the struct holds), not extracted vanilla data, so it is
+    /// declared at the struct rather than in `classes.json`.
+    pub(crate) part_count: u32,
 }
 
 pub(crate) fn parse_object_behavior(
@@ -63,7 +69,8 @@ pub(crate) fn parse_object_behavior(
         .attrs
         .iter()
         .find(|a| path_ends_with(a.path(), attribute_name))?;
-    let class_name = extract_class_name(attr, attribute_name).unwrap_or(s.ident.to_string());
+    let parsed = parse_behavior_attribute(attr, attribute_name);
+    let class_name = parsed.class_name.unwrap_or_else(|| s.ident.to_string());
 
     let mut fields = Vec::new();
     if let syn::Fields::Named(ref named) = s.fields {
@@ -78,6 +85,7 @@ pub(crate) fn parse_object_behavior(
         struct_name: s.ident.to_string(),
         class_name,
         fields,
+        part_count: parsed.part_count,
     })
 }
 
@@ -346,22 +354,45 @@ pub(crate) fn generate_arg(
     }
 }
 
-pub(crate) fn extract_class_name(attr: &syn::Attribute, attribute_name: &str) -> Option<String> {
-    let syn::Meta::List(meta) = &attr.meta else {
-        return None;
+/// The values Steel reads from a `#[*_behavior(...)]` attribute.
+struct BehaviorAttribute {
+    /// The vanilla class this implementation maps to, from `class = "..."`.
+    class_name: Option<String>,
+    /// How many sub-entities the type owns, from `parts = N`.
+    part_count: u32,
+}
+
+/// Reads the recognized keys out of a behavior attribute in a single pass.
+///
+/// Unrecognized keys are consumed and ignored so that each behavior kind can carry
+/// keys the others do not use.
+fn parse_behavior_attribute(attr: &syn::Attribute, attribute_name: &str) -> BehaviorAttribute {
+    let mut parsed = BehaviorAttribute {
+        class_name: None,
+        part_count: 0,
     };
 
-    let mut class_name = None;
+    let syn::Meta::List(meta) = &attr.meta else {
+        return parsed;
+    };
+
     meta.parse_nested_meta(|meta| {
         if meta.path.is_ident("class") {
-            let value = meta.value()?;
-            let lit: syn::LitStr = value.parse()?;
-            class_name = Some(lit.value());
+            parsed.class_name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+        } else if meta.path.is_ident("parts") {
+            parsed.part_count = meta
+                .value()?
+                .parse::<syn::LitInt>()?
+                .base10_parse()
+                .unwrap_or_else(|e| panic!("Failed to parse {attribute_name} parts count: {e}"));
+        } else if let Ok(value) = meta.value() {
+            let _: syn::Expr = value.parse()?;
         }
         Ok(())
     })
     .unwrap_or_else(|e| panic!("Failed to parse {attribute_name} attribute: {e}"));
-    class_name
+
+    parsed
 }
 
 /// Scans behavior source files for annotated structs (e.g. `#[block_behavior]`, `#[item_behavior]`).
