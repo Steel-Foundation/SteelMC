@@ -1472,6 +1472,43 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
 }
 
 #[test]
+fn active_item_use_does_not_overwrite_hand_replaced_during_tick() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("active_item_use_no_overwrite_replaced_hand");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5));
+    player.start_using_item(InteractionHand::MainHand);
+
+    player.tick_active_item_use();
+    assert!(player.active_item_use_hand().is_some());
+
+    let replacement = ItemStack::new(&vanilla_items::DIAMOND);
+    player
+        .inventory
+        .lock()
+        .set_selected_item(replacement.clone());
+
+    player.tick_active_item_use();
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(
+        ItemStack::matches(&hand_item, &replacement),
+        "active-use tick must not restore the pre-replacement stack"
+    );
+    assert!(player.active_item_use_hand().is_none());
+}
+
+#[test]
 fn throttle_player_dropping_items_from_creative_menu() {
     const DROPS_ALLOWED_BEFORE_THROTTLE: i32 =
         DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP;

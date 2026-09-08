@@ -414,32 +414,62 @@ impl Player {
             return;
         };
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
-            self.stop_using_item();
-            return;
-        }
         let mut item = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);
+            if current.item() != active.item() {
+                drop(inventory);
+                self.stop_using_item();
+                return;
+            }
             current.copy_with_count(current.count())
         };
+        let item_before_tick = item.clone();
         let world = self.get_world();
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
 
         if self.active_item_use_hand() != Some(hand) {
-            self.inventory.lock().set_item_in_hand(hand, item);
+            // Active use ended during the callback. Write local mutations only when the
+            // hand still holds the pre-tick stack so #411's remainder path stays intact.
+            let mut inventory = self.inventory.lock();
+            if ItemStack::matches(inventory.get_item_in_hand(hand), &item_before_tick) {
+                inventory.set_item_in_hand(hand, item);
+            }
             return;
         }
+
+        {
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            if !ItemStack::matches(current, &item_before_tick) {
+                // `on_use_tick` (or something it called) replaced the held stack.
+                // Keep that stack instead of overwriting it with the local copy.
+                if current.item() != active.item() {
+                    drop(inventory);
+                    self.stop_using_item();
+                }
+                return;
+            }
+        }
+
         let Some(active) = self.living_base.decrement_active_item_use() else {
             self.inventory.lock().set_item_in_hand(hand, item);
             return;
         };
         if active.remaining_ticks() <= 0 {
+            // Vanilla re-checks the full stack before finishUsingItem.
+            let still_same_stack = {
+                let inventory = self.inventory.lock();
+                ItemStack::is_same_item_same_components(
+                    inventory.get_item_in_hand(hand),
+                    &item_before_tick,
+                )
+            };
+            if !still_same_stack {
+                self.stop_using_item();
+                return;
+            }
             let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, self);
             self.apply_item_use_cooldown(&stack_before_finish);
