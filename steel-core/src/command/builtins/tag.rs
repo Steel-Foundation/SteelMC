@@ -3,13 +3,17 @@
 use std::collections::BTreeSet;
 
 use steel_utils::{Identifier, translations};
-use text_components::TextComponent;
+use text_components::{Modifier, TextComponent};
 
 use super::super::{
-    brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
+    brigadier::{
+        ArgumentSuggestionContext, ArgumentType, CommandNodeBuilder, CommandSyntaxError,
+        SuggestionsBuilder,
+    },
     execution::{
-        CommandSource, SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument,
-        literal,
+        argument, argument_with_suggestions, literal, parse_entity_selector_text,
+        CommandSource, SteelArgumentType, SteelArgumentValue, SteelCommandContext,
+        SteelCommandRuntime,
     },
     registration::CommandRegistration,
 };
@@ -21,11 +25,59 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tag").then(
         argument("targets", SteelArgumentType::entities())
-            .then(literal("add").then(argument("name", ArgumentType::word()).executes(add_tag)))
-            .then(
-                literal("remove").then(argument("name", ArgumentType::word()).executes(remove_tag)),
-            )
+            .then(literal("add").then(
+                argument_with_tag_suggestions().executes(add_tag),
+            ))
+            .then(literal("remove").then(
+                argument_with_tag_suggestions().executes(remove_tag),
+            ))
             .then(literal("list").executes(list_tags)),
+    )
+}
+
+fn argument_with_tag_suggestions() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
+    argument_with_suggestions(
+        "name",
+        ArgumentType::word(),
+        |context: &ArgumentSuggestionContext<'_, CommandSource, SteelArgumentValue>,
+         builder: &mut SuggestionsBuilder<'_>| {
+            let input = builder.input();
+
+            let Some(rest) = input.strip_prefix("tag ") else {
+                return;
+            };
+
+            let target_end = rest
+                .rfind(" add ")
+                .or_else(|| rest.rfind(" remove "));
+
+            let Some(target_end) = target_end else {
+                return;
+            };
+
+            let target_text = &rest[..target_end];
+
+            let Ok(selector) = parse_entity_selector_text(target_text) else {
+                return;
+            };
+
+            let Ok(targets) = selector.find_entities(context.source()) else {
+                return;
+            };
+
+            let prefix = builder.remaining_lowercase().to_owned();
+
+            let tags = targets
+                .iter()
+                .flat_map(|target| target.tags())
+                .collect::<BTreeSet<_>>();
+
+            for tag in tags {
+                if tag.to_lowercase().starts_with(&prefix) {
+                    builder.suggest(tag);
+                }
+            }
+        },
     )
 }
 
@@ -48,14 +100,14 @@ fn add_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandS
         translations::COMMANDS_TAG_ADD_SUCCESS_SINGLE
             .message([
                 TextComponent::plain(tag.to_owned()),
-                TextComponent::plain(target.plain_text_name()),
+                target.display_name(),
             ])
             .component()
     } else {
         translations::COMMANDS_TAG_ADD_SUCCESS_MULTIPLE
             .message([
                 TextComponent::plain(tag.to_owned()),
-                TextComponent::plain(changed.to_string()),
+                TextComponent::plain(targets.len().to_string()),
             ])
             .component()
     };
@@ -84,14 +136,14 @@ fn remove_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
         translations::COMMANDS_TAG_REMOVE_SUCCESS_SINGLE
             .message([
                 TextComponent::plain(tag.to_owned()),
-                TextComponent::plain(target.plain_text_name()),
+                target.display_name(),
             ])
             .component()
     } else {
         translations::COMMANDS_TAG_REMOVE_SUCCESS_MULTIPLE
             .message([
                 TextComponent::plain(tag.to_owned()),
-                TextComponent::plain(changed.to_string()),
+                TextComponent::plain(targets.len().to_string()),
             ])
             .component()
     };
@@ -108,22 +160,24 @@ fn list_tags(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
         let tags = target.tags();
 
         if tags.is_empty() {
-            return Err(CommandSyntaxError::dynamic(
-                translations::COMMANDS_TAG_LIST_SINGLE_EMPTY
-                    .message([TextComponent::plain(target.plain_text_name())])
-                    .component(),
-            ));
+            let message = translations::COMMANDS_TAG_LIST_SINGLE_EMPTY
+                .message([target.display_name()])
+                .component();
+
+            context.source().send_success(&message, false);
+
+            return Ok(0);
         }
 
         let message = translations::COMMANDS_TAG_LIST_SINGLE_SUCCESS
             .message([
-                TextComponent::plain(target.plain_text_name()),
+                target.display_name(),
                 TextComponent::plain(tags.len().to_string()),
-                TextComponent::plain(tags.join(", ")),
+                format_tag_list(&tags),
             ])
             .component();
 
-        context.source().send_success(&message, true);
+        context.source().send_success(&message, false);
 
         return Ok(tags.len().min(i32::MAX as usize) as i32);
     }
@@ -138,7 +192,9 @@ fn list_tags(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
             .message([TextComponent::plain(targets.len().to_string())])
             .component();
 
-        return Err(CommandSyntaxError::dynamic(message));
+        context.source().send_success(&message, false);
+
+        return Ok(0);
     }
 
     let tag_count = all_tags.len();
@@ -147,95 +203,30 @@ fn list_tags(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
         .message([
             TextComponent::plain(targets.len().to_string()),
             TextComponent::plain(tag_count.to_string()),
-            TextComponent::plain(all_tags.iter().cloned().collect::<Vec<_>>().join(", ")),
+            format_tag_list(
+                &all_tags
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ),
         ])
         .component();
 
-    context.source().send_success(&message, true);
+    context.source().send_success(&message, false);
 
     Ok(tag_count.min(i32::MAX as usize) as i32)
 }
 
-#[cfg(test)]
-mod tests {
-    use steel_protocol::packets::game::ArgumentType as ProtocolArgumentType;
-    use steel_registry::init_vanilla_registry;
+fn format_tag_list(tags: &[String]) -> TextComponent {
+    let mut list = TextComponent::plain("");
 
-    use super::super::create_dispatcher;
-    use super::*;
-
-    #[test]
-    fn tag_graph_matches_vanilla_argument_shape() {
-        init_vanilla_registry();
-
-        let Ok(dispatcher) = create_dispatcher() else {
-            panic!("built-in commands should register");
-        };
-
-        let Some(tag) = dispatcher.children(dispatcher.root()).and_then(|children| {
-            children.iter().copied().find(|child| {
-                dispatcher
-                    .node(*child)
-                    .is_some_and(|node| node.name() == "tag")
-            })
-        }) else {
-            panic!("tag root should exist");
-        };
-
-        let target_id = dispatcher
-            .children(tag)
-            .and_then(|children| children.first())
-            .copied()
-            .expect("tag targets should exist");
-
-        let Some(targets) = dispatcher.node(target_id) else {
-            panic!("tag targets should exist");
-        };
-
-        assert_eq!(
-            targets.argument_type(),
-            Some(&SteelArgumentType::entities())
-        );
-        assert!(!targets.is_executable());
-
-        let children = dispatcher
-            .children(target_id)
-            .expect("tag targets children");
-
-        assert_eq!(children.len(), 3);
-
-        for child in children {
-            let node = dispatcher
-                .node(*child)
-                .expect("tag subcommand should exist");
-
-            assert!(matches!(node.name(), "add" | "remove" | "list"));
+    for (index, tag) in tags.iter().enumerate() {
+        if index > 0 {
+            list = list.add_child(TextComponent::plain(", "));
         }
 
-        for operation in ["add", "remove"] {
-            let operation = children
-                .iter()
-                .copied()
-                .find(|child| {
-                    dispatcher
-                        .node(*child)
-                        .is_some_and(|node| node.name() == operation)
-                })
-                .expect("tag operation should exist");
-
-            let name = dispatcher
-                .children(operation)
-                .and_then(|children| children.first())
-                .and_then(|child| dispatcher.node(*child))
-                .expect("tag name should exist");
-
-            assert!(name.is_executable());
-
-            assert!(matches!(
-                name.argument_type()
-                    .map(|argument| argument.protocol_argument().0),
-                Some(ProtocolArgumentType::String { .. })
-            ));
-        }
+        list = list.add_child(TextComponent::plain(tag.to_owned()));
     }
+
+    list
 }

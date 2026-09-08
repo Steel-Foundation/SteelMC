@@ -20,7 +20,11 @@ mod text;
 mod world;
 
 pub(crate) use argument::SteelArgumentType;
-pub(crate) use argument::{SteelArgumentParser, SteelArgumentSuggestionContext};
+pub(crate) use argument::{
+    SteelArgumentParser,
+    SteelArgumentSuggestionContext,
+    SteelArgumentValue,
+};
 pub(crate) use biome::BiomeOrTag;
 pub(crate) use block::{BlockInput, BlockPredicate, placement_flags};
 pub(crate) use coordinates::Coordinates;
@@ -46,7 +50,6 @@ pub(crate) use runtime::{
     argument, argument_with_suggestions, literal,
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
-#[cfg(test)]
 pub(crate) use selector::parse_entity_selector_text;
 pub(crate) use source::{
     CommandArgumentSource, CommandPermissionSource, CommandResultCallback, CommandSource,
