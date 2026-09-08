@@ -32,6 +32,7 @@ use crate::block_entity::{BlockEntityLifecycleExt as _, ClearedBlockEntities, Sh
 use crate::chunk::chunk_holder::{
     ChunkHolder, ChunkSaveDependency, PostProcessGenerationError, TickingReadiness,
 };
+use crate::chunk::chunk_request::ChunkRequestLease;
 pub use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
 #[cfg(test)]
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
@@ -607,8 +608,8 @@ impl ChunkMap {
         F: FnOnce() -> R,
     {
         let ticket_level = ChunkTicketLevel::for_full_chunk_radius(radius);
-        let Some(ticket_receipt) = self.acquire_chunk_request_leases(&[center], ticket_level)
-        else {
+        let lease = ChunkRequestLease::new(Arc::clone(self), Box::new([center]), ticket_level);
+        let Some(ticket_receipt) = lease.submission_receipt else {
             unreachable!("one chunk request lease must produce a receipt");
         };
         let radius = i32::from(radius);
@@ -622,7 +623,7 @@ impl ChunkMap {
             }
 
             if self.cancel_token.is_cancelled() {
-                let _ = self.release_chunk_request_leases(&[center], ticket_level);
+                drop(lease);
                 self.advance_scheduling();
                 return None;
             }
@@ -631,7 +632,7 @@ impl ChunkMap {
         }
 
         let result = f();
-        let _ = self.release_chunk_request_leases(&[center], ticket_level);
+        drop(lease);
         self.advance_scheduling();
 
         Some(result)

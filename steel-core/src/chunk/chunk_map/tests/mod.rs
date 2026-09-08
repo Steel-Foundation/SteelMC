@@ -287,6 +287,7 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
 mod light_updates;
 mod persistence_unloads;
 mod player_tracking;
+mod request_cleanup;
 mod scheduled_ticks;
 mod simulation_tickets;
 mod tickets_generation_readiness;
