@@ -39,8 +39,10 @@ pub enum DuplicatePlayerWaitError {
 /// Why [`Server::try_reserve_player_join`] refused a new join reservation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PlayerJoinReserveError {
+    /// UUID already has a join admission or an online session.
     #[error("player UUID is already joining or online")]
     Duplicate,
+    /// Online + in-flight `Joining` reservations already fill `max_players`.
     #[error("server is full")]
     ServerFull,
 }
