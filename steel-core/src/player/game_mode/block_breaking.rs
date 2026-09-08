@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::CAN_BREAK;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, CAN_PLACE_ON};
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
@@ -57,10 +57,35 @@ impl Player {
         let Some(can_break) = can_break else {
             return true;
         };
-        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
+        !Self::adventure_mode_predicate_matches_block(&can_break, world, pos)
     }
 
-    fn can_break_block_in_adventure_mode(
+    /// Vanilla `ItemStack.useOn` adventure gate: when `mayBuild` is false, the held
+    /// stack must have `can_place_on` matching the clicked block.
+    pub(super) fn may_use_item_on_in_adventure(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        hand: InteractionHand,
+    ) -> bool {
+        if self.abilities.lock().may_build {
+            return true;
+        }
+        let can_place_on = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(hand);
+            if item.is_empty() {
+                return false;
+            }
+            item.get(CAN_PLACE_ON).cloned()
+        };
+        let Some(can_place_on) = can_place_on else {
+            return false;
+        };
+        Self::adventure_mode_predicate_matches_block(&can_place_on, world, pos)
+    }
+
+    fn adventure_mode_predicate_matches_block(
         predicate: &AdventureModePredicate,
         world: &World,
         pos: BlockPos,

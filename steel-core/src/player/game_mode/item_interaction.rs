@@ -94,6 +94,10 @@ pub fn use_item_on(
             return InteractionResult::Pass;
         }
 
+        if !player.may_use_item_on_in_adventure(world, pos, hand) {
+            return InteractionResult::Pass;
+        }
+
         let mut context = UseOnContext::new(
             player,
             hand,
@@ -213,11 +217,11 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use super::use_item;
-    use crate::behavior::{InteractionResult, init_behaviors};
+    use super::{use_item, use_item_on};
+    use crate::behavior::{BlockHitResult, InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
     use crate::player::connection::NetworkConnection as _;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use steel_protocol::packets::game::SUseItem;
     use steel_registry::{item_stack::ItemStack, vanilla_items};
     use steel_utils::types::InteractionHand;
@@ -289,6 +293,114 @@ mod tests {
         assert_eq!(
             player.active_item_use_hand(),
             Some(InteractionHand::MainHand)
+        );
+    }
+
+    #[test]
+    fn use_item_on_adventure_without_can_place_on_passes() {
+        use steel_registry::blocks::properties::Direction;
+        use steel_registry::{init_vanilla_registry, vanilla_blocks};
+        use steel_utils::types::{GameType, UpdateFlags};
+        use steel_utils::{BlockPos, ChunkPos};
+        use std::sync::Arc;
+
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("adventure_no_can_place_on");
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        player
+            .base
+            .set_position_local(glam::DVec3::new(1.0, 64.0, 0.0));
+        player.restore_game_modes(GameType::Adventure, None);
+        player
+            .abilities
+            .lock()
+            .update_for_game_mode(GameType::Adventure);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::POWDER_SNOW_BUCKET));
+
+        let hit = BlockHitResult {
+            location: glam::DVec3::new(1.5, 65.0, 0.5),
+            direction: Direction::Up,
+            block_pos: pos,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+        let result = use_item_on(&player, &world, InteractionHand::MainHand, &hit);
+        assert_eq!(result, InteractionResult::Pass);
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::STONE.default_state()
+        );
+    }
+
+    #[test]
+    fn use_item_on_adventure_with_matching_can_place_on_allows_use() {
+        use steel_registry::blocks::properties::Direction;
+        use steel_registry::data_component_predicate::DataComponentMatchers;
+        use steel_registry::data_components::vanilla_components::CAN_PLACE_ON;
+        use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+        use steel_registry::{RegistryHolderSet, init_vanilla_registry, vanilla_blocks};
+        use steel_utils::types::{GameType, UpdateFlags};
+        use steel_utils::{BlockPos, ChunkPos};
+        use std::sync::Arc;
+
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("adventure_with_can_place_on");
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        player
+            .base
+            .set_position_local(glam::DVec3::new(1.0, 64.0, 0.0));
+        player.restore_game_modes(GameType::Adventure, None);
+        player
+            .abilities
+            .lock()
+            .update_for_game_mode(GameType::Adventure);
+
+        let predicate = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::STONE])),
+            None,
+            None,
+            DataComponentMatchers::ANY,
+        );
+        let can_place =
+            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid");
+        let mut bucket = ItemStack::new(&vanilla_items::POWDER_SNOW_BUCKET);
+        bucket.set(CAN_PLACE_ON, can_place);
+        player.inventory.lock().set_selected_item(bucket);
+
+        let hit = BlockHitResult {
+            location: glam::DVec3::new(1.5, 65.0, 0.5),
+            direction: Direction::Up,
+            block_pos: pos,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+        let result = use_item_on(&player, &world, InteractionHand::MainHand, &hit);
+        assert!(
+            result != InteractionResult::Pass,
+            "matching can_place_on should allow item use_on to run, got {result:?}"
         );
     }
 }
