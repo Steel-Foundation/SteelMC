@@ -39,10 +39,8 @@ pub enum DuplicatePlayerWaitError {
 /// Why [`Server::try_reserve_player_join`] refused a new join reservation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PlayerJoinReserveError {
-    /// Another admission or online session already owns this UUID.
     #[error("player UUID is already joining or online")]
     Duplicate,
-    /// Online players plus in-flight join reservations already fill `max_players`.
     #[error("server is full")]
     ServerFull,
 }
@@ -347,8 +345,6 @@ impl Server {
     }
 
     /// True when online players plus in-flight `Joining` reservations fill `max_players`.
-    ///
-    /// Caller must hold `player_admissions`.
     fn join_slots_full(&self, admissions: &FxHashMap<Uuid, PlayerAdmissionState>) -> bool {
         let joining = admissions
             .values()
