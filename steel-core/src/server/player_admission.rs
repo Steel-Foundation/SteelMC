@@ -354,10 +354,7 @@ impl Server {
             .values()
             .filter(|state| **state == PlayerAdmissionState::Joining)
             .count();
-        self.online_players
-            .len()
-            .saturating_add(joining)
-            >= self.config.max_players as usize
+        self.online_players.len().saturating_add(joining) >= self.config.max_players as usize
     }
 
     #[cfg(test)]
