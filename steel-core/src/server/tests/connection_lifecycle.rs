@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
     player::{ClientInformation, GameProfile, Player, PlayerConnection},
-    server::DuplicatePlayerWaitError,
+    server::{DuplicatePlayerWaitError, PlayerJoinReserveError},
     world::World,
 };
 
@@ -28,7 +28,6 @@ use super::{
     test_storage_root,
 };
 use crate::permission::{OP_GROUP, PermissionSet, PermissionSubjectIndex, PermissionSubjectState};
-use crate::server::PlayerJoinReserveError;
 
 fn java_test_player(
     server: &Arc<Server>,
@@ -257,7 +256,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         };
         assert!(matches!(
             server.try_reserve_player_join(uuid),
-            Err(crate::server::PlayerJoinReserveError::Duplicate)
+            Err(PlayerJoinReserveError::Duplicate)
         ));
         drop(first_reservation);
         let second_reservation = server.try_reserve_player_join(uuid);
