@@ -1370,6 +1370,69 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
 }
 
 #[test]
+fn creative_sword_does_not_break_blocks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("creative_sword_no_break");
+    let pos = BlockPos::new(1, 64, 0);
+    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let stone = vanilla_blocks::STONE.default_state();
+    assert!(world.set_block(pos, stone, UpdateFlags::UPDATE_ALL));
+
+    let player = test_player(Arc::clone(&world));
+    player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
+    player.restore_game_modes(GameType::Creative, None);
+    player.abilities.lock().update_for_game_mode(GameType::Creative);
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::WOODEN_SWORD));
+
+    player.block_breaking.lock().handle_block_break_action(
+        &player,
+        &world,
+        pos,
+        BlockBreakAction::Start,
+        Direction::Up,
+    );
+
+    assert_eq!(world.get_block_state(pos), stone);
+}
+
+#[test]
+fn creative_pickaxe_still_breaks_blocks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("creative_pickaxe_breaks");
+    let pos = BlockPos::new(1, 64, 0);
+    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+
+    let player = test_player(Arc::clone(&world));
+    player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
+    player.restore_game_modes(GameType::Creative, None);
+    player.abilities.lock().update_for_game_mode(GameType::Creative);
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_PICKAXE));
+
+    player.block_breaking.lock().handle_block_break_action(
+        &player,
+        &world,
+        pos,
+        BlockBreakAction::Start,
+        Direction::Up,
+    );
+
+    assert!(world.get_block_state(pos).is_air());
+}
+
+#[test]
 fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
     init_vanilla_registry();
     let world = fresh_test_world("extra_items_created_on_use_has_room");

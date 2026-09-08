@@ -342,6 +342,20 @@ impl BlockBreakingManager {
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
+        // Vanilla `Item.canDestroyBlockInCreative` — swords and similar tools must
+        // not remove blocks in Creative on a single click.
+        if player.game_mode() == GameType::Creative {
+            let can_destroy = {
+                let inventory = player.inventory.lock();
+                inventory
+                    .get_item_in_hand(InteractionHand::MainHand)
+                    .can_destroy_blocks_in_creative()
+            };
+            if !can_destroy {
+                return false;
+            }
+        }
+
         // Check if player's tool can destroy this block
         // TODO: Implement canDestroyBlock check for adventure mode
 
@@ -501,9 +515,15 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
 
     let destroy_time = block.config.destroy_time;
 
-    // Instant break for creative
+    // Instant break for creative when the held tool allows it
     if player.game_mode() == GameType::Creative {
-        return 1.0;
+        let can_destroy = {
+            let inventory = player.inventory.lock();
+            inventory
+                .get_item_in_hand(InteractionHand::MainHand)
+                .can_destroy_blocks_in_creative()
+        };
+        return if can_destroy { 1.0 } else { 0.0 };
     }
 
     // Unbreakable block
