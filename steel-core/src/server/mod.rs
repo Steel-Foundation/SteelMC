@@ -360,7 +360,9 @@ use permissions::validate_player_permission_group_update;
 mod player_admission;
 mod player_lifecycle;
 
-pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
+pub use player_admission::{
+    DuplicatePlayerWaitError, PlayerJoinReservation, PlayerJoinReserveError,
+};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
