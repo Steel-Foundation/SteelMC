@@ -2,7 +2,7 @@ use std::{io::Cursor, sync::Arc};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
-use steel_math::wrap_degrees;
+use steel_math::{wrap_degrees, DEGREE_360};
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -218,7 +218,7 @@ pub(crate) fn spawn_entity(
         f64::from(pos.y()) + y_offset,
         f64::from(pos.z()) + 0.5,
     );
-    let rotation = (wrap_degrees(rand::random::<f32>() * 360.0), 0.0);
+    let rotation = (wrap_degrees(rand::random::<f32>() * DEGREE_360), 0.0);
 
     entity.base().set_position_local(position);
     entity.set_rotation(rotation);
