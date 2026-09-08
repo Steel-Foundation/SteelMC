@@ -523,7 +523,8 @@ impl JavaTcpClient {
                                 }
                             }
                             LoginOperationResult::Completed(Err(err)) => {
-                                log::warn!("Failed to get packet from client {id}: {err}");
+                                self_clone.reject_packet_decode_error(&err).await;
+                                break;
                             }
                             LoginOperationResult::Cancelled => break,
                             LoginOperationResult::TimedOut => {
@@ -794,6 +795,17 @@ impl JavaTcpClient {
         ))
         .await;
         ConnectionAction::none()
+    }
+
+    /// Fail-closed path for codec/decode errors while reading Login/Config packets.
+    ///
+    /// Vanilla disconnects on any unhandled pipeline exception; Steel previously only logged.
+    pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
+        log::warn!("Failed to get packet from client {}: {error}", self.id);
+        self.kick(TextComponent::translated(
+            translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+        ))
+        .await;
     }
 
     /// Kicks the client with a given reason.
