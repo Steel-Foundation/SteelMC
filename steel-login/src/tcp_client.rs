@@ -797,9 +797,7 @@ impl JavaTcpClient {
         ConnectionAction::none()
     }
 
-    /// Fail-closed path for codec/decode errors while reading Login/Config packets.
-    ///
-    /// Vanilla disconnects on any unhandled pipeline exception; Steel previously only logged.
+    /// Kick + close when `process_packet` returns `PacketError` (bad decode / unexpected id).
     pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
         log::warn!("Failed to get packet from client {}: {error}", self.id);
         self.kick(TextComponent::translated(
