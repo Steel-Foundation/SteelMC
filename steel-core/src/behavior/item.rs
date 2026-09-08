@@ -17,7 +17,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla
 use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
 
-use crate::behavior::items::DefaultItemBehavior;
+use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
@@ -223,6 +223,11 @@ pub trait ItemBehavior: Send + Sync {
         stack
             .get_weapon()
             .map(|weapon| weapon.item_damage_per_attack)
+    }
+
+    /// Returns this item behavior as a `SpawnEggItem`.
+    fn as_spawn_egg(&self) -> Option<&SpawnEggItem> {
+        None
     }
 }
 
