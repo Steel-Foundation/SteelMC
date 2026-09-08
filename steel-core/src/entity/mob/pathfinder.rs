@@ -28,6 +28,7 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
             ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float());
         let context = NavigationTickContext {
             mob_position,
+            mob_raw_position: mob.position(),
             mob_bounding_box_width: mob.bounding_box().width(),
             mob_speed: mob.get_speed(),
             game_time,

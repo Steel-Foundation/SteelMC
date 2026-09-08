@@ -28,7 +28,15 @@ pub struct NavigationPathRequest<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NavigationTickContext {
+    /// Vanilla `PathNavigation.getTempMobPos`: the mob position with its Y
+    /// snapped to the surface it navigates along. Only the corner-cutting check
+    /// and stuck detection use this.
     pub mob_position: DVec3,
+    /// The mob's true position. Vanilla measures the distance to the current
+    /// waypoint from here, not from the surface-snapped position: for a mob
+    /// standing in water the two are a full block apart, which is exactly the
+    /// tolerance of the vertical check.
+    pub mob_raw_position: DVec3,
     pub mob_bounding_box_width: f64,
     pub mob_speed: f32,
     pub game_time: i64,
@@ -565,10 +573,10 @@ impl PathNavigation {
                 0.75 - context.mob_bounding_box_width / 2.0
             };
             let x_distance =
-                (context.mob_position.x - (f64::from(current_node_pos.x()) + 0.5)).abs();
-            let y_distance = (context.mob_position.y - f64::from(current_node_pos.y())).abs();
+                (context.mob_raw_position.x - (f64::from(current_node_pos.x()) + 0.5)).abs();
+            let y_distance = (context.mob_raw_position.y - f64::from(current_node_pos.y())).abs();
             let z_distance =
-                (context.mob_position.z - (f64::from(current_node_pos.z()) + 0.5)).abs();
+                (context.mob_raw_position.z - (f64::from(current_node_pos.z()) + 0.5)).abs();
             let is_close_enough_to_current_node = x_distance < max_distance_to_waypoint
                 && z_distance < max_distance_to_waypoint
                 && y_distance < 1.0;
@@ -799,6 +807,19 @@ mod tests {
     fn tick_context(mob_position: DVec3) -> NavigationTickContext {
         NavigationTickContext {
             mob_position,
+            mob_raw_position: mob_position,
+            mob_bounding_box_width: 0.9,
+            mob_speed: 0.25,
+            game_time: 0,
+        }
+    }
+
+    /// Builds a tick context for a mob standing in water, where vanilla's
+    /// surface-snapped position sits a block above the mob itself.
+    fn tick_context_standing_in_water(mob_position: DVec3) -> NavigationTickContext {
+        NavigationTickContext {
+            mob_position: DVec3::new(mob_position.x, mob_position.y.floor() + 1.0, mob_position.z),
+            mob_raw_position: mob_position,
             mob_bounding_box_width: 0.9,
             mob_speed: 0.25,
             game_time: 0,
@@ -812,6 +833,7 @@ mod tests {
     ) -> NavigationTickContext {
         NavigationTickContext {
             mob_position,
+            mob_raw_position: mob_position,
             mob_bounding_box_width: 0.9,
             mob_speed,
             game_time,
@@ -974,6 +996,38 @@ mod tests {
         assert!(navigation.move_to(&level, path, 1.0, DVec3::new(0.5, 64.0, 0.5)));
 
         assert_eq!(navigation.path().map(Path::node_count), Some(2));
+    }
+
+    #[test]
+    fn standing_in_water_still_retires_the_waypoint_underfoot() {
+        // A pig standing in one block of water is on the ground and in water at
+        // the same time, so navigation snaps its Y up to the surface: a full
+        // block above the node it is standing on. Measuring the waypoint from
+        // there puts the vertical distance at exactly 1.0, the tolerance, so the
+        // node never retires and the move control keeps steering the mob at a
+        // point under its own feet. It overshoots, turns about, overshoots back,
+        // and spins on the spot.
+        let path = Path::new(
+            vec![Node::new(0, 64, 0), Node::new(1, 64, 0)],
+            BlockPos::new(1, 64, 0),
+            true,
+        );
+        let mut navigation = PathNavigation::new();
+        let standing_in_water = DVec3::new(0.5, 64.0, 0.5);
+
+        assert!(move_to(&mut navigation, path, 1.0, standing_in_water));
+
+        let target = navigation.next_move_target(tick_context_standing_in_water(standing_in_water));
+
+        let Some((target, _)) = target else {
+            panic!("navigation should target the next path node");
+        };
+        assert_eq!(
+            target,
+            DVec3::new(1.5, 64.0, 0.5),
+            "the node underfoot should have retired and handed over to the next one"
+        );
+        assert_eq!(navigation.path().map(Path::next_node_index), Some(1));
     }
 
     #[test]

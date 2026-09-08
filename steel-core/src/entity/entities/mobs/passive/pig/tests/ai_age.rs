@@ -101,6 +101,7 @@ fn pig_path_target_feeds_move_control_forward_input() {
         let mut navigation = pig.mob_base().navigation().lock();
         navigation.next_move_target(NavigationTickContext {
             mob_position: pig.position(),
+            mob_raw_position: pig.position(),
             mob_bounding_box_width: pig.bounding_box().width(),
             mob_speed: pig.get_speed(),
             game_time: 0,
