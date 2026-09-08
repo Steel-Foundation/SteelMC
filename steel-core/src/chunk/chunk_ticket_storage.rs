@@ -35,7 +35,7 @@ struct PersistentChunkTicket {
     ticks_left: i64,
 }
 
-/// A recoverable invalid value in persisted chunk ticket data.
+/// Invalid persisted chunk ticket data that prevents restoring the ticket storage.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(crate) enum ChunkTicketStorageLoadError {
     #[error("unknown chunk ticket type `{0}`")]
