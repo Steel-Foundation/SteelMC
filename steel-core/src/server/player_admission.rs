@@ -2,7 +2,7 @@ use steel_utils::translations;
 
 use super::{
     Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
-    DomainPlayerState, EncodedPacket, Entity, GlobalPlayerData, Instant, JoinSet,
+    DomainPlayerState, EncodedPacket, Entity, FxHashMap, GlobalPlayerData, Instant, JoinSet,
     NetworkConnection, PendingWorldChangeToken, PersistentPlayerData, Player, ResetReason,
     SegQueue, Server, SyncMutex, Uuid, mpsc,
 };
@@ -318,11 +318,11 @@ impl Server {
         }
     }
 
-    /// Atomically reserves a UUID after configuration's duplicate-session recheck.
+    /// Reserves a UUID for join after the config-phase duplicate recheck.
     ///
-    /// Slot accounting holds the admissions lock and counts online players plus
-    /// in-flight [`PlayerAdmissionState::Joining`] reservations. Operators may
-    /// bypass the `max_players` cap (vanilla `canBypassPlayerLimit`).
+    /// Under the admissions lock: reject if the UUID is busy; otherwise count
+    /// online players + `Joining` slots against `max_players`. Ops bypass the cap
+    /// (`canBypassPlayerLimit`).
     pub fn try_reserve_player_join(
         self: &Arc<Self>,
         uuid: Uuid,
@@ -334,15 +334,8 @@ impl Server {
         if self.online_players.get_by_uuid(&uuid).is_some() {
             return Err(PlayerJoinReserveError::Duplicate);
         }
-        if !self.is_operator(uuid) {
-            let joining = admissions
-                .values()
-                .filter(|state| **state == PlayerAdmissionState::Joining)
-                .count();
-            let occupied = self.online_players.len().saturating_add(joining);
-            if occupied >= self.config.max_players as usize {
-                return Err(PlayerJoinReserveError::ServerFull);
-            }
+        if !self.is_operator(uuid) && self.join_slots_full(&admissions) {
+            return Err(PlayerJoinReserveError::ServerFull);
         }
         let previous = admissions.insert(uuid, PlayerAdmissionState::Joining);
         debug_assert!(previous.is_none());
@@ -353,6 +346,20 @@ impl Server {
         })
     }
 
+    /// True when online players plus in-flight `Joining` reservations fill `max_players`.
+    ///
+    /// Caller must hold `player_admissions`.
+    fn join_slots_full(&self, admissions: &FxHashMap<Uuid, PlayerAdmissionState>) -> bool {
+        let joining = admissions
+            .values()
+            .filter(|state| **state == PlayerAdmissionState::Joining)
+            .count();
+        self.online_players
+            .len()
+            .saturating_add(joining)
+            >= self.config.max_players as usize
+    }
+
     #[cfg(test)]
     pub(super) fn reserve_player_join(&self, player: &Player) -> bool {
         let uuid = player.gameprofile.id;
@@ -360,15 +367,8 @@ impl Server {
         if admissions.contains_key(&uuid) || self.online_players.get_by_uuid(&uuid).is_some() {
             return false;
         }
-        if !self.is_operator(uuid) {
-            let joining = admissions
-                .values()
-                .filter(|state| **state == PlayerAdmissionState::Joining)
-                .count();
-            let occupied = self.online_players.len().saturating_add(joining);
-            if occupied >= self.config.max_players as usize {
-                return false;
-            }
+        if !self.is_operator(uuid) && self.join_slots_full(&admissions) {
+            return false;
         }
         admissions
             .insert(uuid, PlayerAdmissionState::Joining)
