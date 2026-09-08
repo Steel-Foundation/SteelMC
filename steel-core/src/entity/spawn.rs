@@ -2,7 +2,7 @@ use std::{io::Cursor, sync::Arc};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
-use steel_math::{wrap_degrees, DEGREE_360};
+use steel_math::{DEGREE_360, wrap_degrees};
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
