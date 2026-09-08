@@ -26,7 +26,7 @@ impl ItemBehavior for NameTagItem {
                 if let Some(mob) = target.as_mob() {
                     mob.set_persistence_required();
                 }
-                stack.shrink(1);
+                stack.shrink_one();
             }
             InteractionResult::Success
         } else {

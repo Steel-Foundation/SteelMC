@@ -8,11 +8,14 @@ use steel_registry::{
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
 use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::world::game_event::GameEventContext;
+use crate::{
+    behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext},
+    player::Player,
+};
 
 pub(super) enum SurvivalCheck {
     Required,
@@ -147,7 +150,8 @@ impl BlockItem {
             ),
         );
 
-        context.with_item_mut(|item| item.shrink(1));
+        let has_infinite_materials = context.player().is_some_and(Player::has_infinite_materials);
+        context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }
