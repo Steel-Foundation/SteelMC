@@ -2,31 +2,6 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use glam::DVec3;
-use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
-use steel_protocol::packets::common::{
-    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
-};
-use steel_protocol::packets::game::EquipmentSlotItem;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::data_component_predicate::DataComponentMatchers;
-use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
-use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-use steel_registry::packets::play::C_REMOVE_ENTITIES;
-use steel_registry::{
-    RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules,
-    vanilla_items, vanilla_menu_types,
-};
-use steel_utils::codec::VarInt;
-use steel_utils::locks::{IntoShared as _, SyncMutex};
-use steel_utils::serial::ReadFrom;
-use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
-use text_components::TextComponent;
-use uuid::Uuid;
-
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
@@ -40,15 +15,41 @@ use crate::inventory::{
     menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
 };
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
+use crate::player::game_mode::PlayerGameModeState;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
     insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
+use glam::DVec3;
+use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::packets::common::{
+    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
+};
+use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::data_component_predicate::DataComponentMatchers;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
+use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::packets::play::C_REMOVE_ENTITIES;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::{
+    RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
+    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
+    vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
+};
+use steel_utils::codec::VarInt;
+use steel_utils::locks::{IntoShared as _, SyncMutex};
+use steel_utils::serial::ReadFrom;
+use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use text_components::TextComponent;
+use uuid::Uuid;
 
 use super::{
-    ClientInformation, DEATH_DURATION, Player, PlayerConnection, PlayerPermissionState,
-    ResetReason,
+    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
+    DROP_SPAM_THROTTLER_THRESHOLD, Player, PlayerConnection, PlayerPermissionState, ResetReason,
     connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
@@ -1366,4 +1367,177 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
             .get_block_state(pos)
             .get_value(&BlockStateProperties::LIT)
     );
+}
+
+#[test]
+fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_has_room");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .any(|item| item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert!(dropped.is_empty());
+}
+
+#[test]
+fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_full");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+    }
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .all(|item| !item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+/// Regression test: drinking a honey bottle from a full inventory, through
+/// the real tick loop, must not lose the glass bottle remainder to the
+/// emptied hand slot being seen as free room and then overwritten.
+#[test]
+fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tick_loop() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5));
+    }
+
+    player.start_using_item(InteractionHand::MainHand);
+    for _ in 0..40 {
+        player.tick_active_item_use();
+    }
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(hand_item.is(&vanilla_items::HONEY_BOTTLE));
+    assert_eq!(hand_item.count(), 4);
+
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+#[test]
+fn throttle_player_dropping_items_from_creative_menu() {
+    const DROPS_ALLOWED_BEFORE_THROTTLE: i32 =
+        DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP;
+
+    init_vanilla_registry();
+
+    let item = &*vanilla_items::DIAMOND;
+    let packet = SSetCreativeModeSlot {
+        slot_num: -1,
+        item_stack: ItemStack::new(item),
+    };
+
+    let world = fresh_test_world("throttle_player_dropping_items_from_creative_menu");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    let check_drop_count = |expected_count: i32| {
+        let item_dropped_stat = vanilla_stat_types::ITEM_DROPPED.get(item);
+        let drop_custom_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::DROP);
+
+        assert_eq!(
+            world.entity_manager().count(),
+            expected_count as usize,
+            "entity counts in the world did not match"
+        );
+        let stats = player.stats.lock();
+        assert_eq!(
+            stats.get(&item_dropped_stat),
+            expected_count,
+            "ITEM_DROPPED stat counts did not match"
+        );
+        assert_eq!(
+            stats.get(&drop_custom_stat),
+            expected_count,
+            "DROP custom stat counts did not match"
+        );
+    };
+
+    *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
+
+    // Ensure no remainder for easier logic in the test
+    assert_eq!(
+        DROP_SPAM_THROTTLER_INCREMENT_STEP * DROPS_ALLOWED_BEFORE_THROTTLE,
+        DROP_SPAM_THROTTLER_THRESHOLD,
+        "test assumes that threshold is perfectly divisible by increment step, but that is false"
+    );
+
+    for _ in 0..(DROPS_ALLOWED_BEFORE_THROTTLE + 5) {
+        player.handle_set_creative_mode_slot(packet.clone());
+    }
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
+
+    // Decay the Throttler just enough to allow the player drop one more stack.
+    player.tick();
+    player.handle_set_creative_mode_slot(packet.clone());
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
+
+    // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
+    for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
+        player.tick();
+    }
+    player.handle_set_creative_mode_slot(packet.clone());
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
+
+    // Decay the Throttler just enough to allow the player drop one more stack.
+    player.tick();
+    player.handle_set_creative_mode_slot(packet);
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }

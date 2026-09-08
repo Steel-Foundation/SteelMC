@@ -11,6 +11,7 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
@@ -52,7 +53,6 @@ use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
-    wrap_degrees,
 };
 use text_components::{
     Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
@@ -77,6 +77,27 @@ use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
+
+pub(crate) const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
+pub(crate) const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
+
+/// Clamps an entity position using vanilla's load-time world-bound limits.
+pub(crate) fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
+    DVec3::new(
+        pos.x.clamp(
+            -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+        ),
+        pos.y.clamp(
+            -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+            ENTITY_LOAD_MAX_VERTICAL_POSITION,
+        ),
+        pos.z.clamp(
+            -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+        ),
+    )
+}
 
 fn nbt_bool(value: bool) -> NbtTag {
     NbtTag::Byte(i8::from(value))
@@ -734,6 +755,7 @@ mod base;
 mod block_effects;
 mod callback;
 mod combat_rules;
+pub mod consume_effect;
 pub mod damage;
 pub(crate) mod dismount_helper;
 pub mod entities;
@@ -755,7 +777,9 @@ mod living_base;
 mod living_entity;
 mod manager;
 mod mob;
+pub mod mob_effect;
 mod movement_sync;
+mod potion_contents;
 pub mod projectile;
 mod registry;
 mod spawn;
@@ -810,13 +834,18 @@ pub use movement_sync::{
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
+pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
-pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
+pub(crate) use spawn::{
+    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
+    SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
+    create_entity_instance, spawn_entity,
+};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{
