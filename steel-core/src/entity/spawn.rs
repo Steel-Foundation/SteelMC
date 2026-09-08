@@ -6,7 +6,6 @@ use steel_math::wrap_degrees;
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_entities;
 use steel_utils::nbt::merge_nbt_compounds;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty};
 
@@ -169,7 +168,7 @@ pub(crate) fn apply_item_stack_components(
         return Ok(());
     }
 
-    if only_op_can_set_custom_data(entity.entity_type()) && !user_is_operator {
+    if entity.entity_type().only_op_can_set_nbt && !user_is_operator {
         return Ok(());
     }
 
@@ -182,12 +181,6 @@ pub(crate) fn apply_item_stack_components(
     let borrowed = read_compound(&mut cursor).map_err(|_| EntitySpawnError::InvalidEntityData)?;
     entity.apply_spawn_data((&borrowed).into());
     Ok(())
-}
-
-fn only_op_can_set_custom_data(entity_type: EntityTypeRef) -> bool {
-    entity_type == &vanilla_entities::FALLING_BLOCK
-        || entity_type == &vanilla_entities::COMMAND_BLOCK_MINECART
-        || entity_type == &vanilla_entities::SPAWNER_MINECART
 }
 
 /// Mirrors vanilla `EntityType.spawn` for server-side entity creation.
