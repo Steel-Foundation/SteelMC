@@ -1,8 +1,4 @@
-//! Sign item behavior implementation.
-//!
-//! Places sign blocks and opens the sign editor after placement.
-//! Handles both standing signs (on ground) and wall signs (on walls).
-//!
+//! Hanging sign item behavior implementation.
 //! Wall and standing signs are handled by `StandingAndWallBlockItem`, not here.
 
 use std::sync::Arc;
