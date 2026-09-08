@@ -1,23 +1,13 @@
 //! Mob control state.
 
 use glam::DVec3;
+use steel_math::wrap_degrees;
 
 pub(crate) const DEFAULT_LOOK_Y_MAX_ROT_SPEED: f32 = 10.0;
 pub(crate) const DEFAULT_LOOK_X_MAX_ROT_ANGLE: f32 = 40.0;
 const HEAD_STABLE_ANGLE: f32 = 15.0;
 const DELAY_UNTIL_STARTING_TO_FACE_FORWARD: i32 = 10;
 const HOW_LONG_IT_TAKES_TO_FACE_FORWARD: f32 = 10.0;
-
-fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
-}
 
 pub(crate) fn rotate_towards(from_angle: f32, to_angle: f32, max_rot: f32) -> f32 {
     let diff = wrap_degrees(to_angle - from_angle);
