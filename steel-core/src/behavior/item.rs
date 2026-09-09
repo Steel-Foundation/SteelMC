@@ -225,6 +225,13 @@ pub trait ItemBehavior: Send + Sync {
             .map(|weapon| weapon.item_damage_per_attack)
     }
 
+    /// Whether this item may be stored inside container items such as shulker
+    /// boxes and bundles, which vanilla uses to stop them nesting.
+    #[must_use]
+    fn can_fit_inside_container_items(&self) -> bool {
+        true
+    }
+
     /// Returns this item behavior as a `SpawnEggItem`.
     fn as_spawn_egg(&self) -> Option<&SpawnEggItem> {
         None

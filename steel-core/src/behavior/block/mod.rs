@@ -1225,6 +1225,15 @@ pub trait BlockBehavior: Send + Sync {
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
         None
     }
+
+    /// Whether this block's item may be stored inside container items such as
+    /// shulker boxes and bundles.
+    ///
+    /// Vanilla gates this on the item class, but shulker boxes share
+    /// `BlockItem`, so the rule lives on the block instead.
+    fn fits_inside_container_items(&self) -> bool {
+        true
+    }
 }
 
 mod registry;
