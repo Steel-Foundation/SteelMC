@@ -180,6 +180,12 @@ impl Player {
         self.abilities.lock().clone()
     }
 
+    /// Whether this player's own block-breaking should skip normal item drops
+    /// (creative-mode instant-build).
+    pub fn prevents_block_drops(&self) -> bool {
+        self.abilities.lock().instabuild
+    }
+
     /// Handles the player abilities packet from the client.
     /// This is sent when the player starts or stops flying.
     pub fn handle_player_abilities(&self, packet: SPlayerAbilities) {
