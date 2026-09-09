@@ -19,6 +19,7 @@ use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::feature::FeatureDecorationRunner;
+use crate::worldgen::feature::no_nested_features;
 
 use super::BlockRef;
 
@@ -95,6 +96,7 @@ impl MangrovePropaguleBlock {
             config,
             pos,
             obfuscate_biome_seed(world.seed()),
+            no_nested_features,
         );
 
         if placed {

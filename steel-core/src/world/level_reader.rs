@@ -14,6 +14,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
+use crate::chunk::heightmap::HeightmapType;
 use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::world::game_event::GameEventContext;
 
@@ -71,6 +72,15 @@ pub trait LevelReader {
 
     /// Returns the build height.
     fn height(&self) -> i32;
+
+    /// Returns the vanilla heightmap value at a column.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation keeps no heightmaps"
+    )]
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        self.min_y()
+    }
 
     /// Returns the exclusive maximum build height.
     fn max_y_exclusive(&self) -> i32 {
@@ -154,6 +164,20 @@ pub trait LevelAccessor: ScheduledTickAccess {
 
     /// Destroys a block and optionally drops its resources.
     fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool;
+
+    /// Returns whether this surface accepts writes into the given chunk.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation accepts every chunk"
+    )]
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        true
+    }
+
+    /// Returns whether multi-block placements must be dry-run before committing.
+    fn requires_live_write_preflight(&self) -> bool {
+        false
+    }
 
     /// Plays a block sound when this level surface supports runtime side effects.
     #[expect(
