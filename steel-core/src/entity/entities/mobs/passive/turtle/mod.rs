@@ -41,19 +41,15 @@ use crate::entity::{
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
-/// Baby turtles render and collide at 0.3 of the adult size.
 const BABY_SCALE: f32 = 0.3;
-/// Grown turtles are the size the model was built at.
 const ADULT_SCALE: f32 = 1.0;
-/// Where a passenger sits on a baby turtle, before the baby scaling. Vanilla
-/// moves the point up to the adult's full height and back a quarter of a block,
-/// so a rider sits on the shell rather than sunk into it.
+
+/// Vanilla `Turtle.BABY_DIMENSIONS` passenger point: the adult's full height,
+/// back a quarter block, before baby scaling.
 const TURTLE_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.4, -0.25)];
-/// Vanilla `Turtle.BABY_DIMENSIONS`: the adult size with that passenger point,
-/// which is then scaled down by [`BABY_SCALE`]. The adult figures are repeated
-/// here because the passenger point has to be replaced before the scaling, and
-/// the generated entity type cannot be read while building a constant.
+/// Vanilla `Turtle.BABY_DIMENSIONS`, scaled by [`BABY_SCALE`]. The adult figures
+/// are inlined because a `const` cannot read the generated entity type.
 const TURTLE_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
     1.2,
     0.4,
@@ -61,59 +57,37 @@ const TURTLE_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_atta
     EntityAttachments::new(&TURTLE_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
 );
 const DEFAULT_STEP_HEIGHT: f32 = 1.0;
-/// Vanilla `Turtle.aiStep`: while laying, kick up sand particles every fifth tick.
+/// Vanilla `Turtle.aiStep`: sand particles every 5th tick while laying.
 const LAYING_EGG_EMIT_INTERVAL: i32 = 5;
 
-/// How hard a turtle pushes itself along while swimming. Vanilla gives the
-/// turtle its own water travel rather than the shared one, so this replaces the
-/// usual movement-speed-derived push.
+// Vanilla `Turtle.travelInWater` swim physics.
 const SWIM_PUSH: f32 = 0.1;
-/// Share of its speed a swimming turtle keeps each tick, on every axis.
 const SWIM_DRAG: f64 = 0.9;
-/// How fast a turtle drifts down while swimming with nowhere to be. It only
-/// sinks when it has no target and is not near home, so a turtle heading for its
-/// beach keeps its depth.
 const SWIM_SINK_SPEED: f64 = 0.005;
-/// How close to home a turtle counts as "arrived" for the sinking drift.
 const SWIM_SINK_HOME_DISTANCE: f64 = 20.0;
-/// Lift a swimming turtle gains each tick, which keeps it off the sea floor.
 const SWIM_LIFT: f64 = 0.005;
-/// Distance from home past which a swimming turtle takes it slower.
 const FAR_FROM_HOME_DISTANCE: f64 = 16.0;
-/// How much a turtle is slowed while swimming far from home.
 const FAR_FROM_HOME_SPEED_DIVISOR: f32 = 2.0;
-/// Slowest a turtle swims while far from home.
 const FAR_FROM_HOME_MIN_SPEED: f32 = 0.08;
-/// How much slower a baby turtle swims than an adult.
 const BABY_SWIM_SPEED_DIVISOR: f32 = 3.0;
-/// Slowest a baby turtle swims.
 const BABY_MIN_SWIM_SPEED: f32 = 0.06;
-/// How much a turtle is slowed while walking on land, which is why turtles crawl
-/// ashore rather than stroll.
+
+// Vanilla `TurtleMoveControl` land and steering speed.
 const LAND_SPEED_DIVISOR: f32 = 2.0;
-/// Slowest a turtle walks on land.
 const LAND_MIN_SPEED: f32 = 0.06;
-/// Share of the gap to its target speed a turtle closes each tick, so it eases
-/// up to speed instead of starting at it.
 const SPEED_LERP: f32 = 0.125;
-/// How much of a turtle's speed goes into climbing or diving toward its target.
 const CLIMB_SPEED_SHARE: f64 = 0.1;
-/// Distance below which a turtle treats itself as having arrived.
 const ARRIVED_DISTANCE: f64 = 1.0e-5;
 
-/// How far a turtle travels between step sounds. Shorter than the usual one
-/// block, so a turtle shuffles rather than plodding.
+/// Vanilla `Turtle.nextStep`: shorter than the usual one-block stride.
 const NEXT_STEP_DISTANCE: f32 = 0.15;
-/// How much louder a turtle's swimming is than other entities'.
+/// Vanilla `Turtle.playSwimSound` volume multiplier.
 const SWIM_SOUND_VOLUME_SCALE: f32 = 1.5;
-/// Ticks between idle turtle noises, so 10 seconds. Quieter than most mobs,
-/// which idle every 6 seconds.
+/// Vanilla `Turtle.getAmbientSoundInterval`: 10 seconds.
 const AMBIENT_SOUND_INTERVAL: i32 = 200;
-/// Vanilla `Turtle.checkTurtleSpawnRules`: how far above the water line a turtle
-/// will still spawn, so they appear on the beach rather than inland.
+/// Vanilla `Turtle.checkTurtleSpawnRules`: max height above sea level.
 const SPAWN_HEIGHT_ABOVE_SEA_LEVEL: i32 = 4;
-/// Score a turtle gives ground it would rather walk to. Anything it likes gets
-/// the same top score, so water and sand are equally attractive.
+/// Vanilla `Turtle.getWalkTargetValue`: score for preferred ground.
 const PREFERRED_WALK_TARGET_VALUE: f32 = 10.0;
 
 #[entity_behavior(class = "Turtle")]
@@ -126,17 +100,13 @@ pub struct TurtleEntity {
     ageable_base: AgeableMobBase,
     animal_base: AnimalBase,
     entity_data: SyncMutex<TurtleEntityData>,
-    /// Home beach this turtle returns to in order to lay eggs. Distinct from the
-    /// shared mob home restriction, matching vanilla's own `homePos` field.
+    /// Home beach, vanilla's `homePos` (separate from the shared mob home).
     home_pos: SyncMutex<BlockPos>,
-    /// Whether the go-home goal is currently steering this turtle. Transient,
-    /// not persisted, matching vanilla's `goingHome`.
+    /// Vanilla `goingHome`, transient.
     going_home: SyncMutex<bool>,
-    /// The far-water target chosen by the travel goal, if any. Transient,
-    /// matching vanilla's nullable `travelPos`.
+    /// Vanilla `travelPos`, transient.
     travel_pos: SyncMutex<Option<BlockPos>>,
-    /// Counts up while an egg is being laid so laying finishes after a delay.
-    /// Transient, matching vanilla's `layEggCounter`.
+    /// Vanilla `layEggCounter`, transient.
     lay_egg_counter: SyncMutex<i32>,
 }
 
@@ -214,18 +184,13 @@ impl TurtleEntity {
         }
     }
 
-    /// Applies the turtle-specific vanilla pathfinding malus overrides: water is
-    /// free to path through and doors are impassable.
+    /// Water is free to path through, doors are impassable.
     // TODO(amphibious-navigation): vanilla turtles path with a dedicated
-    // AmphibiousPathNavigation. Steel has no amphibious navigator yet, so a zero
-    // WATER malus on the default navigation is an approximation. Swap to a real
-    // one once it lands; frogs, axolotls, and dolphins will want it too. The
-    // matching move control and water travel are ported, in
-    // `TurtleEntity::trim_turtle_speed` and `Mob::tick_move_control` /
-    // `LivingEntity::travel_in_water` on this entity. Still missing with it is
-    // the turtle's own `isStableDestination`: while it has a travel target the
-    // destination has to be water, and otherwise the block below it must not be
-    // air.
+    // AmphibiousPathNavigation. Steel has none yet, so a zero WATER malus on the
+    // default navigation approximates it; frogs, axolotls and dolphins will want
+    // the real thing. The move control and water travel are ported (see
+    // `trim_turtle_speed` and `tick_move_control` / `travel_in_water`); still
+    // missing is the turtle's `isStableDestination` check.
     fn initialize_turtle_pathfinding_malus(mob_base: &MobBase) {
         let mut malus = mob_base.pathfinding_malus().lock();
         malus.set(PathType::Water, 0.0);
@@ -234,7 +199,7 @@ impl TurtleEntity {
         malus.set(PathType::DoorOpen, -1.0);
     }
 
-    /// Returns whether this turtle is carrying an egg to lay.
+    /// Whether this turtle is carrying an egg to lay.
     #[must_use]
     pub fn has_egg(&self) -> bool {
         *self.entity_data.lock().has_egg.get()
@@ -244,64 +209,57 @@ impl TurtleEntity {
         self.entity_data.lock().has_egg.set(has_egg);
     }
 
-    /// Returns whether this turtle is in the middle of laying its egg.
+    /// Whether this turtle is in the middle of laying its egg.
     #[must_use]
     pub fn is_laying_egg(&self) -> bool {
         *self.entity_data.lock().laying_egg.get()
     }
 
-    /// Starts or stops the egg-laying animation, resetting the lay counter to
-    /// match vanilla's `setLayingEgg`.
+    /// Vanilla `setLayingEgg`, which also resets the lay counter.
     pub(crate) fn set_laying_egg(&self, laying: bool) {
         *self.lay_egg_counter.lock() = i32::from(laying);
         self.entity_data.lock().laying_egg.set(laying);
     }
 
-    /// Returns how many ticks the current egg-laying has been running.
     #[must_use]
     pub(crate) fn lay_egg_counter(&self) -> i32 {
         *self.lay_egg_counter.lock()
     }
 
-    /// Advances the egg-laying counter by one tick.
     pub(crate) fn increment_lay_egg_counter(&self) {
         *self.lay_egg_counter.lock() += 1;
     }
 
-    /// Returns whether the go-home goal is currently steering this turtle.
     #[must_use]
     pub(crate) fn going_home(&self) -> bool {
         *self.going_home.lock()
     }
 
-    /// Records whether the go-home goal is currently steering this turtle.
     pub(crate) fn set_going_home(&self, going_home: bool) {
         *self.going_home.lock() = going_home;
     }
 
-    /// Returns the travel goal's current far-water target, if any.
     #[must_use]
     pub(crate) fn travel_pos(&self) -> Option<BlockPos> {
         *self.travel_pos.lock()
     }
 
-    /// Records the travel goal's far-water target.
     pub(crate) fn set_travel_pos(&self, pos: Option<BlockPos>) {
         *self.travel_pos.lock() = pos;
     }
 
-    /// Returns this turtle's home beach position.
+    /// This turtle's home beach.
     #[must_use]
     pub fn home_pos(&self) -> BlockPos {
         *self.home_pos.lock()
     }
 
-    /// Records the home beach this turtle returns to in order to lay eggs.
+    /// Records this turtle's home beach.
     pub fn set_home_pos(&self, pos: BlockPos) {
         *self.home_pos.lock() = pos;
     }
 
-    /// Returns whether an item stack matches the vanilla turtle food tag (seagrass).
+    /// Whether an item stack is turtle food (`#turtle_food`, seagrass).
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
@@ -309,9 +267,8 @@ impl TurtleEntity {
             .is_in_tag(item_stack.item(), &ItemTag::TURTLE_FOOD)
     }
 
-    /// Vanilla `Turtle.ageBoundaryReached`: a turtle that grows into an adult
-    /// sheds a scute, rolled from the turtle grow gift loot table, when the
-    /// `mobDrops` game rule is enabled.
+    /// Vanilla `Turtle.ageBoundaryReached`: drop a scute on growing up, gated on
+    /// `mobDrops`.
     fn drop_turtle_scute(&self) {
         let Some(world) = self.level() else {
             return;
@@ -329,9 +286,8 @@ impl TurtleEntity {
         }
     }
 
-    /// Vanilla `TurtleMoveControl.updateSpeed`: trims the speed a turtle carries
-    /// into this tick and floats it while it swims. Runs before the per-tick
-    /// steering, so the eased speed builds back up from the trimmed value.
+    /// Vanilla `TurtleMoveControl.updateSpeed`: trim carried speed, float while
+    /// swimming. Runs before the steering, which then eases back up from it.
     fn trim_turtle_speed(&self) {
         if self.is_in_water() {
             let mut velocity = self.velocity();
@@ -353,8 +309,7 @@ impl TurtleEntity {
         }
     }
 
-    /// Emits the vanilla sand-kicking particles and game event every five ticks
-    /// while an egg is being laid, matching `Turtle.aiStep`.
+    /// Vanilla `Turtle.aiStep`: sand particles and a game event while laying.
     fn tick_laying_egg(&self) {
         if !LivingEntity::is_alive(self)
             || !self.is_laying_egg()

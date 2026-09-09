@@ -1,20 +1,10 @@
-//! Bespoke turtle AI goals.
+//! Bespoke turtle AI goals, porting the private goal classes nested in vanilla
+//! 26.2 `Turtle`. They read turtle state the shared goals cannot express, and are
+//! grouped by theme: [`breeding`], [`water`], and [`land`].
 //!
-//! These port the private goal classes nested inside vanilla 26.2 `Turtle`. They
-//! read turtle-specific state (`has_egg`, `going_home`, `travel_pos`, the home
-//! beach, and the lay-egg counter) that the shared goals cannot express, so they
-//! live alongside the entity rather than in the generic goal module. The goals are
-//! grouped by theme: [`breeding`] (breed and lay egg), [`water`] (panic, go to
-//! water, travel), and [`land`] (go home, stroll).
-//!
-//! One vanilla mechanism is approximated because Steel has no equivalent yet,
-//! and it is called out in the pull request for review:
-//!
-//! * TODO(amphibious-navigation): vanilla turtles swim with an
-//!   `AmphibiousPathNavigation`. Steel has no amphibious navigator, so the turtle
-//!   uses the default navigation together with a `WATER` pathfinding malus of
-//!   `0.0`. Water motion is therefore not pixel-perfect until the shared
-//!   navigator lands.
+//! TODO(amphibious-navigation): vanilla turtles swim with an
+//! `AmphibiousPathNavigation`. Steel has none, so the turtle uses the default
+//! navigation with a `0.0` `WATER` malus until the shared navigator lands.
 
 mod breeding;
 mod land;
@@ -30,15 +20,13 @@ pub(super) use breeding::{TurtleBreedGoal, TurtleLayEggGoal};
 pub(super) use land::{TurtleGoHomeGoal, TurtleRandomStrollGoal};
 pub(super) use water::{TurtleGoToWaterGoal, TurtlePanicGoal, TurtleTravelGoal};
 
-/// Horizontal and vertical radius for the primary `DefaultRandomPos.getPosTowards`
-/// attempt the go-home and travel goals use to steer toward their target.
+// Vanilla `DefaultRandomPos.getPosTowards` radii for the go-home and travel
+// goals: a primary attempt, then a wider fallback.
 pub(super) const TOWARD_TARGET_H: i32 = 16;
 pub(super) const TOWARD_TARGET_V: i32 = 3;
-/// Radii for the wider fallback attempt when the primary one finds nothing.
 pub(super) const TOWARD_TARGET_FALLBACK_H: i32 = 8;
 pub(super) const TOWARD_TARGET_FALLBACK_V: i32 = 7;
 
-/// Returns the concrete turtle behind a pathfinder mob, if this mob is a turtle.
 fn as_turtle(mob: &dyn PathfinderMob) -> Option<&TurtleEntity> {
     mob.downcast_ref::<TurtleEntity>()
 }
