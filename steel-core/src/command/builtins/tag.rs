@@ -6,7 +6,7 @@ use steel_utils::{Identifier, translations};
 use text_components::{Modifier, TextComponent};
 
 use super::super::{
-    brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
+    brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
         CommandSource, SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument,
         literal,
@@ -22,10 +22,10 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tag").then(
         argument("targets", SteelArgumentType::entities())
             .then(literal("add").then(
-                argument("name", ArgumentType::word()).executes(add_tag),
+                argument("name", SteelArgumentType::word()).executes(add_tag),
             ))
             .then(literal("remove").then(
-                argument("name", ArgumentType::word()).executes(remove_tag),
+                argument("name", SteelArgumentType::entity_tag()).executes(remove_tag),
             ))
             .then(literal("list").executes(list_tags)),
     )

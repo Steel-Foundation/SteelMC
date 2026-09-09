@@ -28,7 +28,7 @@ use crate::{
     world::World,
 };
 
-use super::{CommandExecutionContext, GameProfileArgument};
+use super::{CommandExecutionContext, GameProfileArgument, selector::EntitySelector};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -116,6 +116,10 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     }
 
     fn group_permission_metadata_suggestions(&self, _group: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn entity_tag_suggestions(&self, _targets: &EntitySelector) -> Vec<String> {
         Vec::new()
     }
 
@@ -548,6 +552,17 @@ impl ExecutionCommandSource for CommandSource {
 }
 
 impl CommandArgumentSource for CommandSource {
+    fn entity_tag_suggestions(&self, targets: &EntitySelector) -> Vec<String> {
+        targets
+            .find_entities(self)
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|entity| entity.tags())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         self.world.dimension_type.default_clock
     }
