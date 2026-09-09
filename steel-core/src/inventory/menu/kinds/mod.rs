@@ -7,6 +7,7 @@ mod crafting_menu;
 mod ender_chest_menu;
 mod furnace_menu;
 mod inventory_menu;
+mod shulker_box_menu;
 
 pub use anvil_menu::{AnvilKind, anvil};
 pub use basic_menu::BasicKind;
@@ -15,3 +16,4 @@ pub use crafting_menu::{CraftingKind, crafting};
 pub use ender_chest_menu::{EnderChestKind, ender_chest};
 pub use furnace_menu::{FurnaceMenuKind, furnace_menu};
 pub use inventory_menu::{INVENTORY_MENU_CONTAINER_ID, InventoryKind, inventory_menu};
+pub use shulker_box_menu::{ShulkerBoxKind, shulker_box};
