@@ -6,14 +6,10 @@ use steel_utils::{Identifier, translations};
 use text_components::{Modifier, TextComponent};
 
 use super::super::{
-    brigadier::{
-        ArgumentSuggestionContext, ArgumentType, CommandNodeBuilder, CommandSyntaxError,
-        SuggestionsBuilder,
-    },
+    brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        argument, argument_with_suggestions, literal, parse_entity_selector_text,
-        CommandSource, SteelArgumentType, SteelArgumentValue, SteelCommandContext,
-        SteelCommandRuntime,
+        CommandSource, SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument,
+        literal,
     },
     registration::CommandRegistration,
 };
@@ -26,58 +22,12 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tag").then(
         argument("targets", SteelArgumentType::entities())
             .then(literal("add").then(
-                argument_with_tag_suggestions().executes(add_tag),
+                argument("name", ArgumentType::word()).executes(add_tag),
             ))
             .then(literal("remove").then(
-                argument_with_tag_suggestions().executes(remove_tag),
+                argument("name", ArgumentType::word()).executes(remove_tag),
             ))
             .then(literal("list").executes(list_tags)),
-    )
-}
-
-fn argument_with_tag_suggestions() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    argument_with_suggestions(
-        "name",
-        ArgumentType::word(),
-        |context: &ArgumentSuggestionContext<'_, CommandSource, SteelArgumentValue>,
-         builder: &mut SuggestionsBuilder<'_>| {
-            let input = builder.input();
-
-            let Some(rest) = input.strip_prefix("tag ") else {
-                return;
-            };
-
-            let target_end = rest
-                .rfind(" add ")
-                .or_else(|| rest.rfind(" remove "));
-
-            let Some(target_end) = target_end else {
-                return;
-            };
-
-            let target_text = &rest[..target_end];
-
-            let Ok(selector) = parse_entity_selector_text(target_text) else {
-                return;
-            };
-
-            let Ok(targets) = selector.find_entities(context.source()) else {
-                return;
-            };
-
-            let prefix = builder.remaining_lowercase().to_owned();
-
-            let tags = targets
-                .iter()
-                .flat_map(|target| target.tags())
-                .collect::<BTreeSet<_>>();
-
-            for tag in tags {
-                if tag.to_lowercase().starts_with(&prefix) {
-                    builder.suggest(tag);
-                }
-            }
-        },
     )
 }
 
@@ -87,10 +37,9 @@ fn add_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandS
 
     let changed = targets
         .iter()
-        .filter(|target| target.add_tag(tag.to_owned()))
-        .count();
+        .any(|target| target.add_tag(tag.to_owned()));
 
-    if changed == 0 {
+    if !changed {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
             &translations::COMMANDS_TAG_ADD_FAILED,
         )));
@@ -114,7 +63,7 @@ fn add_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandS
 
     context.source().send_success(&message, true);
 
-    Ok(changed.min(i32::MAX as usize) as i32)
+    Ok(i32::from(changed))
 }
 
 fn remove_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
@@ -123,10 +72,9 @@ fn remove_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
 
     let changed = targets
         .iter()
-        .filter(|target| target.remove_tag(tag))
-        .count();
+        .any(|target| target.remove_tag(tag));
 
-    if changed == 0 {
+    if !changed {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
             &translations::COMMANDS_TAG_REMOVE_FAILED,
         )));
@@ -150,7 +98,7 @@ fn remove_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
 
     context.source().send_success(&message, true);
 
-    Ok(changed.min(i32::MAX as usize) as i32)
+    Ok(i32::from(changed))
 }
 
 fn list_tags(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
@@ -203,12 +151,7 @@ fn list_tags(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
         .message([
             TextComponent::plain(targets.len().to_string()),
             TextComponent::plain(tag_count.to_string()),
-            format_tag_list(
-                &all_tags
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            ),
+            format_tag_list(&all_tags.iter().cloned().collect::<Vec<_>>()),
         ])
         .component();
 
