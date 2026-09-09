@@ -800,10 +800,18 @@ impl JavaTcpClient {
     /// Kick + close when `process_packet` returns `PacketError` (bad decode / unexpected id).
     pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
         log::warn!("Failed to get packet from client {}: {error}", self.id);
-        self.kick(TextComponent::translated(
-            translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
-        ))
-        .await;
+        let reason =
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg());
+        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+            .await
+            .is_err()
+        {
+            log::debug!(
+                "Best-effort invalid-packet disconnect write for client {} timed out",
+                self.id
+            );
+            self.close();
+        }
     }
 
     /// Kicks the client with a given reason.
