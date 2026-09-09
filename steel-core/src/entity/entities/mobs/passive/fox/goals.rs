@@ -6,15 +6,14 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_math::{RAD_TO_DEG_F64, rot_lerp};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::{sound_events, vanilla_attributes, vanilla_blocks, vanilla_entities};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, Downcast as _};
 
 use super::FoxEntity;
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, MeleeAttackGoal,
-    PanicGoal, reduced_tick_delay,
+    NearestAttackableTargetGoal, PanicGoal, reduced_tick_delay,
 };
-use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
@@ -50,9 +49,13 @@ const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 const STALK_CROUCH_DISTANCE_SQ: f64 = 36.0;
 const STALK_SPEED: f64 = 1.5;
 
-/// How often, in ticks, a fox checks whether to defend a trusted entity (vanilla
-/// passes 10 to the underlying `NearestAttackableTargetGoal`).
-const DEFEND_RANDOM_INTERVAL: i32 = reduced_tick_delay(10);
+/// Vanilla `Fox` passes 10 to the defend goal's `NearestAttackableTargetGoal`
+/// base, which halves it, so the fox checks about every five ticks.
+const DEFEND_TARGET_INTERVAL: i32 = 10;
+/// Vanilla `Fox.TRUSTED_TARGET_SELECTOR` recency window: the attacker must have
+/// struck something within this many ticks, so the fox answers a live threat and
+/// not an old one.
+const DEFEND_ATTACKER_GRUDGE_TICKS: i32 = 600;
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
@@ -756,7 +759,7 @@ pub(crate) struct FoxMeleeAttackGoal {
 }
 
 impl FoxMeleeAttackGoal {
-    pub(crate) fn new(speed_modifier: f64) -> Self {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
         Self {
             inner: MeleeAttackGoal::new(speed_modifier, true)
                 .with_attack_sound(&sound_events::ENTITY_FOX_BITE),
@@ -800,21 +803,35 @@ impl Goal for FoxMeleeAttackGoal {
     }
 }
 
-/// Vanilla `Fox.DefendTrustedTargetGoal`: when whatever last hurt a trusted
-/// entity is not itself trusted, the fox turns to fight it.
+/// Vanilla `Fox.TRUSTED_TARGET_SELECTOR`: only an entity that has itself struck
+/// something recently is worth turning on to defend a trusted friend.
+fn recently_aggressive(attacker: &dyn LivingEntity) -> bool {
+    attacker.last_hurt_mob().is_some()
+        && attacker.last_hurt_mob_timestamp() < attacker.tick_count() + DEFEND_ATTACKER_GRUDGE_TICKS
+}
+
+/// Vanilla `Fox.DefendTrustedTargetGoal`: when something the fox does not trust
+/// hurts a trusted entity, the fox turns to fight it. Vanilla subclasses
+/// `NearestAttackableTargetGoal` for the shared target checks and bookkeeping,
+/// then picks the target itself instead of scanning, so this composes that goal.
 pub(crate) struct DefendTrustedTargetGoal {
-    /// The trusted entity's last-hurt-by-mob timestamp this goal last acted on,
-    /// so the same hurt event does not retrigger it every tick.
+    inner: NearestAttackableTargetGoal,
+    /// The trusted entity's last-hurt-by timestamp this goal last acted on, so
+    /// one hurt event does not retrigger it every tick.
     timestamp: i32,
-    pending_attacker: Option<SharedEntity>,
     pending_timestamp: i32,
 }
 
 impl DefendTrustedTargetGoal {
-    pub(crate) const fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
+            inner: NearestAttackableTargetGoal::new_with_interval(
+                DEFEND_TARGET_INTERVAL,
+                false,
+                false,
+                |attacker, _| recently_aggressive(attacker),
+            ),
             timestamp: 0,
-            pending_attacker: None,
             pending_timestamp: 0,
         }
     }
@@ -822,29 +839,30 @@ impl DefendTrustedTargetGoal {
 
 impl Goal for DefendTrustedTargetGoal {
     fn controls(&self) -> GoalControls {
-        GoalControls::TARGET
+        self.inner.controls()
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
         let Some(fox) = as_fox(mob) else {
             return false;
         };
-        if DEFEND_RANDOM_INTERVAL > 0 && rand::random_range(0..DEFEND_RANDOM_INTERVAL) != 0 {
+        let interval = self.inner.random_interval();
+        if interval > 0 && rand::random_range(0..interval) != 0 {
             return false;
         }
         let Some(world) = mob.level() else {
             return false;
         };
 
-        // Vanilla only inspects the first trusted id that resolves to a living entity.
-        let Some(trusted_entity) = fox
+        // Vanilla acts on the first trusted id that resolves to a living entity.
+        let Some(trusted) = fox
             .trusted_ids()
             .into_iter()
             .find_map(|uuid| world.get_entity_by_uuid(&uuid))
         else {
             return false;
         };
-        let Some(trusted_living) = trusted_entity.as_living_entity() else {
+        let Some(trusted_living) = trusted.as_living_entity() else {
             return false;
         };
 
@@ -855,50 +873,35 @@ impl Goal for DefendTrustedTargetGoal {
         let Some(attacker) = trusted_living.last_hurt_by_mob() else {
             return false;
         };
-        let Some(attacker_living) = attacker.as_living_entity() else {
+        if fox.trusts(attacker.uuid()) {
             return false;
-        };
-        if !attacker.is_alive() || fox.trusts(attacker.uuid()) {
+        }
+        if !self.inner.can_attack(mob, attacker.as_living_entity()) {
             return false;
         }
 
-        let follow_range = mob
-            .attributes()
-            .lock()
-            .required_value(vanilla_attributes::FOLLOW_RANGE);
-        let targeting = TargetingConditions::for_combat().range(follow_range);
-        if !targeting.test(
-            world.as_ref(),
-            Some(fox as &dyn LivingEntity),
-            attacker_living,
-        ) {
-            return false;
-        }
-
+        self.inner.set_target(Some(attacker));
         self.pending_timestamp = timestamp;
-        self.pending_attacker = Some(attacker);
         true
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(fox) = as_fox(mob) else {
-            return false;
-        };
-        Mob::target(fox).is_some_and(|target| target.is_alive() && !fox.trusts(target.uuid()))
+        self.inner.can_continue_to_use(mob)
     }
 
     fn start(&mut self, mob: &dyn PathfinderMob) {
         let Some(fox) = as_fox(mob) else {
             return;
         };
-        let Some(attacker) = self.pending_attacker.take() else {
-            return;
-        };
         self.timestamp = self.pending_timestamp;
-        let _ = Mob::set_target(fox, Some(&attacker));
         fox.play_sound(&sound_events::ENTITY_FOX_AGGRO, 1.0, 1.0);
         fox.set_defending(true);
         fox.set_sleeping(false);
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
     }
 }
 

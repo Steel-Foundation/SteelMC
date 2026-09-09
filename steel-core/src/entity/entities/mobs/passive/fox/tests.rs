@@ -735,6 +735,12 @@ fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
     // handled" timestamp; advance it so the hurt event actually looks new.
     trusted.base().advance_tick_count();
     LivingEntity::set_last_hurt_by_mob(trusted.as_ref(), Some(&attacker));
+    // Vanilla's TRUSTED_TARGET_SELECTOR only defends against an attacker that has
+    // itself struck something recently; hitting the trusted pig is that strike.
+    attacker
+        .as_living_entity()
+        .expect("a pig is a living entity")
+        .set_last_hurt_mob(Some(&(Arc::clone(&trusted) as SharedEntity)));
 
     // can_use rolls a random interval each call (vanilla's randomInterval gate),
     // so retry a bounded number of times rather than depend on a single roll.
@@ -753,9 +759,11 @@ fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
 }
 
 /// Pins the fox's goal priorities against vanilla `Fox.registerGoals`. The list
-/// is short of vanilla's because several goals wait on mobs and systems that are
-/// not in the tree yet; each of those is a TODO at the priority it belongs at,
-/// so a goal appearing here is a goal that is actually wired up.
+/// is short of vanilla's for two reasons: some goals wait on mobs and systems
+/// not in the tree yet (a TODO at the priority each belongs at), and this branch
+/// carries only the goals its own PR adds, so goals from sibling fox PRs (the
+/// faceplant at 1, avoid-player at 4, seek-shelter at 6) are not registered here.
+/// Whichever fox PR lands last brings the list up to full.
 #[test]
 fn fox_registers_its_goals_at_the_vanilla_priorities() {
     init_vanilla_registry();
