@@ -1,10 +1,10 @@
 //! Bespoke fox behaviour goals.
 
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::TAU;
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_math::wrap_degrees;
+use steel_math::{RAD_TO_DEG_F64, rot_lerp};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, Downcast as _};
@@ -486,13 +486,8 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// Vanilla `Mth.rotLerp`: eases `from` toward `to` by `delta`, wrapping the angle.
-fn rot_lerp(delta: f32, from: f32, to: f32) -> f32 {
-    from + delta * wrap_degrees(to - from)
-}
-
-/// Vanilla `Fox.isPathClear`: whether the space between the fox and its target, at
-/// head height and above, is all replaceable, so a pounce arc is unobstructed.
+/// Whether the space between the fox and its target is clear enough to pounce
+/// through.
 fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
     let Some(world) = mob.level() else {
         return false;
@@ -521,8 +516,8 @@ fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
     true
 }
 
-/// Vanilla `Fox.FoxPounceGoal`: a fully-crouched fox with a clear line to its target
-/// leaps at it, striking on contact or faceplanting into snow on a hard miss.
+/// A fully-crouched fox with a clear line to its target leaps at it, striking on
+/// contact or faceplanting into snow on a hard miss.
 pub(crate) struct FoxPounceGoal;
 
 impl Goal for FoxPounceGoal {
@@ -544,13 +539,8 @@ impl Goal for FoxPounceGoal {
         let Some(target) = Mob::target(fox).filter(|target| target.is_alive()) else {
             return false;
         };
-        // Vanilla also skips when the target's motion direction differs from its
-        // facing, but getMotionDirection equals getDirection for the fox's prey, so
-        // that guard never fires and is dropped.
         let has_clear_path = is_path_clear(mob, &target);
         if !has_clear_path {
-            // Vanilla nudges the navigation toward the target here; the fox just
-            // stands down from the pounce and leaves the approach to other goals.
             fox.set_crouching(false);
             fox.set_interested(false);
         }
@@ -638,7 +628,7 @@ impl Goal for FoxPounceGoal {
                 let biased_y = movement.y * upward_bias;
                 let len = horizontal.hypot(biased_y);
                 if len > POUNCE_TILT_EPSILON {
-                    let tilt = (-biased_y).signum() * (horizontal / len).acos() * 180.0 / PI;
+                    let tilt = (-biased_y).signum() * (horizontal / len).acos() * RAD_TO_DEG_F64;
                     mob.set_rotation((yaw, tilt as f32));
                 }
             }
@@ -664,18 +654,5 @@ impl Goal for FoxPounceGoal {
             Mob::set_target(fox, None);
             fox.set_faceplanted(true);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::rot_lerp;
-
-    #[test]
-    fn rot_lerp_eases_toward_the_target_angle() {
-        // Eases 10 degrees toward 0 by 0.2, landing at 8.
-        assert!((rot_lerp(0.2, 10.0, 0.0) - 8.0).abs() < 1.0e-4);
-        // Takes the short way across the -180/180 seam: 170 toward -170 is +20.
-        assert!((rot_lerp(0.5, 170.0, -170.0) - 180.0).abs() < 1.0e-4);
     }
 }

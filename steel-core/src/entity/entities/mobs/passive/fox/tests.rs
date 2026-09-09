@@ -346,7 +346,6 @@ fn fox_kit_inherits_a_parent_variant() {
 
 #[test]
 fn fox_pounce_goal_commits_once_it_starts() {
-    // A fox in mid-air cannot be bumped off its pounce by a higher-priority goal.
     let goal = FoxPounceGoal;
     assert!(!Goal::is_interruptable(&goal));
 }
