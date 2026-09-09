@@ -163,7 +163,7 @@ pub trait ItemBehavior: Send + Sync {
         false
     }
 
-    /// Returns vanilla `Item.useOnRelease`.
+    /// Returns whether the item acts when the use key is released, rather than the use timer expiring
     fn use_on_release(&self, _stack: &ItemStack) -> bool {
         false
     }
@@ -337,7 +337,7 @@ pub(crate) fn finish_consuming_stack(
 /// had a `use_remainder` and was actually consumed, either swap the fully
 /// emptied stack for the remainder, or — for a stack that still has items
 /// left (e.g. one honey bottle out of several)
-fn apply_use_remainder(
+pub(crate) fn apply_use_remainder(
     original_stack: &ItemStack,
     used_stack: ItemStack,
     user: &dyn LivingEntity,

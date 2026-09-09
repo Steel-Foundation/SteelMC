@@ -92,6 +92,7 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::{
     BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, ItemBehavior,
+    apply_use_remainder,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -99,8 +100,8 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMoveError,
-    EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
+    EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
     LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
     apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
@@ -344,7 +345,7 @@ impl Player {
         let item = {
             let inventory = self.inventory.lock();
             let item = inventory.get_item_in_hand(hand);
-            item.copy_with_count(item.count())
+            item.clone()
         };
         let duration = ITEM_BEHAVIORS
             .get_behavior(item.item())
@@ -381,13 +382,14 @@ impl Player {
             return;
         };
         let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
-        self.release_using_item_with_behavior(behavior);
+        self.release_using_item_with_behavior(behavior, active);
     }
 
-    fn release_using_item_with_behavior(&self, behavior: &dyn ItemBehavior) {
-        let Some(active) = self.living_base.active_item_use() else {
-            return;
-        };
+    fn release_using_item_with_behavior(
+        &self,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
@@ -403,19 +405,21 @@ impl Player {
         let mut item = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);
-            current.copy_with_count(current.count())
+            current.clone()
         };
-        let stack_before_using = item.copy_with_count(item.count());
+        let stack_before_using = item.clone();
         let world = self.get_world();
-        let apply_use_cooldown =
+        let apply_side_effects =
             behavior.release_using(&mut item, &world, self, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
-        if apply_use_cooldown {
+        if apply_side_effects {
+            item = apply_use_remainder(&stack_before_using, item, self);
             self.apply_item_use_cooldown(&stack_before_using);
         }
         self.inventory.lock().set_item_in_hand(hand, item);
-        if use_on_release {
-            self.tick_active_item_use_with_behavior(behavior);
+        // we re-read active here since behavior.release_using might have already ended the use
+        if use_on_release && let Some(active) = self.living_base.active_item_use() {
+            self.tick_active_item_use_with_behavior(behavior, active);
         }
         self.stop_using_item();
     }
@@ -425,13 +429,14 @@ impl Player {
             return;
         };
         let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
-        self.tick_active_item_use_with_behavior(behavior);
+        self.tick_active_item_use_with_behavior(behavior, active);
     }
 
-    fn tick_active_item_use_with_behavior(&self, behavior: &dyn ItemBehavior) {
-        let Some(active) = self.living_base.active_item_use() else {
-            return;
-        };
+    fn tick_active_item_use_with_behavior(
+        &self,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
@@ -444,7 +449,7 @@ impl Player {
         let mut item = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);
-            current.copy_with_count(current.count())
+            current.clone()
         };
         let world = self.get_world();
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
@@ -458,8 +463,8 @@ impl Player {
             return;
         };
         let use_on_release = behavior.use_on_release(&item);
-        if active.remaining_ticks() == 0 && !use_on_release {
-            let stack_before_finish = item.copy_with_count(item.count());
+        if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
+            let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, self);
             self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
@@ -1927,7 +1932,7 @@ impl LivingEntity for Player {
         let item_stack = {
             let inventory = player.inventory.lock();
             let item_stack = inventory.get_item_in_hand(hand);
-            item_stack.copy_with_count(item_stack.count())
+            item_stack.clone()
         };
         let Some(equippable) = item_stack.get_equippable() else {
             return InteractionResult::Pass;
