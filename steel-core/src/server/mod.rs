@@ -14,7 +14,7 @@ mod world_tick_workers;
 /// Domain-aware loaded world map.
 pub mod worlds;
 
-use crate::bootstrap::init_globals_once;
+use crate::bootstrap::init_globals;
 use crate::chunk::{
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
     status::ChunkStatus,
@@ -550,7 +550,7 @@ impl Server {
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
-        init_globals_once();
+        init_globals();
         log::info!(
             "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
         );

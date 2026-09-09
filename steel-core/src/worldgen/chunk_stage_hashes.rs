@@ -1075,11 +1075,11 @@ fn propagate_light_for_positions(
     reason = "large test with many hash assertions"
 )]
 fn chunk_stage_hashes_inner() {
-    use crate::bootstrap::init_globals_once;
+    use crate::bootstrap::init_globals;
     use crate::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_worldgen::biomes::BiomeSourceKind;
 
-    init_globals_once();
+    init_globals();
 
     let expected = load_expected_hashes();
     let seed = expected.seed;

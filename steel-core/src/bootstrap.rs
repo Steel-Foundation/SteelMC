@@ -19,7 +19,7 @@ fn fill_behavior_registries() {
 /// Initializes the vanilla registry and the behavior registries.
 ///
 /// Idempotent, so an embedder loading several worlds in one process bootstraps once.
-pub fn init_globals_once() {
+pub fn init_globals() {
     static INIT: Once = Once::new();
 
     INIT.call_once(|| {
