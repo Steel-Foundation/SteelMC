@@ -22,7 +22,7 @@ impl ItemBehavior for FishingRodItem {
         let world = context.world;
         let item = context.inv.with_item(|item| item.clone());
 
-        let pitch = 0.4 / (rng().random::<f32>() * 0.4 + 0.8);
+        let pitch = 0.4 / rng().random_range(0.8..1.2);
 
         if let Some(fishing) = player.fishing_hook() {
             if item.is(&vanilla_items::FISHING_ROD) {

@@ -202,15 +202,15 @@ fn generate_random_pos_toward_direction(
     if mob.has_home() && horizontal_dist > 1.0 {
         let center = mob.home_position();
         if position.x > f64::from(center.x()) {
-            xt -= rand::random::<f64>() * horizontal_dist / 2.0;
+            xt -= rand::random_range(0.0..horizontal_dist / 2.0);
         } else {
-            xt += rand::random::<f64>() * horizontal_dist / 2.0;
+            xt += rand::random_range(0.0..horizontal_dist / 2.0);
         }
 
         if position.z > f64::from(center.z()) {
-            zt -= rand::random::<f64>() * horizontal_dist / 2.0;
+            zt -= rand::random_range(0.0..horizontal_dist / 2.0);
         } else {
-            zt += rand::random::<f64>() * horizontal_dist / 2.0;
+            zt += rand::random_range(0.0..horizontal_dist / 2.0);
         }
     }
 

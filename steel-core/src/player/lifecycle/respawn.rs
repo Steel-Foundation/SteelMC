@@ -14,12 +14,12 @@ use crate::{
     },
     player::{Player, player_data::PersistentPlayerData},
 };
+use steel_math::{DEGREE_90, wrap_degrees};
 use steel_protocol::packets::game::{CSound, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
 };
 use steel_registry::{sound_events, vanilla_blocks};
-use steel_utils::wrap_degrees;
 
 // Bed candidates reach two blocks out and collision checks read one block farther.
 const PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS: i32 = 3;
@@ -378,7 +378,9 @@ fn calculate_respawn_look_at_yaw(position: DVec3, look_at_block_pos: BlockPos) -
         f64::from(look_at_block_pos.z()) + 0.5,
     );
     let look_direction = (bed_center - position).normalize_or_zero();
-    wrap_degrees((look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32)
+    wrap_degrees(
+        (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90)) as f32,
+    )
 }
 
 impl Player {
