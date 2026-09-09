@@ -1,5 +1,6 @@
 use glam::DVec3;
 use std::sync::atomic::AtomicI32;
+use std::thread;
 use std::{
     env::temp_dir,
     io::Cursor,
@@ -30,7 +31,12 @@ use steel_registry::{
 use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
+use tokio::{
+    fs,
+    runtime::{Builder, Runtime},
+    task::JoinSet,
+    time::sleep,
+};
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
@@ -39,7 +45,7 @@ use crate::command::execution::{
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
+use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
 use crate::entity::{DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, SharedEntity};
 use crate::permission::{
     OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
@@ -56,10 +62,12 @@ use crate::test_support::{
 };
 use crate::world::World;
 
+use super::DEBUG_STACK_SIZE;
 use super::known_players::{
     KnownPlayerSaveStep, UncachedPlayerTarget, classify_uncached_player_target, direct_uuid_profile,
 };
 use super::player_admission::{PendingPlayerJoin, PlayerAdmissionState};
+use super::service_keys::CONNECT_TIMEOUT as SERVICE_KEY_CONNECT_TIMEOUT;
 use super::{
     AsyncMutex, CancellationToken, ChunkSender, CommandRegistry, CommandRequest,
     CommandRequestQueue, DomainCommandStorage, DomainPlayerData, DomainPlayerState,
@@ -3312,5 +3320,106 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }
+    });
+}
+
+/// Builds a server through the public constructor, offline and pointed at an unroutable
+/// services endpoint so no test depends on reaching Mojang.
+async fn offline_server(save_root: &Path) -> Result<Server, String> {
+    let worlds_config: WorldsConfig = toml::from_str(&format!(
+        r#"
+save_path = '{}'
+
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:flat"
+default = true
+"#,
+        save_root.display()
+    ))
+    .expect("worlds config should parse");
+
+    let mut config = RuntimeConfig::clone(&test_runtime_config());
+    config.services_server = Some("http://127.0.0.1:1/publickeys".to_owned());
+
+    Server::new(
+        Arc::new(server_test_runtime()),
+        CancellationToken::new(),
+        config,
+        worlds_config,
+        PermissionGroupManager::transient(PermissionGroupsConfig::default())
+            .expect("default permission groups should resolve"),
+    )
+    .await
+}
+
+fn server_test_runtime() -> Runtime {
+    Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_stack_size(DEBUG_STACK_SIZE)
+        .enable_all()
+        .build()
+        .expect("test runtime should build")
+}
+
+/// Runs a server-startup test on a thread with the stack `main` gives Steel. Debug builds
+/// overflow the default one in the generated density functions.
+fn with_server_runtime<F: FnOnce(&Runtime) + Send + 'static>(test: F) {
+    thread::Builder::new()
+        .stack_size(DEBUG_STACK_SIZE)
+        .spawn(move || test(&server_test_runtime()))
+        .expect("server test thread should spawn")
+        .join()
+        .expect("server test thread panicked");
+}
+
+#[test]
+fn a_second_server_bootstraps_in_the_same_process() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let first_root = test_storage_root("bootstrap-first");
+            let second_root = test_storage_root("bootstrap-second");
+
+            let first = offline_server(&first_root)
+                .await
+                .expect("the first server should start");
+            let second = offline_server(&second_root)
+                .await
+                .expect("a second server should start in the same process");
+
+            assert_eq!(first.worlds.len(), 1);
+            assert_eq!(second.worlds.len(), 1);
+
+            first.cancel_token.cancel();
+            second.cancel_token.cancel();
+            let _ = fs::remove_dir_all(&first_root).await;
+            let _ = fs::remove_dir_all(&second_root).await;
+        });
+    });
+}
+
+#[test]
+fn offline_startup_does_not_wait_for_the_services_key_fetch() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("offline-service-keys");
+
+            let started = SystemTime::now();
+            let server = offline_server(&save_root)
+                .await
+                .expect("an offline server should start");
+            let elapsed = started.elapsed().expect("startup should be monotonic");
+
+            assert!(
+                elapsed < SERVICE_KEY_CONNECT_TIMEOUT,
+                "offline startup waited {elapsed:?} on the services key fetch"
+            );
+
+            server.cancel_token.cancel();
+            let _ = fs::remove_dir_all(&save_root).await;
+        });
     });
 }
