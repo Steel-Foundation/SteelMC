@@ -59,7 +59,7 @@ use uuid::Uuid;
 use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
-const SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LoginDeadline {
@@ -613,19 +613,26 @@ impl JavaTcpClient {
         .await
     }
 
-    pub(crate) async fn disconnect_slow_login(&self) {
-        let reason =
-            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
-        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+    /// Kicks with `reason`, falling back to closing the socket if the write stalls.
+    async fn kick_with_flush_timeout(&self, reason: TextComponent, context: &str) {
+        if timeout(DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
             .await
             .is_err()
         {
             log::debug!(
-                "Best-effort slow-login disconnect write for client {} timed out",
+                "Best-effort {context} disconnect write for client {} timed out",
                 self.id
             );
             self.close();
         }
+    }
+
+    pub(crate) async fn disconnect_slow_login(&self) {
+        self.kick_with_flush_timeout(
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg()),
+            "slow-login",
+        )
+        .await;
     }
 
     async fn process_packet(&self, packet: RawPacket) -> Result<ConnectionAction, PacketError> {
@@ -800,18 +807,11 @@ impl JavaTcpClient {
     /// Kick + close when `process_packet` returns `PacketError` (bad decode / unexpected id).
     pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
         log::warn!("Failed to get packet from client {}: {error}", self.id);
-        let reason =
-            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg());
-        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
-            .await
-            .is_err()
-        {
-            log::debug!(
-                "Best-effort invalid-packet disconnect write for client {} timed out",
-                self.id
-            );
-            self.close();
-        }
+        self.kick_with_flush_timeout(
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg()),
+            "invalid-packet",
+        )
+        .await;
     }
 
     /// Kicks the client with a given reason.
