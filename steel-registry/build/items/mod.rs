@@ -125,7 +125,7 @@ fn generate_tool_component(value: &Value) -> TokenStream {
 }
 
 fn block_ref_token(value: &str) -> TokenStream {
-    let id = Identifier::from_str(value)
+    let id = Identifier::parse_or_vanilla(value)
         .unwrap_or_else(|error| panic!("invalid tool block id {value:?}: {error}"));
     assert_eq!(
         id.namespace.as_ref(),
@@ -136,13 +136,13 @@ fn block_ref_token(value: &str) -> TokenStream {
     quote! { &vanilla_blocks::#ident }
 }
 
-fn split_identifier(s: &str) -> (&str, &str) {
-    s.split_once(':').unwrap_or(("minecraft", s))
+fn parse_identifier_or_vanilla(s: &str) -> Identifier {
+    Identifier::parse_or_vanilla(s)
+        .unwrap_or_else(|error| panic!("invalid item build identifier {s}: {error}"))
 }
 
 fn identifier_token(s: &str) -> TokenStream {
-    let id =
-        Identifier::from_str(s).unwrap_or_else(|error| panic!("invalid identifier {s:?}: {error}"));
+    let id = parse_identifier_or_vanilla(s);
     let namespace = id.namespace.as_ref();
     let path = id.path.as_ref();
     quote! { Identifier::new_static(#namespace, #path) }

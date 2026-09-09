@@ -1,3 +1,4 @@
+use steel_registry::feature::BlockHolderSet;
 use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::prelude::*;
@@ -187,7 +188,7 @@ impl FeatureDecorationRunner {
     ) -> bool {
         match trunk_placer {
             TrunkPlacer::UpwardsBranching(placer) => {
-                Self::tree_valid_pos_or_tag(region, pos, &placer.can_grow_through)
+                Self::tree_valid_pos_or_tag_id(region, pos, &placer.can_grow_through)
             }
             TrunkPlacer::Straight(_)
             | TrunkPlacer::Forking(_)
@@ -200,7 +201,21 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn tree_valid_pos_or_tag(region: &WorldGenRegion<'_>, pos: BlockPos, tag: &Identifier) -> bool {
+    fn tree_valid_pos_or_tag(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        tag: &BlockHolderSet,
+    ) -> bool {
+        let state = region.block_state(pos);
+        let block = state.get_block();
+        state.is_air() || block.has_tag(&BlockTag::REPLACEABLE_BY_TREES) || tag.contains(block)
+    }
+
+    fn tree_valid_pos_or_tag_id(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        tag: &Identifier,
+    ) -> bool {
         let state = region.block_state(pos);
         let block = state.get_block();
         state.is_air() || block.has_tag(&BlockTag::REPLACEABLE_BY_TREES) || block.has_tag(tag)

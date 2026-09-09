@@ -1,9 +1,15 @@
-use std::slice;
+use std::{slice, sync::Arc};
 
 use super::*;
 use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
 use steel_registry::init_vanilla_registry;
 use steel_registry::vanilla_entities;
+use steel_utils::ChunkPos;
+
+use crate::chunk::{
+    chunk_generation_task::StaticCache2D, chunk_pyramid::GENERATION_PYRAMID, status::ChunkStatus,
+};
+use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
 fn test_registry() -> Registry {
     init_vanilla_registry();
@@ -410,6 +416,79 @@ fn jigsaw_replacement_drops_structure_void_final_state() {
     };
 
     assert!(StructureTemplate::replace_jigsaw_block(&registry, current).is_none());
+}
+
+#[test]
+fn jigsaw_replacement_processor_runs_when_replace_jigsaws_is_disabled() {
+    let registry = test_registry();
+    let jigsaw = registry
+        .blocks
+        .get_default_state_id(&vanilla_blocks::JIGSAW);
+    let mut nbt = NbtCompound::new();
+    nbt.insert(
+        "final_state",
+        NbtTag::String("minecraft:oak_stairs[facing=east,half=top]".into()),
+    );
+    let original = ProcessedBlockInfo {
+        template_pos: BlockPos::ZERO,
+        world_pos: BlockPos::ZERO,
+        state: jigsaw,
+        nbt: None,
+    };
+    let initial = ProcessedBlockInfo {
+        template_pos: BlockPos::ZERO,
+        world_pos: BlockPos::ZERO,
+        state: jigsaw,
+        nbt: Some(nbt),
+    };
+    let processor = StructureProcessorKind::JigsawReplacement;
+    let settings = StructurePlaceSettings {
+        mirror: StructureMirror::None,
+        rotation: Rotation::None,
+        rotation_pivot: BlockPos::ZERO,
+        bounding_box: BoundingBox::new(IVec3::splat(-16), IVec3::splat(16)),
+        processors: slice::from_ref(&processor),
+        block_ignore: StructureBlockIgnore::None,
+        late_block_ignore: StructureBlockIgnore::None,
+        replace_jigsaws: false,
+        projection: None,
+        processor_random: StructureProcessorRandom::Positional,
+        liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+    };
+
+    let world = fresh_test_world("jigsaw_replacement_processor");
+    let holder = insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let cache = StaticCache2D::create(0, 0, 0, move |_, _| Arc::clone(&holder));
+    let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Full);
+    let region = WorldGenRegion::new(
+        &world.chunk_map.world_gen_context,
+        step,
+        &cache,
+        ChunkPos::new(0, 0),
+        RandomSource::Legacy(LegacyRandom::from_seed(0)),
+    );
+    let mut random = WorldgenRandom::from_seed(0);
+
+    let processed = StructureTemplate::process_block(
+        &region,
+        &registry,
+        &original,
+        initial,
+        &settings,
+        BlockPos::ZERO,
+        &mut random,
+    )
+    .expect("non-structure-void final state should remain");
+
+    assert_eq!(processed.nbt, None);
+    assert_eq!(
+        processed.state,
+        StructureTemplate::parse_block_state_string(
+            &registry,
+            "minecraft:oak_stairs[facing=east,half=top]"
+        )
+        .expect("test final state should parse")
+    );
 }
 
 #[test]

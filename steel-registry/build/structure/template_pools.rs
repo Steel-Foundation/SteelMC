@@ -3,6 +3,8 @@
     reason = "build script must fail immediately on invalid extracted template pool data"
 )]
 
+use crate::generator_functions::generate_static_identifier_from_str;
+
 use std::fs;
 use std::io::Read;
 
@@ -10,6 +12,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
+
 // ── JSON structures ──
 
 #[derive(Deserialize, Debug)]
@@ -39,9 +42,9 @@ struct ElementJson {
     elements: Option<Vec<ElementJson>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-enum ProcessorsJson {
+pub(crate) enum ProcessorsJson {
     Registry(String),
     Direct { processors: Vec<Value> },
 }
@@ -231,15 +234,6 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
 
 // ── Code generation helpers ──
 
-fn gen_identifier(id: &str) -> TokenStream {
-    assert!(!id.is_empty(), "Cannot generate an empty identifier");
-    if let Some((namespace, path)) = id.split_once(':') {
-        quote! { Identifier::new(#namespace, #path) }
-    } else {
-        quote! { Identifier::vanilla(#id.to_string()) }
-    }
-}
-
 fn required<T>(value: Option<T>, context: &str, field: &str) -> T {
     value.unwrap_or_else(|| panic!("Missing required field {field} in {context}"))
 }
@@ -253,10 +247,10 @@ fn gen_projection(proj: &Option<String>, context: &str) -> TokenStream {
     }
 }
 
-fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
+pub(crate) fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
     match processors {
         Some(ProcessorsJson::Registry(id)) => {
-            let id = gen_identifier(id);
+            let id = generate_static_identifier_from_str(id, context);
             quote! { ProcessorList::Registry(#id) }
         }
         Some(ProcessorsJson::Direct { processors }) => {
@@ -273,13 +267,19 @@ fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenSt
 fn gen_element(elem: &ElementJson, context: &str) -> TokenStream {
     match elem.element_type.as_str() {
         "minecraft:single_pool_element" => {
-            let location = gen_identifier(required(elem.location.as_deref(), context, "location"));
+            let location = generate_static_identifier_from_str(
+                required(elem.location.as_deref(), context, "location"),
+                context,
+            );
             let processors = gen_processors(elem.processors.as_ref(), context);
             let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::Single { location: #location, processors: #processors, projection: #projection } }
         }
         "minecraft:legacy_single_pool_element" => {
-            let location = gen_identifier(required(elem.location.as_deref(), context, "location"));
+            let location = generate_static_identifier_from_str(
+                required(elem.location.as_deref(), context, "location"),
+                context,
+            );
             let processors = gen_processors(elem.processors.as_ref(), context);
             let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::LegacySingle { location: #location, processors: #processors, projection: #projection } }
@@ -288,7 +288,10 @@ fn gen_element(elem: &ElementJson, context: &str) -> TokenStream {
             quote! { PoolElement::Empty }
         }
         "minecraft:feature_pool_element" => {
-            let feature = gen_identifier(required(elem.feature.as_deref(), context, "feature"));
+            let feature = generate_static_identifier_from_str(
+                required(elem.feature.as_deref(), context, "feature"),
+                context,
+            );
             let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::Feature { feature: #feature, projection: #projection } }
         }
@@ -352,8 +355,12 @@ pub(crate) fn build() -> TokenStream {
 
     let mut pool_tokens = TokenStream::new();
     for (name, pool) in &pools {
-        let key = gen_identifier(&format!("minecraft:{name}"));
-        let fallback = gen_identifier(&pool.fallback);
+        let key = generate_static_identifier_from_str(
+            &format!("minecraft:{name}"),
+            "template pool registry key",
+        );
+        let fallback =
+            generate_static_identifier_from_str(&pool.fallback, "template pool fallback");
 
         let elements: Vec<TokenStream> = pool
             .elements
@@ -388,7 +395,10 @@ pub(crate) fn build() -> TokenStream {
     let mut template_tokens = TokenStream::new();
     let mut template_nbt_match_arms = TokenStream::new();
     for (name, tmpl) in &templates {
-        let key = gen_identifier(&format!("minecraft:{name}"));
+        let key = generate_static_identifier_from_str(
+            &format!("minecraft:{name}"),
+            "structure template registry key",
+        );
         let sx = tmpl.size[0];
         let sy = tmpl.size[1];
         let sz = tmpl.size[2];
@@ -404,11 +414,11 @@ pub(crate) fn build() -> TokenStream {
                 let py = j.pos[1];
                 let pz = j.pos[2];
                 let orientation = gen_orientation(&j.orientation);
-                let jname = gen_identifier(&j.name);
-                let target = gen_identifier(&j.target);
-                let pool = gen_identifier(&j.pool);
+                let jname = generate_static_identifier_from_str(&j.name, "jigsaw name");
+                let target = generate_static_identifier_from_str(&j.target, "jigsaw target");
+                let pool = generate_static_identifier_from_str(&j.pool, "jigsaw pool");
                 let joint = gen_joint(&j.joint);
-                let final_state = gen_identifier(&j.final_state);
+                let final_state = &j.final_state;
                 let sel_pri = j.selection_priority;
                 let plc_pri = j.placement_priority;
 
@@ -420,7 +430,7 @@ pub(crate) fn build() -> TokenStream {
                         target: #target,
                         pool: #pool,
                         joint: #joint,
-                        final_state: #final_state,
+                        final_state: #final_state.to_string(),
                         selection_priority: #sel_pri,
                         placement_priority: #plc_pri,
                     }

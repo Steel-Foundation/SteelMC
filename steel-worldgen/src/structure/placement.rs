@@ -402,7 +402,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             exclusion_zone,
             locate_offset,
         } => StructurePlacement {
-            salt,
+            salt: salt as i32,
             frequency,
             frequency_reduction_method: frequency_reduction_method.into(),
             exclusion_zone: exclusion_zone.map(|ez| ExclusionZone {
@@ -426,7 +426,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             frequency_reduction_method,
             locate_offset,
         } => StructurePlacement {
-            salt,
+            salt: salt as i32,
             frequency,
             frequency_reduction_method: frequency_reduction_method.into(),
             exclusion_zone: None,
@@ -577,7 +577,11 @@ mod tests {
     #[test]
     fn test_load_vanilla_structure_sets() {
         let sets = load_vanilla_structure_sets();
-        assert_eq!(sets.len(), 20);
+        let vanilla_sets_count = sets
+            .iter()
+            .filter(|(k, _)| k.namespace == "minecraft")
+            .count();
+        assert_eq!(vanilla_sets_count, 20);
 
         // Verify villages loaded correctly from datapack
         let (key, villages) = sets

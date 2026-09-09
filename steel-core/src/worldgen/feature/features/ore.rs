@@ -184,7 +184,7 @@ impl FeatureDecorationRunner {
                         pending_section.key.chunk_z,
                         pending_section.key.section_index,
                         &pending_section.positions,
-                        |block_state| targets.matching_replacement(registry, block_state),
+                        |block_state| targets.matching_replacement(registry, block_state, random),
                     );
                 }
                 if let Some(started_at) = batch_apply_started_at
@@ -384,7 +384,7 @@ impl FeatureDecorationRunner {
     ) -> bool {
         if config.discard_chance_on_air_exposure <= 0.0 {
             return sections.replace_ore_target_block_state(pos, |block_state| {
-                targets.matching_replacement(registry, block_state)
+                targets.matching_replacement(registry, block_state, random)
             });
         }
 
@@ -410,7 +410,8 @@ impl FeatureDecorationRunner {
         pos: BlockPos,
         block_id: usize,
     ) -> bool {
-        if !target.matches_block_id(block_id) {
+        let state = region.block_state(pos);
+        if !target.matches_state(state, block_id, random) {
             return false;
         }
 
@@ -430,7 +431,8 @@ impl FeatureDecorationRunner {
         pos: BlockPos,
         block_id: usize,
     ) -> bool {
-        if !target.matches_block_id(block_id) {
+        let state = sections.ore_target_block_state(pos);
+        if !target.matches_state(state, block_id, random) {
             return false;
         }
 
@@ -514,7 +516,9 @@ struct ResolvedOreTarget {
 
 enum ResolvedOreRuleTest {
     Block(usize),
+    BlockState(BlockStateId),
     Tag(SmallVec<[usize; 8]>),
+    RandomBlock(usize, f32),
 }
 
 #[derive(Clone, Copy)]
@@ -559,6 +563,16 @@ impl ResolvedOreTargets {
         for target in &config.targets {
             let matcher = match &target.target {
                 RuleTest::BlockMatch { block } => ResolvedOreRuleTest::Block(block.id()),
+                RuleTest::BlockStateMatch { block_state } => ResolvedOreRuleTest::BlockState(
+                    WorldgenStateResolver::feature_block_state_from_data(
+                        registry,
+                        block_state,
+                        "ore feature target",
+                    ),
+                ),
+                RuleTest::RandomBlockMatch { block, probability } => {
+                    ResolvedOreRuleTest::RandomBlock(block.id(), *probability)
+                }
                 RuleTest::TagMatch { tag } => {
                     let block_ids = registry
                         .blocks
@@ -587,11 +601,14 @@ impl ResolvedOreTargets {
         &self,
         registry: &Registry,
         state: BlockStateId,
+        random: &mut WorldgenRandom,
     ) -> Option<BlockStateId> {
         let block_id = Self::block_id_for_state(registry, state);
-        self.targets
-            .iter()
-            .find_map(|target| target.matches_block_id(block_id).then_some(target.state))
+        self.targets.iter().find_map(|target| {
+            target
+                .matches_state(state, block_id, random)
+                .then_some(target.state)
+        })
     }
 
     fn block_id_for_state(registry: &Registry, state: BlockStateId) -> usize {
@@ -603,10 +620,19 @@ impl ResolvedOreTargets {
 }
 
 impl ResolvedOreTarget {
-    fn matches_block_id(&self, block_id: usize) -> bool {
+    fn matches_state(
+        &self,
+        state: BlockStateId,
+        block_id: usize,
+        random: &mut WorldgenRandom,
+    ) -> bool {
         match &self.matcher {
             ResolvedOreRuleTest::Block(target_block_id) => block_id == *target_block_id,
+            ResolvedOreRuleTest::BlockState(target_state) => state == *target_state,
             ResolvedOreRuleTest::Tag(block_ids) => block_ids.contains(&block_id),
+            ResolvedOreRuleTest::RandomBlock(target_block_id, probability) => {
+                block_id == *target_block_id && random.next_f32() < *probability
+            }
         }
     }
 }

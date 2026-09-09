@@ -19,6 +19,10 @@ impl WorldgenStateResolver {
         context: &str,
     ) -> BlockStateId {
         let Some(block) = registry.blocks.by_key(&data.name) else {
+            println!(
+                "CRITICAL: WorldgenStateResolver references unknown block: {:?}",
+                data.name
+            );
             panic!("{context} references unknown block {}", data.name);
         };
         Self::block_state_from_parts(

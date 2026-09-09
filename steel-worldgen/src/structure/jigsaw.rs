@@ -8,9 +8,7 @@ use std::{array, mem, ptr};
 
 use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
-use steel_registry::structure::{
-    JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
-};
+use steel_registry::structure::{JigsawConfig, LiquidSettingsData, PoolAlias, StructureData};
 use steel_registry::template_pool::{
     JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
 };
@@ -117,11 +115,13 @@ pub fn resolve_aliases(
     map
 }
 
-fn sample_start_height(config: &JigsawConfig, rng: &mut impl Random) -> i32 {
-    match &config.start_height {
-        StartHeight::Constant(y) => *y,
-        StartHeight::Uniform { min, max } => rng.next_i32_between(*min, *max),
-    }
+fn sample_start_height(
+    config: &JigsawConfig,
+    rng: &mut impl Random,
+    min_y: i32,
+    height: i32,
+) -> i32 {
+    config.start_height.sample(rng, min_y, height)
 }
 
 /// Java integer midpoint used by vanilla jigsaw placement: `(min + max) / 2`.
@@ -725,7 +725,7 @@ fn start_assembly(
     min_y: i32,
     max_y: i32,
 ) -> Option<StartedAssembly> {
-    let start_y = sample_start_height(config, rng);
+    let start_y = sample_start_height(config, rng, min_y, max_y - min_y);
     let start_x = chunk_x * 16;
     let start_z = chunk_z * 16;
     let center_rotation = Rotation::get_random(rng);
@@ -945,7 +945,8 @@ impl Structure for JigsawStructure {
 
         let mut alias_position_rng = LegacyRandom::from_seed(0);
         alias_position_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
-        let start_y = sample_start_height(config, &mut alias_position_rng);
+        let start_y =
+            sample_start_height(config, &mut alias_position_rng, ctx.min_y(), ctx.height());
         let mut alias_source = LegacyRandom::from_seed(ctx.seed() as u64);
         let mut alias_rng =
             alias_source
@@ -1415,6 +1416,7 @@ fn try_placing_children<'a>(
 mod tests {
     use super::*;
     use steel_registry::structure::DimensionPadding;
+    use steel_utils::value_providers::{HeightProvider, VerticalAnchor};
 
     fn bbox(min: IVec3, max: IVec3) -> BoundingBox {
         BoundingBox::new(min, max)
@@ -1494,7 +1496,7 @@ mod tests {
             max_depth: 0,
             use_expansion_hack: false,
             project_start_to_heightmap: None,
-            start_height: StartHeight::Constant(70),
+            start_height: HeightProvider::Constant(VerticalAnchor::Absolute(70)),
             max_distance_from_center: 80,
             start_jigsaw_name: Some(Identifier::vanilla_static("bottom")),
             dimension_padding: DimensionPadding { bottom: 0, top: 0 },

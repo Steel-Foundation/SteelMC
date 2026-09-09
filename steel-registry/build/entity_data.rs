@@ -430,10 +430,9 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 panic!(
                     "Raw numeric BlockStateId defaults are not allowed in generated entity data; use a block identifier for {serializer}"
                 );
-            } else {
-                let block_ident = key_ident(default, serializer);
-                quote! { crate::vanilla_blocks::#block_ident.default_state() }
             }
+            let block_ident = key_ident(default, serializer);
+            quote! { crate::vanilla_blocks::#block_ident.default_state() }
         }
         "component" => {
             let text = required_string(default, serializer);

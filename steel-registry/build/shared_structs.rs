@@ -4,7 +4,6 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
 pub struct BlockStateData {
     #[serde(rename = "Name")]
     pub name: Identifier,
@@ -13,7 +12,6 @@ pub struct BlockStateData {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
 pub struct FluidStateData {
     #[serde(rename = "Name")]
     pub name: Identifier,

@@ -183,11 +183,11 @@ impl FeatureDecorationRunner {
         placer: &MangroveRootPlacer,
         placement: &mut TreePlacement,
     ) {
-        if Self::block_matches_identifiers(
-            registry,
-            region.block_state(pos),
-            &placer.mangrove_root_placement.muddy_roots_in,
-        ) {
+        if placer
+            .mangrove_root_placement
+            .muddy_roots_in
+            .contains(region.block_state(pos).get_block())
+        {
             let state = Self::sample_block_state_provider(
                 region,
                 registry,
@@ -210,31 +210,19 @@ impl FeatureDecorationRunner {
         placement.set_root(region, pos, state);
 
         let above = pos.above();
-        if random.next_f32() < placer.above_root_placement.above_root_placement_chance
+        if let Some(above_root) = &placer.above_root_placement
+            && random.next_f32() < above_root.above_root_placement_chance
             && region.block_state(above).is_air()
         {
             let state = Self::sample_block_state_provider(
                 region,
                 registry,
                 random,
-                &placer.above_root_placement.above_root_provider,
+                &above_root.above_root_provider,
                 above,
             );
             let state = Self::copy_waterlogged_from(region, above, state);
             placement.set_root(region, above, state);
         }
-    }
-
-    fn block_matches_identifiers(
-        registry: &Registry,
-        state: BlockStateId,
-        blocks: &[Identifier],
-    ) -> bool {
-        blocks.iter().any(|block_key| {
-            let Some(block) = registry.blocks.by_key(block_key) else {
-                panic!("mangrove root placement references unknown block {block_key}");
-            };
-            state.get_block() == block
-        })
     }
 }

@@ -12,7 +12,8 @@ use crate::generator_functions::{
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as DeError;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use steel_utils::Identifier;
 
@@ -36,6 +37,64 @@ where
             VecOrSingle::Single(s) => vec![s],
         }
     }
+}
+
+fn deserialize_identifier_or_vanilla<'de, D>(deserializer: D) -> Result<Identifier, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    Identifier::parse_or_vanilla(&raw).map_err(D::Error::custom)
+}
+
+fn deserialize_identifier_vec_or_single<'de, D>(
+    deserializer: D,
+) -> Result<VecOrSingle<Identifier>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = VecOrSingle::<String>::deserialize(deserializer)?;
+    match raw {
+        VecOrSingle::Vec(values) => values
+            .into_iter()
+            .map(|value| Identifier::parse_or_vanilla(&value).map_err(D::Error::custom))
+            .collect::<Result<Vec<_>, _>>()
+            .map(VecOrSingle::Vec),
+        VecOrSingle::Single(value) => Identifier::parse_or_vanilla(&value)
+            .map(VecOrSingle::Single)
+            .map_err(D::Error::custom),
+    }
+}
+
+fn deserialize_identifier_grid<'de, D>(deserializer: D) -> Result<Vec<Vec<Identifier>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Vec::<Vec<String>>::deserialize(deserializer)?;
+    raw.into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|value| Identifier::parse_or_vanilla(&value).map_err(D::Error::custom))
+                .collect()
+        })
+        .collect()
+}
+
+fn deserialize_identifier_map<'de, D, T>(
+    deserializer: D,
+) -> Result<FxHashMap<Identifier, T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let raw = FxHashMap::<String, T>::deserialize(deserializer)?;
+    raw.into_iter()
+        .map(|(key, value)| {
+            Identifier::parse_or_vanilla(&key)
+                .map(|key| (key, value))
+                .map_err(D::Error::custom)
+        })
+        .collect()
 }
 
 /// Parse a hex color string (#RRGGBB) to an i32 RGB value
@@ -75,10 +134,12 @@ pub struct BiomeJson {
     creature_spawn_probability: f32,
     #[serde(default)]
     spawners: FxHashMap<String, Vec<SpawnerData>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_identifier_map")]
     spawn_costs: FxHashMap<Identifier, SpawnCost>,
 
+    #[serde(deserialize_with = "deserialize_identifier_vec_or_single")]
     carvers: VecOrSingle<Identifier>,
+    #[serde(deserialize_with = "deserialize_identifier_grid")]
     features: Vec<Vec<Identifier>>,
 }
 
@@ -113,22 +174,39 @@ pub struct BiomeEffects {
     particle: Option<Particle>,
 }
 
+/// JSON color: `#RRGGBB` string or packed RGB integer (vanilla `STRING_RGB_COLOR`).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ColorJson {
+    Int(i32),
+    Hex(String),
+}
+
+impl ColorJson {
+    fn into_i32(self) -> i32 {
+        match self {
+            ColorJson::Int(value) => value,
+            ColorJson::Hex(hex) => parse_hex_color(&hex),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct BiomeEffectsJson {
     #[serde(default = "default_water_color")]
-    water_color: String,
+    water_color: ColorJson,
     #[serde(default)]
-    foliage_color: Option<String>,
+    foliage_color: Option<ColorJson>,
     #[serde(default)]
-    grass_color: Option<String>,
+    grass_color: Option<ColorJson>,
     #[serde(default)]
-    dry_foliage_color: Option<String>,
+    dry_foliage_color: Option<ColorJson>,
     #[serde(default)]
     grass_color_modifier: GrassColorModifier,
 }
 
-fn default_water_color() -> String {
-    "#3f76e4".to_string()
+fn default_water_color() -> ColorJson {
+    ColorJson::Hex("#3f76e4".to_string())
 }
 
 impl From<BiomeEffectsJson> for BiomeEffects {
@@ -136,11 +214,11 @@ impl From<BiomeEffectsJson> for BiomeEffects {
         BiomeEffects {
             fog_color: 12638463, // Default value, will be overridden from attributes
             sky_color: 8103167,  // Default value, will be overridden from attributes
-            water_color: parse_hex_color(&json.water_color),
+            water_color: json.water_color.into_i32(),
             water_fog_color: 329011, // Default value, will be overridden from attributes
-            foliage_color: json.foliage_color.map(|s| parse_hex_color(&s)),
-            grass_color: json.grass_color.map(|s| parse_hex_color(&s)),
-            dry_foliage_color: json.dry_foliage_color.map(|s| parse_hex_color(&s)),
+            foliage_color: json.foliage_color.map(ColorJson::into_i32),
+            grass_color: json.grass_color.map(ColorJson::into_i32),
+            dry_foliage_color: json.dry_foliage_color.map(ColorJson::into_i32),
             grass_color_modifier: json.grass_color_modifier,
             music: None,           // Will be populated from attributes
             ambient_sound: None,   // Will be populated from attributes
@@ -153,7 +231,10 @@ impl From<BiomeEffectsJson> for BiomeEffects {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SpawnerData {
-    #[serde(rename = "type")]
+    #[serde(
+        rename = "type",
+        deserialize_with = "deserialize_identifier_or_vanilla"
+    )]
     entity_type: Identifier,
     weight: i32,
     #[serde(rename = "minCount")]
@@ -196,17 +277,20 @@ pub struct Music {
     replace_current_music: bool,
     max_delay: i32,
     min_delay: i32,
+    #[serde(deserialize_with = "deserialize_identifier_or_vanilla")]
     sound: Identifier,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AdditionsSound {
+    #[serde(deserialize_with = "deserialize_identifier_or_vanilla")]
     sound: Identifier,
     tick_chance: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MoodSound {
+    #[serde(deserialize_with = "deserialize_identifier_or_vanilla")]
     sound: Identifier,
     tick_delay: i32,
     block_search_extent: i32,
@@ -221,7 +305,10 @@ pub struct Particle {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ParticleOptions {
-    #[serde(rename = "type")]
+    #[serde(
+        rename = "type",
+        deserialize_with = "deserialize_identifier_or_vanilla"
+    )]
     particle_type: Identifier,
 }
 
@@ -229,6 +316,7 @@ pub struct ParticleOptions {
 struct BackgroundMusicEntry {
     max_delay: i32,
     min_delay: i32,
+    #[serde(deserialize_with = "deserialize_identifier_or_vanilla")]
     sound: Identifier,
 }
 
@@ -543,10 +631,17 @@ pub(crate) fn build() -> TokenStream {
     // Generate static biome definitions
     let mut register_stream = TokenStream::new();
     for (biome_name, biome) in &biomes {
-        let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
-        let biome_name_str = biome_name.clone();
+        let identifier = Identifier::parse_or_vanilla(biome_name)
+            .unwrap_or_else(|e| panic!("invalid biome name {biome_name}: {e}"));
+        let key = crate::generator_functions::generate_static_identifier(&identifier);
+        let biome_ident_str = if identifier.namespace == steel_utils::Identifier::VANILLA_NAMESPACE
+        {
+            identifier.path.to_shouty_snake_case()
+        } else {
+            biome_name.replace([':', '/'], "_").to_shouty_snake_case()
+        };
+        let biome_ident = Ident::new(&biome_ident_str, Span::call_site());
 
-        let key = quote! { Identifier::vanilla_static(#biome_name_str) };
         let has_precipitation = biome.has_precipitation;
         let temperature = biome.temperature;
         let downfall = biome.downfall;
@@ -577,7 +672,6 @@ pub(crate) fn build() -> TokenStream {
                 id: OnceLock::new(),
             });
         });
-        let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(&#biome_ident);
         });

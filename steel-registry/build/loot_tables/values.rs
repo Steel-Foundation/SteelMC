@@ -133,10 +133,9 @@ pub(super) fn generate_tool_predicate(predicate: &Option<PredicateJson>) -> Toke
                 .strip_prefix("#minecraft:")
                 .unwrap_or(item_str.strip_prefix('#').unwrap_or(item_str));
             return quote! { ToolPredicate::Tag(Identifier::vanilla_static(#tag)) };
-        } else {
-            let item = item_str.strip_prefix("minecraft:").unwrap_or(item_str);
-            return quote! { ToolPredicate::Item(Identifier::vanilla_static(#item)) };
         }
+        let item = item_str.strip_prefix("minecraft:").unwrap_or(item_str);
+        return quote! { ToolPredicate::Item(Identifier::vanilla_static(#item)) };
     }
 
     // Check for enchantment predicates
@@ -274,10 +273,9 @@ pub(super) fn generate_equipment_slot_predicate(slot: &Option<EquipmentSlotJson>
                     .strip_prefix("#minecraft:")
                     .unwrap_or(items.strip_prefix('#').unwrap_or(items));
                 return quote! { Some(ToolPredicate::Tag(Identifier::vanilla_static(#tag))) };
-            } else {
-                let item = items.strip_prefix("minecraft:").unwrap_or(items);
-                return quote! { Some(ToolPredicate::Item(Identifier::vanilla_static(#item))) };
             }
+            let item = items.strip_prefix("minecraft:").unwrap_or(items);
+            return quote! { Some(ToolPredicate::Item(Identifier::vanilla_static(#item))) };
         }
 
         if let Some(predicates) = &s.predicates

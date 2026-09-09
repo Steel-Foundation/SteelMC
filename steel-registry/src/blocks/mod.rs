@@ -723,10 +723,14 @@ impl BlockRegistry {
         properties: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Option<()> {
         for (prop_name, prop_value) in properties {
-            let prop_idx = block
+            let Some(prop_idx) = block
                 .properties
                 .iter()
-                .position(|p| p.get_name() == prop_name)?;
+                .position(|p| p.get_name() == prop_name)
+            else {
+                // Vanilla's block state codec is lenient and ignores unknown properties.
+                continue;
+            };
 
             let prop = block.properties[prop_idx];
             let value_idx = (0..prop.value_count())
@@ -1380,13 +1384,18 @@ mod tests {
     }
 
     #[test]
-    fn test_state_id_from_properties_invalid_property() {
+    fn test_state_id_from_properties_ignores_unknown_property() {
         let registry = create_test_registry();
         let key = Identifier::vanilla_static("redstone_wire");
 
         let invalid_props = [("invalid_property", "value")];
-        let result = registry.state_id_from_properties(&key, &invalid_props);
-        assert!(result.is_none(), "Should return None for invalid property");
+        let result = registry
+            .state_id_from_properties(&key, &invalid_props)
+            .expect("unknown properties should be ignored");
+        let with_power = registry
+            .state_id_from_properties(&key, &[("power", "5")])
+            .expect("valid properties should still resolve");
+        assert_ne!(result, with_power);
     }
 
     #[test]
@@ -1428,22 +1437,32 @@ mod tests {
     }
 
     #[test]
-    fn test_state_id_from_properties_rejects_properties_on_propertyless_block() {
+    fn test_state_id_from_properties_ignores_unknown_property_on_propertyless_block() {
         let registry = create_test_registry();
         let key = Identifier::vanilla_static("stone");
         let stone = registry.by_key(&key).expect("stone should exist");
 
-        let result = registry.state_id_from_properties(&key, &[("power", "1")]);
-        assert!(
-            result.is_none(),
-            "Should return None for invalid property on propertyless block"
-        );
+        let result = registry
+            .state_id_from_properties(&key, &[("power", "1")])
+            .expect("unknown properties should be ignored");
+        assert_eq!(result, registry.get_default_state_id(stone));
 
-        let result = registry.state_id_from_block_defaulted_properties(stone, [("power", "1")]);
-        assert!(
-            result.is_none(),
-            "Should return None for invalid defaulted property on propertyless block"
-        );
+        let result = registry
+            .state_id_from_block_defaulted_properties(stone, [("power", "1")])
+            .expect("unknown defaulted properties should be ignored");
+        assert_eq!(result, registry.get_default_state_id(stone));
+    }
+
+    #[test]
+    fn test_state_id_from_block_defaulted_properties_ignores_removed_grass_path_snowy() {
+        let registry = create_test_registry();
+        let key = Identifier::vanilla_static("dirt_path");
+        let block = registry.by_key(&key).expect("dirt_path should exist");
+
+        let state_id = registry
+            .state_id_from_block_defaulted_properties(block, [("snowy", "false")])
+            .expect("legacy snowy on dirt_path should be ignored");
+        assert_eq!(state_id, registry.get_default_state_id(block));
     }
 
     #[test]
