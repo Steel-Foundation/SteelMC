@@ -46,11 +46,42 @@ pub(super) fn result_tokens(value: &Value) -> TokenStream {
         1,
         "Recipe result has unsupported component set {components:?}"
     );
-    let effects = components
-        .get("minecraft:suspicious_stew_effects")
-        .unwrap_or_else(|| panic!("Unsupported recipe result components {components:?}"))
+    let (key, component) = components
+        .iter()
+        .next()
+        .unwrap_or_else(|| panic!("Recipe result components are empty: {components:?}"));
+    let (component_type, component_value) = match key.as_str() {
+        "minecraft:suspicious_stew_effects" => (
+            quote! { SUSPICIOUS_STEW_EFFECTS },
+            suspicious_stew_effects_tokens(component),
+        ),
+        "minecraft:potion_contents" => (
+            quote! { POTION_CONTENTS },
+            potion_contents_tokens(component),
+        ),
+        _ => panic!("Unsupported recipe result components {components:?}"),
+    };
+    quote! {{
+        let value = #component_value;
+        let components_hash = DataComponentPatch::compute_single_extracted_hash(
+            vanilla_components::#component_type.key(),
+            &value,
+        );
+        let mut components = DataComponentPatch::new();
+        components.set(vanilla_components::#component_type, value);
+        ItemStackTemplate::from_extracted(
+            &vanilla_items::#item,
+            #count,
+            components,
+            components_hash,
+        )
+    }}
+}
+
+fn suspicious_stew_effects_tokens(value: &Value) -> TokenStream {
+    let effects = value
         .as_array()
-        .unwrap_or_else(|| panic!("Suspicious stew effects are not an array: {components:?}"));
+        .unwrap_or_else(|| panic!("Suspicious stew effects are not an array: {value}"));
     let effects: Vec<_> = effects
         .iter()
         .map(|effect| {
@@ -62,24 +93,36 @@ pub(super) fn result_tokens(value: &Value) -> TokenStream {
             quote! { SuspiciousStewEffect::new(&vanilla_mob_effects::#effect_id, #duration) }
         })
         .collect();
-    quote! {{
-        let effects = SuspiciousStewEffects::new(vec![#(#effects),*]);
-        let components_hash = DataComponentPatch::compute_single_extracted_hash(
-            vanilla_components::SUSPICIOUS_STEW_EFFECTS.key(),
-            &effects,
-        );
-        let mut components = DataComponentPatch::new();
-        components.set(
-            vanilla_components::SUSPICIOUS_STEW_EFFECTS,
-            effects,
-        );
-        ItemStackTemplate::from_extracted(
-            &vanilla_items::#item,
-            #count,
-            components,
-            components_hash,
+    quote! { SuspiciousStewEffects::new(vec![#(#effects),*]) }
+}
+
+fn potion_contents_tokens(value: &Value) -> TokenStream {
+    let contents = value
+        .as_object()
+        .unwrap_or_else(|| panic!("Potion contents are not an object: {value}"));
+    assert!(
+        contents.len() == 1 && contents.contains_key("potion"),
+        "Unsupported extracted potion contents {contents:?}"
+    );
+    let potion = vanilla_ident(string_field(value, "potion"));
+    quote! {
+        PotionContents::new(
+            Some(RegistryReference::new(&vanilla_potions::#potion)),
+            None,
+            Vec::new(),
+            None,
         )
-    }}
+    }
+}
+
+/// Generates `Option<ItemStackTemplate>` tokens, mapping an empty extracted
+/// result object to `None`.
+pub(super) fn optional_result_tokens(value: &Value) -> TokenStream {
+    if value.as_object().is_some_and(Map::is_empty) {
+        return quote! { None };
+    }
+    let result = result_tokens(value);
+    quote! { Some(#result) }
 }
 
 pub(super) fn optional_ingredient_tokens(value: Option<&Value>) -> TokenStream {

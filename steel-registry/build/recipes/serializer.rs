@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::RecipeGenerator;
 use super::cooking::CookingSerializer;
-use super::{crafting, smithing, stonecutting};
+use super::{brewing, crafting, smithing, stonecutting};
 
 #[derive(Clone, Copy)]
 pub(super) enum RecipeSerializer {
@@ -14,6 +14,7 @@ pub(super) enum RecipeSerializer {
     Cooking(CookingSerializer),
     Stonecutting,
     Smithing(RecipeGenerator),
+    Brewing,
 }
 
 impl RecipeSerializer {
@@ -28,6 +29,9 @@ impl RecipeSerializer {
         if path == "stonecutting" {
             return Some(Self::Stonecutting);
         }
+        if path == "brewing" {
+            return Some(Self::Brewing);
+        }
         smithing::generator(path).map(Self::Smithing)
     }
 
@@ -36,6 +40,7 @@ impl RecipeSerializer {
             Self::Crafting(generate) | Self::Smithing(generate) => generate(value),
             Self::Cooking(serializer) => serializer.generate(value),
             Self::Stonecutting => stonecutting::generate(value),
+            Self::Brewing => brewing::generate(value),
         }
     }
 
@@ -53,6 +58,10 @@ impl RecipeSerializer {
             Self::Smithing(_) => (
                 quote! { Recipe<SmithingRecipe, SmithingRecipeInput> },
                 quote! { vanilla_recipe_types::SMITHING },
+            ),
+            Self::Brewing => (
+                quote! { Recipe<BrewingRecipe, BrewingRecipeInput> },
+                quote! { vanilla_recipe_types::BREWING },
             ),
         }
     }

@@ -72,6 +72,14 @@ impl FurnaceKind {
             Self::BlastFurnace | Self::Smoker => vanilla_duration / 2,
         }
     }
+
+    #[must_use]
+    const fn cooking_time(self, recipe_time: i32) -> i32 {
+        match self {
+            Self::Furnace => recipe_time,
+            Self::BlastFurnace | Self::Smoker => recipe_time / 2,
+        }
+    }
 }
 
 /// Independently lockable furnace inventory and progress data.
@@ -127,9 +135,10 @@ impl FurnaceContainer {
     }
 
     fn reset_cooking_for_input(&mut self) {
-        self.cooking_total_time = self
+        let recipe_time = self
             .recipe_for_input()
             .map_or(DEFAULT_COOKING_TIME, |recipe| recipe.data().cooking_time);
+        self.cooking_total_time = self.kind.cooking_time(recipe_time);
         self.cooking_timer = 0;
     }
 
@@ -203,7 +212,8 @@ impl FurnaceContainer {
                         self.cooking_timer += 1;
                         if self.cooking_timer == self.cooking_total_time {
                             self.cooking_timer = 0;
-                            self.cooking_total_time = recipe.data().cooking_time;
+                            self.cooking_total_time =
+                                self.kind.cooking_time(recipe.data().cooking_time);
                             self.burn(recipe);
                             changed = true;
                         }

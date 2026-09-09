@@ -437,14 +437,14 @@ mod tests {
     fn every_extracted_recipe_is_present_in_its_operational_type_bucket() {
         init_vanilla_registry();
 
-        assert_eq!(REGISTRY.recipe_types.len(), 7);
-        assert_eq!(REGISTRY.recipes.len(), 1_585);
+        assert_eq!(REGISTRY.recipe_types.len(), 8);
+        assert_eq!(REGISTRY.recipes.len(), 2_042);
         assert_eq!(
             REGISTRY
                 .recipes
                 .by_type(&vanilla_recipe_types::CRAFTING)
                 .len(),
-            1_120
+            1_266
         );
         assert_eq!(
             REGISTRY
@@ -479,7 +479,7 @@ mod tests {
                 .recipes
                 .by_type(&vanilla_recipe_types::STONECUTTING)
                 .len(),
-            319
+            351
         );
         assert_eq!(
             REGISTRY
@@ -487,6 +487,13 @@ mod tests {
                 .by_type(&vanilla_recipe_types::SMITHING)
                 .len(),
             30
+        );
+        assert_eq!(
+            REGISTRY
+                .recipes
+                .by_type(&vanilla_recipe_types::BREWING)
+                .len(),
+            279
         );
     }
 
