@@ -32,9 +32,7 @@ const GO_TO_WATER_RECALC_INTERVAL: i32 = 160;
 const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
 /// Vanilla `TurtleTravelGoal.tick`: how far around a candidate swim position the
-/// world has to be generated already before the turtle will head for it. A far
-/// target is often out past the edge of the generated world, and this keeps the
-/// turtle from setting off toward terrain that does not exist yet.
+/// world must already be generated before the turtle heads for it.
 const TRAVEL_LOADED_MARGIN: i32 = 34;
 
 /// Vanilla `Turtle.TurtlePanicGoal`: always try to reach water when panicking,
@@ -112,10 +110,8 @@ pub(crate) struct TurtleGoToWaterGoal {
 }
 
 impl TurtleGoToWaterGoal {
-    /// Vanilla asks for a fixed speed of 2.0 here when the turtle is a baby, but
-    /// goals are registered while the turtle is still being built, before its age
-    /// is known, so that check is never true and the speed passed in is always
-    /// the one used. Deliberately not reproduced.
+    /// Vanilla passes a fixed 2.0 speed for a baby here, but goals register
+    /// before the turtle's age is known, so that branch never fires. Not ported.
     pub(crate) fn new(speed_modifier: f64) -> Self {
         Self {
             inner: MoveToBlockGoal::new(speed_modifier, GO_TO_WATER_SEARCH_RANGE, |level, pos| {
@@ -148,9 +144,8 @@ impl Goal for TurtleGoToWaterGoal {
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        // Vanilla drops the shared goal's lower `try_ticks` bound here; that bound
-        // only matters after long dwell at a reached target, which cannot happen
-        // while the turtle is still out of water, so the behavior is equivalent.
+        // Vanilla's lower `try_ticks` bound only matters after long dwell at a
+        // reached target, impossible while still out of water, so it is dropped.
         !mob.is_in_water() && self.inner.can_continue_to_use(mob)
     }
 

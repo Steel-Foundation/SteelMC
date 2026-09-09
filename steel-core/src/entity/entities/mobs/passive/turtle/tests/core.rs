@@ -14,9 +14,8 @@ use crate::entity::{AgeableMob, EntityPose, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
 
-/// Tolerance for comparing turtle velocities and speeds, which are computed with
-/// flat multipliers so the result is exact bar floating-point rounding. The
-/// velocity checks are `f64` (`DVec3`), so `f32::EPSILON` is the wrong width.
+/// Tolerance for the `f64` velocity checks (`DVec3`), where `f32::EPSILON` is the
+/// wrong width. The maths is flat multipliers, so the result is near-exact.
 const VELOCITY_EPSILON: f64 = 1e-9;
 
 #[test]
@@ -302,8 +301,7 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
 }
 
 /// Vanilla `TurtleTravelGoal.tick` throws away a swim target whose surroundings
-/// are not generated yet. A turtle picks targets up to 512 blocks away, so this
-/// is what keeps it from setting off toward terrain that does not exist.
+/// are not generated yet.
 #[test]
 fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
     /// Tries allowed for the goal to find any candidate position at all.
@@ -331,8 +329,8 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
     }
     lay_sand_floor(&world, -24..=40);
 
-    // The candidate position is drawn at random and sometimes there is none to
-    // be had, which is a separate reason to give up, so take the best of several.
+    // The candidate position is drawn at random and can come up empty on its
+    // own, so take the best of several.
     let accepted = (0..ACCEPT_ATTEMPTS).any(|_| {
         let mut goal = TurtleTravelGoal::new(1.0);
         goal.tick(turtle.as_ref());
@@ -354,8 +352,7 @@ fn a_turtle_holds_its_course_against_a_current() {
     );
 }
 
-/// Vanilla `TurtleMoveControl.tick` swings the body round with the steering, so
-/// a turning turtle faces where it is going instead of drifting sideways.
+/// Vanilla `TurtleMoveControl.tick` swings the body round with the steering.
 #[test]
 fn a_steering_turtle_turns_its_whole_body() {
     let (world, turtle) = turtle_in_world("turtle_body_turn", DVec3::new(8.5, 65.0, 8.5));
@@ -387,8 +384,8 @@ fn a_steering_turtle_turns_its_whole_body() {
     );
 }
 
-/// A bare level that answers only what the spawn rule asks of it: what is under
-/// the turtle, how bright it is, and where the water line sits.
+/// A bare level answering only what the spawn rule asks: the block below, the
+/// brightness, and the sea level.
 struct SpawnRuleLevel {
     below_state: BlockStateId,
     raw_brightness: u8,
@@ -428,8 +425,7 @@ fn turtle_spawns_at(level: &SpawnRuleLevel, pos: BlockPos) -> bool {
     <TurtleEntity as Animal>::check_animal_spawn_rules(level, EntitySpawnReason::Natural, pos)
 }
 
-/// Vanilla `Turtle.checkTurtleSpawnRules`: sand, daylight, and near the water
-/// line, which is what keeps turtles on beaches instead of inland deserts.
+/// Vanilla `Turtle.checkTurtleSpawnRules`: sand, daylight, and near sea level.
 #[test]
 fn turtles_only_spawn_on_a_bright_beach() {
     init_vanilla_registry();
@@ -441,8 +437,7 @@ fn turtles_only_spawn_on_a_bright_beach() {
     };
     assert!(turtle_spawns_at(&beach, SPAWN_POS));
 
-    // The water line is read from the level, not assumed: drop it far enough and
-    // the same beach is now too high up.
+    // Sea level is read from the level: drop it and the same beach is too high.
     let inland = SpawnRuleLevel {
         sea_level: SPAWN_POS.y() - SPAWN_HEIGHT_ABOVE_SEA_LEVEL,
         ..beach
@@ -468,8 +463,8 @@ fn turtles_only_spawn_on_a_bright_beach() {
     ));
 }
 
-/// Vanilla `Turtle.getAgeScale`. The shared default would make a baby half the
-/// size of an adult; a turtle hatchling is far smaller than that.
+/// Vanilla `Turtle.getAgeScale`: a hatchling is far smaller than the shared
+/// half-size baby.
 #[test]
 fn a_baby_turtle_is_far_smaller_than_its_parent() {
     let turtle = detached_turtle();
@@ -480,9 +475,8 @@ fn a_baby_turtle_is_far_smaller_than_its_parent() {
     assert_eq!(turtle.get_age_scale(), BABY_SCALE);
 }
 
-/// Vanilla `Turtle.BABY_DIMENSIONS` puts a rider on top of a hatchling's shell
-/// rather than where the adult carries one, which is a good deal further down
-/// once everything is scaled to baby size.
+/// Vanilla `Turtle.BABY_DIMENSIONS` seats a rider on the hatchling's shell,
+/// lower than the adult seat scaled down.
 #[test]
 fn a_baby_turtle_carries_a_rider_on_its_shell() {
     init_vanilla_registry();
@@ -496,7 +490,6 @@ fn a_baby_turtle_carries_a_rider_on_its_shell() {
     let seat =
         baby.attachments
             .get_clamped(EntityAttachment::Passenger, 0, turtle.rotation().0, baby);
-    // The adult's own seat, shrunk, would sit noticeably higher than this.
     let adult_seat_scaled =
         adult
             .attachments
@@ -510,8 +503,8 @@ fn a_baby_turtle_carries_a_rider_on_its_shell() {
     );
 }
 
-/// Vanilla does not give the turtle a quieter voice than anything else; only a
-/// handful of mobs override that, and the turtle is not one of them.
+/// Nothing in the turtle's class chain overrides `getSoundVolume`, so it stays
+/// at the shared 1.0.
 #[test]
 fn a_turtle_is_no_quieter_than_any_other_mob() {
     let turtle = detached_turtle();
@@ -523,8 +516,7 @@ fn a_turtle_is_no_quieter_than_any_other_mob() {
 fn a_turtle_shuffles_rather_than_plods() {
     let turtle = detached_turtle();
 
-    // The shared stride rounds up to the next whole block; a turtle's is short
-    // enough that it makes several steps within one.
+    // The shared stride is one block; a turtle's is shorter.
     assert!(
         turtle.next_step() < 1.0,
         "a turtle steps more often than once per block, got {}",

@@ -1,8 +1,5 @@
-//! Vanilla behavior trait implementations for [`TurtleEntity`].
-//!
-//! The entity struct, its state accessors, and construction live in the parent
-//! module; this file carries the `Entity` through `PathfinderMob` stack so neither
-//! file grows unwieldy.
+//! The `Entity` through `PathfinderMob` trait stack for [`TurtleEntity`]. The
+//! struct, its accessors, and construction are in the parent module.
 
 use std::sync::Arc;
 
@@ -92,18 +89,14 @@ impl Entity for TurtleEntity {
         self.play_sound(sound, 0.15, 1.0);
     }
 
-    // TODO(lightning): vanilla `Turtle.thunderHit` kills a struck turtle outright
-    // rather than dealing the shared lightning damage and setting it alight.
-    // Steel has no lightning bolt entity and no thunder-hit hook to override, so
-    // there is nothing to attach this to yet.
-    /// Vanilla `Turtle.isPushedByFluid`: a turtle holds its own course in a
-    /// current instead of being carried along by it.
+    // TODO(lightning): vanilla `Turtle.thunderHit` kills a struck turtle
+    // outright. Steel has no lightning bolt entity or thunder-hit hook yet.
+    /// Vanilla `Turtle.isPushedByFluid`: currents do not carry a turtle.
     fn is_pushed_by_fluid(&self) -> bool {
         false
     }
 
-    /// Vanilla `Turtle.nextStep`: turtles take shorter strides than the shared
-    /// one-block stride, so their shuffle is heard more often.
+    /// Vanilla `Turtle.nextStep`: turtles take shorter strides than the shared one.
     fn next_step(&self) -> f32 {
         self.base().movement_progress().move_dist() + NEXT_STEP_DISTANCE
     }
@@ -112,8 +105,7 @@ impl Entity for TurtleEntity {
         &sound_events::ENTITY_TURTLE_SWIM
     }
 
-    /// Vanilla `Turtle.playSwimSound`: the same sound as everything else, just
-    /// louder.
+    /// Vanilla `Turtle.playSwimSound`: louder than the shared one.
     fn play_swim_sound(&self, volume: f32) {
         self.default_play_swim_sound(volume * SWIM_SOUND_VOLUME_SCALE);
     }
@@ -165,8 +157,7 @@ impl LivingEntity for TurtleEntity {
             .set(clamped);
     }
 
-    /// Vanilla `Turtle.getAgeScale`: a hatchling is much smaller next to its
-    /// parent than the usual half-size baby.
+    /// Vanilla `Turtle.getAgeScale`: hatchlings are far smaller than half-size.
     fn get_age_scale(&self) -> f32 {
         if AgeableMob::is_baby(self) {
             BABY_SCALE
@@ -204,14 +195,8 @@ impl LivingEntity for TurtleEntity {
         result
     }
 
-    /// Vanilla `Turtle.travelInWater`: turtles swim under their own rules rather
-    /// than the shared water travel, which is why they are quick in water and
-    /// slow everywhere else.
-    ///
-    /// The push and the drag are flat values, so swimming speed does not follow
-    /// the movement-speed attribute the way walking does. Vanilla also skips the
-    /// shared path's fluid-falling adjustment and its jump out of water, so the
-    /// gravity and surface arguments go unused here.
+    /// Vanilla `Turtle.travelInWater`. The push and drag are flat, so the
+    /// gravity and surface arguments are unused.
     fn travel_in_water(
         &self,
         input: DVec3,
@@ -223,8 +208,7 @@ impl LivingEntity for TurtleEntity {
         let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut velocity = self.velocity() * SWIM_DRAG;
 
-        // A turtle with somewhere to be holds its depth. One that is just
-        // drifting settles slowly toward the sea floor.
+        // No target and either not homing or still far from home: drift down.
         let drifting = Mob::target(self).is_none()
             && (!self.going_home()
                 || !closer_to_center_than(
@@ -283,10 +267,8 @@ impl Animal for TurtleEntity {
         self.in_love_time() <= 0 && !self.has_egg()
     }
 
-    /// Vanilla `Turtle.checkTurtleSpawnRules`: turtles hatch onto beaches, so
-    /// they only appear on sand at or near the water line, in daylight.
-    /// Unlike the shared animal rule, this one has no exemption for spawners:
-    /// vanilla checks the light here whatever asked for the turtle.
+    /// Vanilla `Turtle.checkTurtleSpawnRules`: sand near sea level, in daylight.
+    /// The light check has no spawner exemption, unlike the shared rule.
     fn check_animal_spawn_rules(
         level: &dyn LevelReader,
         _spawn_reason: EntitySpawnReason,
@@ -315,16 +297,9 @@ impl Mob for TurtleEntity {
         Animal::custom_server_ai_step_animal(self);
     }
 
-    /// Vanilla `Turtle.TurtleMoveControl`: a turtle steers itself rather than
-    /// using the shared move control, which is what makes it lumber on land and
-    /// glide in water.
-    ///
-    /// Four things differ from the shared one. Speed is trimmed every tick by
-    /// [`Self::trim_turtle_speed`] before anything else. It eases toward its
-    /// target speed instead of snapping to it, so it takes a moment to get going.
-    /// It turns the turtle's body along with its steering. And it steers until
-    /// its path is finished rather than for a single tick, with no jumping,
-    /// because a turtle swims over obstacles instead of hopping them.
+    /// Vanilla `Turtle.TurtleMoveControl`: the turtle steers itself. Trims speed
+    /// each tick, eases toward the target speed, turns its body with the
+    /// steering, and steers until the path is done with no jumping.
     fn tick_move_control(&self) {
         self.trim_turtle_speed();
 
@@ -347,8 +322,7 @@ impl Mob for TurtleEntity {
         let (yaw, pitch) = self.rotation();
         let steered_yaw = rotlerp(yaw, y_rot, MOVE_CONTROL_MAX_TURN);
         self.set_rotation((steered_yaw, pitch));
-        // The shell swings round with the steering instead of lagging behind it,
-        // so a turning turtle never looks like it is swimming sideways.
+        // Body turns with the steering, not lagging behind it.
         self.set_y_body_rot(steered_yaw);
 
         let movement_speed = self
@@ -361,8 +335,7 @@ impl Mob for TurtleEntity {
             .mul_add(1.0 - SPEED_LERP, SPEED_LERP * target_speed);
         self.set_mob_speed(speed);
 
-        // Climb or dive toward the target, since a swimming turtle cannot jump
-        // its way up to one.
+        // Climb or dive toward the target; a swimming turtle cannot jump.
         let mut velocity = self.velocity();
         velocity.y += f64::from(speed) * (delta.y / distance) * CLIMB_SPEED_SHARE;
         self.set_velocity(velocity);
@@ -401,9 +374,8 @@ impl Mob for TurtleEntity {
 }
 
 impl PathfinderMob for TurtleEntity {
-    /// Vanilla `Turtle.getWalkTargetValue`: a turtle would rather be in water,
-    /// unless it is heading home to lay, and would rather be on sand than
-    /// anywhere else. Everything else falls back to the shared light-level cost.
+    /// Vanilla `Turtle.getWalkTargetValue`: water is preferred unless heading
+    /// home, then sand, else the shared light-level cost.
     fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
         let Some(world) = self.level() else {
             return 0.0;
