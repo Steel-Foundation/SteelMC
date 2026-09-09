@@ -74,6 +74,7 @@ mod short_dry_grass_block;
 mod small_dripleaf_block;
 mod snowy_block;
 mod spore_blossom_block;
+mod spreading_snowy_block;
 mod stem_block;
 mod sugar_cane;
 mod sweet_berry_bush;
