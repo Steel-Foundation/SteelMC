@@ -198,10 +198,6 @@ impl SteelArgumentType {
         Self::new(EntityAnchorParser)
     }
 
-    pub(crate) fn word() -> Self {
-        Self::new(WordParser)
-    }
-
     pub(crate) fn entity_tag() -> Self {
         Self::new(EntityTagParser)
     }
@@ -770,34 +766,6 @@ unit_argument_parser!(
     },
     protocol(ProtocolArgumentType::EntityAnchor, None)
 );
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct WordParser;
-
-impl_downcast_type!(WordParser, "steel:command/parser/word");
-
-impl SteelArgumentParser for WordParser {
-    type Value = PrimitiveArgumentValue;
-
-    fn parse(
-        &self,
-        reader: &mut StringReader<'_>,
-        _source: &dyn CommandArgumentSource,
-    ) -> Result<Self::Value, CommandSyntaxError> {
-        Ok(PrimitiveArgumentValue::String(
-            reader.read_unquoted_string().into(),
-        ))
-    }
-
-    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
-        (
-            ProtocolArgumentType::String {
-                behavior: ArgumentStringTypeBehavior::SingleWord,
-            },
-            None,
-        )
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct EntityTagParser;
