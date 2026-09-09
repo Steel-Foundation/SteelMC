@@ -4,11 +4,10 @@ use steel_registry::{DyeColor, vanilla_custom_stats};
 use super::*;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
-/// Vanilla `BlockBehaviour.Properties.friction`: the friction of ordinary
-/// ground, which movement speed is tuned around.
-const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
-/// Cube of [`DEFAULT_BLOCK_FRICTION`], the scale that cancels default ground
-/// friction. Kept as vanilla's inlined literal so the arithmetic matches.
+/// The scale that cancels default ground friction in
+/// `getFrictionInfluencedSpeed`: the cube of vanilla's ordinary block friction
+/// (0.6), kept as Mojang's inlined literal (`0.21600002F`, the f32-rounded cube)
+/// so the arithmetic matches.
 const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
 /// Vanilla `LivingEntity.BASE_HORIZONTAL_AIR_DRAG`.
 const BASE_HORIZONTAL_AIR_DRAG: f32 = 0.91;
@@ -2402,14 +2401,11 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Vanilla `LivingEntity.getFrictionInfluencedSpeed()`: compensates for
-    /// slippery ground, but returns the plain speed at or below default friction.
+    /// Returns vanilla `LivingEntity.getFrictionInfluencedSpeed()`: the walk
+    /// speed scaled so slippery ground does not slow the entity down.
     fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
         if !self.on_ground() {
             return self.get_flying_speed();
-        }
-        if block_friction <= DEFAULT_BLOCK_FRICTION {
-            return self.get_speed();
         }
 
         let cubed = block_friction * block_friction * block_friction;
@@ -3195,6 +3191,14 @@ mod tests {
     const WARMUP_TICKS: usize = 40;
     const MEASURED_TICKS: usize = 20;
     const SPEED_TOLERANCE: f64 = 1e-4;
+    /// Vanilla `BlockBehaviour.Properties.friction`: ordinary ground friction,
+    /// what movement speed is tuned around.
+    const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
+    /// Pig `MOVEMENT_SPEED` attribute base (vanilla `Pig` default attributes),
+    /// the speed the walk test drives the pig at.
+    const PIG_MOVEMENT_SPEED: f32 = 0.25;
+    /// Ice has to carry a coasting pig at least this many times as far as grass.
+    const ICE_SLIDE_RATIO: f64 = 5.0;
 
     /// A measured walk across one floor type.
     struct WalkMeasurement {
@@ -3273,18 +3277,22 @@ mod tests {
 
     #[test]
     fn a_modifier_of_one_leaves_friction_alone() {
-        assert!((compute_modified_friction(0.6, 1.0) - 0.6).abs() < f32::EPSILON);
-        assert!((compute_modified_friction(0.98, 1.0) - 0.98).abs() < f32::EPSILON);
+        let unchanged = compute_modified_friction(DEFAULT_BLOCK_FRICTION, 1.0);
+        assert!((unchanged - DEFAULT_BLOCK_FRICTION).abs() < f32::EPSILON);
+        let unchanged = compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 1.0);
+        assert!((unchanged - BASE_VERTICAL_AIR_DRAG).abs() < f32::EPSILON);
     }
 
     #[test]
     fn a_modifier_of_zero_removes_all_slipperiness() {
-        assert!((compute_modified_friction(0.98, 0.0) - 1.0).abs() < f32::EPSILON);
+        assert!(
+            (compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 0.0) - 1.0).abs() < f32::EPSILON
+        );
     }
 
     #[test]
     fn a_large_modifier_is_clamped_to_a_usable_friction() {
-        let friction = compute_modified_friction(0.98, 2048.0);
+        let friction = compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 2048.0);
         assert!(
             (0.0..=1.0).contains(&friction),
             "friction stays in range, got {friction}"
@@ -3292,23 +3300,12 @@ mod tests {
     }
 
     #[test]
-    fn ground_that_grips_more_than_normal_does_not_slow_walking() {
-        // No vanilla block is grippier than the default, but vanilla still
-        // guards this case rather than speeding the entity up.
-        let speed = 0.25_f32;
-        let scaled = speed * (DEFAULT_FRICTION_SPEED_SCALE / (0.3 * 0.3 * 0.3));
-        assert!(
-            scaled > speed,
-            "without the guard, grippy ground would speed an entity up"
-        );
-    }
-
-    #[test]
     fn a_pig_walks_at_the_vanilla_speed_on_ordinary_ground() {
         let walk = walking_speed_on("pig_walk_grass", &vanilla_blocks::GRASS_BLOCK);
 
-        // Vanilla equilibrium for a 0.25 movement-speed mob on default friction.
-        let expected = 0.25 * 0.25 / (1.0 - 0.6 * 0.91);
+        // Vanilla walk equilibrium: speed^2 / (1 - blockFriction * horizontalAirDrag).
+        let expected = f64::from(PIG_MOVEMENT_SPEED * PIG_MOVEMENT_SPEED)
+            / (1.0 - f64::from(DEFAULT_BLOCK_FRICTION * BASE_HORIZONTAL_AIR_DRAG));
         assert!(
             (walk.per_tick - expected).abs() < SPEED_TOLERANCE,
             "expected about {expected} blocks per tick, got {}",
@@ -3324,7 +3321,7 @@ mod tests {
         // The compensation keeps the top speed about the same; only the coast
         // distance changes.
         assert!(
-            on_ice.coasted > on_grass.coasted * 5.0,
+            on_ice.coasted > on_grass.coasted * ICE_SLIDE_RATIO,
             "ice should keep the pig sliding, got {} against {}",
             on_ice.coasted,
             on_grass.coasted
