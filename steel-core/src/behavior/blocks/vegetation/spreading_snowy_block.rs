@@ -55,11 +55,10 @@ impl SpreadingSnowyBlock {
             let default_block_state = self.own_block.default_state();
 
             for _ in 0..4 {
-                // This copies the java code, but maybe we should change this to have a range of -1..2
                 let test_pos = pos.offset(
-                    rand::random_range(0..3) - 1,
-                    rand::random_range(0..5) - 3,
-                    rand::random_range(0..3) - 1,
+                    rand::random_range(-1..2),
+                    rand::random_range(-3..2),
+                    rand::random_range(-1..2),
                 );
                 if world.get_block_state(test_pos).get_block() == self.base_block
                     && Self::can_propagate(default_block_state, world, test_pos)
