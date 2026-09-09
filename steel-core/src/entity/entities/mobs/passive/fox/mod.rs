@@ -50,8 +50,7 @@ use goals::{
     FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
 };
 
-/// Vanilla `Fox.tick`: how often a fox stuck face-down in the ground kicks up
-/// another puff of it, so roughly once every five ticks.
+/// Vanilla `Fox.tick`: chance per tick of a faceplant dust puff.
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
@@ -86,26 +85,21 @@ const FOX_SPIT_PICKUP_DELAY: i32 = 40;
 /// Height above the fox, in blocks, a spat-out item spawns (vanilla `getY() + 1.0`).
 const FOX_SPIT_SPAWN_HEIGHT: f64 = 1.0;
 
-/// Ticks a fox holds food in its mouth before it swallows it (vanilla `Fox.aiStep`,
-/// 30 seconds).
+// Vanilla `Fox.aiStep` eating timers: swallow at 600 ticks, chew from 560.
 const FOX_EAT_TICKS: i32 = 600;
-/// Ticks a fox holds food before it starts chewing over it, two seconds before it
-/// swallows (vanilla `Fox.aiStep`, 28 seconds).
 const FOX_CHEW_TICKS: i32 = 560;
 /// Chance per tick of a chewing noise while a fox finishes its food.
 const FOX_CHEW_SOUND_CHANCE: f32 = 0.1;
 
-/// Chance, per ambient-sound roll at night with nobody near, of the fox screech.
+// Vanilla `Fox.playAmbientSound` night screech: chance, player-suppression
+// range, and volume.
 const FOX_SCREECH_CHANCE: f32 = 0.1;
-/// Range, in blocks, within which a player suppresses the fox screech.
 const FOX_SCREECH_PLAYER_RANGE: f64 = 16.0;
-/// Volume the fox screech plays at (vanilla plays it louder than other sounds).
 const FOX_SCREECH_VOLUME: f32 = 2.0;
 
-/// Horizontal reach of the fox alert scan (vanilla `alertable` inflates the
-/// bounding box by this on X and Z and uses it as the targeting range).
+// Vanilla `Fox` `alertable` scan: bounding-box inflation used as the targeting
+// range.
 const FOX_ALERT_RANGE: f64 = 12.0;
-/// Vertical reach of the fox alert scan (vanilla inflates the box by this on Y).
 const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
 
 /// Chance a naturally spawned fox holds an item (vanilla `populateDefaultEquipmentSlots`).
@@ -165,12 +159,8 @@ impl FoxEntity {
         living_base.initialize_synced_data(&mut entity_data);
 
         {
-            // Fox goals at their vanilla priorities.
-            //
-            // The goals vanilla registers that Steel cannot support yet are listed as
-            // TODOs at the priority they belong at, each blocked on a foundation that
-            // is not in the tree today (a missing mob, a control hook, or a block the
-            // fox has to interact with).
+            // Fox goals at their vanilla priorities. Goals Steel cannot support
+            // yet are left as TODOs at the priority they belong at.
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FoxFloatGoal::new(&mob_base));
             goal_selector.add_goal(0, ClimbOnTopOfPowderSnowGoal::new());
@@ -320,9 +310,7 @@ impl FoxEntity {
         self.set_flag(FLAG_DEFENDING, defending);
     }
 
-    /// Returns vanilla `Fox.canMove`: not sleeping, sitting, or faceplanted.
-    /// Vanilla `Fox.clearStates`: drops everything a fox might be in the middle
-    /// of, so it starts whatever it is about to do from a standing, awake pose.
+    /// Vanilla `Fox.clearStates`: drop everything the fox might be mid-way through.
     pub(crate) fn clear_states(&self) {
         self.set_interested(false);
         self.set_crouching(false);
@@ -332,6 +320,7 @@ impl FoxEntity {
         self.set_faceplanted(false);
     }
 
+    /// Vanilla `Fox.canMove`: not sleeping, sitting, or faceplanted.
     pub(crate) fn can_move(&self) -> bool {
         !self.is_sleeping() && !self.is_sitting() && !self.is_faceplanted()
     }
@@ -344,10 +333,9 @@ impl FoxEntity {
             || *entity_data.trusted_id_1.get() == Some(uuid)
     }
 
-    /// Returns vanilla `Fox.FoxBehaviorGoal.alertable`: whether a nearby entity
-    /// the fox treats as a threat or prey is within alert range. A resting or
-    /// perching fox uses this to stay wary. Mirrors vanilla's combat targeting
-    /// (range, no line-of-sight requirement) plus `FoxAlertableEntitiesSelector`.
+    /// Vanilla `Fox.FoxBehaviorGoal.alertable`: a threat or prey within alert
+    /// range, by combat targeting (no line of sight) plus
+    /// `FoxAlertableEntitiesSelector`.
     pub(crate) fn is_alertable(&self) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -418,7 +406,7 @@ impl FoxEntity {
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
-    /// Returns whether an item stack matches the vanilla fox food tag (sweet berries).
+    /// Whether an item stack is fox food (`#fox_food`, sweet berries).
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
@@ -507,8 +495,7 @@ impl FoxEntity {
         ItemStack::new(item)
     }
 
-    /// Vanilla `Fox.canEat`: a fox only eats out of its mouth while it is awake,
-    /// standing on the ground, and not chasing anything.
+    /// Vanilla `Fox.canEat`: awake, on the ground, holding food, no target.
     fn can_eat(&self) -> bool {
         let mut holds_food = false;
         self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
@@ -517,12 +504,9 @@ impl FoxEntity {
         holds_food && Mob::target(self).is_none() && self.on_ground() && !self.is_sleeping()
     }
 
-    /// Vanilla `Fox.tick`, the half a server has to run: a fox does not stay
-    /// asleep or sat down through anything worth reacting to, and one lying
-    /// face-down keeps kicking up the ground it landed in.
-    ///
-    /// The interest and crouch angles vanilla eases in the same method are only
-    /// used for drawing the fox, so they stay on the client.
+    /// Vanilla `Fox.tick`, server half: wake or stand up when something worth
+    /// reacting to happens, and kick up dust while faceplanted. The interest and
+    /// crouch angle easing is client-side render state, so it is skipped.
     fn tick_fox_posture(&self) {
         if !self.is_effective_ai() {
             return;
@@ -551,8 +535,7 @@ impl FoxEntity {
         }
     }
 
-    /// Vanilla `Fox.aiStep`'s eating block: age the timer since the fox last ate,
-    /// then chew over its food and eventually swallow it.
+    /// Vanilla `Fox.aiStep` eating block: age the since-ate timer, chew, swallow.
     fn tick_eating(&self) {
         if !Entity::is_alive(self) || !self.is_effective_ai() {
             return;
@@ -577,20 +560,17 @@ impl FoxEntity {
         }
     }
 
-    /// Vanilla `Fox.aiStep`: finish the food in the fox's mouth, applying its
-    /// effects (a chorus fruit teleports the fox) and leaving any container behind,
-    /// such as a bottle or a bowl, in its place.
+    /// Vanilla `Fox.aiStep`: finish the mouth item, applying its effects and
+    /// leaving any container (bottle, bowl) behind.
     fn swallow_mouth_item(&self) {
         let Some(world) = self.level() else {
             return;
         };
 
-        // The food leaves the mouth first because finishing it runs the item's
-        // consume effects, which can move the fox and touch its equipment, so the
-        // slot must not be locked while that happens. The item behavior returns the
-        // stack the slot ends up with, so that result goes back into the mouth
-        // whether it is empty or a leftover container. Vanilla consumes the held
-        // stack in place and so only writes the leftover back.
+        // Take the item out of the slot before finishing it: the consume effects
+        // can move the fox and touch its equipment, so the slot must be free.
+        // Whatever `finish_using` returns (empty, or a leftover container) goes
+        // back into the mouth.
         let mut item_in_mouth = self
             .living_base()
             .equipment()
@@ -608,10 +588,9 @@ impl FoxEntity {
     }
 }
 
-/// Vanilla `Fox.FoxAlertableEntitiesSelector`: which nearby entities make a fox
-/// wary. Foxes ignore other foxes; react to chickens, rabbits, and monsters;
-/// ignore creative or spectating players and anyone they trust; and otherwise
-/// react to any entity that is awake and not sneaking.
+/// Vanilla `Fox.FoxAlertableEntitiesSelector`: react to chickens, rabbits and
+/// monsters; ignore other foxes, creative/spectating players and trusted uuids;
+/// otherwise react to anything awake and not sneaking.
 fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
     let entity_type = target.entity_type();
     if entity_type == &vanilla_entities::FOX {
@@ -822,8 +801,6 @@ impl Animal for FoxEntity {
     }
 
     fn play_eating_sound(&self) {
-        // Vanilla Fox plays ENTITY_FOX_EAT when it eats; the Animal feed path
-        // calls this hook for an adult or a growing kit.
         self.play_sound(&sound_events::ENTITY_FOX_EAT, 1.0, 1.0);
     }
 
@@ -854,11 +831,9 @@ impl Animal for FoxEntity {
         }
     }
 
-    /// Vanilla `Fox.checkFoxSpawnRules`: foxes want their own ground, the snow,
-    /// grass and podzol of the forests they live in, rather than the wider set
-    /// every other animal will spawn on.
-    /// Like the turtle and unlike the shared animal rule, the light check has no
-    /// exemption for spawners.
+    /// Vanilla `Fox.checkFoxSpawnRules`: `#foxes_spawnable_on` (snow, grass,
+    /// podzol), not the wider animal set. The light check has no spawner
+    /// exemption, unlike the shared rule.
     fn check_animal_spawn_rules(
         level: &dyn LevelReader,
         _spawn_reason: EntitySpawnReason,
@@ -935,9 +910,9 @@ impl Mob for FoxEntity {
             });
         self.set_variant(variant);
 
-        // Vanilla `populateDefaultEquipmentSlots`: a fifth of foxes spawn holding an item.
-        // (Vanilla shares the variant across a spawn group; picking it from the biome per
-        // fox gives the same uniform result, since a group shares one spawn biome.)
+        // Vanilla `populateDefaultEquipmentSlots`: a fifth of foxes spawn holding
+        // an item. Vanilla shares the variant across a spawn group; per-fox from
+        // the biome is the same result since a group shares one biome.
         if rand::random::<f32>() < FOX_SPAWN_HELD_ITEM_CHANCE {
             self.living_base()
                 .equipment()

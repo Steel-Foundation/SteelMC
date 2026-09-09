@@ -419,8 +419,8 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
     assert!(dropped, "the mouth item is dropped into the world");
 }
 
-/// Puts a fox in the state vanilla requires before it will eat: awake, on the
-/// ground, and holding `item` in its mouth.
+/// Puts the fox in the state vanilla requires to eat: awake, grounded, `item`
+/// in its mouth.
 fn fox_holding(name: &'static str, item: ItemStack) -> (Arc<World>, Arc<FoxEntity>) {
     let (world, fox) = world_with_fox(name);
     fox.set_on_ground(true);
@@ -530,8 +530,7 @@ fn fox_does_not_eat_while_asleep_in_the_air_or_chasing_something() {
     assert_still_holding_berries("a fox chasing something does not eat");
 }
 
-/// A bare level that answers only what the spawn rule asks of it: what is under
-/// the fox, and how bright it is.
+/// A bare level answering only the spawn rule's queries: block below, brightness.
 struct SpawnRuleLevel {
     below_state: BlockStateId,
     raw_brightness: u8,
@@ -570,8 +569,8 @@ fn fox_spawns_on(below_state: BlockStateId, raw_brightness: u8) -> bool {
     <FoxEntity as Animal>::check_animal_spawn_rules(&level, EntitySpawnReason::Natural, SPAWN_POS)
 }
 
-/// Vanilla `Fox.checkFoxSpawnRules`: foxes are pickier about their ground than
-/// animals in general, and the light check holds whatever asked for the spawn.
+/// Vanilla `Fox.checkFoxSpawnRules`: pickier ground than animals in general, and
+/// a light check with no spawner exemption.
 #[test]
 fn foxes_only_spawn_on_their_own_ground() {
     init_vanilla_registry();
@@ -594,12 +593,9 @@ fn foxes_only_spawn_on_their_own_ground() {
     ));
 }
 
-/// Vanilla `Fox.tick`: a sleeping fox is woken by anything worth reacting to,
-/// and it cannot stay sat down in water or once it has dozed off.
-///
-/// The third thing that method does, kicking up the block a faceplanted fox is
-/// stuck in, is a particle effect that only reaches a watching client, so it is
-/// driven here but cannot be asserted on.
+/// Vanilla `Fox.tick`: a sleeping fox wakes to anything worth reacting to and
+/// cannot stay sat down in water or asleep. The faceplant particle is
+/// client-only, so it is driven here but not asserted.
 #[test]
 fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
     let (world, fox) = world_with_fox("fox_wake");
@@ -659,8 +655,7 @@ fn clearing_a_foxs_states_drops_everything_it_was_in_the_middle_of() {
     assert!(!fox.is_faceplanted());
 }
 
-/// Vanilla `Fox.FoxFloatGoal` swims at a shallower depth than the shared goal,
-/// which waits for water up to the mob's jump threshold.
+/// Vanilla `Fox.FoxFloatGoal` swims at a shallower depth than the shared goal.
 #[test]
 fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     let (_world, fox) = world_with_fox("fox_float_depth");
@@ -685,9 +680,7 @@ fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     assert!(!fox.is_sitting());
 }
 
-/// Vanilla gates the fox's panic and follow-parent goals on not defending, so a
-/// fox standing up for something it trusts neither bolts nor wanders off after
-/// its parent.
+/// Vanilla gates the fox's panic and follow-parent goals on not defending.
 #[test]
 fn a_defending_fox_neither_panics_nor_follows_its_parent() {
     let (_world, fox) = world_with_fox("fox_defending_gates");

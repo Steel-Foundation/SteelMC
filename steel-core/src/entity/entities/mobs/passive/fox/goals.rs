@@ -1,7 +1,5 @@
-//! Bespoke fox behaviour goals that read `FoxEntity` state.
-//!
-//! These reach the concrete `FoxEntity` from the goal's `&dyn PathfinderMob` the
-//! same way the sheep and turtle goals do, via `downcast_ref`.
+//! Bespoke fox behaviour goals, reaching `FoxEntity` from `&dyn PathfinderMob`
+//! via `downcast_ref` like the sheep and turtle goals.
 
 use std::f64::consts::TAU;
 use std::sync::Arc;
@@ -35,8 +33,8 @@ const PERCH_EXTRA_LOOKS: i32 = 3;
 const PERCH_MIN_LOOK_TICKS: i32 = 80;
 const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
-/// Vanilla `Fox.FoxFloatGoal`: depth of water a fox starts swimming in. Shallower
-/// than the shared jump threshold, so a fox floats sooner than most mobs.
+/// Vanilla `Fox.FoxFloatGoal`: water depth a fox starts swimming at, shallower
+/// than the shared jump threshold.
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
 /// Randomized delay, in ticks, before a fox may fall asleep (vanilla 140).
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
@@ -215,9 +213,8 @@ impl FoxSleepGoal {
     }
 }
 
-/// Returns whether the fox is under cover (vanilla `hasShelter`): the block at the
-/// top of its bounding box is hidden from the sky and has a non-negative walk-target
-/// value (it is on grass or bright enough).
+/// Vanilla `Fox.hasShelter`: the block at the top of the bounding box is hidden
+/// from the sky and has a non-negative walk-target value.
 fn has_shelter(mob: &dyn PathfinderMob, world: &Arc<World>) -> bool {
     let position = mob.position();
     let pos = BlockPos::containing(position.x, mob.bounding_box().max_y(), position.z);
