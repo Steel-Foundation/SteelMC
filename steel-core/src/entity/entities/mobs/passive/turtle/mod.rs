@@ -330,12 +330,8 @@ impl TurtleEntity {
     }
 
     /// Vanilla `TurtleMoveControl.updateSpeed`: trims the speed a turtle carries
-    /// into this tick, and floats it while it swims.
-    ///
-    /// This runs before the steering each tick, so the trimmed speed is what the
-    /// easing then builds back up from. That balance is what settles a turtle at
-    /// its slow walking pace on land while letting it stay quick in water near
-    /// home.
+    /// into this tick and floats it while it swims. Runs before the per-tick
+    /// steering, so the eased speed builds back up from the trimmed value.
     fn trim_turtle_speed(&self) {
         if self.is_in_water() {
             let mut velocity = self.velocity();
