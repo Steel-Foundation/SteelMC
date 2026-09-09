@@ -37,41 +37,25 @@ const PERCH_MIN_LOOK_TICKS: i32 = 80;
 const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
-/// Vanilla `Fox.registerGoals`: how far a fox looks for berries, and how far up
-/// and down, when it goes hunting for a bush.
 const BERRY_SEARCH_RANGE: i32 = 12;
 const BERRY_VERTICAL_SEARCH_RANGE: i32 = 1;
-/// Vanilla `FoxEatBerriesGoal.acceptedDistance`: a fox eats from an arm's length
-/// away rather than standing on the bush.
 const BERRY_ACCEPTED_DISTANCE: f64 = 2.0;
-/// Vanilla `FoxEatBerriesGoal.shouldRecalculatePath`: ticks between fresh paths
-/// while it walks over.
 const BERRY_RECALCULATE_INTERVAL: i32 = 100;
-/// Vanilla `FoxEatBerriesGoal.WAIT_TICKS`: how long a fox noses around the bush
-/// before it takes anything, so two seconds.
-const BERRY_WAIT_TICKS: i32 = 40;
-/// Vanilla `FoxEatBerriesGoal.tick`: chance each tick of a sniff on the way over.
+pub(super) const BERRY_WAIT_TICKS: i32 = 40;
 const BERRY_SNIFF_CHANCE: f32 = 0.05;
-/// Berries a fox takes from a bush, before the bonus for a fully grown one.
 const BERRIES_PER_PICK: RangeInclusive<i32> = 1..=2;
-/// Growth stage a sweet berry bush has to reach before a fox is interested.
 const SWEET_BERRY_RIPE_AGE: u8 = 2;
-/// Growth stage a fox is interested in that also yields the extra berry.
 const SWEET_BERRY_MAX_AGE: u8 = 3;
-/// Growth stage a picked bush is left at, so it grows back rather than dying.
 const SWEET_BERRY_PICKED_AGE: u8 = 1;
 const SWEET_BERRY_AGE: &IntProperty = &BlockStateProperties::AGE_3;
-/// Whether a cave vine is currently carrying glow berries.
 const BERRIES: &BoolProperty = &BlockStateProperties::BERRIES;
 
-/// Vanilla `CaveVines.hasGlowBerries`: a vine only counts while it is actually
-/// carrying berries, and any other block never does.
+/// Whether a vine is currently carrying glow berries.
 fn has_glow_berries(state: BlockStateId) -> bool {
     state.try_get_value(BERRIES).unwrap_or(false)
 }
 
-/// Vanilla `FoxEatBerriesGoal.isValidTarget`: a ripe sweet berry bush, or a vine
-/// with glow berries on it.
+/// Whether the block is a ripe sweet berry bush, or a vine with glow berries.
 fn is_ripe_berry_block(state: BlockStateId) -> bool {
     (state.get_block() == &vanilla_blocks::SWEET_BERRY_BUSH
         && state.get_value(SWEET_BERRY_AGE) >= SWEET_BERRY_RIPE_AGE)
@@ -521,8 +505,7 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// Vanilla `Fox.FoxEatBerriesGoal`: a fox that spots a ripe sweet berry bush or a
-/// vine hung with glow berries walks over, noses around it a while, and helps
+/// A fox that spots ripe berries walks over, noses around a while, and helps
 /// itself.
 pub(crate) struct FoxEatBerriesGoal {
     inner: MoveToBlockGoal,
@@ -544,12 +527,7 @@ impl FoxEatBerriesGoal {
         }
     }
 
-    /// Vanilla `FoxEatBerriesGoal.onReachedTarget`: take the berries, unless the
-    /// server has told mobs to leave the world alone.
-    ///
-    /// This runs on every tick once the wait is over, but picking leaves the bush
-    /// below the age the goal looks for and strips a vine of its berries, so the
-    /// shared goal stops on its next check and a fox only ever takes one helping.
+    /// Takes the berries, unless `mobGriefing` is off.
     fn on_reached_target(&self, mob: &dyn PathfinderMob) {
         let (Some(fox), Some(world)) = (as_fox(mob), mob.level()) else {
             return;
@@ -567,11 +545,9 @@ impl FoxEatBerriesGoal {
         }
     }
 
-    /// Vanilla `FoxEatBerriesGoal.pickSweetBerries`: one berry goes in the mouth
-    /// if it is free, the rest drop by the bush, and the bush is left picked.
+    /// One berry goes in the mouth if it is free, the rest drop by the bush.
     fn pick_sweet_berries(fox: &FoxEntity, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let age = state.get_value(SWEET_BERRY_AGE);
-        // A fully grown bush gives one berry more than a merely ripe one.
         let mut count =
             rand::random_range(BERRIES_PER_PICK) + i32::from(age == SWEET_BERRY_MAX_AGE);
 

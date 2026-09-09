@@ -13,7 +13,7 @@ use steel_utils::types::UpdateFlags;
 use crate::behavior::init_behaviors;
 use crate::entity::ai::goal::{FloatGoal, Goal};
 use crate::entity::entities::PigEntity;
-use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
+use crate::entity::entities::mobs::passive::fox::goals::{BERRY_WAIT_TICKS, FOX_FLOAT_WATER_DEPTH};
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{EntityFluidContact, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
@@ -681,10 +681,6 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
 }
 
-/// Vanilla `Fox.FoxEatBerriesGoal.isValidTarget`: a fox is only interested in a
-/// bush far enough along to have fruit on it, or a vine actually carrying glow
-/// berries. Driven through the goal so the search and the predicate are both
-/// covered.
 #[test]
 fn a_fox_only_walks_over_to_a_bush_worth_picking() {
     let (world, fox) = world_with_fox("fox_berry_targets");
@@ -700,7 +696,6 @@ fn a_fox_only_walks_over_to_a_bush_worth_picking() {
     assert!(notices(bush.set_value(&BlockStateProperties::AGE_3, 2)));
     assert!(notices(bush.set_value(&BlockStateProperties::AGE_3, 3)));
 
-    // A bare vine is not worth the walk, one hung with berries is.
     assert!(!notices(
         vine.set_value(&BlockStateProperties::BERRIES, false)
     ));
@@ -708,13 +703,9 @@ fn a_fox_only_walks_over_to_a_bush_worth_picking() {
         vine.set_value(&BlockStateProperties::BERRIES, true)
     ));
 
-    // And a block with no berries about it at all is simply not a target.
     assert!(!notices(vanilla_blocks::STONE.default_state()));
 }
 
-/// Puts a fox next to a berry block and runs the goal until it either takes the
-/// berries or gives up, returning the ticks it took. Mirrors what the goal
-/// selector does: stop as soon as the goal no longer wants to continue.
 fn run_berry_goal(fox: &Arc<FoxEntity>) -> Option<u32> {
     let mut goal = FoxEatBerriesGoal::new(1.2);
     assert!(
@@ -732,11 +723,7 @@ fn run_berry_goal(fox: &Arc<FoxEntity>) -> Option<u32> {
     None
 }
 
-/// Ticks allowed for the fox to walk over, wait out the vanilla pause, and pick.
 const BERRY_GOAL_TICKS: u32 = 200;
-/// Where the berries sit in these tests. The goal walks to the block above its
-/// target, so this puts that target right where the fox already stands, since a
-/// test fox is not being moved by a navigator.
 const BERRY_BLOCK_POS: BlockPos = BlockPos::new(8, 64, 8);
 
 fn ripe_bush() -> BlockStateId {
@@ -767,9 +754,6 @@ fn berries_dropped_near(world: &Arc<World>, pos: BlockPos) -> i32 {
         .sum()
 }
 
-/// Vanilla `Fox.FoxEatBerriesGoal`: the fox walks over, noses about for the
-/// vanilla wait, then keeps one berry and drops the rest, leaving the bush
-/// picked rather than destroyed.
 #[test]
 fn a_fox_waits_at_a_bush_then_pockets_one_berry_and_leaves_it_standing() {
     let (world, fox) = world_with_fox("fox_pick_berries");
@@ -778,7 +762,7 @@ fn a_fox_waits_at_a_bush_then_pockets_one_berry_and_leaves_it_standing() {
 
     let ticks = run_berry_goal(&fox).expect("the fox should finish with the bush");
     assert!(
-        ticks > BERRY_WAIT_TICKS_EXPECTED,
+        i64::from(ticks) > i64::from(BERRY_WAIT_TICKS),
         "the fox should nose around before taking anything, took {ticks} ticks"
     );
 
@@ -803,12 +787,6 @@ fn a_fox_waits_at_a_bush_then_pockets_one_berry_and_leaves_it_standing() {
     );
 }
 
-/// The vanilla wait before a fox takes anything, so the test can tell a pick
-/// apart from an instant grab.
-const BERRY_WAIT_TICKS_EXPECTED: u32 = 40;
-
-/// A fox that already has something in its mouth drops the whole picking rather
-/// than swapping it out.
 #[test]
 fn a_fox_with_a_full_mouth_drops_everything_it_picks() {
     let (world, fox) = world_with_fox("fox_pick_berries_full_mouth");
@@ -831,8 +809,6 @@ fn a_fox_with_a_full_mouth_drops_everything_it_picks() {
     );
 }
 
-/// Vanilla gates the pick on the mob-griefing rule, so a server that has turned
-/// it off keeps its bushes.
 #[test]
 fn a_fox_leaves_the_bush_alone_when_mob_griefing_is_off() {
     let (world, fox) = world_with_fox("fox_pick_berries_no_griefing");
@@ -856,8 +832,6 @@ fn a_fox_leaves_the_bush_alone_when_mob_griefing_is_off() {
     assert_eq!(berries_dropped_near(&world, pos), 0, "and nothing drops");
 }
 
-/// Glow berries go through the cave vine's own use path, which empties the vine
-/// and drops the berries.
 #[test]
 fn a_fox_strips_a_vine_of_its_glow_berries() {
     let (world, fox) = world_with_fox("fox_pick_glow_berries");
