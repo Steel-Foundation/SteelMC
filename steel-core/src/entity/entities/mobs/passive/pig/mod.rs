@@ -9,6 +9,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
+use steel_registry::data_components::vanilla_components::{PIG_SOUND_VARIANT, PIG_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -235,6 +236,15 @@ impl Entity for PigEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(PIG_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(PIG_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
     }
 
     fn base_tick(&self) {
