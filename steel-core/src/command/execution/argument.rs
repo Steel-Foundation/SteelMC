@@ -30,7 +30,8 @@ use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+    ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
+    SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
@@ -791,7 +792,7 @@ impl SteelArgumentParser for WordParser {
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         (
             ProtocolArgumentType::String {
-                behavior: steel_protocol::packets::game::ArgumentStringTypeBehavior::SingleWord,
+                behavior: ArgumentStringTypeBehavior::SingleWord,
             },
             None,
         )
@@ -842,7 +843,7 @@ impl SteelArgumentParser for EntityTagParser {
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         (
             ProtocolArgumentType::String {
-                behavior: steel_protocol::packets::game::ArgumentStringTypeBehavior::SingleWord,
+                behavior: ArgumentStringTypeBehavior::SingleWord,
             },
             Some(ProtocolSuggestionType::AskServer),
         )

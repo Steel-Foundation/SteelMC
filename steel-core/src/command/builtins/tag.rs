@@ -21,12 +21,13 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tag").then(
         argument("targets", SteelArgumentType::entities())
-            .then(literal("add").then(
-                argument("name", SteelArgumentType::word()).executes(add_tag),
-            ))
-            .then(literal("remove").then(
-                argument("name", SteelArgumentType::entity_tag()).executes(remove_tag),
-            ))
+            .then(
+                literal("add").then(argument("name", SteelArgumentType::word()).executes(add_tag)),
+            )
+            .then(
+                literal("remove")
+                    .then(argument("name", SteelArgumentType::entity_tag()).executes(remove_tag)),
+            )
             .then(literal("list").executes(list_tags)),
     )
 }
@@ -35,9 +36,7 @@ fn add_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandS
     let targets = context.entities("targets")?;
     let tag = context.string("name")?;
 
-    let changed = targets
-        .iter()
-        .any(|target| target.add_tag(tag.to_owned()));
+    let changed = targets.iter().any(|target| target.add_tag(tag.to_owned()));
 
     if !changed {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -47,10 +46,7 @@ fn add_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandS
 
     let message = if let [target] = targets.as_slice() {
         translations::COMMANDS_TAG_ADD_SUCCESS_SINGLE
-            .message([
-                TextComponent::plain(tag.to_owned()),
-                target.display_name(),
-            ])
+            .message([TextComponent::plain(tag.to_owned()), target.display_name()])
             .component()
     } else {
         translations::COMMANDS_TAG_ADD_SUCCESS_MULTIPLE
@@ -70,9 +66,7 @@ fn remove_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
     let targets = context.entities("targets")?;
     let tag = context.string("name")?;
 
-    let changed = targets
-        .iter()
-        .any(|target| target.remove_tag(tag));
+    let changed = targets.iter().any(|target| target.remove_tag(tag));
 
     if !changed {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -82,10 +76,7 @@ fn remove_tag(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
 
     let message = if let [target] = targets.as_slice() {
         translations::COMMANDS_TAG_REMOVE_SUCCESS_SINGLE
-            .message([
-                TextComponent::plain(tag.to_owned()),
-                target.display_name(),
-            ])
+            .message([TextComponent::plain(tag.to_owned()), target.display_name()])
             .component()
     } else {
         translations::COMMANDS_TAG_REMOVE_SUCCESS_MULTIPLE
