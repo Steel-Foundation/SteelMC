@@ -400,7 +400,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies the base entity's clamped bubble-column surface movement.
-    fn default_on_above_bubble_column(&self, drag_down: bool, _pos: BlockPos) {
+    fn default_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
         if self.is_flying_player() {
             return;
         }
@@ -412,6 +412,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
         };
         self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
     }
 
     /// Applies vanilla `Entity.onInsideBubbleColumn`.

@@ -210,13 +210,17 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Applies bubble-column surface acceleration without clamping velocity.
-    fn on_above_bubble_column_projectile(&self, drag_down: bool, _pos: BlockPos) {
+    fn on_above_bubble_column_projectile(&self, drag_down: bool, pos: BlockPos) {
         let acceleration = if drag_down {
             -BUBBLE_COLUMN_DOWN_ACCELERATION
         } else {
             BUBBLE_COLUMN_ABOVE_UP_ACCELERATION
         };
         self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
     }
 
     /// Applies inside-bubble-column acceleration without clamping velocity.
