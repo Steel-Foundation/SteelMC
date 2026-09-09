@@ -7,9 +7,9 @@ use super::{
     ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, Instant, JoinSet, NetworkConnection,
     PendingCommandExecutionQueue, Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD,
     Server, StringReader, SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats,
-    ThreadPool, World, command_suggestions_packet, configured_packet_workers, sleep,
-    spawn_blocking,
+    ThreadPool, World, command_suggestions_packet, sleep, spawn_blocking,
 };
+use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 
 impl Server {
     pub(super) fn advance_server_tick(&self) -> (u64, bool) {
@@ -28,7 +28,8 @@ impl Server {
     /// fork background chunk-scheduling epochs through each world's task tracker.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         self.packet_processor.open_after_tick();
-        let packet_worker_count = configured_packet_workers(self.config.packet_workers);
+        let packet_worker_count =
+            worker_threads_for_available(self.config.packet_workers, available_worker_threads());
         let mut packet_handles = Vec::with_capacity(packet_worker_count);
         for worker_id in 0..packet_worker_count {
             let s = self.clone();
@@ -543,7 +544,7 @@ impl Server {
     ) -> Result<(), WorldTickWorkerError> {
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
-            if timings.elapsed.as_millis() < 50 {
+            if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
                 continue;
             }
             let cm = &timings.chunk_map;

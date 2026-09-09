@@ -31,7 +31,7 @@ impl JavaTcpClient {
     pub async fn handle_client_information(&self, packet: SClientInformation) {
         log::debug!("Client information packet: {packet:?}");
 
-        // Convert packet to our ClientInformation struct and store it
+        // TODO: Centralize the minimum with config validation when zero view distance is supported.
         let info = ClientInformation {
             language: packet.language,
             view_distance: packet

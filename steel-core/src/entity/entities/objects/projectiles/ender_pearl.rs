@@ -21,18 +21,19 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::EnderPearlEntityData;
-use steel_registry::vanilla_game_rules::ENDER_PEARLS_VANISH_ON_DEATH;
-use steel_registry::{sound_events, vanilla_damage_types, vanilla_items};
+use steel_registry::vanilla_game_rules::{ENDER_PEARLS_VANISH_ON_DEATH, SPAWN_MOBS};
+use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::EndermiteEntity;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
-    ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
-    change_entity_world,
+    ENTITIES, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile,
+    ProjectileBase, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
+    ThrowableProjectile, change_entity_world, next_entity_id,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -40,6 +41,9 @@ use crate::world::World;
 
 /// Fall-style damage dealt to the teleporting owner (vanilla `enderPearl()`, 5.0).
 const TELEPORT_DAMAGE: f32 = 5.0;
+
+/// Spawn chance for an endermite on impact (5% in vanilla `ThrownEnderpearl`).
+const ENDERMITE_SPAWN_CHANCE: f32 = 0.05;
 
 /// A thrown ender pearl.
 #[entity_behavior(class = "ThrownEnderpearl")]
@@ -170,7 +174,21 @@ impl EnderPearlEntity {
         player: &Player,
         teleport_pos: DVec3,
     ) {
-        // TODO: 5% endermite spawn (Endermite entity not implemented).
+        if world.get_game_rule(&SPAWN_MOBS) && rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE {
+            let endermite = ENTITIES.create(
+                &vanilla_entities::ENDERMITE,
+                next_entity_id(),
+                teleport_pos,
+                Arc::downgrade(world),
+            );
+            if let Some(endermite) = endermite {
+                if let Some(endermite_entity) = endermite.as_ref().downcast_ref::<EndermiteEntity>()
+                {
+                    endermite_entity.set_player_spawned(true);
+                }
+                let _ = world.try_add_entity(endermite);
+            }
+        }
         if self.is_on_portal_cooldown() {
             player.reset_portal_cooldown();
         }
@@ -243,6 +261,14 @@ impl Entity for EnderPearlEntity {
 
     fn get_default_gravity(&self) -> f64 {
         self.throwable_default_gravity()
+    }
+
+    fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        self.default_on_above_bubble_column(drag_down, pos);
+    }
+
+    fn on_inside_bubble_column(&self, drag_down: bool) {
+        self.default_on_inside_bubble_column(drag_down);
     }
 
     fn sound_source(&self) -> SoundSource {
@@ -357,6 +383,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_utils::BlockPos;
 
     use crate::entity::{Entity, Projectile, ThrowableItemProjectile};
     use crate::world::World;
@@ -426,5 +453,50 @@ mod tests {
         assert!(!EnderPearlEntity::should_vanish_for_owner_state(
             false, false, false
         ));
+    }
+
+    #[test]
+    fn bubble_column_uses_clamped_entity_behavior() {
+        init_vanilla_registry();
+
+        let pearl = EnderPearlEntity::new(
+            &vanilla_entities::ENDER_PEARL,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
+        let entity: &dyn Entity = &pearl;
+
+        for (above_column, drag_down, initial_y, expected_y) in [
+            (true, false, 2.0, 1.8),
+            (true, true, -2.0, -0.9),
+            (false, false, 2.0, 0.7),
+            (false, true, -2.0, -0.3),
+        ] {
+            entity.set_velocity(DVec3::new(0.25, initial_y, -0.25));
+            entity.set_fall_distance(5.0);
+
+            if above_column {
+                entity.on_above_bubble_column(drag_down, BlockPos::new(0, 0, 0));
+            } else {
+                entity.on_inside_bubble_column(drag_down);
+            }
+
+            let expected = DVec3::new(0.25, expected_y, -0.25);
+            let actual = entity.velocity();
+
+            assert!(
+                (actual - expected).abs().max_element() < 1.0e-12,
+                "above_column={above_column}, drag_down={drag_down}: \
+                 expected {expected:?}, got {actual:?}"
+            );
+
+            let expected_fall_distance = if above_column { 5.0 } else { 0.0 };
+            assert!(
+                (entity.fall_distance() - expected_fall_distance).abs() < 1.0e-12,
+                "above_column={above_column}, drag_down={drag_down}: \
+                 unexpected fall distance"
+            );
+        }
     }
 }

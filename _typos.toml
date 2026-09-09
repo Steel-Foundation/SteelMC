@@ -21,6 +21,8 @@ replaceables = "replaceables"
 undescore = "undescore"
 # Vanilla block tag name minecraft:convertable_to_mud
 convertable = "convertable"
+# Vanilla block name: OCHRE_FROGLIGHT.
+OCHRE = "OCHRE"
 
 [default.extend-identifiers]
 player_mode_customisation = "player_mode_customisation"

@@ -808,7 +808,22 @@ mod tests {
         Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
     };
 
-    use crate::serial::{ReadFrom as _, WriteTo as _};
+    use crate::{
+        serial::{ReadFrom as _, WriteTo as _},
+        translations_registry,
+    };
+
+    #[test]
+    fn deprecated_vanilla_translations_are_applied() {
+        assert!(
+            translations_registry::TRANSLATIONS.contains_key("commands.spawnpoint.success.single")
+        );
+        assert!(
+            !translations_registry::TRANSLATIONS
+                .contains_key("commands.spawnpoint.success.single.new")
+        );
+        assert!(!translations_registry::TRANSLATIONS.contains_key("argument.range.ints"));
+    }
 
     #[test]
     fn component_stream_codec_round_trips_an_unnamed_nbt_tag() {

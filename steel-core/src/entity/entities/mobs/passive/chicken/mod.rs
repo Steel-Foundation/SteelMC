@@ -10,6 +10,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::chicken_sound_variant::{ChickenAge, ChickenSoundVariantRef};
 use steel_registry::chicken_variant::ChickenVariantRef;
+use steel_registry::data_components::vanilla_components::{CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -404,6 +405,15 @@ impl Entity for ChickenEntity {
         self.entity_type
     }
 
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(CHICKEN_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(CHICKEN_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
+    }
+
     fn base_tick(&self) {
         Mob::base_tick_mob(self);
     }
@@ -525,7 +535,7 @@ impl LivingEntity for ChickenEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);

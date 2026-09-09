@@ -538,7 +538,7 @@ impl PistonMovingState {
                 new_state,
                 pos,
                 UpdateFlags::UPDATE_ALL,
-                512,
+                World::UPDATE_LIMIT,
             );
             return;
         }
