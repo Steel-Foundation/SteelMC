@@ -11,7 +11,7 @@ use crate::world::ScheduledTickAccess;
 use std::sync::Arc;
 
 /// Behavior for grass blocks.
-// TODO: Implement SpreadingSnowyBlock random ticks (spreading, turning to dirt when covered) and bonemeal behavior.
+// TODO: Implement bonemeal behavior.
 #[block_behavior]
 pub struct GrassBlock {
     block: BlockRef,
