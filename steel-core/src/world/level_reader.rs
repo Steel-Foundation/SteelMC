@@ -74,11 +74,7 @@ pub trait LevelReader {
     fn height(&self) -> i32;
 
     /// Returns the vanilla heightmap value at a column.
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation keeps no heightmaps"
-    )]
-    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+    fn height_at(&self, _heightmap_type: HeightmapType, _x: i32, _z: i32) -> i32 {
         self.min_y()
     }
 
@@ -166,11 +162,7 @@ pub trait LevelAccessor: ScheduledTickAccess {
     fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool;
 
     /// Returns whether this surface accepts writes into the given chunk.
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation accepts every chunk"
-    )]
-    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+    fn can_write_to_chunk(&self, _chunk_x: i32, _chunk_z: i32) -> bool {
         true
     }
 
