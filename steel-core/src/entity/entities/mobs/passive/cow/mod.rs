@@ -10,6 +10,7 @@ use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::cow_sound_variant::CowSoundVariantRef;
 use steel_registry::cow_variant::CowVariantRef;
+use steel_registry::data_components::vanilla_components::{COW_SOUND_VARIANT, COW_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -245,6 +246,15 @@ impl Entity for CowEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(COW_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(COW_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
     }
 
     fn base_tick(&self) {

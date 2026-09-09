@@ -11,6 +11,7 @@
 use std::io::{self, Write};
 
 use steel_macros::{ClientPacket, WriteTo};
+use steel_math::DEGREE_360;
 use steel_registry::packets::play::{C_MOVE_ENTITY_POS, C_MOVE_ENTITY_POS_ROT, C_MOVE_ENTITY_ROT};
 
 /// Fixed-point encoding multiplier (1/4096 block precision).
@@ -115,7 +116,7 @@ pub const fn to_angle_byte(degrees: f32) -> i8 {
     // Vanilla: (byte)floor(angle * 256.0F / 360.0F)
     // Cast to i32 first (safe for all angle values), then truncate to i8.
     // This matches Java's (byte) cast which truncates the low 8 bits.
-    (degrees * 256.0 / 360.0).floor() as i32 as i8
+    (degrees * 256.0 / DEGREE_360).floor() as i32 as i8
 }
 
 /// Encodes a position component to the protocol's fixed-point format.

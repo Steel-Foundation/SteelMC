@@ -103,6 +103,8 @@ impl EntityRegistry {
 
         let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
         entity.load_additional(nbt);
+        entity.set_old_position_to_current();
+        entity.base().set_old_rotation_to_current();
         entity.sync_base_entity_data();
     }
 
@@ -188,6 +190,8 @@ impl EntityRegistry {
         let entity: SharedEntity = Arc::new(RawEntity::from_saved(load, entity_type));
         let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
         entity.load_additional(nbt);
+        entity.set_old_position_to_current();
+        entity.base().set_old_rotation_to_current();
         entity
     }
 

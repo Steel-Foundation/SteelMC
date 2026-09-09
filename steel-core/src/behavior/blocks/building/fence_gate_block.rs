@@ -162,7 +162,7 @@ impl BlockBehavior for FenceGateBlock {
         } else {
             self.sound_close
         };
-        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        let pitch = rand::random_range(0.9..1.0);
         world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
         let event = if opens {
             &vanilla_game_events::BLOCK_OPEN
@@ -202,7 +202,7 @@ impl BlockBehavior for FenceGateBlock {
         } else {
             self.sound_close
         };
-        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        let pitch = rand::random_range(0.9..1.0);
         world.play_block_sound(sound, pos, 1.0, pitch, None);
         let event = if has_power {
             &vanilla_game_events::BLOCK_OPEN
