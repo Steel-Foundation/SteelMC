@@ -7,7 +7,7 @@ use super::snowy_block::{snowy_placement_state, update_snowy_shape};
 use super::spreading_snowy_block::SpreadingSnowyBlock;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::ScheduledTickAccess;
+use crate::world::{ScheduledTickAccess, World};
 use std::sync::Arc;
 
 /// Behavior for mycelium blocks.
@@ -45,7 +45,7 @@ impl BlockBehavior for MyceliumBlock {
         update_snowy_shape(state, direction, neighbor_state)
     }
 
-    fn random_tick(&self, state: BlockStateId, world: &Arc<crate::world::World>, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.spreading.random_tick(state, world, pos);
     }
 }
