@@ -14,6 +14,11 @@ use crate::entity::{AgeableMob, EntityPose, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
 
+/// Tolerance for comparing turtle velocities and speeds, which are computed with
+/// flat multipliers so the result is exact bar floating-point rounding. The
+/// velocity checks are `f64` (`DVec3`), so `f32::EPSILON` is the wrong width.
+const VELOCITY_EPSILON: f64 = 1e-9;
+
 #[test]
 fn turtle_registers_vanilla_goal_priorities() {
     let turtle = detached_turtle();
@@ -74,6 +79,10 @@ fn set_laying_egg_resets_the_lay_counter() {
 /// asserts it places a turtle egg cluster and clears the carried egg.
 #[test]
 fn lay_egg_goal_places_eggs_on_home_sand() {
+    /// Vanilla laying runs for `LAY_EGG_DURATION` (200) ticks once the turtle is
+    /// in place; this leaves headroom for it to settle onto the block first.
+    const MAX_LAY_TICKS: i32 = 260;
+
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("turtle_lay_egg");
@@ -108,7 +117,7 @@ fn lay_egg_goal_places_eggs_on_home_sand() {
     assert!(goal.can_use(mob), "turtle on home sand should start laying");
     goal.start(mob);
 
-    for _ in 0..260 {
+    for _ in 0..MAX_LAY_TICKS {
         goal.tick(mob);
         if !turtle_from(&shared).has_egg() {
             break;
@@ -222,7 +231,7 @@ fn a_swimming_turtle_pushes_off_at_its_own_pace() {
     // movement speed attribute the way walking does.
     let expected = f64::from(SWIM_PUSH) * SWIM_DRAG;
     assert!(
-        (turtle.velocity().z - expected).abs() < 1e-9,
+        (turtle.velocity().z - expected).abs() < VELOCITY_EPSILON,
         "expected {expected} on z, got {}",
         turtle.velocity().z
     );
@@ -236,7 +245,7 @@ fn a_swimming_turtle_with_nowhere_to_be_drifts_down() {
     turtle.travel_in_water(DVec3::ZERO, 0.0, false, 64.0);
 
     assert!(
-        (turtle.velocity().y + SWIM_SINK_SPEED).abs() < 1e-9,
+        (turtle.velocity().y + SWIM_SINK_SPEED).abs() < VELOCITY_EPSILON,
         "a drifting turtle sinks slowly, got {}",
         turtle.velocity().y
     );
@@ -251,7 +260,7 @@ fn a_turtle_heading_home_holds_its_depth() {
     turtle.travel_in_water(DVec3::ZERO, 0.0, false, 64.0);
 
     assert!(
-        turtle.velocity().y.abs() < 1e-9,
+        turtle.velocity().y.abs() < VELOCITY_EPSILON,
         "a turtle on its way home keeps its depth, got {}",
         turtle.velocity().y
     );
@@ -259,6 +268,9 @@ fn a_turtle_heading_home_holds_its_depth() {
 
 #[test]
 fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
+    /// Enough repeated trims to reach the land speed floor from a full 1.0.
+    const SETTLE_TICKS: u32 = 20;
+
     let (world, turtle) = turtle_in_world("turtle_land_trim", DVec3::new(8.5, 65.0, 8.5));
     assert!(world.set_block(
         BlockPos::new(8, 63, 8),
@@ -273,13 +285,13 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
     turtle.trim_turtle_speed();
 
     assert!(
-        (turtle.get_speed() - 0.5).abs() < f32::EPSILON,
+        (turtle.get_speed() - 1.0 / LAND_SPEED_DIVISOR).abs() < f32::EPSILON,
         "walking speed is halved, got {}",
         turtle.get_speed()
     );
 
     // Repeated trimming settles at the floor rather than dropping to nothing.
-    for _ in 0..20 {
+    for _ in 0..SETTLE_TICKS {
         turtle.trim_turtle_speed();
     }
     assert!(
