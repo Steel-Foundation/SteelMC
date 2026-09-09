@@ -6,7 +6,9 @@ use std::cmp::Ordering;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
-use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, convert_to_rotation_segment};
+use steel_math::{
+    DEGREE_90, DEGREE_180, RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
+};
 use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -50,8 +52,7 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
         .iter()
         .map(|&dir| {
             let dir_angle = dir.to_yaw();
-            let diff = (rotation - dir_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
-            (dir, diff.abs())
+            (dir, wrap_degrees(rotation - dir_angle).abs())
         })
         .collect();
 
@@ -78,20 +79,29 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
 /// Uses the sign's rotation (from block state) and the player's position
 /// relative to the sign to determine which side they're looking at.
 pub fn facing_text_slot(state: BlockStateId, pos: BlockPos, player: &Player) -> SignTextSlot {
+    let player_pos = player.position();
+    facing_text_slot_from(state, pos, player_pos.x, player_pos.z)
+}
+
+/// [`facing_text_slot`] against a raw viewer position.
+fn facing_text_slot_from(
+    state: BlockStateId,
+    pos: BlockPos,
+    player_x: f64,
+    player_z: f64,
+) -> SignTextSlot {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
     // Calculate player's angle relative to the sign center
-    let player_pos = player.position();
-    let dx = player_pos.x - (f64::from(pos.0.x) + 0.5);
-    let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
+    let dx = player_x - (f64::from(pos.0.x) + 0.5);
+    let dz = player_z - (f64::from(pos.0.z) + 0.5);
 
     // Calculate angle from sign to player (in degrees, -90 to account for Minecraft's coordinate system)
     let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
     // Front text if the angle difference is <= 90 degrees
-    let diff = (sign_y_rot - player_angle + DEGREE_180).rem_euclid(360.0) - DEGREE_360;
-    if diff.abs() <= 90.0 {
+    if wrap_degrees(player_angle - sign_y_rot).abs() <= DEGREE_90 {
         SignTextSlot::Front
     } else {
         SignTextSlot::Back
@@ -260,12 +270,29 @@ fn try_open_sign_editor(
     // Determine which side the player is facing
     let slot = facing_text_slot(state, pos, player);
 
-    // Set the editing player lock
-    sign.set_player_who_may_edit(Some(player.gameprofile.id));
-
-    // Open the editor
-    player.open_sign_editor(pos, slot);
+    open_text_edit(sign, player, pos, slot);
     InteractionResult::Success
+}
+
+/// Opens the sign editor for `player`, taking the edit lock.
+fn open_text_edit(sign: &SignBlockEntity, player: &Player, pos: BlockPos, slot: SignTextSlot) {
+    sign.set_player_who_may_edit(Some(player.gameprofile.id));
+    player.open_sign_editor(pos, slot);
+}
+
+/// Opens the front text editor for the player who just placed the sign.
+fn open_sign_editor_on_place(world: &Arc<World>, pos: BlockPos, player: &Player) {
+    let Some(block_entity) = world.get_block_entity(pos) else {
+        return;
+    };
+    let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
+        return;
+    };
+    if sign.is_waxed() {
+        return;
+    }
+
+    open_text_edit(sign, player, pos, SignTextSlot::Front);
 }
 
 /// Behavior for standing sign blocks (placed on ground).
@@ -356,13 +383,13 @@ impl BlockBehavior for StandingSignBlock {
 
     fn set_placed_by(
         &self,
-        state: BlockStateId,
+        _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         source: &PlacementSource<'_>,
     ) {
         if let Some(player) = source.player() {
-            try_open_sign_editor(state, world, pos, player);
+            open_sign_editor_on_place(world, pos, player);
         }
     }
 }
@@ -464,13 +491,13 @@ impl BlockBehavior for WallSignBlock {
 
     fn set_placed_by(
         &self,
-        state: BlockStateId,
+        _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         source: &PlacementSource<'_>,
     ) {
         if let Some(player) = source.player() {
-            try_open_sign_editor(state, world, pos, player);
+            open_sign_editor_on_place(world, pos, player);
         }
     }
 }
@@ -607,13 +634,13 @@ impl BlockBehavior for CeilingHangingSignBlock {
 
     fn set_placed_by(
         &self,
-        state: BlockStateId,
+        _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         source: &PlacementSource<'_>,
     ) {
         if let Some(player) = source.player() {
-            try_open_sign_editor(state, world, pos, player);
+            open_sign_editor_on_place(world, pos, player);
         }
     }
 }
@@ -733,13 +760,13 @@ impl BlockBehavior for WallHangingSignBlock {
 
     fn set_placed_by(
         &self,
-        state: BlockStateId,
+        _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         source: &PlacementSource<'_>,
     ) {
         if let Some(player) = source.player() {
-            try_open_sign_editor(state, world, pos, player);
+            open_sign_editor_on_place(world, pos, player);
         }
     }
 }
