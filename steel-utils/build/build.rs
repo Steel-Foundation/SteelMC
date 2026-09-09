@@ -105,9 +105,15 @@ fn try_acquire_asset_lock(path: &Path) -> Result<Option<AssetLock>, String> {
     }
 }
 
-fn assets_are_valid(version_file: &Path, en_us_dest: &Path, target_ver: &str) -> bool {
+fn assets_are_valid(
+    version_file: &Path,
+    en_us_dest: &Path,
+    deprecated_dest: &Path,
+    target_ver: &str,
+) -> bool {
     version_file.exists()
         && en_us_dest.exists()
+        && deprecated_dest.exists()
         && fs::read_to_string(version_file).is_ok_and(|v| v.trim() == target_ver)
 }
 
@@ -115,6 +121,7 @@ fn acquire_asset_lock(
     lock_file: &Path,
     version_file: &Path,
     en_us_dest: &Path,
+    deprecated_dest: &Path,
     target_ver: &str,
 ) -> Option<AssetLock> {
     let start = Instant::now();
@@ -122,7 +129,7 @@ fn acquire_asset_lock(
         match try_acquire_asset_lock(lock_file) {
             Ok(Some(lock)) => return Some(lock),
             Ok(None) => {
-                if assets_are_valid(version_file, en_us_dest, target_ver) {
+                if assets_are_valid(version_file, en_us_dest, deprecated_dest, target_ver) {
                     return None;
                 }
                 assert!(
@@ -244,17 +251,23 @@ fn download_and_extract_assets(manifest_dir: &str) {
     let datapack_dir = datapack_base.join("minecraft");
     let version_file = datapack_dir.join(".version");
     let en_us_dest = build_assets.join("en_us.json");
+    let deprecated_dest = build_assets.join("deprecated.json");
     let lock_file = build_assets.join(".asset-extract.lock");
 
-    if assets_are_valid(&version_file, &en_us_dest, &target_ver) {
+    if assets_are_valid(&version_file, &en_us_dest, &deprecated_dest, &target_ver) {
         return;
     }
 
-    let Some(_lock) = acquire_asset_lock(&lock_file, &version_file, &en_us_dest, &target_ver)
-    else {
+    let Some(_lock) = acquire_asset_lock(
+        &lock_file,
+        &version_file,
+        &en_us_dest,
+        &deprecated_dest,
+        &target_ver,
+    ) else {
         return;
     };
-    if assets_are_valid(&version_file, &en_us_dest, &target_ver) {
+    if assets_are_valid(&version_file, &en_us_dest, &deprecated_dest, &target_ver) {
         return;
     }
 
@@ -275,6 +288,7 @@ fn download_and_extract_assets(manifest_dir: &str) {
 
     let mut archive = get_server_archive(jar_data);
     let mut extracted_en_us = false;
+    let mut extracted_deprecated = false;
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -304,12 +318,22 @@ fn download_and_extract_assets(manifest_dir: &str) {
                 .unwrap_or_else(|e| panic!("Failed to create file {}: {e}", en_us_dest.display()));
             copy(&mut file, &mut out_file).expect("Failed to extract en_us.json");
             extracted_en_us = true;
+        } else if name == "assets/minecraft/lang/deprecated.json" {
+            let mut out_file = fs::File::create(&deprecated_dest).unwrap_or_else(|e| {
+                panic!("Failed to create file {}: {e}", deprecated_dest.display())
+            });
+            copy(&mut file, &mut out_file).expect("Failed to extract deprecated.json");
+            extracted_deprecated = true;
         }
     }
 
     assert!(
         extracted_en_us,
         "Failed to find assets/minecraft/lang/en_us.json in server jar"
+    );
+    assert!(
+        extracted_deprecated,
+        "Failed to find assets/minecraft/lang/deprecated.json in server jar"
     );
     fs::write(&version_file, &target_ver).expect("Failed to write version file");
     println!(
@@ -340,10 +364,18 @@ pub fn main() {
             .expect("Failed to create output directory");
     }
 
-    let content = build_translations("build_assets/en_us.json");
+    let processed_translations =
+        PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set for translation generation"))
+            .join("en_us.json");
+    translations::prepare(&processed_translations);
+    let processed_translations = processed_translations
+        .to_str()
+        .expect("Translation output path is not valid UTF-8");
+
+    let content = build_translations(processed_translations);
     write_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content.to_string());
 
-    let content = translations::build();
+    let content = translations::build(processed_translations);
     write_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string());
 
     let content = entity_events::build();

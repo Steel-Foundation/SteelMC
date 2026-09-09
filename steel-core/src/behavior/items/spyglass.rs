@@ -5,6 +5,7 @@ use std::sync::Arc;
 use steel_macros::item_behavior;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
+use steel_registry::stat::vanilla_stat_types;
 
 use crate::behavior::{InteractionResult, ItemBehavior, ItemUseAnimation, UseItemContext};
 use crate::entity::{Entity, LivingEntity};
@@ -27,8 +28,11 @@ impl ItemBehavior for SpyglassItem {
         context
             .player
             .play_sound(&sound_events::ITEM_SPYGLASS_USE, 1.0, 1.0);
-        // TODO: Award `Stats.ITEM_USED` once Steel has a statistics foundation.
-        // player.awardStat(Stats.ITEM_USED.get(this));
+        context.inv.with_item(|item| {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
         context.player.start_using_item(context.hand);
         InteractionResult::Consume
     }

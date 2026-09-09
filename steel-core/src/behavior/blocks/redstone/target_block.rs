@@ -6,6 +6,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
+use steel_registry::vanilla_custom_stats;
 use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -94,8 +95,12 @@ impl BlockBehavior for TargetBlock {
         projectile: &dyn Projectile,
     ) {
         let _strength = self.update_redstone_output(world, state, hit, projectile);
-        // The owner-facing target-hit stat and advancement criterion await
-        // Steel's shared statistics and advancement foundations.
+        if let Some(owner) = projectile.projectile_owner()
+            && let Some(player) = owner.as_player()
+        {
+            player.award_custom_stat(&vanilla_custom_stats::TARGET_HIT);
+            // TODO: The advancement criterion awaits Steel's shared advancement foundations.
+        }
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

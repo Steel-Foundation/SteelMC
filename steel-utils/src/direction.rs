@@ -5,6 +5,7 @@
 use std::io::{self, Cursor};
 
 use glam::IVec3;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270};
 
 use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
@@ -131,7 +132,7 @@ impl Direction {
     /// Returns the horizontal direction from a yaw rotation.
     #[must_use]
     pub fn from_yaw(yaw: f32) -> Direction {
-        match ((f64::from(yaw) / 90.0 + 0.5).floor() as i32) & 3 {
+        match ((f64::from(yaw) / f64::from(DEGREE_90) + 0.5).floor() as i32) & 3 {
             0 => Direction::South,
             1 => Direction::West,
             2 => Direction::North,
@@ -146,10 +147,10 @@ impl Direction {
     #[must_use]
     pub const fn to_yaw(self) -> f32 {
         match self {
-            Direction::North => 180.0,
+            Direction::North => DEGREE_180,
             Direction::South | Direction::Up | Direction::Down => 0.0,
-            Direction::West => 90.0,
-            Direction::East => 270.0,
+            Direction::West => DEGREE_90,
+            Direction::East => DEGREE_270,
         }
     }
 

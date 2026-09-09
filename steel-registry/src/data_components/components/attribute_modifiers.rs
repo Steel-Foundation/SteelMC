@@ -49,6 +49,25 @@ impl ItemAttributeModifiers {
             .iter()
             .filter(move |entry| entry.slot.test(slot))
     }
+
+    /// Vanilla `ItemAttributeModifiers.compute`: fold the modifiers this item
+    /// grants for `attribute` in `slot` onto `base_value`, applying each entry's
+    /// operation. Used to approximate the attribute value an entity would have if
+    /// it wore the stack in that slot.
+    #[must_use]
+    pub fn compute(&self, attribute: AttributeRef, base_value: f64, slot: EquipmentSlot) -> f64 {
+        let mut value = base_value;
+        for entry in &self.modifiers {
+            if entry.slot.test(slot) && entry.attribute.key == attribute.key {
+                value += match entry.operation {
+                    AttributeModifierOperation::AddValue => entry.amount,
+                    AttributeModifierOperation::AddMultipliedBase => entry.amount * base_value,
+                    AttributeModifierOperation::AddMultipliedTotal => entry.amount * value,
+                };
+            }
+        }
+        value
+    }
 }
 
 impl Default for ItemAttributeModifiers {

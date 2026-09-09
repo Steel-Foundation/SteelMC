@@ -29,6 +29,7 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::blocks::vegetation::GrowingPlantHeadBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::{InventoryAccess, PlacementSource};
@@ -571,9 +572,9 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the item stack to give when a player picks this block (middle click).
     ///
-    /// The default implementation looks up an item with the same key as the block.
-    /// Override this for blocks where the pick item differs from the block key
-    /// (e.g., crops → seeds, redstone wire → redstone dust, wall torch → torch).
+    /// The default implementation uses the block's registered item association.
+    /// Blocks without an associated item return an empty stack. Override this when
+    /// Vanilla selects the clone item from block state, block entity data, or another rule.
     ///
     /// # Arguments
     /// * `block` - The block being picked
@@ -589,8 +590,7 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
         include_data: bool,
     ) -> Option<ItemStack> {
-        // Default: look up item by block's key
-        REGISTRY.items.by_key(&block.key).map(ItemStack::new)
+        Some(ItemStack::new(REGISTRY.items.by_block(block)))
     }
 
     /// Returns whether this block state is pathfindable for the supplied vanilla path computation.
@@ -607,6 +607,11 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns whether this behavior implements `BedBlock`
     fn is_bed(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this behavior implements vanilla `LiquidBlock`.
+    fn is_liquid_block(&self) -> bool {
         false
     }
 
@@ -1206,6 +1211,11 @@ pub trait BlockBehavior: Send + Sync {
         None
     }
 
+    /// Returns the shared vanilla `GrowingPlantHeadBlock` capability.
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        None
+    }
+
     /// Returns the shared vanilla `Fallable` capability implemented by this block.
     fn as_fallable(&self) -> Option<&dyn Fallable> {
         None
@@ -1214,6 +1224,15 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
         None
+    }
+
+    /// Whether this block's item may be stored inside container items such as
+    /// shulker boxes and bundles.
+    ///
+    /// Vanilla gates this on the item class, but shulker boxes share
+    /// `BlockItem`, so the rule lives on the block instead.
+    fn fits_inside_container_items(&self) -> bool {
+        true
     }
 }
 

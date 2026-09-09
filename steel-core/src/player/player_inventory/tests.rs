@@ -410,10 +410,10 @@ fn main_inventory_search_does_not_use_equipment_slots() {
     }
     inventory.set(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
 
-    assert_eq!(inventory.get_free_slot(), -1);
+    assert_eq!(inventory.get_free_slot(), None);
     assert_eq!(
         inventory.find_slot_matching_item(&ItemStack::new(&vanilla_items::STONE)),
-        -1
+        None
     );
 }
 
