@@ -1214,9 +1214,6 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     /// Returns vanilla `mob.getSensing().hasLineOfSight(target)`.
-    ///
-    /// Lives on `Mob` rather than `PathfinderMob` because vanilla reaches the
-    /// sensing cache through `Mob`: a flying or slime-like mob has one too.
     fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
         self.mob_base()
             .sensing()

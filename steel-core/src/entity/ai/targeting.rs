@@ -139,8 +139,7 @@ mod tests {
     use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
     use crate::test_support::fresh_test_world;
 
-    /// A mob that deliberately does not pathfind, standing in for vanilla's
-    /// flying and slime-like mobs, which are `Mob` without being `PathfinderMob`.
+    /// A test mob that is `Mob` but not `PathfinderMob`, like flying or slime-type mobs.
     struct HoveringTestMob {
         base: EntityBase,
         living_base: LivingEntityBase,
