@@ -26,6 +26,12 @@ use crate::worldgen::registry::{ValidatedWorldGeneratorConfig, WorldGeneratorReg
 pub const ONLINE_MODE_REQUIRES_ENCRYPTION: &str =
     "encryption must be true when online_mode is enabled";
 
+/// Vanilla chat and command spam threshold window, in seconds.
+pub const DEFAULT_SPAM_THRESHOLD_SECONDS: i32 = 10;
+
+/// Default cap on queued neighbor-update tasks in one chained run.
+pub const DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES: i32 = 1_000_000;
+
 /// Validates the login settings that establish a player's authenticated identity.
 ///
 /// # Errors
@@ -90,6 +96,36 @@ pub struct RuntimeConfig {
     pub chunk_generation_threads: Option<usize>,
     /// Optional worker count for the Rayon chunk encoding pool.
     pub chunk_encoding_threads: Option<usize>,
+}
+
+impl Default for RuntimeConfig {
+    /// The settings a freshly packaged server ships, leaving the optional service
+    /// endpoints and server links unset.
+    fn default() -> Self {
+        Self {
+            max_players: 20,
+            view_distance: 10,
+            simulation_distance: 10,
+            max_chained_neighbor_updates: DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES,
+            online_mode: true,
+            auth_server: None,
+            profile_server: None,
+            services_server: None,
+            encryption: true,
+            allow_flight: false,
+            motd: "A Steel Server".to_owned(),
+            use_favicon: true,
+            favicon: "config/favicon.png".to_owned(),
+            enforce_secure_chat: false,
+            chat_spam_threshold_seconds: DEFAULT_SPAM_THRESHOLD_SECONDS,
+            command_spam_threshold_seconds: DEFAULT_SPAM_THRESHOLD_SECONDS,
+            compression: Some(CompressionInfo::default()),
+            server_links: None,
+            packet_workers: None,
+            chunk_generation_threads: None,
+            chunk_encoding_threads: None,
+        }
+    }
 }
 
 impl RuntimeConfig {

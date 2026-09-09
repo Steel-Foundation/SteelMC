@@ -147,24 +147,16 @@ fn test_runtime_config() -> Arc<RuntimeConfig> {
         max_players: 1,
         view_distance: 2,
         simulation_distance: 2,
-        max_chained_neighbor_updates: 1_000_000,
         online_mode: false,
-        auth_server: None,
-        profile_server: None,
-        services_server: None,
         encryption: false,
-        allow_flight: false,
-        motd: String::new(),
         use_favicon: false,
         favicon: String::new(),
-        enforce_secure_chat: false,
-        chat_spam_threshold_seconds: 10,
-        command_spam_threshold_seconds: 10,
+        motd: String::new(),
         compression: None,
-        server_links: None,
         packet_workers: Some(1),
         chunk_generation_threads: Some(1),
         chunk_encoding_threads: Some(1),
+        ..RuntimeConfig::default()
     })
 }
 
