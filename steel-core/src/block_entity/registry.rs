@@ -306,6 +306,11 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
         );
 
+        registry.register(
+            &vanilla_block_entity_types::SHULKER_BOX,
+            |level, pos, state| Arc::new(ShulkerBoxBlockEntity::new(level, pos, state)),
+        );
+
         registry
     });
 }
