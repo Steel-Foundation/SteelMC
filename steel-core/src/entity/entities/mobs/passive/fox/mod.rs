@@ -110,9 +110,6 @@ pub struct FoxEntity {
     animal_base: AnimalBase,
     entity_data: SyncMutex<FoxEntityData>,
     ticks_since_eaten: SyncMutex<i32>,
-    /// Server-side crouch progress (0 to 5), climbed while crouching and read by
-    /// the pounce goal via `is_fully_crouched`. Recomputed from the synced
-    /// crouching flag each tick, so it is not synced or saved.
     crouch_amount: SyncMutex<f32>,
 }
 
