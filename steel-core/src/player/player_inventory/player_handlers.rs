@@ -968,8 +968,8 @@ impl Player {
         let spawn_y = self.get_eye_y() - 0.3;
 
         let velocity = if throw_randomly {
-            let power = rand::random::<f32>() * 0.5;
-            let angle = rand::random::<f32>() * TAU;
+            let power = rand::random_range(0.0..0.5);
+            let angle = rand::random_range(0.0..TAU);
             DVec3::new(
                 f64::from(-angle.sin() * power),
                 0.2,
@@ -984,8 +984,8 @@ impl Player {
             let sin_yaw = yaw_rad.sin();
             let cos_yaw = yaw_rad.cos();
 
-            let angle_offset = rand::random::<f32>() * TAU;
-            let power_offset = 0.02 * rand::random::<f32>();
+            let angle_offset = rand::random_range(0.0..TAU);
+            let power_offset = rand::random_range(0.0..0.02);
 
             DVec3::new(
                 f64::from(-sin_yaw * cos_pitch * 0.3)
