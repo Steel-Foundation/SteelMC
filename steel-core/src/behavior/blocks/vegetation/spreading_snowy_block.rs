@@ -36,7 +36,7 @@ impl SpreadingSnowyBlock {
         let light_dampening_top_face = above_state.get_light_dampening();
         light_dampening_top_face < 15
     }
-    fn can_propagate(&self, state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_propagate(state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
         Self::can_stay_alive(state, level, pos)
             && !level
                 .get_block_state(pos.above())
@@ -62,7 +62,7 @@ impl SpreadingSnowyBlock {
                     rand::random_range(0..3) - 1,
                 );
                 if world.get_block_state(test_pos).get_block() == self.base_block
-                    && self.can_propagate(default_block_state, world, test_pos)
+                    && Self::can_propagate(default_block_state, world, test_pos)
                 {
                     world.set_block(
                         test_pos,
