@@ -1,5 +1,4 @@
-//! Bespoke fox behaviour goals, reaching `FoxEntity` from `&dyn PathfinderMob`
-//! via `downcast_ref` like the sheep and turtle goals.
+//! Bespoke fox behaviour goals.
 
 use std::f64::consts::TAU;
 use std::sync::Arc;
@@ -17,34 +16,24 @@ use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
-/// Range, in blocks, a fox searches around itself for loose items.
 const SEARCH_RANGE: f64 = 8.0;
-/// Average interval, in ticks, between a fox's checks for nearby items.
 const SEARCH_CHECK_TICKS: i32 = 10;
-/// Speed a fox moves toward an item it wants.
 const SEARCH_SPEED: f64 = 1.2;
 
-/// Per-tick chance a resting fox perches and looks around.
 const PERCH_CHANCE: f32 = 0.02;
-/// Minimum and additional random look directions in one perch.
 const PERCH_MIN_LOOKS: i32 = 2;
 const PERCH_EXTRA_LOOKS: i32 = 3;
-/// Minimum and additional random ticks a fox holds one perched look.
 const PERCH_MIN_LOOK_TICKS: i32 = 80;
 const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
-/// Vanilla `Fox.FoxFloatGoal`: water depth a fox starts swimming at, shallower
-/// than the shared jump threshold.
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
-/// Randomized delay, in ticks, before a fox may fall asleep (vanilla 140).
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
 }
 
-/// Returns the position of the first nearby loose item this fox would pick up
-/// (vanilla `Fox.ALLOWED_ITEMS`: no pickup delay and holdable).
+/// Returns the position of the first nearby loose item this fox would pick up.
 fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
     let fox = as_fox(mob)?;
     let world = mob.level()?;
@@ -59,8 +48,8 @@ fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
         })
 }
 
-/// Vanilla `Fox.FoxSearchForItemsGoal`: an empty-mouthed fox walks to a nearby
-/// item so the base looting scan can pick it up.
+/// An empty-mouthed fox walks to a nearby item so the base looting scan can
+/// pick it up.
 pub(crate) struct FoxSearchForItemsGoal;
 
 impl Goal for FoxSearchForItemsGoal {
@@ -97,7 +86,7 @@ impl Goal for FoxSearchForItemsGoal {
     }
 }
 
-/// Vanilla `Fox.PerchAndSearchGoal`: a fox sits and slowly looks around a few times.
+/// A fox sits and slowly looks around a few times.
 pub(crate) struct PerchAndSearchGoal {
     rel_x: f64,
     rel_z: f64,
@@ -186,7 +175,7 @@ impl Goal for PerchAndSearchGoal {
     }
 }
 
-/// Vanilla `Fox.SleepGoal`: an idle fox sleeps under cover during the day.
+/// An idle fox sleeps under cover during the day.
 pub(crate) struct FoxSleepGoal {
     countdown: i32,
 }
@@ -213,8 +202,8 @@ impl FoxSleepGoal {
     }
 }
 
-/// Vanilla `Fox.hasShelter`: the block at the top of the bounding box is hidden
-/// from the sky and has a non-negative walk-target value.
+/// Whether the block at the top of the bounding box is hidden from the sky and
+/// has a non-negative walk-target value.
 fn has_shelter(mob: &dyn PathfinderMob, world: &Arc<World>) -> bool {
     let position = mob.position();
     let pos = BlockPos::containing(position.x, mob.bounding_box().max_y(), position.z);
@@ -258,8 +247,8 @@ impl Goal for FoxSleepGoal {
     }
 }
 
-/// Vanilla `Fox.FoxFloatGoal`: a fox starts swimming in shallower water than
-/// most mobs, and drops whatever it was doing when it does.
+/// A fox starts swimming in shallower water than most mobs, and drops whatever
+/// it was doing when it does.
 pub(crate) struct FoxFloatGoal {
     inner: FloatGoal,
 }
@@ -302,8 +291,7 @@ impl Goal for FoxFloatGoal {
     }
 }
 
-/// Vanilla `Fox.FoxPanicGoal`: a fox standing up for something it trusts holds
-/// its ground instead of bolting.
+/// A fox standing up for something it trusts holds its ground instead of bolting.
 pub(crate) struct FoxPanicGoal {
     inner: PanicGoal,
 }
@@ -326,8 +314,6 @@ impl Goal for FoxPanicGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        // Vanilla gates this inside `shouldPanic`, which the shared goal tests
-        // first thing in `canUse`, so testing it here comes to the same thing.
         !as_fox(mob).is_some_and(FoxEntity::is_defending) && self.inner.can_use(mob)
     }
 
@@ -348,7 +334,7 @@ impl Goal for FoxPanicGoal {
     }
 }
 
-/// Vanilla `Fox.FoxBreedGoal`: both foxes settle down before courting.
+/// Both foxes settle down before courting.
 pub(crate) struct FoxBreedGoal {
     inner: BreedGoal,
 }
@@ -397,8 +383,8 @@ impl Goal for FoxBreedGoal {
     }
 }
 
-/// Vanilla `Fox.FoxFollowParentGoal`: a kit standing up for something it trusts
-/// stays where it is rather than trailing its parent.
+/// A kit standing up for something it trusts stays where it is rather than
+/// trailing its parent.
 pub(crate) struct FoxFollowParentGoal {
     inner: FollowParentGoal,
 }
@@ -444,8 +430,8 @@ impl Goal for FoxFollowParentGoal {
     }
 }
 
-/// Vanilla `Fox.FoxLookAtPlayerGoal`: a fox already fixed on something, or lying
-/// face-down in the ground, does not turn to watch a player.
+/// A fox already fixed on something, or lying face-down in the ground, does not
+/// turn to watch a player.
 pub(crate) struct FoxLookAtPlayerGoal {
     inner: LookAtPlayerGoal,
 }

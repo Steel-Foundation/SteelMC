@@ -99,7 +99,6 @@ fn fox_flags_are_independent_bits() {
     assert!(fox.is_crouching());
     assert!(!fox.is_sleeping());
 
-    // Clearing one flag must not disturb the others sharing the byte.
     fox.set_sitting(false);
     assert!(!fox.is_sitting());
     assert!(fox.is_crouching());
@@ -153,10 +152,8 @@ fn fox_can_hold_item_follows_vanilla_swap_rules() {
     let berries = ItemStack::new(&vanilla_items::SWEET_BERRIES);
     let stone = ItemStack::new(&vanilla_items::STONE);
 
-    // Empty mouth: the fox will hold anything.
     assert!(Mob::can_hold_item(&fox, &stone));
 
-    // Holding a non-food item, once feeding has started, it swaps for food only.
     fox.living_base()
         .equipment()
         .lock()
@@ -171,7 +168,6 @@ fn fox_can_hold_item_follows_vanilla_swap_rules() {
         "a non-food item is not swapped for another non-food item"
     );
 
-    // Holding food, it will not swap for more food.
     fox.living_base()
         .equipment()
         .lock()
@@ -203,7 +199,6 @@ fn fox_spits_out_its_current_item_when_grabbing_another() {
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::STONE),
     );
-    // Feeding must have started for a fox to swap a held non-food item for food.
     *fox.ticks_since_eaten.lock() = 5;
     let item = add_item(&world, ItemStack::new(&vanilla_items::SWEET_BERRIES));
 
@@ -311,10 +306,8 @@ fn fox_sleep_goal_stays_usable_while_sleeping() {
 fn fox_is_alertable_to_a_nearby_untrusted_entity() {
     let (world, fox) = world_with_fox("fox_alertable");
 
-    // A lone fox has nothing to be wary of.
     assert!(!fox.is_alertable(), "a fox alone is not alertable");
 
-    // A nearby awake, non-sneaking entity makes the fox wary (vanilla's else-branch).
     let pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
@@ -329,7 +322,6 @@ fn fox_is_alertable_to_a_nearby_untrusted_entity() {
         "a nearby untrusted entity makes a fox alertable"
     );
 
-    // A trusted entity is ignored.
     fox.add_trusted(pig.uuid());
     assert!(
         !fox.is_alertable(),
@@ -349,7 +341,6 @@ fn fox_kit_inherits_a_parent_variant() {
     let offspring = new_fox();
     parent.initialize_breed_offspring(&partner, &offspring);
 
-    // Both parents are snow foxes, so the random pick is snow either way.
     assert_eq!(offspring.variant(), FoxVariant::Snow);
 }
 
@@ -378,7 +369,6 @@ fn fox_kit_trusts_the_only_feeding_player() {
     let parent = new_fox();
     let partner = new_fox();
     let feeder = Uuid::from_u128(0xfeed);
-    // Only one parent was bred by a player.
     partner.set_love_cause_uuid(Some(feeder));
 
     let offspring = new_fox();
@@ -395,17 +385,14 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
         ItemStack::new(&vanilla_items::SWEET_BERRIES),
     );
 
-    // The unconditional death-equipment drop runs before the loot-rules gate.
     LivingEntity::drop_custom_death_equipment(fox.as_ref(), &world);
 
-    // The mouth is emptied...
     let mut mouth_empty = false;
     fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |held| {
         mouth_empty = held.is_empty();
     });
     assert!(mouth_empty, "the fox drops the held mouth item on death");
 
-    // ...and the berry is now a dropped item in the world.
     let search = fox.bounding_box().inflate(4.0);
     let dropped = world
         .get_entities_in_aabb(&search)
@@ -419,8 +406,6 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
     assert!(dropped, "the mouth item is dropped into the world");
 }
 
-/// Puts the fox in the state vanilla requires to eat: awake, grounded, `item`
-/// in its mouth.
 fn fox_holding(name: &'static str, item: ItemStack) -> (Arc<World>, Arc<FoxEntity>) {
     let (world, fox) = world_with_fox(name);
     fox.set_on_ground(true);
@@ -444,7 +429,6 @@ fn fox_swallows_the_food_in_its_mouth_once_the_timer_runs_out() {
     let (_world, fox) = fox_holding("fox_eat", ItemStack::new(&vanilla_items::SWEET_BERRIES));
     *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS - 1;
 
-    // On the tick the timer reaches the threshold the fox is still chewing.
     fox.tick_eating();
     assert!(
         mouth_item(&fox).is(&vanilla_items::SWEET_BERRIES),
@@ -530,7 +514,6 @@ fn fox_does_not_eat_while_asleep_in_the_air_or_chasing_something() {
     assert_still_holding_berries("a fox chasing something does not eat");
 }
 
-/// A bare level answering only the spawn rule's queries: block below, brightness.
 struct SpawnRuleLevel {
     below_state: BlockStateId,
     raw_brightness: u8,
@@ -558,7 +541,6 @@ impl LevelReader for SpawnRuleLevel {
     }
 }
 
-/// Where the candidate fox stands in the spawn-rule test.
 const SPAWN_POS: BlockPos = BlockPos::new(0, 64, 0);
 
 fn fox_spawns_on(below_state: BlockStateId, raw_brightness: u8) -> bool {
@@ -569,8 +551,6 @@ fn fox_spawns_on(below_state: BlockStateId, raw_brightness: u8) -> bool {
     <FoxEntity as Animal>::check_animal_spawn_rules(&level, EntitySpawnReason::Natural, SPAWN_POS)
 }
 
-/// Vanilla `Fox.checkFoxSpawnRules`: pickier ground than animals in general, and
-/// a light check with no spawner exemption.
 #[test]
 fn foxes_only_spawn_on_their_own_ground() {
     init_vanilla_registry();
@@ -578,7 +558,6 @@ fn foxes_only_spawn_on_their_own_ground() {
     assert!(fox_spawns_on(vanilla_blocks::PODZOL.default_state(), 9));
     assert!(fox_spawns_on(vanilla_blocks::SNOW_BLOCK.default_state(), 9));
 
-    // Sand carries the general animal tag but not the fox one.
     assert!(!fox_spawns_on(vanilla_blocks::SAND.default_state(), 9));
 
     assert!(!fox_spawns_on(vanilla_blocks::PODZOL.default_state(), 8));
@@ -593,9 +572,6 @@ fn foxes_only_spawn_on_their_own_ground() {
     ));
 }
 
-/// Vanilla `Fox.tick`: a sleeping fox wakes to anything worth reacting to and
-/// cannot stay sat down in water or asleep. The faceplant particle is
-/// client-only, so it is driven here but not asserted.
 #[test]
 fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
     let (world, fox) = world_with_fox("fox_wake");
@@ -605,8 +581,6 @@ fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
         UpdateFlags::UPDATE_NONE,
     ));
 
-    // Nothing happening, so a sleeping fox stays asleep, but it does stop
-    // sitting up while it is asleep.
     fox.set_sleeping(true);
     fox.set_sitting(true);
     fox.set_faceplanted(true);
@@ -617,7 +591,6 @@ fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
         "a fox that has dozed off is not sitting up as well"
     );
 
-    // Something to chase wakes it.
     let prey = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
@@ -633,7 +606,6 @@ fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
     assert!(!fox.is_sleeping(), "prey nearby wakes the fox");
 }
 
-/// Vanilla `Fox.clearStates`, which several fox goals call as they start.
 #[test]
 fn clearing_a_foxs_states_drops_everything_it_was_in_the_middle_of() {
     init_vanilla_registry();
@@ -655,7 +627,6 @@ fn clearing_a_foxs_states_drops_everything_it_was_in_the_middle_of() {
     assert!(!fox.is_faceplanted());
 }
 
-/// Vanilla `Fox.FoxFloatGoal` swims at a shallower depth than the shared goal.
 #[test]
 fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     let (_world, fox) = world_with_fox("fox_float_depth");
@@ -672,7 +643,6 @@ fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     let mut goal = FoxFloatGoal::new(fox.mob_base());
     assert!(goal.can_use(fox.as_ref()), "a fox swims in it anyway");
 
-    // Starting to swim drops whatever the fox was doing.
     fox.set_sleeping(true);
     fox.set_sitting(true);
     goal.start(fox.as_ref());
@@ -680,7 +650,6 @@ fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     assert!(!fox.is_sitting());
 }
 
-/// Vanilla gates the fox's panic and follow-parent goals on not defending.
 #[test]
 fn a_defending_fox_neither_panics_nor_follows_its_parent() {
     let (_world, fox) = world_with_fox("fox_defending_gates");
@@ -690,15 +659,12 @@ fn a_defending_fox_neither_panics_nor_follows_its_parent() {
     assert!(!FoxFollowParentGoal::new(1.25).can_use(fox.as_ref()));
     assert!(!FoxFollowParentGoal::new(1.25).can_continue_to_use(fox.as_ref()));
 
-    // Following a parent again means settling down first.
     fox.set_defending(false);
     fox.set_sleeping(true);
     FoxFollowParentGoal::new(1.25).start(fox.as_ref());
     assert!(!fox.is_sleeping());
 }
 
-/// Vanilla `Fox.FoxLookAtPlayerGoal`: a fox already fixed on prey, or lying
-/// face-down, does not break off to watch a player.
 #[test]
 fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     let (_world, fox) = world_with_fox("fox_look_gates");
