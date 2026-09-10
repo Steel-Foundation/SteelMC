@@ -196,7 +196,7 @@ pub trait BlockAttachedEntity: Entity {
 
     fn try_set_position_block_attached_entity(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.block_attached_entity_base()
-            .set_pos(BlockPos(pos.as_ivec3()));
+            .set_pos(BlockPos::containing(pos.x, pos.y, pos.z));
         self.recalculate_bounding_box()?;
         self.base().mark_velocity_sync();
         Ok(())
