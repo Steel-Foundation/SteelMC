@@ -796,15 +796,12 @@ impl Goal for FoxMeleeAttackGoal {
     }
 }
 
-/// Only an entity that has itself struck something recently is worth defending
-/// a trusted friend against.
 fn recently_aggressive(attacker: &dyn LivingEntity) -> bool {
     attacker.last_hurt_mob().is_some()
         && attacker.last_hurt_mob_timestamp() < attacker.tick_count() + DEFEND_ATTACKER_GRUDGE_TICKS
 }
 
-/// When something the fox does not trust hurts a trusted entity, the fox turns
-/// to fight it.
+/// Fights whatever hurt a trusted entity.
 pub(crate) struct DefendTrustedTargetGoal {
     inner: NearestAttackableTargetGoal,
     /// The last-hurt-by timestamp this goal already acted on.

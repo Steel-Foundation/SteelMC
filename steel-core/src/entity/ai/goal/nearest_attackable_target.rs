@@ -125,8 +125,7 @@ impl NearestAttackableTargetGoal {
         self.random_interval
     }
 
-    /// Runs the shared range, sight and home checks against a target picked
-    /// outside the periodic search.
+    /// Runs the shared checks against a target picked outside the periodic search.
     pub(crate) fn can_attack(
         &mut self,
         mob: &dyn PathfinderMob,
