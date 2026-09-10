@@ -1,16 +1,16 @@
 //! `ChunkGenerationTask` handles the generation process for chunks.
 use std::{
     cmp::max,
-    future::Future,
+    future::{Future, poll_fn},
     mem,
     pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    task::Poll,
 };
 
-use futures::future::join_all;
 use rayon::ThreadPool;
 use steel_utils::{ChunkPos, locks::SyncMutex};
 use tokio_util::sync::CancellationToken;
@@ -361,7 +361,7 @@ impl ChunkGenerationTask {
     /// Waits for all scheduled neighbor tasks to complete.
     pub async fn wait_for_scheduled_layers(&self) {
         // Collect all futures first to avoid locking the mutex during await
-        let futures: Vec<_> = {
+        let mut futures: Vec<_> = {
             let mut lock = self.neighbor_ready.lock();
             mem::take(&mut *lock)
         };
@@ -370,13 +370,29 @@ impl ChunkGenerationTask {
             return;
         }
 
-        let results = join_all(futures).await;
-
-        for result in results {
-            if result.is_none() {
-                self.cancel();
-                break;
+        let mut failed = false;
+        poll_fn(|cx| {
+            let mut index = 0;
+            while index < futures.len() {
+                match futures[index].as_mut().poll(cx) {
+                    Poll::Ready(result) => {
+                        failed |= result.is_none();
+                        drop(futures.swap_remove(index));
+                    }
+                    Poll::Pending => index += 1,
+                }
             }
+
+            if futures.is_empty() {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+
+        if failed {
+            self.cancel();
         }
     }
 }

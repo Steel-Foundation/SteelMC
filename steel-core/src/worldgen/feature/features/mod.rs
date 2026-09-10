@@ -45,3 +45,5 @@ mod vegetation_patch;
 mod vines;
 mod void_start_platform;
 mod weeping_vines;
+
+pub(crate) use tree::no_nested_features;

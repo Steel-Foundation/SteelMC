@@ -736,6 +736,17 @@ impl LevelReader for Arc<World> {
         self.as_ref().ambient_light()
     }
 
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        let mapped_type = match heightmap_type {
+            HeightmapType::WorldSurfaceWg => HeightmapType::WorldSurface,
+            HeightmapType::OceanFloorWg => HeightmapType::OceanFloor,
+            other => other,
+        };
+        self.as_ref()
+            .height_at(mapped_type, x, z)
+            .unwrap_or_else(|| self.min_y())
+    }
+
     fn min_y(&self) -> i32 {
         self.as_ref().get_min_y()
     }
@@ -776,6 +787,16 @@ impl ScheduledTickAccess for Arc<World> {
 impl LevelAccessor for Arc<World> {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         self.set_block(pos, state, flags)
+    }
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        self.chunk_map
+            .with_full_chunk(ChunkPos::new(chunk_x, chunk_z), |_| ())
+            .is_some()
+    }
+
+    fn requires_live_write_preflight(&self) -> bool {
+        true
     }
 
     fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {

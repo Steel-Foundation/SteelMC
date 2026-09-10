@@ -295,6 +295,9 @@ pub struct EntityType {
     /// Whether this entity type can be serialized to disk.
     /// Set to false for transient entities (lightning, fishing hooks, players).
     pub can_serialize: bool,
+    /// Whether only server operators may set this entity's data via a spawn
+    /// item's `ENTITY_DATA` component. Mirrors vanilla `EntityType.onlyOpCanSetNbt`.
+    pub only_op_can_set_nbt: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractBoat`.
     pub is_abstract_boat: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractMinecart`.
