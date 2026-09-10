@@ -73,12 +73,10 @@ impl TurtleEggBlock {
         Self { block }
     }
 
-    /// Whether the block below `pos` is a sand type.
     pub(crate) fn on_sand(level: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::is_sand(level, pos.below())
     }
 
-    /// Whether the block is a sand type.
     pub(crate) fn is_sand(level: &dyn LevelReader, pos: BlockPos) -> bool {
         level
             .get_block_state(pos)

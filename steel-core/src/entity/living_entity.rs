@@ -3132,7 +3132,6 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     loot_table.get_random_items(&mut context)
 }
 
-/// Resolves the drops from a gift loot table.
 pub(crate) fn gift_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,

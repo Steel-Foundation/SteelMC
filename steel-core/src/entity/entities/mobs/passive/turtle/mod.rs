@@ -189,7 +189,6 @@ impl TurtleEntity {
         *self.entity_data.lock().laying_egg.get()
     }
 
-    /// Marks this turtle as laying, resetting the lay counter.
     pub(crate) fn set_laying_egg(&self, laying: bool) {
         *self.lay_egg_counter.lock() = i32::from(laying);
         self.entity_data.lock().laying_egg.set(laying);
@@ -241,7 +240,6 @@ impl TurtleEntity {
             .is_in_tag(item_stack.item(), &ItemTag::TURTLE_FOOD)
     }
 
-    /// Drops a scute when this turtle grows into an adult.
     fn drop_turtle_scute(&self) {
         let Some(world) = self.level() else {
             return;
@@ -259,7 +257,6 @@ impl TurtleEntity {
         }
     }
 
-    /// Trims carried speed and floats a swimming turtle.
     fn trim_turtle_speed(&self) {
         if self.is_in_water() {
             let mut velocity = self.velocity();

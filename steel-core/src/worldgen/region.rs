@@ -270,7 +270,7 @@ impl<'a> WorldGenRegion<'a> {
         self.context.generation_height()
     }
 
-    /// Returns this dimension's sea level.
+    /// Generated sea level dimensions
     #[must_use]
     pub const fn sea_level(&self) -> i32 {
         self.context.sea_level()
