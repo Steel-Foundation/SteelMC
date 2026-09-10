@@ -1,43 +1,30 @@
-//! The overload branch of vanilla `MinecraftServer.runServer`: once the game
-//! loop falls far enough behind the wall clock it reports "Can't keep up" and
-//! skips the missed ticks rather than replaying them, so the world keeps its
-//! normal pace instead of fast-forwarding.
+//! Skipping ticks the server is too far behind to replay.
 
 use std::time::{Duration, Instant};
 
-// Vanilla `MinecraftServer` overload constants: how far behind before ticks are
-// dropped, and the minimum gap between "Can't keep up" reports, each with tick
-// slack on top.
 const OVERLOAD_THRESHOLD: Duration = Duration::from_secs(1);
 const OVERLOAD_THRESHOLD_TICKS: u32 = 20;
 const OVERLOAD_WARNING_INTERVAL: Duration = Duration::from_secs(10);
 const OVERLOAD_WARNING_INTERVAL_TICKS: u32 = 100;
 
-/// Tracks how far behind the loop is and drops the backlog past the vanilla
-/// threshold.
+/// Tracks how far behind the loop is and drops the backlog past the threshold.
 pub(super) struct TickOverloadGuard {
-    /// Last backlog drop, rate-limiting the report and the drop. `None` until
-    /// the first report so an early stall is not made to wait out a gap that
-    /// never started.
     last_report: Option<Instant>,
 }
 
 impl TickOverloadGuard {
-    /// A guard that has never reported, so the first large backlog drops at once.
+    /// A guard that has never reported.
     pub(super) const fn new() -> Self {
         Self { last_report: None }
     }
 
-    /// Forgets the recorded backlog, for when the loop deliberately stops
-    /// following the wall clock (vanilla does this while sprinting).
+    /// Forgets the recorded backlog.
     pub(super) const fn reset(&mut self, now: Instant) {
         self.last_report = Some(now);
     }
 
     /// Skips the ticks the loop is behind by, if it is far enough behind and the
     /// last report is old enough, and returns how many were skipped.
-    /// `next_tick_time` is advanced past them, so the loop resumes on the wall
-    /// clock instead of replaying the backlog.
     pub(super) fn skip_backlog_if_overloaded(
         &mut self,
         now: Instant,
@@ -79,8 +66,6 @@ mod tests {
     const NANOS_PER_TICK: u64 = 50_000_000;
     const TICK: Duration = Duration::from_nanos(NANOS_PER_TICK);
 
-    /// A loop `behind` late for its next tick: (now, that tick's deadline, a
-    /// fresh guard).
     fn running_behind(behind: Duration) -> (Instant, Instant, TickOverloadGuard) {
         let next_tick_time = Instant::now();
         (
@@ -103,7 +88,6 @@ mod tests {
 
     #[test]
     fn small_backlog_is_still_replayed() {
-        // Well inside the threshold, so the backlog is replayed, not dropped.
         let (now, mut next_tick_time, mut guard) = running_behind(Duration::from_millis(500));
 
         let skipped = guard.skip_backlog_if_overloaded(now, &mut next_tick_time, NANOS_PER_TICK);
@@ -132,7 +116,6 @@ mod tests {
             100
         );
 
-        // Behind again immediately, but the previous report is too recent.
         next_tick_time = now;
         let later = now + Duration::from_secs(5);
         let skipped = guard.skip_backlog_if_overloaded(later, &mut next_tick_time, NANOS_PER_TICK);
