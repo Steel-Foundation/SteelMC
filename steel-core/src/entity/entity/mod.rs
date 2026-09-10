@@ -390,7 +390,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies vanilla `Entity.onAboveBubbleColumn`.
-    fn on_above_bubble_column(&self, drag_down: bool, _pos: BlockPos) {
+    fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.on_above_bubble_column_projectile(drag_down, pos);
+            return;
+        }
+
+        self.default_on_above_bubble_column(drag_down, pos);
+    }
+
+    /// Applies the base entity's clamped bubble-column surface movement.
+    fn default_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
         if self.is_flying_player() {
             return;
         }
@@ -402,10 +412,24 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
         };
         self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
     }
 
     /// Applies vanilla `Entity.onInsideBubbleColumn`.
     fn on_inside_bubble_column(&self, drag_down: bool) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.on_inside_bubble_column_projectile(drag_down);
+            return;
+        }
+
+        self.default_on_inside_bubble_column(drag_down);
+    }
+
+    /// Applies the base entity's clamped movement inside a bubble-column.
+    fn default_on_inside_bubble_column(&self, drag_down: bool) {
         if self.is_flying_player() {
             return;
         }
