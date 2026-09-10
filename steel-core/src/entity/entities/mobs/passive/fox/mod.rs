@@ -249,7 +249,6 @@ impl FoxEntity {
         self.get_flag(FLAG_POUNCING)
     }
 
-    #[expect(dead_code, reason = "the pounce goal that sets this lands separately")]
     pub(crate) fn set_pouncing(&self, pouncing: bool) {
         self.set_flag(FLAG_POUNCING, pouncing);
     }
