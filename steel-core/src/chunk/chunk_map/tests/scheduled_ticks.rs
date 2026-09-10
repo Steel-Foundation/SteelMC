@@ -104,11 +104,9 @@ fn registered_full_chunks_use_active_order_for_equal_explicit_tick_heads() {
         chunk.schedule_block_tick(tick_pos, &vanilla_blocks::STONE, 1, TickPriority::Normal, 0);
     }
 
-    if let Err(error) = world
+    world
         .reconcile_active_scheduled_tick_chunks([second_chunk_pos, first_chunk_pos].into_iter())
-    {
-        panic!("test scheduler invariant failed: {error:?}");
-    }
+        .expect("test scheduler invariant should hold");
     let batch = world.begin_scheduled_tick_phase(1, MAX_SCHEDULED_TICKS_PER_TICK);
     assert_eq!(
         batch.ticks.iter().map(|tick| tick.pos).collect::<Vec<_>>(),
