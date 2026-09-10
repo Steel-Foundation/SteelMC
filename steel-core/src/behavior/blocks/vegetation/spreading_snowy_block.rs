@@ -33,7 +33,12 @@ impl SpreadingSnowyBlock {
             return false;
         }
 
-        let light_dampening_top_face = above_state.get_light_dampening();
+        let light_dampening_top_face = get_light_block_into(
+            state,
+            above_state,
+            Direction::Up,
+            above_state.get_light_dampening(),
+        );
         light_dampening_top_face < 15
     }
     fn can_propagate(state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
