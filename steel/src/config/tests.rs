@@ -50,10 +50,8 @@ fn packaged_configs_parse() {
     assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
 }
 
-/// `RuntimeConfig::default()` claims to be what a freshly packaged server ships, so the two
-/// are checked against each other rather than kept in step by hand. The destructure is
-/// exhaustive on purpose: a new field stops this compiling until someone decides what the
-/// packaged config says about it.
+/// Covers every `RuntimeConfig` field. The destructure is exhaustive on purpose, so adding
+/// a field stops this compiling until someone extends it.
 #[test]
 fn packaged_config_matches_the_runtime_config_defaults() {
     let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");

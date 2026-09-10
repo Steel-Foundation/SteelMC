@@ -388,7 +388,8 @@ impl WorldsConfig {
         generator_registry: &WorldGeneratorRegistry,
         storage_registry: &WorldStorageRegistry,
     ) -> Result<ResolvedWorldsConfig, String> {
-        // An embedded server cannot chdir per world, so its save root may be absolute.
+        // Stays on validate_clean_path: an embedded server cannot chdir per world, so its
+        // save root may be absolute.
         validate_clean_path(&self.save_path, "save_path")?;
 
         if self.domains.is_empty() {
