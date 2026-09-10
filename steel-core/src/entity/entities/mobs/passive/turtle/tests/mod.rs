@@ -17,7 +17,6 @@ use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 mod core;
 mod persistence;
 
-/// Builds a turtle that is not attached to any world, for pure state tests.
 fn detached_turtle() -> TurtleEntity {
     init_vanilla_registry();
     TurtleEntity::new(&vanilla_entities::TURTLE, 1, DVec3::ZERO, Weak::new())

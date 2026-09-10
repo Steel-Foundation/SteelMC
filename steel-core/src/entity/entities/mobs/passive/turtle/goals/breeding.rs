@@ -1,5 +1,3 @@
-//! Turtle reproduction goals: breeding into an egg, and laying it on home sand.
-
 use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -16,41 +14,23 @@ use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{AgeableMob, Animal, PathfinderMob, SharedEntity};
 use crate::world::game_event::GameEventContext;
 
-/// Number of eggs stored in a placed turtle egg cluster (`1..=4`).
 const EGGS: &IntProperty = &BlockStateProperties::EGGS;
-/// Vanilla `TurtleBreedGoal` partner search radius.
 const PARTNER_SEARCH_RANGE: f64 = 8.0;
-/// Vanilla `BreedGoal.SPAWN_CHILD_DISTANCE` squared: how close parents must be.
 const BREED_DISTANCE_SQR: f64 = 9.0;
-/// Vanilla `BreedGoal` love timer length before an egg is granted.
 const BREED_TIME: i32 = 60;
-/// Vanilla `TurtleBreedGoal.breed`: adult breeding cooldown for both parents.
 const POST_BREED_AGE: i32 = 6000;
-/// Vanilla `TurtleLayEggGoal` search range handed to `MoveToBlockGoal`.
 const LAY_EGG_SEARCH_RANGE: i32 = 16;
-/// Vanilla `TurtleLayEggGoal`: max distance from home to start laying.
 const LAY_EGG_HOME_RANGE: f64 = 9.0;
-/// Vanilla `TurtleLayEggGoal`: laying animation ticks before the cluster lands.
 const LAY_EGG_DURATION: i32 = 200;
-/// Vanilla `TurtleLayEggGoal`: `setInLoveTime(600)` after laying.
 const POST_LAY_LOVE_TIME: i32 = 600;
-/// Vanilla `BreedGoal.tick`: head-turn speed toward the partner, deg/tick.
 const LOOK_AT_PARTNER_SPEED: f32 = 10.0;
-/// Vanilla `TurtleLayEggGoal`: most eggs a single laying leaves.
 const MAX_EGGS_LAID: u8 = 4;
-/// Vanilla `TurtleLayEggGoal`: laying volume and pitch (a small range so
-/// repeats vary).
 const LAY_EGG_SOUND_VOLUME: f32 = 0.3;
 const LAY_EGG_PITCH_BASE: f32 = 0.9;
 const LAY_EGG_PITCH_SPREAD: f32 = 0.2;
 
-/// Vanilla `Turtle.TurtleBreedGoal`: breeding gives the mother an egg to lay
-/// instead of spawning a baby, and both parents age back to adulthood.
-///
-/// Steel's shared `BreedGoal` spawns the child in its tick with no override
-/// point, so the partner search and love timer are reimplemented here to swap in
-/// the egg-granting step. A `breed()` hook would remove the duplication (raised
-/// on the PR).
+/// Breeding gives the mother an egg to lay instead of spawning a baby,
+/// and both parents age back to adulthood.
 pub(crate) struct TurtleBreedGoal {
     partner: Option<SharedEntity>,
     love_time: i32,
@@ -90,8 +70,7 @@ impl TurtleBreedGoal {
         })
     }
 
-    /// Vanilla `TurtleBreedGoal.breed`: grant the egg, age up both parents, award
-    /// the breeding stat to the love-cause player, drop XP.
+    /// Grants the egg, ages up both parents, awards the breeding stat and drops XP.
     fn breed(mob: &dyn PathfinderMob, turtle: &TurtleEntity, partner_animal: &dyn Animal) {
         let Some(world) = mob.level() else {
             return;
@@ -189,8 +168,7 @@ impl Goal for TurtleBreedGoal {
     }
 }
 
-/// Vanilla `Turtle.TurtleLayEggGoal`: walk to sand near home and, after a delay,
-/// place a turtle egg cluster and clear the carried egg.
+/// Walks to sand near home and, after a delay, places a turtle egg cluster.
 pub(crate) struct TurtleLayEggGoal {
     inner: MoveToBlockGoal,
 }
