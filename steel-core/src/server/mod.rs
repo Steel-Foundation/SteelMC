@@ -556,8 +556,9 @@ impl Server {
         );
 
         // Authlib starts this fetch alongside server initialization and waits on first use.
-        // Steel completes the same initial attempt before opening its listener, except in
-        // offline mode, where `enforces_secure_chat` can never consult the keys anyway.
+        // Steel completes the same initial attempt before opening its listener. Offline
+        // servers skip the wait but still fetch: `enforces_secure_chat` needs online mode,
+        // but `handle_chat_session_update` reads the keys ungated, as vanilla does.
         let service_keys = Arc::new(
             ServiceKeyStore::new(config.services_server.as_deref())
                 .map_err(|error| format!("failed to configure Minecraft services keys: {error}"))?,
