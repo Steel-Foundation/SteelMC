@@ -244,6 +244,7 @@ impl FoxEntity {
         self.get_flag(FLAG_POUNCING)
     }
 
+    #[expect(dead_code, reason = "the pounce goal that sets this lands separately")]
     pub(crate) fn set_pouncing(&self, pouncing: bool) {
         self.set_flag(FLAG_POUNCING, pouncing);
     }
@@ -289,6 +290,13 @@ impl FoxEntity {
     }
 
     #[must_use]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the avoid-player goal that reads this lands separately"
+        )
+    )]
     pub(crate) fn trusts(&self, uuid: Uuid) -> bool {
         let entity_data = self.entity_data.lock();
         *entity_data.trusted_id_0.get() == Some(uuid)
