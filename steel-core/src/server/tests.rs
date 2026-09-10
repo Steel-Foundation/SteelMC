@@ -10,7 +10,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
@@ -3323,9 +3323,9 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
     });
 }
 
-/// Builds a server through the public constructor, offline and pointed at an unroutable
-/// services endpoint so no test depends on reaching Mojang.
-async fn offline_server(save_root: &Path) -> Result<Server, String> {
+/// Builds a server through the public constructor, offline and pointed away from Mojang so
+/// no test depends on reaching it.
+async fn offline_server(runtime: &Arc<Runtime>, save_root: &Path) -> Result<Server, String> {
     let worlds_config: WorldsConfig = toml::from_str(&format!(
         r#"
 save_path = '{}'
@@ -3343,10 +3343,12 @@ default = true
     .expect("worlds config should parse");
 
     let mut config = RuntimeConfig::clone(&test_runtime_config());
-    config.services_server = Some("http://127.0.0.1:1/publickeys".to_owned());
+    // RFC 5737 documentation space, so the connect stalls rather than being refused. A
+    // refused address returns instantly and would pass with or without the offline gate.
+    config.services_server = Some("http://192.0.2.1:1/publickeys".to_owned());
 
     Server::new(
-        Arc::new(server_test_runtime()),
+        Arc::clone(runtime),
         CancellationToken::new(),
         config,
         worlds_config,
@@ -3367,10 +3369,10 @@ fn server_test_runtime() -> Runtime {
 
 /// Runs a server-startup test on a thread with the stack `main` gives Steel. Debug builds
 /// overflow the default one in the generated density functions.
-fn with_server_runtime<F: FnOnce(&Runtime) + Send + 'static>(test: F) {
+fn with_server_runtime<F: FnOnce(&Arc<Runtime>) + Send + 'static>(test: F) {
     thread::Builder::new()
         .stack_size(DEBUG_STACK_SIZE)
-        .spawn(move || test(&server_test_runtime()))
+        .spawn(move || test(&Arc::new(server_test_runtime())))
         .expect("server test thread should spawn")
         .join()
         .expect("server test thread panicked");
@@ -3383,10 +3385,10 @@ fn a_second_server_bootstraps_in_the_same_process() {
             let first_root = test_storage_root("bootstrap-first");
             let second_root = test_storage_root("bootstrap-second");
 
-            let first = offline_server(&first_root)
+            let first = offline_server(runtime, &first_root)
                 .await
                 .expect("the first server should start");
-            let second = offline_server(&second_root)
+            let second = offline_server(runtime, &second_root)
                 .await
                 .expect("a second server should start in the same process");
 
@@ -3407,11 +3409,11 @@ fn offline_startup_does_not_wait_for_the_services_key_fetch() {
         runtime.block_on(async {
             let save_root = test_storage_root("offline-service-keys");
 
-            let started = SystemTime::now();
-            let server = offline_server(&save_root)
+            let started = Instant::now();
+            let server = offline_server(runtime, &save_root)
                 .await
                 .expect("an offline server should start");
-            let elapsed = started.elapsed().expect("startup should be monotonic");
+            let elapsed = started.elapsed();
 
             assert!(
                 elapsed < SERVICE_KEY_CONNECT_TIMEOUT,
