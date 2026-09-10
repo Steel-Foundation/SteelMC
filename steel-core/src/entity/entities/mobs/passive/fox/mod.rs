@@ -275,7 +275,6 @@ impl FoxEntity {
         self.set_flag(FLAG_DEFENDING, defending);
     }
 
-    /// Drops everything the fox might be mid-way through.
     pub(crate) fn clear_states(&self) {
         self.set_interested(false);
         self.set_crouching(false);
@@ -285,14 +284,12 @@ impl FoxEntity {
         self.set_faceplanted(false);
     }
 
-    /// Whether the fox can move: not sleeping, sitting, or faceplanted.
     pub(crate) fn can_move(&self) -> bool {
         !self.is_sleeping() && !self.is_sitting() && !self.is_faceplanted()
     }
 
-    /// Returns whether this fox trusts the given entity uuid.
     #[must_use]
-    pub fn trusts(&self, uuid: Uuid) -> bool {
+    pub(crate) fn trusts(&self, uuid: Uuid) -> bool {
         let entity_data = self.entity_data.lock();
         *entity_data.trusted_id_0.get() == Some(uuid)
             || *entity_data.trusted_id_1.get() == Some(uuid)
@@ -376,12 +373,10 @@ impl FoxEntity {
             .is_in_tag(item_stack.item(), &ItemTag::FOX_FOOD)
     }
 
-    /// Whether the fox can eat this item from its mouth.
     fn is_consumable_food(item_stack: &ItemStack) -> bool {
         item_stack.has(FOOD) && item_stack.has(CONSUMABLE)
     }
 
-    /// Throws an item out just ahead of the fox's head.
     fn spit_out_item(&self, world: &Arc<World>, item_stack: ItemStack) {
         if item_stack.is_empty() {
             return;
@@ -407,7 +402,6 @@ impl FoxEntity {
         let _ = world.try_add_entity(Arc::new(item));
     }
 
-    /// Drops an item at the fox's feet.
     fn drop_item_stack(&self, world: &Arc<World>, item_stack: ItemStack) {
         if item_stack.is_empty() {
             return;
@@ -423,7 +417,6 @@ impl FoxEntity {
         let _ = world.try_add_entity(Arc::new(item));
     }
 
-    /// Returns whether no player is close enough to suppress the fox screech.
     fn no_player_within_screech_range(&self, world: &Arc<World>) -> bool {
         let search = self.bounding_box().inflate(FOX_SCREECH_PLAYER_RANGE);
         world
@@ -433,7 +426,6 @@ impl FoxEntity {
             .is_empty()
     }
 
-    /// Rolls the item a fox spawns holding.
     fn spawn_held_item() -> ItemStack {
         let odds = rand::random::<f32>();
         let item = if odds < FOX_HELD_EMERALD_ODDS {
@@ -456,7 +448,6 @@ impl FoxEntity {
         ItemStack::new(item)
     }
 
-    /// Whether the fox is awake, on the ground, holding food and has no target.
     fn can_eat(&self) -> bool {
         let mut holds_food = false;
         self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
@@ -465,7 +456,6 @@ impl FoxEntity {
         holds_food && Mob::target(self).is_none() && self.on_ground() && !self.is_sleeping()
     }
 
-    /// Wakes or stands the fox up, and kicks dust while faceplanted.
     fn tick_fox_posture(&self) {
         if !self.is_effective_ai() {
             return;
@@ -494,7 +484,6 @@ impl FoxEntity {
         }
     }
 
-    /// Ages the since-ate timer, chews, and swallows.
     fn tick_eating(&self) {
         if !Entity::is_alive(self) || !self.is_effective_ai() {
             return;
