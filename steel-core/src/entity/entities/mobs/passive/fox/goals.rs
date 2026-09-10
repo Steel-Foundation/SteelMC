@@ -657,7 +657,6 @@ impl Goal for FoxPounceGoal {
     }
 }
 
-/// What a fox will stalk and pounce.
 fn is_stalkable_prey(target: &SharedEntity) -> bool {
     // TODO(fox-prey): vanilla also stalks rabbits; the Rabbit mob is not in the tree yet.
     target.entity_type() == &vanilla_entities::CHICKEN
