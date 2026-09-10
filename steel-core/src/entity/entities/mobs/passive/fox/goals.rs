@@ -486,8 +486,7 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// Whether the space between the fox and its target is clear enough to pounce
-/// through.
+/// Whether the fox has a clear line to pounce through.
 fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
     let Some(world) = mob.level() else {
         return false;
@@ -516,8 +515,7 @@ fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
     true
 }
 
-/// A fully-crouched fox with a clear line to its target leaps at it, striking on
-/// contact or faceplanting into snow on a hard miss.
+/// Leaps at the target, faceplanting into snow on a hard miss.
 pub(crate) struct FoxPounceGoal;
 
 impl Goal for FoxPounceGoal {
