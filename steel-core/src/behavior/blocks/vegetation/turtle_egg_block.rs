@@ -31,10 +31,7 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
 
-/// Vanilla `TurtleEggBlock.randomTick`: hatchling offset inside the nest block,
-/// on X and Z.
 const HATCHLING_NEST_OFFSET: f64 = 0.3;
-/// Extra X spacing per egg so a cluster's babies do not stack on one point.
 const HATCHLING_SPACING: f64 = 0.2;
 
 /// Cracking stages a turtle egg passes through before it hatches.
@@ -194,10 +191,8 @@ impl TurtleEggBlock {
         }
     }
 
-    /// Vanilla `TurtleEggBlock.randomTick`: spawn one baby turtle in the nest,
-    /// aged down, homed on the block. `index` fans a cluster's babies apart.
-    /// Vanilla's `snapTo(.., 0, 0)` zeroes rotation; Steel's factory already
-    /// starts entities there, so only the position is set.
+    /// Spawns one baby turtle in the nest, homed on the block. `index` fans a
+    /// cluster's babies apart.
     fn hatch_baby_turtle(world: &Arc<World>, pos: BlockPos, index: u8) {
         let spawn_pos = DVec3::new(
             f64::from(pos.x()) + HATCHLING_NEST_OFFSET + f64::from(index) * HATCHLING_SPACING,
@@ -382,11 +377,8 @@ mod tests {
     /// random ticks are deterministic in tests.
     const ALWAYS_HATCH_DAY_TIME: i64 = 21_500;
 
-    /// Slack either side of the nest when looking for hatched turtles, covering
-    /// the cluster fan-out and the turtle's size.
     const HATCH_SEARCH_SLACK: f64 = 1.0;
 
-    /// Collects the turtles hatched at a nest (the block and its neighbors).
     fn hatched_turtles(world: &Arc<World>, pos: BlockPos) -> Vec<SharedEntity> {
         let aabb = WorldAabb::new(
             f64::from(pos.x()) - HATCH_SEARCH_SLACK,
@@ -435,7 +427,6 @@ mod tests {
         behavior.random_tick(world.get_block_state(pos), &world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 2);
 
-        // Final advance hatches the egg and spawns a baby.
         behavior.random_tick(world.get_block_state(pos), &world, pos);
         assert!(world.get_block_state(pos).is_air());
 
@@ -454,9 +445,7 @@ mod tests {
 
     #[test]
     fn full_cluster_hatches_one_baby_per_egg() {
-        /// Eggs in the test cluster. Any count above one exercises the fan-out.
         const CLUSTER_EGGS: u8 = 3;
-        /// Slack for comparing spawn coordinates that were built by addition.
         const POSITION_TOLERANCE: f64 = 1e-9;
 
         let (world, pos) = prepare("turtle_egg_cluster_hatch");
@@ -482,7 +471,6 @@ mod tests {
             "each egg in the cluster hatches into its own baby turtle"
         );
 
-        // The babies are spaced along X, so no two of them share a spot.
         let mut spawn_x: Vec<f64> = babies.iter().map(|baby| baby.position().x).collect();
         spawn_x.sort_by(f64::total_cmp);
         for pair in spawn_x.windows(2) {
