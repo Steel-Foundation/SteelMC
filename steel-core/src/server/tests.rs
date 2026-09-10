@@ -1,6 +1,7 @@
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use std::sync::atomic::AtomicI32;
+use std::thread;
 use std::{
     env::temp_dir,
     io::Cursor,
@@ -10,7 +11,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
@@ -31,7 +32,13 @@ use steel_registry::{
 use steel_utils::{BlockPos, ChunkPos, UuidExt as _, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
+use tokio::{
+    fs,
+    net::TcpListener,
+    runtime::{Builder, Runtime},
+    task::JoinSet,
+    time::{sleep, timeout},
+};
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
@@ -40,7 +47,7 @@ use crate::command::execution::{
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
+use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
@@ -60,10 +67,12 @@ use crate::test_support::{
 };
 use crate::world::World;
 
+use super::DEBUG_STACK_SIZE;
 use super::known_players::{
     KnownPlayerSaveStep, UncachedPlayerTarget, classify_uncached_player_target, direct_uuid_profile,
 };
 use super::player_admission::{PendingPlayerJoin, PlayerAdmissionState};
+use super::service_keys::CONNECT_TIMEOUT as SERVICE_KEY_CONNECT_TIMEOUT;
 use super::{
     AsyncMutex, CancellationToken, ChunkSender, CommandRegistry, CommandRequest,
     CommandRequestQueue, DomainCommandStorage, DomainPlayerData, DomainPlayerState,
@@ -151,24 +160,16 @@ fn test_runtime_config() -> Arc<RuntimeConfig> {
         max_players: 1,
         view_distance: 2,
         simulation_distance: 2,
-        max_chained_neighbor_updates: 1_000_000,
         online_mode: false,
-        auth_server: None,
-        profile_server: None,
-        services_server: None,
         encryption: false,
-        allow_flight: false,
-        motd: String::new(),
         use_favicon: false,
         favicon: String::new(),
-        enforce_secure_chat: false,
-        chat_spam_threshold_seconds: 10,
-        command_spam_threshold_seconds: 10,
+        motd: String::new(),
         compression: None,
-        server_links: None,
         packet_workers: Some(1),
         chunk_generation_threads: Some(1),
         chunk_encoding_threads: Some(1),
+        ..RuntimeConfig::default()
     })
 }
 
@@ -3843,5 +3844,148 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }
+    });
+}
+
+/// RFC 5737 documentation space, so the connect stalls rather than being refused. A refused
+/// address returns instantly and would pass with or without the offline gate.
+const UNROUTABLE_SERVICES: &str = "http://192.0.2.1:1/publickeys";
+
+/// Builds a server through the public constructor, offline and pointed at the given
+/// services endpoint so no test depends on reaching Mojang.
+async fn offline_server(
+    runtime: &Arc<Runtime>,
+    save_root: &Path,
+    services_server: &str,
+) -> Result<Server, String> {
+    let worlds_config: WorldsConfig = toml::from_str(&format!(
+        r#"
+save_path = '{}'
+
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:flat"
+default = true
+"#,
+        save_root.display()
+    ))
+    .expect("worlds config should parse");
+
+    let mut config = RuntimeConfig::clone(&test_runtime_config());
+    config.services_server = Some(services_server.to_owned());
+
+    Server::new(
+        Arc::clone(runtime),
+        CancellationToken::new(),
+        config,
+        worlds_config,
+        PermissionGroupManager::transient(PermissionGroupsConfig::default())
+            .expect("default permission groups should resolve"),
+    )
+    .await
+}
+
+async fn shutdown_server(server: &Server, save_root: &Path) {
+    server.cancel_token.cancel();
+    let _ = fs::remove_dir_all(save_root).await;
+}
+
+fn server_test_runtime() -> Runtime {
+    Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_stack_size(DEBUG_STACK_SIZE)
+        .enable_all()
+        .build()
+        .expect("test runtime should build")
+}
+
+/// Runs a server-startup test on a thread with the stack `main` gives Steel. Debug builds
+/// overflow the default one in the generated density functions.
+fn with_server_runtime<F: FnOnce(&Arc<Runtime>) + Send + 'static>(test: F) {
+    thread::Builder::new()
+        .stack_size(DEBUG_STACK_SIZE)
+        .spawn(move || test(&Arc::new(server_test_runtime())))
+        .expect("server test thread should spawn")
+        .join()
+        .expect("server test thread panicked");
+}
+
+#[test]
+fn a_second_server_bootstraps_in_the_same_process() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let first_root = test_storage_root("bootstrap-first");
+            let second_root = test_storage_root("bootstrap-second");
+
+            let first = offline_server(runtime, &first_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("the first server should start");
+            let second = offline_server(runtime, &second_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("a second server should start in the same process");
+
+            assert_eq!(first.worlds.len(), 1);
+            assert_eq!(second.worlds.len(), 1);
+
+            shutdown_server(&first, &first_root).await;
+            shutdown_server(&second, &second_root).await;
+        });
+    });
+}
+
+#[test]
+fn offline_startup_does_not_wait_for_the_services_key_fetch() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("offline-service-keys");
+
+            let started = Instant::now();
+            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("an offline server should start");
+            let elapsed = started.elapsed();
+
+            assert!(
+                elapsed < SERVICE_KEY_CONNECT_TIMEOUT,
+                "offline startup waited {elapsed:?} on the services key fetch"
+            );
+
+            shutdown_server(&server, &save_root).await;
+        });
+    });
+}
+
+/// Skipping the wait must not turn into skipping the fetch. `handle_chat_session_update`
+/// reads the keys with no online-mode gate, as vanilla does, so an offline server that
+/// never fetched them would drop every chat session a player sends.
+#[test]
+fn offline_startup_still_requests_the_services_keys() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("offline-key-request");
+            let services_stub = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("services key stub should bind");
+            let endpoint = format!(
+                "http://{}/publickeys",
+                services_stub
+                    .local_addr()
+                    .expect("services key stub should report its address")
+            );
+
+            let server = offline_server(runtime, &save_root, &endpoint)
+                .await
+                .expect("an offline server should start");
+
+            timeout(SERVICE_KEY_CONNECT_TIMEOUT, services_stub.accept())
+                .await
+                .expect("an offline server should request the services keys")
+                .expect("services key stub should accept the request");
+
+            shutdown_server(&server, &save_root).await;
+        });
     });
 }

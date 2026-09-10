@@ -551,13 +551,14 @@ impl Server {
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
-        init_globals()?;
+        init_globals();
         log::info!(
             "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
         );
 
         // Authlib starts this fetch alongside server initialization and waits on first use.
-        // Steel completes the same initial attempt before opening its listener.
+        // It runs whatever the login mode, because `handle_chat_session_update` reads these
+        // keys with no online-mode gate, as vanilla does.
         let service_keys = Arc::new(
             ServiceKeyStore::new(config.services_server.as_deref())
                 .map_err(|error| format!("failed to configure Minecraft services keys: {error}"))?,
@@ -699,7 +700,9 @@ impl Server {
             .map(|permission| permission.as_str().to_owned())
             .collect();
 
-        if service_keys_ready.await.is_err() {
+        // Steel finishes the initial attempt before opening its listener, except offline,
+        // where `enforces_secure_chat` needs online mode so nothing acts on the result.
+        if config.online_mode && service_keys_ready.await.is_err() {
             log::error!("Minecraft services key fetch task stopped before its initial attempt");
         }
 
