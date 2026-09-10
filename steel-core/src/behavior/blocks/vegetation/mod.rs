@@ -167,6 +167,7 @@ pub use short_dry_grass_block::ShortDryGrassBlock;
 pub use small_dripleaf_block::SmallDripleafBlock;
 pub use snowy_block::SnowyBlock;
 pub use spore_blossom_block::SporeBlossomBlock;
+pub use spreading_snowy_block::SpreadingSnowyBlock;
 pub use stem_block::StemBlock;
 pub use sugar_cane::SugarCaneBlock;
 pub use sweet_berry_bush::SweetBerryBushBlock;

@@ -1,27 +1,20 @@
 use super::snowy_block::is_snowy_setting;
 use crate::behavior::BlockRef;
+use crate::chunk::light::get_light_block_into;
 use crate::world::{LevelReader, World};
 use std::sync::Arc;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::entity_data::Direction;
 use steel_registry::vanilla_blocks;
 use steel_registry::{blocks::block_state_ext::BlockStateExt, vanilla_fluid_tags::FluidTag};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-pub(super) struct SpreadingSnowyBlock {
-    own_block: BlockRef,
-    base_block: BlockRef,
-}
+/// A structure implementing the spreading of grass blocks and its variants
+pub struct SpreadingSnowyBlock {}
 
 impl SpreadingSnowyBlock {
-    pub(super) const fn new(own: BlockRef, base: BlockRef) -> Self {
-        SpreadingSnowyBlock {
-            own_block: own,
-            base_block: base,
-        }
-    }
-
-    fn can_stay_alive(_state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_stay_alive(state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
         let above = pos.above();
         let above_state: BlockStateId = level.get_block_state(above);
         if above_state.get_block() == &vanilla_blocks::SNOW
@@ -49,15 +42,20 @@ impl SpreadingSnowyBlock {
                 .fluid_id
                 .has_tag(&FluidTag::WATER)
     }
-    pub(super) fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+
+    /// Implements random tick for grass block and its variants (like mycelium)
+    /// It allows blocks to spread to base blocks, and will make them disappear if there is any block ontop of them
+    pub fn random_tick(
+        own: BlockRef,
+        base: BlockRef,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) {
         if !Self::can_stay_alive(state, world, pos) {
-            world.set_block(
-                pos,
-                self.base_block.default_state(),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(pos, base.default_state(), UpdateFlags::UPDATE_ALL);
         } else if world.max_local_raw_brightness(pos.above(), world.sky_darkening()) >= 9 {
-            let default_block_state = self.own_block.default_state();
+            let default_block_state = own.default_state();
 
             for _ in 0..4 {
                 let test_pos = pos.offset(
@@ -65,7 +63,7 @@ impl SpreadingSnowyBlock {
                     rand::random_range(-3..2),
                     rand::random_range(-1..2),
                 );
-                if world.get_block_state(test_pos).get_block() == self.base_block
+                if world.get_block_state(test_pos).get_block() == base
                     && Self::can_propagate(default_block_state, world, test_pos)
                 {
                     world.set_block(

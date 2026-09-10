@@ -14,17 +14,13 @@ use std::sync::Arc;
 #[block_behavior]
 pub struct MyceliumBlock {
     block: BlockRef,
-    spreading: SpreadingSnowyBlock,
 }
 
 impl MyceliumBlock {
     /// Creates a new mycelium block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self {
-            block,
-            spreading: SpreadingSnowyBlock::new(block, &vanilla_blocks::DIRT),
-        }
+        Self { block }
     }
 }
 
@@ -46,7 +42,13 @@ impl BlockBehavior for MyceliumBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.spreading.random_tick(state, world, pos);
+        SpreadingSnowyBlock::random_tick(
+            &vanilla_blocks::MYCELIUM,
+            &vanilla_blocks::DIRT,
+            state,
+            world,
+            pos,
+        );
     }
 }
 

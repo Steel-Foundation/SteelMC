@@ -15,17 +15,13 @@ use std::sync::Arc;
 #[block_behavior]
 pub struct GrassBlock {
     block: BlockRef,
-    spreading: SpreadingSnowyBlock,
 }
 
 impl GrassBlock {
     /// Creates a new grass block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self {
-            block,
-            spreading: SpreadingSnowyBlock::new(block, &vanilla_blocks::DIRT),
-        }
+        Self { block }
     }
 }
 
@@ -47,7 +43,13 @@ impl BlockBehavior for GrassBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.spreading.random_tick(state, world, pos);
+        SpreadingSnowyBlock::random_tick(
+            &vanilla_blocks::GRASS_BLOCK,
+            &vanilla_blocks::DIRT,
+            state,
+            world,
+            pos,
+        );
     }
 }
 
