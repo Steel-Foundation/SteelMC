@@ -388,7 +388,8 @@ impl WorldsConfig {
         generator_registry: &WorldGeneratorRegistry,
         storage_registry: &WorldStorageRegistry,
     ) -> Result<ResolvedWorldsConfig, String> {
-        validate_save_path(&self.save_path, "save_path")?;
+        // An embedded server cannot chdir per world, so its save root may be absolute.
+        validate_clean_path(&self.save_path, "save_path")?;
 
         if self.domains.is_empty() {
             return Err("worlds.toml must declare at least one domain".to_owned());
@@ -743,11 +744,11 @@ fn validate_world_name(name: &str, domain: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validates a config path that may be absolute, rejecting `.` and `..` components.
+/// Validates a config path, rejecting `.` and `..` components.
 ///
-/// An embedded server cannot change the process working directory per world, so its
-/// save root has to be addressable outside that directory.
-pub fn validate_save_path(path: &str, field: &str) -> Result<(), String> {
+/// Absolute paths are accepted. Use [`validate_relative_path`] for paths that have to stay
+/// under a Steel-owned root.
+pub fn validate_clean_path(path: &str, field: &str) -> Result<(), String> {
     let path = Path::new(path);
     if path.as_os_str().is_empty() {
         return Err(format!("{field} must not be empty"));
@@ -773,7 +774,7 @@ pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
     if Path::new(path).is_absolute() {
         return Err(format!("{field} must be relative"));
     }
-    validate_save_path(path, field)
+    validate_clean_path(path, field)
 }
 
 fn validate_player_storage_selection(selection: &StorageSelection) -> Result<(), String> {
