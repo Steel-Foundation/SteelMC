@@ -1,4 +1,31 @@
 use super::*;
+use crate::chunk::chunk_request::{ChunkRequest, ChunkTicketKind};
+use std::thread;
+
+#[test]
+fn world_tick_spawns_dirty_unload_save_on_the_chunk_runtime() {
+    let world = fresh_test_world("world_tick_dirty_unload");
+    let pos = ChunkPos::new(2, 3);
+    let holder = unloaded_light_holder(pos);
+    let Some(chunk) = holder.try_chunk(ChunkStatus::Light) else {
+        panic!("test holder should contain a light-status chunk");
+    };
+    chunk.mark_dirty();
+    let _ = world
+        .chunk_map
+        .unloading_chunks
+        .insert_sync(pos, Arc::clone(&holder));
+    drop(holder);
+
+    let tick_world = Arc::clone(&world);
+    let tick = thread::spawn(move || tick_world.tick_game(1, false));
+    assert!(
+        tick.join().is_ok(),
+        "a world tick outside Tokio must still enqueue unload saves"
+    );
+
+    stop_chunk_tasks(&world);
+}
 
 #[test]
 fn save_retry_marks_same_unloading_holder_dirty() {
@@ -26,7 +53,7 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     let chunk_pos = ChunkPos::new(0, 0);
     let original = insert_ready_full_chunk(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     let preparation = original
         .try_begin_save_preparation()
         .expect("the unloading holder should reserve save preparation");
@@ -34,11 +61,7 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     assert!(
         world
             .chunk_map
-            .update_chunk_level(
-                chunk_pos,
-                Some(ChunkTicketLevel::FULL_CHUNK),
-                Some(ChunkTicketLevel::FULL_CHUNK),
-            )
+            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::FULL_CHUNK))
             .is_none(),
         "revival must be staged instead of blocking the lifecycle thread"
     );
@@ -51,17 +74,51 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     world.chunk_map.merge_deferred_revivals(&mut changes);
     assert_eq!(changes.len(), 1);
     let change = changes[0];
-    let Some(revived) = world.chunk_map.update_chunk_level(
-        change.pos,
-        change.new_level,
-        change.new_simulation_level,
-    ) else {
+    let Some(revived) = world
+        .chunk_map
+        .update_chunk_level(change.pos, change.new_level)
+    else {
         panic!("revival should retry after save preparation releases the holder");
     };
 
     assert!(Arc::ptr_eq(&original, &revived));
     assert!(world.chunk_map.chunks.contains_sync(&chunk_pos));
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+}
+
+#[test]
+fn ticket_receipt_waits_for_deferred_holder_revival() {
+    let world = fresh_test_world("deferred_revival_receipt");
+    let pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, pos);
+    world.chunk_map.update_chunk_level(pos, None);
+    let preparation = holder
+        .try_begin_save_preparation()
+        .expect("the unloading holder should reserve save preparation");
+
+    let receipt = world
+        .chunk_map
+        .acquire_chunk_request_leases(&[pos], ChunkTicketLevel::MAX)
+        .expect("one request lease should produce a receipt");
+    world.chunk_map.advance_scheduling();
+
+    assert!(!world.chunk_map.is_ticket_receipt_committed(receipt));
+    assert!(!world.chunk_map.chunks.contains_sync(&pos));
+
+    drop(preparation);
+    world.chunk_map.advance_scheduling();
+
+    assert!(world.chunk_map.is_ticket_receipt_committed(receipt));
+    assert!(
+        world
+            .chunk_map
+            .chunks
+            .read_sync(&pos, |_, active| Arc::ptr_eq(active, &holder))
+            .unwrap_or(false),
+        "the receipt should publish only after the original holder revives"
+    );
+
+    stop_chunk_tasks(&world);
 }
 
 #[test]
@@ -72,26 +129,21 @@ fn newer_ticket_change_replaces_a_deferred_revival() {
     let chunk_pos = ChunkPos::new(0, 0);
     let holder = insert_ready_full_chunk(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     let preparation = holder
         .try_begin_save_preparation()
         .expect("the unloading holder should reserve save preparation");
     assert!(
         world
             .chunk_map
-            .update_chunk_level(
-                chunk_pos,
-                Some(ChunkTicketLevel::FULL_CHUNK),
-                Some(ChunkTicketLevel::FULL_CHUNK),
-            )
+            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::FULL_CHUNK))
             .is_none()
     );
     drop(preparation);
 
-    let removal = LevelChange {
+    let removal = LoadLevelChange {
         pos: chunk_pos,
         new_level: None,
-        new_simulation_level: None,
     };
     let mut changes = vec![removal];
     world.chunk_map.merge_deferred_revivals(&mut changes);
@@ -126,7 +178,7 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
     assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
     assert_eq!(world.block_entity_tickers().registered_len(), 1);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     world.chunk_map.rebuild_ticking_chunk_snapshot();
     drop(holder);
     let _runtime_guard = world.chunk_map.chunk_runtime.enter();
@@ -158,13 +210,12 @@ fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
     };
     let block_entity = add_test_comparator(chunk, block_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     assert!(world.has_registered_full_chunk_ticks(chunk_pos));
-    let Some(revived) = world.chunk_map.update_chunk_level(
-        chunk_pos,
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-    ) else {
+    let Some(revived) = world
+        .chunk_map
+        .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK))
+    else {
         panic!("restored ticket level must revive the unloading holder");
     };
     world.chunk_map.rebuild_ticking_chunk_snapshot();
@@ -191,11 +242,10 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
     let sign_pos = BlockPos::new(1, 64, 1);
     let original = insert_ready_full_chunk(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
-    let Some(revived) =
-        world
-            .chunk_map
-            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::MAX), None)
+    world.chunk_map.update_chunk_level(chunk_pos, None);
+    let Some(revived) = world
+        .chunk_map
+        .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::MAX))
     else {
         panic!("a weak load level should revive the unloading holder");
     };
@@ -227,11 +277,10 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
         "another holder's publication must not activate a weakly loaded chunk"
     );
 
-    world.chunk_map.update_chunk_level(
-        chunk_pos,
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-    );
+    world
+        .chunk_map
+        .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK));
+    revived.set_simulation_level(Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK));
     world
         .chunk_map
         .reconcile_ticking_readiness(&[])
@@ -241,4 +290,35 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
         1,
         "promotion back to Full must activate the holder's staged ticker"
     );
+}
+
+#[test]
+fn gameplay_cache_scopes_observe_a_full_holder_revived_between_phases() {
+    let world = fresh_test_world("cache_scope_revival");
+    let pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, pos);
+    world.chunk_map.update_chunk_level(pos, None);
+
+    let scheduled_scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+    assert!(world.chunk_map.active_full_chunk_holder(pos).is_none());
+    assert!(world.chunk_map.active_full_chunk_holder(pos).is_none());
+    assert_eq!(scheduled_scope.finish().missing_hits, 1);
+
+    let request = world.chunk_map.request_chunks(ChunkRequest {
+        positions: vec![pos],
+        status: ChunkStatus::Full,
+        ticket_kind: ChunkTicketKind::Player,
+    });
+    // Includes the nested readiness cache and the later gameplay scopes.
+    world.tick_game(1, false);
+
+    let gameplay_scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+    let revived = world
+        .chunk_map
+        .active_full_chunk_holder(pos)
+        .expect("later gameplay must see the revived Full holder");
+    assert!(Arc::ptr_eq(&holder, &revived));
+    assert_eq!(gameplay_scope.finish().missing_hits, 0);
+    drop(request);
+    stop_chunk_tasks(&world);
 }
