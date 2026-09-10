@@ -754,17 +754,13 @@ pub fn validate_clean_path(path: &str, field: &str) -> Result<(), String> {
         return Err(format!("{field} must not be empty"));
     }
     let absolute = path.is_absolute();
-    for component in path.components() {
-        match component {
-            Component::Normal(_) => {}
-            Component::RootDir | Component::Prefix(_) if absolute => {}
-            Component::CurDir
-            | Component::ParentDir
-            | Component::RootDir
-            | Component::Prefix(_) => {
-                return Err(format!("{field} must be a clean path"));
-            }
-        }
+    let clean = path.components().all(|component| match component {
+        Component::Normal(_) => true,
+        Component::RootDir | Component::Prefix(_) => absolute,
+        Component::CurDir | Component::ParentDir => false,
+    });
+    if !clean {
+        return Err(format!("{field} must be a clean path"));
     }
     Ok(())
 }
