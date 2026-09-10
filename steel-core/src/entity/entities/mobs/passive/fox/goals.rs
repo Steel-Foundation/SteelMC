@@ -50,12 +50,10 @@ const SWEET_BERRY_PICKED_AGE: u8 = 1;
 const SWEET_BERRY_AGE: &IntProperty = &BlockStateProperties::AGE_3;
 const BERRIES: &BoolProperty = &BlockStateProperties::BERRIES;
 
-/// Whether a vine is currently carrying glow berries.
 fn has_glow_berries(state: BlockStateId) -> bool {
     state.try_get_value(BERRIES).unwrap_or(false)
 }
 
-/// Whether the block is a ripe sweet berry bush, or a vine with glow berries.
 fn is_ripe_berry_block(state: BlockStateId) -> bool {
     (state.get_block() == &vanilla_blocks::SWEET_BERRY_BUSH
         && state.get_value(SWEET_BERRY_AGE) >= SWEET_BERRY_RIPE_AGE)
@@ -505,7 +503,6 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// Walks to ripe berries, noses around, then eats.
 pub(crate) struct FoxEatBerriesGoal {
     inner: MoveToBlockGoal,
     ticks_waited: i32,
