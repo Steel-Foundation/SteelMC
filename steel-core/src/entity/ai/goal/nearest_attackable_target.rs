@@ -120,15 +120,13 @@ impl NearestAttackableTargetGoal {
         self.target = target;
     }
 
-    /// Vanilla `NearestAttackableTargetGoal.randomInterval`: average ticks
-    /// between checks, already halved from the value passed to the constructor.
+    /// Average ticks between checks, already halved from the constructor value.
     pub(crate) const fn random_interval(&self) -> i32 {
         self.random_interval
     }
 
-    /// Vanilla `NearestAttackableTargetGoal.canAttack`: runs the shared range,
-    /// sight and home checks a subclass needs before committing to a target it
-    /// picked by its own means rather than by the periodic search.
+    /// Runs the shared range, sight and home checks against a target picked
+    /// outside the periodic search.
     pub(crate) fn can_attack(
         &mut self,
         mob: &dyn PathfinderMob,

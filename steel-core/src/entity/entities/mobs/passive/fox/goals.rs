@@ -49,12 +49,7 @@ const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 const STALK_CROUCH_DISTANCE_SQ: f64 = 36.0;
 const STALK_SPEED: f64 = 1.5;
 
-/// Vanilla `Fox` passes 10 to the defend goal's `NearestAttackableTargetGoal`
-/// base, which halves it, so the fox checks about every five ticks.
 const DEFEND_TARGET_INTERVAL: i32 = 10;
-/// Vanilla `Fox.TRUSTED_TARGET_SELECTOR` recency window: the attacker must have
-/// struck something within this many ticks, so the fox answers a live threat and
-/// not an old one.
 const DEFEND_ATTACKER_GRUDGE_TICKS: i32 = 600;
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
@@ -751,9 +746,7 @@ impl Goal for StalkPreyGoal {
     }
 }
 
-/// Vanilla `Fox.FoxMeleeAttackGoal`: the fox closes on and bites its target. It
-/// composes the shared melee goal, adding the fox bite sound and the pose gates
-/// that keep a resting or crouched fox from lunging.
+/// The fox closes on and bites its target, but not while resting or crouched.
 pub(crate) struct FoxMeleeAttackGoal {
     inner: MeleeAttackGoal,
 }
@@ -803,21 +796,18 @@ impl Goal for FoxMeleeAttackGoal {
     }
 }
 
-/// Vanilla `Fox.TRUSTED_TARGET_SELECTOR`: only an entity that has itself struck
-/// something recently is worth turning on to defend a trusted friend.
+/// Only an entity that has itself struck something recently is worth defending
+/// a trusted friend against.
 fn recently_aggressive(attacker: &dyn LivingEntity) -> bool {
     attacker.last_hurt_mob().is_some()
         && attacker.last_hurt_mob_timestamp() < attacker.tick_count() + DEFEND_ATTACKER_GRUDGE_TICKS
 }
 
-/// Vanilla `Fox.DefendTrustedTargetGoal`: when something the fox does not trust
-/// hurts a trusted entity, the fox turns to fight it. Vanilla subclasses
-/// `NearestAttackableTargetGoal` for the shared target checks and bookkeeping,
-/// then picks the target itself instead of scanning, so this composes that goal.
+/// When something the fox does not trust hurts a trusted entity, the fox turns
+/// to fight it.
 pub(crate) struct DefendTrustedTargetGoal {
     inner: NearestAttackableTargetGoal,
-    /// The trusted entity's last-hurt-by timestamp this goal last acted on, so
-    /// one hurt event does not retrigger it every tick.
+    /// The last-hurt-by timestamp this goal already acted on.
     timestamp: i32,
     pending_timestamp: i32,
 }
@@ -854,7 +844,6 @@ impl Goal for DefendTrustedTargetGoal {
             return false;
         };
 
-        // Vanilla acts on the first trusted id that resolves to a living entity.
         let Some(trusted) = fox
             .trusted_ids()
             .into_iter()

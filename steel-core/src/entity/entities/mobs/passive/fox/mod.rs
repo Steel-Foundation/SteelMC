@@ -851,8 +851,6 @@ impl Mob for FoxEntity {
     }
 
     fn set_target(&self, target: Option<&SharedEntity>) -> bool {
-        // Vanilla Fox.setTarget: losing the target always drops isDefending, no
-        // matter which goal cleared it.
         if self.is_defending() && target.is_none() {
             self.set_defending(false);
         }

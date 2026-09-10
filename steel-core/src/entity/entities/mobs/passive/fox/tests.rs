@@ -731,19 +731,13 @@ fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
         DVec3::new(10.0, 65.0, 8.0),
         Arc::downgrade(&world),
     ));
-    // A fresh entity's tick count is 0, the same as the goal's initial "last
-    // handled" timestamp; advance it so the hurt event actually looks new.
     trusted.base().advance_tick_count();
     LivingEntity::set_last_hurt_by_mob(trusted.as_ref(), Some(&attacker));
-    // Vanilla's TRUSTED_TARGET_SELECTOR only defends against an attacker that has
-    // itself struck something recently; hitting the trusted pig is that strike.
     attacker
         .as_living_entity()
         .expect("a pig is a living entity")
         .set_last_hurt_mob(Some(&(Arc::clone(&trusted) as SharedEntity)));
 
-    // can_use rolls a random interval each call (vanilla's randomInterval gate),
-    // so retry a bounded number of times rather than depend on a single roll.
     let mut goal = DefendTrustedTargetGoal::new();
     assert!(
         (0..100).any(|_| goal.can_use(fox.as_ref())),
@@ -758,12 +752,6 @@ fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
     );
 }
 
-/// Pins the fox's goal priorities against vanilla `Fox.registerGoals`. The list
-/// is short of vanilla's for two reasons: some goals wait on mobs and systems
-/// not in the tree yet (a TODO at the priority each belongs at), and this branch
-/// carries only the goals its own PR adds, so goals from sibling fox PRs (the
-/// faceplant at 1, avoid-player at 4, seek-shelter at 6) are not registered here.
-/// Whichever fox PR lands last brings the list up to full.
 #[test]
 fn fox_registers_its_goals_at_the_vanilla_priorities() {
     init_vanilla_registry();
@@ -777,9 +765,6 @@ fn fox_registers_its_goals_at_the_vanilla_priorities() {
     );
 }
 
-/// Vanilla `Fox.registerGoals` gives the fox a `LeapAtTargetGoal`, which is what
-/// makes it hop the last couple of blocks onto something it is hunting rather
-/// than walking into it.
 #[test]
 fn a_hunting_fox_leaps_the_last_stretch_at_its_prey() {
     let (world, fox) = world_with_fox("fox_leap");
@@ -796,7 +781,6 @@ fn a_hunting_fox_leaps_the_last_stretch_at_its_prey() {
         .expect("prey should attach to the loaded chunk");
     assert!(Mob::set_target(fox.as_ref(), Some(&(prey as SharedEntity))));
 
-    // The goal only rolls its leap on some ticks, so give it several chances.
     let mut goal = LeapAtTargetGoal::new(LEAP_AT_TARGET_HEIGHT);
     let leapt = (0..LEAP_ATTEMPTS).any(|_| goal.can_use(fox.as_ref()));
     assert!(leapt, "a fox on the ground within a few blocks should leap");
@@ -809,5 +793,4 @@ fn a_hunting_fox_leaps_the_last_stretch_at_its_prey() {
     );
 }
 
-/// Rolls allowed for the leap goal's own random cadence.
 const LEAP_ATTEMPTS: u32 = 40;
