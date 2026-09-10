@@ -340,12 +340,8 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
 
 #[test]
 fn killed_player_can_reserve_respawn_transition() {
-    let base = EntityBase::new(
-        1,
-        DVec3::ZERO,
-        EntityDimensions::new(0.6, 1.8, 1.62),
-        Weak::<World>::new(),
-    );
+    let dimensions = vanilla_entities::PLAYER.dimensions;
+    let base = EntityBase::new(1, DVec3::ZERO, dimensions, Weak::<World>::new());
     base.set_removed(RemovalReason::Killed);
 
     assert_eq!(base.begin_pending_world_change(), None);
