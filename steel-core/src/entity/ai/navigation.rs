@@ -28,14 +28,9 @@ pub struct NavigationPathRequest<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NavigationTickContext {
-    /// Vanilla `PathNavigation.getTempMobPos`: the mob position with its Y
-    /// snapped to the surface it navigates along. Only the corner-cutting check
-    /// and stuck detection use this.
+    /// The mob position with its Y snapped to the surface it navigates along.
     pub temp_mob_position: DVec3,
-    /// The mob's true position. Vanilla measures the distance to the current
-    /// waypoint from here, not from the surface-snapped position: for a mob
-    /// standing in water the two are a full block apart, which is exactly the
-    /// tolerance of the vertical check.
+    /// The mob's true position, which the waypoint distance is measured from.
     pub mob_position: DVec3,
     pub mob_bounding_box_width: f64,
     pub mob_speed: f32,
@@ -818,8 +813,6 @@ mod tests {
         }
     }
 
-    /// Builds a tick context for a mob standing in water, where vanilla's
-    /// surface-snapped position sits a block above the mob itself.
     fn tick_context_standing_in_water(mob_position: DVec3) -> NavigationTickContext {
         NavigationTickContext {
             temp_mob_position: DVec3::new(
@@ -1008,13 +1001,6 @@ mod tests {
 
     #[test]
     fn standing_in_water_still_retires_the_waypoint_underfoot() {
-        // A pig standing in one block of water is on the ground and in water at
-        // the same time, so navigation snaps its Y up to the surface: a full
-        // block above the node it is standing on. Measuring the waypoint from
-        // there puts the vertical distance at exactly 1.0, the tolerance, so the
-        // node never retires and the move control keeps steering the mob at a
-        // point under its own feet. It overshoots, turns about, overshoots back,
-        // and spins on the spot.
         let path = Path::new(
             vec![Node::new(0, 64, 0), Node::new(1, 64, 0)],
             BlockPos::new(1, 64, 0),
