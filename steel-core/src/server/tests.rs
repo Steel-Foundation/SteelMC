@@ -3365,7 +3365,6 @@ default = true
     .await
 }
 
-/// Stops a started server and drops its save directory, best effort.
 async fn shutdown_server(server: &Server, save_root: &Path) {
     server.cancel_token.cancel();
     let _ = fs::remove_dir_all(save_root).await;

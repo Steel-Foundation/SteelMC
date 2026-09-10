@@ -108,7 +108,6 @@ fn packaged_config_matches_the_runtime_config_defaults() {
         defaults.command_spam_threshold_seconds
     );
 
-    // `CompressionInfo` has no `PartialEq`, so its two fields stand in for the whole.
     let packaged_compression = compression.expect("packaged config enables compression");
     let default_compression = defaults
         .compression
@@ -119,9 +118,8 @@ fn packaged_config_matches_the_runtime_config_defaults() {
     );
     assert_eq!(packaged_compression.level, default_compression.level);
 
-    // The remaining four diverge by design, so only the packaged side is pinned. Links are
-    // an embedder's to choose, and a thread count of zero means the same automatic default
-    // that `None` does.
+    // These four diverge by design, so only the packaged side is pinned: links are the
+    // embedder's to choose, and a thread count of zero means the automatic default `None` does.
     assert!(server_links.is_some());
     assert_eq!(packet_workers, Some(0));
     assert_eq!(chunk_generation_threads, Some(0));

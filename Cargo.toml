@@ -160,7 +160,6 @@ debug = true
 
 [profile.dev]
 debug = 0
-# Uncommenting this needs `cargo-features = ["codegen-backend"]` back at the top of the file.
 #codegen-backend = "cranelift"
 
 
