@@ -325,13 +325,6 @@ impl FoxEntity {
     }
 
     #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the avoid-player goal that reads this lands separately"
-        )
-    )]
     pub(crate) fn trusts(&self, uuid: Uuid) -> bool {
         let entity_data = self.entity_data.lock();
         *entity_data.trusted_id_0.get() == Some(uuid)
