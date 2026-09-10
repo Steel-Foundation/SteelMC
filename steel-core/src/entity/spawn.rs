@@ -280,7 +280,6 @@ pub enum SpawnGroupData {
 }
 
 impl SpawnGroupData {
-    /// The ageable group data every spawn group carries.
     #[must_use]
     pub const fn ageable_group_data(self) -> AgeableMobGroupData {
         match self {
@@ -358,7 +357,6 @@ pub struct FoxGroupData {
 }
 
 impl FoxGroupData {
-    /// Creates a fox group wearing `variant`, with the baby roll disabled.
     #[must_use]
     pub const fn new(variant: FoxVariant) -> Self {
         Self {
@@ -367,7 +365,6 @@ impl FoxGroupData {
         }
     }
 
-    /// The coat every fox in this group wears.
     #[must_use]
     pub const fn variant(self) -> FoxVariant {
         self.variant
@@ -379,7 +376,6 @@ impl FoxGroupData {
         self.ageable.group_size()
     }
 
-    /// Grows the shared group after a fox spawns.
     pub fn advance_group(&mut self, baby_roll: impl FnOnce() -> f32) {
         let _ = self.ageable.finalize_ageable_spawn(baby_roll);
     }
