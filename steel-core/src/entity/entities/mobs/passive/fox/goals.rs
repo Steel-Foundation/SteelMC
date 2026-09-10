@@ -471,8 +471,7 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// An awake, untargeted fox heads for cover from the sun, or immediately during
-/// a thunderstorm.
+/// Heads for cover from the sun, or immediately in a thunderstorm.
 pub(crate) struct FoxSeekShelterGoal {
     flee_sun: FleeSunGoal,
     interval: i32,
