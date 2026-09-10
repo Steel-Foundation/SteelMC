@@ -187,8 +187,7 @@ impl FoxEntity {
         fox
     }
 
-    /// Sets the fox variant (red or snow).
-    pub fn set_variant(&self, variant: FoxVariant) {
+    pub(crate) fn set_variant(&self, variant: FoxVariant) {
         self.entity_data.lock().variant_type.set(variant.id());
     }
 
@@ -214,79 +213,65 @@ impl FoxEntity {
     }
 
     #[must_use]
-    /// Whether this fox is sitting.
-    pub fn is_sitting(&self) -> bool {
+    pub(crate) fn is_sitting(&self) -> bool {
         self.get_flag(FLAG_SITTING)
     }
 
-    /// Sets whether this fox is sitting.
-    pub fn set_sitting(&self, sitting: bool) {
+    pub(crate) fn set_sitting(&self, sitting: bool) {
         self.set_flag(FLAG_SITTING, sitting);
     }
 
     #[must_use]
-    /// Whether this fox is crouching.
-    pub fn is_crouching(&self) -> bool {
+    pub(crate) fn is_crouching(&self) -> bool {
         self.get_flag(FLAG_CROUCHING)
     }
 
-    /// Sets whether this fox is crouching.
-    pub fn set_crouching(&self, crouching: bool) {
+    pub(crate) fn set_crouching(&self, crouching: bool) {
         self.set_flag(FLAG_CROUCHING, crouching);
     }
 
     #[must_use]
-    /// Whether this fox is interested in something.
-    pub fn is_interested(&self) -> bool {
+    pub(crate) fn is_interested(&self) -> bool {
         self.get_flag(FLAG_INTERESTED)
     }
 
-    /// Sets whether this fox is interested in something.
-    pub fn set_interested(&self, interested: bool) {
+    pub(crate) fn set_interested(&self, interested: bool) {
         self.set_flag(FLAG_INTERESTED, interested);
     }
 
     #[must_use]
-    /// Whether this fox is mid-pounce.
-    pub fn is_pouncing(&self) -> bool {
+    pub(crate) fn is_pouncing(&self) -> bool {
         self.get_flag(FLAG_POUNCING)
     }
 
-    /// Sets whether this fox is mid-pounce.
-    pub fn set_pouncing(&self, pouncing: bool) {
+    pub(crate) fn set_pouncing(&self, pouncing: bool) {
         self.set_flag(FLAG_POUNCING, pouncing);
     }
 
     #[must_use]
-    /// Whether this fox is asleep.
-    pub fn is_sleeping(&self) -> bool {
+    pub(crate) fn is_sleeping(&self) -> bool {
         self.get_flag(FLAG_SLEEPING)
     }
 
-    /// Sets whether this fox is asleep.
-    pub fn set_sleeping(&self, sleeping: bool) {
+    pub(crate) fn set_sleeping(&self, sleeping: bool) {
         self.set_flag(FLAG_SLEEPING, sleeping);
     }
 
     #[must_use]
-    /// Whether this fox is face-down in the ground.
-    pub fn is_faceplanted(&self) -> bool {
+    pub(crate) fn is_faceplanted(&self) -> bool {
         self.get_flag(FLAG_FACEPLANTED)
     }
 
-    /// Sets whether this fox is face-down in the ground.
-    pub fn set_faceplanted(&self, faceplanted: bool) {
+    pub(crate) fn set_faceplanted(&self, faceplanted: bool) {
         self.set_flag(FLAG_FACEPLANTED, faceplanted);
     }
 
     #[must_use]
-    /// Whether this fox is standing up for something it trusts.
-    pub fn is_defending(&self) -> bool {
+    pub(crate) fn is_defending(&self) -> bool {
         self.get_flag(FLAG_DEFENDING)
     }
 
-    /// Sets whether this fox is standing up for something it trusts.
-    pub fn set_defending(&self, defending: bool) {
+    pub(crate) fn set_defending(&self, defending: bool) {
         self.set_flag(FLAG_DEFENDING, defending);
     }
 
