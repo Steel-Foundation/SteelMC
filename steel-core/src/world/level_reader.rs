@@ -20,7 +20,7 @@ use crate::world::game_event::GameEventContext;
 
 use super::World;
 
-/// Sea level of the vanilla overworld, as its generator settings give it.
+/// Sea level of the overworld.
 pub const OVERWORLD_SEA_LEVEL: i32 = 63;
 
 /// Read-only level access needed by block behavior and worldgen predicates.
@@ -70,10 +70,7 @@ pub trait LevelReader {
         0.0
     }
 
-    /// Returns vanilla `LevelReader.getSeaLevel`.
-    ///
-    /// Lightweight views that stand in for no particular dimension report the
-    /// overworld value, the same way they report no ambient light.
+    /// Returns this dimension's sea level.
     fn sea_level(&self) -> i32 {
         OVERWORLD_SEA_LEVEL
     }

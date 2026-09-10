@@ -58,9 +58,9 @@ impl World {
         self.has_full_chunk(Self::chunk_pos_for_block(pos))
     }
 
-    /// Vanilla `LevelReader.hasChunksAt`: every chunk covering the block square
-    /// spanned by the two corners is loaded. As in vanilla only the horizontal
-    /// span counts, and the corners are given lowest first.
+    /// Whether every chunk covering the block square between the two corners is
+    /// loaded. Only the horizontal span counts, and the corners are given lowest
+    /// first.
     pub(crate) fn are_full_chunks_loaded_at(&self, from: BlockPos, to: BlockPos) -> bool {
         let from_chunk = Self::chunk_pos_for_block(from);
         let to_chunk = Self::chunk_pos_for_block(to);

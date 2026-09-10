@@ -1,6 +1,5 @@
 use super::*;
 
-/// Round-trips an owned NBT compound back into a borrowed view for loading.
 fn reborrow(nbt: &NbtCompound) -> Vec<u8> {
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);

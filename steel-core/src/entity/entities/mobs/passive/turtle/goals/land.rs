@@ -1,5 +1,3 @@
-//! Turtle land goals: returning to the home beach, and strolling on land.
-
 use std::f64::consts::{FRAC_PI_2, PI};
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -15,23 +13,15 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::{AgeableMob, PathfinderMob};
 
-/// Vanilla `TurtleGoHomeGoal`: with no egg to lay, roll a 1-in-`reducedTickDelay`
-/// of this each tick to decide whether to head home.
 const GO_HOME_CHECK_INTERVAL: i32 = 700;
-/// Vanilla `TurtleGoHomeGoal`: only start heading home when at least this far from it.
 const GO_HOME_MIN_DISTANCE: f64 = 64.0;
-/// Vanilla `TurtleGoHomeGoal`: home counts as reached within this distance.
 const HOME_REACHED_DISTANCE: f64 = 7.0;
-/// Vanilla `TurtleGoHomeGoal.GIVE_UP_TICKS`: stop trying after this long lingering near home.
 const GIVE_UP_TICKS: i32 = 600;
-/// Vanilla `TurtleGoHomeGoal`: near enough home to count down the give-up timer.
 const NEAR_HOME_DISTANCE: f64 = 16.0;
-/// Vanilla `TurtleGoHomeGoal`: vertical radius for the last attempt that avoids
-/// stepping into water (horizontal radius stays [`TOWARD_TARGET_H`]).
 const AVOID_WATER_V: i32 = 5;
 
-/// Vanilla `Turtle.TurtleGoHomeGoal`: head back toward the home beach, always
-/// when carrying an egg and otherwise on a rare timer when far from home.
+/// Heads back toward the home beach: always when carrying an egg,
+/// otherwise on a rare timer when far from home.
 pub(crate) struct TurtleGoHomeGoal {
     speed_modifier: f64,
     stuck: bool,
@@ -144,8 +134,7 @@ impl Goal for TurtleGoHomeGoal {
     }
 }
 
-/// Vanilla `Turtle.TurtleRandomStrollGoal`: stroll only on land, and never while
-/// heading home or carrying an egg.
+/// Strolls only on land, and never while heading home or carrying an egg.
 pub(crate) struct TurtleRandomStrollGoal {
     inner: RandomStrollGoal,
 }

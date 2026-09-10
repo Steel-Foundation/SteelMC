@@ -14,8 +14,6 @@ use crate::entity::{AgeableMob, EntityPose, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
 
-/// Tolerance for the `f64` velocity checks (`DVec3`), where `f32::EPSILON` is the
-/// wrong width. The maths is flat multipliers, so the result is near-exact.
 const VELOCITY_EPSILON: f64 = 1e-9;
 
 #[test]
@@ -74,12 +72,8 @@ fn set_laying_egg_resets_the_lay_counter() {
     assert_eq!(turtle.lay_egg_counter(), 0);
 }
 
-/// Drives `TurtleLayEggGoal` for a turtle standing on sand at its home beach and
-/// asserts it places a turtle egg cluster and clears the carried egg.
 #[test]
 fn lay_egg_goal_places_eggs_on_home_sand() {
-    /// Vanilla laying runs for `LAY_EGG_DURATION` (200) ticks once the turtle is
-    /// in place; this leaves headroom for it to settle onto the block first.
     const MAX_LAY_TICKS: i32 = 260;
 
     init_vanilla_registry();
@@ -137,8 +131,6 @@ fn lay_egg_goal_places_eggs_on_home_sand() {
     assert!(!turtle.is_laying_egg(), "laying should finish");
 }
 
-/// A turtle that grows into an adult sheds a scute from the turtle grow gift loot
-/// table, matching vanilla `Turtle.ageBoundaryReached`.
 #[test]
 fn growing_up_drops_a_scute() {
     init_vanilla_registry();
@@ -158,7 +150,6 @@ fn growing_up_drops_a_scute() {
         .try_add_entity(Arc::clone(&shared))
         .expect("turtle should attach to the loaded test chunk");
 
-    // Crossing from baby to adult runs the vanilla grow-up scute drop.
     turtle_from(&shared).set_age(0);
 
     let aabb = WorldAabb::new(6.0, 63.0, 6.0, 10.0, 68.0, 10.0);
@@ -175,8 +166,6 @@ fn growing_up_drops_a_scute() {
     assert_eq!(scutes, 1, "growing up should drop exactly one turtle scute");
 }
 
-/// Sand under the whole square of block coordinates, so a test turtle has ground
-/// to stand on and somewhere its goals can path to.
 fn lay_sand_floor(world: &Arc<World>, span: RangeInclusive<i32>) {
     const FLOOR_Y: i32 = 63;
 
@@ -197,8 +186,6 @@ fn turtle_from(shared: &SharedEntity) -> &TurtleEntity {
         .expect("shared entity should be a turtle")
 }
 
-/// Puts a turtle in a loaded world at `position`, without any fluid around it,
-/// since the water travel is driven directly rather than through the dispatcher.
 fn turtle_in_world(key: &'static str, position: DVec3) -> (Arc<World>, Arc<TurtleEntity>) {
     init_vanilla_registry();
     init_behaviors();
@@ -223,11 +210,8 @@ fn a_swimming_turtle_pushes_off_at_its_own_pace() {
     let (_world, turtle) = turtle_in_world("turtle_swim_push", DVec3::new(8.5, 64.0, 8.5));
     turtle.set_rotation((0.0, 0.0));
 
-    // Yaw 0 faces south, so a forward push shows up on Z.
     turtle.travel_in_water(DVec3::new(0.0, 0.0, 1.0), 0.0, false, 64.0);
 
-    // The push and the drag are flat, so this does not depend on the turtle's
-    // movement speed attribute the way walking does.
     let expected = f64::from(SWIM_PUSH) * SWIM_DRAG;
     assert!(
         (turtle.velocity().z - expected).abs() < VELOCITY_EPSILON,
@@ -267,7 +251,6 @@ fn a_turtle_heading_home_holds_its_depth() {
 
 #[test]
 fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
-    /// Enough repeated trims to reach the land speed floor from a full 1.0.
     const SETTLE_TICKS: u32 = 20;
 
     let (world, turtle) = turtle_in_world("turtle_land_trim", DVec3::new(8.5, 65.0, 8.5));
@@ -276,7 +259,6 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
         vanilla_blocks::SAND.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
-    // Drop it onto the sand so it is standing on the ground.
     turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
     assert!(turtle.on_ground(), "the turtle should have landed");
 
@@ -289,7 +271,6 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
         turtle.get_speed()
     );
 
-    // Repeated trimming settles at the floor rather than dropping to nothing.
     for _ in 0..SETTLE_TICKS {
         turtle.trim_turtle_speed();
     }
@@ -300,11 +281,8 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
     );
 }
 
-/// Vanilla `TurtleTravelGoal.tick` throws away a swim target whose surroundings
-/// are not generated yet.
 #[test]
 fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
-    /// Tries allowed for the goal to find any candidate position at all.
     const ACCEPT_ATTEMPTS: u32 = 20;
 
     let (world, turtle) = turtle_in_world("turtle_travel_unloaded", DVec3::new(8.5, 64.0, 8.5));
@@ -319,7 +297,6 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
         "only the turtle's own chunk exists, so nothing near it is safe to head for"
     );
 
-    // With the surrounding chunks generated, the same target is accepted.
     for chunk_x in -3..=3 {
         for chunk_z in -3..=3 {
             if (chunk_x, chunk_z) != (0, 0) {
@@ -329,8 +306,6 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
     }
     lay_sand_floor(&world, -24..=40);
 
-    // The candidate position is drawn at random and can come up empty on its
-    // own, so take the best of several.
     let accepted = (0..ACCEPT_ATTEMPTS).any(|_| {
         let mut goal = TurtleTravelGoal::new(1.0);
         goal.tick(turtle.as_ref());
@@ -352,7 +327,6 @@ fn a_turtle_holds_its_course_against_a_current() {
     );
 }
 
-/// Vanilla `TurtleMoveControl.tick` swings the body round with the steering.
 #[test]
 fn a_steering_turtle_turns_its_whole_body() {
     let (world, turtle) = turtle_in_world("turtle_body_turn", DVec3::new(8.5, 65.0, 8.5));
@@ -360,7 +334,6 @@ fn a_steering_turtle_turns_its_whole_body() {
     turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
     assert!(turtle.on_ground(), "the turtle should have landed");
 
-    // Facing south, with somewhere to be off to the east.
     turtle.set_rotation((0.0, 0.0));
     turtle.set_y_body_rot(0.0);
 
@@ -384,8 +357,6 @@ fn a_steering_turtle_turns_its_whole_body() {
     );
 }
 
-/// A bare level answering only what the spawn rule asks: the block below, the
-/// brightness, and the sea level.
 struct SpawnRuleLevel {
     below_state: BlockStateId,
     raw_brightness: u8,
@@ -418,14 +389,12 @@ impl LevelReader for SpawnRuleLevel {
     }
 }
 
-/// Where the candidate turtle stands in the spawn-rule tests.
 const SPAWN_POS: BlockPos = BlockPos::new(0, 64, 0);
 
 fn turtle_spawns_at(level: &SpawnRuleLevel, pos: BlockPos) -> bool {
     <TurtleEntity as Animal>::check_animal_spawn_rules(level, EntitySpawnReason::Natural, pos)
 }
 
-/// Vanilla `Turtle.checkTurtleSpawnRules`: sand, daylight, and near sea level.
 #[test]
 fn turtles_only_spawn_on_a_bright_beach() {
     init_vanilla_registry();
@@ -437,7 +406,6 @@ fn turtles_only_spawn_on_a_bright_beach() {
     };
     assert!(turtle_spawns_at(&beach, SPAWN_POS));
 
-    // Sea level is read from the level: drop it and the same beach is too high.
     let inland = SpawnRuleLevel {
         sea_level: SPAWN_POS.y() - SPAWN_HEIGHT_ABOVE_SEA_LEVEL,
         ..beach
@@ -450,7 +418,6 @@ fn turtles_only_spawn_on_a_bright_beach() {
     };
     assert!(!turtle_spawns_at(&stone, SPAWN_POS));
 
-    // Unlike the shared animal rule, a dark beach stays empty even for a spawner.
     let night = SpawnRuleLevel {
         raw_brightness: 8,
         ..beach
@@ -463,8 +430,6 @@ fn turtles_only_spawn_on_a_bright_beach() {
     ));
 }
 
-/// Vanilla `Turtle.getAgeScale`: a hatchling is far smaller than the shared
-/// half-size baby.
 #[test]
 fn a_baby_turtle_is_far_smaller_than_its_parent() {
     let turtle = detached_turtle();
@@ -475,8 +440,6 @@ fn a_baby_turtle_is_far_smaller_than_its_parent() {
     assert_eq!(turtle.get_age_scale(), BABY_SCALE);
 }
 
-/// Vanilla `Turtle.BABY_DIMENSIONS` seats a rider on the hatchling's shell,
-/// lower than the adult seat scaled down.
 #[test]
 fn a_baby_turtle_carries_a_rider_on_its_shell() {
     init_vanilla_registry();
@@ -503,8 +466,6 @@ fn a_baby_turtle_carries_a_rider_on_its_shell() {
     );
 }
 
-/// Nothing in the turtle's class chain overrides `getSoundVolume`, so it stays
-/// at the shared 1.0.
 #[test]
 fn a_turtle_is_no_quieter_than_any_other_mob() {
     let turtle = detached_turtle();
@@ -516,7 +477,6 @@ fn a_turtle_is_no_quieter_than_any_other_mob() {
 fn a_turtle_shuffles_rather_than_plods() {
     let turtle = detached_turtle();
 
-    // The shared stride is one block; a turtle's is shorter.
     assert!(
         turtle.next_step() < 1.0,
         "a turtle steps more often than once per block, got {}",
@@ -552,7 +512,6 @@ fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
     );
     assert!(turtle.get_walk_target_value(plain_pos) < PREFERRED_WALK_TARGET_VALUE);
 
-    // A turtle on its way home to lay stops finding open water attractive.
     turtle.set_going_home(true);
     assert!(turtle.get_walk_target_value(water_pos) < PREFERRED_WALK_TARGET_VALUE);
     assert_eq!(

@@ -1,5 +1,3 @@
-//! Turtle water goals: panicking toward water, heading to water, and traveling.
-
 use std::f64::consts::{FRAC_PI_2, PI};
 
 use glam::DVec3;
@@ -17,26 +15,17 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::{AgeableMob, Animal, PathfinderMob};
 
-/// Vanilla `TurtlePanicGoal`: horizontal range searched for water to flee into.
 const PANIC_WATER_SEARCH_RANGE: i32 = 7;
-/// Vanilla `TurtlePanicGoal`: horizontal and vertical radius for the random
-/// escape position used when no water is close.
 const PANIC_ESCAPE_H: i32 = 5;
 const PANIC_ESCAPE_V: i32 = 4;
-/// Vanilla `TurtleGoToWaterGoal`: search range handed to `MoveToBlockGoal`.
 const GO_TO_WATER_SEARCH_RANGE: i32 = 24;
-/// Vanilla `TurtleGoToWaterGoal.shouldRecalculatePath`: recalc every N `tryTicks`.
 const GO_TO_WATER_RECALC_INTERVAL: i32 = 160;
-/// Vanilla `TurtleTravelGoal`: half-width of the box a far swim target is drawn
-/// from, horizontally and vertically (`random.nextInt(1025) - 512`, `nextInt(9) - 4`).
 const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
-/// Vanilla `TurtleTravelGoal.tick`: how far around a candidate swim position the
-/// world must already be generated before the turtle heads for it.
 const TRAVEL_LOADED_MARGIN: i32 = 34;
 
-/// Vanilla `Turtle.TurtlePanicGoal`: always try to reach water when panicking,
-/// not only while on fire, then fall back to a random escape position.
+/// Always tries to reach water when panicking, falling back to a random
+/// escape position.
 pub(crate) struct TurtlePanicGoal {
     wanted_position: Option<DVec3>,
     speed_modifier: f64,
@@ -104,14 +93,12 @@ impl Goal for TurtlePanicGoal {
     }
 }
 
-/// Vanilla `Turtle.TurtleGoToWaterGoal`: leave land for the nearest water block.
+/// Leaves land for the nearest water block.
 pub(crate) struct TurtleGoToWaterGoal {
     inner: MoveToBlockGoal,
 }
 
 impl TurtleGoToWaterGoal {
-    /// Vanilla passes a fixed 2.0 speed for a baby here, but goals register
-    /// before the turtle's age is known, so that branch never fires. Not ported.
     pub(crate) fn new(speed_modifier: f64) -> Self {
         Self {
             inner: MoveToBlockGoal::new(speed_modifier, GO_TO_WATER_SEARCH_RANGE, |level, pos| {
@@ -144,8 +131,6 @@ impl Goal for TurtleGoToWaterGoal {
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        // Vanilla's lower `try_ticks` bound only matters after long dwell at a
-        // reached target, impossible while still out of water, so it is dropped.
         !mob.is_in_water() && self.inner.can_continue_to_use(mob)
     }
 
@@ -162,7 +147,7 @@ impl Goal for TurtleGoToWaterGoal {
     }
 }
 
-/// Vanilla `Turtle.TurtleTravelGoal`: pick a far swim target and wander to it.
+/// Picks a far swim target and wanders to it.
 pub(crate) struct TurtleTravelGoal {
     speed_modifier: f64,
     stuck: bool,
@@ -176,7 +161,6 @@ impl TurtleTravelGoal {
         }
     }
 
-    /// True once the goal has given up on the target it was heading for.
     #[cfg(test)]
     pub(crate) const fn is_stuck(&self) -> bool {
         self.stuck

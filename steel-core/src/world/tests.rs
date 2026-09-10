@@ -63,15 +63,11 @@ fn loaded_chunk_range_covers_every_chunk_the_corners_touch() {
     let world = fresh_test_world("loaded_chunk_range");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-    // Wholly inside the one loaded chunk.
     assert!(world.are_full_chunks_loaded_at(BlockPos::new(1, 64, 1), BlockPos::new(14, 64, 14)));
 
-    // One block over the edge on either side is enough to fail, since the
-    // neighboring chunks are not there.
     assert!(!world.are_full_chunks_loaded_at(BlockPos::new(-1, 64, 1), BlockPos::new(14, 64, 14)));
     assert!(!world.are_full_chunks_loaded_at(BlockPos::new(1, 64, 1), BlockPos::new(16, 64, 14)));
 
-    // Filling in the rest of a 3 by 3 makes a span that crosses all of them pass.
     for chunk_x in -1..=1 {
         for chunk_z in -1..=1 {
             if (chunk_x, chunk_z) != (0, 0) {

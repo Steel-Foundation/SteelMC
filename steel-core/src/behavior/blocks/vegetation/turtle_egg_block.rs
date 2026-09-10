@@ -73,14 +73,12 @@ impl TurtleEggBlock {
         Self { block }
     }
 
-    /// Vanilla `TurtleEggBlock.onSand`: whether the block below `pos` is a sand
-    /// type (sand, red sand, or suspicious sand). Turtle eggs only crack and
-    /// hatch on top of sand, and turtles only spawn on it.
+    /// Whether the block below `pos` is a sand type.
     pub(crate) fn on_sand(level: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::is_sand(level, pos.below())
     }
 
-    /// Vanilla `TurtleEggBlock.isSand`.
+    /// Whether the block is a sand type.
     pub(crate) fn is_sand(level: &dyn LevelReader, pos: BlockPos) -> bool {
         level
             .get_block_state(pos)

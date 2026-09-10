@@ -1775,9 +1775,7 @@ fn home_radius_sqr(radius: i32) -> f64 {
     radius * radius
 }
 
-/// Turns `a` toward `b` by at most `max` degrees, mirroring vanilla
-/// `MoveControl.rotlerp`. Entities with their own move control need this to steer
-/// the same way the shared one does.
+/// Turns `a` toward `b` by at most `max` degrees.
 pub(crate) fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
     let mut diff = wrap_degrees(b - a);
     if diff > max {
