@@ -7,8 +7,6 @@ use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
-/// An avoid predicate that also receives the fleeing mob, so it can read that
-/// mob's live state.
 type MobAvoidSelector =
     Box<dyn Fn(&dyn PathfinderMob, &dyn LivingEntity, &World) -> bool + Send + Sync>;
 
@@ -53,8 +51,7 @@ impl AvoidEntityGoal {
         }
     }
 
-    /// Like [`Self::with_selector`], but the predicate also receives the fleeing
-    /// mob. Range and line of sight still apply.
+    /// Like [`Self::with_selector`], but the predicate also receives the fleeing mob.
     #[must_use]
     pub(crate) fn with_mob_selector(
         max_dist: f32,
