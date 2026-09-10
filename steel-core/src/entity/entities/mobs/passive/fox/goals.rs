@@ -486,7 +486,6 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// Whether the fox has a clear line to pounce through.
 fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
     let Some(world) = mob.level() else {
         return false;
