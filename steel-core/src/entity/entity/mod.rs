@@ -9,7 +9,6 @@ use steel_math::DEGREE_90;
 const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
 /// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
 const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
-/// How far either side of its base pitch a swim sound is varied.
 const SWIM_SOUND_PITCH_SPREAD: f32 = 0.4;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
@@ -3052,7 +3051,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.default_play_swim_sound(volume);
     }
 
-    /// Plays the shared swim sound at `volume`.
+    /// Swim sound with randomized pitch
     fn default_play_swim_sound(&self, volume: f32) {
         let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * SWIM_SOUND_PITCH_SPREAD;
         self.play_sound(self.swim_sound(), volume, pitch);
