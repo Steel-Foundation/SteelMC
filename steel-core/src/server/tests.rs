@@ -33,9 +33,10 @@ use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
 use tokio::{
     fs,
+    net::TcpListener,
     runtime::{Builder, Runtime},
     task::JoinSet,
-    time::sleep,
+    time::{sleep, timeout},
 };
 use uuid::Uuid;
 
@@ -3323,9 +3324,17 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
     });
 }
 
-/// Builds a server through the public constructor, offline and pointed away from Mojang so
-/// no test depends on reaching it.
-async fn offline_server(runtime: &Arc<Runtime>, save_root: &Path) -> Result<Server, String> {
+/// RFC 5737 documentation space, so the connect stalls rather than being refused. A refused
+/// address returns instantly and would pass with or without the offline gate.
+const UNROUTABLE_SERVICES: &str = "http://192.0.2.1:1/publickeys";
+
+/// Builds a server through the public constructor, offline and pointed at the given
+/// services endpoint so no test depends on reaching Mojang.
+async fn offline_server(
+    runtime: &Arc<Runtime>,
+    save_root: &Path,
+    services_server: &str,
+) -> Result<Server, String> {
     let worlds_config: WorldsConfig = toml::from_str(&format!(
         r#"
 save_path = '{}'
@@ -3343,9 +3352,7 @@ default = true
     .expect("worlds config should parse");
 
     let mut config = RuntimeConfig::clone(&test_runtime_config());
-    // RFC 5737 documentation space, so the connect stalls rather than being refused. A
-    // refused address returns instantly and would pass with or without the offline gate.
-    config.services_server = Some("http://192.0.2.1:1/publickeys".to_owned());
+    config.services_server = Some(services_server.to_owned());
 
     Server::new(
         Arc::clone(runtime),
@@ -3356,6 +3363,12 @@ default = true
             .expect("default permission groups should resolve"),
     )
     .await
+}
+
+/// Stops a started server and drops its save directory, best effort.
+async fn shutdown_server(server: &Server, save_root: &Path) {
+    server.cancel_token.cancel();
+    let _ = fs::remove_dir_all(save_root).await;
 }
 
 fn server_test_runtime() -> Runtime {
@@ -3385,20 +3398,18 @@ fn a_second_server_bootstraps_in_the_same_process() {
             let first_root = test_storage_root("bootstrap-first");
             let second_root = test_storage_root("bootstrap-second");
 
-            let first = offline_server(runtime, &first_root)
+            let first = offline_server(runtime, &first_root, UNROUTABLE_SERVICES)
                 .await
                 .expect("the first server should start");
-            let second = offline_server(runtime, &second_root)
+            let second = offline_server(runtime, &second_root, UNROUTABLE_SERVICES)
                 .await
                 .expect("a second server should start in the same process");
 
             assert_eq!(first.worlds.len(), 1);
             assert_eq!(second.worlds.len(), 1);
 
-            first.cancel_token.cancel();
-            second.cancel_token.cancel();
-            let _ = fs::remove_dir_all(&first_root).await;
-            let _ = fs::remove_dir_all(&second_root).await;
+            shutdown_server(&first, &first_root).await;
+            shutdown_server(&second, &second_root).await;
         });
     });
 }
@@ -3410,7 +3421,7 @@ fn offline_startup_does_not_wait_for_the_services_key_fetch() {
             let save_root = test_storage_root("offline-service-keys");
 
             let started = Instant::now();
-            let server = offline_server(runtime, &save_root)
+            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
                 .await
                 .expect("an offline server should start");
             let elapsed = started.elapsed();
@@ -3420,8 +3431,39 @@ fn offline_startup_does_not_wait_for_the_services_key_fetch() {
                 "offline startup waited {elapsed:?} on the services key fetch"
             );
 
-            server.cancel_token.cancel();
-            let _ = fs::remove_dir_all(&save_root).await;
+            shutdown_server(&server, &save_root).await;
+        });
+    });
+}
+
+/// Skipping the wait must not turn into skipping the fetch. `handle_chat_session_update`
+/// reads the keys with no online-mode gate, as vanilla does, so an offline server that
+/// never fetched them would drop every chat session a player sends.
+#[test]
+fn offline_startup_still_requests_the_services_keys() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("offline-key-request");
+            let services_stub = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("services key stub should bind");
+            let endpoint = format!(
+                "http://{}/publickeys",
+                services_stub
+                    .local_addr()
+                    .expect("services key stub should report its address")
+            );
+
+            let server = offline_server(runtime, &save_root, &endpoint)
+                .await
+                .expect("an offline server should start");
+
+            timeout(SERVICE_KEY_CONNECT_TIMEOUT, services_stub.accept())
+                .await
+                .expect("an offline server should request the services keys")
+                .expect("services key stub should accept the request");
+
+            shutdown_server(&server, &save_root).await;
         });
     });
 }
