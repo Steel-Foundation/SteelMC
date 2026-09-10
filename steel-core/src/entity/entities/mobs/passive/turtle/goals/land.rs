@@ -20,8 +20,7 @@ const GIVE_UP_TICKS: i32 = 600;
 const NEAR_HOME_DISTANCE: f64 = 16.0;
 const AVOID_WATER_V: i32 = 5;
 
-/// Heads back toward the home beach: always when carrying an egg,
-/// otherwise on a rare timer when far from home.
+/// Returns home with an egg or, rarely, when far away.
 pub(crate) struct TurtleGoHomeGoal {
     speed_modifier: f64,
     stuck: bool,

@@ -29,8 +29,7 @@ const LAY_EGG_SOUND_VOLUME: f32 = 0.3;
 const LAY_EGG_PITCH_BASE: f32 = 0.9;
 const LAY_EGG_PITCH_SPREAD: f32 = 0.2;
 
-/// Breeding gives the mother an egg to lay instead of spawning a baby,
-/// and both parents age back to adulthood.
+/// Produces an egg to lay instead of spawning a baby.
 pub(crate) struct TurtleBreedGoal {
     partner: Option<SharedEntity>,
     love_time: i32,
@@ -70,7 +69,6 @@ impl TurtleBreedGoal {
         })
     }
 
-    /// Grants the egg, ages up both parents, awards the breeding stat and drops XP.
     fn breed(mob: &dyn PathfinderMob, turtle: &TurtleEntity, partner_animal: &dyn Animal) {
         let Some(world) = mob.level() else {
             return;
@@ -82,8 +80,7 @@ impl TurtleBreedGoal {
             && let Some(player) = world.players.get_by_uuid(&love_cause)
         {
             player.award_custom_stat(&vanilla_custom_stats::ANIMALS_BRED);
-            // TODO(advancements): trigger the BRED_ANIMALS criterion once Steel
-            // has an advancement / criteria-trigger system.
+            // TODO(advancements): Trigger the vanilla BRED_ANIMALS criterion.
         }
 
         turtle.set_has_egg(true);
@@ -168,7 +165,7 @@ impl Goal for TurtleBreedGoal {
     }
 }
 
-/// Walks to sand near home and, after a delay, places a turtle egg cluster.
+/// Finds sand near home and lays eggs after a delay.
 pub(crate) struct TurtleLayEggGoal {
     inner: MoveToBlockGoal,
 }

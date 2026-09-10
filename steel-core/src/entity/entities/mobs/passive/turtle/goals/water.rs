@@ -24,8 +24,7 @@ const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
 const TRAVEL_LOADED_MARGIN: i32 = 34;
 
-/// Always tries to reach water when panicking, falling back to a random
-/// escape position.
+/// Panics toward water, falling back to a random escape position.
 pub(crate) struct TurtlePanicGoal {
     wanted_position: Option<DVec3>,
     speed_modifier: f64,
@@ -93,7 +92,6 @@ impl Goal for TurtlePanicGoal {
     }
 }
 
-/// Leaves land for the nearest water block.
 pub(crate) struct TurtleGoToWaterGoal {
     inner: MoveToBlockGoal,
 }
@@ -147,7 +145,7 @@ impl Goal for TurtleGoToWaterGoal {
     }
 }
 
-/// Picks a far swim target and wanders to it.
+/// Wanders toward a distant swimming target.
 pub(crate) struct TurtleTravelGoal {
     speed_modifier: f64,
     stuck: bool,

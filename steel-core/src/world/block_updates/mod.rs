@@ -58,9 +58,8 @@ impl World {
         self.has_full_chunk(Self::chunk_pos_for_block(pos))
     }
 
-    /// Whether every chunk covering the block square between the two corners is
-    /// loaded. Only the horizontal span counts, and the corners are given lowest
-    /// first.
+    /// Returns whether every chunk in the inclusive horizontal rectangle is loaded.
+    /// `from.x/z` must not exceed `to.x/z`.
     pub(crate) fn are_full_chunks_loaded_at(&self, from: BlockPos, to: BlockPos) -> bool {
         let from_chunk = Self::chunk_pos_for_block(from);
         let to_chunk = Self::chunk_pos_for_block(to);

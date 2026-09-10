@@ -86,8 +86,7 @@ impl Entity for TurtleEntity {
         self.play_sound(sound, 0.15, 1.0);
     }
 
-    // TODO(lightning): vanilla `Turtle.thunderHit` kills a struck turtle
-    // outright. Steel has no lightning bolt entity or thunder-hit hook yet.
+    // TODO(lightning): Implement vanilla `Turtle.thunderHit` behavior.
     fn is_pushed_by_fluid(&self) -> bool {
         false
     }
@@ -188,7 +187,6 @@ impl LivingEntity for TurtleEntity {
         result
     }
 
-    /// The push and drag are flat, so the gravity and surface arguments are unused.
     fn travel_in_water(
         &self,
         input: DVec3,

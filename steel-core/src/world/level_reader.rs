@@ -69,7 +69,7 @@ pub trait LevelReader {
         0.0
     }
 
-    /// Dimension sea level
+    /// Returns sea level.
     fn sea_level(&self) -> i32 {
         OVERWORLD_SEA_LEVEL
     }

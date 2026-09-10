@@ -1,5 +1,3 @@
-//! Vanilla Turtle entity.
-
 mod goals;
 mod traits;
 
@@ -96,7 +94,7 @@ unsafe impl DowncastType for TurtleEntity {
 }
 
 impl TurtleEntity {
-    /// Creates a new turtle at runtime.
+    /// Creates a turtle entity.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -105,7 +103,7 @@ impl TurtleEntity {
         )
     }
 
-    /// Reconstructs a turtle from persisted base entity state.
+    /// Creates a turtle entity from saved base data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
@@ -163,8 +161,7 @@ impl TurtleEntity {
         }
     }
 
-    // TODO(amphibious-navigation): vanilla uses AmphibiousPathNavigation.
-    // Steel has none, so a zero WATER malus stands in for it.
+    // TODO(amphibious-navigation): Implement vanilla `AmphibiousPathNavigation`.
     fn initialize_turtle_pathfinding_malus(mob_base: &MobBase) {
         let mut malus = mob_base.pathfinding_malus().lock();
         malus.set(PathType::Water, 0.0);
@@ -173,7 +170,7 @@ impl TurtleEntity {
         malus.set(PathType::DoorOpen, -1.0);
     }
 
-    /// Whether this turtle is carrying an egg to lay.
+    /// Returns whether this turtle is carrying an egg.
     #[must_use]
     pub fn has_egg(&self) -> bool {
         *self.entity_data.lock().has_egg.get()
@@ -183,7 +180,7 @@ impl TurtleEntity {
         self.entity_data.lock().has_egg.set(has_egg);
     }
 
-    /// Whether this turtle is in the middle of laying its egg.
+    /// Returns whether this turtle is laying an egg.
     #[must_use]
     pub fn is_laying_egg(&self) -> bool {
         *self.entity_data.lock().laying_egg.get()
@@ -221,18 +218,18 @@ impl TurtleEntity {
         *self.travel_pos.lock() = pos;
     }
 
-    /// This turtle's home beach.
+    /// Returns this turtle's home position.
     #[must_use]
     pub fn home_pos(&self) -> BlockPos {
         *self.home_pos.lock()
     }
 
-    /// Records this turtle's home beach.
+    /// Sets this turtle's home position.
     pub fn set_home_pos(&self, pos: BlockPos) {
         *self.home_pos.lock() = pos;
     }
 
-    /// Whether an item stack is turtle food (`#turtle_food`, seagrass).
+    /// Returns whether the stack is turtle food.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
@@ -278,7 +275,6 @@ impl TurtleEntity {
         }
     }
 
-    /// Emits the sand-kicking particles and game event while laying.
     fn tick_laying_egg(&self) {
         if !LivingEntity::is_alive(self)
             || !self.is_laying_egg()

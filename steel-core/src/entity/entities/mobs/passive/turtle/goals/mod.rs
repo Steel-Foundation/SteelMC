@@ -1,5 +1,3 @@
-//! Bespoke turtle AI goals.
-
 mod breeding;
 mod land;
 mod water;
