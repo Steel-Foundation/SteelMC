@@ -1213,7 +1213,7 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
     }
 
-    /// Returns vanilla `mob.getSensing().hasLineOfSight(target)`.
+    /// Whether this mob can see `target`.
     fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
         self.mob_base()
             .sensing()

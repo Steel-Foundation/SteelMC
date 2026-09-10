@@ -139,7 +139,6 @@ mod tests {
     use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
     use crate::test_support::fresh_test_world;
 
-    /// A test mob that is `Mob` but not `PathfinderMob`, like flying or slime-type mobs.
     struct HoveringTestMob {
         base: EntityBase,
         living_base: LivingEntityBase,
