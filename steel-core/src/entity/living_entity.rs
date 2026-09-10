@@ -1025,10 +1025,7 @@ pub trait LivingEntity: Entity {
         // TODO: Drop non-mob equipment overrides once those foundations exist.
     }
 
-    /// Vanilla per-entity equipment dropped on death regardless of the loot
-    /// rules, matching overrides like `Fox.dropAllDeathLoot`, which spits the
-    /// held mouth item out even for a baby or with mob loot disabled. Runs
-    /// before the `should_drop_loot` gate. Default: nothing.
+    /// Equipment dropped on death regardless of loot rules
     fn drop_custom_death_equipment(&self, _world: &Arc<World>) {}
 
     /// Runs vanilla `LivingEntity.dropExperience`.

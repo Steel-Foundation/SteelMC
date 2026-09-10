@@ -48,8 +48,7 @@ fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
         })
 }
 
-/// An empty-mouthed fox walks to a nearby item so the base looting scan can
-/// pick it up.
+/// Walks an empty-mouthed fox to a nearby item.
 pub(crate) struct FoxSearchForItemsGoal;
 
 impl Goal for FoxSearchForItemsGoal {
@@ -202,8 +201,7 @@ impl FoxSleepGoal {
     }
 }
 
-/// Whether the block at the top of the bounding box is hidden from the sky and
-/// has a non-negative walk-target value.
+/// Hidden from the sky and walkable.
 fn has_shelter(mob: &dyn PathfinderMob, world: &Arc<World>) -> bool {
     let position = mob.position();
     let pos = BlockPos::containing(position.x, mob.bounding_box().max_y(), position.z);
@@ -247,8 +245,7 @@ impl Goal for FoxSleepGoal {
     }
 }
 
-/// A fox starts swimming in shallower water than most mobs, and drops whatever
-/// it was doing when it does.
+/// Swims in shallower water than most mobs, dropping other goals.
 pub(crate) struct FoxFloatGoal {
     inner: FloatGoal,
 }
@@ -383,8 +380,7 @@ impl Goal for FoxBreedGoal {
     }
 }
 
-/// A kit standing up for something it trusts stays where it is rather than
-/// trailing its parent.
+/// A defending kit stays put instead of trailing its parent.
 pub(crate) struct FoxFollowParentGoal {
     inner: FollowParentGoal,
 }
@@ -430,8 +426,7 @@ impl Goal for FoxFollowParentGoal {
     }
 }
 
-/// A fox already fixed on something, or lying face-down in the ground, does not
-/// turn to watch a player.
+/// Skipped while interested or faceplanted.
 pub(crate) struct FoxLookAtPlayerGoal {
     inner: LookAtPlayerGoal,
 }

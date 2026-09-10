@@ -480,8 +480,7 @@ impl FoxEntity {
         holds_food && Mob::target(self).is_none() && self.on_ground() && !self.is_sleeping()
     }
 
-    /// Wakes or stands the fox up when something worth reacting to happens, and
-    /// kicks up dust while faceplanted.
+    /// Wakes or stands the fox up, and kicks dust while faceplanted.
     fn tick_fox_posture(&self) {
         if !self.is_effective_ai() {
             return;
@@ -535,8 +534,7 @@ impl FoxEntity {
         }
     }
 
-    /// Finishes the mouth item, applying its effects and leaving any container
-    /// behind.
+    /// Finishes the mouth item, leaving any container behind.
     fn swallow_mouth_item(&self) {
         let Some(world) = self.level() else {
             return;
@@ -559,9 +557,7 @@ impl FoxEntity {
     }
 }
 
-/// Reacts to chickens, rabbits and monsters; ignores other foxes, creative or
-/// spectating players and trusted uuids; otherwise reacts to anything awake and
-/// not sneaking.
+/// React: chicken, rabbit, hostiles. Ignore: fox, creative, spectating, trusted
 fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
     let entity_type = target.entity_type();
     if entity_type == &vanilla_entities::FOX {
@@ -797,8 +793,6 @@ impl Animal for FoxEntity {
         }
     }
 
-    /// Foxes spawn on snow, grass and podzol, not the wider animal set, and the
-    /// light check has no spawner exemption.
     fn check_animal_spawn_rules(
         level: &dyn LevelReader,
         _spawn_reason: EntitySpawnReason,
@@ -895,8 +889,6 @@ impl Mob for FoxEntity {
         self.entity_data.lock().mob_mut().mob_flags.set(flags);
     }
 
-    /// A fox holds an item if its mouth is empty, or it will swap a non-food
-    /// item already held for a food item.
     fn can_hold_item(&self, item_stack: &ItemStack) -> bool {
         let equipment = self.living_base().equipment().lock();
         let held = equipment.get_ref(EquipmentSlot::MainHand);
@@ -906,8 +898,6 @@ impl Mob for FoxEntity {
                 && !Self::is_consumable_food(held))
     }
 
-    /// Holds one of the item in the mouth, spitting out whatever was there and
-    /// dropping any extra count.
     fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
         let mut item_stack = item_entity.get_item();
         if !self.can_hold_item(&item_stack) {
