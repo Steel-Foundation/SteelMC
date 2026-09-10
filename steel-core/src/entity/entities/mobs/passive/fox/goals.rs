@@ -505,8 +505,7 @@ impl Goal for FoxLookAtPlayerGoal {
     }
 }
 
-/// A fox that spots ripe berries walks over, noses around a while, and helps
-/// itself.
+/// Walks to ripe berries, noses around, then eats.
 pub(crate) struct FoxEatBerriesGoal {
     inner: MoveToBlockGoal,
     ticks_waited: i32,
