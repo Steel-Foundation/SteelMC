@@ -165,9 +165,6 @@ impl PlayerDataStorage {
     }
 
     /// Creates player data storage that keeps everything in RAM.
-    ///
-    /// Nothing is written to or read from disk, so the data lives exactly as
-    /// long as this storage does.
     #[must_use]
     pub fn in_memory() -> Self {
         Self {
