@@ -15,8 +15,14 @@ struct EffectHolderEntry {
 
 #[derive(Deserialize)]
 struct EffectEntry {
+    #[serde(alias = "id")]
     effect: String,
+    #[serde(default = "default_duration")]
     duration: i32,
+}
+
+const fn default_duration() -> i32 {
+    160
 }
 
 pub(crate) fn build() -> TokenStream {

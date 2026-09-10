@@ -1,4 +1,4 @@
-//! Vanilla Mooshroom (MushroomCow) entity with variant, shearing, and stew-feeding parity.
+//! Vanilla Mooshroom (`MushroomCow`) entity with variant, shearing, and stew-feeding parity.
 
 use std::sync::{Arc, Weak};
 
@@ -594,10 +594,10 @@ impl Entity for MushroomCowEntity {
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
 
-        if let Some(variant_name) = nbt.string("Type") {
-            if let Some(variant) = MushroomCowVariant::from_name(variant_name.to_str().as_ref()) {
-                self.set_variant(variant);
-            }
+        if let Some(variant_name) = nbt.string("Type")
+            && let Some(variant) = MushroomCowVariant::from_name(variant_name.to_str().as_ref())
+        {
+            self.set_variant(variant);
         }
 
         if let Some(tag) = nbt.get("stew_effects") {
@@ -719,7 +719,7 @@ impl Animal for MushroomCowEntity {
 
         let self_variant = self.variant();
         let baby_variant = if self_variant == mate_variant {
-            if rand::random::<u32>() % MUTATE_CHANCE == 0 {
+            if rand::random::<u32>().is_multiple_of(MUTATE_CHANCE) {
                 self_variant.opposite()
             } else {
                 self_variant
