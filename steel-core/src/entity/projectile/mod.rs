@@ -18,6 +18,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::{DEGREE_180, DEGREE_360};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -25,7 +26,7 @@ use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLO
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{UuidExt, WorldAabb};
+use steel_utils::{BlockPos, UuidExt, WorldAabb};
 use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
@@ -35,6 +36,11 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
+
+use super::{
+    BUBBLE_COLUMN_ABOVE_UP_ACCELERATION, BUBBLE_COLUMN_DOWN_ACCELERATION,
+    BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
+};
 
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
@@ -49,7 +55,8 @@ const MAX_ENTITY_HIT_MARGIN: f64 = 0.3;
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
 
 /// Mirrors vanilla `RandomSource.triangle(mode, deviation)`.
-fn triangle_random(mode: f64, deviation: f64) -> f64 {
+#[must_use]
+pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
@@ -202,6 +209,31 @@ pub trait Projectile: Entity + ProjectileEventSource {
         (movement.x, movement.z)
     }
 
+    /// Applies bubble-column surface acceleration without clamping velocity.
+    fn on_above_bubble_column_projectile(&self, drag_down: bool, pos: BlockPos) {
+        let acceleration = if drag_down {
+            -BUBBLE_COLUMN_DOWN_ACCELERATION
+        } else {
+            BUBBLE_COLUMN_ABOVE_UP_ACCELERATION
+        };
+        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
+    }
+
+    /// Applies inside-bubble-column acceleration without clamping velocity.
+    fn on_inside_bubble_column_projectile(&self, drag_down: bool) {
+        let acceleration = if drag_down {
+            -BUBBLE_COLUMN_DOWN_ACCELERATION
+        } else {
+            BUBBLE_COLUMN_INSIDE_UP_ACCELERATION
+        };
+        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+        self.reset_fall_distance();
+    }
+
     /// Sets the owner UUID. Vanilla stores an `EntityReference`; Steel stores the
     /// UUID and resolves lazily.
     // TODO: introduce an `EntityReference` type to cache the resolved owner.
@@ -339,7 +371,14 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Returns vanilla `Projectile.canHitEntity`.
+    /// Use this if you don't need to override.
     fn can_hit_entity(&self, entity: &dyn Entity) -> bool {
+        self.base_can_hit_entity(entity)
+    }
+
+    /// Returns vanilla `Projectile.canHitEntity`.
+    /// We had to split this up, because Rust doesn't allow for calling super trait fns (without causing unbounded recursion) for overrides, so otherwise vanilla behavior would not be achievable.
+    fn base_can_hit_entity(&self, entity: &dyn Entity) -> bool {
         if !entity.can_be_hit_by_projectile() {
             return false;
         }
@@ -443,9 +482,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Casts the move vector and returns the nearest block/entity hit (vanilla
     /// `ProjectileUtil.getHitResultOnMoveVector` with `this::canHitEntity`).
     fn get_hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
+        const EPSILON: f64 = 1.0e-12;
         let world = self.level()?;
         let from = self.position();
         let delta = self.velocity();
+        if delta.length_squared() < EPSILON {
+            return None;
+        }
         let to = from + delta;
 
         let block_hit =
@@ -609,14 +652,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
-            if let Some(world) = self.level() {
-                let owner = self.get_owner();
-                world.game_event_at(
-                    &vanilla_game_events::PROJECTILE_SHOOT,
-                    self.position(),
-                    &GameEventContext::new(owner.as_deref(), None),
-                );
-            }
+            let owner = self.get_owner();
+            self.game_event_with_source_entity(
+                &vanilla_game_events::PROJECTILE_SHOOT,
+                owner.as_deref(),
+            );
             self.set_has_been_shot(true);
         }
         self.check_left_owner();
@@ -837,11 +877,11 @@ const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
 fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
-    while rot - rot_old < -180.0 {
-        rot_old -= 360.0;
+    while rot - rot_old < -DEGREE_180 {
+        rot_old -= DEGREE_360;
     }
-    while rot - rot_old >= 180.0 {
-        rot_old += 360.0;
+    while rot - rot_old >= DEGREE_180 {
+        rot_old += DEGREE_360;
     }
     rot_old + 0.2 * (rot - rot_old)
 }

@@ -8,11 +8,14 @@ use steel_registry::{
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
 use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::world::game_event::GameEventContext;
+use crate::{
+    behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext},
+    player::Player,
+};
 
 pub(super) enum SurvivalCheck {
     Required,
@@ -126,6 +129,10 @@ impl BlockItem {
 
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
+            if let Some(block_entity) = context.world.get_block_entity(place_pos) {
+                context.with_item(|item| block_entity.apply_components_from_item(item));
+                block_entity.set_changed();
+            }
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
@@ -147,7 +154,8 @@ impl BlockItem {
             ),
         );
 
-        context.with_item_mut(|item| item.shrink(1));
+        let has_infinite_materials = context.player().is_some_and(Player::has_infinite_materials);
+        context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }
@@ -167,6 +175,12 @@ impl BlockItem {
 impl ItemBehavior for BlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.place(context.build_place_context())
+    }
+
+    fn can_fit_inside_container_items(&self) -> bool {
+        BLOCK_BEHAVIORS
+            .get_behavior(self.block)
+            .fits_inside_container_items()
     }
 }
 
