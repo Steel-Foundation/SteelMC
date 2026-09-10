@@ -128,8 +128,6 @@ impl Server {
                         () = sleep(next_tick_time - now) => {}
                     }
                 } else {
-                    // Past the deadline: drop a long backlog rather than replay
-                    // it, so a stall does not fast-forward the world.
                     overload_guard.skip_backlog_if_overloaded(
                         now,
                         &mut next_tick_time,
