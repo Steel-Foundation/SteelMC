@@ -801,7 +801,6 @@ fn recently_aggressive(attacker: &dyn LivingEntity) -> bool {
         && attacker.last_hurt_mob_timestamp() < attacker.tick_count() + DEFEND_ATTACKER_GRUDGE_TICKS
 }
 
-/// Fights whatever hurt a trusted entity.
 pub(crate) struct DefendTrustedTargetGoal {
     inner: NearestAttackableTargetGoal,
     /// The last-hurt-by timestamp this goal already acted on.

@@ -27,7 +27,6 @@ pub(crate) struct MeleeAttackGoal {
     ticks_until_next_path_recalculation: i32,
     ticks_until_next_attack: i32,
     last_can_use_check: i64,
-    /// Optional sound played on a landed hit.
     attack_sound: Option<SoundEventRef>,
 }
 
@@ -46,7 +45,6 @@ impl MeleeAttackGoal {
         }
     }
 
-    /// Sets a sound to play on each landed hit.
     #[must_use]
     pub(crate) const fn with_attack_sound(mut self, attack_sound: SoundEventRef) -> Self {
         self.attack_sound = Some(attack_sound);
