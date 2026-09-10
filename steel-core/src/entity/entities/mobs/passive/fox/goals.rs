@@ -33,7 +33,6 @@ fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
 }
 
-/// Returns the position of the first nearby loose item this fox would pick up.
 fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
     let fox = as_fox(mob)?;
     let world = mob.level()?;
@@ -48,7 +47,6 @@ fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
         })
 }
 
-/// Walks an empty-mouthed fox to a nearby item.
 pub(crate) struct FoxSearchForItemsGoal;
 
 impl Goal for FoxSearchForItemsGoal {
@@ -85,7 +83,6 @@ impl Goal for FoxSearchForItemsGoal {
     }
 }
 
-/// A fox sits and slowly looks around a few times.
 pub(crate) struct PerchAndSearchGoal {
     rel_x: f64,
     rel_z: f64,
@@ -201,7 +198,6 @@ impl FoxSleepGoal {
     }
 }
 
-/// Hidden from the sky and walkable.
 fn has_shelter(mob: &dyn PathfinderMob, world: &Arc<World>) -> bool {
     let position = mob.position();
     let pos = BlockPos::containing(position.x, mob.bounding_box().max_y(), position.z);

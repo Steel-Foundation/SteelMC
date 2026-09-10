@@ -25,7 +25,6 @@ impl BreedGoal {
         }
     }
 
-    /// The animal this goal has paired up with, once it has found one.
     pub(crate) const fn partner(&self) -> Option<&SharedEntity> {
         self.partner.as_ref()
     }
