@@ -16,7 +16,7 @@ use steel_utils::{ChunkPos, locks::SyncMutex};
 use tokio_util::sync::CancellationToken;
 
 use crate::chunk::{
-    chunk_holder::ChunkHolder,
+    chunk_holder::{ChunkHolder, ChunkSaveDependency},
     chunk_map::ChunkMap,
     chunk_pyramid::{GENERATION_PYRAMID, LOADING_PYRAMID},
     status::ChunkStatus,
@@ -29,6 +29,8 @@ pub struct StaticCache2D<T> {
     size: i32,
     /// Cache stored in row-major order (Z-then-X).
     cache: Vec<T>,
+    /// Pins generation holders until the last user of this cache finishes.
+    save_dependencies: Option<Box<[ChunkSaveDependency]>>,
 }
 
 impl<T> StaticCache2D<T> {
@@ -57,6 +59,7 @@ impl<T> StaticCache2D<T> {
             min_z,
             size,
             cache,
+            save_dependencies: None,
         }
     }
 
@@ -90,6 +93,18 @@ impl<T> StaticCache2D<T> {
         } else {
             None
         }
+    }
+}
+
+impl StaticCache2D<Arc<ChunkHolder>> {
+    fn pin_holders_for_generation(&mut self) {
+        self.save_dependencies = Some(
+            self.cache
+                .iter()
+                .map(ChunkHolder::add_save_dependency)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
     }
 }
 
@@ -150,12 +165,13 @@ impl ChunkGenerationTask {
             .get_radius_of(ChunkStatus::Empty) as i32;
 
         let chunk_map_clone = chunk_map.clone();
-        let cache = StaticCache2D::create(pos.0.x, pos.0.y, worst_case_radius, move |x, y| {
+        let mut cache = StaticCache2D::create(pos.0.x, pos.0.y, worst_case_radius, move |x, y| {
             chunk_map_clone
-                .chunks
-                .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
-                .expect("The chunkholder should be created by distance manager before the generation task is scheduled. This occurring means there is a bug in the distance manager or you called this yourself.")
+                    .chunks
+                    .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
+                    .expect("The chunkholder should be created by distance manager before the generation task is scheduled. This occurring means there is a bug in the distance manager or you called this yourself.")
         });
+        cache.pin_holders_for_generation();
         let center_holder = Arc::clone(cache.get(pos.0.x, pos.0.y));
 
         Self {
@@ -340,8 +356,6 @@ impl ChunkGenerationTask {
 
             self.schedule_next_layer();
         }
-        let center_chunk = self.cache.get(self.pos.0.x, self.pos.0.y);
-        center_chunk.clear_generation_task_if_current(&self);
     }
 
     /// Waits for all scheduled neighbor tasks to complete.
