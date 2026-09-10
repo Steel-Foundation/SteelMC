@@ -36,6 +36,16 @@ hooks = [
         priority = 10
     },
     {
+        id = "forbid-literal-translation-keys",
+        name = "Fixed translation keys must use steel_utils::translations, not a raw TranslatedMessage",
+        language = "system",
+        entry = "bash -c '! grep -n -A3 -E \"TranslatedMessage[[:space:]]*\\{\" \"$@\" | grep -qE \"key:[[:space:]]*\\\"\"' --",
+        types = ["rust"],
+        pass_filenames = true,
+        require_serial = true,
+        priority = 10
+    },
+    {
         id = "typos",
         name = "Spell Check (typos)",
         language = "system",

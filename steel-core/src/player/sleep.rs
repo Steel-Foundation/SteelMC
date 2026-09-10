@@ -5,7 +5,7 @@ use steel_registry::{
     dimension_type::BedRuleValue,
     vanilla_custom_stats,
 };
-use steel_utils::{BlockPos, Direction};
+use steel_utils::{BlockPos, Direction, translations};
 use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::sleep_state::SLEEP_DURATION;
@@ -55,6 +55,8 @@ impl Player {
             .error_message_key
             .as_ref()
             .map(|key| {
+                // dynamic translation key: dimension bed-rule error keys come
+                // from the dimension type registry, not a fixed vanilla key.
                 TranslatedMessage {
                     key: (*key).into(),
                     fallback: None,
@@ -151,22 +153,16 @@ impl Player {
         }
         if !self.bed_in_range(pos, direction) {
             return Err(BedSleepingProblem::Message(Box::new(
-                TranslatedMessage {
-                    key: "block.minecraft.bed.too_far_away".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
+                translations::BLOCK_MINECRAFT_BED_TOO_FAR_AWAY
+                    .msg()
+                    .component(),
             )));
         }
         if self.bed_blocked(pos, direction) {
             return Err(BedSleepingProblem::Message(Box::new(
-                TranslatedMessage {
-                    key: "block.minecraft.bed.obstructed".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
+                translations::BLOCK_MINECRAFT_BED_OBSTRUCTED
+                    .msg()
+                    .component(),
             )));
         }
 
@@ -193,14 +189,7 @@ impl Player {
         self.award_custom_stat(&vanilla_custom_stats::SLEEP_IN_BED);
         // TODO: trigger CriteriaTriggers.SLEPT_IN_BED once the foundation for advancements exist.
         if !world.can_sleep_through_nights() {
-            self.send_overlay_message(
-                &TranslatedMessage {
-                    key: "sleep.not_possible".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
-            );
+            self.send_overlay_message(&translations::SLEEP_NOT_POSSIBLE.msg().component());
         }
         world.update_sleeping_player_list();
         Ok(())
@@ -224,14 +213,7 @@ impl Player {
                 .as_ref()
                 .is_some_and(|config| !config.is_same_position(current.as_ref()))
         {
-            self.send_message(
-                &TranslatedMessage {
-                    key: "block.minecraft.set_spawn".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
-            );
+            self.send_message(&translations::BLOCK_MINECRAFT_SET_SPAWN.msg().component());
         }
         *current = respawn_config;
     }

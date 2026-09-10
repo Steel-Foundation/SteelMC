@@ -25,7 +25,6 @@ use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
 
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockHitResult, ITEM_BEHAVIORS, InteractionResult,
