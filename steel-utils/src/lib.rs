@@ -27,6 +27,8 @@ pub mod java;
 pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
+/// Vanilla `Mth` helpers.
+pub mod mth;
 /// Vanilla-compatible NBT helpers.
 pub mod nbt;
 pub mod random;

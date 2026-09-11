@@ -4,10 +4,12 @@ use std::{
     hash::Hash,
     io::{Result, Write},
     mem, slice,
+    sync::OnceLock,
 };
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_utils::{BlockStateId, codec::VarInt, serial::WriteTo};
+use steel_registry::{REGISTRY, RegistryExt as _};
+use steel_utils::{BlockStateId, codec::VarInt, mth::ceil_log2, serial::WriteTo};
 
 /// A trait for converting a value to a global ID.
 pub trait ToGlobalId {
@@ -416,7 +418,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 33..=64 => (6, PaletteMode::Hash),
                 65..=128 => (7, PaletteMode::Hash),
                 129..=256 => (8, PaletteMode::Hash),
-                _ => (15, PaletteMode::Global), // ceil(log2(max_block_state_id)) approx 15
+                _ => (block_state_global_bits(), PaletteMode::Global),
             }
         } else {
             // Biomes
@@ -425,10 +427,27 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 2 => (1, PaletteMode::Linear),
                 3..=4 => (2, PaletteMode::Linear),
                 5..=8 => (3, PaletteMode::Hash),
-                _ => (6, PaletteMode::Global), // ceil(log2(max_biome_id)) approx 6
+                _ => (biome_global_bits(), PaletteMode::Global),
             }
         }
     }
+}
+
+/// Bits per entry for the block-state global palette.
+///
+/// Derived from the registered block-state count and cached on first use, so a
+/// version bump that changes the state count doesn't need a matching hardcoded
+/// constant here. Matches vanilla, which sizes the global palette from the
+/// registry rather than a fixed width.
+fn block_state_global_bits() -> u8 {
+    static BITS: OnceLock<u8> = OnceLock::new();
+    *BITS.get_or_init(|| ceil_log2(usize::from(REGISTRY.blocks.next_state_id)))
+}
+
+/// Bits per entry for the biome global palette. See [`block_state_global_bits`].
+fn biome_global_bits() -> u8 {
+    static BITS: OnceLock<u8> = OnceLock::new();
+    *BITS.get_or_init(|| ceil_log2(REGISTRY.biomes.len()))
 }
 
 fn pack_bits(indices: &[u32], bits: usize) -> Vec<u64> {
@@ -511,7 +530,8 @@ impl BlockPalette {
 
 #[cfg(test)]
 mod tests {
-    use super::BlockPalette;
+    use super::{BiomePalette, BlockPalette, biome_global_bits, block_state_global_bits};
+    use steel_registry::init_vanilla_registry;
     use steel_utils::BlockStateId;
 
     fn assert_column_matches_get(container: &BlockPalette, x: usize, z: usize) {
@@ -585,5 +605,65 @@ mod tests {
         }
 
         assert_column_matches_get(&container, x, z);
+    }
+
+    /// A container with more distinct values than any linear/hash palette holds
+    /// must use the registry-derived global bit width, and the fixed-size long
+    /// array it writes (no length prefix) must match that width exactly, or every
+    /// section after it is parsed from the wrong offset.
+    #[test]
+    fn block_global_palette_uses_registry_derived_bit_width_and_long_count() {
+        init_vanilla_registry();
+        let mut cube = Box::new([[[BlockStateId::default(); 16]; 16]; 16]);
+        let mut next_id = 1u16;
+        for slab in &mut cube {
+            for row in slab.iter_mut() {
+                for value in row.iter_mut() {
+                    *value = BlockStateId(next_id);
+                    next_id = next_id.wrapping_add(1);
+                }
+            }
+        }
+        // All 4096 cells are distinct, well past the 256-entry hashed-palette cap.
+        let container = BlockPalette::from_cube(cube);
+
+        let mut written = Vec::new();
+        container
+            .write(&mut written)
+            .expect("writing a global-palette container should not fail");
+
+        let expected_bits = block_state_global_bits();
+        assert_eq!(written[0], expected_bits);
+        let values_per_long = 64 / usize::from(expected_bits);
+        let expected_longs = BlockPalette::VOLUME.div_ceil(values_per_long);
+        assert_eq!(written.len(), 1 + expected_longs * 8);
+    }
+
+    #[test]
+    fn biome_global_palette_uses_registry_derived_bit_width_and_long_count() {
+        init_vanilla_registry();
+        let mut cube = Box::new([[[0u16; 4]; 4]; 4]);
+        let mut next_id = 1u16;
+        for slab in &mut cube {
+            for row in slab.iter_mut() {
+                for value in row.iter_mut() {
+                    *value = next_id;
+                    next_id += 1;
+                }
+            }
+        }
+        // All 64 cells are distinct, well past the 8-entry hashed-palette cap.
+        let container = BiomePalette::from_cube(cube);
+
+        let mut written = Vec::new();
+        container
+            .write(&mut written)
+            .expect("writing a global-palette container should not fail");
+
+        let expected_bits = biome_global_bits();
+        assert_eq!(written[0], expected_bits);
+        let values_per_long = 64 / usize::from(expected_bits);
+        let expected_longs = BiomePalette::VOLUME.div_ceil(values_per_long);
+        assert_eq!(written.len(), 1 + expected_longs * 8);
     }
 }
