@@ -12,16 +12,13 @@ use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, Identifier, UuidExt};
+use steel_utils::{BlockPos, UuidExt};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::path::PathType;
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{
-    AgeableMob, AgeableMobBase, ENTITIES, EntitySpawnReason, Mob, MobBase, SharedEntity,
-    next_entity_id,
-};
+use crate::entity::{AgeableMob, AgeableMobBase, EntitySpawnReason, Mob, MobBase};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
@@ -247,48 +244,6 @@ pub trait Animal: AgeableMob {
         }
 
         self.mob_interact_ageable(player, hand)
-    }
-
-    /// Creates a same-type offspring using the registered entity factory.
-    fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        ENTITIES.create(
-            self.entity_type(),
-            next_entity_id(),
-            self.position(),
-            Arc::downgrade(world),
-        )
-    }
-
-    /// Returns this animal's breedable variant key when offspring inherit it.
-    fn breed_variant_key(&self) -> Option<&Identifier> {
-        None
-    }
-
-    /// Applies a breedable variant key to offspring that inherit one.
-    fn set_breed_variant_key(&self, _key: &Identifier) -> bool {
-        false
-    }
-
-    /// Applies entity-specific state to freshly created breeding offspring.
-    fn initialize_breed_offspring(&self, _partner: &dyn Animal, _offspring: &dyn Animal) {}
-
-    /// Creates this animal's vanilla breeding offspring.
-    fn get_breed_offspring(
-        &self,
-        world: &Arc<World>,
-        partner: &dyn Animal,
-    ) -> Option<SharedEntity> {
-        let offspring = self.create_breed_offspring(world)?;
-        let Some(offspring_animal) = offspring.as_animal() else {
-            log::error!(
-                "breeding entity type {} created non-animal offspring",
-                self.entity_type().key
-            );
-            return None;
-        };
-
-        self.initialize_breed_offspring(partner, offspring_animal);
-        Some(offspring)
     }
 
     /// Creates, initializes, and inserts vanilla breeding offspring.
