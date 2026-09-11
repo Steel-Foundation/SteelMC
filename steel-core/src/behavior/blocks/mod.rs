@@ -61,8 +61,8 @@ pub use vegetation::{
     CactusBlock, CactusFlowerBlock, CarrotBlock, CarvedPumpkinBlock, CocoaBlock, CoralBlock,
     CropBlock, DoublePlantBlock, FlowerBlock, GrassBlock, MangroveLeavesBlock, MultifaceBlock,
     MyceliumBlock, NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock,
-    PumpkinBlock, RootedDirtBlock, SeagrassBlock, SnowyBlock, StemBlock, SugarCaneBlock,
-    SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock,
+    PumpkinBlock, RootedDirtBlock, SeagrassBlock, SnowyBlock, SpreadingGrassBlock, StemBlock,
+    SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock,
     TintedParticleLeavesBlock, TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
