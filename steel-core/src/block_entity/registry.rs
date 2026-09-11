@@ -300,6 +300,12 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
         );
 
+        // Register enchanting table block entity factory
+        registry.register(
+            &vanilla_block_entity_types::ENCHANTING_TABLE,
+            |level, pos, state| Arc::new(EnchantingTableBlockEntity::new(level, pos, state)),
+        );
+
         // Register potent sulfur block entity factory
         registry.register(
             &vanilla_block_entity_types::POTENT_SULFUR,

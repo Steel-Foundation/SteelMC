@@ -17,6 +17,14 @@ pub struct EnchantmentCost {
     pub per_level_above_first: i32,
 }
 
+impl EnchantmentCost {
+    /// Vanilla `Enchantment.Cost.calculate`: `base + per_level_above_first * (level - 1)`.
+    #[must_use]
+    pub const fn calculate(self, level: i32) -> i32 {
+        self.base + self.per_level_above_first * (level - 1)
+    }
+}
+
 #[derive(Debug)]
 pub struct Enchantment {
     pub key: Identifier,
@@ -26,9 +34,12 @@ pub struct Enchantment {
     pub anvil_cost: i32,
     pub weight: u32,
     pub slots: &'static [EquipmentSlotGroup],
-    pub supported_items: &'static str,
-    pub primary_items: Option<&'static str>,
-    pub exclusive_set: Option<&'static str>,
+    /// Item tag the enchantment applies to (`#tag` in the definition JSON).
+    pub supported_items: Identifier,
+    /// Narrower item tag for primary offers, when set.
+    pub primary_items: Option<Identifier>,
+    /// Enchantment tag this enchantment is incompatible with, when set.
+    pub exclusive_set: Option<Identifier>,
     pub effects_nbt: fn() -> NbtCompound,
     pub effects: EnchantmentEffects,
 }
@@ -58,9 +69,9 @@ impl ToNbtTag for &Enchantment {
         compound.insert("description", NbtTag::Compound(desc));
 
         // Definition fields (inlined, not nested)
-        compound.insert("supported_items", self.supported_items);
-        if let Some(primary) = self.primary_items {
-            compound.insert("primary_items", primary);
+        compound.insert("supported_items", tag_ref(&self.supported_items));
+        if let Some(primary) = &self.primary_items {
+            compound.insert("primary_items", tag_ref(primary));
         }
         compound.insert("weight", self.weight as i32);
         compound.insert("max_level", self.max_level as i32);
@@ -80,8 +91,8 @@ impl ToNbtTag for &Enchantment {
         let slots: Vec<String> = self.slots.iter().map(|s| s.as_str().to_owned()).collect();
         compound.insert("slots", NbtTag::List(NbtList::from(slots)));
 
-        if let Some(exclusive) = self.exclusive_set {
-            compound.insert("exclusive_set", exclusive);
+        if let Some(exclusive) = &self.exclusive_set {
+            compound.insert("exclusive_set", tag_ref(exclusive));
         }
 
         let effects = (self.effects_nbt)();
@@ -93,14 +104,9 @@ impl ToNbtTag for &Enchantment {
     }
 }
 
-/// Parses a tag reference string like `"#minecraft:foo"` into an `Identifier`.
-fn parse_tag_ref(tag_ref: &str) -> Option<Identifier> {
-    let without_hash = tag_ref.strip_prefix('#')?;
-    Some(if let Some((ns, path)) = without_hash.split_once(':') {
-        Identifier::new(ns.to_owned(), path.to_owned())
-    } else {
-        Identifier::vanilla(without_hash.to_owned())
-    })
+/// Formats a tag id the way enchantment definitions reference it: `#namespace:path`.
+fn tag_ref(tag: &Identifier) -> String {
+    format!("#{tag}")
 }
 
 impl Enchantment {
@@ -112,10 +118,31 @@ impl Enchantment {
 
     /// Checks if this enchantment can be applied to the given item via `supported_items` tag.
     pub fn can_enchant(&self, item: ItemRef) -> bool {
-        let Some(tag) = parse_tag_ref(self.supported_items) else {
+        REGISTRY.items.is_in_tag(item, &self.supported_items)
+    }
+
+    /// Vanilla `Enchantment.getMinCost`.
+    #[must_use]
+    pub const fn get_min_cost(&self, level: i32) -> i32 {
+        self.min_cost.calculate(level)
+    }
+
+    /// Vanilla `Enchantment.getMaxCost`.
+    #[must_use]
+    pub const fn get_max_cost(&self, level: i32) -> i32 {
+        self.max_cost.calculate(level)
+    }
+
+    /// Vanilla `Enchantment.isPrimaryItem`: supported, and inside `primary_items`
+    /// when that narrower tag is set.
+    pub fn is_primary_item(&self, item: ItemRef) -> bool {
+        if !self.can_enchant(item) {
             return false;
+        }
+        let Some(primary_items) = &self.primary_items else {
+            return true;
         };
-        REGISTRY.items.is_in_tag(item, &tag)
+        REGISTRY.items.is_in_tag(item, primary_items)
     }
 
     /// Checks if two enchantments are compatible (neither's `exclusive_set` contains the other).
@@ -124,15 +151,13 @@ impl Enchantment {
         if a == b {
             return false;
         }
-        if let Some(set) = a.exclusive_set
-            && let Some(tag) = parse_tag_ref(set)
-            && REGISTRY.enchantments.is_in_tag(b, &tag)
+        if let Some(set) = &a.exclusive_set
+            && REGISTRY.enchantments.is_in_tag(b, set)
         {
             return false;
         }
-        if let Some(set) = b.exclusive_set
-            && let Some(tag) = parse_tag_ref(set)
-            && REGISTRY.enchantments.is_in_tag(a, &tag)
+        if let Some(set) = &b.exclusive_set
+            && REGISTRY.enchantments.is_in_tag(a, set)
         {
             return false;
         }
@@ -211,6 +236,26 @@ mod tests {
     use simdnbt::ToNbtTag;
     use simdnbt::owned::{NbtList, NbtTag};
     use steel_utils::Identifier;
+
+    #[test]
+    fn sharpness_is_primary_for_swords_but_only_supported_for_axes() {
+        init_vanilla_registry();
+        let sharpness = &vanilla_enchantments::SHARPNESS;
+        assert!(sharpness.can_enchant(&vanilla_items::DIAMOND_AXE));
+        assert!(!sharpness.is_primary_item(&vanilla_items::DIAMOND_AXE));
+        assert!(sharpness.is_primary_item(&vanilla_items::DIAMOND_SWORD));
+        assert!(!sharpness.is_primary_item(&vanilla_items::STONE));
+    }
+
+    #[test]
+    fn cost_windows_follow_the_vanilla_formula() {
+        init_vanilla_registry();
+        // Sharpness: min 1 + 11/level, max 21 + 11/level.
+        let sharpness = &vanilla_enchantments::SHARPNESS;
+        assert_eq!(sharpness.get_min_cost(1), 1);
+        assert_eq!(sharpness.get_min_cost(5), 45);
+        assert_eq!(sharpness.get_max_cost(3), 43);
+    }
 
     #[test]
     fn binding_curse_has_prevent_armor_change_effect() {

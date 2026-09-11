@@ -525,19 +525,11 @@ pub(crate) fn build() -> TokenStream {
 
         let slots: Vec<TokenStream> = ench.slots.iter().map(|s| slot_to_tokens(s)).collect();
 
-        let supported_items = ench.supported_items.as_str();
-        let primary_items = if let Some(s) = &ench.primary_items {
-            let s = s.as_str();
-            quote! { Some(#s) }
-        } else {
-            quote! { None }
-        };
-        let exclusive_set = if let Some(s) = &ench.exclusive_set {
-            let s = s.as_str();
-            quote! { Some(#s) }
-        } else {
-            quote! { None }
-        };
+        let supported_items = tag_ref_to_tokens(name, "supported_items", &ench.supported_items);
+        let primary_items =
+            optional_tag_ref_to_tokens(name, "primary_items", ench.primary_items.as_deref());
+        let exclusive_set =
+            optional_tag_ref_to_tokens(name, "exclusive_set", ench.exclusive_set.as_deref());
         let effects = generate_enchantment_effects(
             name,
             &ench.effects,
@@ -581,4 +573,35 @@ pub(crate) fn build() -> TokenStream {
     });
 
     stream
+}
+
+/// Turns a `#namespace:path` tag reference into a static `Identifier` expression.
+///
+/// Vanilla models these fields as `HolderSet`s that may also list entries
+/// directly; the extracted vanilla data only uses tags, so anything else is a
+/// build error rather than a silently wrong type.
+fn tag_ref_to_tokens(enchantment: &str, field: &str, tag_ref: &str) -> TokenStream {
+    let Some(tag) = tag_ref.strip_prefix('#') else {
+        panic!("enchantment {enchantment}: {field} {tag_ref:?} is not a tag reference");
+    };
+    match tag.split_once(':') {
+        Some(("minecraft", path)) => quote! { Identifier::vanilla_static(#path) },
+        Some((namespace, path)) => quote! { Identifier::new_static(#namespace, #path) },
+        None => quote! { Identifier::vanilla_static(#tag) },
+    }
+}
+
+/// `Some(tag)` / `None` tokens for an optional tag reference field.
+fn optional_tag_ref_to_tokens(
+    enchantment: &str,
+    field: &str,
+    tag_ref: Option<&str>,
+) -> TokenStream {
+    tag_ref.map_or_else(
+        || quote! { None },
+        |tag_ref| {
+            let tag = tag_ref_to_tokens(enchantment, field, tag_ref);
+            quote! { Some(#tag) }
+        },
+    )
 }

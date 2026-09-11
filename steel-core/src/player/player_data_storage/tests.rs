@@ -63,6 +63,7 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         experience_level: 7,
         experience_progress: 0.5,
         experience_total: 32,
+        enchantment_seed: 1234,
         score: 9,
         seen_credits: true,
         root_vehicle: None,
@@ -450,6 +451,7 @@ fn player_file_roundtrip_preserves_domain_world_data() {
     assert_eq!(decoded.experience_level, 7);
     assert_eq!(decoded.experience_progress.to_bits(), 0.5_f32.to_bits());
     assert_eq!(decoded.experience_total, 32);
+    assert_eq!(decoded.enchantment_seed, 1234);
     assert_eq!(decoded.score, 9);
     assert!(decoded.seen_credits);
 }

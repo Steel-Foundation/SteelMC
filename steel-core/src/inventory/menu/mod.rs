@@ -153,6 +153,13 @@ impl Menu {
         kind.on_rename(behavior, name.into(), player);
     }
 
+    /// Forwards a client button press to the menu's kind and reports whether
+    /// the kind handled it. Always false for kinds without buttons.
+    pub fn click_menu_button(&mut self, button_id: i32, player: &Player) -> bool {
+        let Self { behavior, kind, .. } = self;
+        kind.click_menu_button(behavior, button_id, player)
+    }
+
     /// Clears or counts crafting-grid items in the base inventory menu,
     /// returning the number cleared or counted. Returns 0 for any other menu.
     pub(crate) fn clear_or_count_crafting_items(

@@ -186,20 +186,31 @@ impl Player {
         }
     }
 
-    /// Handles a container button click packet (e.g., enchanting table buttons).
+    /// Handles a container button click (vanilla `handleContainerButtonClick`):
+    /// enchanting table offers, and later stonecutter, loom, and lectern buttons.
     pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
-        log::debug!(
-            "Player {} clicked button {} in container {}",
-            self.gameprofile.name,
-            packet.button_id,
-            packet.container_id
-        );
-        // TODO: Implement container button click handling
-        // This is used for things like:
-        // - Enchanting table level selection
-        // - Stonecutter recipe selection
-        // - Loom pattern selection
-        // - Lectern page turning
+        self.reset_last_action_time();
+        match self.take_open_menu_for_callback(Some(packet.container_id)) {
+            Ok(mut menu) => {
+                if self.game_mode() == GameType::Spectator {
+                    // Vanilla `handleContainerButtonClick` silently drops spectator
+                    // clicks; the resync only happens in `handleContainerClick`.
+                } else if !menu.still_valid(self) {
+                    log::debug!(
+                        "Player {} interacted with invalid menu {}",
+                        self.gameprofile.name,
+                        packet.container_id
+                    );
+                } else if menu.click_menu_button(packet.button_id, self) {
+                    menu.behavior_mut().broadcast_changes(&self.connection);
+                }
+                self.finish_open_menu_callback(menu);
+            }
+            Err(OpenMenuUnavailable::Closed) => {
+                log::debug!("container button click without an open menu");
+            }
+            Err(OpenMenuUnavailable::Unavailable) => {}
+        }
     }
 
     /// Handles a container click packet (slot interaction).

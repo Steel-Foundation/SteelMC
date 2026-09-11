@@ -2,7 +2,7 @@ use std::{
     ptr,
     sync::{
         Arc, Barrier,
-        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize, Ordering},
     },
     thread,
 };
@@ -24,7 +24,9 @@ use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
-    packets::game::{ClickType, HashedStack, SContainerClick, SSetCreativeModeSlot},
+    packets::game::{
+        ClickType, HashedStack, SContainerButtonClick, SContainerClick, SSetCreativeModeSlot,
+    },
 };
 use steel_registry::{
     init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
@@ -32,7 +34,7 @@ use steel_registry::{
 };
 use steel_utils::{
     ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, WorldAabb,
-    locks::{IntoShared as _, Shared},
+    locks::{IntoShared as _, Shared, SyncMutex},
     types::{GameType, InteractionHand},
 };
 use text_components::TextComponent;
@@ -1895,4 +1897,59 @@ fn creative_crafting_grid_updates_the_result_slot() {
             .expect("result container is registered with the menu");
         assert!(result.get_item(0).is_empty());
     }
+}
+
+struct RecordingButtons {
+    presses: Arc<SyncMutex<Vec<i32>>>,
+}
+
+// SAFETY: This test-only key uniquely identifies `RecordingButtons`.
+unsafe impl DowncastType for RecordingButtons {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/menu/recording_buttons");
+}
+
+impl MenuKind for RecordingButtons {
+    fn click_menu_button(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        button_id: i32,
+        _player: &Player,
+    ) -> bool {
+        self.presses.lock().push(button_id);
+        true
+    }
+}
+
+#[test]
+fn container_button_clicks_reach_the_open_menu_only_for_its_container_id() {
+    init_vanilla_registry();
+    let player = test_player(Arc::clone(test_world()));
+    let presses = Arc::new(SyncMutex::new(Vec::new()));
+    let opened_container_id = Arc::new(AtomicI32::new(-1));
+    let (factory_presses, factory_id) = (Arc::clone(&presses), Arc::clone(&opened_container_id));
+    player.open_menu("Buttons", move |context| {
+        factory_id.store(i32::from(context.container_id), Ordering::Relaxed);
+        empty_test_menu(
+            context.player,
+            context.container_id,
+            RecordingButtons {
+                presses: factory_presses,
+            },
+        )
+    });
+    let container_id = opened_container_id.load(Ordering::Relaxed);
+    assert!(container_id >= 0);
+
+    player.handle_container_button_click(SContainerButtonClick {
+        container_id: container_id + 1,
+        button_id: 1,
+    });
+    assert_eq!(*presses.lock(), Vec::<i32>::new());
+
+    player.handle_container_button_click(SContainerButtonClick {
+        container_id,
+        button_id: 2,
+    });
+    assert_eq!(*presses.lock(), vec![2]);
+    assert!(player.has_container_open());
 }

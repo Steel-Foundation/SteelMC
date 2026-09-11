@@ -6,8 +6,7 @@
 //! - Slots 10-36: Main inventory (27)
 //! - Slots 37-45: Hotbar (9)
 
-use crate::inventory::container::CraftingContainer;
-use crate::inventory::container::ResultContainer;
+use crate::inventory::container::{CraftingContainer, DEFAULT_DISTANCE_BUFFER, ResultContainer};
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
 use crate::player::player_inventory::PlayerInventory;
@@ -79,11 +78,14 @@ impl MenuKind for CraftingKind {
     }
 
     /// Returns true if the block is still a crafting table and the player is in
-    /// range (plus a 4.0 buffer).
+    /// range (plus the default container distance buffer).
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         let world = player.get_world();
         world.get_block_state(self.block_pos).get_block() == &vanilla_blocks::CRAFTING_TABLE
-            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
+            && player.is_within_block_interaction_range_with_buffer(
+                self.block_pos,
+                f64::from(DEFAULT_DISTANCE_BUFFER),
+            )
     }
 
     /// Clears the virtual result on close. The grid is drained by [`Menu::removed`].

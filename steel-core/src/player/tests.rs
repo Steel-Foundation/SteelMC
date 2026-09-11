@@ -1269,6 +1269,46 @@ fn persistent_player_data_restores_independent_experience_fields_and_score() {
 }
 
 #[test]
+fn enchanting_spends_levels_and_rerolls_the_seed() {
+    let mut experience = Experience::from_parts(30, 0.5, 1000).with_enchantment_seed(77);
+    experience.on_enchantment_performed(3, 99);
+    assert_eq!(experience.level(), 27);
+    assert_eq!(experience.enchantment_seed(), 99);
+    assert!(experience.dirty);
+
+    let mut broke = Experience::from_parts(1, 0.5, 20).with_enchantment_seed(77);
+    broke.on_enchantment_performed(3, 5);
+    assert_eq!(broke.level(), 0);
+    assert_eq!(broke.progress().to_bits(), 0.0_f32.to_bits());
+    assert_eq!(broke.total_points(), 0);
+}
+
+#[test]
+fn only_a_zero_saved_enchantment_seed_is_rerolled() {
+    let rerolled = Experience::from_parts(0, 0.0, 0).with_loaded_enchantment_seed(0, || 99);
+    assert_eq!(rerolled.enchantment_seed(), 99);
+
+    let kept = Experience::from_parts(0, 0.0, 0).with_loaded_enchantment_seed(4242, || 99);
+    assert_eq!(kept.enchantment_seed(), 4242);
+}
+
+#[test]
+fn saved_enchantment_seed_round_trips_through_player_data() {
+    init_vanilla_registry();
+    let world = fresh_test_world("player_data_enchantment_seed_round_trip");
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "SeedTester", 1).build();
+
+    let mut stored = PersistentPlayerData::from_player(&player);
+    stored.enchantment_seed = 4242;
+    stored.apply_to_player_without_location(&player);
+    assert_eq!(player.experience.lock().enchantment_seed(), 4242);
+    assert_eq!(
+        PersistentPlayerData::from_player(&player).enchantment_seed,
+        4242
+    );
+}
+
+#[test]
 fn persistent_player_data_restores_equipment_inventory_slots() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
