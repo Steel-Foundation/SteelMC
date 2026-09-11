@@ -97,6 +97,7 @@
                 mkdir -p "$out/builtin_datapacks"
                 cp -r inner/data/minecraft "$out/builtin_datapacks/minecraft"
                 cp inner/assets/minecraft/lang/en_us.json "$out/en_us.json"
+                cp inner/assets/minecraft/lang/deprecated.json "$out/deprecated.json"
 
                 chmod -R u+w "$out"
                 printf '%s' "${assets.minecraftVersion}" > "$out/builtin_datapacks/minecraft/.version"
