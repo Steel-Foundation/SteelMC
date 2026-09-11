@@ -46,11 +46,7 @@
         let
           toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-          # rust-analyzer needs rust-src to load the standard library, and
-          # rust-toolchain.toml pins only the channel. Scoped to the devShell
-          # only — the package's `toolchain` binding above stays lean, since
-          # CI (lint.yml) already sets its own components and never reads
-          # rust-toolchain.toml's `components` field.
+          # rust-analyzer needs rust-src; rust-toolchain.toml only pins the channel.
           devToolchain = toolchain.override {
             extensions = [
               "rust-src"
@@ -63,9 +59,7 @@
             rustc = toolchain;
           };
 
-          # The build script normally downloads this jar, but Nix builds have no
-          # internet access, so it is fetched here instead.
-          # Careful: this is Mojang's file. Never upload it to a public Nix cache.
+          # Fetched here since Nix builds have no network access. Mojang's file — never upload to a public cache.
           serverJar = pkgs.fetchurl { inherit (assets.serverJar) url hash; };
 
           buildAssets =
@@ -130,6 +124,7 @@
               "steel"
             ];
 
+            # Suite has known flakiness under constrained parallelism; run tests via `cargo test` instead.
             doCheck = false;
 
             meta = {
@@ -168,7 +163,10 @@
         };
       }) perSystem;
 
-      packages = lib.mapAttrs (_: system: { default = system.steel; }) perSystem;
+      # Scoped to linuxSystems: steel's meta.platforms excludes aarch64-darwin, and offering it anyway breaks `nix flake check`.
+      packages = lib.genAttrs linuxSystems (system: {
+        default = perSystem.${system}.steel;
+      });
 
       checks = lib.genAttrs linuxSystems (system: {
         package = perSystem.${system}.steel;
