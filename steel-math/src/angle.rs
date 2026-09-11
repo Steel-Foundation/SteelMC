@@ -45,9 +45,21 @@ pub fn convert_to_rotation_segment(degrees: f32) -> u8 {
     (((degrees.rem_euclid(DEGREE_360) / (DEGREE_360 / 16.0)) + 0.5) as u8) & 15
 }
 
+/// Eases `start` toward `end` by `delta` (0 to 1) the shorter way around the circle.
+#[must_use]
+pub fn rot_lerp(delta: f32, start: f32, end: f32) -> f32 {
+    start + delta * wrap_degrees(end - start)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{convert_to_rotation_segment, wrap_degrees};
+    use super::{convert_to_rotation_segment, rot_lerp, wrap_degrees};
+
+    #[test]
+    fn rot_lerp_eases_along_the_shorter_arc() {
+        assert!((rot_lerp(0.2, 10.0, 0.0) - 8.0).abs() < 1.0e-4);
+        assert!((rot_lerp(0.5, 170.0, -170.0) - 180.0).abs() < 1.0e-4);
+    }
 
     #[test]
     fn wrap_degrees_matches_vanilla_range() {

@@ -119,6 +119,22 @@ impl NearestAttackableTargetGoal {
     pub(crate) fn set_target(&mut self, target: Option<SharedEntity>) {
         self.target = target;
     }
+
+    /// Average ticks between checks, already halved from the constructor value.
+    pub(crate) const fn random_interval(&self) -> i32 {
+        self.random_interval
+    }
+
+    /// Runs the shared checks against a target picked outside the periodic search.
+    pub(crate) fn can_attack(
+        &mut self,
+        mob: &dyn PathfinderMob,
+        target: Option<&dyn LivingEntity>,
+    ) -> bool {
+        let range = follow_distance(mob);
+        self.target_goal
+            .can_attack(mob, target, &self.target_conditions.clone().range(range))
+    }
 }
 
 impl Goal for NearestAttackableTargetGoal {
