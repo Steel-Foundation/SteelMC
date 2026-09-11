@@ -12,6 +12,7 @@ use crate::world::World;
 
 pub mod armor;
 pub mod arrow;
+pub mod boat;
 pub mod bone_meal;
 pub mod bucket;
 pub mod default;
@@ -21,6 +22,7 @@ pub mod tnt;
 
 pub use armor::ArmorDispenseBehavior;
 pub use arrow::ArrowDispenseBehavior;
+pub use boat::BoatDispenseBehavior;
 pub use bone_meal::BoneMealDispenseBehavior;
 pub use bucket::BucketDispenseBehavior;
 pub use default::DefaultDispenseBehavior;
@@ -132,6 +134,11 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
             1.1,
             6.0,
         )),
+    );
+
+    registry.set_behavior(
+        &vanilla_items::OAK_BOAT,
+        Box::new(BoatDispenseBehavior::new(&vanilla_entities::OAK_BOAT)),
     );
 
     registry
