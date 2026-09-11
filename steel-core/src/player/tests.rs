@@ -49,13 +49,15 @@ use uuid::Uuid;
 
 use super::{
     ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
-    DROP_SPAM_THROTTLER_THRESHOLD, Player, PlayerConnection, PlayerPermissionState, ResetReason,
+    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
+    PlayerPermissionState, ResetReason,
     connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
     game_mode::block_breaking::BlockBreakAction,
     lifecycle::nullable_game_mode_id,
     player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
+    player_inventory::MenuItemDisposition,
 };
 
 const PLAYER_MAIN_HAND_METADATA_INDEX: u8 = 15;
@@ -645,7 +647,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
 }
 
 #[test]
-fn death_respawn_drops_menu_items_exactly_once() {
+fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
     init_vanilla_registry();
     let world = fresh_test_world("death_respawn_menu_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
@@ -678,18 +680,20 @@ fn death_respawn_drops_menu_items_exactly_once() {
 
     player.set_health(0.0);
     player.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
-    player.reset_state_for_death_respawn();
-    let _ = player.base.clear_removed();
-    player.reset(Arc::clone(&world), ResetReason::Respawn);
+    assert_eq!(
+        player.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
+        MenuRemovalStatus::Complete
+    );
+    let replacement = player.new_respawn_replacement(Arc::clone(&world), false, false, true);
     {
-        let mut inventory_menu = player.inventory_menu.lock();
+        let mut inventory_menu = replacement.inventory_menu.lock();
         assert_eq!(inventory_menu.behavior().quickcraft(), None);
         *inventory_menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STICK);
         inventory_menu.clicked(
             Click::QuickCraft(QuickCraft::Start {
                 kind: DragKind::Left,
             }),
-            &player,
+            &replacement,
         );
         assert_eq!(inventory_menu.behavior().quickcraft(), Some(DragKind::Left));
     }
@@ -1010,7 +1014,7 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
 }
 
 #[test]
-fn death_respawn_redetects_unchanged_kept_equipment() {
+fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
@@ -1035,11 +1039,11 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         }]
     );
 
-    // Both keep-inventory and spectator respawns retain the same stack while
-    // Steel resets the reused player's transient attributes.
-    player.reset_state_for_death_respawn();
+    // Both keep-inventory and spectator respawns retain the stack, while the
+    // replacement starts with fresh transient attributes and equipment caches.
+    let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
     assert_eq!(
-        player
+        replacement
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ARMOR)
@@ -1047,13 +1051,13 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         base_armor.to_bits()
     );
     assert!(ItemStack::matches(
-        player.inventory.lock().get_ref(EquipmentSlot::Head),
+        replacement.inventory.lock().get_ref(EquipmentSlot::Head),
         &helmet
     ));
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    LivingEntity::detect_equipment_updates(replacement.as_ref());
     {
-        let attributes = player.attributes().lock();
+        let attributes = replacement.attributes().lock();
         assert_eq!(
             attributes
                 .required_value(vanilla_attributes::ARMOR)
@@ -1068,22 +1072,22 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         );
     }
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(replacement.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet,
         }]
     );
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    LivingEntity::detect_equipment_updates(replacement.as_ref());
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        LivingEntity::drain_dirty_equipment(replacement.as_ref()).len(),
         0
     );
 }
 
 #[test]
-fn death_respawn_discards_stale_pending_equipment_change() {
+fn fresh_death_respawn_discards_stale_pending_equipment_change() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.inventory.lock().set(
@@ -1096,11 +1100,11 @@ fn death_respawn_discards_stale_pending_equipment_change() {
         .inventory
         .lock()
         .set(EquipmentSlot::Head, ItemStack::empty());
-    player.reset_state_for_death_respawn();
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
+    LivingEntity::detect_equipment_updates(replacement.as_ref());
 
     assert!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty(),
+        LivingEntity::drain_dirty_equipment(replacement.as_ref()).is_empty(),
         "respawn must not emit equipment queued by the removed living entity"
     );
 }
@@ -1367,6 +1371,36 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
             .get_block_state(pos)
             .get_value(&BlockStateProperties::LIT)
     );
+}
+
+#[test]
+fn creative_drop_throttle_survives_respawn_replacement() {
+    init_vanilla_registry();
+
+    for restore_all in [false, true] {
+        let world = fresh_test_world("creative_drop_throttle_survives_respawn_replacement");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = test_player(Arc::clone(&world));
+        *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
+
+        let drop_packet = || SSetCreativeModeSlot {
+            slot_num: -1,
+            item_stack: ItemStack::new(&vanilla_items::DIAMOND),
+        };
+        for _ in 0..(DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP) {
+            player.handle_set_creative_mode_slot(drop_packet());
+        }
+        let dropped_before_respawn = world.entity_manager().count();
+
+        let replacement =
+            player.new_respawn_replacement(Arc::clone(&world), restore_all, true, true);
+        replacement.handle_set_creative_mode_slot(drop_packet());
+        assert_eq!(world.entity_manager().count(), dropped_before_respawn);
+
+        replacement.tick_throttlers();
+        replacement.handle_set_creative_mode_slot(drop_packet());
+        assert_eq!(world.entity_manager().count(), dropped_before_respawn + 1);
+    }
 }
 
 #[test]
