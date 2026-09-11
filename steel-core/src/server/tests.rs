@@ -47,7 +47,7 @@ use crate::command::execution::{
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
