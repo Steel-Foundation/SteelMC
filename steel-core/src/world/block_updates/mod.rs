@@ -55,9 +55,20 @@ impl World {
     }
 
     pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
-        self.chunk_map
-            .with_full_chunk(Self::chunk_pos_for_block(pos), |_| ())
-            .is_some()
+        self.has_full_chunk(Self::chunk_pos_for_block(pos))
+    }
+
+    /// Whether every chunk covering the block square between the two corners is
+    /// loaded. Only the horizontal span counts, and the corners are given lowest
+    /// first.
+    pub(crate) fn are_full_chunks_loaded_at(&self, from: BlockPos, to: BlockPos) -> bool {
+        let from_chunk = Self::chunk_pos_for_block(from);
+        let to_chunk = Self::chunk_pos_for_block(to);
+
+        (from_chunk.0.x..=to_chunk.0.x).all(|chunk_x| {
+            (from_chunk.0.y..=to_chunk.0.y)
+                .all(|chunk_z| self.has_full_chunk(ChunkPos::new(chunk_x, chunk_z)))
+        })
     }
 
     pub(crate) fn queue_light_change_after_block_set(

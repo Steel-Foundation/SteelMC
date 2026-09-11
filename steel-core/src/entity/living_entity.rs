@@ -3131,3 +3131,19 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     }
     loot_table.get_random_items(&mut context)
 }
+
+/// Resolves the drops from a gift loot table.
+pub(crate) fn gift_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+    entity: &E,
+    loot_table: LootTableRef,
+    rng: &mut R,
+) -> Vec<ItemStack> {
+    let position = entity.position();
+    let mut context = LootContext::new(rng)
+        .with_origin(position.x, position.y, position.z)
+        .with_this_entity(living_entity_loot_ref(entity));
+    if let Some(level) = entity.level() {
+        context = context.with_game_time(level.game_time());
+    }
+    loot_table.get_random_items(&mut context)
+}

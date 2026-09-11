@@ -58,6 +58,32 @@ fn face_directed_item_drops_respect_block_drops_game_rule() {
 }
 
 #[test]
+fn loaded_chunk_range_covers_every_chunk_the_corners_touch() {
+    init_vanilla_registry();
+    let world = fresh_test_world("loaded_chunk_range");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    assert!(world.are_full_chunks_loaded_at(BlockPos::new(1, 64, 1), BlockPos::new(14, 64, 14)));
+
+    assert!(!world.are_full_chunks_loaded_at(BlockPos::new(-1, 64, 1), BlockPos::new(14, 64, 14)));
+    assert!(!world.are_full_chunks_loaded_at(BlockPos::new(1, 64, 1), BlockPos::new(16, 64, 14)));
+
+    for chunk_x in -1..=1 {
+        for chunk_z in -1..=1 {
+            if (chunk_x, chunk_z) != (0, 0) {
+                insert_ready_full_chunk(&world, ChunkPos::new(chunk_x, chunk_z));
+            }
+        }
+    }
+    assert!(
+        world.are_full_chunks_loaded_at(BlockPos::new(-16, 64, -16), BlockPos::new(31, 64, 31))
+    );
+    assert!(
+        !world.are_full_chunks_loaded_at(BlockPos::new(-16, 64, -16), BlockPos::new(32, 64, 31))
+    );
+}
+
+#[test]
 fn generic_shape_update_does_not_schedule_non_source_fluid() {
     init_vanilla_registry();
     init_behaviors();

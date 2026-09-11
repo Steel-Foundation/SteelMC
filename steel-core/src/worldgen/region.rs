@@ -1418,6 +1418,10 @@ impl LevelReader for WorldGenRegion<'_> {
         self.block_state(pos)
     }
 
+    fn sea_level(&self) -> i32 {
+        WorldGenRegion::sea_level(self)
+    }
+
     fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         self.block_entity(pos)
     }
