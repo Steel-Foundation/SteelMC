@@ -101,8 +101,8 @@ impl SpawnEggItem {
         }
 
         let world = parent.level()?;
-        let offspring = if let Some(animal) = parent.as_animal() {
-            animal.get_breed_offspring(&world, animal)?
+        let offspring = if let Some(ageable) = parent.as_ageable_mob() {
+            ageable.get_breed_offspring(&world, ageable)?
         } else {
             match create_entity_instance(&world, entity_type, parent.position()) {
                 Ok(offspring) => offspring,

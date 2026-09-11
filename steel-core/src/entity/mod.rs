@@ -769,6 +769,7 @@ mod fluid_contact;
 #[rustfmt::skip]
 #[path = "generated/entities.rs"]
 mod generated_entities;
+mod identity;
 mod inside_block_effects;
 mod item_based_steering;
 mod item_frame;
@@ -811,6 +812,7 @@ pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
 };
 pub use fluid_contact::EntityFluidContact;
+pub use identity::EntityGeneration;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
