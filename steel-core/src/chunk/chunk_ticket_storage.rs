@@ -20,8 +20,34 @@ type StoredTickets = Vec<StoredChunkTicket>;
 /// Persistent chunk ticket saved data.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PersistentChunkTickets {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_lenient_tickets")]
     tickets: Vec<PersistentChunkTicket>,
+}
+
+/// Decodes the saved ticket list one entry at a time, keeping the valid entries
+/// and logging each rejected one with its position in the list.
+///
+/// A single malformed entry — a missing field, a wrong field type — no longer
+/// drops the rest of the tickets. Entries are not repaired: required fields stay
+/// required, without guessed defaults. A document that is not a ticket list at
+/// all still fails, and the caller falls back to empty ticket storage.
+fn deserialize_lenient_tickets<'de, D>(
+    deserializer: D,
+) -> Result<Vec<PersistentChunkTicket>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw_entries = Vec::<toml::Value>::deserialize(deserializer)?;
+    let mut tickets = Vec::with_capacity(raw_entries.len());
+    for (index, raw_entry) in raw_entries.into_iter().enumerate() {
+        match raw_entry.try_into::<PersistentChunkTicket>() {
+            Ok(ticket) => tickets.push(ticket),
+            Err(error) => {
+                log::warn!("Ignoring invalid persistent chunk ticket at index {index}: {error}");
+            }
+        }
+    }
+    Ok(tickets)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +61,7 @@ struct PersistentChunkTicket {
     ticks_left: i64,
 }
 
-/// Invalid persisted chunk ticket data that prevents restoring the ticket storage.
+/// A persisted chunk ticket entry that cannot be restored and is dropped on load.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(crate) enum ChunkTicketStorageLoadError {
     #[error("unknown chunk ticket type `{0}`")]
@@ -155,14 +181,18 @@ impl ChunkTicketStorage {
     }
 
     /// Restores registered ticket types from saved data.
-    pub(crate) fn from_persistent(
-        persistent: PersistentChunkTickets,
-    ) -> Result<Self, ChunkTicketStorageLoadError> {
+    ///
+    /// Entries that cannot be restored — an unknown ticket type, an out-of-range
+    /// level — are logged and skipped, keeping the rest. Matching vanilla, a
+    /// single bad entry never fails the whole load.
+    pub(crate) fn from_persistent(persistent: PersistentChunkTickets) -> Self {
         let mut storage = Self::new();
-        for persistent_ticket in persistent.tickets {
-            storage.add_loaded_persistent_ticket(persistent_ticket)?;
+        for (index, persistent_ticket) in persistent.tickets.into_iter().enumerate() {
+            if let Err(error) = storage.add_loaded_persistent_ticket(persistent_ticket) {
+                log::warn!("Ignoring invalid persistent chunk ticket at index {index}: {error}");
+            }
         }
-        Ok(storage)
+        storage
     }
 
     /// Adds one canonical ticket or refreshes an existing matching type and level.
@@ -538,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn persistence_resolves_registered_type_and_rejects_invalid_values() {
+    fn persistence_resolves_registered_type_and_skips_invalid_entries() {
         init_registry();
         let pos = ChunkPos::new(-8, 12);
         let level = ChunkTicketLevel::BLOCK_TICKING_CHUNK;
@@ -552,8 +582,7 @@ mod tests {
 
         let persistent = storage.to_persistent();
         assert_eq!(persistent.tickets.len(), 2);
-        let restored = ChunkTicketStorage::from_persistent(persistent)
-            .expect("registered persistent ticket types should restore");
+        let restored = ChunkTicketStorage::from_persistent(persistent);
         assert_eq!(restored.ticket_count(), 2);
         let restored_tickets = &restored.tickets[&pos];
         let forced_ticks_left = restored_tickets
@@ -577,26 +606,33 @@ mod tests {
         assert_eq!(forced_ticks_left, Some(0));
         assert_eq!(portal_ticks_left, Some(123));
 
-        let unknown = PersistentChunkTickets {
-            tickets: vec![PersistentChunkTicket {
-                ticket_type: Identifier::new_static("test", "missing"),
-                chunk_x: 0,
-                chunk_z: 0,
-                level: level.raw(),
-                ticks_left: 0,
-            }],
+        // An unknown ticket type is dropped; a valid entry beside it survives.
+        let with_unknown_type = PersistentChunkTickets {
+            tickets: vec![
+                PersistentChunkTicket {
+                    ticket_type: Identifier::new_static("test", "missing"),
+                    chunk_x: 0,
+                    chunk_z: 0,
+                    level: level.raw(),
+                    ticks_left: 0,
+                },
+                PersistentChunkTicket {
+                    ticket_type: Identifier::vanilla_static("forced"),
+                    chunk_x: 1,
+                    chunk_z: 1,
+                    level: level.raw(),
+                    ticks_left: 0,
+                },
+            ],
         };
-        let error = ChunkTicketStorage::from_persistent(unknown)
-            .expect_err("unknown ticket type should be rejected");
         assert_eq!(
-            error,
-            ChunkTicketStorageLoadError::UnknownTicketType(Identifier::new_static(
-                "test", "missing"
-            ))
+            ChunkTicketStorage::from_persistent(with_unknown_type).ticket_count(),
+            1
         );
 
+        // An out-of-range level is dropped.
         let invalid_level = ChunkTicketLevel::MAX.raw() + 1;
-        let invalid = PersistentChunkTickets {
+        let with_invalid_level = PersistentChunkTickets {
             tickets: vec![PersistentChunkTicket {
                 ticket_type: Identifier::vanilla_static("forced"),
                 chunk_x: 0,
@@ -605,14 +641,9 @@ mod tests {
                 ticks_left: 0,
             }],
         };
-        let error = ChunkTicketStorage::from_persistent(invalid)
-            .expect_err("out-of-range ticket level should be rejected");
         assert_eq!(
-            error,
-            ChunkTicketStorageLoadError::InvalidTicketLevel {
-                ticket_type: Identifier::vanilla_static("forced"),
-                level: invalid_level,
-            }
+            ChunkTicketStorage::from_persistent(with_invalid_level).ticket_count(),
+            0
         );
     }
 
@@ -636,14 +667,56 @@ mod tests {
             level: level.raw(),
             ticks_left: 20,
         });
-        let restored = ChunkTicketStorage::from_persistent(persistent)
-            .expect("duplicate registered tickets should restore");
+        let restored = ChunkTicketStorage::from_persistent(persistent);
 
         assert_eq!(restored.ticket_count(), 1);
         assert_eq!(
             restored.tickets[&pos][0].ticket.ticks_left(),
             vanilla_ticket_types::PORTAL.timeout()
         );
+    }
+
+    #[test]
+    fn an_invalid_ticket_entry_is_skipped_without_dropping_the_valid_ones() {
+        init_registry();
+        let level = ChunkTicketLevel::FULL_CHUNK.raw();
+        let document = format!(
+            r#"
+            [[tickets]]
+            type = "minecraft:portal"
+            chunk_x = 1
+            chunk_z = 2
+            level = {level}
+
+            [[tickets]]
+            type = "minecraft:portal"
+            chunk_x = 3
+            level = {level}
+
+            [[tickets]]
+            type = "minecraft:portal"
+            chunk_x = 4
+            chunk_z = 5
+            level = {level}
+            "#
+        );
+
+        let decoded: PersistentChunkTickets =
+            toml::from_str(&document).expect("a bad entry must not fail the whole list");
+
+        assert_eq!(decoded.tickets.len(), 2);
+        assert_eq!(
+            ChunkTicketStorage::from_persistent(decoded).ticket_count(),
+            2
+        );
+    }
+
+    #[test]
+    fn a_document_that_is_not_a_ticket_list_fails_to_decode() {
+        // The caller (`World::new_with_config_and_encoding_pool`) turns this into
+        // empty ticket storage rather than failing the world load.
+        assert!(toml::from_str::<PersistentChunkTickets>("tickets = 7").is_err());
+        assert!(toml::from_str::<PersistentChunkTickets>("not valid toml").is_err());
     }
 
     #[test]
@@ -659,8 +732,7 @@ mod tests {
                 ticks_left: i64::MIN,
             }],
         };
-        let mut storage =
-            ChunkTicketStorage::from_persistent(persistent).expect("portal ticket should restore");
+        let mut storage = ChunkTicketStorage::from_persistent(persistent);
 
         let expirations = storage.timed_ticket_expirations();
         let _ = storage.tick_timed_tickets(&expirations);
