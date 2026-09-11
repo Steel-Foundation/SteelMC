@@ -81,7 +81,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn copy_waterlogged_from(
-        region: &WorldGenRegion<'_>,
+        region: &impl LevelReader,
         pos: BlockPos,
         state: BlockStateId,
     ) -> BlockStateId {
@@ -92,7 +92,7 @@ impl FeatureDecorationRunner {
             return state;
         }
 
-        let waterlogged = get_fluid_state_from_block(region.block_state(pos)).is_water();
+        let waterlogged = get_fluid_state_from_block(region.get_block_state(pos)).is_water();
         state.set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
     }
 

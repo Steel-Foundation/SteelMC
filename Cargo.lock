@@ -2810,6 +2810,7 @@ dependencies = [
  "serde_json",
  "simdnbt",
  "steel-macros",
+ "steel-math",
  "steel-registry",
  "steel-utils",
  "text_components",
@@ -2822,6 +2823,7 @@ dependencies = [
 name = "steel-registry"
 version = "0.15.3+mc26.2"
 dependencies = [
+ "bitflags",
  "flate2",
  "glam",
  "heck",
@@ -2834,6 +2836,7 @@ dependencies = [
  "serde_json",
  "simdnbt",
  "smallvec",
+ "steel-math",
  "steel-utils",
  "text_components",
  "tracing",
@@ -2865,6 +2868,7 @@ dependencies = [
  "sha1",
  "simdnbt",
  "steel-macros",
+ "steel-math",
  "text_components",
  "tokio",
  "toml",

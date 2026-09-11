@@ -19,12 +19,12 @@ use relationships::{EntityLifecycleState, EntityRelationshipState};
 
 use std::{
     collections::VecDeque,
-    mem,
     sync::{Arc, Weak},
 };
 
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
+use steel_math::{DEGREE_90, DEGREE_360};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
@@ -35,8 +35,8 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityLevelCallback, EntityMoveError, InsideBlockEffectType, NullEntityCallback, RemovalReason,
-    SharedEntity,
+    EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
+    NullEntityCallback, RemovalReason, SharedEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
@@ -70,7 +70,10 @@ fn normalize_rotation(rotation: (f32, f32)) -> (f32, f32) {
         rotation.0.is_finite() && rotation.1.is_finite(),
         "entity rotation must be finite: {rotation:?}"
     );
-    (rotation.0 % 360.0, rotation.1.clamp(-90.0, 90.0) % 360.0)
+    (
+        rotation.0 % DEGREE_360,
+        rotation.1.clamp(-DEGREE_90, DEGREE_90) % DEGREE_360,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -378,6 +381,8 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    /// Generation counter for this runtime construction of the entity.
+    generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
     id: i32,
     /// Persistent UUID for this entity.
@@ -447,6 +452,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            generation: EntityGeneration::next(),
             id,
             uuid,
             world: SyncMutex::new(world),
@@ -476,6 +482,12 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    /// Gets the generation counter of this runtime construction of the entity.
+    #[inline]
+    pub const fn generation(&self) -> EntityGeneration {
+        self.generation
     }
 
     /// Gets the entity's unique network ID.
@@ -887,63 +899,6 @@ impl EntityBase {
         }
     }
 
-    /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
-    pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
-        self.reset_for_player_respawn_inner(dimensions, None);
-    }
-
-    /// Resets death-respawn state while retaining the relocation that owns admission.
-    pub(crate) fn reset_for_player_respawn_during_world_change(
-        &self,
-        dimensions: EntityDimensions,
-        pending_token: PendingWorldChangeToken,
-    ) {
-        self.reset_for_player_respawn_inner(dimensions, Some(pending_token));
-    }
-
-    fn reset_for_player_respawn_inner(
-        &self,
-        dimensions: EntityDimensions,
-        pending_world_change: Option<PendingWorldChangeToken>,
-    ) {
-        let bounding_box = {
-            let mut state = self.state.lock();
-            let position = state.position;
-            state.old_position = position;
-            state.last_known_position = None;
-            state.last_known_speed = DVec3::ZERO;
-            state.velocity = DVec3::ZERO;
-            state.old_rotation = state.rotation;
-            state.pose = EntityPose::Standing;
-            state.dimensions = dimensions;
-            state.bounding_box = EntityBaseState::make_bounding_box(position, dimensions);
-            state.movement_flags = EntityMovementFlags::new();
-            state.ground_contact = EntityGroundContact::airborne();
-            state.movement_progress = EntityMovementProgress::new();
-            state.fire_freeze = EntityFireFreezeState::new();
-            state.in_block_state = None;
-            state.fluid_contact = EntityFluidContact::default();
-            state.was_eye_in_water = false;
-            state.piston_movement = EntityPistonMovement::new();
-            state.fall_distance = 0.0;
-            state.stuck_speed_multiplier = DVec3::ZERO;
-            state.no_physics = false;
-            state.needs_velocity_sync = false;
-            state.hurt_marked = false;
-            state.bounding_box
-        };
-        self.notify_bounding_box_changed(bounding_box);
-
-        self.movement_trace.lock().reset();
-        *self.portal_process.lock() = None;
-        self.lifecycle.lock().pending_world_change = pending_world_change;
-
-        let mut save_data = self.save_data.lock();
-        let tags = mem::take(&mut save_data.tags);
-        *save_data = EntityBaseSaveData::new();
-        save_data.tags = tags;
-    }
-
     /// Updates the world reference used by this entity.
     pub(crate) fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
@@ -1099,9 +1054,7 @@ impl EntityBase {
 
     /// Clears the removed flag and returns whether the entity had been removed.
     ///
-    /// Steel reuses the same `Player` instance across respawn while vanilla
-    /// constructs a fresh `ServerPlayer`, so player respawn needs an explicit
-    /// way to reset this base lifecycle flag.
+    /// Vanilla uses this when an entity instance itself survives a world change.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
@@ -1293,7 +1246,7 @@ impl EntityBase {
             progress.crystal_sound_intensity
         };
 
-        let pitch = 0.5 + intensity * rand::random::<f32>() * 1.2;
+        let pitch = rand::random_range(0.5..0.5 + intensity * 1.2);
         let volume = 0.1 + intensity * 1.2;
         Some(EntityAmethystStepSound { volume, pitch })
     }
@@ -1340,6 +1293,11 @@ impl EntityBase {
         self.portal_process.lock().as_mut().map(|process| {
             process.process_portal_teleportation(allowed_to_teleport, transition_time)
         })
+    }
+
+    /// Replaces active portal timing state during vanilla player restoration.
+    pub(crate) fn set_portal_process(&self, portal_process: Option<PortalProcessor>) {
+        *self.portal_process.lock() = portal_process;
     }
 
     /// Clears the active vanilla portal process.

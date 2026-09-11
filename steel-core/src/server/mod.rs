@@ -63,6 +63,7 @@ use crate::portal::{
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
+pub(crate) use crate::server::packet_processor::PlayerPacketTransition;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::service_keys::ServiceKeyStore;
 use crate::server::worlds::WorldMap;
@@ -550,13 +551,14 @@ impl Server {
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
-        init_globals()?;
+        init_globals();
         log::info!(
             "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
         );
 
         // Authlib starts this fetch alongside server initialization and waits on first use.
-        // Steel completes the same initial attempt before opening its listener.
+        // It runs whatever the login mode, because `handle_chat_session_update` reads these
+        // keys with no online-mode gate, as vanilla does.
         let service_keys = Arc::new(
             ServiceKeyStore::new(config.services_server.as_deref())
                 .map_err(|error| format!("failed to configure Minecraft services keys: {error}"))?,
@@ -698,7 +700,9 @@ impl Server {
             .map(|permission| permission.as_str().to_owned())
             .collect();
 
-        if service_keys_ready.await.is_err() {
+        // Steel finishes the initial attempt before opening its listener, except offline,
+        // where `enforces_secure_chat` needs online mode so nothing acts on the result.
+        if config.online_mode && service_keys_ready.await.is_err() {
             log::error!("Minecraft services key fetch task stopped before its initial attempt");
         }
 
@@ -797,6 +801,31 @@ impl Server {
     ) {
         self.packet_processor
             .schedule(player, packet, payload_bytes);
+    }
+
+    /// Pauses later packets while `player` is replaced by a new incarnation.
+    pub(crate) fn begin_player_packet_transition(
+        &self,
+        player: &Arc<Player>,
+    ) -> Option<PlayerPacketTransition> {
+        if player.connection.closed() || !player.session.is_current_player(player) {
+            return None;
+        }
+        self.packet_processor.pause_player_session(&player.session)
+    }
+
+    /// Resumes packets retained by an exact player-replacement transition.
+    pub(crate) fn finish_player_packet_transition(
+        &self,
+        transition: PlayerPacketTransition,
+    ) -> bool {
+        self.packet_processor.resume_player_session(transition)
+    }
+
+    /// Discards all pending packet work for a closed player session.
+    pub(crate) fn discard_player_packets(&self, player: &Player) {
+        self.packet_processor
+            .discard_player_session(&player.session);
     }
 
     /// Returns Brigadier completions visible to a command sender.

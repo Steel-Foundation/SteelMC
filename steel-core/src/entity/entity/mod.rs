@@ -1,11 +1,43 @@
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::entity::leash::Leashable;
+use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
 const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
 /// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
 const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
+
+const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
+
+fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
+    let values = nbt.list(key)?.doubles()?;
+    let &[x, y, z, ..] = values.as_slice() else {
+        return None;
+    };
+    Some(DVec3::new(x, y, z))
+}
+
+fn read_nbt_rotation(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<(f32, f32)> {
+    let values = nbt.list(key)?.floats()?;
+    let &[yaw, pitch, ..] = values.as_slice() else {
+        return None;
+    };
+    Some((yaw, pitch))
+}
+
+fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
+    let sanitize = |value: f64| {
+        if value.abs() > MAX_ENTITY_MOTION_COMPONENT {
+            0.0
+        } else {
+            value
+        }
+    };
+    DVec3::new(sanitize(motion.x), sanitize(motion.y), sanitize(motion.z))
+}
 
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,6 +123,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Gets the entity's unique network ID (session-local).
     fn id(&self) -> i32 {
         self.base().id()
+    }
+
+    /// Gets the generation counter of this runtime construction of the entity.
+    fn generation(&self) -> EntityGeneration {
+        self.base().generation()
     }
 
     /// Gets the UUID of the entity (persistent identifier).
@@ -358,7 +395,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies vanilla `Entity.onAboveBubbleColumn`.
-    fn on_above_bubble_column(&self, drag_down: bool, _pos: BlockPos) {
+    fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.on_above_bubble_column_projectile(drag_down, pos);
+            return;
+        }
+
+        self.default_on_above_bubble_column(drag_down, pos);
+    }
+
+    /// Applies the base entity's clamped bubble-column surface movement.
+    fn default_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
         if self.is_flying_player() {
             return;
         }
@@ -370,10 +417,24 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
         };
         self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
     }
 
     /// Applies vanilla `Entity.onInsideBubbleColumn`.
     fn on_inside_bubble_column(&self, drag_down: bool) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.on_inside_bubble_column_projectile(drag_down);
+            return;
+        }
+
+        self.default_on_inside_bubble_column(drag_down);
+    }
+
+    /// Applies the base entity's clamped movement inside a bubble-column.
+    fn default_on_inside_bubble_column(&self, drag_down: bool) {
         if self.is_flying_player() {
             return;
         }
@@ -1986,7 +2047,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             4.0,
         ) && self.should_play_lava_hurt_sound()
         {
-            let pitch = 2.0 + rand::random::<f32>() * 0.4;
+            let pitch = rand::random_range(2.0..2.4);
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
@@ -2323,7 +2384,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 is_shape_full_block(collision_shape)
             });
 
-        let speed = f64::from(rand::random::<f32>().mul_add(0.2, 0.1));
+        let speed = f64::from(rand::random_range(0.1f32..0.3));
         let step = direction_step(closest_direction);
         let scaled_velocity = self.velocity() * 0.75;
         let next_velocity = match closest_direction.axis() {
@@ -3564,6 +3625,109 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
 
+    /// Applies entity-specific implicit components carried by an item stack.
+    ///
+    /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
+    fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
+
+    /// Applies the merged entity data used by vanilla `TypedEntityData.loadInto`.
+    ///
+    /// Spawn-item data is merged into the entity's current save state before it
+    /// is loaded. Keeping that merge at the entity boundary preserves defaults
+    /// and entity-specific state when the component only overrides one field.
+    fn apply_spawn_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let read_int = |key: &str| {
+            nbt.int(key)
+                .or_else(|| nbt.short(key).map(i32::from))
+                .or_else(|| nbt.byte(key).map(i32::from))
+        };
+
+        if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
+            && position.is_finite()
+        {
+            self.base()
+                .set_position_local(super::clamp_loaded_entity_position(position));
+        }
+
+        if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {
+            self.set_velocity(sanitize_nbt_motion(motion));
+        }
+
+        if let Some((yaw, pitch)) = read_nbt_rotation(&nbt, "Rotation") {
+            self.set_rotation((yaw, pitch));
+            if let Some(living) = self.as_living_entity() {
+                living.set_y_head_rot(yaw);
+                living.set_y_body_rot(yaw);
+            }
+        }
+
+        if let Some(fall_distance) = nbt
+            .double("fall_distance")
+            .or_else(|| nbt.double("FallDistance"))
+        {
+            self.set_fall_distance(fall_distance);
+        }
+
+        if let Some(on_ground) = nbt.byte("OnGround") {
+            self.set_on_ground(on_ground != 0);
+        }
+
+        let mut save_data = self.base().save_data();
+        if let Some(air_supply) = read_int("Air") {
+            save_data.air_supply = air_supply;
+        }
+        if let Some(portal_cooldown) = read_int("PortalCooldown") {
+            save_data.portal_cooldown = portal_cooldown;
+        }
+        if let Some(no_gravity) = nbt.byte("NoGravity") {
+            save_data.no_gravity = no_gravity != 0;
+        }
+        if let Some(invulnerable) = nbt.byte("Invulnerable") {
+            save_data.invulnerable = invulnerable != 0;
+        }
+        if let Some(custom_name) = nbt
+            .get("CustomName")
+            .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()))
+        {
+            save_data.custom_name = Some(custom_name);
+        }
+        if let Some(custom_name_visible) = nbt.byte("CustomNameVisible") {
+            save_data.custom_name_visible = custom_name_visible != 0;
+        }
+        if let Some(silent) = nbt.byte("Silent") {
+            save_data.silent = silent != 0;
+        }
+        if let Some(glowing) = nbt.byte("Glowing") {
+            save_data.glowing = glowing != 0;
+        }
+        if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
+            save_data.tags = tags
+                .iter()
+                .take(MAX_ENTITY_TAGS)
+                .map(|tag| tag.to_str().into_owned())
+                .collect::<BTreeSet<_>>();
+        }
+        if let Some(custom_data) = nbt.compound("data") {
+            save_data.custom_data = custom_data.to_owned();
+        }
+        self.base().replace_save_data(save_data);
+
+        if let Some(remaining_fire_ticks) = read_int("Fire") {
+            self.set_remaining_fire_ticks(remaining_fire_ticks);
+        }
+        if let Some(ticks_frozen) = read_int("TicksFrozen") {
+            self.set_ticks_frozen(ticks_frozen);
+        }
+        if let Some(has_visual_fire) = nbt.byte("HasVisualFire") {
+            self.base().set_visual_fire(has_visual_fire != 0);
+        }
+
+        self.load_additional(nbt);
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
+        self.sync_base_entity_data();
+    }
+
     /// Returns vanilla `Entity.isInvulnerableToBase`.
     fn is_invulnerable_to_base(&self, source: &DamageSource) -> bool {
         self.is_removed()
@@ -3682,20 +3846,9 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
     let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_look_at_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
-    let yaw = wrap_look_at_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - 90.0);
+    let pitch = wrap_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
+    let yaw = wrap_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90);
     (yaw, pitch)
-}
-
-fn wrap_look_at_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]

@@ -8,13 +8,12 @@ use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
 
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::fast_floor;
+use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, RAD_TO_DEG, fast_floor, wrap_degrees};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -27,12 +26,13 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_game_events, vanilla_game_rules,
+    vanilla_entities, vanilla_game_events, vanilla_game_rules, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
 
+use crate::behavior::items::SpawnEggItem;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
@@ -53,13 +53,14 @@ use crate::entity::{
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
 const MOB_FLAG_AGGRESSIVE: i8 = 4;
 const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
-const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
+const MOVE_CONTROL_MAX_TURN: f32 = DEGREE_90;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
 /// Vanilla bias subtracted from the roll before comparing against a slot's drop
 /// chance when a mob swaps out worn gear it picked something better up over.
@@ -504,7 +505,18 @@ pub trait Mob: LivingEntity + Leashable {
             return InteractionResult::Pass;
         }
 
-        // TODO: Handle name tags and spawn eggs once item-on-entity behavior exists.
+        let important_interaction = self.check_and_handle_important_interactions(player, hand);
+        if important_interaction.consumes_action() {
+            if let Some(world) = self.level() {
+                world.game_event(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    self.block_position(),
+                    &GameEventContext::new(Some(player), None),
+                );
+            }
+            return important_interaction;
+        }
+
         let interaction_result = self.interact_entity(player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
@@ -516,6 +528,51 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         interaction_result
+    }
+
+    /// Handles vanilla `Mob.checkAndHandleImportantInteractions`.
+    fn check_and_handle_important_interactions(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        let Some(living_entity) = self.as_living_entity() else {
+            return InteractionResult::Pass;
+        };
+
+        let item = {
+            let inventory = player.inventory.lock();
+            inventory.get_item_in_hand(hand).item()
+        };
+
+        if item.key == vanilla_items::NAME_TAG.key {
+            let name_tag_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                ITEM_BEHAVIORS.get_behavior(item).interact_living_entity(
+                    item_stack,
+                    player,
+                    living_entity,
+                    hand,
+                )
+            };
+            if name_tag_result.consumes_action() {
+                return name_tag_result;
+            }
+        }
+
+        if ITEM_BEHAVIORS.get_behavior(item).as_spawn_egg().is_some() {
+            let spawn_egg_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                SpawnEggItem::interact_with_mob(item_stack, player, self)
+            };
+            if spawn_egg_result.consumes_action() {
+                return spawn_egg_result;
+            }
+        }
+
+        InteractionResult::Pass
     }
 
     /// Handles vanilla `Mob.mobInteract`.
@@ -930,6 +987,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn save_mob(&self, nbt: &mut NbtCompound) {
+        self.save_equipment(nbt);
         nbt.insert("CanPickUpLoot", i8::from(self.can_pick_up_loot()));
         nbt.insert(
             "PersistenceRequired",
@@ -967,6 +1025,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        self.load_equipment(nbt);
         self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
         *self.mob_base().persistence_required().lock() = nbt
             .byte("PersistenceRequired")
@@ -1480,7 +1539,7 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         }
 
-        let y_rot = (zd.atan2(xd) as f32 * 180.0 / PI) - 90.0;
+        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -1516,7 +1575,7 @@ pub trait Mob: LivingEntity + Leashable {
         distance = speed / distance;
         let xa = strafe_forward * distance;
         let za = strafe_right * distance;
-        let yaw_radians = self.rotation().0 * PI / 180.0;
+        let yaw_radians = self.rotation().0 * DEG_TO_RAD;
         let sin = yaw_radians.sin();
         let cos = yaw_radians.cos();
         let dx = xa.mul_add(cos, -(za * sin));
@@ -1576,12 +1635,12 @@ pub trait Mob: LivingEntity + Leashable {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * 180.0 / PI;
+                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = (zd.atan2(xd) as f32 * 180.0 / PI) - 90.0;
+                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
@@ -1727,22 +1786,11 @@ fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
 
     let mut result = a + diff;
     if result < 0.0 {
-        result += 360.0;
-    } else if result > 360.0 {
-        result -= 360.0;
+        result += DEGREE_360;
+    } else if result > DEGREE_360 {
+        result -= DEGREE_360;
     }
     result
-}
-
-fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]
