@@ -79,6 +79,7 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         &vanilla_items::LAVA_BUCKET,
         Box::new(BucketDispenseBehavior),
     );
+    registry.set_behavior(&vanilla_items::BUCKET, Box::new(BucketDispenseBehavior));
 
     registry.set_behavior(
         &vanilla_items::BONE_MEAL,
