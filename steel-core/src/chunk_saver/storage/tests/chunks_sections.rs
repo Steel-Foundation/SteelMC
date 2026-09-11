@@ -286,6 +286,7 @@ fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
         Vec::new(),
         Vec::new(),
         pos,
+        ChunkStatus::Full,
     );
 
     let loaded = ChunkStorage::persistent_to_chunk(

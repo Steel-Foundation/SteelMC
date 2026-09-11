@@ -712,6 +712,7 @@ impl ChunkStorage {
             structure_references,
             pois,
             pos,
+            status,
         );
 
         Some(PreparedChunkSave {
@@ -768,6 +769,7 @@ impl ChunkStorage {
         structure_references: Vec<PersistentStructureReference>,
         pois: Vec<PersistentPoi>,
         chunk_pos: ChunkPos,
+        status: ChunkStatus,
     ) -> PersistentChunk<'static> {
         let mut builder = ChunkBuilder::new(&REGISTRY);
 
@@ -813,6 +815,8 @@ impl ChunkStorage {
         let persistent_entities = Self::entities_to_persistent(entities);
 
         PersistentChunk {
+            pos: chunk_pos.into(),
+            status,
             last_modified: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs() as u32),

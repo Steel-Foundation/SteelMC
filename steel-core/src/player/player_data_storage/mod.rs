@@ -23,6 +23,7 @@ use super::player_data::{
     PersistentRootVehicle, PersistentSlot,
 };
 use crate::chunk_saver::PersistentEntity;
+use crate::compression::encode_checked;
 use crate::config::StorageSelection;
 use crate::level_data::RespawnData;
 use crate::permission::PermissionSubjectIndex;
@@ -328,7 +329,7 @@ impl PlayerDataFile {
     fn into_persistent(self) -> io::Result<PersistentPlayerData> {
         if self.data_version != PLAYER_DATA_VERSION {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+                io::ErrorKind::Unsupported,
                 format!(
                     "unsupported player data payload version {}",
                     self.data_version
@@ -500,7 +501,7 @@ fn encode_file(
 ) -> io::Result<Vec<u8>> {
     let payload =
         serialized.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-    let compressed = zstd::encode_all(&payload[..], 3)?;
+    let compressed = encode_checked(&payload)?;
     let mut bytes = Vec::with_capacity(6 + compressed.len());
     bytes.extend_from_slice(&magic);
     bytes.extend_from_slice(&version.to_le_bytes());
@@ -508,6 +509,17 @@ fn encode_file(
     Ok(bytes)
 }
 
+/// Decodes a magic-and-version framed payload.
+///
+/// Error kinds separate the two failure classes, because callers recover from
+/// them differently:
+///
+/// - [`io::ErrorKind::Unsupported`] means the file is intact but was written by
+///   a different format version. A backup carries the same version, so falling
+///   back to one cannot help.
+/// - [`io::ErrorKind::InvalidData`] means the bytes are damaged: bad magic, a
+///   truncated header, or a payload the zstd frame check or wincode rejected.
+///   Recovering from a backup is worthwhile here.
 fn decode_file(
     expected_magic: [u8; 4],
     expected_version: u16,
@@ -528,9 +540,15 @@ fn decode_file(
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     if version != expected_version {
         return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+            io::ErrorKind::Unsupported,
             format!("unsupported player data storage version {version}"),
         ));
     }
-    zstd::decode_all(&bytes[6..])
+    // zstd reports frame and checksum failures as `ErrorKind::Other`
+    zstd::decode_all(&bytes[6..]).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("player data payload is corrupt: {error}"),
+        )
+    })
 }
