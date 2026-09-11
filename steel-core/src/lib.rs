@@ -29,6 +29,7 @@ pub mod server;
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
 pub(crate) mod test_support;
+pub mod whitelist;
 pub mod world;
 pub mod worldgen;
 

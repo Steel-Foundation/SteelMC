@@ -66,6 +66,7 @@ use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, insert_ready_full_chunk,
     test_world,
 };
+use crate::whitelist::WhitelistManager;
 use crate::world::World;
 
 use super::DEBUG_STACK_SIZE;
@@ -235,6 +236,7 @@ async fn test_server_with_worlds(
         .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     let ban_list = BanListManager::transient();
     let ip_ban_list = IpBanListManager::transient();
+    let whitelist = WhitelistManager::transient();
     let config = test_runtime_config();
     let registry_cache = RegistryCache::new(config.compression);
 
@@ -243,6 +245,7 @@ async fn test_server_with_worlds(
         permission_groups,
         ban_list,
         ip_ban_list,
+        whitelist,
         cancel_token: CancellationToken::new(),
         key_store: KeyStore::create(),
         registry_cache,
@@ -3891,6 +3894,7 @@ default = true
             .expect("default permission groups should resolve"),
         BanListManager::transient(),
         IpBanListManager::transient(),
+        WhitelistManager::transient(),
     )
     .await
 }

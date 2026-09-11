@@ -39,6 +39,7 @@ mod tick;
 mod time;
 mod title;
 mod weather;
+mod whitelist;
 mod worldborder;
 
 pub(crate) use difficulty::player_can_change_difficulty;
@@ -109,6 +110,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(time::registration())?;
     builder.register(title::registration())?;
     builder.register(weather::registration())?;
+    builder.register(whitelist::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
     builder.extend(extension_commands.into_inner())?;
@@ -195,6 +197,7 @@ mod tests {
                 "time",
                 "title",
                 "weather",
+                "whitelist",
                 "worldborder",
                 "invsee"
             ]

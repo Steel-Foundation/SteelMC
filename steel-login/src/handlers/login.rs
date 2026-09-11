@@ -54,6 +54,13 @@ impl JavaTcpClient {
             self.kick(ban.disconnect_message()).await;
             return ConnectionAction::none();
         }
+        if self.server.whitelist.is_enabled() && !self.server.whitelist.is_whitelisted(profile.id) {
+            self.kick(TextComponent::from(
+                &translations::MULTIPLAYER_DISCONNECT_NOT_WHITELISTED,
+            ))
+            .await;
+            return ConnectionAction::none();
+        }
         if let Some(ban) = self.server.ip_ban_list.find(&self.address.ip().to_string()) {
             self.kick(ban.disconnect_message()).await;
             return ConnectionAction::none();
