@@ -37,7 +37,7 @@ use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
 
-use crate::ban::BanListManager;
+use crate::ban::{BanListManager, IpBanListManager};
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
@@ -382,6 +382,8 @@ pub struct Server {
     pub permission_groups: PermissionGroupManager,
     /// Runtime player ban list and its persistence boundary.
     pub ban_list: BanListManager,
+    /// Runtime IP ban list and its persistence boundary.
+    pub ip_ban_list: IpBanListManager,
     /// The cancellation token for graceful shutdown.
     pub cancel_token: CancellationToken,
     /// The key store for the server.
@@ -528,6 +530,7 @@ impl Server {
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
         ban_list: BanListManager,
+        ip_ban_list: IpBanListManager,
     ) -> Result<Self, String> {
         Self::new_with_commands(
             chunk_runtime,
@@ -536,6 +539,7 @@ impl Server {
             worlds_config,
             permission_groups,
             ban_list,
+            ip_ban_list,
             CommandRegistry::new(),
         )
         .await
@@ -546,6 +550,10 @@ impl Server {
         clippy::too_many_lines,
         reason = "server initialization is a single cohesive flow"
     )]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is an independently constructed startup dependency"
+    )]
     pub async fn new_with_commands(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,
@@ -553,6 +561,7 @@ impl Server {
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
         ban_list: BanListManager,
+        ip_ban_list: IpBanListManager,
         command_registry: CommandRegistry,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
@@ -716,6 +725,7 @@ impl Server {
             config,
             permission_groups,
             ban_list,
+            ip_ban_list,
             cancel_token,
             key_store: KeyStore::create(),
             worlds,

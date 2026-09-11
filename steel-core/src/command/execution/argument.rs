@@ -30,7 +30,8 @@ use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+    ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
+    SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
@@ -339,6 +340,10 @@ impl SteelArgumentType {
         Self::new(MessageParser)
     }
 
+    pub(crate) fn word() -> Self {
+        Self::new(WordParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -538,6 +543,7 @@ argument_value_wrapper!(
     "steel:command/value/component"
 );
 argument_value_wrapper!(MessageValue(Box<str>), "steel:command/value/message");
+argument_value_wrapper!(WordValue(Box<str>), "steel:command/value/word");
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -1112,6 +1118,21 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::Message, None)
+);
+unit_argument_parser!(
+    WordParser,
+    "steel:command/parser/word",
+    WordValue,
+    parse | reader,
+    _source | { Ok(WordValue(reader.read_unquoted_string().into())) },
+    suggest | _context,
+    _builder | {},
+    protocol(
+        ProtocolArgumentType::String {
+            behavior: ArgumentStringTypeBehavior::SingleWord
+        },
+        None,
+    )
 );
 unit_argument_parser!(
     NbtPathParser,
