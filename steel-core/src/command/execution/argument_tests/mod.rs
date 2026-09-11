@@ -34,7 +34,7 @@ use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
 use text_components::{TextComponent, content::Content};
 
-use crate::bootstrap::init_globals_once;
+use crate::bootstrap::init_globals;
 use crate::entity::EntityAnchor;
 use crate::permission::{PermissionExpr, PermissionState};
 
