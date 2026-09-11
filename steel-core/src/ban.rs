@@ -362,6 +362,18 @@ impl IpBanListManager {
         self.find(ip).is_some()
     }
 
+    /// Returns all active (non-expired) ban entries.
+    #[must_use]
+    pub fn entries(&self) -> Vec<IpBanEntry> {
+        self.state
+            .read()
+            .bans
+            .iter()
+            .filter(|entry| !entry.has_expired())
+            .cloned()
+            .collect()
+    }
+
     /// Adds or replaces the ban entry for `entry.ip`, persisting first.
     ///
     /// # Errors

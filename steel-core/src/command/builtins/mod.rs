@@ -2,6 +2,7 @@
 
 mod ban;
 mod ban_ip;
+mod banlist;
 mod clear;
 mod damage;
 mod difficulty;
@@ -71,6 +72,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::METADATA_PERMISSION)?;
     builder.register(ban::registration())?;
     builder.register(ban_ip::registration())?;
+    builder.register(banlist::registration())?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
@@ -154,6 +156,7 @@ mod tests {
             [
                 "ban",
                 "ban-ip",
+                "banlist",
                 "clear",
                 "deop",
                 "damage",
