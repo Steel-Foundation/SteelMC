@@ -335,6 +335,10 @@ impl SteelArgumentType {
         Self::new(ComponentParser)
     }
 
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -533,6 +537,7 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
+argument_value_wrapper!(MessageValue(Box<str>), "steel:command/value/message");
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -1097,6 +1102,16 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::Component, None)
+);
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    _source | { Ok(MessageValue(reader.read_remaining().into())) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None)
 );
 unit_argument_parser!(
     NbtPathParser,
