@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","HALF","OPEN","POWERED","WATERLOGGED"],"struct":["TrapDoorBlock","WeatheringCopperTrapDoorBlock"]};

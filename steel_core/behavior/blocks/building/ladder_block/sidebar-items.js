@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","WATERLOGGED"],"fn":["can_attach_to"],"struct":["LadderBlock"]};

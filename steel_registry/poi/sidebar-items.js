@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["PoiBlockMatcher","PoiTypeRegistry","PointOfInterestType"],"type":["PoiTypeRef"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CompressionInfo","EncodedPacket"],"trait":["ClientPacket","ServerPacket"]};

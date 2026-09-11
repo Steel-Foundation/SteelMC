@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GameRuleCategory","GameRuleType"],"struct":["GameRule","GameRuleCodec","GameRuleRegistry","GameRuleValue","GameRuleValues"],"trait":["ErasedGameRule","ErasedGameRuleValue","GameRuleValueType"],"type":["ErasedGameRuleRef","GameRuleRef"]};

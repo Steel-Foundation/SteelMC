@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["JigsawOrientation","JointType","PoolElement","ProcessorList","Projection"],"struct":["JigsawBlock","TemplateData","TemplatePoolData"]};

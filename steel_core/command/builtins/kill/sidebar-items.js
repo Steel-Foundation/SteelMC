@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","kill_entities","kill_self","kill_targets","registration"]};

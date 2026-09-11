@@ -1,0 +1,375 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="All noise generators and density functions for a dimension."><title>DimensionNoises in steel_worldgen::density::traits - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c87338a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="steel_worldgen" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (8925ea358 2026-08-20)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../../static.files/storage-41dd4d93.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">DimensionNoises</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../steel_worldgen/index.html">steel_<wbr>worldgen</a><span class="version">0.15.3+mc26.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Dimension<wbr>Noises</a></h2><h3><a href="#required-associated-types">Required Associated Types</a></h3><ul class="block"><li><a href="#associatedtype.ColumnCache" title="ColumnCache">ColumnCache</a></li><li><a href="#associatedtype.Settings" title="Settings">Settings</a></li></ul><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.combine_interpolated" title="combine_interpolated">combine_interpolated</a></li><li><a href="#tymethod.combine_vein_ridged" title="combine_vein_ridged">combine_vein_ridged</a></li><li><a href="#tymethod.combine_vein_toggle" title="combine_vein_toggle">combine_vein_toggle</a></li><li><a href="#tymethod.create" title="create">create</a></li><li><a href="#tymethod.fill_cell_corner_densities" title="fill_cell_corner_densities">fill_cell_corner_densities</a></li><li><a href="#tymethod.interpolated_count" title="interpolated_count">interpolated_count</a></li><li><a href="#tymethod.router_barrier" title="router_barrier">router_barrier</a></li><li><a href="#tymethod.router_continentalness" title="router_continentalness">router_continentalness</a></li><li><a href="#tymethod.router_depth" title="router_depth">router_depth</a></li><li><a href="#tymethod.router_erosion" title="router_erosion">router_erosion</a></li><li><a href="#tymethod.router_final_density" title="router_final_density">router_final_density</a></li><li><a href="#tymethod.router_fluid_level_floodedness" title="router_fluid_level_floodedness">router_fluid_level_floodedness</a></li><li><a href="#tymethod.router_fluid_level_spread" title="router_fluid_level_spread">router_fluid_level_spread</a></li><li><a href="#tymethod.router_lava" title="router_lava">router_lava</a></li><li><a href="#tymethod.router_preliminary_surface_level" title="router_preliminary_surface_level">router_preliminary_surface_level</a></li><li><a href="#tymethod.router_ridges" title="router_ridges">router_ridges</a></li><li><a href="#tymethod.router_temperature" title="router_temperature">router_temperature</a></li><li><a href="#tymethod.router_vegetation" title="router_vegetation">router_vegetation</a></li><li><a href="#tymethod.router_vein_gap" title="router_vein_gap">router_vein_gap</a></li><li><a href="#tymethod.router_vein_ridged" title="router_vein_ridged">router_vein_ridged</a></li><li><a href="#tymethod.router_vein_toggle" title="router_vein_toggle">router_vein_toggle</a></li><li><a href="#tymethod.surface_gradient_ids" title="surface_gradient_ids">surface_gradient_ids</a></li><li><a href="#tymethod.surface_noise_ids" title="surface_noise_ids">surface_noise_ids</a></li><li><a href="#tymethod.surface_rule_block_states" title="surface_rule_block_states">surface_rule_block_states</a></li><li><a href="#tymethod.surface_rule_uses_biome" title="surface_rule_uses_biome">surface_rule_uses_biome</a></li><li><a href="#tymethod.surface_rule_uses_preliminary_surface" title="surface_rule_uses_preliminary_surface">surface_rule_uses_preliminary_surface</a></li><li><a href="#tymethod.surface_rule_uses_steep" title="surface_rule_uses_steep">surface_rule_uses_steep</a></li><li><a href="#tymethod.surface_rule_uses_surface_secondary" title="surface_rule_uses_surface_secondary">surface_rule_uses_surface_secondary</a></li><li><a href="#tymethod.try_apply_surface_rule" title="try_apply_surface_rule">try_apply_surface_rule</a></li><li><a href="#tymethod.vein_interp_enabled" title="vein_interp_enabled">vein_interp_enabled</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.compute_noise_column" title="compute_noise_column">compute_noise_column</a></li><li><a href="#method.fill_cell_corner_densities_4x" title="fill_cell_corner_densities_4x">fill_cell_corner_densities_4x</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In steel_<wbr>worldgen::<wbr>density::<wbr>traits</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">steel_worldgen</a>::<wbr><a href="../index.html">density</a>::<wbr><a href="index.html">traits</a></div><h1>Trait <span class="trait">Dimension<wbr>Noises</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/steel_worldgen/density/traits.rs.html#70-281">Source</a> </span></div><pre class="rust item-decl"><code>pub trait DimensionNoises:
+    <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a>
+    + <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a>
+    + <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a> {
+    type <a href="#associatedtype.ColumnCache" class="associatedtype">ColumnCache</a>: <a class="trait" href="trait.ColumnCache.html" title="trait steel_worldgen::density::traits::ColumnCache">ColumnCache</a>&lt;Noises = Self&gt;;
+    type <a href="#associatedtype.Settings" class="associatedtype">Settings</a>: <a class="trait" href="trait.NoiseSettings.html" title="trait steel_worldgen::density::traits::NoiseSettings">NoiseSettings</a>;
+
+<details class="toggle type-contents-toggle"><summary class="hideme"><span>Show 32 methods</span></summary>    // Required methods
+    fn <a href="#tymethod.create" class="fn">create</a>(
+        seed: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>,
+        splitter: &amp;<a class="enum" href="../../random/enum.RandomSplitter.html" title="enum steel_worldgen::random::RandomSplitter">RandomSplitter</a>,
+        params: &amp;FxHashMap&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>, <a class="struct" href="../struct.NoiseParameters.html" title="struct steel_worldgen::density::NoiseParameters">NoiseParameters</a>&gt;,
+    ) -&gt; Self;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_final_density" class="fn">router_final_density</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_depth" class="fn">router_depth</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_barrier" class="fn">router_barrier</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_fluid_level_floodedness" class="fn">router_fluid_level_floodedness</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_fluid_level_spread" class="fn">router_fluid_level_spread</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_lava" class="fn">router_lava</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_vein_toggle" class="fn">router_vein_toggle</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_vein_ridged" class="fn">router_vein_ridged</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_vein_gap" class="fn">router_vein_gap</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_erosion" class="fn">router_erosion</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_continentalness" class="fn">router_continentalness</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_temperature" class="fn">router_temperature</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_vegetation" class="fn">router_vegetation</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_ridges" class="fn">router_ridges</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.router_preliminary_surface_level" class="fn">router_preliminary_surface_level</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.interpolated_count" class="fn">interpolated_count</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.vein_interp_enabled" class="fn">vein_interp_enabled</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.fill_cell_corner_densities" class="fn">fill_cell_corner_densities</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        blended_noise_value: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>,
+        out: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.combine_interpolated" class="fn">combine_interpolated</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        interpolated: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.combine_vein_toggle" class="fn">combine_vein_toggle</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        interpolated: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.combine_vein_ridged" class="fn">combine_vein_ridged</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        interpolated: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_noise_ids" class="fn">surface_noise_ids</a>() -&gt; &amp;'static [&amp;'static <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>];
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_gradient_ids" class="fn">surface_gradient_ids</a>() -&gt; &amp;'static [&amp;'static <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>];
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_rule_block_states" class="fn">surface_rule_block_states</a>() -&gt; &amp;'static [<a class="struct" href="../../struct.BlockStateId.html" title="struct steel_worldgen::BlockStateId">BlockStateId</a>];
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_rule_uses_biome" class="fn">surface_rule_uses_biome</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_rule_uses_preliminary_surface" class="fn">surface_rule_uses_preliminary_surface</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_rule_uses_surface_secondary" class="fn">surface_rule_uses_surface_secondary</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.surface_rule_uses_steep" class="fn">surface_rule_uses_steep</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.try_apply_surface_rule" class="fn">try_apply_surface_rule</a>(
+        ctx: &amp;mut <a class="struct" href="../../surface/struct.SurfaceRuleContext.html" title="struct steel_worldgen::surface::SurfaceRuleContext">SurfaceRuleContext</a>&lt;'_&gt;,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="../../struct.BlockStateId.html" title="struct steel_worldgen::BlockStateId">BlockStateId</a>&gt;;
+
+    // Provided methods
+    fn <a href="#method.compute_noise_column" class="fn">compute_noise_column</a>(
+        &amp;self,
+        _x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        _block_ys: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>],
+        _z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        out: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+    ) { ... }
+<span class="item-spacer"></span>    fn <a href="#method.fill_cell_corner_densities_4x" class="fn">fill_cell_corner_densities_4x</a>(
+        &amp;self,
+        cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        ys: <a class="type" href="https://doc.rust-lang.org/nightly/core/core_simd/alias/type.f64x4.html" title="type core::core_simd::alias::f64x4">f64x4</a>,
+        z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+        blended_noise_values: <a class="type" href="https://doc.rust-lang.org/nightly/core/core_simd/alias/type.f64x4.html" title="type core::core_simd::alias::f64x4">f64x4</a>,
+        out: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+    ) { ... }
+</details>}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>All noise generators and density functions for a dimension.</p>
+<p>This trait abstracts over dimension-specific noise types (<code>OverworldNoises</code>,
+<code>NetherNoises</code>, etc.) allowing generic code to work with any dimension.</p>
+</div></details><h2 id="required-associated-types" class="section-header">Required Associated Types<a href="#required-associated-types" class="anchor">§</a></h2><div class="methods"><details class="toggle" open><summary><section id="associatedtype.ColumnCache" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#72">Source</a><h4 class="code-header">type <a href="#associatedtype.ColumnCache" class="associatedtype">ColumnCache</a>: <a class="trait" href="trait.ColumnCache.html" title="trait steel_worldgen::density::traits::ColumnCache">ColumnCache</a>&lt;Noises = Self&gt;</h4></section></summary><div class="docblock"><p>The column cache type for this dimension.</p>
+</div></details><details class="toggle" open><summary><section id="associatedtype.Settings" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#74">Source</a><h4 class="code-header">type <a href="#associatedtype.Settings" class="associatedtype">Settings</a>: <a class="trait" href="trait.NoiseSettings.html" title="trait steel_worldgen::density::traits::NoiseSettings">NoiseSettings</a></h4></section></summary><div class="docblock"><p>The noise settings type for this dimension.</p>
+</div></details></div><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.create" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#77-81">Source</a><h4 class="code-header">fn <a href="#tymethod.create" class="fn">create</a>(
+    seed: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>,
+    splitter: &amp;<a class="enum" href="../../random/enum.RandomSplitter.html" title="enum steel_worldgen::random::RandomSplitter">RandomSplitter</a>,
+    params: &amp;FxHashMap&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>, <a class="struct" href="../struct.NoiseParameters.html" title="struct steel_worldgen::density::NoiseParameters">NoiseParameters</a>&gt;,
+) -&gt; Self</h4></section></summary><div class="docblock"><p>Create all noise generators from a world seed and its positional splitter.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_final_density" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#86">Source</a><h4 class="code-header">fn <a href="#tymethod.router_final_density" class="fn">router_final_density</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Final density for terrain generation (positive = solid, negative = air).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_depth" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#89">Source</a><h4 class="code-header">fn <a href="#tymethod.router_depth" class="fn">router_depth</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Depth from surface (used for terrain shaping).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_barrier" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#94">Source</a><h4 class="code-header">fn <a href="#tymethod.router_barrier" class="fn">router_barrier</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Barrier noise for aquifer boundaries.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_fluid_level_floodedness" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#97-103">Source</a><h4 class="code-header">fn <a href="#tymethod.router_fluid_level_floodedness" class="fn">router_fluid_level_floodedness</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Fluid level floodedness for aquifers.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_fluid_level_spread" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#106-112">Source</a><h4 class="code-header">fn <a href="#tymethod.router_fluid_level_spread" class="fn">router_fluid_level_spread</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Fluid level spread for aquifers.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_lava" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#115">Source</a><h4 class="code-header">fn <a href="#tymethod.router_lava" class="fn">router_lava</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Lava placement noise for aquifers.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_vein_toggle" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#120">Source</a><h4 class="code-header">fn <a href="#tymethod.router_vein_toggle" class="fn">router_vein_toggle</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Vein toggle (sign determines copper vs iron).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_vein_ridged" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#123">Source</a><h4 class="code-header">fn <a href="#tymethod.router_vein_ridged" class="fn">router_vein_ridged</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Vein ridged noise for ore placement.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_vein_gap" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#126">Source</a><h4 class="code-header">fn <a href="#tymethod.router_vein_gap" class="fn">router_vein_gap</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Vein gap noise for ore vs filler placement.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_erosion" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#131">Source</a><h4 class="code-header">fn <a href="#tymethod.router_erosion" class="fn">router_erosion</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Erosion value (cached in column cache).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_continentalness" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#134">Source</a><h4 class="code-header">fn <a href="#tymethod.router_continentalness" class="fn">router_continentalness</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Continentalness value (cached in column cache).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_temperature" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#137">Source</a><h4 class="code-header">fn <a href="#tymethod.router_temperature" class="fn">router_temperature</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Temperature value (cached in column cache).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_vegetation" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#140">Source</a><h4 class="code-header">fn <a href="#tymethod.router_vegetation" class="fn">router_vegetation</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Vegetation/humidity value (cached in column cache).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_ridges" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#143">Source</a><h4 class="code-header">fn <a href="#tymethod.router_ridges" class="fn">router_ridges</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Ridges/weirdness value (cached in column cache).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.router_preliminary_surface_level" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#146-152">Source</a><h4 class="code-header">fn <a href="#tymethod.router_preliminary_surface_level" class="fn">router_preliminary_surface_level</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Preliminary surface level (cached in column cache).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.interpolated_count" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#158">Source</a><h4 class="code-header">fn <a href="#tymethod.interpolated_count" class="fn">interpolated_count</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a></h4></section></summary><div class="docblock"><p>Total number of independently interpolated channels across all router
+entries (<code>final_density</code> + <code>vein_toggle</code> + <code>vein_ridged</code>).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.vein_interp_enabled" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#161">Source</a><h4 class="code-header">fn <a href="#tymethod.vein_interp_enabled" class="fn">vein_interp_enabled</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Whether vein functions have interpolation channels.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.fill_cell_corner_densities" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#179-187">Source</a><h4 class="code-header">fn <a href="#tymethod.fill_cell_corner_densities" class="fn">fill_cell_corner_densities</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    blended_noise_value: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>,
+    out: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+)</h4></section></summary><div class="docblock"><p>Evaluate the inner functions of all <code>Interpolated</code> markers at a cell corner.</p>
+<p><code>out</code> must have length [<code>interpolated_count()</code>]. Each element receives
+the value of one <code>Interpolated</code> marker’s inner function at <code>(x, y, z)</code>.
+<code>blended_noise_value</code> is the precomputed blended noise for this Y level.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.combine_interpolated" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#225-232">Source</a><h4 class="code-header">fn <a href="#tymethod.combine_interpolated" class="fn">combine_interpolated</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    interpolated: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Combine trilinearly interpolated values for <code>final_density</code>.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.combine_vein_toggle" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#235-242">Source</a><h4 class="code-header">fn <a href="#tymethod.combine_vein_toggle" class="fn">combine_vein_toggle</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    interpolated: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Combine trilinearly interpolated values for <code>vein_toggle</code>.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.combine_vein_ridged" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#245-252">Source</a><h4 class="code-header">fn <a href="#tymethod.combine_vein_ridged" class="fn">combine_vein_ridged</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    interpolated: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></h4></section></summary><div class="docblock"><p>Combine trilinearly interpolated values for <code>vein_ridged</code>.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_noise_ids" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#258">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_noise_ids" class="fn">surface_noise_ids</a>() -&gt; &amp;'static [&amp;'static <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>]</h4></section></summary><div class="docblock"><p>Noise IDs referenced by this dimension’s surface rule <code>NoiseThreshold</code>
+conditions. Used to construct the <code>SurfaceSystem</code>’s condition noises.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_gradient_ids" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#262">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_gradient_ids" class="fn">surface_gradient_ids</a>() -&gt; &amp;'static [&amp;'static <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>]</h4></section></summary><div class="docblock"><p>Random IDs referenced by this dimension’s surface rule <code>VerticalGradient</code>
+conditions. Used to construct reusable positional random factories.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_rule_block_states" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#265">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_rule_block_states" class="fn">surface_rule_block_states</a>() -&gt; &amp;'static [<a class="struct" href="../../struct.BlockStateId.html" title="struct steel_worldgen::BlockStateId">BlockStateId</a>]</h4></section></summary><div class="docblock"><p>Block states returned by this dimension’s generated surface rules.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_rule_uses_biome" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#268">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_rule_uses_biome" class="fn">surface_rule_uses_biome</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Whether the generated surface rule reads biome-dependent context.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_rule_uses_preliminary_surface" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#271">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_rule_uses_preliminary_surface" class="fn">surface_rule_uses_preliminary_surface</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Whether the generated surface rule reads preliminary surface level.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_rule_uses_surface_secondary" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#274">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_rule_uses_surface_secondary" class="fn">surface_rule_uses_surface_secondary</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Whether the generated surface rule reads surface secondary noise.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.surface_rule_uses_steep" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#277">Source</a><h4 class="code-header">fn <a href="#tymethod.surface_rule_uses_steep" class="fn">surface_rule_uses_steep</a>() -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Whether the generated surface rule reads steep-column context.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.try_apply_surface_rule" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#280">Source</a><h4 class="code-header">fn <a href="#tymethod.try_apply_surface_rule" class="fn">try_apply_surface_rule</a>(
+    ctx: &amp;mut <a class="struct" href="../../surface/struct.SurfaceRuleContext.html" title="struct steel_worldgen::surface::SurfaceRuleContext">SurfaceRuleContext</a>&lt;'_&gt;,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="../../struct.BlockStateId.html" title="struct steel_worldgen::BlockStateId">BlockStateId</a>&gt;</h4></section></summary><div class="docblock"><p>Apply the transpiled surface rule at the given context position.</p>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.compute_noise_column" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#170-172">Source</a><h4 class="code-header">fn <a href="#method.compute_noise_column" class="fn">compute_noise_column</a>(
+    &amp;self,
+    _x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    _block_ys: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>],
+    _z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    out: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+)</h4></section></summary><div class="docblock"><p>Compute blended noise for an entire column of Y values.</p>
+<p>Called by <code>NoiseChunk::fill_slice</code> before iterating over Y corners.
+Dimensions that use <code>BlendedNoise</code> (e.g. overworld) should override this
+to SIMD-batch the blended noise computation.</p>
+<p>Default: no-op (fills <code>out</code> with zeros).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.fill_cell_corner_densities_4x" class="method"><a class="src rightside" href="../../../src/steel_worldgen/density/traits.rs.html#201-222">Source</a><h4 class="code-header">fn <a href="#method.fill_cell_corner_densities_4x" class="fn">fill_cell_corner_densities_4x</a>(
+    &amp;self,
+    cache: &amp;mut Self::<a class="associatedtype" href="trait.DimensionNoises.html#associatedtype.ColumnCache" title="type steel_worldgen::density::traits::DimensionNoises::ColumnCache">ColumnCache</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    ys: <a class="type" href="https://doc.rust-lang.org/nightly/core/core_simd/alias/type.f64x4.html" title="type core::core_simd::alias::f64x4">f64x4</a>,
+    z: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>,
+    blended_noise_values: <a class="type" href="https://doc.rust-lang.org/nightly/core/core_simd/alias/type.f64x4.html" title="type core::core_simd::alias::f64x4">f64x4</a>,
+    out: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>],
+)</h4></section></summary><div class="docblock"><p>SIMD form of <a href="trait.DimensionNoises.html#tymethod.fill_cell_corner_densities" title="method steel_worldgen::density::traits::DimensionNoises::fill_cell_corner_densities"><code>fill_cell_corner_densities</code></a> that batches 4 cell-corner
+Y values at fixed <code>(x, z)</code>.</p>
+<p><code>out</code> layout: lane-major <code>SoA</code>. Lane <code>i</code>’s <code>interpolated_count()</code> channels
+occupy <code>out[i * interpolated_count()..(i + 1) * interpolated_count()]</code>.
+<code>out</code> must have length <code>4 * interpolated_count()</code>.</p>
+<p>The default implementation calls the scalar <a href="trait.DimensionNoises.html#tymethod.fill_cell_corner_densities" title="method steel_worldgen::density::traits::DimensionNoises::fill_cell_corner_densities"><code>fill_cell_corner_densities</code></a>
+four times. Dimensions can override with a true SIMD implementation (the
+transpiled <code>compute_*_4x</code> chain) once the SIMD codegen is in place.</p>
+</div></details></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/nightly/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety".</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><div class="negative-marker"></div><details class="toggle implementors-toggle"><summary><section id="impl-DimensionNoises-for-EndNoises" class="impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/end.rs.html#1">Source</a><a href="#impl-DimensionNoises-for-EndNoises" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.DimensionNoises.html" title="trait steel_worldgen::density::traits::DimensionNoises">DimensionNoises</a> for <a class="struct" href="../../density_functions/end/struct.EndNoises.html" title="struct steel_worldgen::density_functions::end::EndNoises">EndNoises</a></h3></section></summary><div class="impl-items"><section id="associatedtype.ColumnCache-1" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/end.rs.html#1">Source</a><a href="#associatedtype.ColumnCache-1" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.ColumnCache" class="associatedtype">ColumnCache</a> = <a class="struct" href="../../density_functions/end/struct.EndColumnCache.html" title="struct steel_worldgen::density_functions::end::EndColumnCache">EndColumnCache</a></h4></section><section id="associatedtype.Settings-1" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/end.rs.html#1">Source</a><a href="#associatedtype.Settings-1" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.Settings" class="associatedtype">Settings</a> = <a class="struct" href="../../density_functions/end/struct.EndNoiseSettings.html" title="struct steel_worldgen::density_functions::end::EndNoiseSettings">EndNoiseSettings</a></h4></section></div></details><details class="toggle implementors-toggle"><summary><section id="impl-DimensionNoises-for-NetherNoises" class="impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/nether.rs.html#1">Source</a><a href="#impl-DimensionNoises-for-NetherNoises" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.DimensionNoises.html" title="trait steel_worldgen::density::traits::DimensionNoises">DimensionNoises</a> for <a class="struct" href="../../density_functions/nether/struct.NetherNoises.html" title="struct steel_worldgen::density_functions::nether::NetherNoises">NetherNoises</a></h3></section></summary><div class="impl-items"><section id="associatedtype.ColumnCache-2" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/nether.rs.html#1">Source</a><a href="#associatedtype.ColumnCache-2" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.ColumnCache" class="associatedtype">ColumnCache</a> = <a class="struct" href="../../density_functions/nether/struct.NetherColumnCache.html" title="struct steel_worldgen::density_functions::nether::NetherColumnCache">NetherColumnCache</a></h4></section><section id="associatedtype.Settings-2" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/nether.rs.html#1">Source</a><a href="#associatedtype.Settings-2" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.Settings" class="associatedtype">Settings</a> = <a class="struct" href="../../density_functions/nether/struct.NetherNoiseSettings.html" title="struct steel_worldgen::density_functions::nether::NetherNoiseSettings">NetherNoiseSettings</a></h4></section></div></details><details class="toggle implementors-toggle"><summary><section id="impl-DimensionNoises-for-OverworldNoises" class="impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/overworld.rs.html#1">Source</a><a href="#impl-DimensionNoises-for-OverworldNoises" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.DimensionNoises.html" title="trait steel_worldgen::density::traits::DimensionNoises">DimensionNoises</a> for <a class="struct" href="../../density_functions/overworld/struct.OverworldNoises.html" title="struct steel_worldgen::density_functions::overworld::OverworldNoises">OverworldNoises</a></h3></section></summary><div class="impl-items"><section id="associatedtype.ColumnCache-3" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/overworld.rs.html#1">Source</a><a href="#associatedtype.ColumnCache-3" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.ColumnCache" class="associatedtype">ColumnCache</a> = <a class="struct" href="../../density_functions/overworld/struct.OverworldColumnCache.html" title="struct steel_worldgen::density_functions::overworld::OverworldColumnCache">OverworldColumnCache</a></h4></section><section id="associatedtype.Settings-3" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/steel_worldgen/generated/vanilla_density_functions/overworld.rs.html#1">Source</a><a href="#associatedtype.Settings-3" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.Settings" class="associatedtype">Settings</a> = <a class="struct" href="../../density_functions/overworld/struct.OverworldNoiseSettings.html" title="struct steel_worldgen::density_functions::overworld::OverworldNoiseSettings">OverworldNoiseSettings</a></h4></section></div></details></div><script src="../../../trait.impl/steel_worldgen/density/traits/trait.DimensionNoises.js" async></script></section></div></main></body></html>

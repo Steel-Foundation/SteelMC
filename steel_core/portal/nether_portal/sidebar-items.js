@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["NETHER_TARGET_PORTAL_SEARCH_RADIUS","OVERWORLD_TARGET_PORTAL_SEARCH_RADIUS","PORTAL_RECTANGLE_SCAN_LIMIT"],"fn":["approximate_exit_position","calculate_transition","create_dimension_transition","dimension_transition_from_exit","largest_portal_rectangle_at","prewarm_center","prewarm_chunk_radius","search_radius"]};

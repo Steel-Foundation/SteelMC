@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ABS_MAX_VALUE","ABS_MIN_VALUE","CONTINUATION_FLAG","DATA_BITS_MASK","MAX_QUANTIZED_VALUE"],"fn":["has_continuation_bit","pack","sanitize","unpack"],"struct":["LpVec3"]};

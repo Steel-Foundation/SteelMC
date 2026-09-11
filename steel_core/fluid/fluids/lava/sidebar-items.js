@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FAST_LAVA_ENTITY_FLOW_SCALE","NORMAL_LAVA_ENTITY_FLOW_SCALE"],"struct":["LavaFluid"]};

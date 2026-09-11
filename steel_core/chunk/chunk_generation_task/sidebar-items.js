@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ChunkGenerationTask","StaticCache2D"],"type":["NeighborReady"]};

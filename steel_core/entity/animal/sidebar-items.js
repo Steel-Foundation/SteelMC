@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IN_LOVE_TIME","PARENT_AGE_AFTER_BREEDING"],"struct":["AnimalBase","AnimalState"],"trait":["Animal"]};

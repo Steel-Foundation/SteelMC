@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_GRAVITY","WATER_INERTIA"],"trait":["ThrowableProjectile"]};

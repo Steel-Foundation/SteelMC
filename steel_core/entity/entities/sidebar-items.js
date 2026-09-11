@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["mobs","objects","raw"],"struct":["RawEntity"]};

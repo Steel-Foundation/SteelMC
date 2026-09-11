@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POWERED","RAIL_SHAPE"],"struct":["PoweredRailBlock"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LogLevel","LogTimeFormat","RotationTimeFormat"],"fn":["default_log_file","default_log_path","default_max_history"],"struct":["LogConfig"]};

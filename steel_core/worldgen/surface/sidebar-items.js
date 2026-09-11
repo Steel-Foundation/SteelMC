@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CLAY_BAND_LENGTH"],"fn":["create_noise"],"struct":["SurfaceSystem","TemperatureXzCache"]};

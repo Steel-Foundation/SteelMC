@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["init_entities"],"static":["ENTITIES"],"struct":["EntityEntry","EntityLoadRequest","EntityRegistry","EntityRegistryLock"],"type":["EntityFactory","EntityLoadFactory"]};

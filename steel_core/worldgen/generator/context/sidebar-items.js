@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ChunkGeneratorType"],"struct":["WorldGenContext"],"type":["EndGenerator","NetherGenerator","OverworldGenerator"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["argument","cached_route_requirements","literal"],"struct":["ActiveRequirementScope","CommandNodeBuilder","CommandRequirementRoute","RequirementRouteKey"]};

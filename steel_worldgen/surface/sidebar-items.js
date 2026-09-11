@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["SurfaceConditionNoiseCache","SurfaceRuleContext"],"trait":["SurfaceBiomeProvider","SurfaceNoiseProvider"]};

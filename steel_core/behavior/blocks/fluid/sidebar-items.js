@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["bubble_column_block","liquid_block"]};

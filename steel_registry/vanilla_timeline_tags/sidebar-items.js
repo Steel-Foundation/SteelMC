@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["IN_END_TAG_LIST","IN_NETHER_TAG_LIST","IN_OVERWORLD_TAG_LIST","UNIVERSAL_TAG_LIST"],"struct":["TimelineTag"]};

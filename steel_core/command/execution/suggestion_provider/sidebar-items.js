@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["matches_suggestion_substring","matches_suggestion_substring_case_sensitive"],"struct":["FixedSuggestionProvider"]};

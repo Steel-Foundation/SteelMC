@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["stained_glass_pane_block"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LAYERS","MAX_SNOW_LAYERS"],"struct":["SnowLayerBlock"]};

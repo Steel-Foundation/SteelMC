@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UNSUPPORTED_WRITE_PROP","WRONG_WRITE_FORMAT"],"fn":["derive","generate_write_code","parse_struct_write_attributes","parse_write_attributes","write_to_enum","write_to_struct"],"struct":["FieldWriteAttributes"]};

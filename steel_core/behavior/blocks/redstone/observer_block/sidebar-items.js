@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","PLACEMENT_RESET_FLAGS","POWERED","PULSE_DELAY"],"struct":["ObserverBlock"]};

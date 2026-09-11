@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["no_creative_or_spectator"],"struct":["AvoidEntityGoal"]};

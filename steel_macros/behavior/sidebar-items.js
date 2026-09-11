@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["block_behavior","entity_behavior","item_behavior","strip_json_arg_attrs"]};

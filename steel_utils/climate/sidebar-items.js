@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PARAMETER_COUNT","QUANTIZATION_FACTOR"],"fn":["quantize_coord","unquantize_coord"],"mod":["parameter_list","types"],"struct":["Parameter","ParameterList","ParameterPoint","TargetPoint"]};

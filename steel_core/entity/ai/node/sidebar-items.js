@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Node","NodeHeap","NodeStore","Target"]};

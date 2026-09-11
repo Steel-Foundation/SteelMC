@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ADJACENT_FARMLAND_SPEED_DIVISOR","AGE","CROP_GROWTH_CHANCE_BASE","CROWDED_CROP_SPEED_DIVISOR","MIN_CROP_GROWTH_LIGHT_LEVEL","MIN_CROP_LIGHT_LEVEL","MOISTURE"],"fn":["crop_growth_speed","destroy_crop_on_ravager_contact","ravager_breaks_crop"],"struct":["CropBlock"],"trait":["CropLike"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_trim_materials"],"static":["AMETHYST","COPPER","DIAMOND","EMERALD","GOLD","IRON","LAPIS","NETHERITE","QUARTZ","REDSTONE","RESIN"]};

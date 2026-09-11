@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionGroupEditError"],"fn":["create_group","delete_group","permission_metadata_matches","permission_rule_matches","set_default_group","set_inheritance","set_metadata","set_permission","set_priority"]};

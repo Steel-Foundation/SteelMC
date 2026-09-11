@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["added_collision_boxes","push_entities_up","world_aabb_bounds"]};

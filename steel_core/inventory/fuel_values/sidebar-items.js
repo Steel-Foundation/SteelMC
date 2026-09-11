@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["VANILLA_FUEL_VALUES"],"struct":["FuelValues","FuelValuesBuilder"]};

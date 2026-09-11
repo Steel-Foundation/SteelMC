@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ACTIVE_CACHE","CACHE_ENTRY_COUNT"],"enum":["CacheEntryProbe","CacheProbe"],"fn":["lookup_or_insert_for_owner","lookup_or_insert_with"],"struct":["ActiveCache","CacheEntry","CacheOwner","GameplayChunkLookupCacheScope","GameplayChunkLookupCacheStats"]};

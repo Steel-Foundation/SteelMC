@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["furnace_menu","menu_type"],"struct":["FurnaceMenuKind"]};

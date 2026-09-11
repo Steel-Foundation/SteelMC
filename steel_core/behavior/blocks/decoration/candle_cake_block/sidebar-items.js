@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LIT","PARTICLE_OFFSETS"],"struct":["CandleCakeBlock"]};

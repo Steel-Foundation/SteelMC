@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BRUSH_COMPLETED_LEVEL_EVENT","BRUSH_COOLDOWN_TICKS","BRUSH_RESET_TICKS","REQUIRED_BRUSHES","RESET_BRUSH_COUNT_TICKS"],"struct":["BrushOutcome","BrushableBlockEntity","BrushableState","BrushableWorldMutation"]};

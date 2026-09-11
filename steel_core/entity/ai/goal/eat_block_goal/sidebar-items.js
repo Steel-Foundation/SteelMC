@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ADULT_EAT_CHECK_TICKS","BABY_EAT_CHECK_TICKS","EAT_ANIMATION_TICKS","EAT_BLOCK_TICK"],"struct":["EatBlockGoal"]};

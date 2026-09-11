@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING_PROPERTY","MAX_SEGMENT_AMOUNT"],"fn":["segmentable_can_be_replaced","segmentable_get_state_for_placement","segmentable_placement_state"]};

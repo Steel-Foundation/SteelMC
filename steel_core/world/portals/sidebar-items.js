@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["NETHER_PORTAL_CREATE_RADIUS","NETHER_PORTAL_FALLBACK_MAX_Y_OFFSET","NETHER_PORTAL_FALLBACK_MIN_Y"],"fn":["closest_portal_candidate","dist_to_origin_center_sqr","nether_portal_creation_scan_origin","nether_portal_frame_offset_pos","portal_candidate_distance_sqr"],"struct":["MissingPortalCreationChunk"]};

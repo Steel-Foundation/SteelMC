@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_ALLOWED_ITEM_STACKS"],"fn":["command","give","give_default_count","give_to_player","give_with_count","item_display_name","play_pickup_sound","registration"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ATTACK_RANGE_BUFFER","CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT","CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT","ENTITY_INTERACTION_RANGE_BUFFER","FLIGHT_DISABLE_RANGE"],"fn":["use_item","use_item_on"],"mod":["block_breaking","block_interaction","entity_interaction","item_interaction","player_methods","raycast"],"struct":["PlayerGameModeState"]};

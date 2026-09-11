@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["vanilla_recipe_types"],"struct":["Recipe","RecipeType","RecipeTypeEntry","RecipeTypeRegistry"],"trait":["ErasedRecipe","RecipeData","RecipeInput","RecipeMatches"],"type":["RecipeTypeEntryRef"]};

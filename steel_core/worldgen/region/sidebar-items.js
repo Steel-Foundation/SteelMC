@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BULK_SECTION_INLINE_CHUNKS"],"enum":["WorldGenAccessMode"],"fn":["abs_diff"],"struct":["CachedWorldGenChunk","CachedWorldgenHeightmaps","WorldGenBulkSectionAccess","WorldGenChunkRef","WorldGenRegion","WritableSectionKey"],"type":["BulkSectionChunkMap"]};

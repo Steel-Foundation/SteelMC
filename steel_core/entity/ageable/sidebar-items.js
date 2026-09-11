@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE_LOCK_COOLDOWN_TICKS","BABY_START_AGE","FORCED_AGE_PARTICLE_TICKS"],"struct":["AgeableMobBase","AgeableMobState"],"trait":["AgeableMob"]};

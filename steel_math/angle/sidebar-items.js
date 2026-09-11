@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEGREE_180","DEGREE_270","DEGREE_360","DEGREE_90","DEG_TO_RAD","DEG_TO_RAD_F64","RAD_TO_DEG","RAD_TO_DEG_F64"],"fn":["convert_to_rotation_segment","wrap_degrees"]};

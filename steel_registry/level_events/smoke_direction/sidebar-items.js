@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DOWN","EAST","NORTH","SOUTH","UP","WEST"]};

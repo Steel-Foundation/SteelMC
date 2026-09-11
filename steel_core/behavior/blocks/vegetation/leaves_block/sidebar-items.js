@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DISTANCE","PERSISTENT","WATERLOGGED"],"struct":["LeavesBlock","MangroveLeavesBlock","TintedParticleLeavesBlock","UntintedParticleLeavesBlock"]};

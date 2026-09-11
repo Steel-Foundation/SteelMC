@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["TRADEABLE_TAG_LIST"],"struct":["PotionTag"]};

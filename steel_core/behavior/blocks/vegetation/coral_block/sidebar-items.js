@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MIN_WATER_CHECK_DELAY","WATERLOGGED"],"struct":["CoralBlock"]};

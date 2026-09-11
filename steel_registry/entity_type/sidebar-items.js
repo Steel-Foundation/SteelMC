@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_EYE_HEIGHT_FACTOR"],"enum":["EntityAttachment","MobCategory"],"fn":["fallback_point","rotate_attachment_point"],"struct":["EntityAttachmentPoint","EntityAttachments","EntityDimensions","EntityFlags","EntityType","EntityTypeRegistry"],"type":["EntityTypeRef"]};

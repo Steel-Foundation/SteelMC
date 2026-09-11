@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LootEntry","SlotRange"],"struct":["LootPool","LootTable"]};

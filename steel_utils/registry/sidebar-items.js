@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["registry_vanilla_or_custom_tag"]};

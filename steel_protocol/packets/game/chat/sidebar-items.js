@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["command","message","player","session","system"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AIR_NAVIGATION_SPEED_MODIFIER","AIR_SEARCH_HORIZONTAL_RADIUS","AIR_SEARCH_VERTICAL_ABOVE","BREATH_AIR_THRESHOLD","BREATH_MOVE_SPEED"],"fn":["air_search_bounds","find_air_position","first_air_position","first_matching_pos_in_closed_box","gives_air"],"struct":["BreathAirGoal"]};

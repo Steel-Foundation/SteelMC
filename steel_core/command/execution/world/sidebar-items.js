@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["WorldArgument"],"fn":["parse_world_argument","suggest_worlds"]};

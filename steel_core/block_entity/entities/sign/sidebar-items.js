@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_EDIT_DISTANCE","SIGN_LINES"],"struct":["SignBlockEntity","SignState","SignText"]};

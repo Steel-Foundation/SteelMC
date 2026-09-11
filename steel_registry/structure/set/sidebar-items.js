@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FrequencyMethodData","PlacementData","SpreadTypeData"],"struct":["ExclusionZoneData","StructureEntryData","StructureSetData"]};

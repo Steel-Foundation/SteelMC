@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_glow","sound_for"],"struct":["GlowInkSacItem","InkSacItem"]};

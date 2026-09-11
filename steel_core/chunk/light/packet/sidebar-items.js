@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_chunk_light_update_packet","build_chunk_light_update_packet_for_sections","prepare_chunk_section_data","prepare_section_data"]};
