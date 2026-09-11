@@ -119,6 +119,23 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
             6.0,
         )),
     );
+    // TODO implement blue and brown egg entities
+    registry.set_behavior(
+        &vanilla_items::BLUE_EGG,
+        Box::new(ProjectileDispenseBehavior::new(
+            &vanilla_entities::EGG,
+            1.1,
+            6.0,
+        )),
+    );
+    registry.set_behavior(
+        &vanilla_items::BROWN_EGG,
+        Box::new(ProjectileDispenseBehavior::new(
+            &vanilla_entities::EGG,
+            1.1,
+            6.0,
+        )),
+    );
     registry.set_behavior(
         &vanilla_items::SNOWBALL,
         Box::new(ProjectileDispenseBehavior::new(
