@@ -1541,3 +1541,34 @@ fn throttle_player_dropping_items_from_creative_menu() {
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }
+
+#[test]
+fn sword_does_not_destroy_blocks_in_creative() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world = fresh_test_world("sword_does_not_destroy_blocks_in_creative");
+    let pos = BlockPos::new(1, 64, 0);
+    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let dirt = vanilla_blocks::DIRT.default_state();
+    assert!(world.set_block(pos, dirt, UpdateFlags::UPDATE_ALL,));
+    let player = test_player(Arc::clone(&world));
+    player.restore_game_modes(GameType::Creative, None);
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    player.block_breaking.lock().handle_block_break_action(
+        &player,
+        &world,
+        pos,
+        BlockBreakAction::Start,
+        Direction::Up,
+    );
+    assert_eq!(
+        world.get_block_state(pos),
+        dirt,
+        "swords should not destroy blocks when player is in creative mode."
+    );
+}

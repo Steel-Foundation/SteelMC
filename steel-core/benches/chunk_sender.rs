@@ -3,7 +3,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::hint::black_box;
-use steel_core::bootstrap::init_globals_once;
+use steel_core::bootstrap::init_globals;
 use steel_core::player::chunk_sender::benchmark_support::{
     encoded_is_current_for, encoded_pos, prepared_full_chunk, resolve_valid_chunks,
 };
@@ -64,7 +64,7 @@ fn encoding_pool() -> rayon::ThreadPool {
 }
 
 fn fixture(batch_size: usize, shape: BatchShape) -> Fixture {
-    init_globals_once();
+    init_globals();
 
     let positions = grid_positions(batch_size);
     let batch = PreparedBatch {
