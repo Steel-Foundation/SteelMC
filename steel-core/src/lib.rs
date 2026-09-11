@@ -6,6 +6,7 @@
 
 use crate::chunk::chunk_map::ChunkMap;
 
+pub mod ban;
 pub mod behavior;
 pub mod block_entity;
 pub mod bootstrap;

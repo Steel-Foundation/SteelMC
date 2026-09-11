@@ -37,6 +37,7 @@ use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
 
+use crate::ban::BanListManager;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
@@ -379,6 +380,8 @@ pub struct Server {
     pub config: Arc<RuntimeConfig>,
     /// Runtime permission groups and their persistence boundary.
     pub permission_groups: PermissionGroupManager,
+    /// Runtime player ban list and its persistence boundary.
+    pub ban_list: BanListManager,
     /// The cancellation token for graceful shutdown.
     pub cancel_token: CancellationToken,
     /// The key store for the server.
@@ -524,6 +527,7 @@ impl Server {
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
+        ban_list: BanListManager,
     ) -> Result<Self, String> {
         Self::new_with_commands(
             chunk_runtime,
@@ -531,6 +535,7 @@ impl Server {
             config,
             worlds_config,
             permission_groups,
+            ban_list,
             CommandRegistry::new(),
         )
         .await
@@ -547,6 +552,7 @@ impl Server {
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
+        ban_list: BanListManager,
         command_registry: CommandRegistry,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
@@ -709,6 +715,7 @@ impl Server {
         Ok(Server {
             config,
             permission_groups,
+            ban_list,
             cancel_token,
             key_store: KeyStore::create(),
             worlds,

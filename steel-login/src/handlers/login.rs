@@ -50,6 +50,10 @@ impl JavaTcpClient {
         profile: GameProfile,
         reader_encryption: Option<[u8; 16]>,
     ) -> ConnectionAction {
+        if let Some(ban) = self.server.ban_list.find(profile.id) {
+            self.kick(ban.disconnect_message()).await;
+            return ConnectionAction::none();
+        }
         let action = self.send_login_compression().await;
         if !self.disconnect_duplicate_player(&profile).await {
             return ConnectionAction::none();

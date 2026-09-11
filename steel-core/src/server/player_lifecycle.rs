@@ -468,6 +468,12 @@ impl Server {
         self.online_players.len()
     }
 
+    /// Returns the currently connected player with this UUID, if any.
+    #[must_use]
+    pub fn online_player(&self, uuid: Uuid) -> Option<Arc<Player>> {
+        self.online_players.get_by_uuid(&uuid)
+    }
+
     /// Returns a sample of up to 12 online players for the server list ping.
     #[must_use]
     pub fn player_sample(&self) -> Vec<(String, String)> {

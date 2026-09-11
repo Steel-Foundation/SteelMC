@@ -4,10 +4,12 @@
 //! The config is loaded once at startup, split into creation-time values
 //! (consumed by the server constructor) and a `RuntimeConfig` (stored on `Server`).
 
+mod ban_list;
 mod groups;
 mod logging;
 mod server;
 
+pub use ban_list::FileBanListStore;
 pub use groups::FilePermissionGroupStore;
 pub use logging::{LogConfig, LogLevel, LogTimeFormat, RotationTimeFormat};
 pub use server::{ServerConfig, ThreadConfig};
@@ -21,11 +23,12 @@ use std::{
 
 use serde::Deserialize;
 use steel_core::{
+    ban::{BanListConfig, BanListStore},
     config::WorldsConfig,
     permission::{PermissionGroupStore, PermissionGroupsConfig},
 };
 
-use self::{groups::load_or_create_groups, server::validate};
+use self::{ban_list::load_or_create_ban_list, groups::load_or_create_groups, server::validate};
 
 #[cfg(feature = "stand-alone")]
 const DEFAULT_FAVICON: &[u8] = include_bytes!("../../../package-content/favicon.png");
@@ -50,6 +53,12 @@ pub struct SteelConfig {
     /// Path to the loaded `groups.toml`.
     #[serde(skip, default)]
     pub groups_path: Option<PathBuf>,
+    /// Ban list configuration from `banned-players.toml`.
+    #[serde(skip, default)]
+    pub ban_list: BanListConfig,
+    /// Path to the loaded `banned-players.toml`.
+    #[serde(skip, default)]
+    pub ban_list_path: Option<PathBuf>,
 }
 
 impl SteelConfig {
@@ -59,6 +68,14 @@ impl SteelConfig {
         self.groups_path.as_ref().map(|path| {
             Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
         })
+    }
+
+    /// Builds the store used for persistence-first ban list updates.
+    #[must_use]
+    pub fn ban_list_store(&self) -> Option<Arc<dyn BanListStore>> {
+        self.ban_list_path
+            .as_ref()
+            .map(|path| Arc::new(FileBanListStore::new(path.clone())) as Arc<dyn BanListStore>)
     }
 }
 
@@ -112,6 +129,12 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         .join("groups.toml");
     config.groups = load_or_create_groups(&groups_path)?;
     config.groups_path = Some(groups_path);
+    let ban_list_path = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
+        .join("banned-players.toml");
+    config.ban_list = load_or_create_ban_list(&ban_list_path)?;
+    config.ban_list_path = Some(ban_list_path);
 
     // If icon file doesnt exist, write it
     #[cfg(feature = "stand-alone")]

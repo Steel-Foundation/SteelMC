@@ -11,7 +11,8 @@ use std::{
 };
 
 use steel_core::{
-    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionGroupManager, server::Server,
+    GIT_HASH_SHORT, ban::BanListManager, command::CommandRegistry,
+    permission::PermissionGroupManager, server::Server,
 };
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
@@ -93,8 +94,10 @@ impl SteelServer {
         log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
         let permission_group_store = steel_config.permission_group_store();
+        let ban_list_store = steel_config.ban_list_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
+        let ban_list = BanListManager::new(steel_config.ban_list, ban_list_store);
         let permission_groups =
             PermissionGroupManager::new(steel_config.groups, permission_group_store).map_err(
                 |error| {
@@ -110,6 +113,7 @@ impl SteelServer {
             runtime_config,
             worlds_config,
             permission_groups,
+            ban_list,
             command_registry,
         )
         .await
