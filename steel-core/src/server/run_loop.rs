@@ -1,3 +1,4 @@
+use super::tick_overload::TickOverloadGuard;
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
@@ -90,6 +91,7 @@ impl Server {
             }
         };
         let mut next_tick_time = Instant::now();
+        let mut overload_guard = TickOverloadGuard::new();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
@@ -117,6 +119,7 @@ impl Server {
 
             if should_sprint_this_tick {
                 next_tick_time = Instant::now();
+                overload_guard.reset(next_tick_time);
             } else {
                 let now = Instant::now();
                 if now < next_tick_time {
@@ -124,6 +127,12 @@ impl Server {
                         () = cancel_token.cancelled() => break,
                         () = sleep(next_tick_time - now) => {}
                     }
+                } else {
+                    overload_guard.skip_backlog_if_overloaded(
+                        now,
+                        &mut next_tick_time,
+                        nanoseconds_per_tick,
+                    );
                 }
                 next_tick_time += Duration::from_nanos(nanoseconds_per_tick);
             }
