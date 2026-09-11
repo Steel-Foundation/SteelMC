@@ -152,7 +152,7 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when active use is released before completion.
     ///
-    /// Returns whether vanilla should update active use once more before stopping it.
+    /// Returns whether vanilla should apply the stack's after-use component side effects.
     fn release_using(
         &self,
         _stack: &mut ItemStack,
@@ -160,6 +160,11 @@ pub trait ItemBehavior: Send + Sync {
         _user: &dyn LivingEntity,
         _time_left: i32,
     ) -> bool {
+        false
+    }
+
+    /// Returns whether the item acts when the use key is released, rather than the use timer expiring
+    fn use_on_release(&self, _stack: &ItemStack) -> bool {
         false
     }
 
@@ -332,7 +337,7 @@ pub(crate) fn finish_consuming_stack(
 /// had a `use_remainder` and was actually consumed, either swap the fully
 /// emptied stack for the remainder, or — for a stack that still has items
 /// left (e.g. one honey bottle out of several)
-fn apply_use_remainder(
+pub(crate) fn apply_use_remainder(
     original_stack: &ItemStack,
     used_stack: ItemStack,
     user: &dyn LivingEntity,
