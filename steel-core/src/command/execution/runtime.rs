@@ -27,8 +27,8 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
-        GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
-        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        GameModeValue, IdentifierValue, ItemStackValue, MessageValue, NbtPathValue, ObjectiveValue,
+        SteelArgumentValue, TimeValue, TimelineValue, WordValue, WorldClockValue,
     },
     selector::EntitySelector,
 };
@@ -350,6 +350,16 @@ where
     pub(crate) fn text_component(&self, name: &str) -> Result<&TextComponent, CommandSyntaxError> {
         self.typed_argument::<ComponentValue>(name)
             .map(|value| &value.0)
+    }
+
+    pub(crate) fn message(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        self.typed_argument::<MessageValue>(name)
+            .map(|value| &*value.0)
+    }
+
+    pub(crate) fn word(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        self.typed_argument::<WordValue>(name)
+            .map(|value| &*value.0)
     }
 
     pub(crate) fn nbt_path(&self, name: &str) -> Result<&NbtPath, CommandSyntaxError> {
