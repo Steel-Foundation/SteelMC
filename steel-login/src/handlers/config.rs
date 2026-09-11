@@ -6,6 +6,7 @@ use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
 use steel_core::player::connection::JavaConnection;
 use steel_core::player::{ClientInformation, Player};
+use steel_core::server::PlayerJoinReserveError;
 use steel_protocol::packets::common::CCustomPayload;
 use steel_protocol::packets::common::{SClientInformation, SCustomPayload};
 use steel_protocol::packets::config::CFinishConfiguration;
@@ -101,12 +102,22 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
-        let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
-            self.kick(TextComponent::translated(
-                translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
-            ))
-            .await;
-            return ConnectionAction::none();
+        let reservation = match self.server.try_reserve_player_join(gameprofile.id) {
+            Ok(reservation) => reservation,
+            Err(PlayerJoinReserveError::Duplicate) => {
+                self.kick(TextComponent::translated(
+                    translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
+                ))
+                .await;
+                return ConnectionAction::none();
+            }
+            Err(PlayerJoinReserveError::ServerFull) => {
+                self.kick(TextComponent::translated(
+                    translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg(),
+                ))
+                .await;
+                return ConnectionAction::none();
+            }
         };
         self.protocol.store(ConnectionProtocol::Play);
 

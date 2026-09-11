@@ -19,11 +19,15 @@ use uuid::Uuid;
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
     player::{ClientInformation, GameProfile, Player, PlayerConnection},
-    server::DuplicatePlayerWaitError,
+    server::{DuplicatePlayerWaitError, PlayerJoinReserveError},
     world::World,
 };
 
-use super::{PlayerAdmissionState, Server, fresh_test_world, test_server, test_storage_root};
+use super::{
+    PlayerAdmissionState, Server, fresh_test_world, test_server, test_server_with_max_players,
+    test_storage_root,
+};
+use crate::permission::{OP_GROUP, PermissionSet, PermissionSubjectIndex, PermissionSubjectState};
 
 fn java_test_player(
     server: &Arc<Server>,
@@ -247,13 +251,16 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         };
 
         let first_reservation = server.try_reserve_player_join(uuid);
-        let Some(first_reservation) = first_reservation else {
+        let Ok(first_reservation) = first_reservation else {
             panic!("configuration should reserve the released UUID");
         };
-        assert!(server.try_reserve_player_join(uuid).is_none());
+        assert!(matches!(
+            server.try_reserve_player_join(uuid),
+            Err(PlayerJoinReserveError::Duplicate)
+        ));
         drop(first_reservation);
         let second_reservation = server.try_reserve_player_join(uuid);
-        assert!(second_reservation.is_some());
+        assert!(second_reservation.is_ok());
         drop(second_reservation);
 
         drop(pending);
@@ -341,6 +348,120 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
             ));
         }
 
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn max_players_rejects_join_when_online_slots_are_full() {
+    let world = fresh_test_world("max_players_online_full");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("max-players-online-full");
+        let server = test_server_with_max_players(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+            1,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let (online, _, _) = java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        assert!(server.online_players.insert(Arc::clone(&online)));
+
+        assert!(matches!(
+            server.try_reserve_player_join(Uuid::from_u128(2)),
+            Err(PlayerJoinReserveError::ServerFull)
+        ));
+
+        drop(online);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn max_players_counts_joining_reservations_as_occupied_slots() {
+    let world = fresh_test_world("max_players_joining_slot");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("max-players-joining-slot");
+        let server = test_server_with_max_players(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+            1,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let reservation = server
+            .try_reserve_player_join(Uuid::from_u128(1))
+            .expect("first join should reserve the only slot");
+        assert!(matches!(
+            server.try_reserve_player_join(Uuid::from_u128(2)),
+            Err(PlayerJoinReserveError::ServerFull)
+        ));
+        drop(reservation);
+        assert!(server.try_reserve_player_join(Uuid::from_u128(2)).is_ok());
+
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn max_players_allows_operator_bypass() {
+    let world = fresh_test_world("max_players_op_bypass");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("max-players-op-bypass");
+        let op_uuid = Uuid::from_u128(99);
+        let mut permissions = PermissionSubjectIndex::new();
+        permissions.set(
+            op_uuid,
+            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+        );
+        let server =
+            test_server_with_max_players(Arc::clone(&world), permissions, &storage_root, 1).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let (online, _, _) = java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        assert!(server.online_players.insert(Arc::clone(&online)));
+
+        assert!(matches!(
+            server.try_reserve_player_join(Uuid::from_u128(2)),
+            Err(PlayerJoinReserveError::ServerFull)
+        ));
+        assert!(server.try_reserve_player_join(op_uuid).is_ok());
+
+        drop(online);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");

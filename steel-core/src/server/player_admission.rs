@@ -2,7 +2,7 @@ use steel_utils::translations;
 
 use super::{
     Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
-    DomainPlayerState, EncodedPacket, Entity, GlobalPlayerData, Instant, JoinSet,
+    DomainPlayerState, EncodedPacket, Entity, FxHashMap, GlobalPlayerData, Instant, JoinSet,
     NetworkConnection, PendingWorldChangeToken, PersistentPlayerData, Player, ResetReason,
     SegQueue, Server, SyncMutex, Uuid, mpsc,
 };
@@ -34,6 +34,17 @@ pub enum DuplicatePlayerWaitError {
     /// Vanilla's total login deadline elapsed while the old session was leaving.
     #[error("duplicate-player wait exceeded the login deadline")]
     TimedOut,
+}
+
+/// Why [`Server::try_reserve_player_join`] refused a new join reservation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PlayerJoinReserveError {
+    /// UUID already has a join admission or an online session.
+    #[error("player UUID is already joining or online")]
+    Duplicate,
+    /// Online + in-flight `Joining` reservations already fill `max_players`.
+    #[error("server is full")]
+    ServerFull,
 }
 
 /// Exclusive ownership of one UUID's pending join pipeline.
@@ -195,9 +206,16 @@ impl Server {
         if player.connection.closed() {
             return;
         }
-        let Some(reservation) = self.try_reserve_player_join(player.gameprofile.id) else {
-            player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
-            return;
+        let reservation = match self.try_reserve_player_join(player.gameprofile.id) {
+            Ok(reservation) => reservation,
+            Err(PlayerJoinReserveError::Duplicate) => {
+                player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
+                return;
+            }
+            Err(PlayerJoinReserveError::ServerFull) => {
+                player.disconnect(translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg());
+                return;
+            }
         };
 
         reservation.queue_player_join(player);
@@ -300,22 +318,41 @@ impl Server {
         }
     }
 
-    /// Atomically reserves a UUID after configuration's duplicate-session recheck.
-    pub fn try_reserve_player_join(self: &Arc<Self>, uuid: Uuid) -> Option<PlayerJoinReservation> {
+    /// Reserves a UUID for join after the config-phase duplicate recheck.
+    ///
+    /// Under the admissions lock: reject if the UUID is busy; otherwise count
+    /// online players + `Joining` slots against `max_players`. Ops bypass the cap
+    /// (`canBypassPlayerLimit`).
+    pub fn try_reserve_player_join(
+        self: &Arc<Self>,
+        uuid: Uuid,
+    ) -> Result<PlayerJoinReservation, PlayerJoinReserveError> {
         let mut admissions = self.player_admissions.lock();
         if admissions.contains_key(&uuid) {
-            return None;
+            return Err(PlayerJoinReserveError::Duplicate);
         }
         if self.online_players.get_by_uuid(&uuid).is_some() {
-            return None;
+            return Err(PlayerJoinReserveError::Duplicate);
+        }
+        if !self.is_operator(uuid) && self.join_slots_full(&admissions) {
+            return Err(PlayerJoinReserveError::ServerFull);
         }
         let previous = admissions.insert(uuid, PlayerAdmissionState::Joining);
         debug_assert!(previous.is_none());
-        Some(PlayerJoinReservation {
+        Ok(PlayerJoinReservation {
             server: Arc::clone(self),
             uuid,
             queued: false,
         })
+    }
+
+    /// True when online players plus in-flight `Joining` reservations fill `max_players`.
+    fn join_slots_full(&self, admissions: &FxHashMap<Uuid, PlayerAdmissionState>) -> bool {
+        let joining = admissions
+            .values()
+            .filter(|state| **state == PlayerAdmissionState::Joining)
+            .count();
+        self.online_players.len().saturating_add(joining) >= self.config.max_players as usize
     }
 
     #[cfg(test)]
@@ -323,6 +360,9 @@ impl Server {
         let uuid = player.gameprofile.id;
         let mut admissions = self.player_admissions.lock();
         if admissions.contains_key(&uuid) || self.online_players.get_by_uuid(&uuid).is_some() {
+            return false;
+        }
+        if !self.is_operator(uuid) && self.join_slots_full(&admissions) {
             return false;
         }
         admissions

@@ -152,8 +152,12 @@ impl NetworkConnection for RecordingConnection {
 }
 
 fn test_runtime_config() -> Arc<RuntimeConfig> {
+    test_runtime_config_with_max_players(20)
+}
+
+fn test_runtime_config_with_max_players(max_players: u32) -> Arc<RuntimeConfig> {
     Arc::new(RuntimeConfig {
-        max_players: 1,
+        max_players,
         view_distance: 2,
         simulation_distance: 2,
         online_mode: false,
@@ -196,12 +200,53 @@ async fn test_server(
     .await
 }
 
+async fn test_server_with_max_players(
+    world: Arc<World>,
+    player_permission_states: PermissionSubjectIndex,
+    storage_root: &Path,
+    max_players: u32,
+) -> Result<Arc<Server>, String> {
+    let domain = ResolvedDomainConfig {
+        name: world.domain().to_owned(),
+        default_world: world.key.clone(),
+        worlds: vec![world.key.clone()],
+    };
+    test_server_with_worlds_config(
+        domain.name.clone(),
+        slice::from_ref(&domain),
+        slice::from_ref(&world),
+        player_permission_states,
+        storage_root,
+        test_runtime_config_with_max_players(max_players),
+    )
+    .await
+}
+
 async fn test_server_with_worlds(
     default_domain: String,
     domains: &[ResolvedDomainConfig],
     loaded_worlds: &[Arc<World>],
     player_permission_states: PermissionSubjectIndex,
     storage_root: &Path,
+) -> Result<Arc<Server>, String> {
+    test_server_with_worlds_config(
+        default_domain,
+        domains,
+        loaded_worlds,
+        player_permission_states,
+        storage_root,
+        test_runtime_config(),
+    )
+    .await
+}
+
+async fn test_server_with_worlds_config(
+    default_domain: String,
+    domains: &[ResolvedDomainConfig],
+    loaded_worlds: &[Arc<World>],
+    player_permission_states: PermissionSubjectIndex,
+    storage_root: &Path,
+    config: Arc<RuntimeConfig>,
 ) -> Result<Arc<Server>, String> {
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
     for world in loaded_worlds {
@@ -228,7 +273,6 @@ async fn test_server_with_worlds(
         .collect();
     let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
         .map_err(|error| format!("test permission groups should resolve: {error}"))?;
-    let config = test_runtime_config();
     let registry_cache = RegistryCache::new(config.compression);
 
     Ok(Arc::new(Server {
