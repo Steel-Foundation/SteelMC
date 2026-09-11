@@ -1,6 +1,6 @@
 use super::snowy_block::is_snowy_setting;
 use crate::behavior::BlockRef;
-use crate::chunk::light::get_light_block_into;
+use crate::chunk::light::{MAX_LIGHT_LEVEL, get_light_block_into};
 use crate::world::{LevelReader, World};
 use std::sync::Arc;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -11,9 +11,9 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// A structure implementing the spreading of grass blocks and its variants
-pub struct SpreadingSnowyBlock {}
+pub struct SpreadingGrassBlock {}
 
-impl SpreadingSnowyBlock {
+impl SpreadingGrassBlock {
     fn can_stay_alive(state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
         let above = pos.above();
         let above_state: BlockStateId = level.get_block_state(above);
@@ -32,7 +32,7 @@ impl SpreadingSnowyBlock {
             Direction::Up,
             above_state.get_light_dampening(),
         );
-        light_dampening_top_face < 15
+        light_dampening_top_face < MAX_LIGHT_LEVEL
     }
     fn can_propagate(state: BlockStateId, level: &Arc<World>, pos: BlockPos) -> bool {
         Self::can_stay_alive(state, level, pos)

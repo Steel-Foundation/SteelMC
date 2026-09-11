@@ -4,7 +4,7 @@ use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::snowy_block::{snowy_placement_state, update_snowy_shape};
-use super::spreading_snowy_block::SpreadingSnowyBlock;
+use super::spreading_grass_block::SpreadingGrassBlock;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{ScheduledTickAccess, World};
@@ -42,7 +42,7 @@ impl BlockBehavior for MyceliumBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        SpreadingSnowyBlock::random_tick(
+        SpreadingGrassBlock::random_tick(
             &vanilla_blocks::MYCELIUM,
             &vanilla_blocks::DIRT,
             state,
