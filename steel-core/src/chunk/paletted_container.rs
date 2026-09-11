@@ -9,7 +9,7 @@ use std::{
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, RegistryExt as _};
-use steel_utils::{BlockStateId, codec::VarInt, serial::WriteTo};
+use steel_utils::{BlockStateId, codec::VarInt, mth::ceil_log2, serial::WriteTo};
 
 /// A trait for converting a value to a global ID.
 pub trait ToGlobalId {
@@ -450,12 +450,6 @@ fn biome_global_bits() -> u8 {
     *BITS.get_or_init(|| ceil_log2(REGISTRY.biomes.len()))
 }
 
-/// Vanilla `Mth.ceillog2`: the number of bits needed to represent every id in
-/// `0..n`.
-const fn ceil_log2(n: usize) -> u8 {
-    if n <= 1 { 0 } else { (n - 1).bit_width() as u8 }
-}
-
 fn pack_bits(indices: &[u32], bits: usize) -> Vec<u64> {
     let values_per_long = 64 / bits;
     let len = indices.len().div_ceil(values_per_long);
@@ -536,9 +530,7 @@ impl BlockPalette {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BiomePalette, BlockPalette, biome_global_bits, block_state_global_bits, ceil_log2,
-    };
+    use super::{BiomePalette, BlockPalette, biome_global_bits, block_state_global_bits};
     use steel_registry::init_vanilla_registry;
     use steel_utils::BlockStateId;
 
@@ -613,20 +605,6 @@ mod tests {
         }
 
         assert_column_matches_get(&container, x, z);
-    }
-
-    #[test]
-    fn ceil_log2_matches_vanilla_worked_examples() {
-        assert_eq!(ceil_log2(0), 0);
-        assert_eq!(ceil_log2(1), 0);
-        // 64 possible ids still fit in 6 bits (ids 0..=63).
-        assert_eq!(ceil_log2(64), 6);
-        // A 65th id needs a 7th bit, matching the issue's 66-biome regression.
-        assert_eq!(ceil_log2(65), 7);
-        // 26.2's block-state count needs 15 bits, matching the old hardcoded value.
-        assert_eq!(ceil_log2(32_366), 15);
-        // 26.3-rc-1's block-state count needs a 16th bit.
-        assert_eq!(ceil_log2(35_723), 16);
     }
 
     /// A container with more distinct values than any linear/hash palette holds
