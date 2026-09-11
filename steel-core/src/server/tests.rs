@@ -47,7 +47,7 @@ use crate::command::execution::{
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
@@ -217,12 +217,9 @@ async fn test_server_with_worlds(
     let command_storage = DomainCommandStorage::load(&worlds)
         .await
         .map_err(|error| format!("test command storage should load: {error}"))?;
-    let player_data_storage = PlayerDataStorage::new(
-        storage_root.to_owned(),
-        StorageSelection::default_player_file(),
-    )
-    .await
-    .map_err(|error| format!("test player storage should initialize: {error}"))?;
+    let player_data_storage = PlayerDataStorage::on_disk(storage_root.to_owned())
+        .await
+        .map_err(|error| format!("test player storage should initialize: {error}"))?;
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
     let command_permission_keys = registered_commands
