@@ -40,13 +40,15 @@ fn ban_without_reason(
 fn ban_with_reason(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<BanCommandSuspension, CommandSyntaxError> {
-    let reason = context.message("reason")?.to_owned();
+    let reason = context.message("reason")?;
+    let reason = TextComponent::from_snbt(reason)
+        .unwrap_or_else(|_| TextComponent::plain(reason.to_owned()));
     start_ban(context, Some(reason))
 }
 
 fn start_ban(
     context: &SteelCommandContext<CommandSource>,
-    reason: Option<String>,
+    reason: Option<TextComponent>,
 ) -> Result<BanCommandSuspension, CommandSyntaxError> {
     let argument = context.game_profile_argument("targets").cloned()?;
     let source = context.source().clone();
@@ -70,7 +72,7 @@ struct BanCommandResult {
 async fn run_ban(
     source: &CommandSource,
     argument: GameProfileArgument,
-    reason: Option<String>,
+    reason: Option<TextComponent>,
 ) -> Result<BanCommandResult, CommandSyntaxError> {
     let targets = argument.resolve(source).await?;
     let source_name = source.sender().to_string();

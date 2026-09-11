@@ -31,9 +31,10 @@ pub struct BanEntry {
     /// When the ban expires. `None` means it never expires.
     #[serde(default)]
     pub expires: Option<DateTime<Utc>>,
-    /// The ban reason, if any.
+    /// The ban reason, if any. Supports rich text (colors, hover events, ...)
+    /// via SNBT, matching a plain `TextComponent::plain` for ordinary text.
     #[serde(default)]
-    pub reason: Option<String>,
+    pub reason: Option<TextComponent>,
 }
 
 impl BanEntry {
@@ -43,14 +44,13 @@ impl BanEntry {
         self.expires.is_some_and(|expires| expires <= Utc::now())
     }
 
-    /// Returns vanilla's `BanListEntry.getReasonMessage`: the literal reason,
+    /// Returns vanilla's `BanListEntry.getReasonMessage`: the given reason,
     /// or a translated default when none was given.
     #[must_use]
     pub fn reason_message(&self) -> TextComponent {
-        self.reason.as_deref().map_or_else(
-            || TextComponent::from(&translations::MULTIPLAYER_DISCONNECT_BANNED_REASON_DEFAULT),
-            |reason| TextComponent::plain(reason.to_owned()),
-        )
+        self.reason.clone().unwrap_or_else(|| {
+            TextComponent::from(&translations::MULTIPLAYER_DISCONNECT_BANNED_REASON_DEFAULT)
+        })
     }
 
     /// Builds vanilla's `PlayerList.canPlayerLogin` rejection message for this
@@ -244,7 +244,10 @@ mod tests {
     use steel_utils::locks::SyncMutex;
     use uuid::Uuid;
 
-    use super::{BanEntry, BanListConfig, BanListManager, BanListStore, BanListStoreError, Utc};
+    use super::{
+        BanEntry, BanListConfig, BanListManager, BanListStore, BanListStoreError, TextComponent,
+        Utc,
+    };
 
     #[derive(Debug)]
     struct CapturingStore {
@@ -283,7 +286,7 @@ mod tests {
             created: Utc::now(),
             source: "Console".to_owned(),
             expires: None,
-            reason: Some(reason.to_owned()),
+            reason: Some(TextComponent::plain(reason.to_owned())),
         }
     }
 
@@ -302,7 +305,10 @@ mod tests {
 
         let entries = manager.entries();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].reason.as_deref(), Some("second"));
+        assert_eq!(
+            entries[0].reason,
+            Some(TextComponent::plain("second".to_owned()))
+        );
     }
 
     #[tokio::test]
