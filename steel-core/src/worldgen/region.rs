@@ -270,7 +270,7 @@ impl<'a> WorldGenRegion<'a> {
         self.context.generation_height()
     }
 
-    /// Returns this dimension's sea level.
+    /// Returns sea level.
     #[must_use]
     pub const fn sea_level(&self) -> i32 {
         self.context.sea_level()
@@ -1416,6 +1416,10 @@ const fn abs_diff(left: i32, right: i32) -> i32 {
 impl LevelReader for WorldGenRegion<'_> {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         self.block_state(pos)
+    }
+
+    fn sea_level(&self) -> i32 {
+        WorldGenRegion::sea_level(self)
     }
 
     fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {

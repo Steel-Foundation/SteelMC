@@ -87,7 +87,7 @@ impl Goal for PanicGoal {
     }
 }
 
-fn look_for_water(mob: &dyn PathfinderMob, xz_dist: i32) -> Option<BlockPos> {
+pub(crate) fn look_for_water(mob: &dyn PathfinderMob, xz_dist: i32) -> Option<BlockPos> {
     let world = mob.level()?;
     let mob_position = mob.block_position();
     let block_state = world.get_block_state(mob_position);
