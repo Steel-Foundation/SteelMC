@@ -7,6 +7,7 @@ mod building;
 mod colored;
 mod container;
 mod decoration;
+mod face_attached_horizontal_directional_block;
 mod falling;
 mod fluid;
 mod portal;
@@ -29,7 +30,8 @@ pub use building::{
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
     AnvilBlock, BarrelBlock, BeehiveBlock, BlastFurnaceBlock, ChiseledBookShelfBlock,
-    CraftingTableBlock, EnderChestBlock, FurnaceBlock, ShulkerBoxBlock, SmokerBlock,
+    CraftingTableBlock, EnderChestBlock, FurnaceBlock, GrindstoneBlock, ShulkerBoxBlock,
+    SmokerBlock,
 };
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
