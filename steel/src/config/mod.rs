@@ -10,7 +10,7 @@ mod logging;
 mod server;
 mod whitelist;
 
-pub use ban_list::FileBanListStore;
+pub use ban_list::{FileBanListStore, FileIpBanListStore};
 pub use groups::FilePermissionGroupStore;
 pub use logging::{LogConfig, LogLevel, LogTimeFormat, RotationTimeFormat};
 pub use server::{ServerConfig, ThreadConfig};
@@ -25,14 +25,16 @@ use std::{
 
 use serde::Deserialize;
 use steel_core::{
-    ban::{BanListConfig, BanListStore},
+    ban::{BanListConfig, BanListStore, IpBanListConfig, IpBanListStore},
     config::WorldsConfig,
     permission::{PermissionGroupStore, PermissionGroupsConfig},
     whitelist::{WhitelistConfig, WhitelistStore},
 };
 
 use self::{
-    ban_list::load_or_create_ban_list, groups::load_or_create_groups, server::validate,
+    ban_list::{load_or_create_ban_list, load_or_create_ip_ban_list},
+    groups::load_or_create_groups,
+    server::validate,
     whitelist::load_or_create_whitelist,
 };
 
@@ -65,6 +67,12 @@ pub struct SteelConfig {
     /// Path to the loaded `banned-players.toml`.
     #[serde(skip, default)]
     pub ban_list_path: Option<PathBuf>,
+    /// IP ban list configuration from `banned-ips.toml`.
+    #[serde(skip, default)]
+    pub ip_ban_list: IpBanListConfig,
+    /// Path to the loaded `banned-ips.toml`.
+    #[serde(skip, default)]
+    pub ip_ban_list_path: Option<PathBuf>,
     /// Whitelist configuration from `whitelist.toml`.
     #[serde(skip, default)]
     pub whitelist: WhitelistConfig,
@@ -88,6 +96,14 @@ impl SteelConfig {
         self.ban_list_path
             .as_ref()
             .map(|path| Arc::new(FileBanListStore::new(path.clone())) as Arc<dyn BanListStore>)
+    }
+
+    /// Builds the store used for persistence-first IP ban list updates.
+    #[must_use]
+    pub fn ip_ban_list_store(&self) -> Option<Arc<dyn IpBanListStore>> {
+        self.ip_ban_list_path
+            .as_ref()
+            .map(|path| Arc::new(FileIpBanListStore::new(path.clone())) as Arc<dyn IpBanListStore>)
     }
 
     /// Builds the store used for persistence-first whitelist updates.
@@ -155,6 +171,12 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         .join("banned-players.toml");
     config.ban_list = load_or_create_ban_list(&ban_list_path)?;
     config.ban_list_path = Some(ban_list_path);
+    let ip_ban_list_path = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
+        .join("banned-ips.toml");
+    config.ip_ban_list = load_or_create_ip_ban_list(&ip_ban_list_path)?;
+    config.ip_ban_list_path = Some(ip_ban_list_path);
     let whitelist_path = path
         .parent()
         .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?

@@ -41,7 +41,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use crate::ban::BanListManager;
+use crate::ban::{BanListManager, IpBanListManager};
 use crate::behavior::init_behaviors;
 use crate::command::execution::{
     CommandArgumentSource, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
@@ -235,6 +235,7 @@ async fn test_server_with_worlds(
     let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
         .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     let ban_list = BanListManager::transient();
+    let ip_ban_list = IpBanListManager::transient();
     let whitelist = WhitelistManager::transient();
     let config = test_runtime_config();
     let registry_cache = RegistryCache::new(config.compression);
@@ -243,6 +244,7 @@ async fn test_server_with_worlds(
         config,
         permission_groups,
         ban_list,
+        ip_ban_list,
         whitelist,
         cancel_token: CancellationToken::new(),
         key_store: KeyStore::create(),
@@ -3891,6 +3893,7 @@ default = true
         PermissionGroupManager::transient(PermissionGroupsConfig::default())
             .expect("default permission groups should resolve"),
         BanListManager::transient(),
+        IpBanListManager::transient(),
         WhitelistManager::transient(),
     )
     .await

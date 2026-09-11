@@ -61,6 +61,10 @@ impl JavaTcpClient {
             .await;
             return ConnectionAction::none();
         }
+        if let Some(ban) = self.server.ip_ban_list.find(&self.address.ip().to_string()) {
+            self.kick(ban.disconnect_message()).await;
+            return ConnectionAction::none();
+        }
         let action = self.send_login_compression().await;
         if !self.disconnect_duplicate_player(&profile).await {
             return ConnectionAction::none();

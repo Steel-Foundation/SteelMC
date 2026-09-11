@@ -236,6 +236,185 @@ impl From<BanListStoreError> for BanListManagerError {
     }
 }
 
+/// A single IP ban entry, keyed by the banned IP address, matching vanilla's
+/// `IpBanListEntry`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IpBanEntry {
+    /// The banned IP address, as text (e.g. `"127.0.0.1"`).
+    pub ip: String,
+    /// When the ban was created.
+    pub created: DateTime<Utc>,
+    /// Who (or what) created the ban, e.g. a command sender's name.
+    pub source: String,
+    /// When the ban expires. `None` means it never expires.
+    #[serde(default)]
+    pub expires: Option<DateTime<Utc>>,
+    /// The ban reason, if any. Supports rich text (colors, hover events, ...)
+    /// via SNBT, matching a plain `TextComponent::plain` for ordinary text.
+    #[serde(default)]
+    pub reason: Option<TextComponent>,
+}
+
+impl IpBanEntry {
+    /// Returns whether this ban has expired and should no longer apply.
+    #[must_use]
+    pub fn has_expired(&self) -> bool {
+        self.expires.is_some_and(|expires| expires <= Utc::now())
+    }
+
+    /// Returns vanilla's `BanListEntry.getReasonMessage`: the given reason,
+    /// or a translated default when none was given.
+    #[must_use]
+    pub fn reason_message(&self) -> TextComponent {
+        self.reason.clone().unwrap_or_else(|| {
+            TextComponent::from(&translations::MULTIPLAYER_DISCONNECT_BANNED_REASON_DEFAULT)
+        })
+    }
+
+    /// Builds vanilla's `PlayerList.canPlayerLogin` IP-ban rejection message:
+    /// the reason, with an expiration line appended when the ban isn't
+    /// permanent.
+    #[must_use]
+    pub fn disconnect_message(&self) -> TextComponent {
+        let message = translations::MULTIPLAYER_DISCONNECT_BANNED_IP_REASON
+            .message([self.reason_message()])
+            .component();
+        let Some(expires) = self.expires else {
+            return message;
+        };
+        let expiration = translations::MULTIPLAYER_DISCONNECT_BANNED_IP_EXPIRATION
+            .message([TextComponent::plain(
+                expires.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            )])
+            .component();
+        message.add_child(expiration)
+    }
+}
+
+/// Parsed `banned-ips.toml` root.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IpBanListConfig {
+    /// The list of IP ban entries.
+    #[serde(default)]
+    pub bans: Vec<IpBanEntry>,
+}
+
+/// Persists the IP ban list configuration owned outside `steel-core`.
+pub trait IpBanListStore: Send + Sync {
+    /// Saves the complete IP ban list configuration.
+    fn save_bans(
+        &self,
+        config: IpBanListConfig,
+    ) -> BoxFuture<'static, Result<(), BanListStoreError>>;
+}
+
+/// Runtime IP ban list with persistence-first updates.
+pub struct IpBanListManager {
+    updates: AsyncMutex<()>,
+    state: SyncRwLock<IpBanListConfig>,
+    store: Option<Arc<dyn IpBanListStore>>,
+}
+
+impl fmt::Debug for IpBanListManager {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IpBanListManager")
+            .field("updates", &self.updates)
+            .field("state", &self.state)
+            .field("store", &self.store.as_ref().map(|_| "<ip ban list store>"))
+            .finish()
+    }
+}
+
+impl IpBanListManager {
+    /// Builds a manager from an initial config and an optional persistence store.
+    #[must_use]
+    pub fn new(config: IpBanListConfig, store: Option<Arc<dyn IpBanListStore>>) -> Self {
+        Self {
+            updates: AsyncMutex::new(()),
+            state: SyncRwLock::new(config),
+            store,
+        }
+    }
+
+    /// Builds a manager without persistence.
+    #[must_use]
+    pub fn transient() -> Self {
+        Self::new(IpBanListConfig::default(), None)
+    }
+
+    /// Returns the active (non-expired) ban entry for an IP, if any.
+    #[must_use]
+    pub fn find(&self, ip: &str) -> Option<IpBanEntry> {
+        self.state
+            .read()
+            .bans
+            .iter()
+            .find(|entry| entry.ip == ip && !entry.has_expired())
+            .cloned()
+    }
+
+    /// Returns whether an IP currently has an active ban.
+    #[must_use]
+    pub fn is_banned(&self, ip: &str) -> bool {
+        self.find(ip).is_some()
+    }
+
+    /// Returns all active (non-expired) ban entries.
+    #[must_use]
+    pub fn entries(&self) -> Vec<IpBanEntry> {
+        self.state
+            .read()
+            .bans
+            .iter()
+            .filter(|entry| !entry.has_expired())
+            .cloned()
+            .collect()
+    }
+
+    /// Adds or replaces the ban entry for `entry.ip`, persisting first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when persistence fails.
+    pub async fn add(&self, entry: IpBanEntry) -> Result<(), BanListManagerError> {
+        let _guard = self.updates.lock().await;
+        let mut config = self.state.read().clone();
+        config.bans.retain(|existing| existing.ip != entry.ip);
+        config.bans.push(entry);
+        self.persist_locked(config).await
+    }
+
+    /// Removes the ban entry for an IP, persisting first.
+    ///
+    /// Returns whether an entry was actually removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when persistence fails.
+    pub async fn remove(&self, ip: &str) -> Result<bool, BanListManagerError> {
+        let _guard = self.updates.lock().await;
+        let mut config = self.state.read().clone();
+        let previous_len = config.bans.len();
+        config.bans.retain(|entry| entry.ip != ip);
+        if config.bans.len() == previous_len {
+            return Ok(false);
+        }
+        self.persist_locked(config).await?;
+        Ok(true)
+    }
+
+    async fn persist_locked(&self, config: IpBanListConfig) -> Result<(), BanListManagerError> {
+        if let Some(store) = &self.store {
+            store.save_bans(config.clone()).await?;
+        }
+        *self.state.write() = config;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -245,8 +424,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        BanEntry, BanListConfig, BanListManager, BanListStore, BanListStoreError, TextComponent,
-        Utc,
+        BanEntry, BanListConfig, BanListManager, BanListStore, BanListStoreError, IpBanEntry,
+        IpBanListManager, TextComponent, Utc,
     };
 
     #[derive(Debug)]
@@ -364,5 +543,69 @@ mod tests {
             "failed to store ban list: test store failure"
         );
         assert!(!failing.is_banned(uuid));
+    }
+
+    fn ip_entry(ip: &str, reason: &str) -> IpBanEntry {
+        IpBanEntry {
+            ip: ip.to_owned(),
+            created: Utc::now(),
+            source: "Console".to_owned(),
+            expires: None,
+            reason: Some(TextComponent::plain(reason.to_owned())),
+        }
+    }
+
+    #[tokio::test]
+    async fn ip_add_replaces_existing_entry_for_the_same_ip() {
+        let manager = IpBanListManager::transient();
+        manager
+            .add(ip_entry("127.0.0.1", "first"))
+            .await
+            .expect("add should succeed");
+        manager
+            .add(ip_entry("127.0.0.1", "second"))
+            .await
+            .expect("add should succeed");
+
+        let entry = manager
+            .find("127.0.0.1")
+            .expect("entry should still be banned");
+        assert_eq!(
+            entry.reason,
+            Some(TextComponent::plain("second".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn ip_expired_bans_are_not_active() {
+        let manager = IpBanListManager::transient();
+        let mut expired = ip_entry("127.0.0.1", "stale");
+        expired.expires = Some(Utc::now() - chrono::Duration::seconds(1));
+        manager.add(expired).await.expect("add should succeed");
+
+        assert!(!manager.is_banned("127.0.0.1"));
+    }
+
+    #[tokio::test]
+    async fn ip_remove_reports_whether_an_entry_existed() {
+        let manager = IpBanListManager::transient();
+        assert!(
+            !manager
+                .remove("127.0.0.1")
+                .await
+                .expect("remove should succeed")
+        );
+
+        manager
+            .add(ip_entry("127.0.0.1", "reason"))
+            .await
+            .expect("add should succeed");
+        assert!(
+            manager
+                .remove("127.0.0.1")
+                .await
+                .expect("remove should succeed")
+        );
+        assert!(!manager.is_banned("127.0.0.1"));
     }
 }
