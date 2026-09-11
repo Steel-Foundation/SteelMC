@@ -97,9 +97,6 @@ pub enum PacketError {
     #[error("packet length {0} exceeds maximum length")]
     /// The packet length exceeds the maximum length.
     TooLong(usize),
-    #[error("packet length is out of bounds")]
-    /// The packet length is out of bounds.
-    OutOfBounds,
     #[error("malformed packet length VarInt: {0}")]
     /// The packet length `VarInt` is malformed.
     MalformedLength(String),
@@ -112,6 +109,9 @@ pub enum PacketError {
     #[error("failed to compress packet: {0}")]
     /// Failed to compress the packet.
     CompressionFailed(String),
+    #[error("badly compressed packet - size of {0} is below the server threshold")]
+    /// The packet declares a compressed size below the server's compression threshold.
+    BelowThreshold(usize),
     #[error("packet is uncompressed but greater than the threshold")]
     /// The packet is uncompressed but greater than the threshold.
     NotCompressed,

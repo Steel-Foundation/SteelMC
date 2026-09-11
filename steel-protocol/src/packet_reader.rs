@@ -18,9 +18,7 @@ use steel_utils::codec::VarInt;
 use steel_utils::serial::ReadFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 
-use crate::utils::{
-    Aes128Cfb8Dec, MAX_PACKET_DATA_SIZE, MAX_PACKET_SIZE, PacketError, RawPacket, StreamDecryptor,
-};
+use crate::utils::{Aes128Cfb8Dec, MAX_PACKET_DATA_SIZE, PacketError, RawPacket, StreamDecryptor};
 
 /// A reader that can decrypt data.
 pub enum DecryptionReader<R: AsyncRead + Unpin> {
@@ -108,10 +106,32 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
     /// - If the packet fails to decompress.
     #[expect(clippy::cast_sign_loss)]
     pub async fn get_raw_packet(&mut self) -> Result<RawPacket, PacketError> {
-        let packet_len = VarInt::read_async(&mut self.reader).await? as usize;
+        // Decode the packet length VarInt manually, capping it at 3 bytes like vanilla
+        // `Varint21FrameDecoder`, so oversized lengths fail fast instead of consuming
+        // unbounded input.
+        let mut packet_len: usize = 0;
+        let mut length_bytes = 0;
+        loop {
+            if length_bytes == 3 {
+                Err(PacketError::MalformedLength(
+                    "packet length varint exceeds 3 bytes".to_string(),
+                ))?;
+            }
 
-        if packet_len > MAX_PACKET_SIZE {
-            Err(PacketError::OutOfBounds)?;
+            let mut byte = [0u8; 1];
+            self.reader.read_exact(&mut byte).await?;
+            packet_len |= ((byte[0] & 0x7F) as usize) << (7 * length_bytes);
+            length_bytes += 1;
+
+            if byte[0] & 0x80 == 0 {
+                break;
+            }
+        }
+
+        if packet_len == 0 {
+            Err(PacketError::MalformedLength(
+                "packet length cannot be zero".to_string(),
+            ))?;
         }
 
         // Read the entire packet data into a buffer
@@ -132,6 +152,10 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
             }
 
             if decompressed_len > 0 {
+                if decompressed_len < threshold.get() as usize {
+                    Err(PacketError::BelowThreshold(decompressed_len))?;
+                }
+
                 let mut decompressed = vec![0; decompressed_len];
                 let mut decoder = ZlibDecoder::new(&mut cursor);
                 decoder
@@ -603,5 +627,45 @@ mod compression_security_tests {
 
         assert_eq!(raw_packet.id, 2);
         assert_eq!(raw_packet.payload(), b"hello");
+    }
+
+    #[tokio::test]
+    async fn rejects_length_varint_wider_than_21_bits() {
+        // Four-byte length VarInt: three continuation bytes then a terminator, like
+        // vanilla `Varint21FrameDecoder`'s "length wider than 21-bit" case.
+        let wire = [0x80, 0x80, 0x80, 0x01];
+        let mut decoder = TCPNetworkDecoder::new(wire.as_slice());
+
+        assert!(matches!(
+            decoder.get_raw_packet().await,
+            Err(PacketError::MalformedLength(message))
+                if message.contains("exceeds 3 bytes")
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_zero_length_frames() {
+        let wire = [0x00];
+        let mut decoder = TCPNetworkDecoder::new(wire.as_slice());
+
+        assert!(matches!(
+            decoder.get_raw_packet().await,
+            Err(PacketError::MalformedLength(message))
+                if message.contains("cannot be zero")
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_compressed_size_below_server_threshold() {
+        // A well-formed compressed packet whose declared size is under the server
+        // threshold: vanilla `CompressionDecoder` rejects it before inflating.
+        let packet = compressed_packet(5, b"hello");
+        let mut decoder = TCPNetworkDecoder::new(packet.as_slice());
+        decoder.set_compression(NonZeroU32::new(256).expect("nonzero threshold"));
+
+        assert!(matches!(
+            decoder.get_raw_packet().await,
+            Err(PacketError::BelowThreshold(5))
+        ));
     }
 }
