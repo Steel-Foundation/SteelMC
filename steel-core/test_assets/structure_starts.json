@@ -3,13 +3,13 @@
   "scan_range": 100,
   "max_generate": 2000,
   "overworld": {
-    "candidate_chunks": 10931,
+    "candidate_chunks": 10956,
     "generated_chunks": 2000,
-    "chunks_with_starts": 68,
-    "chunks_with_references": 869,
-    "total_starts": 68,
-    "total_pieces": 6508,
-    "total_references": 1120,
+    "chunks_with_starts": 69,
+    "chunks_with_references": 871,
+    "total_starts": 69,
+    "total_pieces": 6510,
+    "total_references": 1127,
     "chunks": [
       {
         "x": -100,
@@ -59472,6 +59472,15 @@
         ],
         "references": [
           {
+            "structure": "minecraft:abandoned_camp_meadow",
+            "source_chunks": [
+              [
+                -85,
+                -97
+              ]
+            ]
+          },
+          {
             "structure": "minecraft:mineshaft",
             "source_chunks": [
               [
@@ -59487,6 +59496,15 @@
         "z": -96,
         "starts": [],
         "references": [
+          {
+            "structure": "minecraft:abandoned_camp_meadow",
+            "source_chunks": [
+              [
+                -85,
+                -97
+              ]
+            ]
+          },
           {
             "structure": "minecraft:mineshaft",
             "source_chunks": [
@@ -61613,6 +61631,128 @@
       },
       {
         "x": -85,
+        "z": -97,
+        "starts": [
+          {
+            "structure": "minecraft:abandoned_camp_meadow",
+            "chunk_x": -85,
+            "chunk_z": -97,
+            "references": 0,
+            "bounding_box": {
+              "min_x": -1373,
+              "min_y": 114,
+              "min_z": -1569,
+              "max_x": -1340,
+              "max_y": 145,
+              "max_z": -1530
+            },
+            "pieces": [
+              {
+                "type": "minecraft:jigsaw",
+                "gen_depth": 0,
+                "orientation": -1,
+                "bounding_box": {
+                  "min_x": -1360,
+                  "min_y": 126,
+                  "min_z": -1557,
+                  "max_x": -1353,
+                  "max_y": 133,
+                  "max_z": -1552
+                },
+                "piece_data": {
+                  "position": [
+                    -1360,
+                    126,
+                    -1552
+                  ],
+                  "ground_level_delta": 1,
+                  "junctions": [
+                    {
+                      "delta_y": 0,
+                      "dest_proj": "rigid",
+                      "source_ground_y": 127,
+                      "source_x": -1357,
+                      "source_z": -1551
+                    }
+                  ],
+                  "pool_element": {
+                    "element_type": "minecraft:legacy_single_pool_element",
+                    "location": "minecraft:abandoned_camp/tent/meadow/tent_meadow_8",
+                    "processors": {
+                      "processors": []
+                    },
+                    "projection": "rigid"
+                  },
+                  "rotation": "COUNTERCLOCKWISE_90",
+                  "liquid_settings": "apply_waterlogging"
+                }
+              },
+              {
+                "type": "minecraft:jigsaw",
+                "gen_depth": 0,
+                "orientation": -1,
+                "bounding_box": {
+                  "min_x": -1361,
+                  "min_y": 126,
+                  "min_z": -1551,
+                  "max_x": -1352,
+                  "max_y": 128,
+                  "max_z": -1542
+                },
+                "piece_data": {
+                  "position": [
+                    -1361,
+                    126,
+                    -1542
+                  ],
+                  "ground_level_delta": 1,
+                  "junctions": [
+                    {
+                      "delta_y": 0,
+                      "dest_proj": "rigid",
+                      "source_ground_y": 127,
+                      "source_x": -1357,
+                      "source_z": -1552
+                    }
+                  ],
+                  "pool_element": {
+                    "element_type": "minecraft:legacy_single_pool_element",
+                    "location": "minecraft:abandoned_camp/camp/default/campsite_default_chest_4",
+                    "processors": {
+                      "processors": []
+                    },
+                    "projection": "rigid"
+                  },
+                  "rotation": "COUNTERCLOCKWISE_90",
+                  "liquid_settings": "apply_waterlogging"
+                }
+              }
+            ]
+          }
+        ],
+        "references": [
+          {
+            "structure": "minecraft:abandoned_camp_meadow",
+            "source_chunks": [
+              [
+                -85,
+                -97
+              ]
+            ]
+          },
+          {
+            "structure": "minecraft:mineshaft",
+            "source_chunks": [
+              [
+                -86,
+                -98
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "x": -85,
         "z": -50,
         "starts": [],
         "references": [
@@ -63501,6 +63641,15 @@
         "starts": [],
         "references": [
           {
+            "structure": "minecraft:abandoned_camp_meadow",
+            "source_chunks": [
+              [
+                -85,
+                -97
+              ]
+            ]
+          },
+          {
             "structure": "minecraft:mineshaft",
             "source_chunks": [
               [
@@ -63516,6 +63665,15 @@
         "z": -96,
         "starts": [],
         "references": [
+          {
+            "structure": "minecraft:abandoned_camp_meadow",
+            "source_chunks": [
+              [
+                -85,
+                -97
+              ]
+            ]
+          },
           {
             "structure": "minecraft:mineshaft",
             "source_chunks": [
@@ -93411,6 +93569,22 @@
       },
       {
         "x": -83,
+        "z": -23,
+        "starts": [],
+        "references": [
+          {
+            "structure": "minecraft:trial_chambers",
+            "source_chunks": [
+              [
+                -87,
+                -18
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "x": -83,
         "z": -20,
         "starts": [],
         "references": [
@@ -108550,10 +108724,10 @@
             "chunk_z": -22,
             "references": 0,
             "bounding_box": {
-              "min_x": -1216,
-              "min_y": 68,
+              "min_x": -1215,
+              "min_y": 67,
               "min_z": -352,
-              "max_x": -1208,
+              "max_x": -1206,
               "max_y": 74,
               "max_z": -344
             },
@@ -108563,10 +108737,10 @@
                 "gen_depth": 0,
                 "orientation": 2,
                 "bounding_box": {
-                  "min_x": -1216,
-                  "min_y": 68,
+                  "min_x": -1215,
+                  "min_y": 67,
                   "min_z": -352,
-                  "max_x": -1208,
+                  "max_x": -1206,
                   "max_y": 74,
                   "max_z": -344
                 }
@@ -152322,13 +152496,13 @@
     ]
   },
   "the_nether": {
-    "candidate_chunks": 10929,
+    "candidate_chunks": 10954,
     "generated_chunks": 2000,
     "chunks_with_starts": 187,
-    "chunks_with_references": 409,
+    "chunks_with_references": 410,
     "total_starts": 189,
     "total_pieces": 1297,
-    "total_references": 449,
+    "total_references": 450,
     "chunks": [
       {
         "x": -100,
@@ -165468,35 +165642,6 @@
         "z": 88,
         "starts": [
           {
-            "structure": "minecraft:nether_fossil",
-            "chunk_x": -94,
-            "chunk_z": 88,
-            "references": 0,
-            "bounding_box": {
-              "min_x": -1504,
-              "min_y": 65,
-              "min_z": 1405,
-              "max_x": -1476,
-              "max_y": 89,
-              "max_z": 1433
-            },
-            "pieces": [
-              {
-                "type": "minecraft:nefos",
-                "gen_depth": 0,
-                "orientation": 2,
-                "bounding_box": {
-                  "min_x": -1492,
-                  "min_y": 77,
-                  "min_z": 1417,
-                  "max_x": -1488,
-                  "max_y": 77,
-                  "max_z": 1421
-                }
-              }
-            ]
-          },
-          {
             "structure": "minecraft:fortress",
             "chunk_x": -94,
             "chunk_z": 88,
@@ -167227,6 +167372,35 @@
                 }
               }
             ]
+          },
+          {
+            "structure": "minecraft:nether_fossil",
+            "chunk_x": -94,
+            "chunk_z": 88,
+            "references": 0,
+            "bounding_box": {
+              "min_x": -1504,
+              "min_y": 65,
+              "min_z": 1405,
+              "max_x": -1476,
+              "max_y": 89,
+              "max_z": 1433
+            },
+            "pieces": [
+              {
+                "type": "minecraft:nefos",
+                "gen_depth": 0,
+                "orientation": 2,
+                "bounding_box": {
+                  "min_x": -1492,
+                  "min_y": 77,
+                  "min_z": 1417,
+                  "max_x": -1488,
+                  "max_y": 77,
+                  "max_z": 1421
+                }
+              }
+            ]
           }
         ],
         "references": [
@@ -167387,6 +167561,22 @@
               [
                 -94,
                 88
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "x": -93,
+        "z": 37,
+        "starts": [],
+        "references": [
+          {
+            "structure": "minecraft:nether_fossil",
+            "source_chunks": [
+              [
+                -94,
+                36
               ]
             ]
           }
@@ -172757,10 +172947,10 @@
             "bounding_box": {
               "min_x": -1215,
               "min_y": 29,
-              "min_z": -352,
+              "min_z": -341,
               "max_x": -1206,
               "max_y": 36,
-              "max_z": -344
+              "max_z": -330
             },
             "pieces": [
               {
@@ -172770,10 +172960,10 @@
                 "bounding_box": {
                   "min_x": -1215,
                   "min_y": 29,
-                  "min_z": -352,
+                  "min_z": -341,
                   "max_x": -1206,
                   "max_y": 36,
-                  "max_z": -344
+                  "max_z": -330
                 }
               }
             ]
@@ -181088,12 +181278,12 @@
             "chunk_z": 5,
             "references": 0,
             "bounding_box": {
-              "min_x": -1198,
-              "min_y": 31,
-              "min_z": 68,
-              "max_x": -1189,
-              "max_y": 38,
-              "max_z": 79
+              "min_x": -1200,
+              "min_y": 71,
+              "min_z": 80,
+              "max_x": -1192,
+              "max_y": 77,
+              "max_z": 88
             },
             "pieces": [
               {
@@ -181101,14 +181291,25 @@
                 "gen_depth": 0,
                 "orientation": 2,
                 "bounding_box": {
-                  "min_x": -1198,
-                  "min_y": 31,
-                  "min_z": 68,
-                  "max_x": -1189,
-                  "max_y": 38,
-                  "max_z": 79
+                  "min_x": -1200,
+                  "min_y": 71,
+                  "min_z": 80,
+                  "max_x": -1192,
+                  "max_y": 77,
+                  "max_z": 88
                 }
               }
+            ]
+          }
+        ],
+        "references": [
+          {
+            "structure": "minecraft:ruined_portal_nether",
+            "source_chunks": [
+              [
+                -75,
+                5
+              ]
             ]
           }
         ]
@@ -181205,35 +181406,6 @@
         "x": -74,
         "z": 68,
         "starts": [
-          {
-            "structure": "minecraft:nether_fossil",
-            "chunk_x": -74,
-            "chunk_z": 68,
-            "references": 0,
-            "bounding_box": {
-              "min_x": -1192,
-              "min_y": 71,
-              "min_z": 1078,
-              "max_x": -1164,
-              "max_y": 99,
-              "max_z": 1104
-            },
-            "pieces": [
-              {
-                "type": "minecraft:nefos",
-                "gen_depth": 0,
-                "orientation": 2,
-                "bounding_box": {
-                  "min_x": -1180,
-                  "min_y": 83,
-                  "min_z": 1090,
-                  "max_x": -1176,
-                  "max_y": 87,
-                  "max_z": 1092
-                }
-              }
-            ]
-          },
           {
             "structure": "minecraft:bastion_remnant",
             "chunk_x": -74,
@@ -185041,6 +185213,35 @@
                   },
                   "rotation": "CLOCKWISE_180",
                   "liquid_settings": "apply_waterlogging"
+                }
+              }
+            ]
+          },
+          {
+            "structure": "minecraft:nether_fossil",
+            "chunk_x": -74,
+            "chunk_z": 68,
+            "references": 0,
+            "bounding_box": {
+              "min_x": -1192,
+              "min_y": 71,
+              "min_z": 1078,
+              "max_x": -1164,
+              "max_y": 99,
+              "max_z": 1104
+            },
+            "pieces": [
+              {
+                "type": "minecraft:nefos",
+                "gen_depth": 0,
+                "orientation": 2,
+                "bounding_box": {
+                  "min_x": -1180,
+                  "min_y": 83,
+                  "min_z": 1090,
+                  "max_x": -1176,
+                  "max_y": 87,
+                  "max_z": 1092
                 }
               }
             ]
@@ -190843,22 +191044,6 @@
       },
       {
         "x": -68,
-        "z": -70,
-        "starts": [],
-        "references": [
-          {
-            "structure": "minecraft:ruined_portal_nether",
-            "source_chunks": [
-              [
-                -67,
-                -69
-              ]
-            ]
-          }
-        ]
-      },
-      {
-        "x": -68,
         "z": 18,
         "starts": [],
         "references": [
@@ -191625,12 +191810,12 @@
             "chunk_z": -69,
             "references": 0,
             "bounding_box": {
-              "min_x": -1074,
-              "min_y": 36,
-              "min_z": -1111,
-              "max_x": -1059,
-              "max_y": 51,
-              "max_z": -1101
+              "min_x": -1072,
+              "min_y": 81,
+              "min_z": -1104,
+              "max_x": -1063,
+              "max_y": 88,
+              "max_z": -1096
             },
             "pieces": [
               {
@@ -191638,12 +191823,12 @@
                 "gen_depth": 0,
                 "orientation": 2,
                 "bounding_box": {
-                  "min_x": -1074,
-                  "min_y": 36,
-                  "min_z": -1111,
-                  "max_x": -1059,
-                  "max_y": 51,
-                  "max_z": -1101
+                  "min_x": -1072,
+                  "min_y": 81,
+                  "min_z": -1104,
+                  "max_x": -1063,
+                  "max_y": 88,
+                  "max_z": -1096
                 }
               }
             ]
@@ -196235,7 +196420,7 @@
     ]
   },
   "the_end": {
-    "candidate_chunks": 10929,
+    "candidate_chunks": 10954,
     "generated_chunks": 2000,
     "chunks_with_starts": 1,
     "chunks_with_references": 12,

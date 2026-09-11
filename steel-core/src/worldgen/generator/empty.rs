@@ -1,7 +1,6 @@
 use crate::chunk::Chunk;
 use crate::worldgen::generator::{
-    CarversPhase, ChunkGenerator, GenerationChunk, NoisePhase, SurfacePhase,
-    xoroshiro_worldgen_region_random,
+    ChunkGenerator, GenerationChunk, TerrainPhase, xoroshiro_worldgen_region_random,
 };
 use crate::worldgen::region::WorldGenRegion;
 use glam::IVec3;
@@ -15,6 +14,9 @@ use steel_worldgen::noise::Beardifier;
 pub struct EmptyChunkGenerator;
 
 impl EmptyChunkGenerator {
+    const MIN_Y: i32 = 0;
+    const HEIGHT: i32 = 384;
+
     /// Creates a new `EmptyWorld`.
     #[must_use]
     pub const fn new() -> Self {
@@ -24,11 +26,11 @@ impl EmptyChunkGenerator {
 
 impl ChunkGenerator for EmptyChunkGenerator {
     fn min_y(&self) -> i32 {
-        0
+        Self::MIN_Y
     }
 
     fn gen_depth(&self) -> i32 {
-        384
+        Self::HEIGHT
     }
 
     fn noise_biome(&self, _quart_x: i32, _quart_y: i32, _quart_z: i32) -> BiomeRef {
@@ -41,19 +43,19 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn fill_from_noise(
         &self,
-        _chunk: GenerationChunk<'_, NoisePhase>,
+        _chunk: GenerationChunk<'_, TerrainPhase>,
         _beardifier: Option<&Beardifier>,
     ) {
     }
 
     fn build_surface(
         &self,
-        _chunk: GenerationChunk<'_, SurfacePhase>,
+        _chunk: GenerationChunk<'_, TerrainPhase>,
         _neighbor_biomes: &dyn Fn(IVec3) -> u16,
     ) {
     }
 
-    fn apply_carvers(&self, _chunk: GenerationChunk<'_, CarversPhase>) {}
+    fn apply_carvers(&self, _chunk: GenerationChunk<'_, TerrainPhase>) {}
 
     fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource {
         xoroshiro_worldgen_region_random(world_seed, center)

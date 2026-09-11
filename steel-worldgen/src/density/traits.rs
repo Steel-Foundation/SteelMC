@@ -4,9 +4,8 @@
 //! allowing generic chunk generation code to work with any dimension's transpiled
 //! density functions.
 
-use std::simd::f64x4;
-
 use crate::BlockStateId;
+use crate::noise::OreVeinifier;
 use crate::random::RandomSplitter;
 use crate::surface::SurfaceRuleContext;
 use rustc_hash::FxHashMap;
@@ -31,6 +30,8 @@ pub trait NoiseSettings: Send + Sync {
     const AQUIFERS_ENABLED: bool;
     /// Whether ore veins are enabled for this dimension.
     const ORE_VEINS_ENABLED: bool;
+    /// Whether this dimension's material rule contains ore veins.
+    const MATERIAL_ORE_VEINS_ENABLED: bool;
     /// Whether this dimension uses Java's LCG random (true) or Xoroshiro (false).
     const LEGACY_RANDOM_SOURCE: bool;
 
@@ -167,7 +168,7 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// to SIMD-batch the blended noise computation.
     ///
     /// Default: no-op (fills `out` with zeros).
-    fn compute_noise_column(&self, _x: i32, _block_ys: &[i32], _z: i32, out: &mut [f64]) {
+    fn compute_noise_column(&self, _x: i32, _block_ys: &[i32], _z: i32, out: &mut [f32]) {
         out.fill(0.0);
     }
 
@@ -182,74 +183,39 @@ pub trait DimensionNoises: Sized + Send + Sync {
         x: i32,
         y: i32,
         z: i32,
-        blended_noise_value: f64,
-        out: &mut [f64],
+        blended_noise_value: f32,
+        out: &mut [f32],
     );
-
-    /// SIMD form of [`fill_cell_corner_densities`] that batches 4 cell-corner
-    /// Y values at fixed `(x, z)`.
-    ///
-    /// `out` layout: lane-major `SoA`. Lane `i`'s `interpolated_count()` channels
-    /// occupy `out[i * interpolated_count()..(i + 1) * interpolated_count()]`.
-    /// `out` must have length `4 * interpolated_count()`.
-    ///
-    /// The default implementation calls the scalar [`fill_cell_corner_densities`]
-    /// four times. Dimensions can override with a true SIMD implementation (the
-    /// transpiled `compute_*_4x` chain) once the SIMD codegen is in place.
-    ///
-    /// [`fill_cell_corner_densities`]: Self::fill_cell_corner_densities
-    fn fill_cell_corner_densities_4x(
-        &self,
-        cache: &mut Self::ColumnCache,
-        x: i32,
-        ys: f64x4,
-        z: i32,
-        blended_noise_values: f64x4,
-        out: &mut [f64],
-    ) {
-        let interp_count = Self::interpolated_count();
-        let ys_arr = ys.to_array();
-        let blended_arr = blended_noise_values.to_array();
-        for lane in 0..4 {
-            let dst = &mut out[lane * interp_count..(lane + 1) * interp_count];
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "block Y values are integer-valued f64s in cell-corner range"
-            )]
-            let y = ys_arr[lane] as i32;
-            self.fill_cell_corner_densities(cache, x, y, z, blended_arr[lane], dst);
-        }
-    }
 
     /// Combine trilinearly interpolated values for `final_density`.
     fn combine_interpolated(
         &self,
         cache: &mut Self::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[f32],
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> f32;
 
     /// Combine trilinearly interpolated values for `vein_toggle`.
     fn combine_vein_toggle(
         &self,
         cache: &mut Self::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[f32],
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> f32;
 
     /// Combine trilinearly interpolated values for `vein_ridged`.
     fn combine_vein_ridged(
         &self,
         cache: &mut Self::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[f32],
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> f32;
 
     // ── Surface rules ───────────────────────────────────────────────────────
 
@@ -278,4 +244,42 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     /// Apply the transpiled surface rule at the given context position.
     fn try_apply_surface_rule(ctx: &mut SurfaceRuleContext<'_>) -> Option<BlockStateId>;
+
+    /// Number of prefilled density/richness values for this dimension's material ore rules.
+    fn material_ore_vein_value_count() -> usize;
+
+    /// Fill one block's material ore density/richness values.
+    ///
+    /// Vanilla samples these functions over the complete chunk volume before
+    /// surface rules start evaluating. `out` has
+    /// [`Self::material_ore_vein_value_count`] entries, two per ore rule.
+    fn fill_material_ore_vein_values(
+        &self,
+        cache: &mut Self::ColumnCache,
+        interpolated: &[f32],
+        x: i32,
+        y: i32,
+        z: i32,
+        out: &mut [f32],
+    );
+
+    /// Evaluates each ore-vein node from this dimension's material rule using
+    /// density/richness values prefilled for this exact block position.
+    ///
+    /// `out` is ordered by the material-rule tree's depth-first traversal, so
+    /// generated rule code can preserve vanilla's sequence ordering.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the generated Vanilla material-rule call"
+    )]
+    fn fill_prefilled_material_ore_vein_results(
+        &self,
+        cache: &mut Self::ColumnCache,
+        ore_veinifier: &OreVeinifier,
+        values: &[f32],
+        x: i32,
+        y: i32,
+        z: i32,
+        out: &mut [Option<BlockStateId>],
+    );
 }

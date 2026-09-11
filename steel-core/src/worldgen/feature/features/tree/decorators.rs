@@ -99,7 +99,15 @@ impl FeatureDecorationRunner {
                         placement,
                     );
                 }
-                TreeDecorator::ShelfMushroom { .. } => todo!("shelf mushroom tree decorator"),
+                TreeDecorator::ShelfMushroom { probability } => {
+                    Self::place_shelf_mushroom_tree_decorator(
+                        region,
+                        registry,
+                        random,
+                        *probability,
+                        placement,
+                    );
+                }
             }
         }
     }
@@ -248,7 +256,6 @@ impl FeatureDecorationRunner {
         max_z += decorator.radius;
         let min_y = min_y - decorator.height;
         let max_y = min_y + decorator.height * 2;
-
         for _ in 0..decorator.tries {
             let pos = BlockPos::new(
                 random.next_i32_between(min_x, max_x),
@@ -429,6 +436,174 @@ impl FeatureDecorationRunner {
                 placement.set_decoration(region, cocoa_pos, cocoa_state);
             }
         }
+    }
+
+    fn place_shelf_mushroom_tree_decorator(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        probability: f32,
+        placement: &mut TreePlacement,
+    ) {
+        if random.next_f32() >= probability {
+            return;
+        }
+
+        let logs = Self::sorted_tree_positions(&placement.trunks);
+        let Some(first_log) = logs.first() else {
+            return;
+        };
+        let Some(last_log) = logs.last() else {
+            return;
+        };
+
+        if first_log.y() == last_log.y() {
+            Self::place_shelf_mushrooms_on_fallen_log(region, registry, random, &logs, placement);
+        } else {
+            Self::place_shelf_mushrooms_on_standing_tree(
+                region, registry, random, &logs, placement,
+            );
+        }
+    }
+
+    fn place_shelf_mushrooms_on_standing_tree(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        logs: &[BlockPos],
+        placement: &mut TreePlacement,
+    ) {
+        let first_direction = Self::random_horizontal_direction(random);
+        let directions = [first_direction, first_direction.rotate_y_clockwise()];
+        let tree_base_y = logs[0].y();
+
+        for &log_pos in logs {
+            let height = log_pos.y() - tree_base_y;
+            if !(1..=4).contains(&height) {
+                continue;
+            }
+
+            for facing in directions {
+                if random.next_f32() <= 0.25
+                    && Self::try_place_shelf_mushroom_on_standing_tree(
+                        region, registry, random, log_pos, facing, placement,
+                    )
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn place_shelf_mushrooms_on_fallen_log(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        logs: &[BlockPos],
+        placement: &mut TreePlacement,
+    ) {
+        let Some(last_log) = logs.last() else {
+            return;
+        };
+        let directions = if logs[0].x() == last_log.x() {
+            [Direction::East, Direction::West]
+        } else {
+            [Direction::North, Direction::South]
+        };
+
+        for &log_pos in logs {
+            for facing in directions {
+                if random.next_f32() <= 0.25 {
+                    Self::try_place_shelf_mushroom_on_fallen_log(
+                        region, registry, random, log_pos, facing, placement,
+                    );
+                }
+            }
+        }
+    }
+
+    fn try_place_shelf_mushroom_on_standing_tree(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        log_pos: BlockPos,
+        facing: Direction,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        let mushroom_pos = log_pos.relative(facing);
+        if !Self::is_replaceable_with_shelf_mushroom(region, mushroom_pos)
+            || Self::has_shelf_mushroom_at(region, mushroom_pos.below())
+        {
+            return false;
+        }
+
+        Self::place_shelf_mushroom(region, registry, random, mushroom_pos, facing, placement);
+        true
+    }
+
+    fn try_place_shelf_mushroom_on_fallen_log(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        log_pos: BlockPos,
+        facing: Direction,
+        placement: &mut TreePlacement,
+    ) {
+        let mushroom_pos = log_pos.relative(facing);
+        if !Self::is_replaceable_with_shelf_mushroom(region, mushroom_pos)
+            || Self::has_horizontally_adjacent_shelf_mushroom(region, mushroom_pos)
+            || Self::has_horizontally_adjacent_shelf_mushroom(region, log_pos)
+        {
+            return;
+        }
+
+        Self::place_shelf_mushroom(region, registry, random, mushroom_pos, facing, placement);
+    }
+
+    fn place_shelf_mushroom(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        pos: BlockPos,
+        facing: Direction,
+        placement: &mut TreePlacement,
+    ) {
+        let state = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SHELF_MUSHROOM)
+            .set_value(
+                &BlockStateProperties::AGE_1,
+                random.next_i32_bounded(2) as u8,
+            )
+            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing);
+        placement.set_decoration(region, pos, state);
+    }
+
+    fn is_replaceable_with_shelf_mushroom(region: &impl LevelReader, pos: BlockPos) -> bool {
+        region.get_block_state(pos).is_replaceable() && !Self::is_water_or_water_nearby(region, pos)
+    }
+
+    fn is_water_or_water_nearby(region: &impl LevelReader, pos: BlockPos) -> bool {
+        [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ]
+        .into_iter()
+        .any(|direction| {
+            region.get_block_state(pos.relative(direction)).get_block() == &vanilla_blocks::WATER
+        }) || region.get_block_state(pos).get_block() == &vanilla_blocks::WATER
+    }
+
+    fn has_shelf_mushroom_at(region: &impl LevelReader, pos: BlockPos) -> bool {
+        region.get_block_state(pos).get_block() == &vanilla_blocks::SHELF_MUSHROOM
+    }
+
+    fn has_horizontally_adjacent_shelf_mushroom(region: &impl LevelReader, pos: BlockPos) -> bool {
+        Self::VANILLA_HORIZONTAL_DIRECTIONS
+            .into_iter()
+            .any(|direction| Self::has_shelf_mushroom_at(region, pos.relative(direction)))
     }
 
     fn try_place_tree_vine(

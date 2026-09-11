@@ -39,6 +39,10 @@ impl FeatureDecorationRunner {
         Self::VANILLA_HORIZONTAL_DIRECTIONS[random.next_i32_bounded(4) as usize]
     }
 
+    pub(super) fn random_direction(random: &mut WorldgenRandom) -> Direction {
+        Self::VANILLA_DIRECTION_VALUES[random.next_i32_bounded(6) as usize]
+    }
+
     pub(super) fn shuffled_directions<const N: usize>(
         random: &mut WorldgenRandom,
         mut directions: [Direction; N],

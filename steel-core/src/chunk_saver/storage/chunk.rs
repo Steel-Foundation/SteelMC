@@ -1,7 +1,7 @@
 use super::{
-    BlockPos, BlockStateId, BlockTickList, CarvingMask, Chunk, ChunkBuilder, ChunkHeightmaps,
-    ChunkPos, ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList,
-    FullChunkRef, FxHashSet, Heightmap, HeightmapType, LoadedChunk, Ordering, PalettedContainer,
+    BlockPos, BlockStateId, BlockTickList, Chunk, ChunkBuilder, ChunkHeightmaps, ChunkPos,
+    ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList, FullChunkRef,
+    FxHashSet, Heightmap, HeightmapType, LoadedChunk, Ordering, PalettedContainer,
     PersistentBiomeData, PersistentChunk, PersistentHeightmap, PersistentLightSection,
     PersistentPoi, PersistentSection, REGISTRY, RegistryExt, SectionHolder, Sections, Weak, World,
     bits_for_palette_len, io, pack_indices, unpack_indices,
@@ -63,7 +63,6 @@ impl ChunkStorage {
     )]
     fn validate_persistent_chunk(
         persistent: &PersistentChunk<'_>,
-        status: ChunkStatus,
         min_y: i32,
         height: i32,
     ) -> io::Result<()> {
@@ -238,20 +237,6 @@ impl ChunkStorage {
             }
         }
 
-        if status == ChunkStatus::Full && persistent.carving_mask.is_some() {
-            return Err(Self::invalid_chunk_data(
-                "Full chunk contains a proto carving mask",
-            ));
-        }
-        if let Some(mask) = &persistent.carving_mask {
-            let max_words = (256usize * height as usize).div_ceil(64);
-            if mask.len() > max_words {
-                return Err(Self::invalid_chunk_data(format!(
-                    "carving mask has {} words, maximum is {max_words}",
-                    mask.len()
-                )));
-            }
-        }
         if persistent.postprocessing.len() > expected_sections {
             return Err(Self::invalid_chunk_data(format!(
                 "chunk has {} postprocessing section lists, maximum is {expected_sections}",
@@ -391,7 +376,7 @@ impl ChunkStorage {
         // Validate every persisted shape that materialization relies on before
         // constructing a Chunk. Full construction populates world POI state, so
         // a late validation failure would otherwise leak partial loaded state.
-        Self::validate_persistent_chunk(persistent, status, min_y, height)?;
+        Self::validate_persistent_chunk(persistent, min_y, height)?;
         let sections: Vec<ChunkSection> = persistent
             .sections
             .iter()
@@ -494,11 +479,6 @@ impl ChunkStorage {
             let fluid_ticks = FluidTickList::from_proto_saved_ticks(
                 Self::persistent_to_fluid_saved_ticks(&persistent.fluid_ticks, pos),
             );
-            let carving_mask = persistent
-                .carving_mask
-                .as_deref()
-                .map(|packed| CarvingMask::from_packed_u64s(height, min_y, packed));
-
             let chunk = Chunk::from_disk(
                 sections,
                 pos,
@@ -508,7 +488,6 @@ impl ChunkStorage {
                 heightmaps,
                 structure_starts,
                 structure_references,
-                carving_mask,
                 persistent.postprocessing.iter().map(Vec::clone).collect(),
                 block_ticks,
                 fluid_ticks,

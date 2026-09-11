@@ -16,7 +16,7 @@ use steel_worldgen::density::NoiseParameters;
 use steel_worldgen::noise::{NormalNoise, PerlinSimplexNoise};
 use steel_worldgen::surface::SurfaceNoiseProvider;
 
-use crate::worldgen::generator::{GenerationChunk, SurfacePhase};
+use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
 
 const CLAY_BAND_LENGTH: usize = 192;
 
@@ -226,10 +226,12 @@ impl SurfaceSystem {
         if !xz.frozen_large_x7.is_nan() {
             return xz.frozen_large_x7;
         }
-        let v = self
-            .frozen_temperature_noise
-            .get_value(f64::from(xz.block_x) * 0.05, f64::from(xz.block_z) * 0.05)
-            * 7.0;
+        let v = f64::from(
+            self.frozen_temperature_noise
+                .get_value(f64::from(xz.block_x) * 0.05, f64::from(xz.block_z) * 0.05)
+                as f32
+                * 7.0_f32,
+        );
         xz.frozen_large_x7 = v;
         v
     }
@@ -266,10 +268,10 @@ impl SurfaceSystem {
         if !xz.height_temp_noise_x8.is_nan() {
             return xz.height_temp_noise_x8;
         }
-        let v = self
-            .temperature_noise
-            .get_value(f64::from(xz.block_x) / 8.0, f64::from(xz.block_z) / 8.0)
-            * 8.0;
+        let v = self.temperature_noise.get_value(
+            f64::from(xz.block_x as f32 / 8.0),
+            f64::from(xz.block_z as f32 / 8.0),
+        ) * 8.0;
         xz.height_temp_noise_x8 = v;
         v
     }
@@ -432,7 +434,7 @@ impl SurfaceSystem {
     #[must_use]
     pub fn eroded_badlands_extension(
         &self,
-        chunk: GenerationChunk<'_, SurfacePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         local_x: usize,
         local_z: usize,
         block_x: i32,
@@ -446,11 +448,13 @@ impl SurfaceSystem {
                 .get_value(f64::from(block_x), 0.0, f64::from(block_z))
                 * 8.25)
                 .abs(),
-            self.badlands_pillar_noise.get_value(
-                f64::from(block_x) * 0.2,
-                0.0,
-                f64::from(block_z) * 0.2,
-            ) * 15.0,
+            f64::from(
+                self.badlands_pillar_noise.get_value_f32(
+                    f64::from(block_x) * 0.2,
+                    0.0,
+                    f64::from(block_z) * 0.2,
+                ) * 15.0_f32,
+            ),
         );
 
         if pillar_buffer <= 0.0 {
@@ -530,11 +534,13 @@ impl SurfaceSystem {
                 .get_value(f64::from(block_x), 0.0, f64::from(block_z))
                 * 8.25)
                 .abs(),
-            self.iceberg_pillar_noise.get_value(
-                f64::from(block_x) * 1.28,
-                0.0,
-                f64::from(block_z) * 1.28,
-            ) * 15.0,
+            f64::from(
+                self.iceberg_pillar_noise.get_value_f32(
+                    f64::from(block_x) * 1.28,
+                    0.0,
+                    f64::from(block_z) * 1.28,
+                ) * 15.0_f32,
+            ),
         );
 
         if iceberg <= 1.8 {

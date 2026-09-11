@@ -184,7 +184,7 @@ impl BlockBreakingManager {
             } else {
                 let ticks_spent_destroying =
                     self.game_ticks.saturating_sub(self.destroy_progress_start);
-                let event = if ticks_spent_destroying % 4 == 0 {
+                let event = if ticks_spent_destroying.is_multiple_of(4) {
                     level_events::PARTICLES_AND_SOUND_DESTROY_PROGRESS
                 } else {
                     level_events::PARTICLES_DESTROY_PROGRESS

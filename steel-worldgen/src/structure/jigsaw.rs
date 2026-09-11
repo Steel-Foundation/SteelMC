@@ -4,10 +4,10 @@
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-use std::{array, mem, ptr};
+use std::{array, mem};
 
 use glam::IVec3;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use steel_registry::structure::{
     JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
 };
@@ -134,13 +134,11 @@ static SYNTHETIC_EMPTY_POOL: Identifier = Identifier::new_static("minecraft", "e
 
 type PoolTemplateCache<'a> = FxHashMap<Identifier, Vec<&'a PoolElement>>;
 type JigsawRotationCache<'a> = FxHashMap<Identifier, [Option<Vec<TransformedJigsaw<'a>>>; 4]>;
-const CANDIDATE_DEDUPE_THRESHOLD: usize = 16;
 const JIGSAW_PRIORITY_CACHE_THRESHOLD: usize = 16;
 const QUEUE_HEAP_THRESHOLD: usize = 512;
 const FREE_SPACE_OCTREE_THRESHOLD: usize = 512;
 
 struct AssemblyScratch<'a> {
-    parsed_candidates: FxHashSet<*const PoolElement>,
     source_jigsaw_indices: Vec<usize>,
     candidate_jigsaw_indices: Vec<usize>,
     jigsaw_order_scratch: Vec<usize>,
@@ -154,7 +152,6 @@ struct AssemblyScratch<'a> {
 impl AssemblyScratch<'_> {
     fn new() -> Self {
         Self {
-            parsed_candidates: FxHashSet::default(),
             source_jigsaw_indices: Vec::new(),
             candidate_jigsaw_indices: Vec::new(),
             jigsaw_order_scratch: Vec::new(),
@@ -381,37 +378,6 @@ fn shuffle_jigsaw_indices_with_priority_cache(
     } else {
         descending_priorities_into(template, priority_scratch);
         shuffle_jigsaw_indices_into(template, priority_scratch, rng, out, order_scratch);
-    }
-}
-
-/// Consumes the same RNG draws as a failed placement attempt for a duplicate pool element.
-///
-/// Vanilla keeps weighted duplicates, but each attempt exhausts every rotation
-/// and target jigsaw before moving on. With unchanged free space, a later
-/// identical duplicate cannot succeed if the first one failed; only the RNG
-/// draws need to be preserved.
-fn prime_duplicate_candidate_rng(
-    element: &PoolElement,
-    templates: &FxHashMap<Identifier, TemplateData>,
-    rotations: [Rotation; 4],
-    rng: &mut LegacyRandom,
-    scratch: &mut AssemblyScratch<'_>,
-) {
-    for _rotation in rotations {
-        if let Some(location) = element_location(element)
-            && let Some(template) = templates.get(location)
-        {
-            shuffle_jigsaw_indices_with_priority_cache(
-                location,
-                template,
-                rng,
-                &mut scratch.candidate_jigsaw_indices,
-                &mut scratch.jigsaw_order_scratch,
-                &mut scratch.jigsaw_priority_scratch,
-                &mut scratch.jigsaw_priority_cache,
-            );
-        }
-        // Feature/Empty elements do not shuffle jigsaws; no RNG to prime here.
     }
 }
 
@@ -1148,32 +1114,12 @@ fn try_placing_children<'a>(
 
         let placement_priority = source.block.placement_priority;
         let mut source_jigsaw_base_height: Option<i32> = None;
-        let dedupe_candidates = candidates.len() > CANDIDATE_DEDUPE_THRESHOLD;
-        if dedupe_candidates {
-            scratch.parsed_candidates.clear();
-        }
-
         for &candidate_element in &candidates {
             if candidate_element.is_empty() {
                 break;
             }
 
             let rotations = Rotation::get_shuffled(rng);
-            if dedupe_candidates
-                && !scratch
-                    .parsed_candidates
-                    .insert(ptr::from_ref(candidate_element))
-            {
-                prime_duplicate_candidate_rng(
-                    candidate_element,
-                    templates,
-                    rotations,
-                    rng,
-                    scratch,
-                );
-                continue;
-            }
-
             let candidate_location = element_location(candidate_element);
             let candidate_template = candidate_location
                 .and_then(|location| templates.get(location).map(|template| (location, template)));

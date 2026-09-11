@@ -96,13 +96,11 @@ pub(super) fn generate_int_provider_nbt(provider: &IntProvider) -> TokenStream {
         IntProvider::VeryBiasedToBottom {
             min_inclusive,
             max_inclusive,
-            inner,
         } => quote! {{
             let mut compound = NbtCompound::new();
             compound.insert("type", "minecraft:very_biased_to_bottom");
             compound.insert("min_inclusive", #min_inclusive);
             compound.insert("max_inclusive", #max_inclusive);
-            compound.insert("inner", #inner);
             NbtTag::Compound(compound)
         }},
         IntProvider::Trapezoid { min, max, plateau } => quote! {{
@@ -320,7 +318,7 @@ pub(super) fn generate_block_predicate_nbt(predicate: &BlockPredicate) -> TokenS
     }
 }
 
-fn direction_name(direction: steel_utils::Direction) -> &'static str {
+const fn direction_name(direction: steel_utils::Direction) -> &'static str {
     match direction {
         steel_utils::Direction::Down => "down",
         steel_utils::Direction::Up => "up",

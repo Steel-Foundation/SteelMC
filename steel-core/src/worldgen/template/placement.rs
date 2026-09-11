@@ -700,9 +700,13 @@ impl StructureTemplate {
         state: BlockStateId,
         nbt: &NbtCompound,
     ) -> Option<BlockEntityTypeRef> {
+        let block = Self::block_for_state(registry, state);
         if let Some(id) = nbt.string("id") {
             let id = Identifier::from_str(id.to_str().as_ref()).ok()?;
-            return registry.block_entity_types.by_key(&id);
+            return registry
+                .block_entity_types
+                .by_key(&id)
+                .filter(|block_entity_type| block_entity_type.is_valid(block));
         }
         Self::block_entity_type_for_state(registry, state)
     }

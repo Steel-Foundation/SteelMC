@@ -11,7 +11,7 @@ pub use empty::EmptyChunkGenerator;
 pub use flat::FlatChunkGenerator;
 #[cfg(feature = "benchmark-support")]
 pub use generation_chunk::benchmark_support as generation_benchmark_support;
-pub use generation_chunk::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
+pub use generation_chunk::{GenerationChunk, TerrainPhase};
 pub use vanilla::{SteelPostNoiseState, VanillaGenerator, VanillaPostNoiseStateType};
 
 use enum_dispatch::enum_dispatch;
@@ -63,7 +63,20 @@ pub trait ChunkGenerator: Send + Sync {
     /// Creates the biomes in a chunk.
     fn create_biomes(&self, chunk: &Chunk);
 
-    /// Fills the chunk with noise.
+    /// Builds vanilla's atomic Terrain generation step.
+    fn build_terrain(
+        &self,
+        chunk: GenerationChunk<'_, TerrainPhase>,
+        beardifier: Option<&Beardifier>,
+        neighbor_biomes: &dyn Fn(IVec3) -> u16,
+    ) {
+        self.fill_from_noise(chunk, beardifier);
+        self.build_surface(chunk, neighbor_biomes);
+        self.apply_carvers(chunk);
+        chunk.clear_post_noise_state();
+    }
+
+    /// Fills the chunk with noise as part of Terrain generation.
     ///
     /// `beardifier` carries pre-collected structure-piece terrain adaptation. The caller
     /// (production: noise stage; tests: harness) is responsible for walking the chunk's
@@ -72,23 +85,23 @@ pub trait ChunkGenerator: Send + Sync {
     /// an empty beardifier).
     fn fill_from_noise(
         &self,
-        chunk: GenerationChunk<'_, NoisePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         beardifier: Option<&Beardifier>,
     );
 
-    /// Builds the surface of the chunk.
+    /// Builds the surface as part of Terrain generation.
     ///
     /// `neighbor_biomes` maps `(quart_x, quart_y, quart_z)` to a biome palette ID,
     /// reading from neighbor chunk palettes for out-of-chunk biome lookups (matching
     /// vanilla's `WorldGenRegion.getNoiseBiome`).
     fn build_surface(
         &self,
-        chunk: GenerationChunk<'_, SurfacePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         neighbor_biomes: &dyn Fn(IVec3) -> u16,
     );
 
-    /// Applies carvers to the chunk.
-    fn apply_carvers(&self, chunk: GenerationChunk<'_, CarversPhase>);
+    /// Applies carvers as part of Terrain generation.
+    fn apply_carvers(&self, chunk: GenerationChunk<'_, TerrainPhase>);
 
     /// Creates the per-region random source exposed by vanilla `WorldGenRegion.getRandom()`.
     fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource;

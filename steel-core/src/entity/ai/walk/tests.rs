@@ -5,6 +5,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
 use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
 use super::{
     MobPathSettings, WalkNodeEvaluator, WalkPathEvaluator,
@@ -50,11 +51,15 @@ impl LevelReader for GridLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        OverworldNoiseSettings::MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        OverworldNoiseSettings::HEIGHT
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 

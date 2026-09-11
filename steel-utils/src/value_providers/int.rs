@@ -30,8 +30,6 @@ pub enum IntProvider {
         min_inclusive: i32,
         /// Inclusive upper bound.
         max_inclusive: i32,
-        /// Minimum span of the inner window.
-        inner: i32,
     },
     /// Sum of two uniform draws, symmetric triangle when `plateau == 0`.
     Trapezoid {
@@ -233,17 +231,11 @@ impl IntProvider {
             Self::VeryBiasedToBottom {
                 min_inclusive,
                 max_inclusive,
-                inner,
             } => {
-                let limit = *max_inclusive - *min_inclusive - *inner + 1;
-                if limit <= 0 {
-                    *min_inclusive
-                } else {
-                    let upper_inclusive = random.next_i32_bounded(limit) + *min_inclusive + *inner;
-                    let biased_upper_inclusive =
-                        random.next_i32_between(*min_inclusive, upper_inclusive - 1);
-                    random.next_i32_between(*min_inclusive, biased_upper_inclusive - 1 + *inner)
-                }
+                let range = *max_inclusive - *min_inclusive + 1;
+                let outer = random.next_i32_bounded(range);
+                let middle = random.next_i32_bounded(outer + 1);
+                *min_inclusive + random.next_i32_bounded(middle + 1)
             }
             Self::Trapezoid { min, max, plateau } => {
                 if *plateau == 0 && *max == -*min {
@@ -293,10 +285,6 @@ impl IntProvider {
 }
 
 impl<'de> Deserialize<'de> for IntProvider {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "keeps the vanilla int-provider schema variants in one deserialization table"
-    )]
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
         #[serde(tag = "type", deny_unknown_fields)]
@@ -317,8 +305,6 @@ impl<'de> Deserialize<'de> for IntProvider {
             VeryBiasedToBottom {
                 min_inclusive: i32,
                 max_inclusive: i32,
-                #[serde(default = "default_inner")]
-                inner: i32,
             },
             #[serde(rename = "minecraft:trapezoid")]
             Trapezoid { min: i32, max: i32, plateau: i32 },
@@ -339,10 +325,6 @@ impl<'de> Deserialize<'de> for IntProvider {
             WeightedList {
                 distribution: Vec<WeightedIntProvider>,
             },
-        }
-
-        const fn default_inner() -> i32 {
-            1
         }
 
         let value = serde_json::Value::deserialize(d)?;
@@ -372,11 +354,9 @@ impl<'de> Deserialize<'de> for IntProvider {
                 Tagged::VeryBiasedToBottom {
                     min_inclusive,
                     max_inclusive,
-                    inner,
                 } => Self::VeryBiasedToBottom {
                     min_inclusive,
                     max_inclusive,
-                    inner,
                 },
                 Tagged::Trapezoid { min, max, plateau } => Self::Trapezoid { min, max, plateau },
                 Tagged::ClampedNormal {

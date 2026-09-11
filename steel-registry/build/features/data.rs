@@ -933,7 +933,7 @@ pub struct SteppedColumnClusterConfiguration {
     pub height: IntProvider,
 }
 
-fn default_always_true_predicate() -> BlockPredicate {
+const fn default_always_true_predicate() -> BlockPredicate {
     BlockPredicate::True
 }
 

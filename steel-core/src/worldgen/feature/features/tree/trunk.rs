@@ -161,7 +161,16 @@ impl FeatureDecorationRunner {
                 placer,
                 placement,
             ),
-            TrunkPlacer::Poplar(_) => todo!("poplar tree trunk placement"),
+            TrunkPlacer::Poplar(placer) => Self::place_poplar_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placer,
+                placement,
+            ),
         }
     }
 
@@ -183,6 +192,54 @@ impl FeatureDecorationRunner {
 
         vec![FoliageAttachment {
             pos: origin.above_n(tree_height),
+            radius_offset: 0,
+            double_trunk: false,
+        }]
+    }
+
+    fn place_poplar_tree_trunk(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placer: &PoplarTrunkPlacer,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
+        let trunk_height_up_to_foliage_branches =
+            tree_height - placer.trunk_height_above_branches.sample(random);
+
+        for y in 0..tree_height {
+            let log_pos = origin.above_n(y);
+            let _ = Self::place_tree_log(region, registry, random, log_pos, config, placement);
+            let directions = Self::shuffled_directions(random, Self::VANILLA_DIRECTION_VALUES);
+
+            if trunk_height_up_to_foliage_branches - 1 != y {
+                continue;
+            }
+
+            let branches = placer.branch_amount.sample(random);
+            for direction in directions
+                .into_iter()
+                .filter(|direction| direction.axis() != Axis::Y)
+                .take(branches as usize)
+            {
+                let _ = Self::place_tree_log_with_axis(
+                    region,
+                    registry,
+                    random,
+                    log_pos.relative(direction),
+                    direction.axis(),
+                    config,
+                    placement,
+                );
+            }
+        }
+
+        vec![FoliageAttachment {
+            pos: origin.above_n(trunk_height_up_to_foliage_branches),
             radius_offset: 0,
             double_trunk: false,
         }]
@@ -1108,7 +1165,7 @@ impl FeatureDecorationRunner {
         Self::place_tree_log_with_axis(region, registry, random, pos, axis, config, placement)
     }
 
-    fn with_axis_if_present(state: BlockStateId, axis: Axis) -> BlockStateId {
+    pub(super) fn with_axis_if_present(state: BlockStateId, axis: Axis) -> BlockStateId {
         if state.try_get_value(&BlockStateProperties::AXIS).is_some() {
             state.set_value(&BlockStateProperties::AXIS, axis)
         } else {

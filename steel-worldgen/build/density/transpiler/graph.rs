@@ -17,7 +17,8 @@ pub(super) fn uses_y(df: &DensityFunction) -> bool {
         // uses y * 0.25
         DensityFunction::YClampedGradient(_)
         | DensityFunction::Shift(_)
-        | DensityFunction::BlendedNoise(_) => true,
+        | DensityFunction::BlendedNoise(_)
+        | DensityFunction::DistanceToPoint(_) => true,
         DensityFunction::Noise(n) => n.y_scale != 0.0,
         DensityFunction::ShiftedNoise(sn) => sn.y_scale != 0.0 || uses_y(&sn.shift_y),
         DensityFunction::WeirdScaledSampler(ws) => uses_y(&ws.input),
@@ -35,7 +36,6 @@ pub(super) fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::Marker(m) => uses_y(&m.wrapped),
         DensityFunction::Spline(s) => uses_y_spline(&s.spline),
         DensityFunction::Slice(s) => !matches!(s.axis, Axis::Y) && uses_y(&s.input),
-        DensityFunction::DistanceToPoint(_) => true,
         // These don't use Y:
         // - FindTopSurface scans Y internally but result only depends on (x, z)
         // - References are handled at the analysis level

@@ -16,8 +16,7 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::graph::{collect_interpolated_inners, is_flat_cached, unwrap_markers};
 use super::naming::{
-    named_fn_ident, named_fn_ident_4x, router_cache_field_ident, router_compute_fn_ident,
-    sanitize_name,
+    named_fn_ident, router_cache_field_ident, router_compute_fn_ident, sanitize_name,
 };
 
 impl TranspileContext {
@@ -40,7 +39,7 @@ impl TranspileContext {
             fns.push(quote! {
                 #[doc = #doc]
                 #[inline]
-                fn #fn_name(#params) -> f64 {
+                fn #fn_name(#params) -> f32 {
                     #body
                 }
             });
@@ -48,44 +47,9 @@ impl TranspileContext {
 
         let spline_fns = mem::take(&mut self.spline_fns);
 
-        // SIMD (4-Y batched) parallel compute functions for non-flat named
-        // functions. Flat functions splat from the column cache, so they don't
-        // need a 4x form. Some non-flat functions may only be reachable from
-        // scalar paths (non-fill routers); the `dead_code` allow keeps those
-        // cases warning-free.
-        let mut fns_4x = Vec::new();
-        for name in self.topo_order.clone() {
-            if self.flat_cached.contains(&name) {
-                continue;
-            }
-            let Some(df) = input.registry.get(&name) else {
-                continue;
-            };
-            let inner = unwrap_markers(df).clone();
-            let fn_name_4x = named_fn_ident_4x(&name);
-
-            let body = self.gen_expr_simd(&inner, input, false);
-
-            let params = self.fn_params_4x();
-
-            let doc = Literal::string(&format!("`{name}` (SIMD form, batches 4 Y values)"));
-            fns_4x.push(quote! {
-                #[doc = #doc]
-                #[allow(dead_code)]
-                #[inline]
-                fn #fn_name_4x(#params) -> f64x4 {
-                    #body
-                }
-            });
-        }
-
-        let spline_fns_4x = mem::take(&mut self.spline_fns);
-
         quote! {
             #(#fns)*
             #(#spline_fns)*
-            #(#fns_4x)*
-            #(#spline_fns_4x)*
         }
     }
 
@@ -111,7 +75,7 @@ impl TranspileContext {
 
                 fns.push(quote! {
                     #[inline]
-                    fn #compute_fn_name(#compute_params) -> f64 {
+                    fn #compute_fn_name(#compute_params) -> f32 {
                         #compute_body
                     }
                 });
@@ -123,7 +87,7 @@ impl TranspileContext {
                 fns.push(quote! {
                     #[doc = #doc]
                     #[inline]
-                    pub fn #fn_name(#full_params) -> f64 {
+                    pub fn #fn_name(#full_params) -> f32 {
                         cache.#cache_field
                     }
                 });
@@ -136,7 +100,7 @@ impl TranspileContext {
                 fns.push(quote! {
                     #[doc = #doc]
                     #[inline]
-                    pub fn #fn_name(#params) -> f64 {
+                    pub fn #fn_name(#params) -> f32 {
                         let x = cache.x as f64;
                         let z = cache.z as f64;
                         #body
@@ -173,7 +137,18 @@ impl TranspileContext {
 
         // Entries that may contain Interpolated markers.
         // Order matters: final_density first, then vein functions.
-        let entry_names = ["final_density", "vein_toggle", "vein_ridged"];
+        let mut entry_names = vec![
+            "final_density".to_owned(),
+            "vein_toggle".to_owned(),
+            "vein_ridged".to_owned(),
+        ];
+        entry_names.extend(
+            input
+                .router_entries
+                .keys()
+                .filter(|name| name.starts_with("material_ore_vein_"))
+                .cloned(),
+        );
 
         // Phase 1: Collect ALL interpolated inners across all entries
         #[expect(
@@ -187,14 +162,14 @@ impl TranspileContext {
         let mut all_inners: Vec<DensityFunction> = Vec::new();
         let mut entries: BTreeMap<String, EntryInfo> = BTreeMap::new();
 
-        for name in entry_names {
+        for name in &entry_names {
             if let Some(df) = input.router_entries.get(name) {
                 let start = all_inners.len();
                 let inners = collect_interpolated_inners(df, &input.registry);
                 if !inners.is_empty() {
                     all_inners.extend(inners);
                     entries.insert(
-                        name.to_owned(),
+                        name.clone(),
                         EntryInfo {
                             start,
                             df: df.clone(),
@@ -218,29 +193,6 @@ impl TranspileContext {
         }
         self.fill_mode = false;
         let fill_spline_fns = mem::take(&mut self.spline_fns);
-
-        // Phase 2b: Generate fill_cell_corner_densities_4x — SIMD form that
-        // batches 4 cell-corner Y values per call. Output layout is lane-major:
-        // `out[lane * INTERPOLATED_COUNT + ch] = lane_ch_value`. This pairs
-        // with `noise_chunk::fill_slice`'s 4-batched corner loop.
-        self.fill_mode = true;
-        let mut inner_stmts_4x = Vec::with_capacity(total_count);
-        for (i, inner_df) in all_inners.iter().enumerate() {
-            let idx = Literal::usize_unsuffixed(i);
-            let inner = unwrap_markers(inner_df);
-            let expr_simd = self.gen_expr_simd(inner, input, false);
-            inner_stmts_4x.push(quote! {
-                {
-                    let __r = #expr_simd;
-                    out[#idx] = __r[0];
-                    out[#idx + INTERPOLATED_COUNT] = __r[1];
-                    out[#idx + 2 * INTERPOLATED_COUNT] = __r[2];
-                    out[#idx + 3 * INTERPOLATED_COUNT] = __r[3];
-                }
-            });
-        }
-        self.fill_mode = false;
-        let fill_spline_fns_4x = mem::take(&mut self.spline_fns);
 
         // Phase 3: Generate combine_interpolated for final_density
         let combine_fd_body = if let Some(info) = entries.get("final_density") {
@@ -278,6 +230,39 @@ impl TranspileContext {
         };
         let combine_vein_ridged_splines = mem::take(&mut self.spline_fns);
 
+        let mut material_combine_fns = Vec::new();
+        let mut material_combine_splines = Vec::new();
+        for (name, info) in entries
+            .iter()
+            .filter(|(name, _)| name.starts_with("material_ore_vein_"))
+        {
+            let function = format_ident!("combine_{}", sanitize_name(name));
+            self.interpolated_param_mode = true;
+            self.interpolated_param_counter = info.start;
+            self.disable_range_choice_input_cse = true;
+            let body = self.gen_expr(&info.df, input, false);
+            self.disable_range_choice_input_cse = false;
+            self.interpolated_param_mode = false;
+            material_combine_splines.extend(mem::take(&mut self.spline_fns));
+            material_combine_fns.push(quote! {
+                #[expect(unused_variables, reason = "generated function has a fixed signature")]
+                #[inline]
+                pub fn #function(
+                    noises: &#noises,
+                    cache: &#cache,
+                    interpolated: &[f32],
+                    _x: i32,
+                    y: i32,
+                    _z: i32,
+                ) -> f32 {
+                    let x = cache.x as f64;
+                    let z = cache.z as f64;
+                    let y = y as f64;
+                    #body
+                }
+            });
+        }
+
         // Determine whether vein interpolation is present
         let has_vein_interp =
             entries.contains_key("vein_toggle") || entries.contains_key("vein_ridged");
@@ -305,8 +290,8 @@ impl TranspileContext {
                 x: i32,
                 y: i32,
                 z: i32,
-                blended_noise_value: f64,
-                out: &mut [f64],
+                blended_noise_value: f32,
+                out: &mut [f32],
             ) {
                 let x = cache.x as f64;
                 let z = cache.z as f64;
@@ -314,40 +299,16 @@ impl TranspileContext {
                 #(#inner_stmts)*
             }
 
-            /// SIMD form of [`fill_cell_corner_densities`] that batches 4
-            /// cell-corner Y values at fixed `(x, z)`.
-            ///
-            /// `out` layout: lane-major SoA. Lane `i`'s `INTERPOLATED_COUNT`
-            /// channels live at `out[i * INTERPOLATED_COUNT..(i + 1) * INTERPOLATED_COUNT]`.
-            /// `out` must have length `4 * INTERPOLATED_COUNT`.
-            ///
-            /// Per-lane semantics are bit-identical to four scalar
-            /// [`fill_cell_corner_densities`] calls at the same Y values.
-            #[expect(unused_variables, reason = "generated function has a fixed signature; not all dimensions use every parameter")]
-            pub fn fill_cell_corner_densities_4x(
-                noises: &#noises,
-                cache: &#cache,
-                x: i32,
-                ys: f64x4,
-                z: i32,
-                blended_noise_value_v: f64x4,
-                out: &mut [f64],
-            ) {
-                let x = cache.x as f64;
-                let z = cache.z as f64;
-                #(#inner_stmts_4x)*
-            }
-
             /// Combine interpolated values for `final_density`.
             #[expect(unused_variables, reason = "generated function has a fixed signature; not all parameters are used in every dimension")]
             pub fn combine_interpolated(
                 noises: &#noises,
                 cache: &#cache,
-                interpolated: &[f64],
+                interpolated: &[f32],
                 _x: i32,
                 y: i32,
                 _z: i32,
-            ) -> f64 {
+            ) -> f32 {
                 let x = cache.x as f64;
                 let z = cache.z as f64;
                 let y = y as f64;
@@ -359,11 +320,11 @@ impl TranspileContext {
             pub fn combine_vein_toggle(
                 noises: &#noises,
                 cache: &#cache,
-                interpolated: &[f64],
+                interpolated: &[f32],
                 _x: i32,
                 y: i32,
                 _z: i32,
-            ) -> f64 {
+            ) -> f32 {
                 let x = cache.x as f64;
                 let z = cache.z as f64;
                 let y = y as f64;
@@ -375,11 +336,11 @@ impl TranspileContext {
             pub fn combine_vein_ridged(
                 noises: &#noises,
                 cache: &#cache,
-                interpolated: &[f64],
+                interpolated: &[f32],
                 _x: i32,
                 y: i32,
                 _z: i32,
-            ) -> f64 {
+            ) -> f32 {
                 let x = cache.x as f64;
                 let z = cache.z as f64;
                 let y = y as f64;
@@ -387,10 +348,11 @@ impl TranspileContext {
             }
 
             #(#fill_spline_fns)*
-            #(#fill_spline_fns_4x)*
             #(#combine_fd_splines)*
             #(#combine_vein_toggle_splines)*
             #(#combine_vein_ridged_splines)*
+            #(#material_combine_fns)*
+            #(#material_combine_splines)*
         }
     }
 }

@@ -95,8 +95,10 @@ impl FeatureDecorationRunner {
                 min_inclusive,
                 max_inclusive,
             } => {
-                let min_y = min_inclusive.resolve_y(level.min_y(), level.height());
-                let max_y = max_inclusive.resolve_y(level.min_y(), level.height());
+                let min_y =
+                    min_inclusive.resolve_y(level.min_y(), level.height(), level.sea_level());
+                let max_y =
+                    max_inclusive.resolve_y(level.min_y(), level.height(), level.sea_level());
                 (min_y..=max_y).contains(&origin.y())
             }
             BlockPredicate::VolumeMatch { min, max, matches } => {

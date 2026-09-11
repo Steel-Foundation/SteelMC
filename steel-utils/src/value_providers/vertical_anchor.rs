@@ -25,14 +25,12 @@ impl VerticalAnchor {
     /// `WorldGenerationContext.getSeaLevel()`. Sea level is not threaded
     /// through here yet, so that variant has no value to resolve against.
     #[must_use]
-    pub const fn resolve_y(self, min_y: i32, height: i32) -> i32 {
+    pub const fn resolve_y(self, min_y: i32, height: i32, sea_level: i32) -> i32 {
         match self {
             Self::Absolute(y) => y,
             Self::AboveBottom(offset) => min_y + offset,
             Self::BelowTop(offset) => min_y + height - 1 - offset,
-            Self::RelativeToSeaLevel(_) => {
-                panic!("VerticalAnchor::RelativeToSeaLevel needs a sea level parameter")
-            }
+            Self::RelativeToSeaLevel(offset) => sea_level + offset,
         }
     }
 }

@@ -173,12 +173,12 @@ impl TranspileContext {
             .filter(|n| self.flat_cached.contains(*n))
             .collect();
 
-        // Active-value fields (one f64 per flat-cached function)
+        // Active-value fields (one f32 per flat-cached function)
         let cache_fields: Vec<TokenStream> = flat_names
             .iter()
             .map(|name| {
                 let field = named_fn_field_ident(name);
-                quote! { pub #field: f64 }
+                quote! { pub #field: f32 }
             })
             .collect();
 
@@ -187,7 +187,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = grid_field_ident(name);
-                quote! { #field: [f64; #grid_total_lit] }
+                quote! { #field: [f32; #grid_total_lit] }
             })
             .collect();
 
@@ -246,7 +246,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = router_cache_field_ident(name);
-                quote! { pub #field: f64 }
+                quote! { pub #field: f32 }
             })
             .collect();
 
@@ -255,7 +255,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = router_grid_field_ident(name);
-                quote! { #field: [f64; #grid_total_lit] }
+                quote! { #field: [f32; #grid_total_lit] }
             })
             .collect();
 
@@ -316,7 +316,7 @@ impl TranspileContext {
             .values()
             .map(|(idx, _, _)| {
                 let field = format_ident!("inline_noise_{}", idx);
-                quote! { pub #field: f64 }
+                quote! { pub #field: f32 }
             })
             .collect();
 
@@ -325,7 +325,7 @@ impl TranspileContext {
             .values()
             .map(|(idx, _, _)| {
                 let field = format_ident!("grid_inline_noise_{}", idx);
-                quote! { #field: [f64; #grid_total_lit] }
+                quote! { #field: [f32; #grid_total_lit] }
             })
             .collect();
 
@@ -339,7 +339,7 @@ impl TranspileContext {
                 quote! {
                     self.#field = noises.#noise_field.get_value_xz(
                         x * #scale, z * #scale,
-                    );
+                    ) as f32;
                 }
             })
             .collect();
@@ -385,23 +385,23 @@ impl TranspileContext {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         quote! {
-            /// Column-level cache for flat-cached (xz-only) density function results.
+            /// Column-level cache for xz-only density function results.
             ///
-            /// Supports two modes matching vanilla's `NoiseChunk.FlatCache`:
+            /// Supports two modes:
             /// - **Grid mode** (`init_grid()` called): Pre-computes a 2D grid of all
-            ///   in-chunk quart positions. `ensure()` does O(1) grid lookups for
-            ///   in-bounds positions, falls back to on-the-fly for out-of-bounds.
+            ///   in-chunk quart positions. `ensure()` does O(1) grid lookups for exact
+            ///   grid points and evaluates other positions on the fly.
             /// - **No-grid mode** (default): Single-entry lazy cache that recomputes
-            ///   when quart-quantized coordinates change. Used by climate samplers.
+            ///   when the exact coordinates change.
             #[derive(Clone)]
             pub struct #cache {
                 /// Raw x block coordinate (for non-flat router functions).
                 pub x: i32,
                 /// Raw z block coordinate (for non-flat router functions).
                 pub z: i32,
-                /// Effective x used to evaluate flat-cached values.
+                /// X coordinate used to evaluate the cached values.
                 qx: i32,
-                /// Effective z used to evaluate flat-cached values.
+                /// Z coordinate used to evaluate the cached values.
                 qz: i32,
                 valid: bool,
                 // ── Grid backing store ──
@@ -445,9 +445,9 @@ impl TranspileContext {
 
                 /// Pre-compute flat-cached values for all quart positions in a chunk.
                 ///
-                /// After this call, `ensure()` for in-bounds positions copies from
-                /// the grid (O(1)). Out-of-bounds positions fall back to on-the-fly
-                /// evaluation at raw (non-quantized) coordinates.
+                /// After this call, `ensure()` for matching grid points copies from
+                /// the grid (O(1)). Other positions are evaluated at their exact
+                /// coordinates, matching 26.3's generic `minecraft:cache` sampler.
                 pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32,
                                  noises: &#noises) {
                     self.grid_first_quart_x = chunk_block_x >> 2;
@@ -477,9 +477,8 @@ impl TranspileContext {
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
                 ///
-                /// With a grid: in-bounds positions load from the pre-computed grid,
-                /// out-of-bounds positions compute at raw (non-quantized) coordinates.
-                /// Without a grid: always quantizes and lazy-computes (single-entry cache).
+                /// Grid-aligned in-bounds positions load from the pre-computed grid.
+                /// Every other position is evaluated at its exact coordinates.
                 pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
                     self.x = x;
                     self.z = z;
@@ -490,7 +489,8 @@ impl TranspileContext {
                     if self.has_grid {
                         let rel_x = quart_x - self.grid_first_quart_x;
                         let rel_z = quart_z - self.grid_first_quart_z;
-                        if rel_x >= 0 && rel_z >= 0
+                        if x & 3 == 0 && z & 3 == 0
+                            && rel_x >= 0 && rel_z >= 0
                             && rel_x < Self::GRID_SIDE
                             && rel_z < Self::GRID_SIDE
                         {
@@ -509,7 +509,7 @@ impl TranspileContext {
                             self.valid = true;
                             return;
                         }
-                        // Out-of-bounds: raw coords, compute on-the-fly
+                        // Non-grid position: compute on the fly at exact coordinates.
                         if self.valid && self.qx == x && self.qz == z {
                             return;
                         }
@@ -524,16 +524,14 @@ impl TranspileContext {
                         return;
                     }
 
-                    // No grid: quantize and lazy-compute
-                    let eval_x = quart_x << 2;
-                    let eval_z = quart_z << 2;
-                    if self.valid && self.qx == eval_x && self.qz == eval_z {
+                    // No grid: compute lazily at exact coordinates.
+                    if self.valid && self.qx == x && self.qz == z {
                         return;
                     }
-                    self.qx = eval_x;
-                    self.qz = eval_z;
-                    let x = eval_x as f64;
-                    let z = eval_z as f64;
+                    self.qx = x;
+                    self.qz = z;
+                    let x = x as f64;
+                    let z = z as f64;
                     #(#ensure_stmts)*
                     #(#router_ensure_stmts)*
                     #(#inline_noise_ensure_stmts)*

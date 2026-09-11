@@ -375,19 +375,21 @@ impl World {
         let modified_temp = match biome.temperature_modifier {
             TemperatureModifier::None => biome.temperature,
             TemperatureModifier::Frozen => {
-                let large = FROZEN_BIOME_TEMPERATURE_NOISE
-                    .get_value(f64::from(pos.x()) * 0.05, f64::from(pos.z()) * 0.05)
-                    * 7.0;
+                let large = f64::from(
+                    FROZEN_BIOME_TEMPERATURE_NOISE
+                        .get_value(f64::from(pos.x()) * 0.05, f64::from(pos.z()) * 0.05)
+                        as f32
+                        * 7.0_f32,
+                );
                 let edge =
                     BIOME_INFO_NOISE.get_value(f64::from(pos.x()) * 0.2, f64::from(pos.z()) * 0.2);
                 if large + edge < 0.3 {
                     let small = BIOME_INFO_NOISE
                         .get_value(f64::from(pos.x()) * 0.09, f64::from(pos.z()) * 0.09);
-                    if small < 0.8 {
-                        return 0.2;
-                    }
+                    if small < 0.8 { 0.2 } else { biome.temperature }
+                } else {
+                    biome.temperature
                 }
-                biome.temperature
             }
         };
 
@@ -396,9 +398,10 @@ impl World {
             return modified_temp;
         }
 
-        let noise = BIOME_TEMPERATURE_NOISE
-            .get_value(f64::from(pos.x()) / 8.0, f64::from(pos.z()) / 8.0)
-            as f32
+        let noise = BIOME_TEMPERATURE_NOISE.get_value(
+            f64::from(pos.x() as f32 / 8.0),
+            f64::from(pos.z() as f32 / 8.0),
+        ) as f32
             * 8.0;
         modified_temp - (noise + pos.y() as f32 - snow_level as f32) * 0.05 / 40.0
     }

@@ -90,6 +90,7 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::EndGateway(_) => place_end_gateway,
             ConfiguredFeatureKind::EndIsland => place_end_island,
             ConfiguredFeatureKind::EndPlatform => place_end_platform,
+            ConfiguredFeatureKind::EndPodium { .. } => place_end_podium,
             ConfiguredFeatureKind::EndSpike(_) => place_end_spike,
             ConfiguredFeatureKind::FallenTree(_) => place_fallen_tree,
             ConfiguredFeatureKind::Fossil(_) => place_fossil,
@@ -104,12 +105,18 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::Lake(_) => place_lake,
             ConfiguredFeatureKind::LargeDripstone(_) => place_large_dripstone,
             ConfiguredFeatureKind::MonsterRoom => place_monster_room,
+            ConfiguredFeatureKind::NoOp => place_no_op,
             ConfiguredFeatureKind::MultifaceGrowth(_) => place_multiface_growth,
             ConfiguredFeatureKind::NetherForestVegetation(_) => place_nether_forest_vegetation,
             ConfiguredFeatureKind::NetherrackReplaceBlobs(_) => place_netherrack_replace_blobs,
             ConfiguredFeatureKind::Ore(_) => place_ore,
+            ConfiguredFeatureKind::Overlay { .. } => place_overlay,
+            ConfiguredFeatureKind::ProjectedRandomPatchySquare(_) => {
+                place_projected_random_patchy_square
+            }
             ConfiguredFeatureKind::PointedDripstone(_) => place_pointed_dripstone,
             ConfiguredFeatureKind::RandomBooleanSelector(_) => place_random_boolean_selector,
+            ConfiguredFeatureKind::RandomNeighborSpread(_) => place_random_neighbor_spread,
             ConfiguredFeatureKind::RandomSelector(_) => place_random_selector,
             ConfiguredFeatureKind::WeightedRandomSelector(_) => place_weighted_random_selector,
             ConfiguredFeatureKind::RootSystem(_) => place_root_system,
@@ -120,10 +127,12 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::Sequence(_) => place_sequence,
             ConfiguredFeatureKind::SimpleBlock(_) => place_simple_block,
             ConfiguredFeatureKind::SimpleRandomSelector(_) => place_simple_random_selector,
+            ConfiguredFeatureKind::SingleBlockPillar(_) => place_single_block_pillar,
             ConfiguredFeatureKind::Speleothem(_) => place_speleothem,
             ConfiguredFeatureKind::SpeleothemCluster(_) => place_speleothem_cluster,
             ConfiguredFeatureKind::Spike(_) => place_spike,
             ConfiguredFeatureKind::SpringFeature(_) => place_spring_feature,
+            ConfiguredFeatureKind::SteppedColumnCluster(_) => place_stepped_column_cluster,
             ConfiguredFeatureKind::Template(_) => place_template,
             ConfiguredFeatureKind::Tree(_) => place_tree,
             ConfiguredFeatureKind::TwistingVines(_) => place_twisting_vines,
@@ -135,17 +144,111 @@ impl FeatureDecorationRunner {
                 place_waterlogged_vegetation_patch
             }
             ConfiguredFeatureKind::WeepingVines => place_weeping_vines,
-            ConfiguredFeatureKind::EndPodium { .. }
-            | ConfiguredFeatureKind::NoOp
-            | ConfiguredFeatureKind::Overlay { .. }
-            | ConfiguredFeatureKind::ProjectedRandomPatchySquare(_)
-            | ConfiguredFeatureKind::RandomNeighborSpread(_)
-            | ConfiguredFeatureKind::SingleBlockPillar(_)
-            | ConfiguredFeatureKind::SteppedColumnCluster(_) => {
-                todo!("{kind:?} configured feature placement")
-            }
         }
     }
+}
+
+fn place_end_podium(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::EndPodium { active } = kind else {
+        panic!("end_podium placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_end_podium_feature(context.region, context.origin, *active)
+}
+
+const fn place_no_op(
+    _context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    _kind: &ConfiguredFeatureKind,
+) -> bool {
+    true
+}
+
+fn place_projected_random_patchy_square(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::ProjectedRandomPatchySquare(config) = kind else {
+        panic!("projected_random_patchy_square placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_projected_random_patchy_square_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_single_block_pillar(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SingleBlockPillar(config) = kind else {
+        panic!("single_block_pillar placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_single_block_pillar_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_overlay(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Overlay { features } = kind else {
+        panic!("overlay placer received wrong configured feature kind");
+    };
+    let mut placed_any = false;
+    for feature in features {
+        placed_any |= FeatureDecorationRunner::place_placed_feature_ref(
+            context.region,
+            context.registry,
+            context.random,
+            context.origin,
+            feature,
+            context.biome_zoom_seed,
+        );
+    }
+    placed_any
+}
+
+fn place_random_neighbor_spread(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::RandomNeighborSpread(config) = kind else {
+        panic!("random_neighbor_spread placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_random_neighbor_spread_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_stepped_column_cluster(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SteppedColumnCluster(config) = kind else {
+        panic!("stepped_column_cluster placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_stepped_column_cluster_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
 }
 
 fn place_random_boolean_selector(

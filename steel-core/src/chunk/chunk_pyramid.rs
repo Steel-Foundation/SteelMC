@@ -382,23 +382,13 @@ define_pyramid! {
             requirements: [(StructureStarts, 8)],
             task: ChunkStatusTasks::generate_biomes,
         },
-        Noise => {
+        Terrain => {
             requirements: [(StructureStarts, 8), (Biomes, 1)],
             block_state_write_radius: 0,
-            task: ChunkStatusTasks::generate_noise,
-        },
-        Surface => {
-            requirements: [(StructureStarts, 8), (Biomes, 1)],
-            block_state_write_radius: 0,
-            task: ChunkStatusTasks::generate_surface,
-        },
-        Carvers => {
-            requirements: [(StructureStarts, 8)],
-            block_state_write_radius: 0,
-            task: ChunkStatusTasks::generate_carvers,
+            task: ChunkStatusTasks::build_terrain,
         },
         Features => {
-            requirements: [(StructureStarts, 8), (Carvers, 1)],
+            requirements: [(StructureStarts, 8), (Terrain, 1)],
             block_state_write_radius: 1,
             task: ChunkStatusTasks::generate_features,
         },
@@ -434,13 +424,7 @@ define_pyramid! {
         Biomes => {
             task: noop_task,
         },
-        Noise => {
-            task: noop_task,
-        },
-        Surface => {
-            task: noop_task,
-        },
-        Carvers => {
+        Terrain => {
             task: noop_task,
         },
         Features => {

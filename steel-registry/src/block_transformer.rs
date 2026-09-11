@@ -17,7 +17,7 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{Direction, Identifier};
 
 use crate::sound_event::SoundEventHolder;
-use crate::{REGISTRY, RegistryEntry, RegistryExt, RegistryTags};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 /// Item block transforms, e.g. shovel flattening dirt into a path.
 ///
@@ -557,7 +557,7 @@ fn insert_offset(value: &mut NbtCompound, offset: (i32, i32, i32)) {
     }
 }
 
-fn particle_name(particle: TransformParticle) -> &'static str {
+const fn particle_name(particle: TransformParticle) -> &'static str {
     match particle {
         TransformParticle::None => "none",
         TransformParticle::Scrape => "scrape",
@@ -566,14 +566,14 @@ fn particle_name(particle: TransformParticle) -> &'static str {
     }
 }
 
-fn drop_strategy_name(strategy: DropStrategy) -> &'static str {
+const fn drop_strategy_name(strategy: DropStrategy) -> &'static str {
     match strategy {
         DropStrategy::ClickedFace => "clicked_face",
         DropStrategy::FromMiddle => "from_middle",
     }
 }
 
-fn transform_type_name(transform_type: TransformType) -> &'static str {
+const fn transform_type_name(transform_type: TransformType) -> &'static str {
     match transform_type {
         TransformType::SingleBlock => "single_block",
         TransformType::CopperChest => "copper_chest",
@@ -649,7 +649,6 @@ impl HashComponent for BlockTransformerComponent {
 pub struct BlockTransformerRegistry {
     entries_by_id: Vec<BlockTransformerRef>,
     entries_by_key: FxHashMap<Identifier, usize>,
-    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -660,7 +659,6 @@ impl BlockTransformerRegistry {
             entries_by_id: Vec::new(),
             entries_by_key: FxHashMap::default(),
             allows_registering: true,
-            tags: RegistryTags::default(),
         }
     }
 }

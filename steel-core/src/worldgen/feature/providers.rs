@@ -3,6 +3,22 @@ use super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
 use steel_math::map_clamped;
 
+pub(super) trait NoiseScale: Copy {
+    fn scale_coord(self, coord: i32) -> f64;
+}
+
+impl NoiseScale for f32 {
+    fn scale_coord(self, coord: i32) -> f64 {
+        f64::from(coord as f32 * self)
+    }
+}
+
+impl NoiseScale for f64 {
+    fn scale_coord(self, coord: i32) -> f64 {
+        f64::from(coord) * self
+    }
+}
+
 impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
         level: &dyn LevelReader,
@@ -12,17 +28,30 @@ impl FeatureDecorationRunner {
         pos: BlockPos,
     ) -> Option<BlockStateId> {
         match provider {
+            BlockStateProviderKind::Reference(provider) => {
+                Self::sample_block_state_provider_optional(
+                    level,
+                    registry,
+                    random,
+                    &provider.kind,
+                    pos,
+                )
+            }
             BlockStateProviderKind::RuleBased { fallback, rules } => {
                 for rule in rules {
-                    if Self::test_block_predicate(level, registry, &rule.if_true, pos) {
-                        return Some(Self::sample_block_state_provider(
+                    if Self::test_block_predicate(level, registry, &rule.if_true, pos)
+                        && let Some(state) = Self::sample_block_state_provider_optional(
                             level, registry, random, &rule.then, pos,
-                        ));
+                        )
+                    {
+                        return Some(state);
                     }
                 }
 
-                fallback.as_ref().map(|fallback| {
-                    Self::sample_block_state_provider(level, registry, random, fallback, pos)
+                fallback.as_ref().and_then(|fallback| {
+                    Self::sample_block_state_provider_optional(
+                        level, registry, random, fallback, pos,
+                    )
                 })
             }
             _ => Some(Self::sample_block_state_provider(
@@ -31,6 +60,10 @@ impl FeatureDecorationRunner {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeps the Vanilla provider dispatch together"
+    )]
     pub(super) fn sample_block_state_provider(
         level: &dyn LevelReader,
         registry: &Registry,
@@ -68,11 +101,27 @@ impl FeatureDecorationRunner {
                 panic!("weighted block-state provider failed to select an entry");
             }
             BlockStateProviderKind::RotatedBlock { state, direction } => {
+                let direction = direction.unwrap_or_else(|| Self::random_direction(random));
                 let state = Self::sample_block_state_provider(level, registry, random, state, pos);
-                let axis = direction
-                    .map(|direction| direction.axis())
-                    .unwrap_or_else(|| Self::random_axis(random));
-                state.set_value(&BlockStateProperties::AXIS, axis)
+                let state = if state.try_get_value(&BlockStateProperties::AXIS).is_some() {
+                    state.set_value(&BlockStateProperties::AXIS, direction.axis())
+                } else {
+                    state
+                };
+                let state = if state.try_get_value(&BlockStateProperties::FACING).is_some() {
+                    state.set_value(&BlockStateProperties::FACING, direction)
+                } else {
+                    state
+                };
+                if direction.is_horizontal()
+                    && state
+                        .try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                        .is_some()
+                {
+                    state.set_value(&BlockStateProperties::HORIZONTAL_FACING, direction)
+                } else {
+                    state
+                }
             }
             BlockStateProviderKind::RandomizedInt {
                 property,
@@ -134,14 +183,6 @@ impl FeatureDecorationRunner {
                 };
                 registry.blocks.get_default_state_id(block)
             }
-        }
-    }
-
-    pub(super) fn random_axis(random: &mut WorldgenRandom) -> Axis {
-        match random.next_i32_bounded(3) {
-            0 => Axis::X,
-            1 => Axis::Y,
-            _ => Axis::Z,
         }
     }
 
@@ -262,12 +303,11 @@ impl FeatureDecorationRunner {
         )
     }
 
-    pub(super) fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f32) -> f64 {
-        let scale = f64::from(scale);
+    pub(super) fn noise_value<S: NoiseScale>(noise: &NormalNoise, pos: BlockPos, scale: S) -> f64 {
         noise.get_value(
-            f64::from(pos.x()) * scale,
-            f64::from(pos.y()) * scale,
-            f64::from(pos.z()) * scale,
+            scale.scale_coord(pos.x()),
+            scale.scale_coord(pos.y()),
+            scale.scale_coord(pos.z()),
         )
     }
 
@@ -296,8 +336,8 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn noise_state_index(state_count: usize, noise_value: f64) -> usize {
-        let placement_value = f64::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
-        (placement_value * state_count as f64) as usize
+        let placement_value = f32::midpoint(1.0_f32, noise_value as f32).clamp(0.0, 0.9999);
+        (placement_value * state_count as f32) as usize
     }
 
     pub(super) fn random_block_state_from_data_list(
@@ -326,12 +366,15 @@ mod tests {
 
     #[test]
     fn noise_state_index_uses_vanilla_placement_value_formula() {
-        for (state_count, noise_value) in
-            [(2, -1.5), (4, -0.5), (8, 0.0), (16, 0.75), (32, 1.5)] as [(usize, f64); 5]
-        {
-            let placement_value = f64::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
-            let expected = (placement_value * state_count as f64) as usize;
-
+        for (state_count, noise_value, expected) in [
+            (2, -1.5, 0),
+            (4, -0.5, 1),
+            (8, 0.0, 4),
+            (16, 0.75, 14),
+            (32, 1.5, 31),
+            (2, -f64::from(2.0_f32.powi(-25)), 1),
+            (8, -f64::from(2.0_f32.powi(-25)), 4),
+        ] {
             assert_eq!(
                 FeatureDecorationRunner::noise_state_index(state_count, noise_value),
                 expected

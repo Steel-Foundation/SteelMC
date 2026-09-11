@@ -8,7 +8,6 @@
 use std::sync::LazyLock;
 
 use glam::IVec3;
-use steel_math::map_clamped;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::template_pool::Projection;
 use steel_utils::BoundingBox;
@@ -69,7 +68,7 @@ fn is_in_kernel_range(index: i32) -> bool {
 ///
 /// `dx`, `dy`, `dz` are the distances from the query point to the piece for kernel lookup.
 /// `y_to_ground` is the vertical distance from query point to the piece's ground level.
-fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f64 {
+fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f32 {
     let xi = dx + KERNEL_RADIUS;
     let yi = dy + KERNEL_RADIUS;
     let zi = dz + KERNEL_RADIUS;
@@ -78,20 +77,24 @@ fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f64 {
         return 0.0;
     }
 
-    let dy_with_offset = f64::from(y_to_ground) + 0.5;
-    let dist_sq = f64::from(dx * dx) + dy_with_offset * dy_with_offset + f64::from(dz * dz);
-    let value = -dy_with_offset * fast_inv_sqrt(dist_sq / 2.0) / 2.0;
+    let dy_with_offset = y_to_ground as f32 + 0.5;
+    let dist_sq = (dx * dx) as f32 + dy_with_offset * dy_with_offset + (dz * dz) as f32;
+    let value = -dy_with_offset * fast_inv_sqrt(f64::from(dist_sq / 2.0)) as f32 / 2.0;
     let kernel_idx =
         zi as usize * KERNEL_SIZE * KERNEL_SIZE + xi as usize * KERNEL_SIZE + yi as usize;
-    value * f64::from(BEARD_KERNEL[kernel_idx])
+    value * BEARD_KERNEL[kernel_idx]
 }
 
 /// Computes the bury density contribution for a point near a structure piece.
 ///
 /// Simple linear falloff: 1.0 at distance 0, 0.0 at distance 6.
-fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> f64 {
-    let distance = (dx * dx + dy * dy + dz * dz).sqrt();
-    map_clamped(distance, 0.0, 6.0, 1.0, 0.0)
+fn get_bury_contribution(dx: f32, dy: f32, dz: f32) -> f32 {
+    let distance_squared = dx * dx + dy * dy + dz * dz;
+    if distance_squared >= 36.0 {
+        0.0
+    } else {
+        1.0 - distance_squared.sqrt() / 6.0
+    }
 }
 
 /// Computes terrain density contributions from nearby structure pieces and junctions.
@@ -226,7 +229,7 @@ impl Beardifier {
             return 0.0;
         }
 
-        let mut value = 0.0;
+        let mut value = 0.0f32;
 
         for rigid in &self.rigids {
             let bb = &rigid.bounding_box;
@@ -241,11 +244,7 @@ impl Beardifier {
             match rigid.terrain_adjustment {
                 TerrainAdjustment::None => {}
                 TerrainAdjustment::Bury => {
-                    value += get_bury_contribution(
-                        f64::from(dx),
-                        f64::from(dy_to_ground) / 2.0,
-                        f64::from(dz),
-                    );
+                    value += get_bury_contribution(dx as f32, dy_to_ground as f32 / 2.0, dz as f32);
                 }
                 TerrainAdjustment::BeardThin => {
                     value += get_beard_contribution(dx, dy_to_ground, dz, dy_to_ground) * 0.8;
@@ -256,11 +255,9 @@ impl Beardifier {
                 }
                 TerrainAdjustment::Encapsulate => {
                     let dy = 0.max((bb.min_y() - block_y).max(block_y - bb.max_y()));
-                    value += get_bury_contribution(
-                        f64::from(dx) / 2.0,
-                        f64::from(dy) / 2.0,
-                        f64::from(dz) / 2.0,
-                    ) * 0.8;
+                    value +=
+                        get_bury_contribution(dx as f32 / 2.0, dy as f32 / 2.0, dz as f32 / 2.0)
+                            * 0.8;
                 }
             }
         }
@@ -272,7 +269,7 @@ impl Beardifier {
             value += get_beard_contribution(dx, dy, dz, dy) * 0.4;
         }
 
-        value
+        f64::from(value)
     }
 }
 

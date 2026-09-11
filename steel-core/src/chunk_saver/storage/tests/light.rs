@@ -97,7 +97,6 @@ fn persistent_chunk_loads_chunk_owned_light_into_full_chunk() {
         Vec::new(),
         Vec::new(),
         persistent_light,
-        None,
         Vec::new(),
         Vec::new(),
         Vec::new(),

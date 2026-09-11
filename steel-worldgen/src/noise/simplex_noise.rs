@@ -37,9 +37,20 @@ impl SimplexNoise {
     /// Matches vanilla's `SimplexNoise(RandomSource)` constructor:
     /// consumes 3 doubles for offsets, then shuffles a 256-entry permutation table.
     pub fn new<R: Random>(random: &mut R) -> Self {
-        let xo = random.next_f64() * 256.0;
-        let yo = random.next_f64() * 256.0;
-        let zo = random.next_f64() * 256.0;
+        Self::with_noise_offset_scale(random, 256.0)
+    }
+
+    /// Creates a simplex sampler whose random offsets are discarded.
+    ///
+    /// Vanilla still consumes the three offset samples when the scale is zero.
+    pub fn new_without_noise_offset<R: Random>(random: &mut R) -> Self {
+        Self::with_noise_offset_scale(random, 0.0)
+    }
+
+    fn with_noise_offset_scale<R: Random>(random: &mut R, noise_offset_scale: f64) -> Self {
+        let xo = random.next_f64() * noise_offset_scale;
+        let yo = random.next_f64() * noise_offset_scale;
+        let zo = random.next_f64() * noise_offset_scale;
 
         let mut p = [0i32; 512];
 
@@ -97,7 +108,7 @@ impl SimplexNoise {
         let n1 = corner_noise_3d(gi1, x1, y1, 0.0, 0.5);
         let n2 = corner_noise_3d(gi2, x2, y2, 0.0, 0.5);
 
-        70.0 * (n0 + n1 + n2)
+        f64::from((70.0 * (n0 + n1 + n2)) as f32)
     }
 
     /// Skewing factor for 3D simplex: `1/3`
@@ -163,7 +174,7 @@ impl SimplexNoise {
         let n2 = corner_noise_3d(gi2, x2, y2, z2, 0.6);
         let n3 = corner_noise_3d(gi3, x3, y3, z3, 0.6);
 
-        32.0 * (n0 + n1 + n2 + n3)
+        f64::from((32.0 * (n0 + n1 + n2 + n3)) as f32)
     }
 }
 

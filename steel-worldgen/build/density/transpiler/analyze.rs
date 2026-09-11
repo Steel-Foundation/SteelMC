@@ -121,7 +121,8 @@ impl TranspileContext {
             DensityFunction::Constant(_)
             | DensityFunction::BlendAlpha(_)
             | DensityFunction::BlendOffset(_)
-            | DensityFunction::YClampedGradient(_) => {}
+            | DensityFunction::YClampedGradient(_)
+            | DensityFunction::DistanceToPoint(_) => {}
 
             DensityFunction::EndIslands => {
                 self.uses_end_islands = true;
@@ -194,7 +195,6 @@ impl TranspileContext {
                 self.walk_df(&fts.upper_bound, input);
             }
             DensityFunction::Slice(s) => self.walk_df(&s.input, input),
-            DensityFunction::DistanceToPoint(_) => {}
             DensityFunction::Reference(r) => {
                 if !self.used_names.contains(&r.id) {
                     self.used_names.insert(r.id.clone());

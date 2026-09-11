@@ -32,6 +32,9 @@ pub const GRADIENT: [[f64; 3]; 16] = [
     [0.0, -1.0, -1.0],
 ];
 
+/// See `GRADIENT` for details. This is a f32 version of the gradient table for use in f32 noise functions
+pub const GRADIENT_F32: [[f32; 3]; 16] = gradient_f32();
+
 /// Same as Gradient but with a fourth 0 to be more simd friendly
 pub const GRADIENT_4: [[f64; 4]; 16] = [
     [1.0, 1.0, 0.0, 0.],
@@ -157,4 +160,20 @@ pub fn corner_noise_3d(index: usize, x: f64, y: f64, z: f64, base: f64) -> f64 {
         let t0 = t0 * t0;
         t0 * t0 * dot(&GRADIENT[index], x, y, z)
     }
+}
+
+const fn gradient_f32() -> [[f32; 3]; 16] {
+    let mut result = [[0.0; 3]; 16];
+    let mut i = 0;
+
+    while i < GRADIENT.len() {
+        result[i] = [
+            GRADIENT[i][0] as f32,
+            GRADIENT[i][1] as f32,
+            GRADIENT[i][2] as f32,
+        ];
+        i += 1;
+    }
+
+    result
 }

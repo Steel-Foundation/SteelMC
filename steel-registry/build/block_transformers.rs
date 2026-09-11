@@ -69,15 +69,13 @@ fn block_transform_token(value: &Value) -> TokenStream {
         },
     );
     let drop_strategy = drop_strategy_token(transform.get("drop_strategy"));
-    let update_from_neighbors = transform
-        .get("update_from_neighbors")
-        .map_or(true, |value| {
-            value
-                .as_bool()
-                .unwrap_or_else(|| panic!("update_from_neighbors must be a boolean"))
-        });
+    let update_from_neighbors = transform.get("update_from_neighbors").is_none_or(|value| {
+        value
+            .as_bool()
+            .unwrap_or_else(|| panic!("update_from_neighbors must be a boolean"))
+    });
     let transform_type = transform_type_token(transform.get("transform_type"));
-    let consume_on_use = transform.get("consume_on_use").map_or(true, |value| {
+    let consume_on_use = transform.get("consume_on_use").is_none_or(|value| {
         value
             .as_bool()
             .unwrap_or_else(|| panic!("consume_on_use must be a boolean"))

@@ -35,6 +35,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use steel_worldgen::noise::Beardifier;
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
@@ -479,7 +480,7 @@ fn make_holder_for_features(
     if distance <= 1 {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
-            ChunkStatus::Carvers,
+            ChunkStatus::Terrain,
         );
     } else {
         let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
@@ -514,7 +515,7 @@ fn make_holder_for_feature_centers(
     if needs_carvers {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
-            ChunkStatus::Carvers,
+            ChunkStatus::Terrain,
         );
     } else {
         let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
@@ -695,28 +696,24 @@ const CONCURRENT_FEATURE_GRID_MAX: i32 = 2;
 const CONCURRENT_FEATURE_THREAD_COUNT: usize = 8;
 const FULL_PIPELINE_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
 const LIGHT_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
-const FULL_PIPELINE_STATUSES: [ChunkStatus; 12] = [
+const FULL_PIPELINE_STATUSES: [ChunkStatus; 10] = [
     ChunkStatus::Empty,
     ChunkStatus::StructureStarts,
     ChunkStatus::StructureReferences,
     ChunkStatus::Biomes,
-    ChunkStatus::Noise,
-    ChunkStatus::Surface,
-    ChunkStatus::Carvers,
+    ChunkStatus::Terrain,
     ChunkStatus::Features,
     ChunkStatus::InitializeLight,
     ChunkStatus::Light,
     ChunkStatus::Spawn,
     ChunkStatus::Full,
 ];
-const LIGHT_SETUP_STATUSES: [ChunkStatus; 9] = [
+const LIGHT_SETUP_STATUSES: [ChunkStatus; 7] = [
     ChunkStatus::Empty,
     ChunkStatus::StructureStarts,
     ChunkStatus::StructureReferences,
     ChunkStatus::Biomes,
-    ChunkStatus::Noise,
-    ChunkStatus::Surface,
-    ChunkStatus::Carvers,
+    ChunkStatus::Terrain,
     ChunkStatus::Features,
     ChunkStatus::InitializeLight,
 ];
@@ -1622,7 +1619,7 @@ fn build_references_fixture(
         Weak::new(),
         dim.min_y,
         dim.height,
-        63, // overworld sea level (bench is overworld)
+        OverworldNoiseSettings::SEA_LEVEL,
     ));
 
     let gen_for_factory = generator_arc.clone();

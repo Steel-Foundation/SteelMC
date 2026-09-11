@@ -12,8 +12,8 @@ use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 use std::simd::ptr::SimdConstPtr;
 use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
 use steel_math::{
-    GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp2, lerp3, lerp3_simd,
-    smoothstep, smoothstep_derivative, smoothstep_simd,
+    GRADIENT, GRADIENT_F32, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp2, lerp3,
+    lerp3_simd, smoothstep, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
@@ -98,6 +98,143 @@ impl ImprovedNoise {
         let zr = z - f64::from(zf);
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+    }
+
+    /// Samples the 26.3 float-based `PerlinNoise` implementation.
+    ///
+    /// Vanilla keeps coordinates and offsets as doubles, then converts the
+    /// fractional coordinates and every interpolation operation to `float`.
+    #[inline]
+    #[must_use]
+    pub fn noise_f32(&self, x: f64, y: f64, z: f64) -> f32 {
+        let x = steel_math::wrap(x) + self.xo;
+        let y = steel_math::wrap(y) + self.yo;
+        let z = steel_math::wrap(z) + self.zo;
+        let floor_x = fast_floor(x);
+        let floor_y = fast_floor(y);
+        let floor_z = fast_floor(z);
+        self.sample_and_lerp_f32(
+            floor_x,
+            floor_y,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            (y - f64::from(floor_y)) as f32,
+            (z - f64::from(floor_z)) as f32,
+            (y - f64::from(floor_y)) as f32,
+        )
+    }
+
+    /// Samples the float-based `SmearedPerlinNoise` used by 26.3's blended
+    /// terrain noise.
+    #[inline]
+    #[must_use]
+    pub fn smeared_noise_f32(
+        &self,
+        original_x: f64,
+        original_y: f64,
+        original_z: f64,
+        fudge_y_scale: f64,
+    ) -> f32 {
+        let x = steel_math::wrap(original_x) + self.xo;
+        let y = steel_math::wrap(original_y) + self.yo;
+        let z = steel_math::wrap(original_z) + self.zo;
+        let floor_x = fast_floor(x);
+        let floor_y = fast_floor(y);
+        let floor_z = fast_floor(z);
+        let relative_y = y - f64::from(floor_y);
+        let fudge_limit = if original_y >= 0.0 && original_y < relative_y {
+            original_y
+        } else {
+            relative_y
+        };
+        let fudge = (fudge_limit / fudge_y_scale + f64::from(1.0e-7_f32)).floor() * fudge_y_scale;
+        self.sample_and_lerp_f32(
+            floor_x,
+            floor_y,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            (relative_y - fudge) as f32,
+            (z - f64::from(floor_z)) as f32,
+            relative_y as f32,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla PerlinNoise.sampleAndLerp"
+    )]
+    fn sample_and_lerp_f32(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        relative_x: f32,
+        relative_y: f32,
+        relative_z: f32,
+        original_relative_y: f32,
+    ) -> f32 {
+        let permute = |coordinate: i32| i32::from(self.p[(coordinate & 255) as usize]);
+        let grad_dot = |hash: i32, x: f32, y: f32, z: f32| {
+            let [gx, gy, gz] = GRADIENT_F32[(hash & 15) as usize];
+            gx * x + gy * y + gz * z
+        };
+
+        let lerp = |alpha: f32, first: f32, second: f32| first + alpha * (second - first);
+        let smoothstep = |value: f32| value * value * value * (value * (value * 6.0 - 15.0) + 10.0);
+
+        let x0 = permute(x);
+        let x1 = permute(x + 1);
+        let xy00 = permute(x0 + y);
+        let xy01 = permute(x0 + y + 1);
+        let xy10 = permute(x1 + y);
+        let xy11 = permute(x1 + y + 1);
+        let d000 = grad_dot(permute(xy00 + z), relative_x, relative_y, relative_z);
+        let d100 = grad_dot(permute(xy10 + z), relative_x - 1.0, relative_y, relative_z);
+        let d010 = grad_dot(permute(xy01 + z), relative_x, relative_y - 1.0, relative_z);
+        let d110 = grad_dot(
+            permute(xy11 + z),
+            relative_x - 1.0,
+            relative_y - 1.0,
+            relative_z,
+        );
+        let d001 = grad_dot(
+            permute(xy00 + z + 1),
+            relative_x,
+            relative_y,
+            relative_z - 1.0,
+        );
+        let d101 = grad_dot(
+            permute(xy10 + z + 1),
+            relative_x - 1.0,
+            relative_y,
+            relative_z - 1.0,
+        );
+        let d011 = grad_dot(
+            permute(xy01 + z + 1),
+            relative_x,
+            relative_y - 1.0,
+            relative_z - 1.0,
+        );
+        let d111 = grad_dot(
+            permute(xy11 + z + 1),
+            relative_x - 1.0,
+            relative_y - 1.0,
+            relative_z - 1.0,
+        );
+        let x_alpha = smoothstep(relative_x);
+        let y_alpha = smoothstep(original_relative_y);
+        let z_alpha = smoothstep(relative_z);
+        let xz0 = lerp(
+            y_alpha,
+            lerp(x_alpha, d000, d100),
+            lerp(x_alpha, d010, d110),
+        );
+        let xz1 = lerp(
+            y_alpha,
+            lerp(x_alpha, d001, d101),
+            lerp(x_alpha, d011, d111),
+        );
+        lerp(z_alpha, xz0, xz1)
     }
 
     /// Calculate Perlin noise using SIMD vectors.

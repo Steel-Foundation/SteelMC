@@ -25,7 +25,11 @@ impl FeatureDecorationRunner {
         }
 
         if Self::is_double_plant_block(state_to_place.get_block()) {
-            if !region.block_state(origin.above()).is_air() {
+            let above_state = region.block_state(origin.above());
+            if !above_state.is_air()
+                && (state_to_place.get_fluid_state() != above_state.get_fluid_state()
+                    || !above_state.is_replaceable())
+            {
                 return false;
             }
             Self::place_double_plant(region, state_to_place, origin);
@@ -50,6 +54,7 @@ impl FeatureDecorationRunner {
             || block == &vanilla_blocks::PEONY
             || block == &vanilla_blocks::TALL_GRASS
             || block == &vanilla_blocks::LARGE_FERN
+            || block == &vanilla_blocks::TALL_SEAGRASS
             || block == &vanilla_blocks::PITCHER_PLANT
             || block == &vanilla_blocks::SMALL_DRIPLEAF
     }

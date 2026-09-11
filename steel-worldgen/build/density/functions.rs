@@ -7,7 +7,7 @@ use std::string::String;
 use std::sync::Arc;
 use std::{fs, path::PathBuf};
 
-use super::surface_rules::{SurfaceRuleJson, generate_surface_rule_function};
+use super::surface_rules::{SurfaceRuleJson, collect_ore_veins, generate_surface_rule_function};
 
 /// Parsed density function from datapack JSON.
 ///
@@ -59,6 +59,12 @@ pub enum DensityFunctionData {
         xz_scale: f64,
         y_scale: f64,
         noise: String,
+        #[serde(default)]
+        shift_x: Option<Box<DensityFunctionJson>>,
+        #[serde(default)]
+        shift_y: Option<Box<DensityFunctionJson>>,
+        #[serde(default)]
+        shift_z: Option<Box<DensityFunctionJson>>,
     },
     #[serde(rename = "minecraft:shifted_noise")]
     ShiftedNoise {
@@ -264,6 +270,8 @@ struct AquifersJson {
     fluid_level_floodedness: DensityFunctionJson,
     fluid_level_spread: DensityFunctionJson,
     lava: DensityFunctionJson,
+    #[serde(default)]
+    surface_level: Option<DensityFunctionJson>,
 }
 
 /// Full noise settings from a datapack file.
@@ -280,6 +288,8 @@ struct NoiseSettingsJson {
     noise_router: NoiseRouterJson,
     #[serde(default)]
     surface_rule: Option<SurfaceRuleJson>,
+    #[serde(default)]
+    material_rule: Option<String>,
 }
 
 // ── Datapack file reading ───────────────────────────────────────────────────
@@ -345,6 +355,118 @@ fn read_noise_settings(dimension: &str) -> NoiseSettingsJson {
     let content =
         fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
     serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
+}
+
+fn material_registry_path(registry: &str, id: &str) -> PathBuf {
+    let path = id
+        .strip_prefix("minecraft:")
+        .unwrap_or_else(|| panic!("unsupported {registry} namespace: {id}"));
+    Path::new(DATAPACK_BASE)
+        .join(registry)
+        .join(path)
+        .with_extension("json")
+}
+
+fn resolve_material_registry_entry(
+    registry: &str,
+    value: &mut serde_json::Value,
+    stack: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::String(id) => {
+            let id = id.clone();
+            let stack_id = format!("{registry}:{id}");
+            assert!(
+                !stack.contains(&stack_id),
+                "cyclic {registry} reference: {} -> {id}",
+                stack.join(" -> ")
+            );
+            let path = material_registry_path(registry, &id);
+            println!("cargo:rerun-if-changed={}", path.display());
+            let content = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("Failed to read {}: {error}", path.display()));
+            let mut resolved: serde_json::Value = serde_json::from_str(&content)
+                .unwrap_or_else(|error| panic!("Failed to parse {}: {error}", path.display()));
+            stack.push(stack_id);
+            resolve_material_rule(&mut resolved, stack);
+            stack.pop();
+            *value = resolved;
+        }
+        serde_json::Value::Object(rule) => {
+            match rule.get("type").and_then(serde_json::Value::as_str) {
+                Some("minecraft:sequence") => {
+                    for child in rule
+                        .get_mut("sequence")
+                        .and_then(serde_json::Value::as_array_mut)
+                        .expect("material rule sequence must contain an array")
+                    {
+                        resolve_material_rule(child, stack);
+                    }
+                }
+                Some("minecraft:condition") => {
+                    resolve_material_registry_entry(
+                        "material_condition",
+                        rule.get_mut("if_true")
+                            .expect("material rule condition must contain if_true"),
+                        stack,
+                    );
+                    resolve_material_rule(
+                        rule.get_mut("then_run")
+                            .expect("material rule condition must contain then_run"),
+                        stack,
+                    );
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn resolve_material_rule(value: &mut serde_json::Value, stack: &mut Vec<String>) {
+    resolve_material_registry_entry("material_rule", value, stack);
+}
+
+fn read_material_rule(id: &str) -> SurfaceRuleJson {
+    let mut value = serde_json::Value::String(id.to_owned());
+    resolve_material_rule(&mut value, &mut Vec::new());
+    serde_json::from_value(value).unwrap_or_else(|error| {
+        panic!("Failed to deserialize resolved material rule {id}: {error}")
+    })
+}
+
+fn surface_rule(settings: &NoiseSettingsJson) -> Option<SurfaceRuleJson> {
+    settings
+        .surface_rule
+        .clone()
+        .or_else(|| settings.material_rule.as_deref().map(read_material_rule))
+}
+
+fn material_ore_router_entries(
+    rule: Option<&SurfaceRuleJson>,
+) -> BTreeMap<String, DensityFunction> {
+    let mut entries = BTreeMap::new();
+    let Some(rule) = rule else {
+        return entries;
+    };
+
+    let mut ore_veins = Vec::new();
+    collect_ore_veins(rule, &mut ore_veins);
+    for (index, ore_vein) in ore_veins.into_iter().enumerate() {
+        entries.insert(
+            format!("material_ore_vein_{index}_density"),
+            json_to_df(&ore_vein.density),
+        );
+        entries.insert(
+            format!("material_ore_vein_{index}_richness"),
+            json_to_df(&ore_vein.richness),
+        );
+        entries.insert(
+            format!("material_ore_vein_{index}_filler_gap"),
+            json_to_df(&ore_vein.filler_gap),
+        );
+    }
+    entries
 }
 
 // ── JSON → DensityFunction conversion ───────────────────────────────────────
@@ -420,12 +542,30 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             xz_scale,
             y_scale,
             noise,
-        } => DensityFunction::Noise(Noise {
-            noise_id: noise.clone(),
-            xz_scale: *xz_scale,
-            y_scale: *y_scale,
-            noise: None,
-        }),
+            shift_x,
+            shift_y,
+            shift_z,
+        } => {
+            if shift_x.is_none() && shift_y.is_none() && shift_z.is_none() {
+                DensityFunction::Noise(Noise {
+                    noise_id: noise.clone(),
+                    xz_scale: *xz_scale,
+                    y_scale: *y_scale,
+                    noise: None,
+                })
+            } else {
+                let zero = || DensityFunction::Constant(Constant { value: 0.0 });
+                DensityFunction::ShiftedNoise(ShiftedNoise {
+                    shift_x: Arc::new(shift_x.as_deref().map_or_else(zero, json_to_df)),
+                    shift_y: Arc::new(shift_y.as_deref().map_or_else(zero, json_to_df)),
+                    shift_z: Arc::new(shift_z.as_deref().map_or_else(zero, json_to_df)),
+                    xz_scale: *xz_scale,
+                    y_scale: *y_scale,
+                    noise_id: noise.clone(),
+                    noise: None,
+                })
+            }
+        }
 
         DensityFunctionData::ShiftedNoise {
             shift_x,
@@ -547,8 +687,9 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         // TODO: Implement Beardifier for structure terrain adaptation.
         // Constant(0.0) is correct when structures are not yet generated.
         DensityFunctionData::Beardifier {} => DensityFunction::Constant(Constant { value: 0.0 }),
-        DensityFunctionData::EndIslands {} => DensityFunction::EndIslands,
-        DensityFunctionData::EndOuterIslands {} => DensityFunction::EndIslands,
+        DensityFunctionData::EndIslands {} | DensityFunctionData::EndOuterIslands {} => {
+            DensityFunction::EndIslands
+        }
 
         DensityFunctionData::Slice {
             axis,
@@ -755,6 +896,12 @@ fn router_to_entries(
             json_to_df(&aquifers.fluid_level_spread),
         );
         entries.insert("lava".to_string(), json_to_df(&aquifers.lava));
+        if let Some(surface_level) = &aquifers.surface_level {
+            entries.insert(
+                "preliminary_surface_level".to_string(),
+                json_to_df(surface_level),
+            );
+        }
     }
     for (name, field) in [
         ("vein_toggle", &router.vein_toggle),
@@ -765,7 +912,9 @@ fn router_to_entries(
             &router.preliminary_surface_level,
         ),
     ] {
-        if let Some(json) = field {
+        if !entries.contains_key(name)
+            && let Some(json) = field
+        {
             entries.insert(name.to_string(), json_to_df(json));
         }
     }
@@ -830,7 +979,10 @@ fn transpile_dimension(
     registry: &BTreeMap<String, DensityFunction>,
 ) -> TokenStream {
     let settings = read_noise_settings(dimension);
-    let router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    let mut router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    router_entries.extend(material_ore_router_entries(
+        surface_rule(&settings).as_ref(),
+    ));
 
     let (cell_width, cell_height) = router_entries
         .values()
@@ -854,11 +1006,17 @@ fn transpile_dimension(
     reason = "generated noise settings include all trait glue in one quoted block"
 )]
 fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
-    let mut settings = read_noise_settings(dimension);
+    let settings = read_noise_settings(dimension);
 
     let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
     let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
     let cache_struct = Ident::new(&format!("{prefix}ColumnCache"), Span::call_site());
+
+    let material_rule = surface_rule(&settings);
+    let mut material_ore_veins = Vec::new();
+    if let Some(rule) = material_rule.as_ref() {
+        collect_ore_veins(rule, &mut material_ore_veins);
+    }
 
     // Generate surface rule function, noise IDs, and block-state cache.
     let (
@@ -870,7 +1028,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
         surface_rule_uses_preliminary_surface,
         surface_rule_uses_surface_secondary,
         surface_rule_uses_steep,
-    ) = if let Some(rule) = settings.surface_rule.take() {
+    ) = if let Some(rule) = material_rule.as_ref() {
         let (
             func,
             noise_ids,
@@ -880,7 +1038,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             uses_preliminary_surface,
             uses_surface_secondary,
             uses_steep,
-        ) = generate_surface_rule_function(&rule, settings.noise.min_y, settings.noise.height);
+        ) = generate_surface_rule_function(rule, settings.noise.min_y, settings.noise.height);
         let noise_id_literals: Vec<_> = noise_ids.iter().map(String::as_str).collect();
         let gradient_id_literals: Vec<_> = gradient_ids.iter().map(String::as_str).collect();
         let block_state_idents: Vec<_> = block_state_names
@@ -937,13 +1095,16 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
     let sea_level = settings.sea_level;
     let aquifers_enabled = settings.aquifers.is_some();
     let ore_veins_enabled = false;
+    let material_ore_veins_enabled = !material_ore_veins.is_empty();
+    let material_ore_vein_value_count = material_ore_veins.len() * 2;
     let legacy_random_source = settings.legacy_random_source;
 
     let registry: BTreeMap<String, DensityFunction> = read_density_function_registry()
         .iter()
         .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
-    let router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    let mut router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    router_entries.extend(material_ore_router_entries(material_rule.as_ref()));
     let (cell_width, cell_height) = router_entries
         .values()
         .find_map(|df| find_interpolated_cell_size(df, &registry))
@@ -965,7 +1126,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
     .map(|name| {
         let fn_ident = format_ident!("router_{name}");
         let body = if router_entries.contains_key(name) {
-            quote! { #fn_ident(self, cache, x as f64, y as f64, z as f64) }
+            quote! { f64::from(#fn_ident(self, cache, x as f64, y as f64, z as f64)) }
         } else {
             quote! { 0.0 }
         };
@@ -993,6 +1154,80 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
     let default_block_ident = Ident::new(&default_block_upper, Span::call_site());
     let default_fluid_ident = Ident::new(&default_fluid_upper, Span::call_site());
+    let material_ore_vein_values_body: TokenStream = material_ore_veins
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let combined_density = format_ident!("combine_material_ore_vein_{index}_density");
+            let combined_richness = format_ident!("combine_material_ore_vein_{index}_richness");
+            let value_index = index * 2;
+            quote! {
+                out[#value_index] = #combined_density(self, cache, interpolated, x, y, z) as f32;
+                out[#value_index + 1] = #combined_richness(self, cache, interpolated, x, y, z) as f32;
+            }
+        })
+        .collect();
+    let material_ore_vein_apply_body: TokenStream = material_ore_veins
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| {
+            let filler_gap = format_ident!("router_material_ore_vein_{index}_filler_gap");
+            let value_index = index * 2;
+            let raw_ore_chance = rule.raw_ore_chance;
+            quote! {
+                if let Some(state) = ore_veinifier.try_apply_material_rule(
+                    x,
+                    y,
+                    z,
+                    values[#value_index],
+                    values[#value_index + 1],
+                    || #filler_gap(self, cache, x as f64, y as f64, z as f64) as f32,
+                    ore_vein_states[#index][0],
+                    ore_vein_states[#index][1],
+                    ore_vein_states[#index][2],
+                    #raw_ore_chance,
+                ) {
+                    out[#index] = Some(state);
+                }
+            }
+        })
+        .collect();
+    let material_ore_vein_states: Vec<TokenStream> = material_ore_veins
+        .iter()
+        .map(|rule| {
+            let ore = Ident::new(
+                &rule
+                    .ore_block
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(&rule.ore_block)
+                    .to_uppercase(),
+                Span::call_site(),
+            );
+            let raw_ore = Ident::new(
+                &rule
+                    .raw_ore_block
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(&rule.raw_ore_block)
+                    .to_uppercase(),
+                Span::call_site(),
+            );
+            let filler = Ident::new(
+                &rule
+                    .filler_block
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(&rule.filler_block)
+                    .to_uppercase(),
+                Span::call_site(),
+            );
+            quote! {
+                [
+                    steel_registry::vanilla_blocks::#ore.default_state(),
+                    steel_registry::vanilla_blocks::#raw_ore.default_state(),
+                    steel_registry::vanilla_blocks::#filler.default_state(),
+                ]
+            }
+        })
+        .collect();
 
     quote! {
         /// Noise settings for this dimension, parsed from the datapack.
@@ -1013,6 +1248,8 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             pub const AQUIFERS_ENABLED: bool = #aquifers_enabled;
             /// Whether ore veins are enabled.
             pub const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+            /// Whether the material rule contains ore veins.
+            pub const MATERIAL_ORE_VEINS_ENABLED: bool = #material_ore_veins_enabled;
             /// Whether this dimension uses Java's LCG random (true) or Xoroshiro (false).
             pub const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
 
@@ -1037,6 +1274,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             const CELL_HEIGHT: i32 = #cell_height;
             const AQUIFERS_ENABLED: bool = #aquifers_enabled;
             const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+            const MATERIAL_ORE_VEINS_ENABLED: bool = #material_ore_veins_enabled;
             const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
 
             #[inline]
@@ -1084,39 +1322,39 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
             #[inline]
             fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_final_density(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_final_density(self, cache, x as f64, y as f64, z as f64))
             }
 
             #[inline]
             fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_depth(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_depth(self, cache, x as f64, y as f64, z as f64))
             }
 
             #optional_router_fns
 
             #[inline]
             fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_erosion(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_erosion(self, cache, x as f64, y as f64, z as f64))
             }
 
             #[inline]
             fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_continentalness(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_continentalness(self, cache, x as f64, y as f64, z as f64))
             }
 
             #[inline]
             fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_temperature(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_temperature(self, cache, x as f64, y as f64, z as f64))
             }
 
             #[inline]
             fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vegetation(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_vegetation(self, cache, x as f64, y as f64, z as f64))
             }
 
             #[inline]
             fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_ridges(self, cache, x as f64, y as f64, z as f64)
+                f64::from(router_ridges(self, cache, x as f64, y as f64, z as f64))
             }
 
             #[inline]
@@ -1129,40 +1367,28 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             }
 
             #[inline]
-            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
+            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f32]) {
                 self.blended_noise.compute_column(x, block_ys, z, out);
             }
 
             #[inline]
-            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f64, out: &mut [f64]) {
+            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f32, out: &mut [f32]) {
                 fill_cell_corner_densities(self, cache, x, y, z, blended_noise_value, out)
             }
 
             #[inline]
-            fn fill_cell_corner_densities_4x(
-                &self,
-                cache: &mut Self::ColumnCache,
-                x: i32,
-                ys: std::simd::f64x4,
-                z: i32,
-                blended_noise_values: std::simd::f64x4,
-                out: &mut [f64],
-            ) {
-                fill_cell_corner_densities_4x(self, cache, x, ys, z, blended_noise_values, out)
-            }
-
             #[inline]
-            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f32], x: i32, y: i32, z: i32) -> f32 {
                 combine_interpolated(self, cache, interpolated, x, y, z)
             }
 
             #[inline]
-            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f32], x: i32, y: i32, z: i32) -> f32 {
                 combine_vein_toggle(self, cache, interpolated, x, y, z)
             }
 
             #[inline]
-            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f32], x: i32, y: i32, z: i32) -> f32 {
                 combine_vein_ridged(self, cache, interpolated, x, y, z)
             }
 
@@ -1198,6 +1424,42 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 ctx: &mut steel_worldgen::surface::SurfaceRuleContext<'_>,
             ) -> Option<steel_utils::BlockStateId> {
                 Self::apply_surface_rule_impl(ctx)
+            }
+
+            fn material_ore_vein_value_count() -> usize {
+                #material_ore_vein_value_count
+            }
+
+            fn fill_material_ore_vein_values(
+                &self,
+                cache: &mut Self::ColumnCache,
+                interpolated: &[f32],
+                x: i32,
+                y: i32,
+                z: i32,
+                out: &mut [f32],
+            ) {
+                #material_ore_vein_values_body
+            }
+
+            fn fill_prefilled_material_ore_vein_results(
+                &self,
+                cache: &mut Self::ColumnCache,
+                ore_veinifier: &steel_worldgen::noise::OreVeinifier,
+                values: &[f32],
+                x: i32,
+                y: i32,
+                z: i32,
+                out: &mut [Option<steel_utils::BlockStateId>],
+            ) {
+                let ore_vein_states: &[[steel_utils::BlockStateId; 3]] = {
+                    static ORE_VEIN_STATES: std::sync::OnceLock<Box<[[steel_utils::BlockStateId; 3]]>> =
+                        std::sync::OnceLock::new();
+                    ORE_VEIN_STATES.get_or_init(|| Box::from([
+                        #(#material_ore_vein_states),*
+                    ]))
+                };
+                #material_ore_vein_apply_body
             }
         }
 

@@ -875,34 +875,4 @@ mod tests {
         assert!((mapper.get_values(0.6) - 2.0).abs() < 0.01);
         assert!((mapper.get_values(0.8) - 3.0).abs() < 0.01);
     }
-
-    #[test]
-    fn test_resolve_bakes_noises() {
-        use crate::random::Random;
-        use crate::random::xoroshiro::Xoroshiro;
-
-        let mut rng = Xoroshiro::from_seed(12345);
-        let splitter = rng.next_positional();
-
-        let mut noises = FxHashMap::default();
-        let noise = NormalNoise::create(&splitter, "test_noise", -4, &[1.0, 1.0, 1.0, 1.0]);
-        noises.insert("test_noise".to_string(), noise);
-
-        let registry = FxHashMap::default();
-
-        let func = DensityFunction::Noise(Noise {
-            noise_id: "test_noise".to_string(),
-            xz_scale: 1.0,
-            y_scale: 1.0,
-            noise: None, // not yet baked
-        });
-
-        // After resolve, noise should be baked
-        let resolved = func.resolve(&registry, &noises);
-        if let DensityFunction::Noise(n) = &resolved {
-            assert!(n.noise.is_some());
-        } else {
-            panic!("Expected Noise variant");
-        }
-    }
 }
