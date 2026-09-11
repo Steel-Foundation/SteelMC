@@ -250,9 +250,10 @@ pub struct IpBanEntry {
     /// When the ban expires. `None` means it never expires.
     #[serde(default)]
     pub expires: Option<DateTime<Utc>>,
-    /// The ban reason, if any.
+    /// The ban reason, if any. Supports rich text (colors, hover events, ...)
+    /// via SNBT, matching a plain `TextComponent::plain` for ordinary text.
     #[serde(default)]
-    pub reason: Option<String>,
+    pub reason: Option<TextComponent>,
 }
 
 impl IpBanEntry {
@@ -262,14 +263,13 @@ impl IpBanEntry {
         self.expires.is_some_and(|expires| expires <= Utc::now())
     }
 
-    /// Returns vanilla's `BanListEntry.getReasonMessage`: the literal reason,
+    /// Returns vanilla's `BanListEntry.getReasonMessage`: the given reason,
     /// or a translated default when none was given.
     #[must_use]
     pub fn reason_message(&self) -> TextComponent {
-        self.reason.as_deref().map_or_else(
-            || TextComponent::from(&translations::MULTIPLAYER_DISCONNECT_BANNED_REASON_DEFAULT),
-            |reason| TextComponent::plain(reason.to_owned()),
-        )
+        self.reason.clone().unwrap_or_else(|| {
+            TextComponent::from(&translations::MULTIPLAYER_DISCONNECT_BANNED_REASON_DEFAULT)
+        })
     }
 
     /// Builds vanilla's `PlayerList.canPlayerLogin` IP-ban rejection message:
@@ -539,7 +539,7 @@ mod tests {
             created: Utc::now(),
             source: "Console".to_owned(),
             expires: None,
-            reason: Some(reason.to_owned()),
+            reason: Some(TextComponent::plain(reason.to_owned())),
         }
     }
 
@@ -558,7 +558,10 @@ mod tests {
         let entry = manager
             .find("127.0.0.1")
             .expect("entry should still be banned");
-        assert_eq!(entry.reason.as_deref(), Some("second"));
+        assert_eq!(
+            entry.reason,
+            Some(TextComponent::plain("second".to_owned()))
+        );
     }
 
     #[tokio::test]
