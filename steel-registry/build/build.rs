@@ -71,6 +71,7 @@ mod recipes;
 mod sound_events;
 mod sound_types;
 mod structure;
+mod suspicious_stew_effects;
 mod timelines;
 mod trim_materials;
 mod trim_patterns;
@@ -163,6 +164,7 @@ const CARVERS: &str = "configured_carvers";
 const CONFIGURED_FEATURES: &str = "configured_features";
 const PLACED_FEATURES: &str = "placed_features";
 const CUSTOM_STATS: &str = "custom_stats";
+const SUSPICIOUS_STEW_EFFECTS: &str = "suspicious_stew_effects";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -252,6 +254,7 @@ pub fn main() {
         (features::build_configured(), CONFIGURED_FEATURES),
         (features::build_placed(), PLACED_FEATURES),
         (custom_stats::build(), CUSTOM_STATS),
+        (suspicious_stew_effects::build(), SUSPICIOUS_STEW_EFFECTS),
     ];
 
     // Track which files we're generating this run
