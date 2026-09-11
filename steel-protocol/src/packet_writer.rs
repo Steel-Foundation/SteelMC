@@ -122,10 +122,49 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
     /// - If the packet fails to write.
     /// - If the stream fails to flush.
     pub async fn write_packet(&mut self, packet: &EncodedPacket) -> Result<(), PacketError> {
+        self.write_packets([packet]).await
+    }
+
+    /// Writes a packet to the stream without flushing.
+    ///
+    /// # Errors
+    /// - If the packet fails to write.
+    pub async fn write_packet_buffered(
+        &mut self,
+        packet: &EncodedPacket,
+    ) -> Result<(), PacketError> {
         self.writer
             .write_all(&packet.encoded_data)
             .await
-            .map_err(|e| PacketError::EncryptionFailed(e.to_string()))?;
+            .map_err(|e| PacketError::EncryptionFailed(e.to_string()))
+    }
+
+    /// Flushes the stream.
+    ///
+    /// # Errors
+    /// - If the stream fails to flush.
+    pub async fn flush(&mut self) -> Result<(), PacketError> {
+        self.writer
+            .flush()
+            .await
+            .map_err(|e| PacketError::EncryptionFailed(e.to_string()))
+    }
+
+    /// Writes multiple packets to the stream with a single flush.
+    ///
+    /// # Errors
+    /// - If a packet fails to write.
+    /// - If the stream fails to flush.
+    pub async fn write_packets<'a, I>(&mut self, packets: I) -> Result<(), PacketError>
+    where
+        I: IntoIterator<Item = &'a EncodedPacket>,
+    {
+        for packet in packets {
+            self.writer
+                .write_all(&packet.encoded_data)
+                .await
+                .map_err(|e| PacketError::EncryptionFailed(e.to_string()))?;
+        }
 
         self.writer
             .flush()
