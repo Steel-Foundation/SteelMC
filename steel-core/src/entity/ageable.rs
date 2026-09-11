@@ -7,11 +7,15 @@ use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
+use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
-use crate::entity::{AgeableMobGroupData, Entity, EntitySpawnReason, Mob, SpawnGroupData};
+use crate::entity::{
+    AgeableMobGroupData, ENTITIES, Entity, EntitySpawnReason, Mob, SharedEntity, SpawnGroupData,
+    next_entity_id,
+};
 use crate::player::Player;
 use crate::world::World;
 
@@ -298,6 +302,48 @@ pub trait AgeableMob: Mob {
 
         InteractionResult::Success
     }
+
+    /// Creates a same-type offspring using the registered entity factory.
+    fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
+        ENTITIES.create(
+            self.entity_type(),
+            next_entity_id(),
+            self.position(),
+            Arc::downgrade(world),
+        )
+    }
+
+    /// Creates this animal's vanilla breeding offspring.
+    fn get_breed_offspring(
+        &self,
+        world: &Arc<World>,
+        partner: &dyn AgeableMob,
+    ) -> Option<SharedEntity> {
+        let offspring = self.create_breed_offspring(world)?;
+        let Some(offspring_animal) = offspring.as_ageable_mob() else {
+            log::error!(
+                "breeding entity type {} created non-ageable offspring",
+                self.entity_type().key
+            );
+            return None;
+        };
+
+        self.initialize_breed_offspring(partner, offspring_animal);
+        Some(offspring)
+    }
+
+    /// Returns this animal's breedable variant key when offspring inherit it.
+    fn breed_variant_key(&self) -> Option<&Identifier> {
+        None
+    }
+
+    /// Applies a breedable variant key to offspring that inherit one.
+    fn set_breed_variant_key(&self, _key: &Identifier) -> bool {
+        false
+    }
+
+    /// Applies entity-specific state to freshly created breeding offspring.
+    fn initialize_breed_offspring(&self, _partner: &dyn AgeableMob, _offspring: &dyn AgeableMob) {}
 
     /// Ticks vanilla age progression.
     fn tick_ageable_mob(&self) {
