@@ -17,15 +17,18 @@ use crate::{
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetBeacon,
+    SSetCarriedItem, SSetCreativeModeSlot,
 };
 use steel_registry::item_stack::ItemStack;
+use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_custom_stats;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::{
     Downcast as _,
     locks::Shared,
+    translations,
     types::{GameType, InteractionHand},
 };
 use text_components::TextComponent;
@@ -184,6 +187,52 @@ impl Player {
 
             entity.player_touch(&player_arc);
         }
+    }
+
+    /// Resolves an optional beacon effect ID, rejecting IDs vanilla's packet codec would reject.
+    pub(super) fn resolve_beacon_effect(id: Option<i32>) -> Result<Option<MobEffectRef>, ()> {
+        id.map(|id| {
+            let id = usize::try_from(id).map_err(|_| ())?;
+            REGISTRY.mob_effects.by_id(id).ok_or(())
+        })
+        .transpose()
+    }
+
+    /// Handles a beacon effect selection from the set-beacon packet.
+    pub fn handle_set_beacon_packet(&self, packet: SSetBeacon) {
+        let (Ok(primary), Ok(secondary)) = (
+            Self::resolve_beacon_effect(packet.primary),
+            Self::resolve_beacon_effect(packet.secondary),
+        ) else {
+            log::warn!(
+                "Player {} sent an unknown beacon effect id",
+                self.gameprofile.name
+            );
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
+            return;
+        };
+
+        let Ok(mut menu) = self.take_open_menu_for_callback(None) else {
+            return;
+        };
+        if !menu.still_valid(self) {
+            log::debug!(
+                "Player {} interacted with invalid menu",
+                self.gameprofile.name
+            );
+            self.finish_open_menu_callback(menu);
+            return;
+        }
+        if !menu.update_effects(primary, secondary, &self.connection) {
+            log::warn!(
+                "Player {} tried to set invalid beacon effects",
+                self.gameprofile.name
+            );
+            self.finish_open_menu_callback(menu);
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
+            return;
+        }
+        self.finish_open_menu_callback(menu);
     }
 
     /// Handles a container button click packet (e.g., enchanting table buttons).
