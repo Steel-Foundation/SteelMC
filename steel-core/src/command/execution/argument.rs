@@ -351,6 +351,16 @@ impl SteelArgumentType {
         Self::new(WorldClockParser)
     }
 
+    /// Creates a greedy message argument parser (`minecraft:message`).
+    ///
+    /// In the vanilla protocol, this argument implements `SignedArgumentType`.
+    /// When traversed in the command tree, it forces secure clients to sign the
+    /// consumed argument string and send a `ServerboundChatCommandSignedPacket`
+    /// instead of a regular command packet.
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
     pub(crate) fn timeline(clock_argument: Option<&'static str>) -> Self {
         Self::new(TimelineParser { clock_argument })
     }
@@ -543,6 +553,7 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+argument_value_wrapper!(MessageValue(Box<str>), "steel:command/value/message");
 
 macro_rules! unit_argument_parser {
     (
@@ -1166,6 +1177,17 @@ unit_argument_parser!(
         },
         None,
     )
+);
+
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    _source | { Ok(MessageValue(reader.read_remaining().into())) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None,)
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -32,7 +32,7 @@ use super::{
     },
     selector::EntitySelector,
 };
-use crate::command::execution::argument::DamageTypeValue;
+use crate::command::execution::argument::{DamageTypeValue, MessageValue};
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -405,6 +405,12 @@ where
         name: &str,
     ) -> Result<&PermissionGroupName, CommandSyntaxError> {
         self.typed_argument(name)
+    }
+
+    /// Return a &str from a SignedMessage
+    pub(crate) fn message(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        self.typed_argument::<MessageValue>(name)
+            .map(|value| value.0.as_ref())
     }
 }
 
