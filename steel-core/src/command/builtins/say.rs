@@ -8,6 +8,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use log::info;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -18,7 +19,10 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("say").then(argument("message", SteelArgumentType::message()).executes(
         |ctx: &SteelCommandContext<CommandSource>| {
-            let message= ctx.message("message")?.to_string();
+            let message = ctx.message("message")?.to_string();
+            if let Some(signed_arg) = ctx.source().signing_context() {
+                info!("Signing message context : {:?}", signed_arg);
+            }
 
             for player in ctx.source().server().get_players() {
                 player.send_message(&TextComponent::plain(message.clone()));

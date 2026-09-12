@@ -365,6 +365,7 @@ use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQu
 
 mod world_changes;
 
+use crate::command::signing_context::CommandSigningContext;
 use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
     EndGatewayTeleportJob, EndPortalTeleportJob, EnderPearlRestoreJob, NetherPortalTeleportJob,
@@ -793,10 +794,12 @@ impl Server {
         &self,
         sender: CommandSender,
         command: String,
+        signing_context: Option<CommandSigningContext>,
     ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Execute {
             owner: CommandExecutionOwner::capture(sender, self),
             command,
+            signing_context,
         })
     }
 

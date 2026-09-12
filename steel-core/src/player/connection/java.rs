@@ -1,5 +1,4 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
-use log::info;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -21,10 +20,19 @@ use steel_protocol::packets::game::{
     SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
 };
 
+use crate::command::signing_context::CommandSigningContext;
+use crate::command::{handle_client_request, sender::CommandSender};
+use crate::entity::Entity;
+use crate::player::connection::NetworkConnection;
+use crate::player::{Player, PlayerSession};
+use crate::server::Server;
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::translations;
+use steel_utils::translations::{
+    MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED, MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS,
+};
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
@@ -34,12 +42,6 @@ use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
-use steel_utils::translations::{CHAT_VALIDATION_ERROR, MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED, MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS};
-use crate::command::{handle_client_request, sender::CommandSender};
-use crate::entity::Entity;
-use crate::player::connection::NetworkConnection;
-use crate::player::{Player, PlayerSession};
-use crate::server::Server;
 
 /// Boxed read half of a Java client transport (a TCP socket or an in-memory pipe).
 pub type JavaTransportRead = Box<dyn AsyncRead + Send + Unpin>;
@@ -279,7 +281,11 @@ impl ScheduledPlayPacket {
                 // TODO: check if this has a signed argument
                 player.reset_last_action_time();
                 if server
-                    .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
+                    .submit_command(
+                        CommandSender::Player(Arc::clone(&player)),
+                        packet.command,
+                        None,
+                    )
                     .is_err()
                 {
                     player.send_message(
@@ -292,10 +298,18 @@ impl ScheduledPlayPacket {
                 // Copy handleSignedChatCommand from vanilla, step by step
 
                 // unpackAndApplyLastSeen
-                let last_seen = match player.chat().lock().message_validator.apply_update(packet.last_seen.acknowledged, packet.last_seen.offset.0, 0) {
-                    Ok(last_seen) => {Some(last_seen)}
+                let last_seen = match player.chat().lock().message_validator.apply_update(
+                    packet.last_seen.acknowledged,
+                    packet.last_seen.offset.0,
+                    0,
+                ) {
+                    Ok(last_seen) => Some(last_seen),
                     Err(error) => {
-                        log::error!("Failed to validate message acknowledgements from {}: {}", player.name(), error);
+                        log::error!(
+                            "Failed to validate message acknowledgements from {}: {}",
+                            player.name(),
+                            error
+                        );
                         player.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
                         None
                     }
@@ -304,10 +318,9 @@ impl ScheduledPlayPacket {
                 // Try Handle Chat
                 // message = packet.command
                 if let Some(last_seen) = last_seen {
-
                     // Check for illegal characters
                     for char in packet.command.chars() {
-                        let cp = char  as u32;
+                        let cp = char as u32;
                         if !(cp >= 32 && cp != 127 && cp != 167) {
                             player.disconnect(MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS.msg());
                             return;
@@ -318,11 +331,32 @@ impl ScheduledPlayPacket {
                     player.reset_last_action_time();
 
                     // performSignedChatCommand
+                    let signing_context = CommandSigningContext::new(
+                        packet.timestamp as u64,
+                        packet.salt,
+                        packet
+                            .argument_signatures
+                            .into_iter()
+                            .map(|entry| (entry.name, Box::from(entry.signature))),
+                    );
+
+                    player.reset_last_action_time();
+                    if server
+                        .submit_command(
+                            CommandSender::Player(Arc::clone(&player)),
+                            packet.command,
+                            Some(signing_context),
+                        )
+                        .is_err()
+                    {
+                        player.send_message(
+                            &TextComponent::const_plain("Command queue is full").color(Color::Red),
+                        );
+                    }
 
                     player.detect_command_rate_spam();
-
                 }
-            },
+            }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
                 if server
                     .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
