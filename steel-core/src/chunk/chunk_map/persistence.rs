@@ -1,5 +1,5 @@
 use super::{
-    Arc, Chunk, ChunkHolder, ChunkMap, ChunkPos, ChunkSaveDependency, ChunkStatus, ChunkStorage,
+    Arc, Chunk, ChunkHolder, ChunkMap, ChunkSaveDependency, ChunkStatus, ChunkStorage,
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
@@ -45,12 +45,12 @@ impl ChunkMap {
                     None
                 };
 
+                let prepared = save_preparation.finish(prepared).flatten();
+
                 if prepared.is_none() && dirty {
                     chunk_guard.mark_dirty();
                 }
 
-                // Revival need not wait for encoding or disk I/O once this owned input exists.
-                drop(save_preparation);
                 prepared
             };
 
@@ -120,22 +120,16 @@ impl ChunkMap {
     /// Processes chunks that are pending unload.
     ///
     /// Iterates over `unloading_chunks`. For each chunk with `strong_count == 1`:
-    /// - If staged to revive at the next lifecycle boundary: keep
     /// - If dirty: spawn save task (keep until saved and clean)
     /// - If not dirty: release region handle and remove
-    #[instrument(level = "trace", skip(self, staged_revivals))]
-    pub(super) fn process_unloads(self: &Arc<Self>, staged_revivals: &FxHashSet<ChunkPos>) {
+    #[instrument(level = "trace", skip(self))]
+    pub(super) fn process_unloads(self: &Arc<Self>) {
         self.propagate_queued_light_changes();
 
         let mut finalized = Vec::new();
         {
             let light_updates = self.light_updates.lock();
             self.unloading_chunks.retain_sync(|pos, holder| {
-                // Prepared ticket changes publish only at the next lifecycle boundary.
-                if staged_revivals.contains(pos) {
-                    return true;
-                }
-
                 if light_updates.touches_chunk(*pos) {
                     return true;
                 }
