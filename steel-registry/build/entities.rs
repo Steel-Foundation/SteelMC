@@ -29,6 +29,7 @@ struct EntityTypeEntry {
     class_hierarchy: Vec<ClassHierarchyEntry>,
     #[serde(default = "default_can_serialize")]
     can_serialize: bool,
+    only_op_can_set_nbt: bool,
     #[serde(default)]
     flags: Option<FlagsEntry>,
     #[serde(default)]
@@ -180,6 +181,7 @@ pub(crate) fn build() -> TokenStream {
         let allowed_in_peaceful = entity_type.allowed_in_peaceful;
         let can_spawn_far = entity_type.can_spawn_far_from_player;
         let can_serialize = entity_type.can_serialize;
+        let only_op_can_set_nbt = entity_type.only_op_can_set_nbt;
         let is_abstract_boat = entity_type
             .class_hierarchy
             .iter()
@@ -261,6 +263,7 @@ pub(crate) fn build() -> TokenStream {
                 allowed_in_peaceful: #allowed_in_peaceful,
                 can_spawn_far_from_player: #can_spawn_far,
                 can_serialize: #can_serialize,
+                only_op_can_set_nbt: #only_op_can_set_nbt,
                 is_abstract_boat: #is_abstract_boat,
                 is_abstract_minecart: #is_abstract_minecart,
                 is_projectile: #is_projectile,

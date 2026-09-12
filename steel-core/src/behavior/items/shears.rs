@@ -90,7 +90,7 @@ mod tests {
     use super::ShearsItem;
     use crate::behavior::blocks::vegetation::MAX_AGE;
     use crate::behavior::{BlockHitResult, InteractionResult, ItemBehavior, UseOnContext};
-    use crate::bootstrap::init_globals_once;
+    use crate::bootstrap::init_globals;
     use crate::chunk::chunk_holder::ChunkHolder;
     use crate::entity::Entity;
     use crate::player::connection::NetworkConnection;
@@ -185,7 +185,7 @@ mod tests {
     }
 
     fn create_fixture(key: &'static str, age: u8) -> ShearsFixture {
-        init_globals_once();
+        init_globals();
         let world = fresh_test_world(key);
         let pos = BlockPos::new(8, 64, 8);
         let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));

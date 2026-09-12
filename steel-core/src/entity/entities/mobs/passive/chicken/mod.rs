@@ -10,6 +10,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::chicken_sound_variant::{ChickenAge, ChickenSoundVariantRef};
 use steel_registry::chicken_variant::ChickenVariantRef;
+use steel_registry::data_components::vanilla_components::{CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -404,6 +405,15 @@ impl Entity for ChickenEntity {
         self.entity_type
     }
 
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(CHICKEN_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(CHICKEN_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
+    }
+
     fn base_tick(&self) {
         Mob::base_tick_mob(self);
     }
@@ -559,16 +569,6 @@ impl AgeableMob for ChickenEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
-}
-
-impl Animal for ChickenEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        ChickenEntity::is_food(item_stack)
-    }
 
     fn breed_variant_key(&self) -> Option<&Identifier> {
         Some(&self.variant().key)
@@ -578,7 +578,7 @@ impl Animal for ChickenEntity {
         self.set_variant_by_key(key)
     }
 
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
         let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
@@ -592,6 +592,16 @@ impl Animal for ChickenEntity {
         if !offspring.set_breed_variant_key(variant_key) {
             log::error!("chicken offspring could not inherit breeding variant {variant_key}");
         }
+    }
+}
+
+impl Animal for ChickenEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        ChickenEntity::is_food(item_stack)
     }
 }
 
