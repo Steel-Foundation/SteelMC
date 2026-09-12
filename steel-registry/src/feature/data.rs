@@ -753,6 +753,24 @@ pub enum TrunkPlacer {
     Cherry(CherryTrunkPlacer),
 }
 
+impl TrunkPlacer {
+    /// Vanilla `TrunkPlacer.getBaseHeight`.
+    #[must_use]
+    pub const fn base_height(&self) -> i32 {
+        match self {
+            Self::Straight(placer)
+            | Self::Giant(placer)
+            | Self::Fancy(placer)
+            | Self::Forking(placer)
+            | Self::DarkOak(placer)
+            | Self::MegaJungle(placer) => placer.base_height,
+            Self::Bending(placer) => placer.base_height,
+            Self::UpwardsBranching(placer) => placer.base_height,
+            Self::Cherry(placer) => placer.base_height,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TrunkPlacerBase {
     pub base_height: i32,
