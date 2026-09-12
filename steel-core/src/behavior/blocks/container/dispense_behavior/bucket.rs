@@ -1,6 +1,5 @@
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockStateBehaviorExt;
-use crate::inventory::click::Click::Pickup;
 use std::sync::Arc;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;

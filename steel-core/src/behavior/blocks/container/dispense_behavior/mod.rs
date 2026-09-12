@@ -17,6 +17,7 @@ pub mod bone_meal;
 pub mod bucket;
 pub mod default;
 pub mod flint_and_steel;
+pub mod honeycomb;
 pub mod projectile;
 pub mod tnt;
 
@@ -27,6 +28,7 @@ pub use bone_meal::BoneMealDispenseBehavior;
 pub use bucket::BucketDispenseBehavior;
 pub use default::DefaultDispenseBehavior;
 pub use flint_and_steel::FlintAndSteelDispenseBehavior;
+pub use honeycomb::HoneycombDispenseBehavior;
 pub use projectile::ProjectileDispenseBehavior;
 pub use tnt::TntDispenseBehavior;
 
@@ -156,6 +158,11 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     registry.set_behavior(
         &vanilla_items::OAK_BOAT,
         Box::new(BoatDispenseBehavior::new(&vanilla_entities::OAK_BOAT)),
+    );
+
+    registry.set_behavior(
+        &vanilla_items::HONEYCOMB,
+        Box::new(HoneycombDispenseBehavior),
     );
 
     registry
