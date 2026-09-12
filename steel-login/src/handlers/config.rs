@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
 use steel_core::player::connection::JavaConnection;
-use steel_core::player::{ClientInformation, Player};
+use steel_core::player::{ClientInformation, Player, PlayerSession};
 use steel_protocol::packets::common::CCustomPayload;
 use steel_protocol::packets::common::{SClientInformation, SCustomPayload};
 use steel_protocol::packets::config::CFinishConfiguration;
@@ -115,27 +115,33 @@ impl JavaTcpClient {
         let world = self.server.overworld().clone();
         let entity_id = next_entity_id();
 
-        let player = Arc::new_cyclic(|player_weak| {
-            let java_connection = JavaConnection::new(
-                self.outgoing_queue.clone(),
-                self.cancel_token.clone(),
-                self.compression.load(),
-                self.network_writer.clone(),
-                self.id,
-                player_weak.clone(),
-            );
-            let connection = Arc::new(PlayerConnection::Java(java_connection));
-
-            Player::new(
-                gameprofile,
-                connection,
-                world,
-                Arc::downgrade(&self.server),
-                self.server.config.clone(),
-                entity_id,
-                client_info,
-            )
-        });
+        let session = Arc::new(PlayerSession::new(
+            self.server.config.chat_spam_threshold_seconds,
+            self.server.config.command_spam_threshold_seconds,
+        ));
+        let java_connection = JavaConnection::new(
+            self.outgoing_queue.clone(),
+            self.cancel_token.clone(),
+            self.compression.load(),
+            self.network_writer.clone(),
+            self.id,
+            Arc::clone(&session),
+        );
+        let connection = Arc::new(PlayerConnection::Java(java_connection));
+        let player = Arc::new(Player::new(
+            gameprofile,
+            connection,
+            Arc::clone(&session),
+            world,
+            Arc::downgrade(&self.server),
+            self.server.config.clone(),
+            entity_id,
+            client_info,
+        ));
+        assert!(
+            session.bind_initial_player(&player),
+            "new client session was already bound to a player"
+        );
 
         let connection = Arc::clone(&player.connection);
         if self

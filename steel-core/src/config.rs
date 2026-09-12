@@ -26,6 +26,12 @@ use crate::worldgen::registry::{ValidatedWorldGeneratorConfig, WorldGeneratorReg
 pub const ONLINE_MODE_REQUIRES_ENCRYPTION: &str =
     "encryption must be true when online_mode is enabled";
 
+/// Vanilla chat and command spam threshold window, in seconds.
+pub const DEFAULT_SPAM_THRESHOLD_SECONDS: i32 = 10;
+
+/// Default cap on queued neighbor-update tasks in one chained run.
+pub const DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES: i32 = 1_000_000;
+
 /// Validates the login settings that establish a player's authenticated identity.
 ///
 /// # Errors
@@ -90,6 +96,36 @@ pub struct RuntimeConfig {
     pub chunk_generation_threads: Option<usize>,
     /// Optional worker count for the Rayon chunk encoding pool.
     pub chunk_encoding_threads: Option<usize>,
+}
+
+impl Default for RuntimeConfig {
+    /// The settings a freshly packaged server ships, leaving the optional service
+    /// endpoints and server links unset.
+    fn default() -> Self {
+        Self {
+            max_players: 20,
+            view_distance: 10,
+            simulation_distance: 10,
+            max_chained_neighbor_updates: DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES,
+            online_mode: true,
+            auth_server: None,
+            profile_server: None,
+            services_server: None,
+            encryption: true,
+            allow_flight: false,
+            motd: "A Steel Server".to_owned(),
+            use_favicon: true,
+            favicon: "config/favicon.png".to_owned(),
+            enforce_secure_chat: false,
+            chat_spam_threshold_seconds: DEFAULT_SPAM_THRESHOLD_SECONDS,
+            command_spam_threshold_seconds: DEFAULT_SPAM_THRESHOLD_SECONDS,
+            compression: Some(CompressionInfo::default()),
+            server_links: None,
+            packet_workers: None,
+            chunk_generation_threads: None,
+            chunk_encoding_threads: None,
+        }
+    }
 }
 
 impl RuntimeConfig {
@@ -352,7 +388,9 @@ impl WorldsConfig {
         generator_registry: &WorldGeneratorRegistry,
         storage_registry: &WorldStorageRegistry,
     ) -> Result<ResolvedWorldsConfig, String> {
-        validate_relative_path(&self.save_path, "save_path")?;
+        // Stays on validate_clean_path: an embedded server cannot chdir per world, so its
+        // save root may be absolute.
+        validate_clean_path(&self.save_path, "save_path")?;
 
         if self.domains.is_empty() {
             return Err("worlds.toml must declare at least one domain".to_owned());
@@ -707,27 +745,33 @@ fn validate_world_name(name: &str, domain: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validates a config path as a relative path under a Steel-owned root.
-pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
+/// Validates a config path, rejecting `.` and `..` components.
+///
+/// Absolute paths are accepted. Use [`validate_relative_path`] for paths that have to stay
+/// under a Steel-owned root.
+pub fn validate_clean_path(path: &str, field: &str) -> Result<(), String> {
     let path = Path::new(path);
     if path.as_os_str().is_empty() {
         return Err(format!("{field} must not be empty"));
     }
-    if path.is_absolute() {
-        return Err(format!("{field} must be relative"));
-    }
-    for component in path.components() {
-        match component {
-            Component::Normal(_) => {}
-            Component::CurDir
-            | Component::ParentDir
-            | Component::RootDir
-            | Component::Prefix(_) => {
-                return Err(format!("{field} must be a clean relative path"));
-            }
-        }
+    let absolute = path.is_absolute();
+    let clean = path.components().all(|component| match component {
+        Component::Normal(_) => true,
+        Component::RootDir | Component::Prefix(_) => absolute,
+        Component::CurDir | Component::ParentDir => false,
+    });
+    if !clean {
+        return Err(format!("{field} must be a clean path"));
     }
     Ok(())
+}
+
+/// Validates a config path as a relative path under a Steel-owned root.
+pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
+    if Path::new(path).is_absolute() {
+        return Err(format!("{field} must be relative"));
+    }
+    validate_clean_path(path, field)
 }
 
 fn validate_player_storage_selection(selection: &StorageSelection) -> Result<(), String> {
@@ -797,6 +841,7 @@ fn parse_difficulty(value: &str) -> Result<Difficulty, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env::temp_dir;
     use steel_registry::init_vanilla_registry;
 
     #[test]
@@ -1181,6 +1226,62 @@ default = true
         assert_eq!(
             resolved.worlds[0].generator,
             Identifier::vanilla_static("flat")
+        );
+    }
+
+    fn worlds_config_with_save_path(save_path: &str) -> Result<ResolvedWorldsConfig, String> {
+        resolve(&format!(
+            r#"
+save_path = '{save_path}'
+
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:flat"
+default = true
+"#
+        ))
+    }
+
+    #[test]
+    fn resolves_an_absolute_save_path() {
+        let root = temp_dir().join("steel-absolute-save-root");
+        let resolved = worlds_config_with_save_path(&root.display().to_string())
+            .expect("an absolute save path should resolve");
+
+        assert_eq!(resolved.save_path, root);
+    }
+
+    #[test]
+    fn rejects_traversal_in_a_save_path() {
+        let relative = worlds_config_with_save_path("../saves")
+            .expect_err("a relative save path with .. should be rejected");
+        assert!(relative.contains("save_path must be a clean path"));
+
+        let absolute = temp_dir().join("..").join("saves");
+        let absolute = worlds_config_with_save_path(&absolute.display().to_string())
+            .expect_err("an absolute save path with .. should be rejected");
+        assert!(absolute.contains("save_path must be a clean path"));
+    }
+
+    #[test]
+    fn rejects_an_empty_save_path() {
+        let error = worlds_config_with_save_path("").expect_err("an empty save path is not a root");
+        assert!(error.contains("save_path must not be empty"));
+    }
+
+    #[test]
+    fn world_storage_paths_stay_relative_to_the_save_root() {
+        let absolute = temp_dir().display().to_string();
+        assert_eq!(
+            validate_relative_path(&absolute, "storage.config.path"),
+            Err("storage.config.path must be relative".to_owned())
+        );
+        assert_eq!(
+            validate_relative_path("region", "storage.config.path"),
+            Ok(())
         );
     }
 }

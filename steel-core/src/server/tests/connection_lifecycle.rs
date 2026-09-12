@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
-    player::{ClientInformation, GameProfile, Player, PlayerConnection},
+    player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession},
     server::DuplicatePlayerWaitError,
     world::World,
 };
@@ -37,30 +37,31 @@ fn java_test_player(
     let (outgoing_packets, receiver) = mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
     let network_writer = Arc::new(AsyncMutex::new(None));
-    let player = Arc::new_cyclic(|player_weak| {
-        let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
-            outgoing_packets,
-            cancel_token,
-            None,
-            Arc::clone(&network_writer),
-            1,
-            player_weak.clone(),
-        )));
-        Player::new(
-            GameProfile {
-                id: uuid,
-                name: "TestPlayer".to_owned(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
-            connection,
-            world,
-            Arc::downgrade(server),
-            Arc::clone(&server.config),
-            1,
-            ClientInformation::default(),
-        )
-    });
+    let session = Arc::new(PlayerSession::new(10, 10));
+    let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
+        outgoing_packets,
+        cancel_token,
+        None,
+        Arc::clone(&network_writer),
+        1,
+        Arc::clone(&session),
+    )));
+    let player = Arc::new(Player::new(
+        GameProfile {
+            id: uuid,
+            name: "TestPlayer".to_owned(),
+            properties: Vec::new(),
+            profile_actions: None,
+        },
+        connection,
+        Arc::clone(&session),
+        world,
+        Arc::downgrade(server),
+        Arc::clone(&server.config),
+        1,
+        ClientInformation::default(),
+    ));
+    assert!(session.bind_initial_player(&player));
     (player, receiver, network_writer)
 }
 
@@ -188,6 +189,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 closed: AtomicBool::new(false),
             },
         )));
+        let session = Arc::new(PlayerSession::new(10, 10));
         let player = Arc::new(Player::new(
             GameProfile {
                 id: uuid,
@@ -196,12 +198,14 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 profile_actions: None,
             },
             connection,
+            Arc::clone(&session),
             Arc::clone(&world),
             Arc::downgrade(&server),
             Arc::clone(&server.config),
             1,
             ClientInformation::default(),
         ));
+        assert!(session.bind_initial_player(&player));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
