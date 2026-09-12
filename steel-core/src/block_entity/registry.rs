@@ -243,6 +243,17 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(CampfireBlockEntity::new(level, pos, state)),
         );
 
+        // Register dispenser block entity factory
+        registry.register(
+            &vanilla_block_entity_types::DISPENSER,
+            |level, pos, state| Arc::new(DispenserBlockEntity::new(level, pos, state)),
+        );
+
+        // Register dropper block entity factory
+        registry.register(&vanilla_block_entity_types::DROPPER, |level, pos, state| {
+            Arc::new(DropperBlockEntity::new(level, pos, state))
+        });
+
         registry.register(
             &vanilla_block_entity_types::CHISELED_BOOKSHELF,
             |level, pos, state| Arc::new(ChiseledBookShelfBlockEntity::new(level, pos, state)),
