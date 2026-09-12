@@ -20,6 +20,7 @@ mod operator;
 mod perms;
 mod playsound;
 mod return_command;
+mod say;
 mod seed;
 mod setblock;
 mod setidletimeout;
@@ -84,6 +85,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(say::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
     builder.register(spawnpoint::registration())?;
