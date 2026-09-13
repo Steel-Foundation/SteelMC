@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use small_map::FxSmallMap;
 
 use super::{
     BlockPos, BlockStateId, BlockTickList, CarvingMask, Chunk, ChunkBuilder, ChunkHeightmaps,
@@ -8,6 +8,7 @@ use super::{
     PersistentPoi, PersistentSection, REGISTRY, RegistryExt, SectionHolder, Sections, Weak, World,
     bits_for_palette_len, io, pack_indices_from_iter, unpack_indices,
 };
+const PALETTE_INLINE_CAPACITY: usize = 8;
 
 impl ChunkStorage {
     fn invalid_chunk_data(message: impl Into<String>) -> io::Error {
@@ -292,7 +293,7 @@ impl ChunkStorage {
                 // inverting the palette once instead of scanning it per block.
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous section should have palette length >= 2");
-                let palette_indices: FxHashMap<BlockStateId, u32> = data
+                let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, BlockStateId, u32> = data
                     .palette
                     .iter()
                     .enumerate()
@@ -341,7 +342,7 @@ impl ChunkStorage {
 
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous biome data should have palette length >= 2");
-                let palette_indices: FxHashMap<u16, u32> = data
+                let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, u16, u32> = data
                     .palette
                     .iter()
                     .enumerate()
