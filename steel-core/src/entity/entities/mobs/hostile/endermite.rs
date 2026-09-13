@@ -27,6 +27,8 @@ use crate::world::World;
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const MAX_LIFETIME: i32 = 2400;
+/// Vanilla `Endermite` constructor `xpReward` (small monster).
+const XP_REWARD: i32 = 3;
 
 /// A hostile endermite entity.
 #[entity_behavior(class = "Endermite")]
@@ -67,6 +69,7 @@ impl EndermiteEntity {
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type);
         let mob_base = MobBase::new();
+        mob_base.set_xp_reward(XP_REWARD);
         let mut entity_data = EndermiteEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
 
@@ -273,13 +276,23 @@ impl PathfinderMob for EndermiteEntity {}
 #[cfg(test)]
 mod tests {
     use super::EndermiteEntity;
-    use crate::entity::Entity;
+    use crate::entity::{Entity, LivingEntity};
     use glam::DVec3;
     use simdnbt::borrow::read_compound;
     use simdnbt::owned::NbtCompound;
     use std::io::Cursor;
     use std::sync::Weak;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
+
+    #[test]
+    fn endermite_uses_vanilla_small_monster_experience_reward() {
+        init_vanilla_registry();
+
+        let endermite =
+            EndermiteEntity::new(&vanilla_entities::ENDERMITE, 1, DVec3::ZERO, Weak::new());
+
+        assert_eq!(LivingEntity::base_experience_reward(&endermite), 3);
+    }
 
     #[test]
     fn endermite_nbt_round_trip() {
