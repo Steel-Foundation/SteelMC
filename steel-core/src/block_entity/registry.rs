@@ -311,6 +311,11 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(ShulkerBoxBlockEntity::new(level, pos, state)),
         );
 
+        registry.register(
+            &vanilla_block_entity_types::MOB_SPAWNER,
+            |level, pos, state| Arc::new(SpawnerBlockEntity::new(level, pos, state)),
+        );
+
         registry
     });
 }
