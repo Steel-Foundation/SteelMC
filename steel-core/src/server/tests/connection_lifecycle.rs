@@ -28,8 +28,8 @@ use super::{
     test_storage_root,
 };
 use crate::permission::{
-    PermissionMetadataEntry, PermissionMetadataSet, PermissionMetadataValue, PermissionSet,
-    PermissionSubjectIndex, PermissionSubjectState,
+    OP_GROUP, PermissionMetadataEntry, PermissionMetadataSet, PermissionMetadataValue,
+    PermissionSet, PermissionSubjectIndex, PermissionSubjectState,
 };
 use steel_utils::Identifier;
 
@@ -516,7 +516,7 @@ fn max_players_operator_alone_does_not_bypass() {
         permissions.set(
             op_uuid,
             PermissionSubjectState::new(
-                vec![crate::permission::OP_GROUP.to_owned()],
+                vec![OP_GROUP.to_owned()],
                 PermissionSet::new(),
             ),
         );
