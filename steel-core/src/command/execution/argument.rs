@@ -106,6 +106,10 @@ pub(crate) trait SteelArgumentParser:
 
     /// Returns the vanilla command-tree parser representation.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
@@ -124,6 +128,11 @@ trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
     fn protocol_argument_erased(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool;
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 impl<P> ErasedSteelArgumentParser for P
@@ -375,6 +384,10 @@ impl SteelArgumentType {
         self.0.protocol_argument_erased()
     }
 
+    pub(crate) fn is_signed(&self) -> bool {
+        self.0.is_signed()
+    }
+
     #[cfg(test)]
     pub(crate) fn parser_type_key(&self) -> DowncastTypeKey {
         self.0.downcast_type_key()
@@ -484,6 +497,11 @@ where
     ) {
         self.0.list_suggestions_erased(context, builder);
     }
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        self.0.is_signed()
+    }
 }
 
 macro_rules! impl_downcast_type {
@@ -556,13 +574,35 @@ argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timelin
 argument_value_wrapper!(MessageValue(Box<str>), "steel:command/value/message");
 
 macro_rules! unit_argument_parser {
+    // Pattern without 'is_signed': forwards with default value 'false'
     (
         $parser:ident,
         $key:literal,
         $value:ty,
         parse |$reader:ident, $source:ident| $parse:block,
         suggest |$context:ident, $builder:ident| $suggest:block,
-        protocol $protocol:expr
+        protocol $protocol:expr $(,)?
+    ) => {
+        unit_argument_parser!(
+            $parser,
+            $key,
+            $value,
+            parse |$reader, $source| $parse,
+            suggest |$context, $builder| $suggest,
+            protocol $protocol,
+            is_signed false
+        );
+    };
+
+    // Full pattern: contains the actual implementation
+    (
+        $parser:ident,
+        $key:literal,
+        $value:ty,
+        parse |$reader:ident, $source:ident| $parse:block,
+        suggest |$context:ident, $builder:ident| $suggest:block,
+        protocol $protocol:expr,
+        is_signed $is_signed:expr $(,)?
     ) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         struct $parser;
@@ -589,10 +629,13 @@ macro_rules! unit_argument_parser {
             ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
                 $protocol
             }
+
+            fn is_signed(&self) -> bool {
+                $is_signed
+            }
         }
     };
 }
-
 #[derive(Clone, Debug, PartialEq)]
 struct PrimitiveParser(ArgumentType);
 
@@ -1187,7 +1230,8 @@ unit_argument_parser!(
     _source | { Ok(MessageValue(reader.read_remaining().into())) },
     suggest | _context,
     _builder | {},
-    protocol(ProtocolArgumentType::Message, None,)
+    protocol(ProtocolArgumentType::Message, None,),
+    is_signed true
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

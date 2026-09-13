@@ -58,6 +58,10 @@ impl CommandArgumentParser<String> for OpaqueArgument {
             builder.suggest(suggestion);
         }
     }
+
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

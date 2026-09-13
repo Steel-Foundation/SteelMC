@@ -35,12 +35,16 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                             sender_name: TextComponent::plain(source.sender().to_string()), // Command sender implement Display
                             target_name: None,
                         };
-                        (OutgoingChatMessage::Disguised {
-                            content: component_message,
-                        }, chat_type)
+                        (
+                            OutgoingChatMessage::Disguised {
+                                content: component_message,
+                            },
+                            chat_type,
+                        )
                     } else {
                         let signing_ctx = source.signing_context();
-                        let raw_sig = signing_ctx.and_then(|sc| sc.get_argument_signature("message"));
+                        let raw_sig =
+                            signing_ctx.and_then(|sc| sc.get_argument_signature("message"));
 
                         let (timestamp, salt) = signing_ctx
                             .map(|sc| (sc.timestamp, sc.salt))
@@ -74,7 +78,9 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                             registry_id: vanilla_chat_types::SAY_COMMAND.id() as i32,
                             sender_name: TextComponent::plain(sender_name.clone())
                                 .insertion(sender_name.clone())
-                                .click_event(ClickEvent::suggest_command(format!("/tell {sender_name} ")))
+                                .click_event(ClickEvent::suggest_command(format!(
+                                    "/tell {sender_name} "
+                                )))
                                 .hover_event(HoverEvent::show_entity(
                                     "minecraft:player",
                                     sender_uuid,
@@ -97,11 +103,14 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                             chat_type.clone(),
                         );
 
-                        (OutgoingChatMessage::Player {
-                            packet,
-                            signature: sig_array,
-                            sender_last_seen,
-                        }, chat_type)
+                        (
+                            OutgoingChatMessage::Player {
+                                packet,
+                                signature: sig_array,
+                                sender_last_seen,
+                            },
+                            chat_type,
+                        )
                     }
                 }
                 None => {
@@ -110,10 +119,13 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         sender_name: TextComponent::plain(source.sender().to_string()), // Command sender implement Display
                         target_name: None,
                     };
-                    (OutgoingChatMessage::Disguised {
-                        content: component_message,
-                    }, chat_type)
-                },
+                    (
+                        OutgoingChatMessage::Disguised {
+                            content: component_message,
+                        },
+                        chat_type,
+                    )
+                }
             };
 
             for world in source.server().worlds.values() {

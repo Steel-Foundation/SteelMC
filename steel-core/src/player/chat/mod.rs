@@ -15,7 +15,10 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
-use steel_protocol::packets::game::{CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate};
+use steel_protocol::packets::game::{
+    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat,
+    SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+};
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
 use text_components::Modifier;
@@ -202,7 +205,9 @@ impl OutgoingChatMessage {
                     drop(chat);
 
                     if pending_count > 4096 {
-                        recipient.disconnect(translations::MULTIPLAYER_DISCONNECT_TOO_MANY_PENDING_CHATS.msg());
+                        recipient.disconnect(
+                            translations::MULTIPLAYER_DISCONNECT_TOO_MANY_PENDING_CHATS.msg(),
+                        );
                     }
                 }
             }
@@ -648,21 +653,24 @@ impl Player {
         }
     }
 
-    pub fn handle_command(
-        self: &Arc<Self>,
-        packet: SChatCommand,
-        server: &Arc<Server>,
-    ) {
-        if self.server().enforces_secure_chat() {
-            if server.command_storage..requires_signed_arguments(&packet.command) {
-                // Drop unsigned command or disconnect the sender according to vanilla policy
-                self.disconnect(
-                    "Secure chat is enforced on this server, but this command requires signed arguments",
+    pub fn handle_command(self: &Arc<Self>, packet: SChatCommand, server: &Arc<Server>) {
+        // check if this has a signed argument, in this case, do nothing
+        if server.enforces_secure_chat() {
+            if server.command_requires_signed_arguments(
+                &packet.command,
+                CommandSender::Player(Arc::clone(self)),
+            ) {
+                // Client sent an unsigned command (SChatCommand) when signed arguments are required
+                log::error!(
+                    "Received unsigned command packet from {}, but the command requires signable arguments: {}",
+                    self.gameprofile.name,
+                    packet.command
                 );
+                self.send_message(&CHAT_DISABLED_INVALID_SIGNATURE.msg().component());
                 return;
             }
         }
-        // TODO: check if this has a signed argument
+
         self.reset_last_action_time();
         if server
             .submit_command(
@@ -677,7 +685,6 @@ impl Player {
             );
         }
         self.detect_command_rate_spam();
-
     }
 
     pub fn handle_signed_command(
@@ -685,9 +692,13 @@ impl Player {
         packet: SChatCommandSigned,
         server: &Arc<Server>,
     ) {
-
         if !server.enforces_secure_chat() {
-            self.handle_command(SChatCommand{command: packet.command}, server);
+            self.handle_command(
+                SChatCommand {
+                    command: packet.command,
+                },
+                server,
+            );
             return;
         }
 

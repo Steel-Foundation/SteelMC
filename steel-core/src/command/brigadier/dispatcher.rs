@@ -384,6 +384,19 @@ where
         }
         candidate.errors().is_empty() && !current.errors().is_empty()
     }
+
+    pub(crate) fn has_signed_arguments(&self, parse: &ParseResults<'_, S, R>) -> bool {
+        for parsed_node in parse.context().nodes() {
+            if let Some(node) = self.node(parsed_node.node()) {
+                if let CommandNodeData::Argument(_, arg_data) = &node.data {
+                    if arg_data.argument_type().is_signed() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 #[cfg(test)]

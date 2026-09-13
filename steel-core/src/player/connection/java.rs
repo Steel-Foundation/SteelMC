@@ -274,21 +274,7 @@ impl ScheduledPlayPacket {
                 }
             }
             ScheduledPlayPacketKind::ChatCommand(packet) => {
-                // TODO: check if this has a signed argument
-                player.reset_last_action_time();
-                if server
-                    .submit_command(
-                        CommandSender::Player(Arc::clone(&player)),
-                        packet.command,
-                        None,
-                    )
-                    .is_err()
-                {
-                    player.send_message(
-                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
-                    );
-                }
-                player.detect_command_rate_spam();
+                player.handle_command(packet, server);
             }
             ScheduledPlayPacketKind::ChatCommandSigned(packet) => {
                 player.handle_signed_command(packet, server);

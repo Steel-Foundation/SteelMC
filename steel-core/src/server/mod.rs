@@ -882,4 +882,16 @@ impl Server {
             }
         }
     }
+
+    /// Returns whether a command requires signed arguments when parsed for the given sender.
+    pub fn command_requires_signed_arguments(
+        self: &Arc<Self>,
+        command: &str,
+        sender: CommandSender,
+    ) -> bool {
+        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+        dispatcher.has_signed_arguments(&parse)
+    }
 }
