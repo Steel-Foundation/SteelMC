@@ -6,43 +6,41 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, IntProperty,
 };
-use steel_registry::feature::ConfiguredFeatureKind;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{REGISTRY, vanilla_blocks, vanilla_configured_features};
-use steel_utils::random::worldgen_random::WorldgenRandom;
+use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
-use steel_worldgen::biomes::obfuscate_biome_seed;
 
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
-use crate::worldgen::feature::FeatureDecorationRunner;
-use crate::worldgen::feature::no_nested_features;
 
-use super::BlockRef;
+use super::{BlockRef, SaplingBlock, TreeGrower};
 
 /// Vanilla `MangrovePropaguleBlock` behavior.
+///
+/// Vanilla extends `SaplingBlock`; the planted growth path is shared through
+/// [`SaplingBlock::advance_tree`].
 #[block_behavior]
 pub struct MangrovePropaguleBlock {
     block: BlockRef,
+    #[json_arg(r#enum = "TreeGrower", json = "tree_grower_name")]
+    tree_grower: TreeGrower,
 }
 
 const AGE: &IntProperty = &BlockStateProperties::AGE_4;
 const HANGING: &BoolProperty = &BlockStateProperties::HANGING;
-const STAGE: &IntProperty = &BlockStateProperties::STAGE;
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 const MAX_AGE: u8 = 4;
 const RANDOM_GROWTH_BOUND: u32 = 7;
 const BONEMEAL_SUCCESS_CHANCE: f32 = 0.45;
-const TALL_MANGROVE_CHANCE: f32 = 0.85;
 
 impl MangrovePropaguleBlock {
     /// Creates a new mangrove propagule block behavior.
     #[must_use]
-    pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+    pub const fn new(block: BlockRef, tree_grower: TreeGrower) -> Self {
+        Self { block, tree_grower }
     }
 
     /// Creates vanilla's initial hanging propagule state.
@@ -66,58 +64,18 @@ impl MangrovePropaguleBlock {
         )
     }
 
-    fn grow_tree(
+    fn advance_tree(
+        &self,
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         rng: &mut dyn Rng,
-    ) -> bool {
-        let feature = if rng.random::<f32>() < TALL_MANGROVE_CHANCE {
-            &*vanilla_configured_features::TALL_MANGROVE
-        } else {
-            &*vanilla_configured_features::MANGROVE
-        };
-        let ConfiguredFeatureKind::Tree(config) = &feature.kind else {
-            return false;
-        };
-        let replacement = if state.get_value(WATERLOGGED) {
-            vanilla_blocks::WATER.default_state()
-        } else {
-            vanilla_blocks::AIR.default_state()
-        };
-        world.set_block(pos, replacement, UpdateFlags::UPDATE_NONE);
-
-        let mut worldgen_random = WorldgenRandom::from_seed(rng.random());
-        let mut level = Arc::clone(world);
-        let placed = FeatureDecorationRunner::place_tree_feature(
-            &mut level,
-            &REGISTRY,
-            &mut worldgen_random,
-            config,
-            pos,
-            obfuscate_biome_seed(world.seed()),
-            no_nested_features,
-        );
-
-        if placed {
-            if world.get_block_state(pos) == replacement {
-                world.send_block_updated(pos);
-            }
-        } else {
-            world.set_block(pos, state, UpdateFlags::UPDATE_NONE);
-        }
-        placed
-    }
-
-    fn advance_tree(world: &Arc<World>, pos: BlockPos, state: BlockStateId, rng: &mut dyn Rng) {
-        if state.get_value(STAGE) == 0 {
-            world.set_block(pos, state.set_value(STAGE, 1), UpdateFlags::UPDATE_NONE);
-        } else {
-            Self::grow_tree(world, pos, state, rng);
-        }
+    ) {
+        SaplingBlock::advance_tree(self.tree_grower, world, pos, state, rng);
     }
 
     fn random_tick_with_rng(
+        &self,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
@@ -126,7 +84,7 @@ impl MangrovePropaguleBlock {
         if state.get_value(HANGING) {
             Self::advance_hanging(state, world, pos);
         } else if rng.random_range(0..RANDOM_GROWTH_BOUND) == 0 {
-            Self::advance_tree(world, pos, state, rng);
+            self.advance_tree(world, pos, state, rng);
         }
     }
 }
@@ -174,7 +132,7 @@ impl BlockBehavior for MangrovePropaguleBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        Self::random_tick_with_rng(state, world, pos, &mut rand::rng());
+        self.random_tick_with_rng(state, world, pos, &mut rand::rng());
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
@@ -186,14 +144,14 @@ impl Bonemealable for MangrovePropaguleBlock {
     fn is_valid_bonemeal_target(
         &self,
         state: BlockStateId,
-        _world: &dyn LevelReader,
-        _pos: BlockPos,
+        world: &dyn LevelReader,
+        pos: BlockPos,
     ) -> bool {
         if state.get_value(HANGING) {
             return state.get_value(AGE) < MAX_AGE;
         }
 
-        true
+        SaplingBlock::is_valid_bonemeal_target_for(self.tree_grower, world, pos)
     }
 
     fn is_bonemeal_success(
@@ -220,42 +178,26 @@ impl Bonemealable for MangrovePropaguleBlock {
         if state.get_value(HANGING) {
             Self::advance_hanging(state, world, pos);
         } else {
-            Self::advance_tree(world, pos, state, rng);
+            self.advance_tree(world, pos, state, rng);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::convert::Infallible;
-
-    use rand::{SeedableRng, TryRng, rngs::StdRng};
+    use rand::{SeedableRng, rngs::StdRng};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_items};
     use steel_utils::ChunkPos;
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestLevel, ZeroRng, fresh_test_world, insert_ready_full_chunk};
 
-    #[derive(Default)]
-    struct ZeroRng;
+    const STAGE: &IntProperty = &BlockStateProperties::STAGE;
 
-    impl TryRng for ZeroRng {
-        type Error = Infallible;
-
-        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
-            Ok(0)
-        }
-
-        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
-            Ok(0)
-        }
-
-        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
-            dst.fill(0);
-            Ok(())
-        }
+    fn behavior() -> MangrovePropaguleBlock {
+        MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE, TreeGrower::Mangrove)
     }
 
     #[test]
@@ -292,7 +234,7 @@ mod tests {
             vanilla_blocks::WATER.default_state(),
             UpdateFlags::UPDATE_NONE,
         ));
-        let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
+        let behavior = behavior();
 
         let wet_state = {
             let mut stack = ItemStack::new(&vanilla_items::MANGROVE_PROPAGULE);
@@ -354,7 +296,7 @@ mod tests {
     #[test]
     fn bonemeal_targets_match_hanging_age_and_tree_height() {
         init_vanilla_registry();
-        let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
+        let behavior = behavior();
         let hanging = MangrovePropaguleBlock::create_new_hanging_propagule();
         let level = TestLevel::default().with_min_y(0).with_height(10);
 
@@ -364,15 +306,18 @@ mod tests {
             &level,
             BlockPos::ZERO,
         ));
+        let min_height = TreeGrower::Mangrove
+            .minimum_height()
+            .expect("mangrove has a primary tree");
         assert!(behavior.is_valid_bonemeal_target(
             vanilla_blocks::MANGROVE_PROPAGULE.default_state(),
             &level,
-            BlockPos::new(0, 7, 0),
+            BlockPos::new(0, 9 - min_height, 0),
         ));
-        assert!(behavior.is_valid_bonemeal_target(
+        assert!(!behavior.is_valid_bonemeal_target(
             vanilla_blocks::MANGROVE_PROPAGULE.default_state(),
             &level,
-            BlockPos::new(0, 8, 0),
+            BlockPos::new(0, 10 - min_height, 0),
         ));
     }
 
@@ -385,7 +330,7 @@ mod tests {
         insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::MANGROVE_PROPAGULE.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
-        let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
+        let behavior = behavior();
 
         behavior.perform_bonemeal(state, &world, &mut ZeroRng, pos);
 
@@ -420,7 +365,7 @@ mod tests {
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
         let placed = (0..64).any(|seed| {
             let mut rng = StdRng::seed_from_u64(seed);
-            MangrovePropaguleBlock::grow_tree(&world, pos, state, &mut rng)
+            TreeGrower::Mangrove.grow_tree(&world, pos, state, &mut rng)
         });
 
         assert!(placed);
@@ -435,7 +380,7 @@ mod tests {
     #[test]
     fn unsupported_waterlogged_propagule_schedules_water_before_breaking() {
         init_vanilla_registry();
-        let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
+        let behavior = behavior();
         let state = vanilla_blocks::MANGROVE_PROPAGULE
             .default_state()
             .set_value(WATERLOGGED, true);

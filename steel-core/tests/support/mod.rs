@@ -1,7 +1,9 @@
 use std::cell::{Cell, RefCell};
+use std::convert::Infallible;
 use std::slice;
 use std::sync::{Arc, OnceLock};
 
+use rand::TryRng;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::fluid::FluidRef;
@@ -34,6 +36,48 @@ mod player;
 
 pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
+
+/// RNG that always returns zero: takes every `< chance` roll and picks the first option.
+#[derive(Default)]
+pub(crate) struct ZeroRng;
+
+impl TryRng for ZeroRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(0)
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(0)
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        dst.fill(0);
+        Ok(())
+    }
+}
+
+/// RNG that always returns the maximum value: fails every `< chance` roll.
+#[derive(Default)]
+pub(crate) struct MaxRng;
+
+impl TryRng for MaxRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(u32::MAX)
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(u64::MAX)
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        dst.fill(u8::MAX);
+        Ok(())
+    }
+}
 
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
@@ -359,8 +403,9 @@ impl LevelReader for TestLevel {
             )
     }
 
-    fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-        self.raw_brightness.get()
+    /// The configured brightness models sky light, so sky darkening applies like `World`.
+    fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
+        self.raw_brightness.get().saturating_sub(sky_darkening)
     }
 
     fn min_y(&self) -> i32 {
