@@ -79,6 +79,63 @@ fn vanilla_inventory_nbt_contains_main_slots_only() {
 }
 
 #[test]
+fn replacement_copy_preserves_all_logical_slots_and_selection() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        source.set_item(
+            slot,
+            ItemStack::with_count(&vanilla_items::OAK_LOG, slot as i32 + 1),
+        );
+    }
+    source.set_selected_slot(8);
+
+    let replacement = source.replacement_copy();
+
+    assert_eq!(replacement.get_selected_slot(), 8);
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        assert_eq!(replacement.get_item(slot), source.get_item(slot));
+    }
+}
+
+#[test]
+fn replacement_copy_does_not_drain_or_share_storage_with_source() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    sword.set_damage_value(3);
+    source.set_item(0, sword);
+    source.set_item(
+        PlayerInventory::SLOT_OFFHAND,
+        ItemStack::with_count(&vanilla_items::OAK_LOG, 4),
+    );
+    source.set_selected_slot(1);
+
+    let mut replacement = source.replacement_copy();
+
+    assert_eq!(source.get_item(0).get_damage_value(), 3);
+    assert_eq!(source.get_item(PlayerInventory::SLOT_OFFHAND).count(), 4);
+
+    source.get_item_mut(0).set_damage_value(7);
+    source
+        .get_item_mut(PlayerInventory::SLOT_OFFHAND)
+        .set_count(2);
+    source.set_selected_slot(2);
+
+    assert_eq!(replacement.get_item(0).get_damage_value(), 3);
+    assert_eq!(
+        replacement.get_item(PlayerInventory::SLOT_OFFHAND).count(),
+        4
+    );
+    assert_eq!(replacement.get_selected_slot(), 1);
+
+    replacement.get_item_mut(0).set_damage_value(11);
+    assert_eq!(source.get_item(0).get_damage_value(), 7);
+}
+
+#[test]
 fn add_marks_changed_when_stack_fills_existing_slot() {
     init_vanilla_registry();
 
@@ -1136,7 +1193,7 @@ fn disconnected_menu_removal_drops_transient_items() {
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
     observer
-        .chunk_sender
+        .chunk_sender()
         .lock()
         .mark_chunk_sent_for_test(ChunkPos::new(0, 0));
 

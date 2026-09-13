@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
+use crate::chunk::chunk_ticket_storage::{ChunkTicketStorage, PersistentChunkTickets};
 use crate::chunk::full_chunk::{FullChunkBlockSetResult, FullChunkRef};
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
 use crate::chunk::light::{
@@ -373,7 +373,8 @@ impl World {
         let persistent_chunk_tickets: PersistentChunkTickets = saved_data
             .load_or_default(saved_data_names::CHUNK_TICKETS)
             .await?;
-        let timed_chunk_tickets = TimedChunkTickets::from_persistent(persistent_chunk_tickets);
+        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -395,7 +396,7 @@ impl World {
         }
 
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
-            let chunk_map = Arc::new(ChunkMap::new_with_storage_and_timed_tickets(
+            let chunk_map = Arc::new(ChunkMap::new_with_storage_and_ticket_storage(
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
@@ -404,7 +405,9 @@ impl World {
                 config.generator,
                 generation_pool,
                 chunk_encoding_pool,
-                timed_chunk_tickets,
+                view_distance,
+                simulation_distance,
+                ticket_storage,
             ));
             chunk_map.start_generation_refill_loop();
 
@@ -511,9 +514,12 @@ impl World {
 
         let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED) as u32;
 
+        let early_lookup_stats = lookup_cache_scope.finish();
         let mut chunk_map_timings =
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
+        chunk_map_timings.lookup_cache.merge(early_lookup_stats);
+        let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(&self.chunk_map);
 
         if runs_normally {
             let _span = tracing::trace_span!("block_events").entered();
@@ -626,7 +632,9 @@ impl World {
             );
         }
 
-        chunk_map_timings.lookup_cache = lookup_cache_scope.finish();
+        chunk_map_timings
+            .lookup_cache
+            .merge(lookup_cache_scope.finish());
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
@@ -728,6 +736,17 @@ impl LevelReader for Arc<World> {
         self.as_ref().ambient_light()
     }
 
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        let mapped_type = match heightmap_type {
+            HeightmapType::WorldSurfaceWg => HeightmapType::WorldSurface,
+            HeightmapType::OceanFloorWg => HeightmapType::OceanFloor,
+            other => other,
+        };
+        self.as_ref()
+            .height_at(mapped_type, x, z)
+            .unwrap_or_else(|| self.min_y())
+    }
+
     fn min_y(&self) -> i32 {
         self.as_ref().get_min_y()
     }
@@ -768,6 +787,16 @@ impl ScheduledTickAccess for Arc<World> {
 impl LevelAccessor for Arc<World> {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         self.set_block(pos, state, flags)
+    }
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        self.chunk_map
+            .with_full_chunk(ChunkPos::new(chunk_x, chunk_z), |_| ())
+            .is_some()
+    }
+
+    fn requires_live_write_preflight(&self) -> bool {
+        true
     }
 
     fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {

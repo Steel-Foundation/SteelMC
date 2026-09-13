@@ -1,24 +1,31 @@
 use super::*;
+use crate::chunk::chunk_pyramid::GENERATION_PYRAMID;
 
 #[test]
 fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     let world = fresh_test_world("chunk_removal_boundary");
     let pos = ChunkPos::new(9, -11);
-    let ticket = ChunkTicket::loading(ChunkTicketLevel::MAX);
-    let addition_revision = world.chunk_map.add_chunk_ticket(pos, ticket);
-    advance_until_revision(&world.chunk_map, addition_revision);
+    let ticket_level = ChunkTicketLevel::MAX;
+    let addition_receipt = world
+        .chunk_map
+        .acquire_chunk_request_leases(&[pos], ticket_level)
+        .expect("one request lease should produce a receipt");
+    advance_until_receipt(&world.chunk_map, addition_receipt);
     let holder = world
         .chunk_map
         .chunks
         .read_sync(&pos, |_, holder| Arc::clone(holder))
         .expect("committed ticket should create an active holder");
 
-    let removal_revision = world.chunk_map.remove_chunk_ticket(pos, ticket);
+    let removal_receipt = world
+        .chunk_map
+        .release_chunk_request_leases(&[pos], ticket_level)
+        .expect("one request lease release should produce a receipt");
 
     assert!(world.chunk_map.chunks.contains_sync(&pos));
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
 
-    advance_until_revision(&world.chunk_map, removal_revision);
+    advance_until_receipt(&world.chunk_map, removal_receipt);
 
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
     assert!(
@@ -29,11 +36,14 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
             .unwrap_or(false)
     );
 
-    let revival_revision = world.chunk_map.add_chunk_ticket(pos, ticket);
+    let revival_receipt = world
+        .chunk_map
+        .acquire_chunk_request_leases(&[pos], ticket_level)
+        .expect("one request lease should produce a receipt");
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
     assert!(world.chunk_map.unloading_chunks.contains_sync(&pos));
 
-    advance_until_revision(&world.chunk_map, revival_revision);
+    advance_until_receipt(&world.chunk_map, revival_receipt);
 
     assert!(
         world
@@ -44,61 +54,10 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     );
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
 
-    world.chunk_map.remove_chunk_ticket(pos, ticket);
-}
-
-#[test]
-fn staged_revival_keeps_map_only_unloading_holder_until_commit() {
-    let world = fresh_test_world("staged_chunk_revival");
-    let pos = ChunkPos::new(-4, 7);
-    let level = ChunkTicketLevel::MAX;
-    let ticket = ChunkTicket::loading(level);
-    let holder = world
+    let _ = world
         .chunk_map
-        .update_chunk_level(pos, Some(level), None)
-        .expect("loaded level should create a holder");
-
-    world.chunk_map.update_chunk_level(pos, None, None);
-    let weak_holder = Arc::downgrade(&holder);
-    drop(holder);
-
-    assert_eq!(
-        world
-            .chunk_map
-            .unloading_chunks
-            .read_sync(&pos, |_, unloading| Arc::strong_count(unloading)),
-        Some(1),
-        "the unloading map should own the holder's only strong reference"
-    );
-
-    world.chunk_map.add_chunk_ticket(pos, ticket);
-    let epoch = world.chunk_map.prepare_scheduling_epoch(
-        ChunkTicketManager::new(),
-        ChunkTicketRevision::default(),
-        Vec::new(),
-    );
-
-    assert!(
-        weak_holder.upgrade().is_some(),
-        "a staged revival must reserve the unloading holder until commit"
-    );
-    assert!(world.chunk_map.unloading_chunks.contains_sync(&pos));
-
-    let change = epoch
-        .changes
-        .into_iter()
-        .find(|change| change.pos == pos)
-        .expect("ticket propagation should stage the holder revival");
-    let active = world
-        .chunk_map
-        .update_chunk_level(change.pos, change.new_level, change.new_simulation_level)
-        .expect("revival commit should reactivate the holder");
-    let original = weak_holder
-        .upgrade()
-        .expect("revival commit should preserve the original holder");
-
-    assert!(Arc::ptr_eq(&active, &original));
-    assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
+        .release_chunk_request_leases(&[pos], ticket_level);
+    stop_chunk_tasks(&world);
 }
 
 #[test]
@@ -135,6 +94,96 @@ fn generation_priority_orders_normal_by_load_level() {
         GenerationTaskPriority::for_levels(Some(ChunkTicketLevel::for_full_chunk_radius(4)), None);
 
     assert!(stronger_load < weaker_load);
+}
+
+#[test]
+fn cancelled_generation_task_keeps_cached_holders_pinned_for_in_flight_steps() {
+    init_vanilla_registry();
+    let world = fresh_test_world("pending_generation_save_dependency");
+    world.chunk_map.stop_generation_refill_loop();
+
+    let center_pos = ChunkPos::new(0, 0);
+    let target_status = ChunkStatus::Biomes;
+    let cache_radius = GENERATION_PYRAMID
+        .get_step_to(target_status)
+        .accumulated_dependencies
+        .get_radius_of(ChunkStatus::Empty) as i32;
+    let timed_ticket_pos = ChunkPos::new(cache_radius, 0);
+    let mut cached_holders = Vec::new();
+
+    for z in -cache_radius..=cache_radius {
+        for x in -cache_radius..=cache_radius {
+            let pos = ChunkPos::new(x, z);
+            let holder = Arc::new(ChunkHolder::new(
+                pos,
+                ChunkTicketLevel::STRONGEST,
+                None,
+                world.chunk_map.world_gen_context.min_y(),
+                world.chunk_map.world_gen_context.height(),
+            ));
+            let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+            cached_holders.push(holder);
+        }
+    }
+
+    let center = world
+        .chunk_map
+        .chunks
+        .read_sync(&center_pos, |_, holder| Arc::clone(holder))
+        .expect("the center holder should be cached");
+    assert!(center.schedule_chunk_generation_task_b(target_status, &world.chunk_map));
+    let in_flight_cache = {
+        let pending = world.chunk_map.pending_generation_tasks.lock();
+        assert_eq!(pending.len(), 1);
+        Arc::clone(&pending[0].cache)
+    };
+    assert!(
+        cached_holders
+            .iter()
+            .all(|holder| !holder.is_ready_for_saving())
+    );
+
+    world.chunk_map.place_ender_pearl_ticket(timed_ticket_pos);
+    assert_eq!(
+        world.chunk_map.scheduling.timed_ticket_expirations().len(),
+        1
+    );
+    assert!(
+        world
+            .chunk_map
+            .eligible_timed_ticket_expirations()
+            .is_empty(),
+        "a holder cached by a pending generation task must not age timed tickets"
+    );
+
+    world.chunk_map.stop_generation_refill_loop();
+    assert!(world.chunk_map.pending_generation_tasks.lock().is_empty());
+    assert!(
+        cached_holders
+            .iter()
+            .all(|holder| !holder.is_ready_for_saving())
+    );
+    assert!(
+        world
+            .chunk_map
+            .eligible_timed_ticket_expirations()
+            .is_empty(),
+        "cancellation must not release holders still used by a spawned generation step"
+    );
+
+    drop(in_flight_cache);
+    assert!(
+        cached_holders
+            .iter()
+            .all(|holder| holder.is_ready_for_saving())
+    );
+    assert_eq!(
+        world.chunk_map.eligible_timed_ticket_expirations().len(),
+        1,
+        "dropping the cancelled task must release every cached save dependency"
+    );
+
+    stop_chunk_tasks(&world);
 }
 
 #[test]
@@ -309,10 +358,9 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 
     world
         .chunk_map
-        .prepare_ticking_readiness_demotions(&[LevelChange {
+        .prepare_ticking_readiness_demotions(&[LoadLevelChange {
             pos: ChunkPos::new(-2, -2),
             new_level: None,
-            new_simulation_level: None,
         }])
         .expect("removing an indexed outer contributor should reconcile");
     assert_eq!(
@@ -324,10 +372,9 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 
     world
         .chunk_map
-        .prepare_ticking_readiness_demotions(&[LevelChange {
+        .prepare_ticking_readiness_demotions(&[LoadLevelChange {
             pos: ChunkPos::new(-1, -1),
             new_level: None,
-            new_simulation_level: None,
         }])
         .expect("removing an indexed inner contributor should reconcile");
     assert_eq!(
@@ -400,7 +447,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
 }
 
 #[test]
-fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
+fn entity_tickability_requires_simulation_and_entity_readiness() {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("ticking_chunk_snapshot");
@@ -416,75 +463,19 @@ fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
     entity.transition_ticking_readiness(TickingReadiness::EntityTicking);
 
     world.chunk_map.rebuild_ticking_chunk_snapshot();
-    let snapshot = world.chunk_map.ticking_chunks.load();
-    let mut scc_order = Vec::new();
-    world.chunk_map.chunks.iter_sync(|pos, _| {
-        scc_order.push(*pos);
-        true
-    });
-    assert_eq!(
-        snapshot
-            .block
-            .iter()
-            .map(|chunk| chunk.pos)
-            .collect::<Vec<_>>(),
-        scc_order
-    );
-
-    let random_positions = snapshot
-        .random_chunk_indices
-        .iter()
-        .map(|&index| snapshot.block[index].pos)
-        .collect::<FxHashSet<_>>();
-    assert_eq!(
-        random_positions,
-        FxHashSet::from_iter([random_pos, entity_pos])
-    );
-    let entity_positions = snapshot
-        .entity_indices
-        .iter()
-        .map(|&index| snapshot.block[index].pos)
-        .collect::<Vec<_>>();
-    assert_eq!(entity_positions, [entity_pos]);
-}
-
-#[test]
-fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
-    init_vanilla_registry();
-    init_behaviors();
-    let world = fresh_test_world("simulation_snapshot_membership");
-    let pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, pos);
-
-    let entity_ticking = LevelChange {
-        pos,
-        new_level: Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        new_simulation_level: Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK),
-    };
     assert!(
         world
             .chunk_map
-            .simulation_changes_ticking_snapshot(&[entity_ticking]),
-        "entering the random-tick set must republish the snapshot"
+            .is_block_ticking_full_chunk_simulated(block_only_pos)
     );
-
-    let unchanged = LevelChange {
-        new_simulation_level: Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        ..entity_ticking
-    };
     assert!(
-        !world
+        world
             .chunk_map
-            .simulation_changes_ticking_snapshot(&[unchanged]),
-        "an unchanged simulation class must retain the snapshot"
+            .is_block_ticking_full_chunk_simulated(random_pos)
     );
-
-    holder.transition_ticking_readiness(TickingReadiness::Unready);
-    assert!(
-        !world
-            .chunk_map
-            .simulation_changes_ticking_snapshot(&[entity_ticking]),
-        "simulation changes cannot add an unready holder to the snapshot"
+    assert_eq!(
+        world.chunk_map.tickable_full_chunk_positions(),
+        [entity_pos]
     );
 }
 

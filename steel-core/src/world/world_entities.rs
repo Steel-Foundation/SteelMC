@@ -7,8 +7,8 @@ use steel_utils::ChunkPos;
 
 use crate::{
     entity::{
-        Entity, EntityOwnership, LivingEntity, NullEntityCallback, PlayerEntityCallback,
-        RemovalReason, SharedEntity,
+        AddEntityError, Entity, EntityOwnership, LivingEntity, NullEntityCallback,
+        PlayerEntityCallback, RemovalReason, SharedEntity,
     },
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
@@ -81,18 +81,23 @@ impl World {
         player.set_level_callback(callback);
     }
 
-    fn register_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
-        self.attach_player_entity_callback(player);
-
-        let entity: SharedEntity = player.clone();
-        let lifecycle = match self
+    fn try_register_player_entity(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+    ) -> Result<(), AddEntityError> {
+        let entity: SharedEntity = Arc::<Player>::clone(player);
+        let lifecycle = self
             .entity_manager()
-            .add_live_entity(entity.clone(), EntityOwnership::External)
-        {
-            Ok(lifecycle) => lifecycle,
-            Err(error) => panic!("failed to register player entity: {error}"),
-        };
+            .add_live_entity(entity, EntityOwnership::External)?;
+        self.attach_player_entity_callback(player);
         self.apply_entity_lifecycle_changes(lifecycle);
+        Ok(())
+    }
+
+    fn register_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
+        if let Err(error) = self.try_register_player_entity(player) {
+            panic!("failed to register player entity: {error}");
+        }
     }
 
     fn unride_player_for_removal(&self, player: &Player, store_root_vehicle: bool) {
@@ -142,22 +147,58 @@ impl World {
         self.chunk_map.update_player_status(player);
     }
 
-    pub(crate) fn add_respawned_player(self: &Arc<Self>, player: Arc<Player>) -> bool {
-        if Self::reject_duplicate_player_membership(&player, self, "respawn") {
-            return false;
-        }
-        if !self.players.insert(player.clone()) {
-            player.connection.close();
+    /// Installs a fresh player incarnation in this world's live indexes.
+    ///
+    /// Same-world respawns provide the exact detached old map occupant. Cross-world
+    /// and End-credits respawns insert into an empty target-world player map.
+    pub(crate) fn install_respawned_player(
+        self: &Arc<Self>,
+        player: Arc<Player>,
+        expected_old_player: Option<&Arc<Player>>,
+    ) -> bool {
+        let installed = if let Some(expected_old_player) = expected_old_player {
+            self.players
+                .replace_player(expected_old_player, Arc::clone(&player))
+        } else {
+            self.players.insert(Arc::clone(&player))
+        };
+        if !installed {
             return false;
         }
 
-        self.register_respawned_player_entity(&player);
+        if let Err(error) = self.try_register_player_entity(&player) {
+            let rolled_back = if let Some(expected_old_player) = expected_old_player {
+                self.players
+                    .replace_player(&player, Arc::clone(expected_old_player))
+            } else {
+                self.players.remove_player_sync(&player).is_some()
+            };
+            if !rolled_back {
+                tracing::error!(
+                    player = %player.gameprofile.name,
+                    world = %self.key,
+                    "Respawn entity registration failed after world player ownership changed"
+                );
+            }
+            tracing::warn!(
+                player = %player.gameprofile.name,
+                world = %self.key,
+                "Refusing to install respawned player entity: {error}"
+            );
+            return false;
+        }
+
+        self.chunk_map.update_player_status(&player);
         self.update_sleeping_player_list();
         player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,
             data: 0.0,
         });
         true
+    }
+
+    pub(crate) fn add_respawned_player(self: &Arc<Self>, player: Arc<Player>) -> bool {
+        self.install_respawned_player(player, None)
     }
 
     /// Detaches a disconnecting player from live world state and snapshots it.
@@ -213,6 +254,49 @@ impl World {
         self.entity_tracker().on_player_leave(&player);
         self.player_area_map.on_player_leave(&player);
         // Note: no CRemovePlayerInfo — player stays in the global tab list
+    }
+
+    /// Detaches the exact old player incarnation for a fresh-player respawn.
+    ///
+    /// Same-world respawns retain the old player-map entry so installation can
+    /// compare-and-swap it with the fresh player. Cross-world respawns remove it.
+    /// This does not award `LEAVE_GAME` or snapshot persistent player data.
+    pub(crate) fn detach_player_for_respawn(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        retain_player_map_entry: bool,
+    ) -> bool {
+        if !self.contains_player(player) {
+            return false;
+        }
+        if player.is_sleeping() {
+            player.stop_sleep_in_bed(true, false);
+        }
+
+        let detached_player = if retain_player_map_entry {
+            Arc::clone(player)
+        } else {
+            let Some(detached_player) = self.players.remove_player_sync(player) else {
+                return false;
+            };
+            detached_player
+        };
+
+        self.chunk_map.remove_player(&detached_player);
+        self.unride_player_for_removal(&detached_player, false);
+        self.unregister_player_entity(&detached_player);
+        self.entity_tracker().on_player_leave(&detached_player);
+        self.player_area_map.on_player_leave(&detached_player);
+        self.update_sleeping_player_list();
+        true
+    }
+
+    /// Removes an exact fresh respawn installation during transaction cleanup.
+    ///
+    /// A stale cleanup request cannot detach a newer player incarnation with the
+    /// same UUID and numeric entity ID.
+    pub(crate) fn remove_respawned_player(self: &Arc<Self>, player: &Arc<Player>) -> bool {
+        self.detach_player_for_respawn(player, false)
     }
 
     /// Detaches a player for a domain switch and returns its persistence snapshot.

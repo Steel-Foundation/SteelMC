@@ -1456,6 +1456,10 @@ impl LevelReader for WorldGenRegion<'_> {
         self.context.world().dimension_type.ambient_light
     }
 
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        WorldGenRegion::height_at(self, heightmap_type, x, z)
+    }
+
     fn min_y(&self) -> i32 {
         WorldGenRegion::min_y(self)
     }
@@ -1484,6 +1488,10 @@ impl ScheduledTickAccess for WorldGenRegion<'_> {
 impl LevelAccessor for WorldGenRegion<'_> {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         WorldGenRegion::set_block_state(self, pos, state, flags)
+    }
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        WorldGenRegion::can_write_to_chunk(self, chunk_x, chunk_z)
     }
 
     fn destroy_block(&self, pos: BlockPos, _drop_items: bool) -> bool {

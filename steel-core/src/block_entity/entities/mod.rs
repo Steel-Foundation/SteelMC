@@ -16,6 +16,7 @@ mod jukebox;
 mod piston_moving;
 mod potent_sulfur;
 mod raw;
+mod shulker_box;
 mod sign;
 
 pub use abstract_furnace::{
@@ -39,4 +40,5 @@ pub use jukebox::JukeboxBlockEntity;
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use raw::RawBlockEntity;
+pub use shulker_box::{AnimationStatus, SHULKER_BOX_SLOTS, ShulkerBoxBlockEntity};
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
