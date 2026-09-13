@@ -127,13 +127,10 @@ where
     /// does nothing if the node isn't a argument
     #[must_use]
     pub(crate) fn suggests(
-        mut self,
+        self,
         suggestion: impl SuggestionProvider<S, R::Argument> + 'static,
     ) -> Self {
-        if let CommandNodeData::Argument(_, data) = &mut self.data {
-            data.custom_suggestions = Some(Arc::new(suggestion));
-        }
-        self
+        self.suggests_arc(Arc::new(suggestion))
     }
 
     /// Add a custom [`SuggestionProvider`] wrap in an Arc to the corresponding argument
