@@ -18,6 +18,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
@@ -37,7 +38,6 @@ use crate::world::World;
 pub const DEATH_DURATION: i32 = 20;
 /// Vanilla default `SwingAnimation` duration in ticks.
 pub const DEFAULT_SWING_DURATION: i32 = 6;
-const INFINITE_EFFECT_DURATION: i32 = -1;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
@@ -143,6 +143,24 @@ impl MobEffectInstance {
     #[must_use]
     pub const fn is_infinite_duration(&self) -> bool {
         self.duration == INFINITE_EFFECT_DURATION
+    }
+
+    /// Returns vanilla `MobEffectInstance.endsWithin(ticks)`: whether this
+    /// effect expires within `ticks`. An infinite effect never does.
+    #[must_use]
+    pub const fn ends_within(&self, ticks: i32) -> bool {
+        !self.is_infinite_duration() && self.duration <= ticks
+    }
+
+    /// Returns vanilla `MobEffectInstance.mapDuration(mapper)`: applies `mapper`
+    /// to this effect's duration, leaving the infinite and zero sentinels alone.
+    #[must_use]
+    fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
+        if self.is_infinite_duration() || self.duration == 0 {
+            self.duration
+        } else {
+            mapper(self.duration)
+        }
     }
 
     /// Serializes this effect with vanilla's `MobEffectInstance.CODEC` shape.
@@ -276,9 +294,7 @@ impl MobEffectInstance {
             hidden_effect.tick_down_duration();
         }
 
-        if !self.is_infinite_duration() && self.duration != 0 {
-            self.duration -= 1;
-        }
+        self.duration = self.map_duration(|duration| duration - 1);
     }
 
     fn downgrade_to_hidden_effect(&mut self) -> bool {

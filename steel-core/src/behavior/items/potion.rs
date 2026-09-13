@@ -50,79 +50,85 @@ impl ItemBehavior for PotionItem {
     }
 
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if context.hit_result.direction == Direction::Down {
-            return InteractionResult::Pass;
+        potion_use_on(context)
+    }
+}
+
+/// Vanilla `PotionItem.useOn`: converts the block hit into mud when the
+/// held stack is a water bottle over a `CONVERTABLE_TO_MUD` block.
+pub(super) fn potion_use_on(context: &mut UseOnContext) -> InteractionResult {
+    if context.hit_result.direction == Direction::Down {
+        return InteractionResult::Pass;
+    }
+
+    let pos = context.hit_result.block_pos;
+    let block_state = context.world.get_block_state(pos);
+    if !block_state
+        .get_block()
+        .has_tag(&BlockTag::CONVERTABLE_TO_MUD)
+    {
+        return InteractionResult::Pass;
+    }
+
+    let was_water = context.inv.with_inventory(|inv| {
+        let potion_contents = inv
+            .get_item_in_hand(context.hand)
+            .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
+        if !potion_contents.is(&vanilla_potions::WATER) {
+            return false;
         }
+        inv.apply_filled_result(
+            context.hand,
+            ItemStack::new(&vanilla_items::GLASS_BOTTLE),
+            context.player.has_infinite_materials(),
+            true,
+        );
+        true
+    });
 
-        let pos = context.hit_result.block_pos;
-        let block_state = context.world.get_block_state(pos);
-        if !block_state
-            .get_block()
-            .has_tag(&BlockTag::CONVERTABLE_TO_MUD)
-        {
-            return InteractionResult::Pass;
+    if was_water {
+        context.world.play_sound(
+            &sound_events::ENTITY_GENERIC_SPLASH,
+            SoundSource::Blocks,
+            pos,
+            1.0,
+            1.0,
+            None,
+        );
+        for _ in 0..5 {
+            context.world.send_particles(
+                ParticleData::simple(&vanilla_particle_types::SPLASH),
+                DVec3::new(
+                    f64::from(pos.x()) + rand::random::<f64>(),
+                    f64::from(pos.y()) + 1.0,
+                    f64::from(pos.z()) + rand::random::<f64>(),
+                ),
+                1,
+                DVec3::ZERO,
+                1.0,
+            );
         }
+        context.world.play_sound(
+            &sound_events::ITEM_BOTTLE_EMPTY,
+            SoundSource::Blocks,
+            pos,
+            1.0,
+            1.0,
+            None,
+        );
+        context.world.game_event(
+            &vanilla_game_events::FLUID_PLACE,
+            pos,
+            &GameEventContext::new(None, None),
+        );
+        context.world.set_block(
+            pos,
+            vanilla_blocks::MUD.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
 
-        let was_water = context.inv.with_inventory(|inv| {
-            let potion_contents = inv
-                .get_item_in_hand(context.hand)
-                .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
-            if !potion_contents.is(&vanilla_potions::WATER) {
-                return false;
-            }
-            inv.apply_filled_result(
-                context.hand,
-                ItemStack::new(&vanilla_items::GLASS_BOTTLE),
-                context.player.has_infinite_materials(),
-                true,
-            );
-            true
-        });
-
-        if was_water {
-            context.world.play_sound(
-                &sound_events::ENTITY_GENERIC_SPLASH,
-                SoundSource::Blocks,
-                pos,
-                1.0,
-                1.0,
-                None,
-            );
-            for _ in 0..5 {
-                context.world.send_particles(
-                    ParticleData::simple(&vanilla_particle_types::SPLASH),
-                    DVec3::new(
-                        f64::from(pos.x()) + rand::random::<f64>(),
-                        f64::from(pos.y()) + 1.0,
-                        f64::from(pos.z()) + rand::random::<f64>(),
-                    ),
-                    1,
-                    DVec3::ZERO,
-                    1.0,
-                );
-            }
-            context.world.play_sound(
-                &sound_events::ITEM_BOTTLE_EMPTY,
-                SoundSource::Blocks,
-                pos,
-                1.0,
-                1.0,
-                None,
-            );
-            context.world.game_event(
-                &vanilla_game_events::FLUID_PLACE,
-                pos,
-                &GameEventContext::new(None, None),
-            );
-            context.world.set_block(
-                pos,
-                vanilla_blocks::MUD.default_state(),
-                UpdateFlags::UPDATE_ALL,
-            );
-
-            InteractionResult::Success
-        } else {
-            InteractionResult::Pass
-        }
+        InteractionResult::Success
+    } else {
+        InteractionResult::Pass
     }
 }

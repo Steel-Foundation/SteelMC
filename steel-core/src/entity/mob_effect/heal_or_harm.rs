@@ -43,9 +43,9 @@ impl MobEffectBehavior for HealOrHarmBehavior {
 }
 
 impl InstantaneousMobEffect for HealOrHarmBehavior {
-    /// Reached by drinking a potion directly, or a splash/lingering potion
-    /// once implemented. Unlike `apply_effect_tick`, the heal amount is
-    /// never clamped to zero, and damage is attributed via
+    /// Reached by drinking a potion directly or by a splash potion's
+    /// distance-scaled application. Unlike `apply_effect_tick`, the heal amount
+    /// is never clamped to zero, and damage is attributed via
     /// `indirectMagic(source, owner)` when `direct_entity` is known.
     fn apply_instantaneous(
         &self,
@@ -54,11 +54,11 @@ impl InstantaneousMobEffect for HealOrHarmBehavior {
         amplifier: i32,
         direct_entity: Option<i32>,
         causing_entity: Option<i32>,
-        scale: f32,
+        scale: f64,
     ) {
         if self.is_harm == user.is_inverted_heal_and_harm() {
             let amount =
-                (scale * (BASE_HEAL_AMOUNT.wrapping_shl(amplifier as u32) as f32) + 0.5) as i32;
+                (scale * f64::from(BASE_HEAL_AMOUNT.wrapping_shl(amplifier as u32)) + 0.5) as i32;
             user.heal(amount as f32);
         } else {
             let mut source = DamageSource::environment(if direct_entity.is_some() {
@@ -73,9 +73,9 @@ impl InstantaneousMobEffect for HealOrHarmBehavior {
                 source = source.with_causing_entity(entity_id);
             }
             // Vanilla truncates via a Java `(int)` cast; `as i32` on a
-            // non-negative f32 truncates the same way.
+            // non-negative f64 truncates the same way.
             let amount =
-                (scale * (BASE_HARM_AMOUNT.wrapping_shl(amplifier as u32) as f32) + 0.5) as i32;
+                (scale * f64::from(BASE_HARM_AMOUNT.wrapping_shl(amplifier as u32)) + 0.5) as i32;
             user.hurt(world, &source, amount as f32);
         }
     }
