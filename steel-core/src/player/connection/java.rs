@@ -20,20 +20,15 @@ use steel_protocol::packets::game::{
     SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
 };
 
-use crate::command::signing_context::CommandSigningContext;
 use crate::command::{handle_client_request, sender::CommandSender};
 use crate::entity::Entity;
-use crate::player::chat::message_chain::SignedMessageBody;
 use crate::player::connection::NetworkConnection;
-use crate::player::{LastSeen, Player, PlayerSession};
+use crate::player::{Player, PlayerSession};
 use crate::server::Server;
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::translations;
-use steel_utils::translations::{
-    MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED, MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS,
-};
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;

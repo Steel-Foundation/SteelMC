@@ -9,11 +9,11 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::player::chat::OutgoingChatMessage;
-use log::info;
 use steel_protocol::packets::game::{CPlayerChat, ChatTypeBound, FilterType};
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::Identifier;
-use text_components::TextComponent;
+use text_components::interactivity::{ClickEvent, HoverEvent};
+use text_components::{Modifier, TextComponent};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("say"), |_| command())
@@ -24,19 +24,10 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         |ctx: &SteelCommandContext<CommandSource>| {
             let source = ctx.source();
             let message = ctx.message("message")?.to_string();
-            if let Some(signed_arg) = source.signing_context() {
-                info!("Signing message context : {:?}", signed_arg);
-            }
 
             let component_message: TextComponent = TextComponent::plain(message.clone());
 
-            let chat_type = ChatTypeBound {
-                registry_id: vanilla_chat_types::SAY_COMMAND.id() as i32,
-                sender_name: TextComponent::plain(source.sender().to_string()), // Command sender implement Display
-                target_name: None,
-            };
-
-            let outgoing = match source.sender().get_player() {
+            let (outgoing, chat_type) = match source.sender().get_player() {
                 Some(player) => {
                     let signing_ctx = source.signing_context();
                     let raw_sig = signing_ctx.and_then(|sc| sc.get_argument_signature("message"));
@@ -50,13 +41,6 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                                 .as_millis() as u64;
                             (now, 0)
                         });
-
-                    let sender_index = {
-                        let mut chat = player.chat().lock();
-                        let idx = chat.messages_sent;
-                        chat.messages_sent += 1;
-                        idx
-                    };
 
                     let sender_last_seen = signing_ctx
                         .map(|sc| sc.last_seen.clone())
@@ -72,6 +56,23 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         }
                     });
 
+                    let sender_name = player.gameprofile.name.clone(); // or player.gameprofile.name
+                    let sender_uuid = player.gameprofile.id;
+                    let sender_index = signing_ctx.map(|sc| sc.sender_index).unwrap_or(0);
+
+                    let chat_type = ChatTypeBound {
+                        registry_id: vanilla_chat_types::SAY_COMMAND.id() as i32,
+                        sender_name: TextComponent::plain(sender_name.clone())
+                            .insertion(sender_name.clone())
+                            .click_event(ClickEvent::suggest_command(format!("/tell {sender_name} ")))
+                            .hover_event(HoverEvent::show_entity(
+                                "minecraft:player",
+                                sender_uuid,
+                                Some(sender_name),
+                            )),
+                        target_name: None,
+                    };
+
                     let packet = CPlayerChat::new(
                         0, // Replaced after in broadcast_chat
                         player.gameprofile.id,
@@ -81,19 +82,26 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         timestamp as i64,
                         salt,
                         Box::new([]),
-                        Some(component_message.clone()),
-                        FilterType::FullyFiltered,
+                        None,
+                        FilterType::PassThrough,
                         chat_type.clone(),
                     );
 
-                    OutgoingChatMessage::Player {
+                    (OutgoingChatMessage::Player {
                         packet,
                         signature: sig_array,
                         sender_last_seen,
-                    }
+                    }, chat_type)
                 }
-                None => OutgoingChatMessage::Disguised {
-                    content: component_message,
+                None => {
+                    let chat_type = ChatTypeBound {
+                        registry_id: vanilla_chat_types::SAY_COMMAND.id() as i32,
+                        sender_name: TextComponent::plain(source.sender().to_string()), // Command sender implement Display
+                        target_name: None,
+                    };
+                    (OutgoingChatMessage::Disguised {
+                        content: component_message,
+                    }, chat_type)
                 },
             };
 

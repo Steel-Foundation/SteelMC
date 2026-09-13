@@ -159,6 +159,9 @@ impl OutgoingChatMessage {
                 let messages_received = recipient.get_and_increment_messages_received();
                 packet.global_index = messages_received;
 
+                // Override with the contextual chat type (e.g., SAY_COMMAND)
+                packet.chat_type = chat_type.clone();
+
                 log::debug!(
                     "Broadcasting to player {} (UUID: {}), global_index={}",
                     recipient.gameprofile.name,
@@ -418,11 +421,9 @@ impl Player {
             None
         };
 
-        let sender_index = {
-            let mut chat = player.chat().lock();
-            let idx = chat.messages_sent;
-            chat.messages_sent += 1;
-            idx
+        let sender_index = match &verification_result {
+            Some(Ok((link, _))) => link.index,
+            _ => 0,
         };
 
         let registry_id = vanilla_chat_types::CHAT.id() as i32;
@@ -650,7 +651,7 @@ impl Player {
             }
         }
 
-        let last_seen = {
+        let (last_seen, sender_index) = {
             let mut chat = self.chat().lock();
 
             let last_seen_sigs = match chat.message_validator.apply_update(
@@ -686,8 +687,9 @@ impl Player {
                 .map(|(_, arg)| arg)
                 .unwrap_or("");
 
+            let mut sender_index = 0;
             for entry in &packet.argument_signatures {
-                if let Err(err_component) = Self::verify_and_advance_chain(
+                match Self::verify_and_advance_chain(
                     &mut chat,
                     &session,
                     argument_value,
@@ -696,13 +698,18 @@ impl Player {
                     last_seen_sigs.clone(),
                     &entry.signature,
                 ) {
-                    drop(chat);
-                    self.send_message(&err_component);
-                    return;
+                    Ok(link) => {
+                        sender_index = link.index;
+                    }
+                    Err(err_component) => {
+                        drop(chat);
+                        self.send_message(&err_component);
+                        return;
+                    }
                 }
             }
 
-            last_seen_sigs
+            (last_seen_sigs, sender_index)
         };
 
         self.reset_last_action_time();
@@ -715,6 +722,7 @@ impl Player {
                 .into_iter()
                 .map(|entry| (entry.name, Box::from(entry.signature))),
             last_seen,
+            sender_index,
         );
 
         if server

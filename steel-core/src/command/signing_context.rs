@@ -15,6 +15,8 @@ pub struct CommandSigningContext {
     pub argument_signatures: HashMap<Box<str>, MessageSignature>,
     /// Window of previously received message signatures acknowledged by the client when submitting this command.
     pub last_seen: LastSeen,
+    /// Monotonically increasing index of this message within the player's secure chat session chain.
+    pub sender_index: i32,
 }
 
 impl CommandSigningContext {
@@ -24,12 +26,14 @@ impl CommandSigningContext {
         salt: i64,
         signatures: impl IntoIterator<Item = (impl Into<Box<str>>, MessageSignature)>,
         last_seen: LastSeen,
+        sender_index: i32,
     ) -> Self {
         Self {
             timestamp,
             salt,
             argument_signatures: signatures.into_iter().map(|(k, v)| (k.into(), v)).collect(),
             last_seen,
+            sender_index,
         }
     }
 
