@@ -13,6 +13,12 @@ use crate::RegistryReference;
 use crate::mob_effect_instance::MobEffectInstance;
 use crate::potion::Potion;
 
+/// Vanilla `PotionContents.BASE_POTION_COLOR`.
+const BASE_POTION_COLOR: i32 = -13_083_194;
+/// Fully opaque alpha channel, matching vanilla `ARGB.color(r, g, b)`'s implicit
+/// `ARGB.color(255, r, g, b)`.
+const OPAQUE_ALPHA: i32 = 0xFF00_0000_u32 as i32;
+
 /// A registered base potion plus optional custom display and effect data.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct PotionContents {
@@ -87,6 +93,59 @@ impl PotionContents {
         }
         effects.extend(self.custom_effects.iter().cloned());
         effects
+    }
+
+    /// Returns vanilla `PotionContents.hasEffects()`.
+    #[must_use]
+    pub fn has_effects(&self) -> bool {
+        !self.custom_effects.is_empty()
+            || self
+                .potion
+                .is_some_and(|potion| !potion.value().effects.is_empty())
+    }
+
+    /// Returns vanilla `PotionContents.getColor()` (`getColorOr(BASE_POTION_COLOR)`).
+    #[must_use]
+    pub fn get_color(&self) -> i32 {
+        self.get_color_or(BASE_POTION_COLOR)
+    }
+
+    /// Returns vanilla `PotionContents.getColorOr(defaultColor)`.
+    #[must_use]
+    pub fn get_color_or(&self, default_color: i32) -> i32 {
+        self.custom_color
+            .or_else(|| Self::color_from_effects(&self.all_effects()))
+            .unwrap_or(default_color)
+    }
+
+    /// Returns vanilla `PotionContents.getColorOptional`: the amplifier-weighted
+    /// average of every visible effect's color, or `None` when no effect is visible.
+    fn color_from_effects(effects: &[MobEffectInstance]) -> Option<i32> {
+        let mut red: i64 = 0;
+        let mut green: i64 = 0;
+        let mut blue: i64 = 0;
+        let mut total_weight: i64 = 0;
+
+        for effect in effects {
+            if !effect.show_particles() {
+                continue;
+            }
+            let color = effect.effect().color;
+            let weight = i64::from(effect.amplifier() + 1);
+            red += weight * i64::from(color.red());
+            green += weight * i64::from(color.green());
+            blue += weight * i64::from(color.blue());
+            total_weight += weight;
+        }
+
+        if total_weight == 0 {
+            None
+        } else {
+            let r = (red / total_weight) as i32;
+            let g = (green / total_weight) as i32;
+            let b = (blue / total_weight) as i32;
+            Some(OPAQUE_ALPHA | (r << 16) | (g << 8) | b)
+        }
     }
 
     fn to_nbt_tag_ref(&self) -> NbtTag {
@@ -379,6 +438,106 @@ mod tests {
     fn all_effects_is_empty_without_a_base_potion_or_custom_effects() {
         init_vanilla_registry();
         assert_eq!(PotionContents::empty().all_effects(), Vec::new());
+    }
+
+    #[test]
+    fn has_effects_checks_base_potion_and_custom_effects_independently() {
+        init_vanilla_registry();
+        assert!(!PotionContents::empty().has_effects());
+        assert!(
+            !PotionContents::new(
+                Some(RegistryReference::new(&vanilla_potions::WATER)),
+                None,
+                Vec::new(),
+                None
+            )
+            .has_effects()
+        );
+        assert!(
+            PotionContents::new(
+                Some(RegistryReference::new(&vanilla_potions::POISON)),
+                None,
+                Vec::new(),
+                None
+            )
+            .has_effects()
+        );
+        assert!(
+            PotionContents::new(
+                None,
+                None,
+                vec![crate::MobEffectInstance::simple(
+                    vanilla_mob_effects::LUCK,
+                    200,
+                    1
+                )],
+                None,
+            )
+            .has_effects()
+        );
+    }
+
+    #[test]
+    fn get_color_prefers_custom_color_over_effect_blend() {
+        init_vanilla_registry();
+        let contents = PotionContents::new(
+            Some(RegistryReference::new(&vanilla_potions::POISON)),
+            Some(0x00_ff_00),
+            Vec::new(),
+            None,
+        );
+        assert_eq!(contents.get_color(), 0x00_ff_00);
+    }
+
+    #[test]
+    fn get_color_falls_back_to_default_without_visible_effects() {
+        init_vanilla_registry();
+        assert_eq!(
+            PotionContents::empty().get_color(),
+            super::BASE_POTION_COLOR
+        );
+        assert_eq!(PotionContents::empty().get_color_or(0x11_22_33), 0x11_22_33);
+    }
+
+    #[test]
+    fn get_color_blends_visible_effect_colors_by_amplifier_weight() {
+        init_vanilla_registry();
+
+        // Poison's single effect is `RgbColor::new(0x87_A3_63)` at amplifier 0, so
+        // the weighted average is that color verbatim, returned as opaque ARGB
+        // exactly like vanilla's `ARGB.color(r, g, b)`.
+        let poison = PotionContents::new(
+            Some(RegistryReference::new(&vanilla_potions::POISON)),
+            None,
+            Vec::new(),
+            None,
+        );
+        assert_eq!(poison.get_color(), 0xFF_87_A3_63_u32 as i32);
+
+        // Two custom effects with different amplifiers blend weighted by
+        // `amplifier + 1`: red at weight 1 and blue at weight 3 average to
+        // `(255 / 4, 0, 3 * 255 / 4)` per channel.
+        let blended = PotionContents::new(
+            None,
+            None,
+            vec![
+                crate::MobEffectInstance::simple(vanilla_mob_effects::LUCK, 200, 0),
+                crate::MobEffectInstance::simple(vanilla_mob_effects::UNLUCK, 200, 2),
+            ],
+            None,
+        );
+        let luck = vanilla_mob_effects::LUCK.color;
+        let unluck = vanilla_mob_effects::UNLUCK.color;
+        let expected_channel = |luck_channel: u8, unluck_channel: u8| -> i32 {
+            (i32::from(luck_channel) + 3 * i32::from(unluck_channel)) / 4
+        };
+        assert_eq!(
+            blended.get_color(),
+            0xFF00_0000_u32 as i32
+                | (expected_channel(luck.red(), unluck.red()) << 16)
+                | (expected_channel(luck.green(), unluck.green()) << 8)
+                | expected_channel(luck.blue(), unluck.blue())
+        );
     }
 
     #[test]
