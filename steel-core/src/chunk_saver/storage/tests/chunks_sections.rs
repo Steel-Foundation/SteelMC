@@ -322,8 +322,9 @@ fn heterogeneous_biome_section_roundtrips_through_persistent_chunk() {
     let pos = ChunkPos::new(0, 0);
     let mut section = ChunkSection::new_empty();
     let desert = vanilla_biomes::DESERT.id() as u16;
-    // Two cells must differ from the homogeneous default so a heterogeneous
-    // palette with >= 2 entries gets persisted.
+    // Change both ends of the 4x4x4 biome cube while leaving the other cells at
+    // their default biome. Saving and loading this heterogeneous section checks
+    // the packed length and preserves the biome values across the whole cube.
     section.biomes.set(0, 0, 0, desert);
     section.biomes.set(3, 3, 3, desert);
     let chunk = Chunk::new(

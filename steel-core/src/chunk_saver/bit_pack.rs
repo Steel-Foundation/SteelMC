@@ -45,6 +45,11 @@ pub fn pack_indices_from_iter(indices: impl ExactSizeIterator<Item = u32>, bits:
     let values_per_u64 = 64 / bits;
     let num_u64s = entry_count.div_ceil(values_per_u64);
     let mut data = vec![0u64; num_u64s];
+    // Integer division selects the destination word; the remainder selects its
+    // entry slot. Shift the index into that slot, starting at the least significant
+    // bits, then OR it into the zero-initialized word without changing earlier slots.
+    // Each index fits in `bits` bits, and the supported widths divide 64, so slots
+    // do not overlap or cross word boundaries.
     for (i, index) in indices.enumerate() {
         data[i / values_per_u64] |= u64::from(index) << ((i % values_per_u64) * bits);
     }
