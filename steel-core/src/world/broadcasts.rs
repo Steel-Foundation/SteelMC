@@ -1,6 +1,6 @@
 use super::{
-    CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
-    Entity, EntityMovementSyncPacket, NetworkConnection, Player, PlayerChunkView, World,
+    CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket, Entity,
+    EntityMovementSyncPacket, NetworkConnection, Player, PlayerChunkView, World,
 };
 use crate::player::chat::OutgoingChatMessage;
 use steel_protocol::packets::game::ChatTypeBound;

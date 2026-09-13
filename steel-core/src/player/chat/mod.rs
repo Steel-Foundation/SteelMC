@@ -31,6 +31,7 @@ use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
+use steel_utils::translations::{CHAT_DISABLED_CHAIN_BROKEN, CHAT_DISABLED_EXPIRED_PROFILE_KEY, CHAT_DISABLED_INVALID_SIGNATURE, CHAT_DISABLED_MISSING_PROFILE_KEY, CHAT_DISABLED_OUT_OF_ORDER_CHAT};
 
 /// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
@@ -254,23 +255,30 @@ impl Player {
     fn verify_chat_signature(
         &self,
         packet: &SChat,
-    ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
+    ) -> Result<(message_chain::SignedMessageLink, LastSeen), TextComponent> {
         let mut chat = self.chat().lock();
-        let session = chat.chat_session.clone().ok_or("No chat session")?;
-        let signature = packet.signature.as_ref().ok_or("No signature present")?;
+        let session = chat
+            .chat_session
+            .clone()
+            .ok_or_else(|| CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component())?;
+
+        let signature = packet
+            .signature
+            .as_ref()
+            .ok_or_else(|| CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component())?;
 
         if session
             .profile_public_key
             .data()
             .has_expired_with_grace(profile_key::EXPIRY_GRACE_PERIOD)
         {
-            return Err("Profile key has expired".to_string());
+            return Err(CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component());
         }
 
         let chain = chat.message_chain.as_mut().ok_or("No message chain")?;
 
         if chain.is_broken() {
-            return Err("Message chain is broken".to_string());
+            return Err(CHAT_DISABLED_CHAIN_BROKEN.msg().component());
         }
 
         let timestamp =
@@ -282,11 +290,11 @@ impl Player {
             .unwrap_or(Duration::from_secs(0));
 
         if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
-            return Err(format!(
+            return Err(TextComponent::plain(format!(
                 "Message expired (age: {}s, max: {}s)",
                 message_age.as_secs(),
                 MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
-            ));
+            )));
         }
 
         let last_seen_signatures = chat
@@ -306,21 +314,38 @@ impl Player {
             last_seen,
         );
 
-        let chain = chat.message_chain.as_mut().ok_or("No message chain")?;
         let link = chain
             .validate_and_advance(&body)
-            .map_err(|e| format!("Chain validation failed: {e}"))?;
+            .map_err(|err| match err {
+                message_chain::ChainError::OutOfOrderChat => {
+                    CHAT_DISABLED_OUT_OF_ORDER_CHAT.msg().component()
+                }
+                message_chain::ChainError::ChainBroken => {
+                    CHAT_DISABLED_CHAIN_BROKEN.msg().component()
+                }
+                message_chain::ChainError::ExpiredProfileKey => {
+                    CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component()
+                }
+                message_chain::ChainError::MissingProfileKey => {
+                    CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component()
+                }
+                _ => TextComponent::plain(format!("Chain validation failed: {err}")),
+            })?;
 
         let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
         let validator = session.profile_public_key.create_signature_validator();
 
-        let is_valid = SignatureValidator::validate(&validator, &updater, signature)
-            .map_err(|e| format!("Signature validation error: {e}"))?;
-
-        if is_valid {
-            Ok((link, body.last_seen.clone()))
-        } else {
-            Err("Invalid signature".to_string())
+        match SignatureValidator::validate(&validator, &updater, signature) {
+            Ok(true) => Ok((link, body.last_seen.clone())),
+            Ok(false) => {
+                chain.break_chain();
+                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
+            }
+            Err(err) => {
+                log::error!("Signature cryptographic evaluation failed: {err}");
+                chain.break_chain();
+                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
+            }
         }
     }
 
@@ -334,8 +359,9 @@ impl Player {
                 Ok((link, last_seen)) => Some(Ok((link, last_seen))),
                 Err(err) => {
                     log::warn!(
-                        "Player {} sent message with invalid signature: {err}",
-                        self.gameprofile.name
+                        "Failed to update secure chat state for {}: '{}'",
+                        self.gameprofile.name,
+                        err.color(Color::Red)
                     );
                     Some(Err(err))
                 }
