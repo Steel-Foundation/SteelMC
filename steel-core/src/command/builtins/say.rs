@@ -9,6 +9,7 @@ use super::super::{
     registration::CommandRegistration,
 };
 use log::info;
+use steel_protocol::packets::game::CDisguisedChat;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -23,6 +24,10 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             if let Some(signed_arg) = ctx.source().signing_context() {
                 info!("Signing message context : {:?}", signed_arg);
             }
+
+            /*for world in ctx.source().server().worlds.values() {
+                world.broadcast_chat(&outgoing, &chat_type);
+            }*/
 
             for player in ctx.source().server().get_players() {
                 player.send_message(&TextComponent::plain(message.clone()));

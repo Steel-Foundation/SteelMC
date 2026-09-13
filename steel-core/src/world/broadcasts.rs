@@ -2,74 +2,14 @@ use super::{
     Arc, CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
     Entity, EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
 };
+use crate::player::chat::OutgoingChatMessage;
+use steel_protocol::packets::game::ChatTypeBound;
 
 impl World {
-    /// Broadcasts a signed chat message to all players in the world.
-    ///
-    /// # Panics
-    /// Panics if `message_signature` is `None` after checking `is_some()` (should never happen).
-    pub fn broadcast_chat(
-        &self,
-        mut packet: CPlayerChat,
-        _sender: Arc<Player>,
-        sender_last_seen: LastSeen,
-        message_signature: Option<&[u8; 256]>,
-    ) {
-        log::debug!(
-            "broadcast_chat: sender_last_seen has {} signatures, message_signature present: {}",
-            sender_last_seen.len(),
-            message_signature.is_some()
-        );
-
+    /// Broadcasts a chat message (signed or not) to all players
+    pub fn broadcast_chat(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
         self.players.iter_players(|_, recipient| {
-            let messages_received = recipient.get_and_increment_messages_received();
-            packet.global_index = messages_received;
-
-            log::debug!(
-                "Broadcasting to player {} (UUID: {}), global_index={}",
-                recipient.gameprofile.name,
-                recipient.gameprofile.id,
-                messages_received
-            );
-
-            // IMPORTANT: Index previous messages BEFORE updating the cache
-            // This matches vanilla's order: pack() then push()
-            let previous_messages = {
-                let chat = recipient.chat().lock();
-                chat.signature_cache
-                    .index_previous_messages(&sender_last_seen)
-            };
-
-            log::debug!(
-                "  Indexed {} previous messages for recipient",
-                previous_messages.len()
-            );
-
-            packet.previous_messages.clone_from(&previous_messages);
-
-            // Send the packet
-            recipient.send_packet(packet.clone());
-
-            // AFTER sending, update the recipient's cache using vanilla's push algorithm
-            // This adds all lastSeen signatures + current signature to the cache
-            {
-                let mut chat = recipient.chat().lock();
-                if let Some(signature) = message_signature {
-                    chat.signature_cache
-                        .push(&sender_last_seen, Some(signature));
-
-                    log::debug!("  Added signature to recipient's cache and pending list");
-
-                    // Add to pending messages for acknowledgment tracking
-                    chat.message_validator
-                        .add_pending(Some(Box::new(*signature) as Box<[u8]>));
-                } else {
-                    // Even unsigned messages update the pending tracker
-                    chat.message_validator.add_pending(None);
-                    log::debug!("  Added unsigned message to pending list");
-                }
-            }
-
+            outgoing.send_to_player(recipient, chat_type);
             true
         });
     }

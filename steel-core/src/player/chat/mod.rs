@@ -16,8 +16,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::game::{
-    CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat, SChatAck,
-    SChatSessionUpdate,
+    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat,
+    SChatAck, SChatSessionUpdate,
 };
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
@@ -108,6 +108,92 @@ impl ChatState {
                 20,
                 command_spam_threshold_seconds.wrapping_mul(20),
             ),
+        }
+    }
+}
+
+pub enum OutgoingChatMessage {
+    /// Signed or unsigned chat message from a genuine player session
+    Player {
+        packet: CPlayerChat,
+        signature: Option<[u8; 256]>,
+        sender_last_seen: LastSeen,
+    },
+    /// Unsigned message (console, command block)
+    Disguised { content: TextComponent },
+}
+
+impl OutgoingChatMessage {
+    /// Determines whether to track as a signed player packet or disguised system packet.
+    pub fn create(
+        content: TextComponent,
+        player_chat_data: Option<(CPlayerChat, Option<[u8; 256]>, LastSeen)>,
+    ) -> Self {
+        match player_chat_data {
+            Some((packet, signature, sender_last_seen)) => Self::Player {
+                packet,
+                signature,
+                sender_last_seen,
+            },
+            None => Self::Disguised { content },
+        }
+    }
+
+    /// Dispatches the appropriate packet to the given recipient.
+    pub fn send_to_player(&self, recipient: &Player, chat_type: &ChatTypeBound) {
+        match self {
+            Self::Player {
+                packet,
+                signature,
+                sender_last_seen,
+            } => {
+                let mut packet = packet.clone();
+                let messages_received = recipient.get_and_increment_messages_received();
+                packet.global_index = messages_received;
+
+                log::debug!(
+                    "Broadcasting to player {} (UUID: {}), global_index={}",
+                    recipient.gameprofile.name,
+                    recipient.gameprofile.id,
+                    messages_received
+                );
+
+                // IMPORTANT: Index previous messages BEFORE updating the cache
+                // This matches vanilla's order: pack() then push()
+                let previous_messages = {
+                    let chat = recipient.chat().lock();
+                    chat.signature_cache
+                        .index_previous_messages(sender_last_seen)
+                };
+                packet.previous_messages.clone_from(&previous_messages);
+
+                // Send the packet
+                recipient.send_packet(packet);
+
+                // AFTER sending, update the recipient's cache using vanilla's push algorithm
+                // This adds all lastSeen signatures + current signature to the cache
+                {
+                    let mut chat = recipient.chat().lock();
+                    if let Some(signature) = signature {
+                        chat.signature_cache
+                            .push(&sender_last_seen, Some(signature));
+
+                        log::debug!("  Added signature to recipient's cache and pending list");
+
+                        // Add to pending messages for acknowledgment tracking
+                        chat.message_validator
+                            .add_pending(Some(Box::new(*signature) as Box<[u8]>));
+                    } else {
+                        // Even unsigned messages update the pending tracker
+                        chat.message_validator.add_pending(None);
+                        log::debug!("  Added unsigned message to pending list");
+                    }
+                }
+            }
+            Self::Disguised { content } => {
+                let packet = CDisguisedChat::new(content, chat_type.clone(), recipient);
+                recipient.send_packet(packet);
+            }
         }
     }
 }
@@ -289,6 +375,22 @@ impl Player {
 
         let registry_id = vanilla_chat_types::CHAT.id() as i32;
 
+        let chat_type = ChatTypeBound {
+            registry_id,
+            sender_name: TextComponent::plain(player.gameprofile.name.clone())
+                .insertion(player.gameprofile.name.clone())
+                .click_event(ClickEvent::suggest_command(format!(
+                    "/tell {} ",
+                    player.gameprofile.name
+                )))
+                .hover_event(HoverEvent::show_entity(
+                    "minecraft:player",
+                    self.uuid(),
+                    Some(player.gameprofile.name.clone()),
+                )),
+            target_name: None,
+        };
+
         let chat_packet = CPlayerChat::new(
             0,
             player.gameprofile.id,
@@ -300,25 +402,12 @@ impl Player {
             Box::new([]),
             Some(TextComponent::plain(chat_message.clone())),
             FilterType::PassThrough,
-            ChatTypeBound {
-                registry_id,
-                sender_name: TextComponent::plain(player.gameprofile.name.clone())
-                    .insertion(player.gameprofile.name.clone())
-                    .click_event(ClickEvent::suggest_command(format!(
-                        "/tell {} ",
-                        player.gameprofile.name
-                    )))
-                    .hover_event(HoverEvent::show_entity(
-                        "minecraft:player",
-                        self.uuid(),
-                        Some(player.gameprofile.name.clone()),
-                    )),
-                target_name: None,
-            },
+            chat_type.clone(),
         );
 
         steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-        if let Some(sig_box) = &signature
+
+        let (signature, last_seen) = if let Some(sig_box) = &signature
             && sig_box.len() == 256
         {
             let mut sig_array = [0u8; 256];
@@ -330,18 +419,19 @@ impl Player {
                 LastSeen::default()
             };
 
-            for world in self.server().worlds.values() {
-                world.broadcast_chat(
-                    chat_packet.clone(),
-                    Arc::clone(&player),
-                    last_seen.clone(),
-                    Some(&sig_array),
-                );
-            }
+            (Some(sig_array), last_seen)
         } else {
-            for world in self.server().worlds.values() {
-                world.broadcast_unsigned_chat(chat_packet.clone());
-            }
+            (None, LastSeen::default())
+        };
+
+        let outgoing = OutgoingChatMessage::Player {
+            packet: chat_packet,
+            signature,
+            sender_last_seen: last_seen,
+        };
+
+        for world in self.server().worlds.values() {
+            world.broadcast_chat(&outgoing, &chat_type);
         }
 
         self.detect_chat_rate_spam();
