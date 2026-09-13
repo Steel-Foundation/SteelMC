@@ -42,7 +42,6 @@ impl BlockInput {
         }
     }
 
-    #[cfg(test)]
     pub(crate) const fn state(&self) -> BlockStateId {
         self.state
     }
@@ -58,7 +57,7 @@ impl BlockInput {
         world: &Arc<World>,
         pos: BlockPos,
         flags: UpdateFlags,
-    ) -> Result<bool, simdnbt::Error> {
+    ) -> Result<bool, CommandSyntaxError> {
         let mut state = if flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE) {
             self.state
         } else {
@@ -79,7 +78,13 @@ impl BlockInput {
             && let Some(block_entity) = world.get_block_entity(pos)
         {
             let before = block_entity.save_without_metadata();
-            block_entity.load_with_owned_components(nbt)?;
+            block_entity
+                .load_with_owned_components(nbt)
+                .map_err(|error| {
+                    CommandSyntaxError::dynamic(format!(
+                        "Failed to apply block entity NBT at {pos:?}: {error}"
+                    ))
+                })?;
             let after = block_entity.save_without_metadata();
             if !nbt_compounds_equal(&before, &after) {
                 affected = true;
@@ -89,6 +94,17 @@ impl BlockInput {
         }
         Ok(affected)
     }
+}
+
+/// Block-update flags for command placement, vanilla's `2 | (strict ? 816 : 256)`.
+pub(crate) fn placement_flags(strict: bool) -> UpdateFlags {
+    let mut flags = UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
+    if strict {
+        flags |= UpdateFlags::UPDATE_KNOWN_SHAPE
+            | UpdateFlags::UPDATE_SUPPRESS_DROPS
+            | UpdateFlags::UPDATE_SKIP_ON_PLACE;
+    }
+    flags
 }
 
 /// A concrete block or block tag with optional state and block-entity constraints.

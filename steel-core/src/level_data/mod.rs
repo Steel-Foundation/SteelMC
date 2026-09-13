@@ -11,13 +11,14 @@ use std::{
 
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use steel_math::{DEGREE_90, wrap_degrees};
 use steel_registry::REGISTRY;
 use steel_registry::game_rules::GameRuleValues;
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
 
-use crate::world::clock::WorldClockManager;
+use crate::world::{MAX_SIZE, clock::WorldClockManager};
 
 /// Persistent world border data stored with Steel level data.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -52,7 +53,7 @@ impl Default for WorldBorderData {
             safe_zone: 5.0,
             warning_blocks: 5,
             warning_time: 300,
-            size: f64::from(5.999_997E7_f32),
+            size: MAX_SIZE,
             lerp_time: 0,
             lerp_target: 0.0,
         }
@@ -197,7 +198,7 @@ impl RespawnData {
         Self {
             global_pos,
             yaw: wrap_degrees(yaw),
-            pitch: pitch.clamp(-90.0, 90.0),
+            pitch: pitch.clamp(-DEGREE_90, DEGREE_90),
         }
     }
 
@@ -218,17 +219,6 @@ impl RespawnData {
     pub const fn pos(&self) -> BlockPos {
         self.global_pos.pos
     }
-}
-
-fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[derive(Serialize, Deserialize)]

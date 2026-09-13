@@ -25,7 +25,7 @@ use steel_registry::vanilla_game_rules::{ENDER_PEARLS_VANISH_ON_DEATH, SPAWN_MOB
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
@@ -57,7 +57,7 @@ pub struct EnderPearlEntity {
     /// Shared `Projectile` state (owner / left-owner / has-been-shot).
     projectile_base: ProjectileBase,
     /// Countdown until the chunk-loading ticket is refreshed (vanilla `ticketTimer`).
-    ticket_timer: SyncMutex<i32>,
+    ticket_timer: SyncMutex<i64>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `EnderPearlEntity`.
@@ -119,13 +119,27 @@ impl EnderPearlEntity {
 
         let mut timer = self.ticket_timer.lock();
         *timer -= 1;
-        if (*timer > 0 && !crossed_border) || self.owner_player().is_none() {
+        if *timer > 0 && !crossed_border {
             return;
         }
 
+        let Some(owner) = self.owner_player() else {
+            return;
+        };
+        let Some(player) = owner.as_player() else {
+            return;
+        };
+        let Some(pearl) = world.get_entity_by_uuid(&self.uuid()) else {
+            return;
+        };
+        if pearl.generation() != self.generation() {
+            return;
+        }
+
+        player.register_ender_pearl(&pearl);
         world.chunk_map.place_ender_pearl_ticket(current_chunk);
         // Vanilla `registerAndUpdateEnderPearlTicket` returns `timeout - 1`.
-        *timer = ENDER_PEARL_TICKET_TIMEOUT as i32 - 1;
+        *timer = ENDER_PEARL_TICKET_TIMEOUT - 1;
     }
 
     /// Vanilla `ThrownEnderpearl.tick` owner-death short-circuit: a pearl whose
@@ -263,6 +277,14 @@ impl Entity for EnderPearlEntity {
         self.throwable_default_gravity()
     }
 
+    fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        self.default_on_above_bubble_column(drag_down, pos);
+    }
+
+    fn on_inside_bubble_column(&self, drag_down: bool) {
+        self.default_on_inside_bubble_column(drag_down);
+    }
+
     fn sound_source(&self) -> SoundSource {
         SoundSource::Neutral
     }
@@ -371,12 +393,14 @@ impl ThrowableItemProjectile for EnderPearlEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_utils::{BlockPos, ChunkPos};
 
-    use crate::entity::{Entity, Projectile, ThrowableItemProjectile};
+    use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
 
     use super::EnderPearlEntity;
@@ -444,5 +468,78 @@ mod tests {
         assert!(!EnderPearlEntity::should_vanish_for_owner_state(
             false, false, false
         ));
+    }
+
+    #[test]
+    fn ticket_renewal_registers_with_the_resolved_owner() {
+        init_vanilla_registry();
+
+        let world = fresh_test_world("ender_pearl_ticket_owner");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
+        let owner: SharedEntity = player.clone();
+        let pearl = Arc::new(EnderPearlEntity::new(
+            &vanilla_entities::ENDER_PEARL,
+            2,
+            DVec3::new(0.5, 64.0, 0.5),
+            Arc::downgrade(&world),
+        ));
+        pearl.set_owner_entity(Some(&owner));
+        let shared_pearl: SharedEntity = pearl.clone();
+        if let Err(error) = world.try_add_entity(shared_pearl) {
+            panic!("test pearl should be added: {error}");
+        }
+
+        assert!(player.ender_pearls().is_empty());
+        pearl.update_ender_pearl_ticket(&world);
+
+        let registered = player.ender_pearls();
+        assert_eq!(registered.len(), 1);
+        assert_eq!(registered[0].generation(), pearl.generation());
+    }
+
+    #[test]
+    fn bubble_column_uses_clamped_entity_behavior() {
+        init_vanilla_registry();
+
+        let pearl = EnderPearlEntity::new(
+            &vanilla_entities::ENDER_PEARL,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
+        let entity: &dyn Entity = &pearl;
+
+        for (above_column, drag_down, initial_y, expected_y) in [
+            (true, false, 2.0, 1.8),
+            (true, true, -2.0, -0.9),
+            (false, false, 2.0, 0.7),
+            (false, true, -2.0, -0.3),
+        ] {
+            entity.set_velocity(DVec3::new(0.25, initial_y, -0.25));
+            entity.set_fall_distance(5.0);
+
+            if above_column {
+                entity.on_above_bubble_column(drag_down, BlockPos::new(0, 0, 0));
+            } else {
+                entity.on_inside_bubble_column(drag_down);
+            }
+
+            let expected = DVec3::new(0.25, expected_y, -0.25);
+            let actual = entity.velocity();
+
+            assert!(
+                (actual - expected).abs().max_element() < 1.0e-12,
+                "above_column={above_column}, drag_down={drag_down}: \
+                 expected {expected:?}, got {actual:?}"
+            );
+
+            let expected_fall_distance = if above_column { 5.0 } else { 0.0 };
+            assert!(
+                (entity.fall_distance() - expected_fall_distance).abs() < 1.0e-12,
+                "above_column={above_column}, drag_down={drag_down}: \
+                 unexpected fall distance"
+            );
+        }
     }
 }

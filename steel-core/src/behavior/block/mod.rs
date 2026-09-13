@@ -29,6 +29,7 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::blocks::vegetation::GrowingPlantHeadBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::{InventoryAccess, PlacementSource};
@@ -606,6 +607,11 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns whether this behavior implements `BedBlock`
     fn is_bed(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this behavior implements vanilla `LiquidBlock`.
+    fn is_liquid_block(&self) -> bool {
         false
     }
 
@@ -1205,6 +1211,11 @@ pub trait BlockBehavior: Send + Sync {
         None
     }
 
+    /// Returns the shared vanilla `GrowingPlantHeadBlock` capability.
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        None
+    }
+
     /// Returns the shared vanilla `Fallable` capability implemented by this block.
     fn as_fallable(&self) -> Option<&dyn Fallable> {
         None
@@ -1213,6 +1224,15 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
         None
+    }
+
+    /// Whether this block's item may be stored inside container items such as
+    /// shulker boxes and bundles.
+    ///
+    /// Vanilla gates this on the item class, but shulker boxes share
+    /// `BlockItem`, so the rule lives on the block instead.
+    fn fits_inside_container_items(&self) -> bool {
+        true
     }
 }
 

@@ -13,6 +13,7 @@ pub use tags::RegistryTags;
 use crate::game_events::GameEventRegistry;
 use crate::stat::custom::CustomStatRegistry;
 use crate::stat::{StatTypeRegistry, vanilla_stat_types};
+use crate::ticket_type::TicketTypeRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -58,9 +59,12 @@ use crate::{
     poi::PoiTypeRegistry,
     position_source::PositionSourceTypeRegistry,
     potion::PotionRegistry,
-    recipe::RecipeRegistry,
+    recipe::{
+        RecipeBookCategoryRegistry, RecipeRegistry, RecipeTypeRegistry,
+        vanilla_recipe_book_categories, vanilla_recipe_types,
+    },
     sound_event::SoundEventRegistry,
-    sound_events,
+    sound_events, steel_ticket_types,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
     template_pool,
@@ -82,8 +86,8 @@ use crate::{
     vanilla_pig_sound_variants, vanilla_pig_variants, vanilla_placed_features,
     vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
     vanilla_potions, vanilla_recipes, vanilla_structure_processors, vanilla_structure_tags,
-    vanilla_structures, vanilla_template_pools, vanilla_timeline_tags, vanilla_timelines,
-    vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
+    vanilla_structures, vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags,
+    vanilla_timelines, vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
     vanilla_villager_types, vanilla_wolf_sound_variants, vanilla_wolf_variants,
     vanilla_world_clocks, vanilla_zombie_nautilus_variants,
     villager_profession::VillagerProfessionRegistry,
@@ -226,6 +230,7 @@ pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
 pub const CUSTOM_STAT_REGISTRY: Identifier = Identifier::vanilla_static("custom_stat");
 pub const STAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("stat_type");
+pub const TICKET_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("ticket_type");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -267,6 +272,8 @@ pub struct Registry {
     pub potions: PotionRegistry,
     pub zombie_nautilus_variants: ZombieNautilusVariantRegistry,
     pub timelines: TimelineRegistry,
+    pub recipe_types: RecipeTypeRegistry,
+    pub recipe_book_categories: RecipeBookCategoryRegistry,
     pub recipes: RecipeRegistry,
     pub entity_types: EntityTypeRegistry,
     pub loot_tables: LootTableRegistry,
@@ -285,6 +292,7 @@ pub struct Registry {
     pub structure_processors: StructureProcessorListRegistry,
     pub custom_stats: CustomStatRegistry,
     pub stat_types: StatTypeRegistry,
+    pub ticket_types: TicketTypeRegistry,
 }
 
 impl Debug for Registry {
@@ -378,6 +386,8 @@ impl Registry {
         );
         vanilla_timelines::register_timelines(&mut registry.timelines);
         vanilla_timeline_tags::TimelineTag::register_timeline_tags(&mut registry.timelines);
+        vanilla_recipe_types::register(&mut registry.recipe_types);
+        vanilla_recipe_book_categories::register(&mut registry.recipe_book_categories);
         vanilla_recipes::register_recipes(&mut registry.recipes);
         vanilla_entities::register_entity_types(&mut registry.entity_types);
         vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
@@ -416,6 +426,9 @@ impl Registry {
 
         vanilla_custom_stats::register_custom_stats(&mut registry.custom_stats);
         vanilla_stat_types::register_vanilla_stat_types(&mut registry.stat_types);
+
+        vanilla_ticket_types::register_vanilla_ticket_types(&mut registry.ticket_types);
+        steel_ticket_types::register_steel_ticket_types(&mut registry.ticket_types);
 
         registry
     }
@@ -462,7 +475,9 @@ impl Registry {
         self.potions.freeze();
         self.zombie_nautilus_variants.freeze();
         self.timelines.freeze();
-        self.recipes.freeze();
+        self.recipe_types.freeze();
+        self.recipe_book_categories.freeze();
+        self.recipes.freeze(&self.recipe_types);
         self.entity_types.freeze();
         self.loot_tables.freeze();
         self.block_entity_types.freeze();
@@ -480,6 +495,7 @@ impl Registry {
         self.structure_processors.freeze();
         self.custom_stats.freeze();
         self.stat_types.freeze();
+        self.ticket_types.freeze();
     }
 
     fn validate_references(&self) {
@@ -720,6 +736,8 @@ impl Registry {
             potions: PotionRegistry::new(),
             zombie_nautilus_variants: ZombieNautilusVariantRegistry::new(),
             timelines: TimelineRegistry::new(),
+            recipe_types: RecipeTypeRegistry::new(),
+            recipe_book_categories: RecipeBookCategoryRegistry::new(),
             recipes: RecipeRegistry::new(),
             entity_types: EntityTypeRegistry::new(),
             loot_tables: LootTableRegistry::new(),
@@ -738,6 +756,7 @@ impl Registry {
             structure_processors: StructureProcessorListRegistry::new(),
             custom_stats: CustomStatRegistry::new(),
             stat_types: StatTypeRegistry::new(),
+            ticket_types: TicketTypeRegistry::new(),
         }
     }
 }

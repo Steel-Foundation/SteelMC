@@ -6,7 +6,9 @@ use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
-use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
+use crate::behavior::blocks::vegetation::growing_plant_head_block::{
+    GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
+};
 use crate::behavior::blocks::vegetation::nether_vines;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, World};
@@ -74,6 +76,10 @@ impl BlockBehavior for WeepingVinesBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(&self.base)
     }
 }
 impl Bonemealable for WeepingVinesBlock {

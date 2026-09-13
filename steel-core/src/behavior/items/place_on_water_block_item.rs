@@ -1,17 +1,10 @@
-use std::{
-    ops::{Add, Mul},
-    sync::Arc,
-};
-
 use steel_macros::item_behavior;
-use steel_registry::{blocks::BlockRef, items::item::BlockHitResult};
+use steel_registry::blocks::BlockRef;
 
-use crate::{
-    behavior::{BlockItem, InteractionResult, ItemBehavior, UseItemContext, UseOnContext},
-    entity::Entity,
-    player::Player,
-    world::{ClipBlockShape, ClipFluid, World},
-};
+use crate::behavior::item_utils::get_player_pov_hit_result;
+use crate::behavior::{BlockItem, InteractionResult, ItemBehavior, UseItemContext, UseOnContext};
+use crate::world::ClipFluid;
+
 /// blockitem behavior for lily pad and frog spawn.
 #[item_behavior]
 pub struct PlaceOnWaterBlockItem {
@@ -45,27 +38,5 @@ impl ItemBehavior for PlaceOnWaterBlockItem {
             world: context.world,
             inv: context.inv.clone(),
         })
-    }
-}
-
-fn get_player_pov_hit_result(
-    world: &Arc<World>,
-    player: &Player,
-    fluid: ClipFluid,
-) -> BlockHitResult {
-    let from = player.position().with_y(player.get_eye_y());
-    let to = from.add(
-        player
-            .calculate_view_vector(player.rotation().1, player.rotation().0)
-            .mul(player.block_interaction_range()),
-    );
-    let c_r = world.clip(from, to, ClipBlockShape::Outline, fluid);
-    BlockHitResult {
-        location: c_r.location,
-        direction: c_r.direction,
-        block_pos: c_r.block_pos,
-        miss: c_r.miss,
-        inside: c_r.inside,
-        world_border_hit: c_r.world_border_hit,
     }
 }

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
+    ContextChain, SuggestionProvider,
 };
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
@@ -131,6 +131,19 @@ where
     S: ExecutionCommandSource,
 {
     CommandNodeBuilder::argument(name, argument_type.into())
+}
+
+/// Creates an argument backed by Steel's runtime model. This argument will override its argument type's
+/// suggestions to have its own.
+pub(crate) fn argument_with_suggestions<S>(
+    name: impl Into<Box<str>>,
+    argument_type: impl Into<SteelArgumentType>,
+    custom_suggestions: impl SuggestionProvider<S, SteelArgumentType> + 'static,
+) -> CommandNodeBuilder<S, SteelCommandRuntime>
+where
+    S: ExecutionCommandSource,
+{
+    CommandNodeBuilder::argument_with_suggestions(name, argument_type.into(), custom_suggestions)
 }
 
 impl<S> CommandNodeBuilder<S, SteelCommandRuntime>

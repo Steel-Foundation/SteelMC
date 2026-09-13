@@ -290,7 +290,7 @@ impl Entity for LeashFenceKnotEntity {
             return self.interact_entity(player, hand, location);
         }
 
-        self.game_event_with_player(&BLOCK_ATTACH, player);
+        self.game_event_with_source_entity(&BLOCK_ATTACH, Some(player));
         self.play_sound(&ITEM_LEAD_TIED, 1.0, 1.0);
 
         InteractionResult::Success

@@ -79,7 +79,7 @@ impl TripWireHookBlock {
         } else if !attached && was_attached {
             (
                 &sound_events::BLOCK_TRIPWIRE_DETACH,
-                1.2 / rand::random::<f32>().mul_add(0.2, 0.9),
+                1.2 / rand::random_range(0.9f32..1.1),
                 &vanilla_game_events::BLOCK_DETACH,
             )
         } else {

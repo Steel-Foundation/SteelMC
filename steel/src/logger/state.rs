@@ -37,7 +37,7 @@ impl LogState {
         );
         let rotation_time = log_config.map_or(RotationTimeFormat::None, |l| l.rotation_time);
         let log_enabled = log_config.is_some_and(|l| l.log_file);
-        let max_history = log_config.map_or(50, |l| l.max_history);
+        let max_history = log_config.map_or(LogConfig::DEFAULT_MAX_HISTORY, |l| l.max_history);
 
         create_dir_all(&path)?;
 

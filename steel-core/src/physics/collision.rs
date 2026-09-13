@@ -124,7 +124,7 @@ pub trait CollisionWorld {
         let mut collisions = self.get_entity_collisions(aabb);
         collisions.extend(self.get_block_collisions_with_context(
             aabb,
-            BlockCollisionContext::pre_move(old_bottom_center.y, descending),
+            BlockCollisionContext::with_position(old_bottom_center.y, descending),
         ));
         collisions
     }
@@ -348,7 +348,7 @@ impl<'a> WorldCollisionProvider<'a> {
         placement: bool,
     ) -> BlockCollisionContext {
         let context = if placement {
-            BlockCollisionContext::pre_move(entity_bottom, descending)
+            BlockCollisionContext::with_position(entity_bottom, descending)
         } else {
             BlockCollisionContext::entity(entity_bottom, descending)
         };

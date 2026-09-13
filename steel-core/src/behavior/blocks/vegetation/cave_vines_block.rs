@@ -14,7 +14,9 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
-use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
+use crate::behavior::blocks::vegetation::growing_plant_head_block::{
+    GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
@@ -159,6 +161,10 @@ impl BlockBehavior for CaveVinesBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(&self.base)
     }
 }
 impl Bonemealable for CaveVinesBlock {

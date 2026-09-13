@@ -55,7 +55,8 @@ impl StructurePiecePlacer {
     /// Creates a structure mob when Steel implements its concrete type.
     ///
     /// Unsupported types are skipped instead of leaving behaviorless entities in generated
-    /// chunks.
+    /// chunks. Completed structure placement does not retry these skipped spawns.
+    /// Structure spawn finalization remains tracked in `SteelMC` issue #564.
     fn create_mob(
         entity_type: EntityTypeRef,
         position: DVec3,
@@ -80,8 +81,7 @@ impl StructurePiecePlacer {
         if persistence_required {
             mob.set_persistence_required();
         }
-        entity.set_rotation((0.0, 0.0));
-        entity.set_old_position_to_current();
+        entity.snap_to(position, 0.0, 0.0);
         Some(entity)
     }
 
@@ -402,11 +402,51 @@ mod tests {
     use steel_registry::vanilla_entities;
 
     use super::*;
-    use crate::bootstrap::init_globals_once;
+    use crate::bootstrap::init_globals;
+
+    #[test]
+    fn registered_non_mob_is_skipped() {
+        init_globals();
+
+        assert!(
+            StructurePiecePlacer::create_mob(
+                &vanilla_entities::ITEM,
+                DVec3::ZERO,
+                Weak::new(),
+                true,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn supported_structure_mob_preserves_placement_and_persistence() {
+        init_globals();
+        let position = DVec3::new(12.5, 64.0, -7.5);
+
+        for persistence_required in [false, true] {
+            let Some(entity) = StructurePiecePlacer::create_mob(
+                &vanilla_entities::PIG,
+                position,
+                Weak::new(),
+                persistence_required,
+            ) else {
+                panic!("registered pig should spawn");
+            };
+            let Some(mob) = entity.as_mob() else {
+                panic!("pig should be a mob");
+            };
+
+            assert_eq!(mob.is_persistence_required(), persistence_required);
+            assert_eq!(entity.position(), position);
+            assert_eq!(entity.base().old_position(), position);
+            assert_eq!(entity.rotation(), (0.0, 0.0));
+        }
+    }
 
     #[test]
     fn unsupported_structure_mob_is_skipped() {
-        init_globals_once();
+        init_globals();
 
         assert!(
             StructurePiecePlacer::create_mob(

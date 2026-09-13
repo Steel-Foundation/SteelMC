@@ -1,5 +1,7 @@
 use glam::DVec3;
+use simdnbt::owned::{NbtCompound, NbtTag};
 use std::sync::atomic::AtomicI32;
+use std::thread;
 use std::{
     env::temp_dir,
     io::Cursor,
@@ -9,25 +11,34 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
-use steel_protocol::packets::game::CRemovePlayerInfo;
+use steel_protocol::packets::game::{CRemovePlayerInfo, ClientCommandAction};
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::packets::play::{C_ADD_ENTITY, C_PLAYER_INFO_UPDATE, C_SYSTEM_CHAT};
-use steel_registry::{
-    vanilla_blocks, vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS,
-    vanilla_items,
+use steel_registry::packets::play::{
+    C_ADD_ENTITY, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT,
+    C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT,
 };
-use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+use steel_registry::{
+    init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
+    vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS, vanilla_items,
+};
+use steel_utils::{BlockPos, ChunkPos, UuidExt as _, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
+use tokio::{
+    fs,
+    net::TcpListener,
+    runtime::{Builder, Runtime},
+    task::JoinSet,
+    time::{sleep, timeout},
+};
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
@@ -36,8 +47,11 @@ use crate::command::execution::{
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
-use crate::entity::{DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, SharedEntity};
+use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::entity::{
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
+    SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
+};
 use crate::permission::{
     OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
     PermissionGroupsConfig, PermissionKey, PermissionMetadataSet, PermissionSet,
@@ -53,10 +67,12 @@ use crate::test_support::{
 };
 use crate::world::World;
 
+use super::DEBUG_STACK_SIZE;
 use super::known_players::{
     KnownPlayerSaveStep, UncachedPlayerTarget, classify_uncached_player_target, direct_uuid_profile,
 };
 use super::player_admission::{PendingPlayerJoin, PlayerAdmissionState};
+use super::service_keys::CONNECT_TIMEOUT as SERVICE_KEY_CONNECT_TIMEOUT;
 use super::{
     AsyncMutex, CancellationToken, ChunkSender, CommandRegistry, CommandRequest,
     CommandRequestQueue, DomainCommandStorage, DomainPlayerData, DomainPlayerState,
@@ -144,24 +160,16 @@ fn test_runtime_config() -> Arc<RuntimeConfig> {
         max_players: 1,
         view_distance: 2,
         simulation_distance: 2,
-        max_chained_neighbor_updates: 1_000_000,
         online_mode: false,
-        auth_server: None,
-        profile_server: None,
-        services_server: None,
         encryption: false,
-        allow_flight: false,
-        motd: String::new(),
         use_favicon: false,
         favicon: String::new(),
-        enforce_secure_chat: false,
-        chat_spam_threshold_seconds: 10,
-        command_spam_threshold_seconds: 10,
+        motd: String::new(),
         compression: None,
-        server_links: None,
         packet_workers: Some(1),
         chunk_generation_threads: Some(1),
         chunk_encoding_threads: Some(1),
+        ..RuntimeConfig::default()
     })
 }
 
@@ -610,7 +618,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
 }
 
 #[test]
-fn ender_pearl_restore_waits_while_its_owner_has_no_live_membership() {
+fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
     let world = fresh_test_world_in_domain("survival", "spawn");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
@@ -631,6 +639,10 @@ fn ender_pearl_restore_waits_while_its_owner_has_no_live_membership() {
         assert!(server.online_players.insert(Arc::clone(&player)));
 
         let residence_token = player.domain_residence_token();
+        let root = PersistentRootVehicle {
+            attach: [6; 16],
+            entity: test_persistent_entity(&vanilla_entities::MINECART, [6; 16]),
+        };
         let pearl = PersistentEnderPearl {
             world: world.key.to_string(),
             entity: test_persistent_entity(&vanilla_entities::ENDER_PEARL, [7; 16]),
@@ -638,9 +650,18 @@ fn ender_pearl_restore_waits_while_its_owner_has_no_live_membership() {
         assert!(player.install_pending_domain_restores(
             residence_token,
             &world,
-            None,
+            Some(root.clone()),
             vec![pearl.clone()],
         ));
+        let root_job = RootVehicleRestoreJob::new(
+            Arc::clone(&player),
+            Arc::clone(&world),
+            &root,
+            residence_token,
+        );
+        let Some(root_job) = root_job else {
+            panic!("valid root vehicle data should create a restore job");
+        };
         let job = EnderPearlRestoreJob::new(
             Arc::clone(&player),
             Arc::clone(&world),
@@ -650,20 +671,239 @@ fn ender_pearl_restore_waits_while_its_owner_has_no_live_membership() {
         let Some(job) = job else {
             panic!("valid pearl data should create a restore job");
         };
+        server.jobs.spawn(root_job);
         server.jobs.spawn(job);
 
         server.tick_jobs(1, true);
 
         assert_eq!(
             server.jobs.len(),
-            1,
-            "temporary detachment must retain the restore job"
+            2,
+            "temporary detachment must retain both restore jobs"
         );
+        assert!(player.pending_root_vehicle_for_current_world().is_some());
         assert_eq!(player.pending_ender_pearls().len(), 1);
         server.jobs.cancel_all();
 
         drop(player);
         drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the test follows both restore jobs through one replacement transaction"
+)]
+fn domain_restore_jobs_follow_same_session_player_replacement() {
+    init_vanilla_registry();
+    init_entities();
+    init_behaviors();
+    let world = fresh_test_world_in_domain("survival", "respawn_restore");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let storage_root = test_storage_root("same-session-restore-job");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let old_player =
+            test_player_with_packets(&server, Arc::clone(&world), "TestPlayer", next_entity_id()).0;
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
+        let _ = old_player.mark_joined_world();
+
+        let residence_token = old_player.domain_residence_token();
+        let root_uuid = [6; 16];
+        let pearl_uuid = [7; 16];
+        let root = PersistentRootVehicle {
+            attach: root_uuid,
+            entity: test_persistent_entity(&vanilla_entities::PIG, root_uuid),
+        };
+        let mut pearl_entity = test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid);
+        let mut pearl_nbt = NbtCompound::new();
+        pearl_nbt.insert(
+            "Owner",
+            NbtTag::IntArray(old_player.gameprofile.id.to_int_array().to_vec()),
+        );
+        pearl_nbt.write(&mut pearl_entity.nbt_data);
+        let pearl = PersistentEnderPearl {
+            world: world.key.to_string(),
+            entity: pearl_entity,
+        };
+        assert!(old_player.install_pending_domain_restores(
+            residence_token,
+            &world,
+            Some(root.clone()),
+            vec![pearl.clone()],
+        ));
+        let root_job = RootVehicleRestoreJob::new(
+            Arc::clone(&old_player),
+            Arc::clone(&world),
+            &root,
+            residence_token,
+        );
+        let Some(root_job) = root_job else {
+            panic!("valid root vehicle data should create a restore job");
+        };
+        let pearl_job = EnderPearlRestoreJob::new(
+            Arc::clone(&old_player),
+            Arc::clone(&world),
+            pearl.entity,
+            residence_token,
+        );
+        let Some(pearl_job) = pearl_job else {
+            panic!("valid pearl data should create a restore job");
+        };
+        server.jobs.spawn(root_job);
+        server.jobs.spawn(pearl_job);
+
+        let replacement = old_player.new_respawn_replacement(Arc::clone(&world), true, false, true);
+        assert!(world.detach_player_for_respawn(&old_player, true));
+        assert!(world.install_respawned_player(Arc::clone(&replacement), Some(&old_player),));
+        assert!(server.replace_online_player(&old_player, Arc::clone(&replacement)));
+        let _ = replacement.mark_joined_world();
+        assert!(old_player.session.replace_player(&old_player, &replacement));
+
+        finish_test_respawn_job(&server, &world).await;
+
+        assert!(replacement.is_domain_residence_current(residence_token));
+        assert!(
+            replacement
+                .pending_root_vehicle_for_current_world()
+                .is_none()
+        );
+        assert!(replacement.pending_ender_pearls().is_empty());
+        assert!(old_player.vehicle().is_none());
+        assert_eq!(
+            replacement.vehicle().map(|vehicle| vehicle.uuid()),
+            Some(Uuid::from_bytes(root_uuid))
+        );
+        let restored_pearls = replacement.ender_pearls();
+        assert_eq!(restored_pearls.len(), 1);
+        assert_eq!(restored_pearls[0].uuid(), Uuid::from_bytes(pearl_uuid));
+        assert!(
+            restored_pearls[0]
+                .projectile_owner()
+                .is_some_and(|owner| owner.generation() == replacement.generation())
+        );
+
+        world.remove_player_for_world_change(&replacement);
+        assert!(server.remove_online_player_sync(&replacement).is_some());
+        world.chunk_map.stop_generation_refill_loop();
+        world.chunk_map.task_tracker.close();
+        world.chunk_map.task_tracker.wait().await;
+        drop((old_player, replacement, server));
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn domain_restore_jobs_do_not_follow_a_different_player_session() {
+    let world = fresh_test_world_in_domain("survival", "foreign_restore");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let storage_root = test_storage_root("foreign-session-restore-job");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let uuid = Uuid::from_u128(1);
+        let old_player = test_player_with_uuid(&server, Arc::clone(&world), uuid);
+        let foreign_player = test_player_with_uuid(&server, Arc::clone(&world), uuid);
+        assert!(!Arc::ptr_eq(&old_player.session, &foreign_player.session));
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
+        let _ = old_player.mark_joined_world();
+
+        let residence_token = old_player.domain_residence_token();
+        let root = PersistentRootVehicle {
+            attach: [6; 16],
+            entity: test_persistent_entity(&vanilla_entities::MINECART, [6; 16]),
+        };
+        let pearl = PersistentEnderPearl {
+            world: world.key.to_string(),
+            entity: test_persistent_entity(&vanilla_entities::ENDER_PEARL, [7; 16]),
+        };
+        assert!(old_player.install_pending_domain_restores(
+            residence_token,
+            &world,
+            Some(root.clone()),
+            vec![pearl.clone()],
+        ));
+        let root_job = RootVehicleRestoreJob::new(
+            Arc::clone(&old_player),
+            Arc::clone(&world),
+            &root,
+            residence_token,
+        );
+        let Some(root_job) = root_job else {
+            panic!("valid root vehicle data should create a restore job");
+        };
+        let pearl_job = EnderPearlRestoreJob::new(
+            Arc::clone(&old_player),
+            Arc::clone(&world),
+            pearl.entity,
+            residence_token,
+        );
+        let Some(pearl_job) = pearl_job else {
+            panic!("valid pearl data should create a restore job");
+        };
+        server.jobs.spawn(root_job);
+        server.jobs.spawn(pearl_job);
+
+        assert!(
+            server
+                .online_players
+                .replace_player(&old_player, Arc::clone(&foreign_player))
+        );
+
+        server.tick_jobs(1, true);
+
+        assert!(server.jobs.is_empty());
+        assert!(
+            old_player
+                .pending_root_vehicle_for_current_world()
+                .is_some()
+        );
+        assert_eq!(old_player.pending_ender_pearls().len(), 1);
+        assert!(
+            foreign_player
+                .pending_root_vehicle_for_current_world()
+                .is_none()
+        );
+        assert!(foreign_player.pending_ender_pearls().is_empty());
+        assert!(foreign_player.vehicle().is_none());
+        assert!(foreign_player.ender_pearls().is_empty());
+
+        world.remove_player_for_world_change(&old_player);
+        assert!(server.remove_online_player_sync(&foreign_player).is_some());
+        world.chunk_map.stop_generation_refill_loop();
+        world.chunk_map.task_tracker.close();
+        world.chunk_map.task_tracker.wait().await;
+        drop((old_player, foreign_player, server));
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }
@@ -787,7 +1027,7 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
 
         let old_epoch = *player.chunk_send_epoch.lock();
         let batch = {
-            let mut sender = player.chunk_sender.lock();
+            let mut sender = player.chunk_sender().lock();
             sender.prepare_batch(&world, center, &player.chunk_send_epoch)
         };
         let Some(batch) = batch else {
@@ -807,9 +1047,9 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
         assert!(detached.is_some());
         assert_eq!(*player.chunk_send_epoch.lock(), old_epoch.wrapping_add(1));
         assert!(player.last_tracking_view.lock().is_none());
-        assert!(player.chunk_sender.lock().pending_chunks.is_empty());
+        assert!(player.chunk_sender().lock().pending_chunks.is_empty());
 
-        let committed = player.chunk_sender.lock().commit_batch(
+        let committed = player.chunk_sender().lock().commit_batch(
             &batch,
             encoded,
             &player.connection,
@@ -1227,6 +1467,10 @@ fn apply_non_default_domain_data(player: &Player) {
     source_data.experience_total = 300;
     source_data.score = 42;
     source_data.seen_credits = true;
+    source_data.ender_items = vec![PersistentSlot {
+        slot: 3,
+        item: ItemStack::new(&vanilla_items::STICK),
+    }];
     source_data.apply_to_player_without_location(player);
 }
 
@@ -1250,6 +1494,7 @@ fn assert_default_domain_data(player: &Player) {
         0.1_f32.to_bits()
     );
     assert!(target_data.inventory.is_empty());
+    assert!(target_data.ender_items.is_empty());
     assert_eq!(target_data.selected_slot, 0);
     assert_eq!(target_data.food_level, 20);
     assert_eq!(
@@ -1931,6 +2176,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&source_world));
+        let player_generation = player.generation();
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.players.insert(Arc::clone(&player)));
         let _ = player.mark_joined_world();
@@ -1975,6 +2221,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         assert!(!player.is_world_change_pending());
         assert!(!source_world.contains_player(&player));
         assert!(target_world.contains_player(&player));
+        assert_eq!(player.generation(), player_generation);
         assert_eq!(player.position(), DVec3::new(0.5, 66.0, 0.5));
         assert_eq!(player.rotation(), (37.0, 0.0));
 
@@ -2002,6 +2249,81 @@ fn test_player(server: &Arc<Server>, world: Arc<World>) -> Arc<Player> {
 
 fn test_player_with_uuid(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
     test_player_with_uuid_and_packets(server, world, uuid, "TestPlayer", 1).0
+}
+
+fn prepare_respawn_test_world(world: &Arc<World>) {
+    init_behaviors();
+    {
+        let mut level_data = world.level_data.write();
+        level_data.data_mut().set_spawn_pos(BlockPos::new(0, 64, 0));
+    }
+    assert!(world.set_game_rule(&RESPAWN_RADIUS, 0));
+    for z in -3..=3 {
+        for x in -3..=3 {
+            insert_ready_full_chunk(world, ChunkPos::new(x, z));
+        }
+    }
+    assert!(world.set_block(
+        BlockPos::new(0, 64, 0),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(world.set_block(
+        BlockPos::new(0, 65, 0),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+}
+
+async fn finish_test_respawn_job(server: &Arc<Server>, world: &Arc<World>) {
+    for tick in 1..=1_000 {
+        world.chunk_map.advance_scheduling();
+        server.tick_jobs(tick, true);
+        if server.jobs.is_empty() {
+            return;
+        }
+        sleep(Duration::from_millis(1)).await;
+    }
+    panic!("respawn job should finish");
+}
+
+fn current_respawn_replacement(
+    server: &Arc<Server>,
+    world: &Arc<World>,
+    old_player: &Arc<Player>,
+) -> Arc<Player> {
+    let Some(replacement) = server
+        .online_players
+        .get_by_uuid(&old_player.gameprofile.id)
+    else {
+        panic!("respawn replacement should own the online-player index");
+    };
+
+    assert!(!Arc::ptr_eq(&replacement, old_player));
+    assert_eq!(replacement.gameprofile.id, old_player.gameprofile.id);
+    assert_eq!(replacement.id(), old_player.id());
+    assert_ne!(replacement.generation(), old_player.generation());
+    assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
+    assert!(replacement.session.is_current_player(&replacement));
+    assert!(!replacement.session.is_current_player(old_player));
+    assert!(server.owns_online_player(&replacement));
+    assert!(!server.owns_online_player(old_player));
+    assert!(world.contains_player(&replacement));
+    assert!(!world.contains_player(old_player));
+    assert!(
+        world
+            .players
+            .get_by_uuid(&replacement.gameprofile.id)
+            .is_some_and(|current| Arc::ptr_eq(&current, &replacement))
+    );
+    assert!(
+        world
+            .get_entity_by_id(replacement.id())
+            .is_some_and(|entity| entity.generation() == replacement.generation())
+    );
+    assert!(!old_player.is_world_change_pending());
+
+    replacement
 }
 
 fn test_persistent_entity(entity_type: EntityTypeRef, uuid: [u8; 16]) -> PersistentEntity {
@@ -2097,6 +2419,22 @@ fn decode_system_chat(packet: &EncodedPacket) -> TextComponent {
     component
 }
 
+/// Parses `command` for `source` and runs it to completion on `server`.
+fn run_command(server: &Server, source: CommandSource, command: &str) {
+    let chain = {
+        let dispatcher = server.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source.clone());
+        dispatcher.context_chain(parse)
+    };
+    let chain = match chain {
+        Ok(chain) => chain,
+        Err(error) => panic!("{command} should parse: {error}"),
+    };
+    let mut execution = CommandExecutionContext::for_source(&source);
+    execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+    assert!(matches!(execution.run(), ExecutionStop::Completed));
+}
+
 fn packet_id(packet: &EncodedPacket) -> i32 {
     let mut cursor = Cursor::new(packet.encoded_data.as_slice());
     assert!(
@@ -2107,6 +2445,37 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
         Ok(packet_id) => packet_id.0,
         Err(error) => panic!("packet id should decode: {error}"),
     }
+}
+
+fn packet_payload(packet: &EncodedPacket, expected_id: i32) -> Vec<u8> {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    assert!(
+        VarInt::read(&mut cursor).is_ok(),
+        "packet length should decode"
+    );
+    let Ok(packet_id) = VarInt::read(&mut cursor) else {
+        panic!("packet id should decode");
+    };
+    assert_eq!(packet_id.0, expected_id);
+    packet.encoded_data.as_slice()[cursor.position() as usize..].to_vec()
+}
+
+fn packet_payloads(packets: &SyncMutex<Vec<EncodedPacket>>, expected_id: i32) -> Vec<Vec<u8>> {
+    packets
+        .lock()
+        .iter()
+        .filter(|packet| packet_id(packet) == expected_id)
+        .map(|packet| packet_payload(packet, expected_id))
+        .collect()
+}
+
+fn decode_text_component(payload: &[u8]) -> TextComponent {
+    let mut cursor = Cursor::new(payload);
+    let Ok(component) = TextComponent::read(&mut cursor) else {
+        panic!("title component should decode");
+    };
+    assert_eq!(cursor.position() as usize, payload.len());
+    component
 }
 
 fn decode_initial_player_info_hat(packet: &EncodedPacket) -> (Uuid, bool) {
@@ -2198,7 +2567,7 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         let spawn_position = existing.position();
         let spawn_chunk = ChunkPos::from_entity_pos(spawn_position);
         existing
-            .chunk_sender
+            .chunk_sender()
             .lock()
             .mark_chunk_sent_for_test(spawn_chunk);
         existing_packets.lock().clear();
@@ -2489,6 +2858,57 @@ fn player_disconnect_detaches_before_async_persistence() {
 }
 
 #[test]
+fn online_respawn_replacement_rejects_admission_and_stale_owners() {
+    let world = fresh_test_world("exact_online_respawn_replacement");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("exact-online-respawn-replacement");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let uuid = Uuid::from_u128(1);
+        let old = test_player_with_uuid(&server, Arc::clone(&world), uuid);
+        let replacement = old.new_respawn_replacement(Arc::clone(&world), false, false, true);
+        let stale = old.new_respawn_replacement(Arc::clone(&world), false, false, true);
+        let foreign_session = test_player_with_uuid(&server, Arc::clone(&world), uuid);
+
+        assert!(server.online_players.insert(Arc::clone(&old)));
+        assert!(!server.replace_online_player(&old, foreign_session));
+        assert!(server.reserve_player_relocation(&old));
+        assert!(!server.replace_online_player(&old, Arc::clone(&replacement)));
+        server.release_player_admission(uuid, PlayerAdmissionState::Relocating);
+
+        assert!(server.replace_online_player(&old, Arc::clone(&replacement)));
+        assert!(!server.replace_online_player(&old, stale));
+        assert!(server.rollback_respawn_online_player(&replacement, Arc::clone(&old)));
+        assert!(server.owns_online_player(&old));
+        assert!(server.replace_online_player(&old, Arc::clone(&replacement)));
+        assert!(server.remove_online_player_sync(&old).is_none());
+        let Some(current) = server.online_players.get_by_uuid(&uuid) else {
+            panic!("stale operations must leave the replacement online");
+        };
+        assert!(Arc::ptr_eq(&current, &replacement));
+        assert!(server.owns_online_player(&replacement));
+
+        assert!(server.remove_online_player_sync(&replacement).is_some());
+        drop((old, replacement, server));
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
 fn simultaneous_disconnects_batch_tab_list_removal() {
     let world = fresh_test_world("batched_disconnects");
     let runtime = Builder::new_current_thread().enable_all().build();
@@ -2633,6 +3053,165 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
         drop(pending);
         drop(player);
         drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn death_respawn_replaces_the_live_player_incarnation() {
+    let world = fresh_test_world("death_respawn_fresh_player");
+    prepare_respawn_test_world(&world);
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("death-respawn-fresh-player");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let old_player = test_player(&server, Arc::clone(&world));
+
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
+        let _ = old_player.mark_joined_world();
+
+        old_player.set_health(0.0);
+        old_player.respawn();
+        assert_eq!(server.jobs.len(), 1);
+        finish_test_respawn_job(&server, &world).await;
+
+        let replacement = current_respawn_replacement(&server, &world, &old_player);
+        assert_eq!(replacement.get_health(), replacement.get_max_health());
+        assert!(!replacement.experience.lock().dirty);
+        assert!(old_player.is_removed());
+        assert_eq!(old_player.removal_reason(), Some(RemovalReason::Killed));
+
+        world.remove_player_for_world_change(&replacement);
+        assert!(server.remove_online_player_sync(&replacement).is_some());
+        world.chunk_map.stop_generation_refill_loop();
+        world.chunk_map.task_tracker.close();
+        world.chunk_map.task_tracker.wait().await;
+        drop((old_player, replacement, server));
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn end_credits_respawn_replaces_the_detached_player_incarnation() {
+    let source_world = fresh_test_world_in_domain("survival", "the_end");
+    let target_world = fresh_test_world_in_domain("survival", "overworld");
+    prepare_respawn_test_world(&source_world);
+    prepare_respawn_test_world(&target_world);
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("end-credits-respawn-fresh-player");
+        let domain = ResolvedDomainConfig {
+            name: "survival".to_owned(),
+            default_world: target_world.key.clone(),
+            worlds: vec![source_world.key.clone(), target_world.key.clone()],
+        };
+        let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
+        let server = test_server_with_worlds(
+            domain.name.clone(),
+            slice::from_ref(&domain),
+            &worlds,
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let old_player = test_player(&server, Arc::clone(&source_world));
+
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(source_world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
+        let _ = old_player.mark_joined_world();
+
+        let pearl = Arc::new(EnderPearlEntity::new(
+            &vanilla_entities::ENDER_PEARL,
+            2,
+            DVec3::new(8.5, 100.0, 8.5),
+            Arc::downgrade(&source_world),
+        ));
+        let old_owner: SharedEntity = old_player.clone();
+        pearl.set_owner_entity(Some(&old_owner));
+        let shared_pearl: SharedEntity = pearl.clone();
+        if let Err(error) = source_world.try_add_entity(Arc::clone(&shared_pearl)) {
+            panic!("test pearl should be added: {error}");
+        }
+        old_player.register_ender_pearl(&shared_pearl);
+        let leave_game = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::LEAVE_GAME);
+        let leave_game_count = |player: &Player| {
+            player
+                .stats()
+                .iter()
+                .find_map(|(stat, count)| (*stat == leave_game).then_some(*count))
+                .unwrap_or(0)
+        };
+        let leave_game_before_credits = leave_game_count(&old_player);
+
+        old_player.show_end_credits();
+        assert!(!source_world.contains_player(&old_player));
+        assert!(server.owns_online_player(&old_player));
+        old_player.handle_client_command(ClientCommandAction::PerformRespawn);
+        assert_eq!(server.jobs.len(), 1);
+        finish_test_respawn_job(&server, &target_world).await;
+
+        let replacement = current_respawn_replacement(&server, &target_world, &old_player);
+        assert!(replacement.has_seen_credits());
+        assert!(!replacement.has_won_game());
+        assert!(!replacement.experience.lock().dirty);
+        assert_eq!(
+            leave_game_count(&replacement),
+            leave_game_before_credits,
+            "End credits are not a disconnect"
+        );
+        assert!(old_player.is_removed());
+        assert_eq!(
+            old_player.removal_reason(),
+            Some(RemovalReason::ChangedWorld)
+        );
+
+        assert!(replacement.ender_pearls().is_empty());
+        pearl.tick();
+        assert!(
+            pearl
+                .projectile_owner()
+                .is_some_and(|owner| owner.generation() == replacement.generation())
+        );
+        let registered_pearls = replacement.ender_pearls();
+        assert_eq!(registered_pearls.len(), 1);
+        assert_eq!(registered_pearls[0].generation(), pearl.generation());
+
+        target_world.remove_player_for_world_change(&replacement);
+        assert!(server.remove_online_player_sync(&replacement).is_some());
+        pearl.set_removed(RemovalReason::Discarded);
+        source_world.chunk_map.stop_generation_refill_loop();
+        target_world.chunk_map.stop_generation_refill_loop();
+        source_world.chunk_map.task_tracker.close();
+        target_world.chunk_map.task_tracker.close();
+        tokio::join!(
+            source_world.chunk_map.task_tracker.wait(),
+            target_world.chunk_map.task_tracker.wait(),
+        );
+        drop((old_player, replacement, shared_pearl, pearl, server));
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }
@@ -3088,20 +3667,11 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         attacker.set_client_loaded(true);
 
         let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
-        let command = "damage Victim 1 minecraft:player_attack by Attacker";
-        let chain = {
-            let dispatcher = server.command_dispatcher.read();
-            let parse = dispatcher.parse(command, source.clone());
-            dispatcher.context_chain(parse)
-        };
-        let chain = match chain {
-            Ok(chain) => chain,
-            Err(error) => panic!("damage command should parse: {error}"),
-        };
-
-        let mut execution = CommandExecutionContext::for_source(&source);
-        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-        assert!(matches!(execution.run(), ExecutionStop::Completed));
+        run_command(
+            &server,
+            source,
+            "damage Victim 1 minecraft:player_attack by Attacker",
+        );
 
         assert_eq!(
             target.last_hurt_by_player_uuid(),
@@ -3110,10 +3680,312 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         );
 
         drop((target, attacker));
-        drop(execution);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }
+    });
+}
+
+#[test]
+fn title_command_delivers_vanilla_packets_to_recorded_connections() {
+    let world = fresh_test_world("title-command");
+    let storage_root = test_storage_root("title-command");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let (alice, alice_packets) =
+            test_player_with_packets(&server, Arc::clone(&world), "Alice", 1);
+        let (bob, bob_packets) = test_player_with_packets(&server, Arc::clone(&world), "Bob", 2);
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&bob), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        assert!(server.online_players.insert(Arc::clone(&bob)));
+        let _ = alice.mark_joined_world();
+        let _ = bob.mark_joined_world();
+        alice.set_client_loaded(true);
+        bob.set_client_loaded(true);
+
+        let execute = |command: &str, source_entity: Option<SharedEntity>| -> (bool, i32) {
+            let result = Arc::new(SyncMutex::new(None));
+            let result_for_callback = Arc::clone(&result);
+            let callback = CommandResultCallback::new(move |success, value| {
+                *result_for_callback.lock() = Some((success, value));
+            });
+            let mut source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+            if let Some(source_entity) = source_entity {
+                source = source.with_entity(source_entity);
+            }
+            run_command(&server, source.with_callback(callback), command);
+
+            let Some(result) = *result.lock() else {
+                panic!("title command should report a result");
+            };
+            result
+        };
+
+        assert_eq!(
+            execute(
+                "title @a title {text:\"Hello \",extra:[{selector:\"@s\"}]}",
+                Some(Arc::clone(&alice) as SharedEntity),
+            ),
+            (true, 2)
+        );
+        let mut titles = packet_payloads(&alice_packets, C_SET_TITLE_TEXT)
+            .into_iter()
+            .chain(packet_payloads(&bob_packets, C_SET_TITLE_TEXT))
+            .map(|payload| decode_text_component(&payload).to_plain(&DisplayResolutor))
+            .collect::<Vec<_>>();
+        titles.sort_unstable();
+        assert_eq!(titles, ["Hello Alice", "Hello Alice"]);
+
+        assert_eq!(
+            execute("title Alice subtitle {text:\"Sub\"}", None),
+            (true, 1)
+        );
+        let subtitle = packet_payloads(&alice_packets, C_SET_SUBTITLE_TEXT);
+        assert_eq!(subtitle.len(), 1);
+        assert_eq!(
+            decode_text_component(&subtitle[0]).to_plain(&DisplayResolutor),
+            "Sub"
+        );
+
+        assert_eq!(
+            execute("title Bob actionbar {text:\"Bar\"}", None),
+            (true, 1)
+        );
+        let actionbar = packet_payloads(&bob_packets, C_SET_ACTION_BAR_TEXT);
+        assert_eq!(actionbar.len(), 1);
+        assert_eq!(
+            decode_text_component(&actionbar[0]).to_plain(&DisplayResolutor),
+            "Bar"
+        );
+
+        assert_eq!(execute("title @a times 1.5s 2t 3t", None), (true, 2));
+        let expected_times = [0, 0, 0, 30, 0, 0, 0, 2, 0, 0, 0, 3];
+        let alice_times = packet_payloads(&alice_packets, C_SET_TITLES_ANIMATION);
+        let bob_times = packet_payloads(&bob_packets, C_SET_TITLES_ANIMATION);
+        assert_eq!(alice_times, [expected_times]);
+        assert_eq!(bob_times, [expected_times]);
+
+        assert_eq!(execute("title Alice clear", None), (true, 1));
+        assert_eq!(packet_payloads(&alice_packets, C_CLEAR_TITLES), [vec![0]]);
+        assert_eq!(execute("title Bob reset", None), (true, 1));
+        assert_eq!(packet_payloads(&bob_packets, C_CLEAR_TITLES), [vec![1]]);
+
+        drop((alice, bob, server));
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
+    use crate::block_entity::init_block_entities;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::init_vanilla_registry;
+
+    init_vanilla_registry();
+    init_behaviors();
+    init_block_entities();
+    let world = fresh_test_world("setblock-command");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let storage_root = test_storage_root("setblock-command");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let run = |command: &str| {
+            let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+            run_command(&server, source, command);
+        };
+
+        let pos = BlockPos::new(8, 64, 8);
+        run("setblock 8 64 8 minecraft:stone");
+        assert_eq!(
+            world.get_block_state(pos).get_block(),
+            &vanilla_blocks::STONE,
+            "setblock must place the requested block"
+        );
+
+        run("setblock 8 64 8 minecraft:dirt keep");
+        assert_eq!(
+            world.get_block_state(pos).get_block(),
+            &vanilla_blocks::STONE,
+            "keep mode must not replace an occupied position"
+        );
+
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+/// RFC 5737 documentation space, so the connect stalls rather than being refused. A refused
+/// address returns instantly and would pass with or without the offline gate.
+const UNROUTABLE_SERVICES: &str = "http://192.0.2.1:1/publickeys";
+
+/// Builds a server through the public constructor, offline and pointed at the given
+/// services endpoint so no test depends on reaching Mojang.
+async fn offline_server(
+    runtime: &Arc<Runtime>,
+    save_root: &Path,
+    services_server: &str,
+) -> Result<Server, String> {
+    let worlds_config: WorldsConfig = toml::from_str(&format!(
+        r#"
+save_path = '{}'
+
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:flat"
+default = true
+"#,
+        save_root.display()
+    ))
+    .expect("worlds config should parse");
+
+    let mut config = RuntimeConfig::clone(&test_runtime_config());
+    config.services_server = Some(services_server.to_owned());
+
+    Server::new(
+        Arc::clone(runtime),
+        CancellationToken::new(),
+        config,
+        worlds_config,
+        PermissionGroupManager::transient(PermissionGroupsConfig::default())
+            .expect("default permission groups should resolve"),
+    )
+    .await
+}
+
+async fn shutdown_server(server: &Server, save_root: &Path) {
+    server.cancel_token.cancel();
+    let _ = fs::remove_dir_all(save_root).await;
+}
+
+fn server_test_runtime() -> Runtime {
+    Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_stack_size(DEBUG_STACK_SIZE)
+        .enable_all()
+        .build()
+        .expect("test runtime should build")
+}
+
+/// Runs a server-startup test on a thread with the stack `main` gives Steel. Debug builds
+/// overflow the default one in the generated density functions.
+fn with_server_runtime<F: FnOnce(&Arc<Runtime>) + Send + 'static>(test: F) {
+    thread::Builder::new()
+        .stack_size(DEBUG_STACK_SIZE)
+        .spawn(move || test(&Arc::new(server_test_runtime())))
+        .expect("server test thread should spawn")
+        .join()
+        .expect("server test thread panicked");
+}
+
+#[test]
+fn a_second_server_bootstraps_in_the_same_process() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let first_root = test_storage_root("bootstrap-first");
+            let second_root = test_storage_root("bootstrap-second");
+
+            let first = offline_server(runtime, &first_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("the first server should start");
+            let second = offline_server(runtime, &second_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("a second server should start in the same process");
+
+            assert_eq!(first.worlds.len(), 1);
+            assert_eq!(second.worlds.len(), 1);
+
+            shutdown_server(&first, &first_root).await;
+            shutdown_server(&second, &second_root).await;
+        });
+    });
+}
+
+#[test]
+fn offline_startup_does_not_wait_for_the_services_key_fetch() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("offline-service-keys");
+
+            let started = Instant::now();
+            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("an offline server should start");
+            let elapsed = started.elapsed();
+
+            assert!(
+                elapsed < SERVICE_KEY_CONNECT_TIMEOUT,
+                "offline startup waited {elapsed:?} on the services key fetch"
+            );
+
+            shutdown_server(&server, &save_root).await;
+        });
+    });
+}
+
+/// Skipping the wait must not turn into skipping the fetch. `handle_chat_session_update`
+/// reads the keys with no online-mode gate, as vanilla does, so an offline server that
+/// never fetched them would drop every chat session a player sends.
+#[test]
+fn offline_startup_still_requests_the_services_keys() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("offline-key-request");
+            let services_stub = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("services key stub should bind");
+            let endpoint = format!(
+                "http://{}/publickeys",
+                services_stub
+                    .local_addr()
+                    .expect("services key stub should report its address")
+            );
+
+            let server = offline_server(runtime, &save_root, &endpoint)
+                .await
+                .expect("an offline server should start");
+
+            timeout(SERVICE_KEY_CONNECT_TIMEOUT, services_stub.accept())
+                .await
+                .expect("an offline server should request the services keys")
+                .expect("services key stub should accept the request");
+
+            shutdown_server(&server, &save_root).await;
+        });
     });
 }

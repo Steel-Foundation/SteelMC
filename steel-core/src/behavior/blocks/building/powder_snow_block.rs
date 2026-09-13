@@ -358,7 +358,7 @@ mod tests {
             state,
             &empty_level(),
             pos,
-            BlockCollisionContext::pre_move(65.0, false)
+            BlockCollisionContext::with_position(65.0, false)
                 .with_can_walk_on_powder_snow(true)
                 .with_fall_distance(NUM_BLOCKS_TO_FALL_INTO_BLOCK + 0.01),
         );

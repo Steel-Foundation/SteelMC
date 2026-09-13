@@ -1,10 +1,5 @@
 //! Dispatcher-owned command node arena.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
-
 #[cfg(test)]
 use super::CommandContext;
 use super::{
@@ -13,6 +8,11 @@ use super::{
     ParseError, ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind,
     StringRange, StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
+};
+use crate::command::brigadier::node::ArgumentData;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
 };
 
 static NEXT_DISPATCHER_ID: AtomicU64 = AtomicU64::new(1);
@@ -117,9 +117,9 @@ where
                         builder.suggest(literal.as_ref());
                     }
                 }
-                CommandNodeData::Argument { argument_type, .. } => {
+                CommandNodeData::Argument(_, argument_data) => {
                     let argument_context = context.context.argument_suggestion_context();
-                    argument_type.list_suggestions(&argument_context, &mut builder);
+                    argument_data.list_suggestions(&argument_context, &mut builder);
                 }
             }
             candidate_sets.push(builder.build()?);
@@ -340,10 +340,7 @@ where
                     node.redirect.as_ref(),
                 );
             }
-            CommandNodeData::Argument {
-                name,
-                argument_type,
-            } => {
+            CommandNodeData::Argument(name, ArgumentData { argument_type, .. }) => {
                 let value = argument_type.parse(reader, context.source())?;
                 let range = StringRange::between(start, reader.cursor());
                 context.with_argument(name, range, value);

@@ -20,10 +20,13 @@ pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
 mod profile;
+mod session;
 mod sleep;
 mod sleep_state;
+mod spam_throttler;
 pub mod stats_counter;
 mod tick_state;
+mod title;
 
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
@@ -31,7 +34,7 @@ pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
 use connection::NetworkConnection as _;
 pub use connection::{ClientInformation, PlayerConnection};
 use container_counter::ContainerCounter;
-use food_data::FoodData;
+use food_data::{FoodData, food_constants};
 use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
 use health_sync::HealthSyncState;
@@ -47,9 +50,11 @@ pub use profile::{
     GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
     is_valid_player_name, offline_uuid,
 };
+pub use session::PlayerSession;
+pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::mem::replace;
+use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -88,17 +93,20 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
-use crate::behavior::{BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult};
+use crate::behavior::{
+    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, ItemBehavior,
+    apply_use_remainder,
+};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
+    EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
+    apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -117,7 +125,7 @@ use crate::player::player_inventory::{
     MenuItemDisposition, MenuRemovalStatus, PlayerInventory, PlayerInventorySyncState,
 };
 use crate::server::{
-    Server,
+    PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
 };
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
@@ -140,7 +148,12 @@ use crate::inventory::container::Container;
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
+const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
+const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::entities::objects::projectiles::FishingHookEntity;
+use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
@@ -154,6 +167,8 @@ pub struct Player {
     pub gameprofile: GameProfile,
     /// The player's connection (abstracted for testing).
     pub connection: Arc<PlayerConnection>,
+    /// Stable connection session shared by every incarnation of this player.
+    pub(crate) session: Arc<PlayerSession>,
 
     /// The world the player is in.
     pub world: ArcSwap<World>,
@@ -179,15 +194,9 @@ pub struct Player {
     pub last_chunk_pos: SyncMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
     pub last_tracking_view: SyncMutex<Option<PlayerChunkView>>,
-    /// The chunk sender for the player.
-    pub chunk_sender: SyncMutex<ChunkSender>,
-
     /// The client's settings/information (language, view distance, chat visibility, etc.).
     /// Updated when the client sends `SClientInformation` during config or play phase.
     client_information: SyncMutex<ClientInformation>,
-
-    /// Chat state: message counters, signature cache, validator, session, chain.
-    pub chat: SyncMutex<ChatState>,
 
     /// Current and previous game mode.
     game_modes: SyncMutex<PlayerGameModeState>,
@@ -197,6 +206,9 @@ pub struct Player {
 
     /// Logical inventory slots that must be resent directly to this player's client.
     inventory_sync: SyncMutex<PlayerInventorySyncState>,
+
+    /// The player's ender chest inventory.
+    pub ender_chest_inventory: SyncPlayerEnderChest,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
     last_item_in_main_hand: SyncMutex<ItemStack>,
@@ -261,6 +273,9 @@ pub struct Player {
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
 
+    /// Active fishing hook, kept weakly because the world owns live entities.
+    pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
+
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
 
@@ -283,6 +298,7 @@ struct PendingRootVehicleRestore {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct DomainResidenceToken(u64);
 
+#[derive(Clone)]
 struct PlayerResidenceState {
     token: DomainResidenceToken,
     pending_root_vehicle: Option<PendingRootVehicleRestore>,
@@ -313,6 +329,16 @@ impl Player {
     const USING_ITEM_FLAG: i8 = 1;
     const OFF_HAND_ACTIVE_ITEM_FLAG: i8 = 1 << 1;
 
+    /// Returns the chunk sender owned by this player's connection session.
+    pub(crate) fn chunk_sender(&self) -> &SyncMutex<ChunkSender> {
+        &self.session.chunk_sender
+    }
+
+    /// Returns chat protocol state owned by this connection session.
+    pub(crate) fn chat(&self) -> &SyncMutex<ChatState> {
+        &self.session.chat
+    }
+
     /// Returns the hand currently driving active item use.
     #[must_use]
     pub fn active_item_use_hand(&self) -> Option<InteractionHand> {
@@ -326,7 +352,7 @@ impl Player {
         let item = {
             let inventory = self.inventory.lock();
             let item = inventory.get_item_in_hand(hand);
-            item.copy_with_count(item.count())
+            item.clone()
         };
         let duration = ITEM_BEHAVIORS
             .get_behavior(item.item())
@@ -362,6 +388,15 @@ impl Player {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        self.release_using_item_with_behavior(behavior, active);
+    }
+
+    fn release_using_item_with_behavior(
+        &self,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
@@ -371,20 +406,27 @@ impl Player {
             self.stop_using_item();
             return;
         }
+        // Read a copy rather than clearing the slot,
+        // so any inventory-touching side effect from
+        // `release_using` never sees the hand as vacant.
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.clone()
         };
+        let stack_before_using = item.clone();
         let world = self.get_world();
-        let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
-            &mut item,
-            &world,
-            self,
-            active.remaining_ticks(),
-        );
+        let apply_side_effects =
+            behavior.release_using(&mut item, &world, self, active.remaining_ticks());
+        let use_on_release = behavior.use_on_release(&item);
+        if apply_side_effects {
+            item = apply_use_remainder(&stack_before_using, item, self);
+            self.apply_item_use_cooldown(&stack_before_using);
+        }
         self.inventory.lock().set_item_in_hand(hand, item);
-        if use_on_release {
-            self.tick_active_item_use();
+        // we re-read active here since behavior.release_using might have already ended the use
+        if use_on_release && let Some(active) = self.living_base.active_item_use() {
+            self.tick_active_item_use_with_behavior(behavior, active);
         }
         self.stop_using_item();
     }
@@ -393,6 +435,15 @@ impl Player {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        self.tick_active_item_use_with_behavior(behavior, active);
+    }
+
+    fn tick_active_item_use_with_behavior(
+        &self,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
@@ -403,11 +454,11 @@ impl Player {
             return;
         }
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.clone()
         };
         let world = self.get_world();
-        let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
 
         if self.active_item_use_hand() != Some(hand) {
@@ -418,8 +469,11 @@ impl Player {
             self.inventory.lock().set_item_in_hand(hand, item);
             return;
         };
-        if active.remaining_ticks() <= 0 {
+        let use_on_release = behavior.use_on_release(&item);
+        if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
+            let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, self);
+            self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
         }
 
@@ -458,11 +512,7 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let block_interaction_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let block_interaction_range = self.block_interaction_range();
         let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
@@ -492,9 +542,14 @@ impl Player {
     }
 
     /// Creates a new player.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "player construction requires explicit connection, session, world, and identity owners"
+    )]
     pub fn new(
         gameprofile: GameProfile,
         connection: Arc<PlayerConnection>,
+        session: Arc<PlayerSession>,
         world: Arc<World>,
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
@@ -503,6 +558,7 @@ impl Player {
     ) -> Self {
         // Create a single shared inventory container used by both the player and inventory menu
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
+        let ender_chest_inventory = Arc::new(SyncMutex::new(PlayerEnderChestContainer::new()));
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
@@ -510,12 +566,10 @@ impl Player {
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
-        let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
-        let command_spam_threshold_seconds = config.command_spam_threshold_seconds;
-
         Self {
             gameprofile,
             connection,
+            session,
 
             world: ArcSwap::new(world),
             server,
@@ -537,15 +591,11 @@ impl Player {
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
-            chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
-            chat: SyncMutex::new(ChatState::new(
-                chat_spam_threshold_seconds,
-                command_spam_threshold_seconds,
-            )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
+            ender_chest_inventory,
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
             inventory_menu: SyncMutex::new(inventory_menu(inventory)),
             open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
@@ -567,8 +617,36 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+        }
+    }
+
+    /// Returns the active fishing hook, clearing a stale reference after removal.
+    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
+        let mut fishing = self.fishing.lock();
+        let hook = fishing.as_ref().and_then(Weak::upgrade);
+        if hook.is_none() {
+            *fishing = None;
+        }
+        hook
+    }
+
+    /// Records the hook currently owned by this player.
+    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
+        *self.fishing.lock() = Some(Arc::downgrade(hook));
+    }
+
+    /// Clears `hook` if it is still this player's active fishing hook.
+    pub fn clear_fishing_hook(&self, hook: &FishingHookEntity) {
+        let mut fishing = self.fishing.lock();
+        if fishing
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|active| ptr::eq(active.as_ref(), hook))
+        {
+            *fishing = None;
         }
     }
 
@@ -582,7 +660,7 @@ impl Player {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
-        self.tick_spam_throttlers();
+        self.tick_throttlers();
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
@@ -1070,10 +1148,6 @@ impl Player {
         true
     }
 
-    pub(crate) fn clear_pending_root_vehicle(&self) {
-        self.residence.lock().pending_root_vehicle = None;
-    }
-
     pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
         let world_key = self.get_world().key.clone();
         self.residence
@@ -1185,6 +1259,17 @@ impl Player {
         let mut pearls = self.ender_pearls.lock();
         pearls.retain(|weak| weak.upgrade().is_some_and(|p| !p.is_removed()));
         pearls.iter().filter_map(Weak::upgrade).collect()
+    }
+
+    /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
+    pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
+        debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
+        let replacement_entity: SharedEntity = replacement.clone();
+        for pearl in self.ender_pearls() {
+            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
+                pearl.restore_owner_reference(&replacement_entity);
+            }
+        }
     }
 
     /// Appends vanilla-shaped player state used by command NBT predicates.
@@ -1419,6 +1504,7 @@ impl Entity for Player {
     fn stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();
+        self.base.set_boarding_cooldown(0);
         let Some(old_vehicle) = old_vehicle else {
             return;
         };
@@ -1428,6 +1514,11 @@ impl Entity for Player {
             old_vehicle.id(),
             Self::passenger_ids_for_packet(old_vehicle.as_ref()),
         ));
+    }
+
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        let (yaw, pitch) = self.rotation();
+        self.teleport(pos, yaw, pitch)
     }
 
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
@@ -1849,7 +1940,7 @@ impl LivingEntity for Player {
         let item_stack = {
             let inventory = player.inventory.lock();
             let item_stack = inventory.get_item_in_hand(hand);
-            item_stack.copy_with_count(item_stack.count())
+            item_stack.clone()
         };
         let Some(equippable) = item_stack.get_equippable() else {
             return InteractionResult::Pass;
@@ -1933,6 +2024,13 @@ impl LivingEntity for Player {
         Player::has_infinite_materials(self)
     }
 
+    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+        let leftover = self.inventory.lock().add_or_return(extra);
+        if !leftover.is_empty() {
+            let _ = self.drop_item(leftover, false, false);
+        }
+    }
+
     fn get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
@@ -1969,9 +2067,9 @@ impl LivingEntity for Player {
         self.default_jump_from_ground();
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
-            self.cause_food_exhaustion(0.2);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
         } else {
-            self.cause_food_exhaustion(0.05);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
         }
     }
 

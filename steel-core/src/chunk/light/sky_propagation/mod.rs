@@ -5,7 +5,8 @@ use super::{
     CachedLightBlock, LIGHT_BLOCKED, LightAxisDirection, LightCacheLayout, LightDirectionSet,
     LightLayer, LightLayerEdit, LightQueueFlags, LightSectionEmptinessChange,
     LightSectionReadCache, LightWorkset, MAX_LIGHT_LEVEL, PackedLightPropagationQueues,
-    PackedLightQueueEntry, get_light_block_into, get_light_opacity, light_occlusion_shape,
+    PackedLightQueueEntry, PooledPackedLightQueues, get_light_block_into, get_light_opacity,
+    light_occlusion_shape,
 };
 
 /// Error returned when a sky-light propagation context is built from mismatched caches.
@@ -87,7 +88,7 @@ pub fn propagate_sky_light_chunk(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Sky, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     let mut context = SkyLightPropagationContext::new(
@@ -120,7 +121,7 @@ pub fn force_load_sky_light_chunk(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Sky, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     let mut context = SkyLightPropagationContext::new(
@@ -148,7 +149,7 @@ pub fn check_sky_light_chunk_edges(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Sky, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     let mut context = SkyLightPropagationContext::new(
@@ -238,7 +239,7 @@ pub fn propagate_sky_light_changes_with_empty_sections(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Sky, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     let mut context = SkyLightPropagationContext::new(

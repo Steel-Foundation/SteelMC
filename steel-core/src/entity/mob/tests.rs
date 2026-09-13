@@ -4,12 +4,13 @@ use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
 use steel_registry::{
     REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
 
 use super::{
     can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
@@ -20,12 +21,15 @@ use crate::entity::ai::goal::GoalControl;
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::PigEntity;
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::leash::Leashable;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
-    Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity,
+    Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity, next_entity_id,
 };
-use crate::test_support::test_world;
+use crate::inventory::equipment::EquipmentSlot;
+use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
 use crate::world::{LevelReader, World};
 
 #[test]
@@ -86,6 +90,7 @@ struct DespawnTestMob {
     nearest_player_distance_sqr: Option<f64>,
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
+    preferred_weapon_type: SyncMutex<Option<Identifier>>,
 }
 
 impl DespawnTestMob {
@@ -132,7 +137,12 @@ impl DespawnTestMob {
             nearest_player_distance_sqr,
             remove_when_far_away,
             controlling_passenger: SyncMutex::new(None),
+            preferred_weapon_type: SyncMutex::new(None),
         }
+    }
+
+    fn set_preferred_weapon_type(&self, tag: Identifier) {
+        *self.preferred_weapon_type.lock() = Some(tag);
     }
 
     fn set_controlling_passenger(&self, passenger: SharedEntity) {
@@ -244,6 +254,10 @@ impl Mob for DespawnTestMob {
 
     fn nearest_player_distance_sqr(&self) -> Option<f64> {
         self.nearest_player_distance_sqr
+    }
+
+    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
+        self.preferred_weapon_type.lock().clone()
     }
 }
 
@@ -718,6 +732,478 @@ fn mob_home_restriction_uses_vanilla_radius() {
     mob.clear_home();
     assert!(!mob.has_home());
     assert!(mob.is_within_home_pos(BlockPos::new(1000, 64, 1000)));
+}
+
+#[test]
+fn looting_collects_nearby_item_into_main_hand() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_looting_pickup");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    mob.set_can_pick_up_loot(true);
+
+    let item = Arc::new(ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 65.0, 8.0),
+        ItemStack::new(&vanilla_items::STONE),
+        Arc::downgrade(&world),
+    ));
+    item.set_no_pickup_delay();
+
+    for entity in [
+        Arc::clone(&mob) as SharedEntity,
+        Arc::clone(&item) as SharedEntity,
+    ] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    Mob::tick_looting(mob.as_ref());
+
+    assert!(
+        item.is_removed(),
+        "the picked-up item entity should be discarded"
+    );
+    let mut held_is_stone = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        held_is_stone = item_stack.is(&vanilla_items::STONE);
+    });
+    assert!(
+        held_is_stone,
+        "the mob should now hold the picked-up item in its main hand"
+    );
+    assert!(
+        mob.is_equipment_drop_preserved(EquipmentSlot::MainHand),
+        "picked-up gear should always drop on death"
+    );
+}
+
+#[test]
+fn looting_runs_through_ai_step_even_with_no_ai() {
+    // Vanilla runs the looting loop from `Mob.aiStep`, not `serverAiStep`, so a
+    // mob with `NoAI` set still collects loot. Drive the real `mob_ai_step` path
+    // (rather than calling `tick_looting` directly) to guard against the looting
+    // regressing behind the `isEffectiveAi` gate that skips the goal ticks.
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_looting_no_ai");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    mob.set_can_pick_up_loot(true);
+    mob.set_no_ai(true);
+    assert!(
+        !mob.is_effective_ai(),
+        "a NoAI mob should not be effective-ai"
+    );
+
+    let item = Arc::new(ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 65.0, 8.0),
+        ItemStack::new(&vanilla_items::STONE),
+        Arc::downgrade(&world),
+    ));
+    item.set_no_pickup_delay();
+
+    for entity in [
+        Arc::clone(&mob) as SharedEntity,
+        Arc::clone(&item) as SharedEntity,
+    ] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    Mob::mob_ai_step(mob.as_ref());
+
+    assert!(
+        item.is_removed(),
+        "a NoAI mob should still pick up loot through aiStep"
+    );
+    let mut held_is_stone = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        held_is_stone = item_stack.is(&vanilla_items::STONE);
+    });
+    assert!(
+        held_is_stone,
+        "the NoAI mob should now hold the picked-up item in its main hand"
+    );
+}
+
+#[test]
+fn looting_skips_when_mob_cannot_pick_up_loot() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_looting_disabled");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    // A mob leaves `canPickUpLoot` off by default, so it should ignore the item.
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+
+    let item = Arc::new(ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 65.0, 8.0),
+        ItemStack::new(&vanilla_items::STONE),
+        Arc::downgrade(&world),
+    ));
+    item.set_no_pickup_delay();
+
+    for entity in [
+        Arc::clone(&mob) as SharedEntity,
+        Arc::clone(&item) as SharedEntity,
+    ] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    Mob::tick_looting(mob.as_ref());
+
+    assert!(
+        !item.is_removed(),
+        "the item should remain when the mob cannot pick up loot"
+    );
+    assert!(
+        !mob.has_item_in_slot(EquipmentSlot::MainHand),
+        "the mob should not have grabbed anything"
+    );
+}
+
+#[test]
+fn pick_up_item_leaves_an_occupied_main_hand_untouched() {
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::WOODEN_SPEAR),
+    );
+
+    let item = ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::ZERO,
+        ItemStack::new(&vanilla_items::STONE),
+        Weak::<World>::new(),
+    );
+    item.set_no_pickup_delay();
+
+    Mob::pick_up_item(&mob, test_world(), &item);
+
+    assert!(
+        !item.is_removed(),
+        "the item should be left alone when the main hand is full"
+    );
+    let mut still_holding_spear = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        still_holding_spear = item_stack.is(&vanilla_items::WOODEN_SPEAR);
+    });
+    assert!(
+        still_holding_spear,
+        "an existing main-hand item must not be replaced"
+    );
+}
+
+#[test]
+fn equip_routes_armor_to_its_armor_slot() {
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+
+    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::IRON_HELMET));
+
+    assert!(
+        equipped.is(&vanilla_items::IRON_HELMET),
+        "the helmet should be reported as equipped"
+    );
+    let mut head_is_helmet = false;
+    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+        head_is_helmet = item_stack.is(&vanilla_items::IRON_HELMET);
+    });
+    assert!(
+        head_is_helmet,
+        "an equippable helmet should route to the head slot, not the main hand"
+    );
+    assert!(
+        !mob.has_item_in_slot(EquipmentSlot::MainHand),
+        "the main hand should stay empty"
+    );
+}
+
+#[test]
+fn equip_replaces_worse_armor_and_drops_the_old_piece() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_equip_upgrade");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&mob) as SharedEntity)
+        .expect("test mob should attach to the loaded chunk");
+
+    // Wear a leather helmet and force it to always drop, so the swap is
+    // deterministic rather than riding on the drop-chance roll.
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::LEATHER_HELMET),
+    );
+    mob.set_guaranteed_drop(EquipmentSlot::Head);
+
+    let equipped =
+        Mob::equip_item_if_possible(mob.as_ref(), ItemStack::new(&vanilla_items::DIAMOND_HELMET));
+
+    assert!(
+        equipped.is(&vanilla_items::DIAMOND_HELMET),
+        "the stronger helmet should be equipped"
+    );
+    let mut head_is_diamond = false;
+    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+    });
+    assert!(head_is_diamond, "the head slot should now hold diamond");
+
+    let dropped = world
+        .get_entities_in_aabb(&mob.bounding_box().inflate_xyz(4.0, 4.0, 4.0))
+        .into_iter()
+        .filter_map(|entity| {
+            entity
+                .downcast_ref::<ItemEntity>()
+                .map(|item| item.get_item().is(&vanilla_items::LEATHER_HELMET))
+        })
+        .any(|is_leather_helmet| is_leather_helmet);
+    assert!(
+        dropped,
+        "the replaced leather helmet should have been dropped nearby"
+    );
+}
+
+#[test]
+fn equip_carries_worse_armor_in_a_free_hand() {
+    // Vanilla: armor that is not an upgrade still gets carried in an empty main
+    // hand rather than being ignored.
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+    );
+
+    let equipped =
+        Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::LEATHER_HELMET));
+
+    assert!(
+        equipped.is(&vanilla_items::LEATHER_HELMET),
+        "the worse helmet should still be taken into the free hand"
+    );
+    let mut head_is_diamond = false;
+    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+    });
+    assert!(
+        head_is_diamond,
+        "the worn diamond helmet must not be swapped out"
+    );
+    let mut hand_is_leather = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        hand_is_leather = item_stack.is(&vanilla_items::LEATHER_HELMET);
+    });
+    assert!(
+        hand_is_leather,
+        "the leather helmet should be carried in the main hand"
+    );
+}
+
+#[test]
+fn equip_rejects_worse_armor_when_the_hands_are_full() {
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+    );
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::STONE),
+    );
+
+    let equipped =
+        Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::LEATHER_HELMET));
+
+    assert!(
+        equipped.is_empty(),
+        "worse armor with no free hand should not be taken"
+    );
+    let mut head_is_diamond = false;
+    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+    });
+    assert!(head_is_diamond, "the worn diamond helmet must be untouched");
+    let mut hand_is_stone = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        hand_is_stone = item_stack.is(&vanilla_items::STONE);
+    });
+    assert!(hand_is_stone, "the occupied main hand must be untouched");
+}
+
+#[test]
+fn equip_respects_prevent_armor_change_on_worn_gear() {
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    let mut bound_helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
+    bound_helmet.set_enchantments(&[(Identifier::vanilla_static("binding_curse"), 1)], false);
+    mob.living_base()
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::Head, bound_helmet);
+    // Block the main-hand fallback so we test the armor slot in isolation.
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::STONE),
+    );
+
+    let equipped =
+        Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::NETHERITE_HELMET));
+
+    assert!(
+        equipped.is_empty(),
+        "a curse-of-binding helmet must not be swapped out even for stronger armor"
+    );
+    let mut head_is_diamond = false;
+    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+    });
+    assert!(head_is_diamond, "the bound helmet must stay on");
+}
+
+#[test]
+fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_equip_partial");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    mob.set_can_pick_up_loot(true);
+
+    // Three helmets in one stack: the head slot only holds one, so the source
+    // should shrink to two rather than being wholly consumed.
+    let item = Arc::new(ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 65.0, 8.0),
+        ItemStack::new(&vanilla_items::IRON_HELMET).copy_with_count(3),
+        Arc::downgrade(&world),
+    ));
+    item.set_no_pickup_delay();
+
+    for entity in [
+        Arc::clone(&mob) as SharedEntity,
+        Arc::clone(&item) as SharedEntity,
+    ] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    Mob::pick_up_item(mob.as_ref(), &world, &item);
+
+    assert!(
+        !item.is_removed(),
+        "the item entity should survive when only part of the stack is taken"
+    );
+    assert_eq!(
+        item.get_item().count(),
+        2,
+        "the source stack should shrink by the single equipped helmet"
+    );
+    let mut head_is_helmet = false;
+    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+        head_is_helmet = item_stack.is(&vanilla_items::IRON_HELMET) && item_stack.count() == 1;
+    });
+    assert!(
+        head_is_helmet,
+        "the mob should be wearing exactly one of the helmets"
+    );
+}
+
+#[test]
+fn equip_keeps_a_preferred_weapon_over_a_stronger_one() {
+    // A mob that favors a weapon type (like a skeleton with its bow) keeps it
+    // even when a higher-damage weapon of another type is picked up.
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.set_preferred_weapon_type(ItemTag::SKELETON_PREFERRED_WEAPONS);
+    mob.living_base()
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::MainHand, ItemStack::new(&vanilla_items::BOW));
+
+    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    assert!(
+        equipped.is_empty(),
+        "a stronger sword should not displace the preferred bow"
+    );
+    let mut hand_is_bow = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        hand_is_bow = item_stack.is(&vanilla_items::BOW);
+    });
+    assert!(hand_is_bow, "the bow must stay in the main hand");
+}
+
+#[test]
+fn equip_takes_a_preferred_weapon_over_a_held_non_preferred_one() {
+    // The mirror case: the preferred weapon type wins even when it deals less
+    // damage than what is already held.
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.set_preferred_weapon_type(ItemTag::SKELETON_PREFERRED_WEAPONS);
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::STONE_SWORD),
+    );
+
+    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::BOW));
+
+    assert!(
+        equipped.is(&vanilla_items::BOW),
+        "the preferred bow should replace the held sword"
+    );
+    let mut hand_is_bow = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        hand_is_bow = item_stack.is(&vanilla_items::BOW);
+    });
+    assert!(hand_is_bow, "the bow should now be held");
 }
 
 #[test]

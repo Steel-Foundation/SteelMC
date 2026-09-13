@@ -20,12 +20,13 @@ use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
-use steel_registry::{vanilla_damage_types, vanilla_mob_effects};
+use steel_registry::vanilla_mob_effects;
 use steel_utils::locks::{IntoShared, Shared, SyncMutex};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Identifier};
 use uuid::Uuid;
 
+use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
@@ -189,31 +190,15 @@ impl MobEffectInstance {
             self.duration
         };
 
-        if self.effect == vanilla_mob_effects::WITHER {
-            let interval = 40_i32.wrapping_shr(self.amplifier as u32);
-            return interval <= 0 || tick_count % interval == 0;
-        }
-
-        // TODO: Add the remaining vanilla effect schedules as their gameplay systems land.
-        false
+        MOB_EFFECT_BEHAVIORS
+            .get_behavior(self.effect)
+            .should_apply_effect_tick_this_tick(tick_count, self.amplifier)
     }
 
-    pub(crate) fn apply_effect_tick<E: LivingEntity + ?Sized>(
-        &self,
-        world: &World,
-        entity: &E,
-    ) -> bool {
-        if self.effect == vanilla_mob_effects::WITHER {
-            entity.hurt(
-                world,
-                &DamageSource::environment(&vanilla_damage_types::WITHER),
-                1.0,
-            );
-        }
-
-        // Vanilla effect ticks return whether the effect remains active. Wither
-        // always returns true, and unimplemented effect ticks are not scheduled.
-        true
+    pub(crate) fn apply_effect_tick(&self, world: &World, entity: &dyn LivingEntity) -> bool {
+        MOB_EFFECT_BEHAVIORS
+            .get_behavior(self.effect)
+            .apply_effect_tick(world, entity, self.amplifier)
     }
 
     #[must_use]
@@ -703,9 +688,9 @@ impl LivingEntityState {
 /// **Deviation from vanilla:** Vanilla calls this guard `LivingEntity.dead`,
 /// but it means death side effects have been processed, not health is zero.
 /// `ServerPlayer.die()` does NOT call `super.die()` and never sets that field.
-/// Steel uses this guard for players too because it reuses the same `Player`
-/// instance; health remains the source of truth for dead-or-dying checks such
-/// as client respawn requests.
+/// Steel uses this guard for players too so repeated callbacks cannot duplicate
+/// death side effects. Health remains the source of truth for dead-or-dying
+/// checks such as client respawn requests.
 pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
@@ -1658,56 +1643,6 @@ impl LivingEntityBase {
     #[inline]
     pub fn reset_death_state(&self) {
         self.state.lock().reset_death_state();
-    }
-
-    /// Resets state that vanilla gets from constructing a fresh living player for death respawn.
-    pub fn reset_for_player_respawn(&self) {
-        self.set_sprinting(false);
-
-        // Vanilla respawns with a newly constructed `LivingEntity`, whose
-        // equipment snapshots and related runtime bookkeeping start empty.
-        // Steel reuses the same `Player`, so reset those fields explicitly.
-        *self.last_equipment_items.lock() = array::from_fn(|_| ItemStack::empty());
-        *self.pending_equipment_changes.lock() = array::from_fn(|_| None);
-        {
-            let mut attributes = self.attributes.lock();
-            let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
-            for modifiers in installed_modifiers.iter_mut() {
-                for key in modifiers.drain(..) {
-                    attributes.remove_modifier(key.attribute, &key.id);
-                }
-            }
-        }
-
-        let removed_effects = {
-            let mut effects = self.active_mob_effects.lock();
-            let removed_effects = effects.keys().copied().collect::<Vec<_>>();
-            effects.clear();
-            removed_effects
-        };
-
-        for effect in removed_effects.iter().copied() {
-            self.remove_effect_attribute_modifiers(effect);
-        }
-
-        {
-            let mut dirty_effects = self.dirty_mob_effects.lock();
-            dirty_effects.clear();
-            dirty_effects.extend(
-                removed_effects
-                    .into_iter()
-                    .map(|effect| MobEffectSyncChange::Remove { effect }),
-            );
-        }
-
-        let speed = self
-            .attributes
-            .lock()
-            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
-
-        let mut state = self.state.lock();
-        *state = LivingEntityState::new(speed);
-        state.effects_dirty = true;
     }
 }
 

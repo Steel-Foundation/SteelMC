@@ -4,7 +4,7 @@ use std::f32::consts::{PI, TAU};
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
-use steel_math::trig;
+use steel_math::{DEG_TO_RAD, trig};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -22,9 +22,6 @@ use crate::block_entity::{BlockEntityTicker, entities::DaylightDetectorBlockEnti
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
-
-// `(float) (Math.PI / 180.0)` in vanilla.
-const DEGREES_TO_RADIANS: f32 = 0.017_453_292;
 
 /// Vanilla `DaylightDetectorBlock` behavior.
 #[block_behavior]
@@ -59,7 +56,7 @@ impl DaylightDetectorBlock {
             return MIN_REDSTONE_SIGNAL as u8;
         }
 
-        let mut sun_angle = sun_angle_degrees * DEGREES_TO_RADIANS;
+        let mut sun_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
         java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle)))
@@ -233,7 +230,7 @@ mod tests {
         );
         let sun_angle_degrees = world.sun_angle_degrees();
 
-        let mut adjusted_angle = sun_angle_degrees * DEGREES_TO_RADIANS;
+        let mut adjusted_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if adjusted_angle < PI { 0.0 } else { TAU };
         adjusted_angle += (offset - adjusted_angle) * 0.2;
         assert_eq!(java_round(11.0 * adjusted_angle.cos()), 7);

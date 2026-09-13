@@ -102,6 +102,8 @@ impl EntityRegistry {
 
         let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
         entity.load_additional(nbt);
+        entity.set_old_position_to_current();
+        entity.base().set_old_rotation_to_current();
         entity.sync_base_entity_data();
     }
 
@@ -171,7 +173,8 @@ impl EntityRegistry {
 
     /// Creates an entity from persisted data.
     ///
-    /// Returns `None` and logs a warning when Steel does not implement the entity type yet.
+    /// Returns `None` and logs a warning when Steel has no load factory for the type.
+    /// Skipped entities and their passenger trees are not retained when the chunk is saved.
     #[must_use]
     pub fn create_and_load(
         &self,
