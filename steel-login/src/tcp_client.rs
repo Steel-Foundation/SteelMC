@@ -10,7 +10,7 @@ use std::{
     io::Cursor,
     net::SocketAddr,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -44,7 +44,7 @@ use steel_utils::{
 use text_components::{
     TextComponent, content::Resolvable, custom::CustomData, resolving::TextResolutor,
 };
-use tokio::time::{Interval, MissedTickBehavior, interval};
+use tokio::time::timeout;
 use tokio::{
     io::{BufReader, BufWriter},
     net::{TcpStream, tcp::OwnedReadHalf},
@@ -54,7 +54,6 @@ use tokio::{
         broadcast::{self, Sender, error::RecvError},
         mpsc::{self, UnboundedReceiver, UnboundedSender, error::TryRecvError},
     },
-    time::timeout,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
@@ -63,10 +62,6 @@ use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
 const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
-/// Bound for the periodic keep-alive write itself: a healthy client accepts it in
-/// microseconds, so a stall means the socket is wedged and the connection must close
-/// instead of the read loop blocking on the write forever.
-const KEEP_ALIVE_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LoginDeadline {
@@ -213,6 +208,8 @@ enum KeepAliveDecision {
 /// Configuration keep-alive state, mirroring vanilla's `ServerCommonPacketListenerImpl`
 /// keep-alive timing and latency smoothing.
 pub(crate) struct PrePlayKeepAliveTracker {
+    /// Monotonic clock origin used for challenge ids, like vanilla `Util.getMillis()`.
+    clock_start: Instant,
     /// Last time a challenge was sent (or the phase was entered).
     pub(crate) last_sent: Instant,
     /// The challenge the client has not answered yet.
@@ -227,40 +224,27 @@ impl PrePlayKeepAliveTracker {
     /// client whose challenge went unanswered for a full interval.
     const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
-    /// Decides this tick's action, mirroring vanilla `keepConnectionAlive`.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "milliseconds since the Unix epoch fit i64 for the next 292 million years"
-    )]
     fn tick(&mut self, now: Instant) -> KeepAliveDecision {
-        if now.duration_since(self.last_sent) < Self::KEEP_ALIVE_INTERVAL {
+        if now.saturating_duration_since(self.last_sent) < Self::KEEP_ALIVE_INTERVAL {
             return KeepAliveDecision::None;
         }
         if self.pending.is_some() {
             return KeepAliveDecision::Timeout;
         }
 
-        // Vanilla uses `Util.getMillis()` as the challenge id.
-        let challenge = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("System time before UNIX EPOCH")
-            .as_millis() as i64;
+        // Vanilla uses monotonic milliseconds as the challenge id.
+        let challenge_millis = now.saturating_duration_since(self.clock_start).as_millis();
+        let challenge = i64::try_from(challenge_millis).unwrap_or(i64::MAX);
         self.pending = Some(challenge);
         self.last_sent = now;
         KeepAliveDecision::Send(challenge)
     }
 
-    /// Records a client keep-alive response. Returns `true` when it answers the pending
-    /// challenge, smoothing the latency like vanilla `handleKeepAlive`; out-of-order
-    /// answers return `false` and are a timeout kick.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "an unanswered challenge times out after one interval, so the round trip stays far below u32::MAX ms"
-    )]
     fn answer(&mut self, id: i64, now: Instant) -> bool {
         match self.pending {
             Some(pending) if pending == id => {
-                let round_trip = now.duration_since(self.last_sent).as_millis() as u32;
+                let round_trip_millis = now.saturating_duration_since(self.last_sent).as_millis();
+                let round_trip = u32::try_from(round_trip_millis).unwrap_or(u32::MAX);
                 self.latency = (self.latency * 3 + round_trip) / 4;
                 self.pending = None;
                 true
@@ -331,6 +315,7 @@ impl JavaTcpClient {
         let (outgoing_queue, recv) = mpsc::unbounded_channel();
         let (connection_updates, _) = broadcast::channel(128);
 
+        let config_keepalive_start = Instant::now();
         let client = Self {
             id,
             client_information: AsyncMutex::new(ClientInformation::default()),
@@ -347,7 +332,8 @@ impl JavaTcpClient {
             connection_session,
             challenge: AtomicCell::new([0; 4]),
             config_keepalive: SyncMutex::new(PrePlayKeepAliveTracker {
-                last_sent: Instant::now(),
+                clock_start: config_keepalive_start,
+                last_sent: config_keepalive_start,
                 pending: None,
                 latency: 0,
             }),
@@ -567,15 +553,14 @@ impl JavaTcpClient {
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
-            // One-second ticks give the vanilla 15-second send and timeout boundaries
-            // one-second resolution on a single shared timer.
-            let mut config_keepalive_tick = interval(Duration::from_secs(1));
-            config_keepalive_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            // Consume the immediate first tick so the cadence starts at one second.
-            config_keepalive_tick.tick().await;
+            let mut next_server_tick = self_clone.server.current_tick().saturating_add(1);
             loop {
                 let incoming_event = self_clone
-                    .await_incoming_event(&mut reader, &mut connection_updates_recv, &mut config_keepalive_tick)
+                    .await_incoming_event(
+                        &mut reader,
+                        &mut connection_updates_recv,
+                        &mut next_server_tick,
+                    )
                     .await;
 
                 match incoming_event {
@@ -618,7 +603,6 @@ impl JavaTcpClient {
                     LoginOperationResult::Completed(IncomingEvent::ConnectionUpdate(
                         connection_update,
                     )) => match connection_update {
-                        Ok(ConnectionUpdate::EnableEncryption(_)) => {}
                         Ok(ConnectionUpdate::Upgrade(upgrade)) => {
                             connection = Some(upgrade);
                             break;
@@ -631,12 +615,9 @@ impl JavaTcpClient {
                             }
                             cancel_token.cancel();
                         }
+                        Ok(ConnectionUpdate::EnableEncryption(_)) => {}
                     },
-                    LoginOperationResult::Completed(IncomingEvent::KeepAliveTick) => {
-                        if self_clone.protocol.load() == ConnectionProtocol::Config {
-                            self_clone.tick_config_keepalive().await;
-                        }
-                    }
+                    LoginOperationResult::Completed(IncomingEvent::KeepAliveTick) => {}
                     LoginOperationResult::Cancelled => break,
                     LoginOperationResult::TimedOut => {
                         if self_clone.login_deadline_expired() {
@@ -662,33 +643,57 @@ impl JavaTcpClient {
         });
     }
 
-    /// Awaits the next pre-play event: an inbound packet, a connection update, or a
-    /// configuration keep-alive tick, bounded by the login deadline when one is set.
+    /// Awaits the next pre-play event: an inbound packet or a connection update, bounded by the
+    /// login deadline when one is set. A pending packet read is retained while server ticks are
+    /// processed so a tick cannot discard a partially read frame.
     async fn await_incoming_event(
         &self,
         reader: &mut TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
         connection_updates_recv: &mut broadcast::Receiver<ConnectionUpdate>,
-        config_keepalive_tick: &mut Interval,
+        next_server_tick: &mut u64,
     ) -> LoginOperationResult<IncomingEvent> {
-        if self.login_deadline_expired() {
-            return LoginOperationResult::TimedOut;
-        }
-        let incoming_event = async {
-            select! {
-                packet = reader.get_raw_packet() => IncomingEvent::Packet(packet),
-                connection_update = connection_updates_recv.recv() => {
-                    IncomingEvent::ConnectionUpdate(connection_update)
-                }
-                _ = config_keepalive_tick.tick() => IncomingEvent::KeepAliveTick,
+        let packet = reader.get_raw_packet();
+        tokio::pin!(packet);
+
+        loop {
+            if self.login_deadline_expired() {
+                return LoginOperationResult::TimedOut;
             }
-        };
-        await_login_operation(
-            &self.cancel_token,
-            &self.login_deadline,
-            incoming_event,
-            self.wait_for_login_deadline(),
-        )
-        .await
+
+            let incoming_event = async {
+                select! {
+                    packet = &mut packet => IncomingEvent::Packet(packet),
+                    connection_update = connection_updates_recv.recv() => {
+                        IncomingEvent::ConnectionUpdate(connection_update)
+                    }
+                    () = async {
+                        if self.protocol.load() == ConnectionProtocol::Config {
+                            self.server.wait_until_tick(*next_server_tick).await;
+                        } else {
+                            pending::<()>().await;
+                        }
+                    } => IncomingEvent::KeepAliveTick,
+                }
+            };
+
+            match await_login_operation(
+                &self.cancel_token,
+                &self.login_deadline,
+                incoming_event,
+                self.wait_for_login_deadline(),
+            )
+            .await
+            {
+                LoginOperationResult::Completed(IncomingEvent::KeepAliveTick) => {
+                    *next_server_tick = (*next_server_tick).saturating_add(1);
+                    self.tick_config_keepalive().await;
+                }
+                LoginOperationResult::Completed(IncomingEvent::ConnectionUpdate(Ok(
+                    ConnectionUpdate::EnableEncryption(_),
+                ))) => {}
+                result => return result,
+            }
+        }
     }
 
     fn login_deadline_expired(&self) -> bool {
@@ -857,6 +862,17 @@ impl JavaTcpClient {
         }
     }
 
+    fn read_keep_alive_payload(payload: &[u8]) -> Result<SKeepAlive, PacketError> {
+        let mut data = Cursor::new(payload);
+        let packet = SKeepAlive::read_packet(&mut data)?;
+        if data.position() != payload.len() as u64 {
+            return Err(PacketError::MalformedValue(
+                "trailing bytes in keep-alive packet".to_string(),
+            ));
+        }
+        Ok(packet)
+    }
+
     /// Handles a configuration packet.
     pub(crate) async fn handle_config(
         &self,
@@ -883,7 +899,7 @@ impl JavaTcpClient {
                 Ok(ConnectionAction::none())
             }
             config::S_KEEP_ALIVE => {
-                let packet = SKeepAlive::read_packet(data)?;
+                let packet = Self::read_keep_alive_payload(packet.payload())?;
                 if self
                     .config_keepalive
                     .lock()
@@ -910,21 +926,32 @@ impl JavaTcpClient {
         }
     }
 
-    /// Ticks the configuration keep-alive, executing the tracker's vanilla-timed
-    /// decision. Both writes are bounded: a wedged socket must close the connection
-    /// instead of stalling the read loop.
+    /// Ticks the configuration keep-alive using the server's connection tick cadence.
     async fn tick_config_keepalive(&self) {
         let decision = self.config_keepalive.lock().tick(Instant::now());
         match decision {
             KeepAliveDecision::None => {}
             KeepAliveDecision::Send(challenge) => {
-                if timeout(
-                    KEEP_ALIVE_WRITE_TIMEOUT,
-                    self.send_bare_packet_now(CKeepAlive::new(challenge)),
-                )
-                .await
-                .is_err()
-                {
+                let packet = match EncodedPacket::from_bare(
+                    CKeepAlive::new(challenge),
+                    self.compression.load(),
+                    self.protocol.load(),
+                ) {
+                    Ok(packet) => packet,
+                    Err(error) => {
+                        log::warn!(
+                            "Failed to encode configuration keep-alive for client {}: {error}",
+                            self.id
+                        );
+                        self.close();
+                        return;
+                    }
+                };
+                if let Err(error) = self.send_packet(packet) {
+                    log::warn!(
+                        "Failed to queue configuration keep-alive for client {}: {error}",
+                        self.id
+                    );
                     self.close();
                 }
             }

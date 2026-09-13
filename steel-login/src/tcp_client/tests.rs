@@ -9,10 +9,11 @@ use std::{
 };
 
 use crossbeam::atomic::AtomicCell;
+use steel_protocol::utils::PacketError;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    KeepAliveDecision, LoginDeadline, LoginOperationResult, PrePlayKeepAliveTracker,
+    JavaTcpClient, KeepAliveDecision, LoginDeadline, LoginOperationResult, PrePlayKeepAliveTracker,
     await_login_operation,
 };
 
@@ -83,6 +84,7 @@ async fn configuration_handoff_disables_ready_login_deadline() {
 fn keepalive_decisions_match_vanilla_boundaries() {
     let now = Instant::now();
     let mut tracker = PrePlayKeepAliveTracker {
+        clock_start: now,
         last_sent: now,
         pending: None,
         latency: 0,
@@ -110,9 +112,26 @@ fn keepalive_decisions_match_vanilla_boundaries() {
 }
 
 #[test]
+fn config_keepalive_rejects_trailing_payload() {
+    let payload = 1234_i64.to_be_bytes();
+    assert!(matches!(
+        JavaTcpClient::read_keep_alive_payload(&payload),
+        Ok(packet) if packet.id == 1234
+    ));
+
+    let mut trailing = payload.to_vec();
+    trailing.push(0);
+    assert!(matches!(
+        JavaTcpClient::read_keep_alive_payload(&trailing),
+        Err(PacketError::MalformedValue(_))
+    ));
+}
+
+#[test]
 fn keepalive_answer_smooths_latency_and_rejects_out_of_order() {
     let now = Instant::now();
     let mut tracker = PrePlayKeepAliveTracker {
+        clock_start: now,
         last_sent: now,
         pending: Some(1234),
         latency: 100,

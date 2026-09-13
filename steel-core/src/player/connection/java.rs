@@ -813,7 +813,7 @@ impl JavaConnection {
                     .lock()
                     .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
             }
-            ImmediatePlayPacket::Unknown(id) => log::debug!("play packet id {id} is not known"),
+            ImmediatePlayPacket::Unknown(id) => log::info!("play packet id {id} is not known"),
         }
     }
 
