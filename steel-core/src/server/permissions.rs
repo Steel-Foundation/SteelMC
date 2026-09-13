@@ -1,8 +1,16 @@
+use steel_utils::Identifier;
+
+use crate::permission::PermissionMetadataValue;
+
 use super::{
     Arc, FnServerJob, OP_GROUP, PermissionGroupManager, PermissionGroupManagerError,
     PermissionGroupUpdateError, PermissionGroupsConfig, PermissionSet, PermissionSubjectState,
     Player, PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
 };
+
+/// Steel equivalent of vanilla ops.json `bypassesPlayerLimit` (not granted by `/op` alone).
+const BYPASSES_PLAYER_LIMIT: Identifier =
+    Identifier::new_static(Identifier::STEEL_NAMESPACE, "bypasses_player_limit");
 
 pub(super) fn validate_player_permission_group_update<E>(
     manager: &PermissionGroupManager,
@@ -67,6 +75,20 @@ impl Server {
             .read()
             .get(uuid)
             .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP))
+    }
+
+    /// Returns whether this UUID may join past `max_players`.
+    ///
+    /// Mirrors dedicated-server `canBypassPlayerLimit`: a separate per-subject flag
+    /// (`steel:bypasses_player_limit`), not operator membership.
+    #[must_use]
+    pub(crate) fn can_bypass_player_limit(&self, uuid: Uuid) -> bool {
+        let subject = self.player_permission_state(uuid).unwrap_or_default();
+        self.permission_groups
+            .effective_metadata(subject.groups(), subject.metadata_overrides())
+            .resolve(&BYPASSES_PLAYER_LIMIT)
+            .and_then(PermissionMetadataValue::as_bool)
+            == Some(true)
     }
 
     /// Captures effective command permissions from the latest published subject and group state.

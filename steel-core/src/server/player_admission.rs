@@ -2,7 +2,7 @@ use steel_utils::translations;
 
 use super::{
     Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
-    DomainPlayerState, EncodedPacket, Entity, FxHashMap, GlobalPlayerData, Instant, JoinSet,
+    DomainPlayerState, EncodedPacket, Entity, GlobalPlayerData, Instant, JoinSet,
     NetworkConnection, PendingWorldChangeToken, PersistentPlayerData, Player, ResetReason,
     SegQueue, Server, SyncMutex, Uuid, mpsc,
 };
@@ -42,7 +42,15 @@ pub enum PlayerJoinReserveError {
     /// UUID already has a join admission or an online session.
     #[error("player UUID is already joining or online")]
     Duplicate,
-    /// Online + in-flight `Joining` reservations already fill `max_players`.
+}
+
+/// Why admitting a prepared join into the online set failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PlayerJoinAdmitError {
+    /// UUID was not in the `Joining` admission state.
+    #[error("player UUID is not reserved for joining")]
+    NotReserved,
+    /// Online players already fill `max_players` and the UUID cannot bypass.
     #[error("server is full")]
     ServerFull,
 }
@@ -212,10 +220,6 @@ impl Server {
                 player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
                 return;
             }
-            Err(PlayerJoinReserveError::ServerFull) => {
-                player.disconnect(translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg());
-                return;
-            }
         };
 
         reservation.queue_player_join(player);
@@ -273,8 +277,15 @@ impl Server {
             }
         };
 
-        if !self.admit_reserved_player(Arc::clone(&player)) {
-            player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
+        if let Err(error) = self.admit_reserved_player(Arc::clone(&player)) {
+            match error {
+                PlayerJoinAdmitError::ServerFull => {
+                    player.disconnect(translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg());
+                }
+                PlayerJoinAdmitError::NotReserved => {
+                    player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
+                }
+            }
             return;
         }
 
@@ -320,9 +331,9 @@ impl Server {
 
     /// Reserves a UUID for join after the config-phase duplicate recheck.
     ///
-    /// Under the admissions lock: reject if the UUID is busy; otherwise count
-    /// online players + `Joining` slots against `max_players`. Ops bypass the cap
-    /// (`canBypassPlayerLimit`).
+    /// Under the admissions lock: reject if the UUID is busy. Capacity against
+    /// `max_players` is enforced later in [`Self::admit_reserved_player`], after
+    /// spawn preparation (vanilla `JoinWorldTask` / `canPlayerLogin` timing).
     pub fn try_reserve_player_join(
         self: &Arc<Self>,
         uuid: Uuid,
@@ -334,9 +345,6 @@ impl Server {
         if self.online_players.get_by_uuid(&uuid).is_some() {
             return Err(PlayerJoinReserveError::Duplicate);
         }
-        if !self.is_operator(uuid) && self.join_slots_full(&admissions) {
-            return Err(PlayerJoinReserveError::ServerFull);
-        }
         let previous = admissions.insert(uuid, PlayerAdmissionState::Joining);
         debug_assert!(previous.is_none());
         Ok(PlayerJoinReservation {
@@ -346,13 +354,9 @@ impl Server {
         })
     }
 
-    /// True when online players plus in-flight `Joining` reservations fill `max_players`.
-    fn join_slots_full(&self, admissions: &FxHashMap<Uuid, PlayerAdmissionState>) -> bool {
-        let joining = admissions
-            .values()
-            .filter(|state| **state == PlayerAdmissionState::Joining)
-            .count();
-        self.online_players.len().saturating_add(joining) >= self.config.max_players as usize
+    /// True when the online player count already fills `max_players`.
+    fn online_player_slots_full(&self) -> bool {
+        self.online_players.len() >= self.config.max_players as usize
     }
 
     #[cfg(test)]
@@ -362,26 +366,41 @@ impl Server {
         if admissions.contains_key(&uuid) || self.online_players.get_by_uuid(&uuid).is_some() {
             return false;
         }
-        if !self.is_operator(uuid) && self.join_slots_full(&admissions) {
-            return false;
-        }
         admissions
             .insert(uuid, PlayerAdmissionState::Joining)
             .is_none()
     }
 
-    fn admit_reserved_player(&self, player: Arc<Player>) -> bool {
+    /// Moves a prepared `Joining` reservation into the online set.
+    ///
+    /// Enforces `max_players` here (with [`Self::can_bypass_player_limit`]), matching
+    /// vanilla's post-`PrepareSpawnTask` login check.
+    pub(super) fn admit_reserved_player(
+        &self,
+        player: Arc<Player>,
+    ) -> Result<(), PlayerJoinAdmitError> {
         let uuid = player.gameprofile.id;
         let mut admissions = self.player_admissions.lock();
         if admissions.get(&uuid) != Some(&PlayerAdmissionState::Joining) {
-            return false;
+            return Err(PlayerJoinAdmitError::NotReserved);
+        }
+
+        if !self.can_bypass_player_limit(uuid) && self.online_player_slots_full() {
+            let _ = admissions.remove(&uuid);
+            drop(admissions);
+            self.player_admission_changed.notify_waiters();
+            return Err(PlayerJoinAdmitError::ServerFull);
         }
 
         let admitted = self.online_players.insert(player);
         let _ = admissions.remove(&uuid);
         drop(admissions);
         self.player_admission_changed.notify_waiters();
-        admitted
+        if admitted {
+            Ok(())
+        } else {
+            Err(PlayerJoinAdmitError::NotReserved)
+        }
     }
 
     fn reserve_player_disconnect(&self, player: &Arc<Player>) -> bool {

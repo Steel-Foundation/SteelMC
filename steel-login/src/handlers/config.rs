@@ -102,6 +102,9 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
+        // Client already left configuration after CFinishConfiguration; encode kicks as play.
+        self.protocol.store(ConnectionProtocol::Play);
+
         let reservation = match self.server.try_reserve_player_join(gameprofile.id) {
             Ok(reservation) => reservation,
             Err(PlayerJoinReserveError::Duplicate) => {
@@ -111,15 +114,7 @@ impl JavaTcpClient {
                 .await;
                 return ConnectionAction::none();
             }
-            Err(PlayerJoinReserveError::ServerFull) => {
-                self.kick(TextComponent::translated(
-                    translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg(),
-                ))
-                .await;
-                return ConnectionAction::none();
-            }
         };
-        self.protocol.store(ConnectionProtocol::Play);
 
         let client_info = self.client_information.lock().await.clone();
 

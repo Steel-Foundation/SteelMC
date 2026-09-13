@@ -362,7 +362,7 @@ mod player_admission;
 mod player_lifecycle;
 
 pub use player_admission::{
-    DuplicatePlayerWaitError, PlayerJoinReservation, PlayerJoinReserveError,
+    DuplicatePlayerWaitError, PlayerJoinAdmitError, PlayerJoinReservation, PlayerJoinReserveError,
 };
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
