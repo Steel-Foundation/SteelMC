@@ -15,10 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
-use steel_protocol::packets::game::{
-    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat,
-    SChatAck, SChatCommandSigned, SChatSessionUpdate,
-};
+use steel_protocol::packets::game::{CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate};
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
 use text_components::Modifier;
@@ -198,6 +195,14 @@ impl OutgoingChatMessage {
                         // Even unsigned messages update the pending tracker
                         chat.message_validator.add_pending(None);
                         log::debug!("  Added unsigned message to pending list");
+                    }
+
+                    // Check against Vanilla DOS/memory leak threshold
+                    let pending_count = chat.message_validator.tracked_count();
+                    drop(chat);
+
+                    if pending_count > 4096 {
+                        recipient.disconnect(translations::MULTIPLAYER_DISCONNECT_TOO_MANY_PENDING_CHATS.msg());
                     }
                 }
             }
@@ -477,10 +482,16 @@ impl Player {
             (None, LastSeen::default())
         };
 
-        let outgoing = OutgoingChatMessage::Player {
-            packet: chat_packet,
-            signature,
-            sender_last_seen: last_seen,
+        let outgoing = if self.server().enforces_secure_chat() {
+            OutgoingChatMessage::Player {
+                packet: chat_packet,
+                signature,
+                sender_last_seen: last_seen,
+            }
+        } else {
+            OutgoingChatMessage::Disguised {
+                content: TextComponent::plain(chat_message),
+            }
         };
 
         for world in self.server().worlds.values() {
@@ -637,11 +648,49 @@ impl Player {
         }
     }
 
+    pub fn handle_command(
+        self: &Arc<Self>,
+        packet: SChatCommand,
+        server: &Arc<Server>,
+    ) {
+        if self.server().enforces_secure_chat() {
+            if server.command_storage..requires_signed_arguments(&packet.command) {
+                // Drop unsigned command or disconnect the sender according to vanilla policy
+                self.disconnect(
+                    "Secure chat is enforced on this server, but this command requires signed arguments",
+                );
+                return;
+            }
+        }
+        // TODO: check if this has a signed argument
+        self.reset_last_action_time();
+        if server
+            .submit_command(
+                CommandSender::Player(Arc::clone(self)),
+                packet.command,
+                None,
+            )
+            .is_err()
+        {
+            self.send_message(
+                &TextComponent::const_plain("Command queue is full").color(Color::Red),
+            );
+        }
+        self.detect_command_rate_spam();
+
+    }
+
     pub fn handle_signed_command(
         self: &Arc<Self>,
         packet: SChatCommandSigned,
         server: &Arc<Server>,
     ) {
+
+        if !server.enforces_secure_chat() {
+            self.handle_command(SChatCommand{command: packet.command}, server);
+            return;
+        }
+
         // Check allow char
         for char in packet.command.chars() {
             let cp = char as u32;
