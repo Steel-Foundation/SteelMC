@@ -1,5 +1,5 @@
-use super::{CSetChunkCenter, ChunkMap, ChunkPos, ChunkTicket, Entity, Player, PlayerChunkView};
-use crate::player::chunk_sender::ChunkSender;
+use super::{CSetChunkCenter, ChunkMap, ChunkPos, Entity, Player, PlayerChunkView};
+use crate::chunk::chunk_scheduler::PlayerTicketOperation;
 
 impl ChunkMap {
     /// Updates the player's status in the chunk map.
@@ -10,23 +10,22 @@ impl ChunkMap {
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
         let world = self.world_gen_context.world();
+        let player_id = player.gameprofile.id;
         let mut last_view_guard = player.last_tracking_view.lock();
 
         if last_view_guard.as_ref() != Some(&new_view) {
-            let new_ticket = ChunkTicket::player(new_view.view_distance, world.simulation_distance);
-
             if let Some(last_view) = last_view_guard.as_ref() {
-                if last_view.center != new_view.center
-                    || last_view.view_distance != new_view.view_distance
-                {
-                    let old_ticket =
-                        ChunkTicket::player(last_view.view_distance, world.simulation_distance);
-                    self.replace_chunk_ticket(
-                        last_view.center,
-                        old_ticket,
-                        new_view.center,
-                        new_ticket,
-                    );
+                if last_view.center != new_view.center {
+                    let _ = self.scheduling.queue_player_ticket_operations([
+                        PlayerTicketOperation::Remove {
+                            pos: last_view.center,
+                            player_id,
+                        },
+                        PlayerTicketOperation::Add {
+                            pos: new_view.center,
+                            player_id,
+                        },
+                    ]);
 
                     player.send_packet(CSetChunkCenter {
                         x: new_view.center.0.x,
@@ -39,7 +38,7 @@ impl ChunkMap {
                 let mut removed_chunks = Vec::new();
 
                 // We lock here to ensure we have unique access for the duration of the diff
-                let mut chunk_sender = player.chunk_sender.lock();
+                let mut chunk_sender = player.chunk_sender().lock();
                 let connection = &*player.connection;
                 PlayerChunkView::difference(
                     last_view,
@@ -63,7 +62,11 @@ impl ChunkMap {
                     &removed_chunks,
                 );
             } else {
-                self.add_chunk_ticket(new_view.center, new_ticket);
+                self.scheduling
+                    .queue_player_ticket_operation(PlayerTicketOperation::Add {
+                        pos: new_view.center,
+                        player_id,
+                    });
 
                 // Send initial chunk cache center to client
                 player.send_packet(CSetChunkCenter {
@@ -71,7 +74,7 @@ impl ChunkMap {
                     y: new_view.center.0.y,
                 });
 
-                let mut chunk_sender = player.chunk_sender.lock();
+                let mut chunk_sender = player.chunk_sender().lock();
                 new_view.for_each(|pos| {
                     chunk_sender.mark_chunk_pending_to_send(pos);
                 });
@@ -88,7 +91,7 @@ impl ChunkMap {
         // Entity visibility also depends on exact player position, not only
         // chunk-view changes. Vanilla refreshes tracked entities for accepted
         // movement within the same chunk as well.
-        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
         world
             .entity_tracker()
             .update_player(player, &new_view, |chunk| sent_chunks.contains(&chunk));
@@ -96,23 +99,26 @@ impl ChunkMap {
 
     /// Removes a player from the chunk map.
     pub fn remove_player(&self, player: &Player) {
-        let last_view = {
-            // Keep the same view -> sender lock order as `update_player_status`.
-            // The independent chunk-sending loop holds the view through its commit,
-            // making this the linearization point for detaching chunk state.
-            let mut last_view = player.last_tracking_view.lock();
-            let mut chunk_sender = player.chunk_sender.lock();
+        // Keep the view guard through ticket submission so a concurrent tracking
+        // update cannot re-add the player before this removal is ordered.
+        // Keep the same view -> sender lock order as `update_player_status`.
+        let mut last_view = player.last_tracking_view.lock();
+        let removed_view = last_view.take();
+        {
+            let mut chunk_sender = player.chunk_sender().lock();
             let mut chunk_send_epoch = player.chunk_send_epoch.lock();
             *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
-            *chunk_sender = ChunkSender::default();
+            chunk_sender.clear_world_chunks();
             *player.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
-            last_view.take()
-        };
+        }
 
-        if let Some(last_view) = last_view {
-            let world = self.world_gen_context.world();
-            let ticket = ChunkTicket::player(last_view.view_distance, world.simulation_distance);
-            self.remove_chunk_ticket(last_view.center, ticket);
+        if let Some(removed_view) = removed_view {
+            let player_id = player.gameprofile.id;
+            self.scheduling
+                .queue_player_ticket_operation(PlayerTicketOperation::Remove {
+                    pos: removed_view.center,
+                    player_id,
+                });
         }
     }
 }

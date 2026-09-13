@@ -53,12 +53,6 @@ impl HealthSyncState {
     pub const fn invalidate(&mut self) {
         self.last_health = -1.0e8;
     }
-
-    /// Resets to respawn defaults (forces re-send on next tick).
-    pub const fn reset_for_respawn(&mut self) {
-        self.last_health = -1.0;
-        self.last_food = -1;
-    }
 }
 
 impl Player {

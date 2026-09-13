@@ -12,7 +12,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
-use steel_core::bootstrap::init_globals_once;
+use steel_core::bootstrap::init_globals;
 use steel_core::chunk::Chunk;
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
@@ -217,7 +217,7 @@ fn bench_end_biome(c: &mut Criterion) {
 // ── Noise benchmarks ────────────────────────────────────────────────────────
 
 fn bench_overworld_noise(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -231,7 +231,7 @@ fn bench_overworld_noise(c: &mut Criterion) {
 }
 
 fn bench_nether_noise(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -245,7 +245,7 @@ fn bench_nether_noise(c: &mut Criterion) {
 }
 
 fn bench_end_noise(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -261,7 +261,7 @@ fn bench_end_noise(c: &mut Criterion) {
 // ── Surface benchmarks ──────────────────────────────────────────────────────
 
 fn bench_overworld_surface(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -284,7 +284,7 @@ fn bench_overworld_surface(c: &mut Criterion) {
 }
 
 fn bench_nether_surface(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -307,7 +307,7 @@ fn bench_nether_surface(c: &mut Criterion) {
 }
 
 fn bench_end_surface(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -335,7 +335,7 @@ fn bench_end_surface(c: &mut Criterion) {
 /// when chunks load from disk. This tracks the palette-counting path over a full
 /// overworld chunk's section set.
 fn bench_overworld_recalculate_counts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -361,7 +361,7 @@ fn bench_overworld_recalculate_counts(c: &mut Criterion) {
 // ── Carvers benchmarks ──────────────────────────────────────────────────────
 
 fn bench_overworld_carvers(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -387,7 +387,7 @@ fn bench_overworld_carvers(c: &mut Criterion) {
 }
 
 fn bench_nether_carvers(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -413,7 +413,7 @@ fn bench_nether_carvers(c: &mut Criterion) {
 }
 
 fn bench_end_carvers(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -681,7 +681,7 @@ fn bench_features(c: &mut Criterion, name: &str, generator_key: Identifier) {
 }
 
 fn bench_overworld_features(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     bench_features(
         c,
         "overworld_generate_features",
@@ -1092,7 +1092,7 @@ fn build_concurrent_light_fixture(
 }
 
 fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
 
     c.bench_function("overworld_generate_features_concurrent_overlap", |b| {
@@ -1125,7 +1125,7 @@ fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
 }
 
 fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
 
     c.bench_function("overworld_full_pipeline_concurrent_overlap", |b| {
         b.iter_batched(
@@ -1150,7 +1150,7 @@ fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
 /// neighbors), so this measures the honest end-to-end cost of producing one
 /// finished chunk rather than a single isolated step.
 fn bench_overworld_full_chunk(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
 
     c.bench_function("overworld_full_chunk", |b| {
         b.iter_batched(
@@ -1174,7 +1174,7 @@ fn bench_overworld_full_chunk(c: &mut Criterion) {
 /// Same workload shape as `overworld_full_pipeline_concurrent_overlap`, but
 /// expressed as a throughput group so criterion reports elements/sec per chunk.
 fn bench_overworld_full_chunk_concurrent(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let chunk_count = concurrent_feature_centers().len() as u64;
 
     let mut group = c.benchmark_group("overworld_full_chunk_concurrent");
@@ -1197,7 +1197,7 @@ fn bench_overworld_full_chunk_concurrent(c: &mut Criterion) {
 }
 
 fn bench_overworld_light(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
 
     c.bench_function("overworld_light", |b| {
         b.iter_batched(
@@ -1216,7 +1216,7 @@ fn bench_overworld_light(c: &mut Criterion) {
 }
 
 fn bench_overworld_light_concurrent(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let chunk_count = concurrent_feature_centers().len() as u64;
 
     let mut group = c.benchmark_group("overworld_light_concurrent");
@@ -1487,7 +1487,7 @@ fn duration_ms(duration: Duration) -> f64 {
 }
 
 fn bench_nether_features(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     bench_features(
         c,
         "nether_generate_features",
@@ -1496,7 +1496,7 @@ fn bench_nether_features(c: &mut Criterion) {
 }
 
 fn bench_end_features(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     bench_features(
         c,
         "end_generate_features",
@@ -1524,7 +1524,7 @@ fn run_grid<G: ChunkGenerator>(generator: &G, chunks: &[Chunk]) {
 }
 
 fn bench_overworld_structure_starts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1539,7 +1539,7 @@ fn bench_overworld_structure_starts(c: &mut Criterion) {
 }
 
 fn bench_nether_structure_starts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1554,7 +1554,7 @@ fn bench_nether_structure_starts(c: &mut Criterion) {
 }
 
 fn bench_end_structure_starts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1669,7 +1669,7 @@ struct ReferencesFixture {
 }
 
 fn bench_overworld_structure_references(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let generator = OverworldGenerator::new(
         None,
@@ -1691,7 +1691,7 @@ fn bench_overworld_structure_references(c: &mut Criterion) {
 }
 
 fn bench_nether_structure_references(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let generator = NetherGenerator::new(
         None,
@@ -1713,7 +1713,7 @@ fn bench_nether_structure_references(c: &mut Criterion) {
 }
 
 fn bench_end_structure_references(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let generator = EndGenerator::new(
         None,
@@ -1737,7 +1737,7 @@ fn bench_end_structure_references(c: &mut Criterion) {
 // ── Full-pipeline benchmarks (biomes + noise + surface + carvers) ──────────
 
 fn bench_overworld_full(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1757,7 +1757,7 @@ fn bench_overworld_full(c: &mut Criterion) {
 }
 
 fn bench_nether_full(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1777,7 +1777,7 @@ fn bench_nether_full(c: &mut Criterion) {
 }
 
 fn bench_end_full(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());

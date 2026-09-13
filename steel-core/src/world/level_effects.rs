@@ -10,6 +10,7 @@ use super::{
 };
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use steel_registry::sound_event::SoundEventHolder;
+use steel_registry::vanilla_particle_types::{BUBBLE, SPLASH};
 
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
@@ -202,6 +203,29 @@ impl World {
         let (x, y, z) = player_block_pos.get_center();
         let radius = if override_limiter { 512.0 } else { 32.0 };
         DVec3::new(x, y, z).distance_squared(particle_pos) < radius * radius
+    }
+
+    /// Sends bubble column particles at the position
+    pub fn send_bubble_column_particles(&self, pos: BlockPos) {
+        let x = f64::from(pos.x());
+        let y = f64::from(pos.y()) + 1.0;
+        let z = f64::from(pos.z());
+        for _ in 0..2 {
+            self.send_particles(
+                ParticleData::simple(&SPLASH),
+                DVec3::new(x + rand::random::<f64>(), y, z + rand::random::<f64>()),
+                1,
+                DVec3::ZERO,
+                1.0,
+            );
+            self.send_particles(
+                ParticleData::simple(&BUBBLE),
+                DVec3::new(x + rand::random::<f64>(), y, z + rand::random::<f64>()),
+                1,
+                DVec3::new(0.0, 0.01, 0.0),
+                0.2,
+            );
+        }
     }
 
     /// Broadcasts a global level event to all players in the world.
