@@ -390,9 +390,7 @@ fn max_players_rejects_admit_when_online_slots_are_full() {
 
         // Vanilla checks capacity after spawn preparation, so reservation still succeeds.
         assert!(
-            server
-                .try_reserve_player_join(Uuid::from_u128(2))
-                .is_ok(),
+            server.try_reserve_player_join(Uuid::from_u128(2)).is_ok(),
             "full server still reserves for spawn prep"
         );
         let (joining, _, _) = java_test_player(&server, Arc::clone(&world), Uuid::from_u128(2));
@@ -431,7 +429,8 @@ fn max_players_admit_serializes_competing_joining_slots() {
             panic!("test server should initialize");
         };
 
-        let (first_player, _, _) = java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let (first_player, _, _) =
+            java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
         let (second_player, _, _) =
             java_test_player(&server, Arc::clone(&world), Uuid::from_u128(2));
         assert!(server.reserve_player_join(&first_player));
