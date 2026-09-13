@@ -515,10 +515,7 @@ fn max_players_operator_alone_does_not_bypass() {
         let mut permissions = PermissionSubjectIndex::new();
         permissions.set(
             op_uuid,
-            PermissionSubjectState::new(
-                vec![OP_GROUP.to_owned()],
-                PermissionSet::new(),
-            ),
+            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
         );
         let server =
             test_server_with_max_players(Arc::clone(&world), permissions, &storage_root, 1).await;
