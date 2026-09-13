@@ -805,11 +805,15 @@ impl JavaTcpClient {
     }
 
     /// Kick + close when `process_packet` returns `PacketError` (bad decode / unexpected id).
+    /// Matches vanilla `Connection.exceptionCaught` (`disconnect.genericReason`).
     pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
         log::warn!("Failed to get packet from client {}: {error}", self.id);
         self.kick_with_flush_timeout(
-            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg()),
-            "invalid-packet",
+            TextComponent::translated(
+                translations::DISCONNECT_GENERIC_REASON
+                    .message([format!("Internal Exception: {error}")]),
+            ),
+            "packet-decode",
         )
         .await;
     }
