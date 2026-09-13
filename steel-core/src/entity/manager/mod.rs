@@ -110,6 +110,11 @@ pub enum AddEntityError {
         /// Duplicate persistent UUID.
         uuid: Uuid,
     },
+    /// Another live entity with the same runtime network ID is already registered.
+    DuplicateId {
+        /// Duplicate entity network ID.
+        entity_id: i32,
+    },
     /// The entity is already removed and cannot be added to the live world.
     RemovedEntity {
         /// Entity network ID.
@@ -125,6 +130,9 @@ impl fmt::Display for AddEntityError {
             }
             Self::DuplicateUuid { entity_id, uuid } => {
                 write!(f, "entity {entity_id} has duplicate UUID {uuid}")
+            }
+            Self::DuplicateId { entity_id } => {
+                write!(f, "entity {entity_id} has a duplicate runtime ID")
             }
             Self::RemovedEntity { entity_id } => {
                 write!(f, "entity {entity_id} is already removed")
@@ -737,6 +745,10 @@ impl WorldEntityManager {
         let entry = Self::checked_live_entry(entity, ownership)?;
         let entity_id = entry.entity.id();
         let mut state = self.state.write();
+        assert!(
+            !Self::contains_id(&state, entity_id),
+            "entity id {entity_id} is already registered in the world entity manager"
+        );
         Self::validate_live_entries(&state, slice::from_ref(&entry), ownership, true)?;
         Self::insert_live_entry(&mut state, entry);
         Ok(Self::apply_entity_lifecycle_after_insert(
@@ -749,10 +761,6 @@ impl WorldEntityManager {
     /// Use this for persisted vehicle/passenger trees so registration either
     /// publishes the whole tree or leaves world indexes unchanged.
     ///
-    /// # Panics
-    ///
-    /// Panics if the entity tree contains the same session network ID more
-    /// than once. Duplicate runtime IDs indicate corrupted ownership.
     pub fn add_live_entity_tree(
         &self,
         entities: &[SharedEntity],
@@ -767,10 +775,9 @@ impl WorldEntityManager {
         let mut seen_uuids = FxHashSet::default();
         for entry in &entries {
             let entity_id = entry.entity.id();
-            assert!(
-                seen_ids.insert(entity_id),
-                "entity id {entity_id} appears more than once in a live entity tree"
-            );
+            if !seen_ids.insert(entity_id) {
+                return Err(AddEntityError::DuplicateId { entity_id });
+            }
             if !seen_uuids.insert(entry.uuid) {
                 return Err(AddEntityError::DuplicateUuid {
                     entity_id,
@@ -818,10 +825,9 @@ impl WorldEntityManager {
     ) -> Result<(), AddEntityError> {
         for entry in entries {
             let entity_id = entry.entity.id();
-            assert!(
-                !Self::contains_id(state, entity_id),
-                "entity id {entity_id} is already registered in the world entity manager"
-            );
+            if Self::contains_id(state, entity_id) {
+                return Err(AddEntityError::DuplicateId { entity_id });
+            }
             if Self::contains_uuid(state, entry.uuid) {
                 return Err(AddEntityError::DuplicateUuid {
                     entity_id,

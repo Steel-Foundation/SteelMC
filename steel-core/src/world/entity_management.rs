@@ -248,6 +248,52 @@ impl World {
         Ok(())
     }
 
+    /// Adds a fresh vehicle/passenger tree only after every member has passed
+    /// chunk and identity validation.
+    pub(crate) fn try_add_fresh_entity_with_passengers(
+        self: &Arc<Self>,
+        root: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        let mut entities = Vec::new();
+        let mut seen_ids = FxHashSet::default();
+        Self::collect_fresh_entity_tree(&root, &mut seen_ids, &mut entities)?;
+
+        let mut dirty_chunks = FxHashSet::default();
+        for entity in &entities {
+            let chunk = ChunkPos::from_entity_pos(entity.position());
+            if !self.has_full_chunk(chunk) {
+                return Err(AddEntityError::ChunkNotLoaded {
+                    entity_id: entity.id(),
+                    chunk,
+                });
+            }
+            dirty_chunks.insert(chunk);
+        }
+
+        self.register_loaded_entity_tree(&entities)?;
+        for chunk in dirty_chunks {
+            self.mark_chunk_dirty(chunk);
+        }
+        Ok(())
+    }
+
+    fn collect_fresh_entity_tree(
+        entity: &SharedEntity,
+        seen_ids: &mut FxHashSet<i32>,
+        entities: &mut Vec<SharedEntity>,
+    ) -> Result<(), AddEntityError> {
+        if !seen_ids.insert(entity.id()) {
+            return Err(AddEntityError::DuplicateId {
+                entity_id: entity.id(),
+            });
+        }
+        entities.push(Arc::clone(entity));
+        for passenger in entity.passengers() {
+            Self::collect_fresh_entity_tree(&passenger, seen_ids, entities)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
         // Runtime entity membership follows retained chunk holders, so it
         // starts at Empty rather than waiting for full LevelChunk readiness.

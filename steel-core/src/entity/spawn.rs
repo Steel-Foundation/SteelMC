@@ -1,15 +1,26 @@
-use std::{io::Cursor, sync::Arc};
+use std::{collections::BTreeSet, io::Cursor, sync::Arc};
 
 use glam::DVec3;
-use simdnbt::borrow::read_compound;
+use simdnbt::borrow::{BaseNbtCompound, NbtCompound as BorrowedNbtCompoundView, read_compound};
+use simdnbt::owned::NbtCompound;
 use steel_math::{DEGREE_360, wrap_degrees};
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::nbt::merge_nbt_compounds;
-use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty};
+use steel_utils::{
+    BlockPos, Downcast, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty,
+};
+use text_components::TextComponent;
+use uuid::Uuid;
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
+use crate::entity::entities::RawEntity;
+use crate::entity::entity::{read_nbt_dvec3, read_nbt_rotation, sanitize_nbt_motion};
+use crate::entity::{
+    EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest, start_riding_entities,
+};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
 use crate::world::World;
 
@@ -137,6 +148,140 @@ pub(crate) fn add_spawned_entity(
     entity: SharedEntity,
 ) -> Result<(), AddEntityError> {
     world.try_add_entity(entity)
+}
+
+/// Loads a complete entity tree from vanilla entity NBT without publishing it
+/// to the world. The caller owns the atomic insertion boundary.
+pub(crate) fn load_entity_recursive(
+    world: &Arc<World>,
+    nbt: &BaseNbtCompound<'_>,
+    reason: EntitySpawnReason,
+    post_load: impl Fn(&SharedEntity),
+) -> Option<SharedEntity> {
+    let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+    load_entity_recursive_inner(world, &nbt, reason, &post_load)
+}
+
+/// Reborrows an owned compound and loads it through the recursive entity path.
+pub(crate) fn load_entity_recursive_owned(
+    world: &Arc<World>,
+    nbt: &NbtCompound,
+    reason: EntitySpawnReason,
+    post_load: impl Fn(&SharedEntity),
+) -> Option<SharedEntity> {
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(bytes.as_slice())).ok()?;
+    load_entity_recursive(world, &borrowed, reason, post_load)
+}
+
+#[expect(
+    clippy::only_used_in_recursion,
+    reason = "The spawn reason must be propagated to every nested passenger load."
+)]
+fn load_entity_recursive_inner(
+    world: &Arc<World>,
+    nbt: &BorrowedNbtCompoundView<'_, '_>,
+    reason: EntitySpawnReason,
+    post_load: &impl Fn(&SharedEntity),
+) -> Option<SharedEntity> {
+    let entity_type = entity_type_from_nbt(nbt)?;
+    let position = read_nbt_dvec3(nbt, "Pos").unwrap_or(DVec3::ZERO);
+    if !position.is_finite() {
+        return None;
+    }
+
+    let motion = read_nbt_dvec3(nbt, "Motion").unwrap_or(DVec3::ZERO);
+    let rotation = read_nbt_rotation(nbt, "Rotation").unwrap_or((0.0, 0.0));
+    if !rotation.0.is_finite() || !rotation.1.is_finite() {
+        return None;
+    }
+
+    let uuid = nbt
+        .int_array("UUID")
+        .as_deref()
+        .and_then(Uuid::from_int_array)
+        .unwrap_or_else(Uuid::new_v4);
+    let save_data = load_entity_save_data(nbt);
+    let request = EntityLoadRequest {
+        entity_type,
+        position: super::clamp_loaded_entity_position(position),
+        uuid,
+        velocity: sanitize_nbt_motion(motion),
+        rotation,
+        fall_distance: nbt
+            .double("fall_distance")
+            .or_else(|| nbt.double("FallDistance"))
+            .unwrap_or(0.0),
+        fire_freeze: EntityFireFreezeState::from_parts(
+            read_int(nbt, "Fire").unwrap_or(0),
+            read_int(nbt, "TicksFrozen").unwrap_or(0),
+            false,
+            false,
+            nbt.byte("HasVisualFire").is_some_and(|value| value != 0),
+        ),
+        on_ground: nbt.byte("OnGround").is_some_and(|value| value != 0),
+        save_data,
+        world: Arc::downgrade(world),
+    };
+
+    let entity = ENTITIES.create_and_load_or_raw_view(request, nbt);
+    if entity.downcast_ref::<RawEntity>().is_some() {
+        return None;
+    }
+    post_load(&entity);
+
+    let Some(passengers) = nbt.list("Passengers") else {
+        return Some(entity);
+    };
+    let passengers = passengers.compounds()?;
+    for passenger_nbt in passengers {
+        let passenger = load_entity_recursive_inner(world, &passenger_nbt, reason, post_load)?;
+        if !start_riding_entities(&passenger, &entity) {
+            return None;
+        }
+    }
+
+    Some(entity)
+}
+
+fn entity_type_from_nbt(nbt: &BorrowedNbtCompoundView<'_, '_>) -> Option<EntityTypeRef> {
+    let id = nbt.string("id")?.to_str().parse::<Identifier>().ok()?;
+    REGISTRY.entity_types.by_key(&id)
+}
+
+fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSaveData {
+    let mut save_data = EntityBaseSaveData::new();
+    save_data.air_supply = read_int(nbt, "Air").unwrap_or(save_data.air_supply);
+    save_data.portal_cooldown = read_int(nbt, "PortalCooldown").unwrap_or(0);
+    save_data.no_gravity = nbt.byte("NoGravity").is_some_and(|value| value != 0);
+    save_data.invulnerable = nbt.byte("Invulnerable").is_some_and(|value| value != 0);
+    save_data.custom_name = nbt
+        .get("CustomName")
+        .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()));
+    save_data.custom_name_visible = nbt
+        .byte("CustomNameVisible")
+        .is_some_and(|value| value != 0);
+    save_data.silent = nbt.byte("Silent").is_some_and(|value| value != 0);
+    save_data.glowing = nbt.byte("Glowing").is_some_and(|value| value != 0);
+    if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
+        save_data.tags = tags
+            .iter()
+            .take(super::MAX_ENTITY_TAGS)
+            .map(|tag| tag.to_str().into_owned())
+            .collect::<BTreeSet<_>>();
+    }
+    save_data.custom_data = nbt
+        .compound("data")
+        .map(|data| data.to_owned())
+        .unwrap_or_default();
+    save_data
+}
+
+fn read_int(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<i32> {
+    nbt.int(key)
+        .or_else(|| nbt.short(key).map(i32::from))
+        .or_else(|| nbt.byte(key).map(i32::from))
 }
 
 /// Applies the implicit entity data carried by an item stack.

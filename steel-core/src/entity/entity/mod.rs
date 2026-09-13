@@ -12,23 +12,26 @@ const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
-fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
+pub(crate) fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;
-    let &[x, y, z, ..] = values.as_slice() else {
+    let &[x, y, z] = values.as_slice() else {
         return None;
     };
     Some(DVec3::new(x, y, z))
 }
 
-fn read_nbt_rotation(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<(f32, f32)> {
+pub(crate) fn read_nbt_rotation(
+    nbt: &BorrowedNbtCompoundView<'_, '_>,
+    key: &str,
+) -> Option<(f32, f32)> {
     let values = nbt.list(key)?.floats()?;
-    let &[yaw, pitch, ..] = values.as_slice() else {
+    let &[yaw, pitch] = values.as_slice() else {
         return None;
     };
     Some((yaw, pitch))
 }
 
-fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
+pub(crate) fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
     let sanitize = |value: f64| {
         if value.abs() > MAX_ENTITY_MOTION_COMPONENT {
             0.0

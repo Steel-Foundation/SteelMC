@@ -92,17 +92,14 @@ pub struct EntityRegistry {
 }
 
 impl EntityRegistry {
-    /// Completes the registered-entity portion of vanilla `Entity.load` after
-    /// the load factory has reconstructed the entity's base state.
-    fn finish_registered_load(entity: &SharedEntity, nbt: &BorrowedNbtCompound<'_>) {
+    fn finish_registered_load_view(entity: &SharedEntity, nbt: &BorrowedNbtCompoundView<'_, '_>) {
         let yaw = entity.rotation().0;
         if let Some(living) = entity.as_living_entity() {
             living.set_y_head_rot(yaw);
             living.set_y_body_rot(yaw);
         }
 
-        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-        entity.load_additional(nbt);
+        entity.load_additional(*nbt);
         entity.set_old_position_to_current();
         entity.base().set_old_rotation_to_current();
         entity.sync_base_entity_data();
@@ -179,17 +176,27 @@ impl EntityRegistry {
         request: EntityLoadRequest,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> SharedEntity {
+        let nbt_view: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+        self.create_and_load_or_raw_view(request, &nbt_view)
+    }
+
+    /// Creates an entity from an already borrowed NBT view.
+    #[must_use]
+    pub(crate) fn create_and_load_or_raw_view(
+        &self,
+        request: EntityLoadRequest,
+        nbt: &BorrowedNbtCompoundView<'_, '_>,
+    ) -> SharedEntity {
         let (entity_type, load) = request.into_base_load();
         let id = entity_type.id();
         if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
             let entity = load_factory(entity_type, load);
-            Self::finish_registered_load(&entity, nbt);
+            Self::finish_registered_load_view(&entity, nbt);
             return entity;
         }
 
         let entity: SharedEntity = Arc::new(RawEntity::from_saved(load, entity_type));
-        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-        entity.load_additional(nbt);
+        entity.load_additional(*nbt);
         entity.set_old_position_to_current();
         entity.base().set_old_rotation_to_current();
         entity
