@@ -344,7 +344,7 @@ impl Server {
         admitted
     }
 
-    fn reserve_player_disconnect(&self, player: &Arc<Player>) -> bool {
+    pub(super) fn reserve_player_disconnect(&self, player: &Arc<Player>) -> bool {
         let uuid = player.gameprofile.id;
         let mut admissions = self.player_admissions.lock();
         if admissions.contains_key(&uuid) {
