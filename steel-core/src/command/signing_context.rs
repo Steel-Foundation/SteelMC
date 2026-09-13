@@ -1,3 +1,4 @@
+use crate::player::LastSeen;
 use std::collections::HashMap;
 
 /// Binary cryptographic signature supplied by the official client (typically 256 bytes for RSA-SHA256).
@@ -12,6 +13,8 @@ pub struct CommandSigningContext {
     pub salt: i64,
     /// Map associating each signed Brigadier argument name to its raw binary signature.
     pub argument_signatures: HashMap<Box<str>, MessageSignature>,
+    /// Window of previously received message signatures acknowledged by the client when submitting this command.
+    pub last_seen: LastSeen,
 }
 
 impl CommandSigningContext {
@@ -20,11 +23,13 @@ impl CommandSigningContext {
         timestamp: u64,
         salt: i64,
         signatures: impl IntoIterator<Item = (impl Into<Box<str>>, MessageSignature)>,
+        last_seen: LastSeen,
     ) -> Self {
         Self {
             timestamp,
             salt,
             argument_signatures: signatures.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+            last_seen,
         }
     }
 

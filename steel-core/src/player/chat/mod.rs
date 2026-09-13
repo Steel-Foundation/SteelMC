@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::game::{
     CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat,
-    SChatAck, SChatSessionUpdate,
+    SChatAck, SChatCommandSigned, SChatSessionUpdate,
 };
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
@@ -26,12 +26,19 @@ use text_components::TextComponent;
 use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 
+use crate::command::sender::CommandSender;
+use crate::command::signing_context::CommandSigningContext;
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
+use crate::server::Server;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
-use steel_utils::translations::{CHAT_DISABLED_CHAIN_BROKEN, CHAT_DISABLED_EXPIRED_PROFILE_KEY, CHAT_DISABLED_INVALID_SIGNATURE, CHAT_DISABLED_MISSING_PROFILE_KEY, CHAT_DISABLED_OUT_OF_ORDER_CHAT};
+use steel_utils::translations::{
+    CHAT_DISABLED_CHAIN_BROKEN, CHAT_DISABLED_EXPIRED_PROFILE_KEY, CHAT_DISABLED_INVALID_SIGNATURE,
+    CHAT_DISABLED_MISSING_PROFILE_KEY, CHAT_DISABLED_OUT_OF_ORDER_CHAT,
+    MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED, MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS,
+};
 
 /// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
@@ -252,6 +259,75 @@ impl Player {
         val
     }
 
+    // Verify signature, advance chain, and handle breaking on error
+    fn verify_and_advance_chain(
+        chat: &mut ChatState,
+        session: &RemoteChatSession,
+        content: &str,
+        timestamp: u64,
+        salt: i64,
+        last_seen: LastSeen,
+        signature: &[u8; 256],
+    ) -> Result<message_chain::SignedMessageLink, TextComponent> {
+        let chain = chat
+            .message_chain
+            .as_mut()
+            .ok_or_else(|| CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component())?;
+
+        if chain.is_broken() {
+            return Err(CHAT_DISABLED_CHAIN_BROKEN.msg().component());
+        }
+
+        let message_time = UNIX_EPOCH + Duration::from_millis(timestamp);
+        let now = SystemTime::now();
+        let message_age = now.duration_since(message_time).unwrap_or(Duration::ZERO);
+
+        if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
+            return Err(TextComponent::plain(format!(
+                "Message expired (age: {}s, max: {}s)",
+                message_age.as_secs(),
+                MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
+            )));
+        }
+
+        let body = message_chain::SignedMessageBody::new(
+            content.to_string(),
+            message_time,
+            salt,
+            last_seen,
+        );
+
+        let link = chain.validate_and_advance(&body).map_err(|err| match err {
+            message_chain::ChainError::OutOfOrderChat => {
+                CHAT_DISABLED_OUT_OF_ORDER_CHAT.msg().component()
+            }
+            message_chain::ChainError::ChainBroken => CHAT_DISABLED_CHAIN_BROKEN.msg().component(),
+            message_chain::ChainError::ExpiredProfileKey => {
+                CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component()
+            }
+            message_chain::ChainError::MissingProfileKey => {
+                CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component()
+            }
+            _ => TextComponent::plain(format!("Chain validation failed: {err}")),
+        })?;
+
+        let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
+        let validator = session.profile_public_key.create_signature_validator();
+
+        match SignatureValidator::validate(&validator, &updater, signature) {
+            Ok(true) => Ok(link),
+            Ok(false) => {
+                chain.break_chain();
+                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
+            }
+            Err(err) => {
+                log::error!("Signature cryptographic evaluation failed: {err}");
+                chain.break_chain();
+                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
+            }
+        }
+    }
+
     fn verify_chat_signature(
         &self,
         packet: &SChat,
@@ -275,80 +351,30 @@ impl Player {
             return Err(CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component());
         }
 
-        let chain = chat.message_chain.as_mut().ok_or("No message chain")?;
-
-        if chain.is_broken() {
-            return Err(CHAT_DISABLED_CHAIN_BROKEN.msg().component());
-        }
-
-        let timestamp =
-            UNIX_EPOCH + Duration::from_millis(packet.timestamp.try_into().unwrap_or(0));
-
-        let now = SystemTime::now();
-        let message_age = now
-            .duration_since(timestamp)
-            .unwrap_or(Duration::from_secs(0));
-
-        if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
-            return Err(TextComponent::plain(format!(
-                "Message expired (age: {}s, max: {}s)",
-                message_age.as_secs(),
-                MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
-            )));
-        }
-
         let last_seen_signatures = chat
             .message_validator
             .apply_update(packet.acknowledged, packet.offset, packet.checksum)
             .map_err(|e| {
                 log::error!("Message acknowledgment validation failed: {e}");
-                e
+                MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED
+                    .msg()
+                    .component()
             })?;
 
         let last_seen = LastSeen::new(last_seen_signatures);
 
-        let body = message_chain::SignedMessageBody::new(
-            packet.message.clone(),
-            timestamp,
+        let link = Self::verify_and_advance_chain(
+            &mut chat,
+            &session,
+            &packet.message,
+            packet.timestamp.try_into().unwrap_or(0),
             packet.salt,
-            last_seen,
-        );
+            last_seen.clone(),
+            signature,
+        )?;
 
-        let link = chain
-            .validate_and_advance(&body)
-            .map_err(|err| match err {
-                message_chain::ChainError::OutOfOrderChat => {
-                    CHAT_DISABLED_OUT_OF_ORDER_CHAT.msg().component()
-                }
-                message_chain::ChainError::ChainBroken => {
-                    CHAT_DISABLED_CHAIN_BROKEN.msg().component()
-                }
-                message_chain::ChainError::ExpiredProfileKey => {
-                    CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component()
-                }
-                message_chain::ChainError::MissingProfileKey => {
-                    CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component()
-                }
-                _ => TextComponent::plain(format!("Chain validation failed: {err}")),
-            })?;
-
-        let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
-        let validator = session.profile_public_key.create_signature_validator();
-
-        match SignatureValidator::validate(&validator, &updater, signature) {
-            Ok(true) => Ok((link, body.last_seen.clone())),
-            Ok(false) => {
-                chain.break_chain();
-                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
-            }
-            Err(err) => {
-                log::error!("Signature cryptographic evaluation failed: {err}");
-                chain.break_chain();
-                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
-            }
-        }
+        Ok((link, last_seen))
     }
-
     /// Handles a chat message from the player.
     pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
         player.reset_last_action_time();
@@ -361,7 +387,7 @@ impl Player {
                     log::warn!(
                         "Failed to update secure chat state for {}: '{}'",
                         self.gameprofile.name,
-                        err.color(Color::Red)
+                        err.clone().color(Color::Red)
                     );
                     Some(Err(err))
                 }
@@ -608,6 +634,103 @@ impl Player {
                 self.gameprofile.name
             );
         }
+    }
+
+    pub fn handle_signed_command(
+        self: &Arc<Self>,
+        packet: SChatCommandSigned,
+        server: &Arc<Server>,
+    ) {
+        // Check allow char
+        for char in packet.command.chars() {
+            let cp = char as u32;
+            if !(cp >= 32 && cp != 127 && cp != 167) {
+                self.disconnect(MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS.msg());
+                return;
+            }
+        }
+
+        let last_seen = {
+            let mut chat = self.chat().lock();
+
+            let last_seen_sigs = match chat.message_validator.apply_update(
+                packet.last_seen.acknowledged,
+                packet.last_seen.offset.0,
+                0,
+            ) {
+                Ok(signatures) => LastSeen::new(signatures),
+                Err(error) => {
+                    log::error!(
+                        "Failed to validate message acknowledgements from {}: {}",
+                        self.name(),
+                        error
+                    );
+                    drop(chat);
+                    self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
+                    return;
+                }
+            };
+
+            let session = match chat.chat_session.clone() {
+                Some(s) => s,
+                None => {
+                    drop(chat);
+                    self.disconnect(CHAT_DISABLED_MISSING_PROFILE_KEY.msg());
+                    return;
+                }
+            };
+
+            let argument_value = packet
+                .command
+                .split_once(' ')
+                .map(|(_, arg)| arg)
+                .unwrap_or("");
+
+            for entry in &packet.argument_signatures {
+                if let Err(err_component) = Self::verify_and_advance_chain(
+                    &mut chat,
+                    &session,
+                    argument_value,
+                    packet.timestamp as u64,
+                    packet.salt,
+                    last_seen_sigs.clone(),
+                    &entry.signature,
+                ) {
+                    drop(chat);
+                    self.send_message(&err_component);
+                    return;
+                }
+            }
+
+            last_seen_sigs
+        };
+
+        self.reset_last_action_time();
+
+        let signing_context = CommandSigningContext::new(
+            packet.timestamp as u64,
+            packet.salt,
+            packet
+                .argument_signatures
+                .into_iter()
+                .map(|entry| (entry.name, Box::from(entry.signature))),
+            last_seen,
+        );
+
+        if server
+            .submit_command(
+                CommandSender::Player(Arc::clone(self)),
+                packet.command,
+                Some(signing_context),
+            )
+            .is_err()
+        {
+            self.send_message(
+                &TextComponent::const_plain("Command queue is full").color(Color::Red),
+            );
+        }
+
+        self.detect_command_rate_spam();
     }
 }
 

@@ -9,7 +9,6 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::player::chat::OutgoingChatMessage;
-use crate::player::LastSeen;
 use log::info;
 use steel_protocol::packets::game::{CPlayerChat, ChatTypeBound, FilterType};
 use steel_registry::{RegistryEntry, vanilla_chat_types};
@@ -59,6 +58,10 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         idx
                     };
 
+                    let sender_last_seen = signing_ctx
+                        .map(|sc| sc.last_seen.clone())
+                        .unwrap_or_default();
+
                     let sig_array = raw_sig.and_then(|s| {
                         if s.len() == 256 {
                             let mut arr = [0u8; 256];
@@ -70,7 +73,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     });
 
                     let packet = CPlayerChat::new(
-                        0, // Remplacé dynamiquement par recipient.get_and_increment_messages_received()
+                        0, // Replaced after in broadcast_chat
                         player.gameprofile.id,
                         sender_index,
                         sig_array.map(|s| Box::new(s) as Box<[u8]>),
@@ -86,7 +89,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     OutgoingChatMessage::Player {
                         packet,
                         signature: sig_array,
-                        sender_last_seen: LastSeen::default(),
+                        sender_last_seen,
                     }
                 }
                 None => OutgoingChatMessage::Disguised {
