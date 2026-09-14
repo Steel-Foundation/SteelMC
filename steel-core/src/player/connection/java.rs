@@ -194,14 +194,21 @@ impl ScheduledPlayPacket {
                     ScheduledPacketExecution::Exclusive
                 }
             },
-            // Position, world, menu, chat, and domain mutations may overlap player-local work but
-            // retain one global mutation order matching the packet submission order.
+            // Movement handlers mutate only per-player movement/teleport state (SyncMutex)
+            // and route through chunk-map ticket APIs with fine-grained internal locks, so
+            // they may run fully concurrent across players.
+            ScheduledPlayPacketKind::MovePlayer(_) | ScheduledPlayPacketKind::MoveVehicle(_) => {
+                ScheduledPacketExecution::PlayerLocal
+            }
+            // Chat and domain mutations may overlap player-local work but retain one global
+            // mutation order matching the packet submission order. Menu transactions (click,
+            // button, slot state) serialize on the menu lock exactly like ContainerClick.
             ScheduledPlayPacketKind::AcceptTeleportation(_)
             | ScheduledPlayPacketKind::Chat(_)
             | ScheduledPlayPacketKind::ChatAck(_)
-            | ScheduledPlayPacketKind::MovePlayer(_)
-            | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::ContainerButtonClick(_)
+            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_)
             | ScheduledPlayPacketKind::RenameItem(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
@@ -209,15 +216,11 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Serialized,
-            // Combat spans source and target state, custom payloads have no constrained resource
-            // contract, and the unimplemented menu handlers have no auditable transaction yet.
+            // Combat spans source and target state, and custom payloads have no constrained
+            // resource contract: full global barriers.
             ScheduledPlayPacketKind::Attack(_)
             | ScheduledPlayPacketKind::Interact(_)
-            | ScheduledPlayPacketKind::CustomPayload(_)
-            | ScheduledPlayPacketKind::ContainerButtonClick(_)
-            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
-                ScheduledPacketExecution::Exclusive
-            }
+            | ScheduledPlayPacketKind::CustomPayload(_) => ScheduledPacketExecution::Exclusive,
         }
     }
 
@@ -968,6 +971,8 @@ impl NetworkConnection for JavaConnection {
 mod tests {
     use std::array;
 
+    use glam::DVec3;
+
     use crate::{
         entity::{Entity as _, LivingEntity as _},
         test_support::{TestPlayerBuilder, fresh_test_world},
@@ -1117,7 +1122,7 @@ mod tests {
             execution(ScheduledPlayPacketKind::MovePlayer(
                 SMovePlayerStatusOnly { packed_byte: 0 }.into(),
             )),
-            ScheduledPacketExecution::Serialized
+            ScheduledPacketExecution::PlayerLocal
         );
     }
 
@@ -1234,18 +1239,18 @@ mod tests {
     }
 
     #[test]
-    fn cross_player_and_unimplemented_handlers_remain_global_barriers() {
+    fn cross_player_handlers_remain_global_barriers() {
         assert_eq!(
             execution(ScheduledPlayPacketKind::Attack(SAttack { entity_id: 1 })),
             ScheduledPacketExecution::Exclusive
         );
         assert_eq!(
-            execution(ScheduledPlayPacketKind::ContainerButtonClick(
-                SContainerButtonClick {
-                    container_id: 1,
-                    button_id: 0,
-                },
-            )),
+            execution(ScheduledPlayPacketKind::Interact(SInteract {
+                entity_id: 1,
+                hand: InteractionHand::MainHand,
+                location: DVec3::ZERO,
+                using_secondary_action: false,
+            })),
             ScheduledPacketExecution::Exclusive
         );
         assert_eq!(
@@ -1256,6 +1261,42 @@ mod tests {
                 sequence: 0,
             })),
             ScheduledPacketExecution::Exclusive
+        );
+    }
+
+    #[test]
+    fn menu_transactions_share_the_serialized_lane() {
+        let click = SContainerClick {
+            container_id: 0,
+            state_id: 0,
+            slot_num: 0,
+            button_num: 0,
+            click_type: ClickType::Pickup,
+            changed_slots: FxHashMap::default(),
+            carried_item: HashedStack::Empty,
+        };
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ContainerClick(click)),
+            ScheduledPacketExecution::Serialized
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ContainerButtonClick(
+                SContainerButtonClick {
+                    container_id: 1,
+                    button_id: 0,
+                },
+            )),
+            ScheduledPacketExecution::Serialized
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ContainerSlotStateChanged(
+                SContainerSlotStateChanged {
+                    slot_id: 0,
+                    container_id: 0,
+                    new_state: true,
+                },
+            )),
+            ScheduledPacketExecution::Serialized
         );
     }
 
