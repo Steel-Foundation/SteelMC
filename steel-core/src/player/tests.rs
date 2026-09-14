@@ -2,11 +2,11 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::behavior::{InteractionResult, init_behaviors};
+use crate::behavior::{InteractionResult, ItemBehavior, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
-    damage::DamageSource, entities::ItemEntity, next_entity_id,
+    ActiveItemUseState, DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity,
+    SharedEntity, damage::DamageSource, entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
     click::{Click, DragKind, QuickCraft},
@@ -32,6 +32,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::items::ItemRef;
 use steel_registry::packets::play::C_REMOVE_ENTITIES;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
@@ -1574,6 +1575,374 @@ fn throttle_player_dropping_items_from_creative_menu() {
     player.tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
+}
+
+fn using_item_flag(player: &Player) -> bool {
+    let entity_data = player.entity_data.lock();
+    *entity_data.living_entity().living_entity_flags.get() & Player::USING_ITEM_FLAG != 0
+}
+
+fn hand_stack(player: &Player) -> ItemStack {
+    player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone()
+}
+
+fn assert_use_finished(player: &Player) {
+    assert!(
+        player.active_item_use_hand().is_none(),
+        "item use should have stopped"
+    );
+    assert!(
+        !using_item_flag(player),
+        "stopping item use must clear the USING_ITEM_FLAG"
+    );
+}
+
+fn player_using_test_item(world: Arc<World>, item: ItemRef, count: i32) -> Arc<Player> {
+    init_vanilla_registry();
+    init_behaviors();
+    let player = test_player(world);
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::MainHand,
+        ItemStack::with_count(item, count),
+    );
+    player.start_using_item(InteractionHand::MainHand);
+    assert!(
+        player.active_item_use_hand().is_some(),
+        "player should be using the test item"
+    );
+    assert!(
+        using_item_flag(&player),
+        "start_using_item must set the USING_ITEM_FLAG"
+    );
+    player
+}
+
+/// Drives `tick_active_item_use` until the use finishes. Set stack sizes are
+/// chosen so eating/drinking completes within the bound.
+fn tick_until_use_finished(player: &Player) {
+    for _ in 0..64 {
+        player.tick_active_item_use();
+        if player.active_item_use_hand().is_none() {
+            break;
+        }
+    }
+    assert_use_finished(player);
+}
+
+// The scenario behaviors below cover active-use branches that no vanilla item can reach
+
+/// Starts a hands-on use for a scenario behavior, mirroring
+/// `Player::start_using_item` with an explicit duration, and returns the
+/// resulting active-use state.
+fn start_using_fixture_item(
+    player: &Player,
+    item: ItemRef,
+    count: i32,
+    duration: i32,
+) -> ActiveItemUseState {
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::MainHand,
+        ItemStack::with_count(item, count),
+    );
+    let stack = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(
+        player
+            .living_base
+            .start_using_item(InteractionHand::MainHand, &stack, duration),
+        "scenario use should start"
+    );
+    let mut entity_data = player.entity_data.lock();
+    let flags = entity_data.living_entity().living_entity_flags.get();
+    let flags = (*flags | Player::USING_ITEM_FLAG) & !Player::OFF_HAND_ACTIVE_ITEM_FLAG;
+    entity_data
+        .living_entity_mut()
+        .living_entity_flags
+        .set(flags);
+    drop(entity_data);
+    player
+        .living_base
+        .active_item_use()
+        .expect("scenario use should be active")
+}
+
+/// Shrinks the hand stack clone on every use tick.
+struct ShrinkOnUseTick;
+
+impl ItemBehavior for ShrinkOnUseTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+        stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        stack.shrink(1);
+    }
+}
+
+/// Swaps the player's hand to DIAMOND during `on_use_tick`.
+struct TamperOnUseTick;
+
+impl ItemBehavior for TamperOnUseTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        user: &dyn LivingEntity,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        tamper_hand(user);
+    }
+}
+
+/// Shrinks the clone and stops the use by driving the public release path.
+struct ShrinkAndStopUse;
+
+impl ItemBehavior for ShrinkAndStopUse {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        user: &dyn LivingEntity,
+        stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        stack.shrink(1);
+        let Some(player) = user.as_player() else {
+            return;
+        };
+        player.release_using_item();
+    }
+}
+
+/// Swaps the hand to DIAMOND during `finish_using` and returns a glass bottle.
+struct TamperOnFinish;
+
+impl ItemBehavior for TamperOnFinish {
+    fn finish_using(
+        &self,
+        _stack: &mut ItemStack,
+        _world: &Arc<World>,
+        user: &dyn LivingEntity,
+    ) -> ItemStack {
+        tamper_hand(user);
+        ItemStack::new(&vanilla_items::GLASS_BOTTLE)
+    }
+}
+
+/// Shrinks the clone on release.
+struct ShrinkOnRelease;
+
+impl ItemBehavior for ShrinkOnRelease {
+    fn release_using(
+        &self,
+        stack: &mut ItemStack,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+        _time_left: i32,
+    ) -> bool {
+        stack.shrink(1);
+        false
+    }
+}
+
+/// Swaps the hand to DIAMOND during `release_using`.
+struct TamperOnRelease;
+
+impl ItemBehavior for TamperOnRelease {
+    fn release_using(
+        &self,
+        _stack: &mut ItemStack,
+        _world: &Arc<World>,
+        user: &dyn LivingEntity,
+        _time_left: i32,
+    ) -> bool {
+        tamper_hand(user);
+        false
+    }
+}
+
+fn tamper_hand(user: &dyn LivingEntity) {
+    let Some(player) = user.as_player() else {
+        return;
+    };
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::MainHand,
+        ItemStack::new(&vanilla_items::DIAMOND),
+    );
+}
+
+// Covers a vanilla-accurate branch that no vanilla item can replicate: a
+// behavior shrinks the hand stack during `on_use_tick` without stopping the use.
+#[test]
+fn tick_active_item_use_writes_back_shrunk_stack() {
+    let world = fresh_test_world("tick_shrink");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::STICK, 1, 2);
+    let original_count = hand_stack(&player).count();
+
+    player.tick_active_item_use_with_behavior(&ShrinkOnUseTick, active);
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "on_use_tick shrunk the clone; the write-back should persist that change"
+    );
+}
+
+// Covers a vanilla-accurate branch that no vanilla item can replicate: a
+// behavior shrinks the hand stack during `on_use_tick`.
+#[test]
+fn tick_active_item_use_keeps_using_mid_use() {
+    let world = fresh_test_world("tick_mid_use");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::STICK, 3, 2);
+
+    let original_count = hand_stack(&player).count();
+    player.tick_active_item_use_with_behavior(&ShrinkOnUseTick, active);
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "mid-use on_use_tick shrink must be written back"
+    );
+    assert!(
+        player.active_item_use_hand().is_some(),
+        "use must continue while ticks remain"
+    );
+    assert!(
+        using_item_flag(&player),
+        "USING_ITEM_FLAG must stay set while use is active"
+    );
+
+    let active = player
+        .living_base
+        .active_item_use()
+        .expect("use should still be active");
+    player.tick_active_item_use_with_behavior(&ShrinkOnUseTick, active);
+    assert_use_finished(&player);
+}
+
+#[test]
+fn tick_active_item_use_does_not_overwrite_tampered_hand() {
+    let world = fresh_test_world("tick_tamper");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::IRON_INGOT, 1, 1);
+
+    player.tick_active_item_use_with_behavior(&TamperOnUseTick, active);
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::DIAMOND),
+        "on_use_tick replaced the hand with DIAMOND; that must not be overwritten by the stale clone"
+    );
+}
+
+// Covers a vanilla-accurate branch that no vanilla item can replicate: the use
+// stops mid-tick while the hand stack was mutated.
+#[test]
+fn tick_active_item_use_preserves_mutations_on_early_stop() {
+    let world = fresh_test_world("tick_early_stop");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::PAPER, 1, 1);
+    let original_count = hand_stack(&player).count();
+
+    player.tick_active_item_use_with_behavior(&ShrinkAndStopUse, active);
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "on_use_tick shrunk the clone and stopped use; the shrink must still be written back"
+    );
+    assert_use_finished(&player);
+}
+
+// Honey bottle: drinking a single bottle must finish the use and replace
+// the hand stack with the glass bottle remainder.
+#[test]
+fn tick_active_item_use_drinking_honey_replaces_with_glass_bottle() {
+    let world = fresh_test_world("tick_finish_honey");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::HONEY_BOTTLE, 1);
+
+    tick_until_use_finished(&player);
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::GLASS_BOTTLE),
+        "the emptied honey bottle should leave the glass bottle remainder in hand"
+    );
+}
+
+// No vanilla item can swap the hand mid-`finish_using`, but a mod can. Vanilla
+// `completeUsingItem` writes the finish result via `setItemInHand(hand, result)`
+// without re-checking the hand, so that swap must be clobbered.
+#[test]
+fn tick_active_item_use_finish_clobbers_behavior_hand_swap() {
+    let world = fresh_test_world("tick_finish_tamper");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::BOWL, 1, 1);
+
+    player.tick_active_item_use_with_behavior(&TamperOnFinish, active);
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::GLASS_BOTTLE),
+        "finish_using result must overwrite the hand even when the behavior swapped it"
+    );
+    assert_use_finished(&player);
+}
+
+// Cookie: eating one cookie out of a stack of three must finish the use
+// and leave two in hand.
+#[test]
+fn tick_active_item_use_eating_cookie_decrements_the_stack() {
+    let world = fresh_test_world("tick_finish_cookie");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::COOKIE, 3);
+    let original_count = hand_stack(&player).count();
+
+    tick_until_use_finished(&player);
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "eating a cookie should shrink the stack by one"
+    );
+}
+
+// Covers a vanilla-accurate branch that no vanilla item can replicate: a behavior
+// shrinks the hand stack during `release_using`
+#[test]
+fn release_using_item_writes_back_shrunk_stack() {
+    let world = fresh_test_world("release_shrink");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::FLINT, 1, 1);
+    let original_count = hand_stack(&player).count();
+
+    player.release_using_item_with_behavior(&ShrinkOnRelease, active);
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "release_using shrunk the clone; the write-back should persist that change"
+    );
+}
+
+#[test]
+fn release_using_item_does_not_overwrite_tampered_hand() {
+    let world = fresh_test_world("release_tamper");
+    let player = test_player(Arc::clone(&world));
+    let active = start_using_fixture_item(&player, &vanilla_items::LEATHER, 1, 1);
+
+    player.release_using_item_with_behavior(&TamperOnRelease, active);
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::DIAMOND),
+        "release_using tampered with the hand; the stale clone must not overwrite it"
+    );
 }
 
 #[test]
