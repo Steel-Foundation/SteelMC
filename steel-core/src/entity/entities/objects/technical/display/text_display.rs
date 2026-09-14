@@ -141,13 +141,13 @@ impl Entity for TextDisplayEntity {
             view.set_background_color(nbt.int("background").unwrap_or(DEFAULT_BACKGROUND_COLOR));
 
             let mut flags = TextDisplayFlags::empty();
-            if view.shadow() {
+            if nbt.byte("shadow").is_some_and(|v| v != 0) {
                 flags.insert(TextDisplayFlags::SHADOW);
             }
-            if view.see_through() {
+            if nbt.byte("see_through").is_some_and(|v| v != 0) {
                 flags.insert(TextDisplayFlags::SEE_THROUGH);
             }
-            if view.default_background() {
+            if nbt.byte("default_background").is_some_and(|v| v != 0) {
                 flags.insert(TextDisplayFlags::USE_DEFAULT_BACKGROUND);
             }
             view.set_flags(flags);

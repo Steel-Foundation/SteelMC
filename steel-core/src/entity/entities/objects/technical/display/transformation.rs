@@ -10,6 +10,8 @@ use steel_utils::nbt::{
     mat4_from_nbt_tag, quat_from_nbt_tag, quat_to_nbt_tag, vec3_from_nbt_tag, vec3_to_nbt_tag,
 };
 
+pub const DECOMPOSITION_EPSILON: f32 = 1.0e-6;
+
 /// A structure describing an affine transformation in 3D space.
 ///
 /// Transformations are applied in the following order:
@@ -58,8 +60,8 @@ impl Transformation {
     fn qr_givens_quat(a: f32, b: f32) -> Givens {
         let p = a.hypot(b);
 
-        let mut sin_half = if p > 1.0e-6 { b } else { 0.0 };
-        let mut cos_half = a.abs() + p.max(1.0e-6);
+        let mut sin_half = if p > DECOMPOSITION_EPSILON { b } else { 0.0 };
+        let mut cos_half = a.abs() + p.max(DECOMPOSITION_EPSILON);
         if a < 0.0 {
             mem::swap(&mut sin_half, &mut cos_half);
         }
@@ -71,7 +73,7 @@ impl Transformation {
     }
 
     fn step_jacobi(m: &mut Mat3, result: &mut Quat) {
-        if m.col(0)[1] * m.col(0)[1] + m.col(1)[0] * m.col(1)[0] > 1.0e-6 {
+        if m.col(0)[1] * m.col(0)[1] + m.col(1)[0] * m.col(1)[0] > DECOMPOSITION_EPSILON {
             let g = Self::approx_givens_quat(
                 m.col(0)[0],
                 f32::midpoint(m.col(0)[1], m.col(1)[0]),
@@ -82,7 +84,7 @@ impl Transformation {
             Self::similarity_transform(m, g.around_z_mat());
         }
 
-        if m.col(0)[2] * m.col(0)[2] + m.col(2)[0] * m.col(2)[0] > 1.0e-6 {
+        if m.col(0)[2] * m.col(0)[2] + m.col(2)[0] * m.col(2)[0] > DECOMPOSITION_EPSILON {
             let g = Self::approx_givens_quat(
                 m.col(0)[0],
                 f32::midpoint(m.col(0)[2], m.col(2)[0]),
@@ -94,7 +96,7 @@ impl Transformation {
             Self::similarity_transform(m, g.around_y_mat());
         }
 
-        if m.col(1)[2] * m.col(1)[2] + m.col(2)[1] * m.col(2)[1] > 1.0e-6 {
+        if m.col(1)[2] * m.col(1)[2] + m.col(2)[1] * m.col(2)[1] > DECOMPOSITION_EPSILON {
             let g = Self::approx_givens_quat(
                 m.col(1)[1],
                 f32::midpoint(m.col(1)[2], m.col(2)[1]),
@@ -133,8 +135,8 @@ impl Transformation {
         // Use the resulting quaternion to get the right rotation's conjugate.
         right_rotation = right_rotation.normalize();
 
-        let zero_column_0 = ata.col(0)[0] < 1.0e-6;
-        let zero_column_1 = ata.col(1)[1] < 1.0e-6;
+        let zero_column_0 = ata.col(0)[0] < DECOMPOSITION_EPSILON;
+        let zero_column_1 = ata.col(1)[1] < DECOMPOSITION_EPSILON;
 
         // Get a matrix that can be reduced to a diagonal form.
         let u012s = mat * Mat3::from_quat(right_rotation);
@@ -197,7 +199,7 @@ struct Givens {
 
 impl Givens {
     pub const G: f32 = 3.0 + 2.0 * consts::SQRT_2;
-    const SIN_PI_8: f32 = 0.382_683_43;
+    const SIN_PI_8: f32 = 0.382_683_46;
     const COS_PI_8: f32 = 0.923_879_5;
 
     pub const PI_4: Self = Self::new(Self::SIN_PI_8, Self::COS_PI_8);
