@@ -106,6 +106,7 @@ impl Entity for BlockDisplayEntity {
         self.with_view(|mut view| {
             <Self as Display>::load_display(&mut view, nbt);
 
+            // TODO: Make this function more accurate to BlockState.CODEC
             view.set_block_state(
                 nbt.compound("block_state")
                     .and_then(block_state_nbt::load)

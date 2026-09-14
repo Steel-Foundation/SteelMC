@@ -14,22 +14,31 @@ use steel_registry::vanilla_entity_data::DisplayEntityData;
 
 /// The default interpolation duration of a display entity.
 pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DURATION: i32 = 0;
+
 /// The default delay in interpolation of a display entity.
 pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DELAY: i32 = 0;
+
 /// The default teleport duration of a display entity.
 pub const DEFAULT_POS_ROT_INTERPOLATION_DURATION: i32 = 0;
+
 /// The default [`BillboardConstraints`] of a display entity.
 pub const DEFAULT_BILLBOARD_CONSTRAINTS: BillboardConstraints = BillboardConstraints::Fixed;
+
 /// The default view range of a display entity.
 pub const DEFAULT_VIEW_RANGE: f32 = 1.0;
+
 /// The default shadow radius of a display entity.
 pub const DEFAULT_SHADOW_RADIUS: f32 = 0.0;
+
 /// The default shadow strength of a display entity.
 pub const DEFAULT_SHADOW_STRENGTH: f32 = 1.0;
+
 /// The default width of a display entity.
 pub const DEFAULT_WIDTH: f32 = 0.0;
+
 /// The default height of a display entity.
 pub const DEFAULT_HEIGHT: f32 = 0.0;
+
 /// The default glow color override of a display entity.
 ///
 /// `-1` corresponds to no override.
@@ -59,14 +68,17 @@ pub trait Display: Entity {
             self.stop_riding();
         }
     }
+
     /// The base `hurtServer()` method for display entities.
     fn hurt_display(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
         false
     }
+
     /// The base `pistonPushReaction()` method for display entities.
     fn piston_push_reaction_display(&self) -> PushReaction {
         PushReaction::Ignore
     }
+
     /// The base `isIgnoringBlockTriggers()` method for display entities.
     fn is_ignoring_block_triggers_display(&self) -> bool {
         true
@@ -186,6 +198,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             right_rotation: *data.right_rotation.get(),
         }
     }
+
     /// Sets the [`Transformation`] of the display entity to `transformation`.
     ///
     /// **Note:** This property is interpolated.
@@ -209,12 +222,14 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .transformation_interpolation_duration
             .get()
     }
+
     /// Sets the display entity's *interpolation duration* (the time to interpolate to a new transformation), in ticks, to `duration`.
     fn set_transformation_interpolation_duration(&mut self, duration: i32) {
         self.display_data_mut()
             .transformation_interpolation_duration
             .set(duration);
     }
+
     /// Gets the display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks.
     ///
     /// Values are clamped to be between `0` and `59` ticks, inclusive.
@@ -226,6 +241,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .transformation_interpolation_start_delta_ticks
             .get()
     }
+
     /// Sets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks, to `duration`,
     /// and restarts the transformation animation (regardless of what `duration` is).
     ///
@@ -237,10 +253,12 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .transformation_interpolation_start_delta_ticks
             .set_and_force_dirty(duration, true);
     }
+
     /// Gets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks.
     fn pos_rot_interpolation_duration(&self) -> i32 {
         *self.display_data().pos_rot_interpolation_duration.get()
     }
+
     /// Sets the display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks, to `duration`.
     fn set_pos_rot_interpolation_duration(&mut self, duration: i32) {
         self.display_data_mut()
@@ -253,6 +271,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
         BillboardConstraints::try_from(*self.display_data().billboard_render_constraints.get())
             .unwrap_or(DEFAULT_BILLBOARD_CONSTRAINTS)
     }
+
     /// Sets the display entity's billboard constraints to `constraints`.
     fn set_billboard_constraints(&mut self, constraints: BillboardConstraints) {
         self.display_data_mut()
@@ -274,54 +293,64 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
     fn view_range(&self) -> f32 {
         *self.display_data().view_range.get()
     }
+
     /// Sets the display entity's maximum view range to `range`.
     fn set_view_range(&mut self, range: f32) {
         self.display_data_mut().view_range.set(range);
     }
+
     /// Gets the display entity's shadow radius.
     ///
     /// **Note:** This property is interpolated.
     fn shadow_radius(&self) -> f32 {
         *self.display_data().shadow_radius.get()
     }
+
     /// Sets the display entity's shadow radius to `size`.
     ///
     /// **Note:** This property is interpolated.
     fn set_shadow_radius(&mut self, size: f32) {
         self.display_data_mut().shadow_radius.set(size);
     }
+
     /// Sets the display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below).
     ///
     /// **Note:** This property is interpolated.
     fn shadow_strength(&self) -> f32 {
         *self.display_data().shadow_strength.get()
     }
+
     /// Sets the display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below) to `strength`.
     ///
     /// **Note:** This property is interpolated.
     fn set_shadow_strength(&mut self, strength: f32) {
         self.display_data_mut().shadow_strength.set(strength);
     }
+
     /// Gets the display entity's maximum width.
     fn width(&self) -> f32 {
         *self.display_data().width.get()
     }
+
     /// Sets the display entity's maximum width to `width`.
     ///
     /// Setting this to `0` indicates no culling on the horizontal axis.
     fn set_width(&mut self, width: f32) {
         self.display_data_mut().width.set(width);
     }
+
     /// Gets the display entity's maximum height.
     fn height(&self) -> f32 {
         *self.display_data().height.get()
     }
+
     /// Sets the display entity's maximum height to `height`.
     ///
     /// Setting this to `0` indicates no culling on the vertical axis.
     fn set_height(&mut self, height: f32) {
         self.display_data_mut().height.set(height);
     }
+
     /// Gets the display entity's glow color override. If this is `None`, the entity glows according to its team's color.
     ///
     /// **Note:** This has no effect on *text displays*.
@@ -329,6 +358,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
         let color = *self.display_data().glow_color_override.get();
         (color != -1).then_some(color)
     }
+
     /// Sets the display entity's glow color override to `value`. If this is `None`, the entity glows according to its team's color.
     ///
     /// **Note:** This has no effect on *text displays*.
