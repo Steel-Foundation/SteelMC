@@ -1285,6 +1285,7 @@ impl Player {
             nbt.insert("XpP", experience.progress());
             nbt.insert("XpLevel", experience.level());
             nbt.insert("XpTotal", experience.total_points());
+            nbt.insert("XpSeed", experience.enchantment_seed());
         }
         nbt.insert("Score", self.score());
 

@@ -12,6 +12,10 @@ use crate::entity::{Entity, LivingEntity, MobEffectInstance};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
+mod selection;
+
+pub(crate) use selection::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EnchantmentDamageContext<'a> {
     this_entity_type: EntityTypeRef,
