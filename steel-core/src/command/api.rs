@@ -158,7 +158,6 @@ pub struct CommandNode {
     inner: CommandNodeBuilder<InternalCommandSource, SteelCommandRuntime>,
 }
 
-#[expect(unused, reason = "it's an api interface")]
 impl CommandNode {
     /// Creates a literal node.
     #[must_use]
@@ -235,7 +234,7 @@ impl CommandNode {
     /// Add a custom [`SuggestionProvider`] to the corresponding argument
     /// does nothing if the node isn't a argument
     #[must_use]
-    pub(crate) fn suggests(
+    pub fn suggests(
         mut self,
         suggestion: &'static (impl SuggestionProvider + 'static),
     ) -> Self {
