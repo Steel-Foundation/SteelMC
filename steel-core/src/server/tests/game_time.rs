@@ -203,49 +203,6 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
     with_server_runtime(|runtime| {
         runtime.block_on(async {
             let root = test_storage_root("game-time-primary-last");
-            let worlds_config = || WorldsConfig {
-                save_path: root.to_string_lossy().into_owned(),
-                seed: None,
-                default_gamemode: None,
-                difficulty: None,
-                storage: None,
-                player_storage: None,
-                domains: [(
-                    "custom".to_owned(),
-                    DomainConfig {
-                        default: true,
-                        seed: None,
-                        default_gamemode: None,
-                        difficulty: None,
-                        storage: None,
-                        worlds: [("derived", false), ("authority", true)]
-                            .into_iter()
-                            .map(|(name, default)| WorldEntryConfig {
-                                name: name.to_owned(),
-                                generator: Identifier::vanilla_static("flat"),
-                                default,
-                                seed: None,
-                                default_gamemode: None,
-                                difficulty: None,
-                                storage: None,
-                                nether_portal_target: None,
-                                end_portal_target: None,
-                                config: default.then(|| {
-                                    toml::Value::Table(
-                                        [(
-                                            "dimension_type".to_owned(),
-                                            toml::Value::String("minecraft:the_end".to_owned()),
-                                        )]
-                                        .into_iter()
-                                        .collect(),
-                                    )
-                                }),
-                            })
-                            .collect(),
-                    },
-                )]
-                .into(),
-            };
             let config = || {
                 let mut config = RuntimeConfig::clone(&test_runtime_config());
                 config.services_server = Some(UNROUTABLE_SERVICES.to_owned());
@@ -256,7 +213,7 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
                     Arc::clone(runtime),
                     CancellationToken::new(),
                     config(),
-                    worlds_config(),
+                    primary_last_worlds_config(&root),
                     PermissionGroupManager::transient(PermissionGroupsConfig::default())
                         .expect("permissions"),
                 )
@@ -323,6 +280,59 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
     });
 }
 
+fn primary_last_worlds_config(root: &Path) -> WorldsConfig {
+    game_time_worlds_config(
+        root,
+        [("derived", false), ("authority", true)]
+            .into_iter()
+            .map(|(name, default)| WorldEntryConfig {
+                name: name.to_owned(),
+                generator: Identifier::vanilla_static("flat"),
+                default,
+                seed: None,
+                default_gamemode: None,
+                difficulty: None,
+                storage: None,
+                nether_portal_target: None,
+                end_portal_target: None,
+                config: default.then(|| {
+                    toml::Value::Table(
+                        [(
+                            "dimension_type".to_owned(),
+                            toml::Value::String("minecraft:the_end".to_owned()),
+                        )]
+                        .into_iter()
+                        .collect(),
+                    )
+                }),
+            })
+            .collect(),
+    )
+}
+
+fn game_time_worlds_config(root: &Path, worlds: Vec<WorldEntryConfig>) -> WorldsConfig {
+    WorldsConfig {
+        save_path: root.to_string_lossy().into_owned(),
+        seed: None,
+        default_gamemode: None,
+        difficulty: None,
+        storage: None,
+        player_storage: None,
+        domains: [(
+            "custom".to_owned(),
+            DomainConfig {
+                default: true,
+                seed: None,
+                default_gamemode: None,
+                difficulty: None,
+                storage: None,
+                worlds,
+            },
+        )]
+        .into(),
+    }
+}
+
 fn next_simulation_gate(server: &Server) -> bool {
     let mut manager = server.tick_rate_manager.write();
     manager.tick();
@@ -369,43 +379,27 @@ fn game_time_rejects_ephemeral_primary_before_touching_derived_save() {
             .expect("fixture save");
             write_legacy_game_time(&path, 2_000).await;
             let original = fs::read(&path).await.expect("original save");
-            let worlds_config = WorldsConfig {
-                save_path: root.to_string_lossy().into_owned(),
-                seed: None,
-                default_gamemode: None,
-                difficulty: None,
-                storage: None,
-                player_storage: None,
-                domains: [(
-                    "custom".to_owned(),
-                    DomainConfig {
-                        default: true,
+            let worlds_config = game_time_worlds_config(
+                &root,
+                [("derived", "disk", false), ("lobby", "ram", true)]
+                    .into_iter()
+                    .map(|(name, backend, default)| WorldEntryConfig {
+                        name: name.to_owned(),
+                        generator: Identifier::vanilla_static("flat"),
+                        default,
                         seed: None,
                         default_gamemode: None,
                         difficulty: None,
-                        storage: None,
-                        worlds: [("derived", "disk", false), ("lobby", "ram", true)]
-                            .into_iter()
-                            .map(|(name, backend, default)| WorldEntryConfig {
-                                name: name.to_owned(),
-                                generator: Identifier::vanilla_static("flat"),
-                                default,
-                                seed: None,
-                                default_gamemode: None,
-                                difficulty: None,
-                                storage: Some(StorageSelection {
-                                    kind: Identifier::new_static("steel", backend),
-                                    config: None,
-                                }),
-                                nether_portal_target: None,
-                                end_portal_target: None,
-                                config: None,
-                            })
-                            .collect(),
-                    },
-                )]
-                .into(),
-            };
+                        storage: Some(StorageSelection {
+                            kind: Identifier::new_static("steel", backend),
+                            config: None,
+                        }),
+                        nether_portal_target: None,
+                        end_portal_target: None,
+                        config: None,
+                    })
+                    .collect(),
+            );
             let mut config = RuntimeConfig::clone(&test_runtime_config());
             config.services_server = Some(UNROUTABLE_SERVICES.to_owned());
             let cancel = CancellationToken::new();
