@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SteelExecutor","SteelModifier"],"fn":["argument","argument_with_suggestions","literal"],"struct":["SteelCommandRuntime"],"trait":["CustomCommandExecutor","CustomModifierExecutor"],"type":["StandardExecutor","StandardModifier","SteelCommandContext","SteelContextChain","SuspendedExecutor"]};

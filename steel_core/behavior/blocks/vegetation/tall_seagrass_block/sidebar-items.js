@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DOUBLE_BLOCK_HALF"],"struct":["TallSeagrassBlock"]};

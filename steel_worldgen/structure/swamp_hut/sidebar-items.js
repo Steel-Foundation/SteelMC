@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SWAMP_HUT_DEPTH","SWAMP_HUT_HEIGHT","SWAMP_HUT_WIDTH"],"fn":["swamp_hut_piece"],"struct":["SwampHutPieceData","SwampHutStructure"]};

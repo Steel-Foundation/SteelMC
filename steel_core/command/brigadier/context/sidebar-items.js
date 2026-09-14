@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":[["impl_get_primitive_argument_value",1]],"struct":["ArgumentSuggestionContext","CommandContext","ParseError","ParseResults","ParsedArgument","ParsedArguments","ParsedCommandContext","ParsedCommandNode","SuggestionContext"]};

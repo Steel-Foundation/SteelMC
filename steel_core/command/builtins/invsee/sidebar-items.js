@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INVSEE_PERMISSION","MODIFY_PERMISSION"],"fn":["command","ensure_same_domain","invsee","invsee_permissions","registration"],"struct":["InvseeMenuKind"]};

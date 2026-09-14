@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_item_behaviors"]};

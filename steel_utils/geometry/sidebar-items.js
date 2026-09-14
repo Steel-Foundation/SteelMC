@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ordered_pair","ordered_pair_i32"],"struct":["Aabb","BlockLocal","Structure","World"],"trait":["AabbVector","Space"],"type":["BlockLocalAabb","BoundingBox","WorldAabb"]};

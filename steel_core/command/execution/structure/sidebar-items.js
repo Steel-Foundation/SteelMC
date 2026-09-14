@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["StructureOrTagKey"],"fn":["parse_structure_or_tag_key","suggest_structures"]};

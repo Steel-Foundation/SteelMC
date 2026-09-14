@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CatAge","CatSoundVariant","CatSoundVariantRegistry"],"type":["CatSoundVariantRef"]};

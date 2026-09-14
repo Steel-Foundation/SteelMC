@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_lava_fluid","is_water_fluid"],"mod":["collision","conversion","flowing_fluid","fluid_behavior","fluids","spread_context","state"],"struct":["Fluid","FluidState"],"trait":["FluidStateExt"],"type":["FluidRef"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["first_point_level_up_sound","level_for_total_points"],"struct":["Experience"]};

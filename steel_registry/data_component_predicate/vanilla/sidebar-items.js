@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["vanilla_data_component_predicate_types"]};

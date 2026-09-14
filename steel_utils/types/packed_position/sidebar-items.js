@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["InvalidPackedSectionBlockPos","PackedBlockPos","PackedChunkLocalXZ","PackedChunkPos","PackedSectionBlockPos","PackedSectionPos"]};

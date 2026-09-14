@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GRADIENT","GRADIENT_4"],"fn":["corner_noise_3d","dot","grad_dot","grad_dot_4x","grad_dot_simd"]};

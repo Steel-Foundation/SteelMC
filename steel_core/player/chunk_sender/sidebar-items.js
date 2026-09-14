@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_CHUNKS_PER_TICK","MAX_UNACKNOWLEDGED_BATCHES","MIN_CHUNKS_PER_TICK","START_CHUNKS_PER_TICK"],"mod":["benchmark_support"],"struct":["ChunkSender","EncodedChunk","PreparedBatch","PreparedChunk"]};

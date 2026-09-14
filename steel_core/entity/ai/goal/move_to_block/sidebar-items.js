@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_ACCEPTED_DISTANCE","DEFAULT_RECALCULATE_PATH_INTERVAL","DEFAULT_VERTICAL_SEARCH_RANGE","GIVE_UP_TICKS","INTERVAL_TICKS","STAY_TICKS"],"fn":["block_center_with_y","block_pos_closer_to_center_than","find_nearest_block_from","next_mirrored_offset"],"struct":["MoveToBlockGoal"],"type":["MoveToTarget","ValidTargetPredicate"]};

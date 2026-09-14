@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","registration","set_idle_timeout"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_beardifier","collect_structure_references","generate"],"type":["StructureReferencesForNoise"]};

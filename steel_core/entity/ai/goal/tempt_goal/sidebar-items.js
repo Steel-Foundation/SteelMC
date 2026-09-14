@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_STOP_DISTANCE"],"struct":["TemptGoal"],"type":["TemptItemPredicate"]};

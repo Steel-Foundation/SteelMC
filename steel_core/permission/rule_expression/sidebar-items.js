@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionExpressionContextError","PermissionRuleExpressionError"],"fn":["parse_context","parse_custom_context","parse_domain_context","parse_world_context","write_context","write_context_entries","write_context_entry"],"struct":["PermissionRuleExpression"]};

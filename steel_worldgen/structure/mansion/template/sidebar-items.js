@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Mirror"],"fn":["above","add_piece","apply_mirror","compose_rotation","dir_from_2d","piece_bb","relative","structure_mirror","template_size","zero_pos_transform"],"struct":["MansionTemplatePiece"]};

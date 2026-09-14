@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_CACHED_SIGNATURES","MAX_PREVIOUS_MESSAGES"],"struct":["LastSeen","MessageCache"]};

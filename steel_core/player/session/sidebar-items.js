@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CurrentPlayerSlot"],"static":["LAST_PLAYER_SESSION_ID"],"struct":["PlayerSession","PlayerSessionId"]};
