@@ -1,5 +1,8 @@
 //! Steel-owned built-in command declarations.
 
+mod ban;
+mod ban_ip;
+mod banlist;
 mod clear;
 mod damage;
 mod difficulty;
@@ -13,10 +16,13 @@ pub(crate) mod gamemode;
 mod gamerule;
 mod give;
 mod invsee;
+mod kick;
 mod kill;
 mod list;
 mod locate;
 mod operator;
+mod pardon;
+mod pardon_ip;
 mod perms;
 mod playsound;
 mod return_command;
@@ -33,6 +39,7 @@ mod tick;
 mod time;
 mod title;
 mod weather;
+mod whitelist;
 mod worldborder;
 
 pub(crate) use difficulty::player_can_change_difficulty;
@@ -64,6 +71,9 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
+    builder.register(ban::registration())?;
+    builder.register(ban_ip::registration())?;
+    builder.register(banlist::registration())?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
@@ -77,10 +87,13 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
+    builder.register(kick::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
+    builder.register(pardon::registration())?;
+    builder.register(pardon_ip::registration())?;
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
     builder.register(return_command::registration())?;
@@ -97,6 +110,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(time::registration())?;
     builder.register(title::registration())?;
     builder.register(weather::registration())?;
+    builder.register(whitelist::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
     builder.extend(extension_commands.into_inner())?;
@@ -142,6 +156,9 @@ mod tests {
         assert_eq!(
             names,
             [
+                "ban",
+                "ban-ip",
+                "banlist",
                 "clear",
                 "deop",
                 "damage",
@@ -156,10 +173,13 @@ mod tests {
                 "gamemode",
                 "gamerule",
                 "give",
+                "kick",
                 "kill",
                 "list",
                 "locate",
                 "op",
+                "pardon",
+                "pardon-ip",
                 "perms",
                 "playsound",
                 "return",
@@ -177,6 +197,7 @@ mod tests {
                 "time",
                 "title",
                 "weather",
+                "whitelist",
                 "worldborder",
                 "invsee"
             ]
