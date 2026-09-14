@@ -17,8 +17,9 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetBeacon,
+    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
+    SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -98,6 +99,7 @@ enum ScheduledPlayPacketKind {
     RenameItem(SRenameItem),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
+    SetBeacon(SSetBeacon),
     SetCarriedItem(SSetCarriedItem),
     Swing(SSwing),
     PlayerAction(SPlayerAction),
@@ -215,6 +217,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::Interact(_)
             | ScheduledPlayPacketKind::CustomPayload(_)
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
+            | ScheduledPlayPacketKind::SetBeacon(_)
             | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
                 ScheduledPacketExecution::Exclusive
             }
@@ -234,6 +237,10 @@ impl ScheduledPlayPacket {
         )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "flat dispatch over every scheduled packet kind"
+    )]
     pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;
@@ -288,6 +295,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ContainerButtonClick(packet) => {
                 player.handle_container_button_click(packet);
+            }
+            ScheduledPlayPacketKind::SetBeacon(packet) => {
+                player.handle_set_beacon_packet(packet);
             }
             ScheduledPlayPacketKind::ContainerClick(packet) => {
                 player.handle_container_click(packet);
@@ -749,6 +759,9 @@ impl JavaConnection {
                     SSetCreativeModeSlot::read_packet(data)?,
                 ))
             }
+            play::S_SET_BEACON => scheduled(ScheduledPlayPacketKind::SetBeacon(
+                SSetBeacon::read_packet(data)?,
+            )),
             play::S_PLAYER_INPUT => scheduled(ScheduledPlayPacketKind::PlayerInput(
                 SPlayerInput::read_packet(data)?,
             )),
