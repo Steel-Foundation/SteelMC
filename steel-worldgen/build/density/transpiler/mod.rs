@@ -64,6 +64,8 @@ pub struct TranspilerInput {
     ///   hardcoded params `(-7, [1.0, 1.0])` and direct `LegacyRandom(seed)`.
     /// - `BlendedNoise` uses `LegacyRandom(seed)` instead of the positional splitter.
     pub legacy_random_source: bool,
+    /// Build-time SIMD lane width for the corner-fill backend (4 or 8).
+    pub simd_lanes: usize,
 }
 
 /// Compile density function trees into a `TokenStream` of Rust code.
@@ -74,8 +76,8 @@ pub struct TranspilerInput {
 /// - Private `compute_*` functions for each named density function
 /// - Public `router_*` functions for each noise router entry point
 #[must_use]
-pub fn transpile(input: &TranspilerInput) -> TokenStream {
-    let mut ctx = context::TranspileContext::new(&input.prefix);
+pub fn transpile(input: &TranspilerInput, simd_lanes: usize) -> TokenStream {
+    let mut ctx = context::TranspileContext::new(&input.prefix, simd_lanes);
     ctx.legacy_random_source = input.legacy_random_source;
 
     // Phase 1: Analyze the graph

@@ -559,7 +559,7 @@ impl TranspileContext {
     pub(super) fn fn_params_4x(&self) -> TokenStream {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
-        quote! { noises: &#noises, cache: &#cache, x: f64, ys: f64x4, z: f64 }
+        quote! { noises: &#noises, cache: &#cache, x: f64, ys: __LaneV, z: f64 }
     }
 
     /// Generate the function parameter list for a router entry point.

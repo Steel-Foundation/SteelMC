@@ -22,6 +22,10 @@ pub(super) fn named_fn_ident_4x(name: &str) -> Ident {
     format_ident!("compute_{}_4x", sanitize_name(name))
 }
 
+pub(super) fn named_fn_ident_lanes(name: &str, lanes: usize) -> Ident {
+    format_ident!("compute_{}_{}x", sanitize_name(name), lanes)
+}
+
 pub(super) fn grid_field_ident(name: &str) -> Ident {
     format_ident!("grid_df_{}", sanitize_name(name))
 }
