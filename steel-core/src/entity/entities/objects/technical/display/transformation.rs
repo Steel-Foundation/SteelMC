@@ -119,7 +119,7 @@ impl Transformation {
         let input = matrix * scale_factor;
 
         // Extract the translation.
-        let translation = input.w_axis.xyz() * scale_factor;
+        let translation = input.w_axis.xyz();
 
         let mat = Mat3::from_mat4(input);
 

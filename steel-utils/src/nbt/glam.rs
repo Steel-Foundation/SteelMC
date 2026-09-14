@@ -80,7 +80,7 @@ pub fn quat_from_nbt_tag(tag: BorrowedNbtTag) -> Option<Quat> {
         && let Some(floats) = l.floats()
         && floats.len() == 4
     {
-        return Some(Quat::from_xyzw(floats[0], floats[1], floats[2], floats[3]));
+        return Some(Quat::from_xyzw(floats[0], floats[1], floats[2], floats[3]).normalize());
     }
     Some(AxisAngle4f::from_nbt_tag(tag)?.into())
 }
