@@ -443,7 +443,7 @@ impl LevelDataManager {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!(
-                            "Primary world {} is missing game_time; changing the domain default requires explicit authority transfer",
+                            "Domain default world's {} is missing game_time. If you changed the domain default world, stop the server and copy game_time from the previous default world's level.toml into this file before restarting.",
                             path.display()
                         ),
                     ));
