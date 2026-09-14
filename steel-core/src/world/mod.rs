@@ -370,11 +370,16 @@ impl World {
         if level_data.is_dirty() {
             level_data.save().await?;
         }
-        let persistent_chunk_tickets: PersistentChunkTickets = saved_data
-            .load_or_default(saved_data_names::CHUNK_TICKETS)
-            .await?;
-        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let persistent_chunk_tickets = saved_data
+            .load_or_default::<PersistentChunkTickets>(saved_data_names::CHUNK_TICKETS)
+            .await
+            .unwrap_or_else(|error| {
+                log::warn!(
+                    "Could not load chunk ticket data for world {key}; starting with none: {error}"
+                );
+                PersistentChunkTickets::default()
+            });
+        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets);
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
