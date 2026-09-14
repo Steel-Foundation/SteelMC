@@ -16,7 +16,9 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, PlayerConnection,
-    connection::{JavaNetworkWriter, OutboundPacket},
+    connection::{
+        JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite, OutboundPacket,
+    },
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -44,7 +46,7 @@ use text_components::{
 };
 use tokio::{
     io::{BufReader, BufWriter},
-    net::{TcpStream, tcp::OwnedReadHalf},
+    net::TcpStream,
     select,
     sync::{
         Notify,
@@ -232,7 +234,7 @@ pub struct JavaTcpClient {
 }
 
 impl JavaTcpClient {
-    /// Creates a new `JavaTcpClient`.
+    /// Creates a new `JavaTcpClient` over a TCP socket.
     #[must_use]
     pub fn new(
         tcp_stream: TcpStream,
@@ -242,12 +244,41 @@ impl JavaTcpClient {
         server: Arc<Server>,
         connection_session: Arc<ServerConnectionSession>,
         task_tracker: TaskTracker,
-    ) -> (
-        Self,
-        UnboundedReceiver<OutboundPacket>,
-        TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-    ) {
+    ) -> (Self, UnboundedReceiver<OutboundPacket>, JavaNetworkReader) {
         let (read, write) = tcp_stream.into_split();
+        Self::from_transport(
+            Box::new(read),
+            Box::new(write),
+            address,
+            id,
+            cancel_token,
+            server,
+            connection_session,
+            task_tracker,
+        )
+    }
+
+    /// Creates a new `JavaTcpClient` over an already-established transport.
+    ///
+    /// `read` and `write` are the two halves of a byte stream that speaks the Java Edition
+    /// protocol from the handshake onward. [`Self::new`] uses this with a split `TcpStream`;
+    /// an embedder running the server in-process can pass the halves of an in-memory pipe.
+    /// `address` is what the server logs and reports as the client's address.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "same parameters as `new` with the stream split into its two halves"
+    )]
+    pub fn from_transport(
+        read: JavaTransportRead,
+        write: JavaTransportWrite,
+        address: SocketAddr,
+        id: u64,
+        cancel_token: CancellationToken,
+        server: Arc<Server>,
+        connection_session: Arc<ServerConnectionSession>,
+        task_tracker: TaskTracker,
+    ) -> (Self, UnboundedReceiver<OutboundPacket>, JavaNetworkReader) {
         let (outgoing_queue, recv) = mpsc::unbounded_channel();
         let (connection_updates, _) = broadcast::channel(128);
 
@@ -470,10 +501,7 @@ impl JavaTcpClient {
 
     /// Starts a task that will receive packets from the client.
     /// This task will run until the client is closed or the cancellation token is cancelled.
-    pub fn start_incoming_packet_task(
-        self: &Arc<Self>,
-        mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-    ) {
+    pub fn start_incoming_packet_task(self: &Arc<Self>, mut reader: JavaNetworkReader) {
         let cancel_token = self.cancel_token.clone();
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
