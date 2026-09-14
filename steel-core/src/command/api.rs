@@ -234,10 +234,7 @@ impl CommandNode {
     /// Add a custom [`SuggestionProvider`] to the corresponding argument
     /// does nothing if the node isn't a argument
     #[must_use]
-    pub fn suggests(
-        mut self,
-        suggestion: &'static (impl SuggestionProvider + 'static),
-    ) -> Self {
+    pub fn suggests(mut self, suggestion: &'static (impl SuggestionProvider + 'static)) -> Self {
         self.inner = self.inner.suggests(SuggestionProviderWrapper(suggestion));
         self
     }
