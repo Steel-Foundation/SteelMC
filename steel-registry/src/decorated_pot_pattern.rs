@@ -142,7 +142,6 @@ mod tests {
 
     use simdnbt::borrow::read_tag;
     use simdnbt::{FromNbtTag as _, ToNbtTag as _};
-    use steel_utils::Identifier;
     use steel_utils::hash::HashComponent as _;
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 

@@ -3,11 +3,11 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
-use std::ops;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
 use std::simd::f64x4;
 use std::simd::num::SimdFloat;
 use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat};
+use std::{f64::consts::SQRT_2, ops};
 
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
@@ -24,7 +24,7 @@ use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::N
 pub const INPUT_FACTOR: f64 = 1.0181268882175227;
 
 /// `NormalNoise.TARGET_DEVIATION` — target standard deviation for the combined output.
-const TARGET_DEVIATION: f64 = 0.3333333333333333;
+const TARGET_DEVIATION: f64 = 0.333_333_333_333_333_3;
 
 /// Per-octave deviation coefficient used by `estimateDeviation`.
 ///
@@ -282,7 +282,7 @@ impl NormalNoise {
 /// `NormalNoise.getAmplitudeModifier`: modifier for octave `index`, or `1.0` when the
 /// list is empty (meaning "unmodified").
 #[inline]
-fn get_amplitude_modifier(amplitude_modifiers: &[f64], index: usize) -> f64 {
+const fn get_amplitude_modifier(amplitude_modifiers: &[f64], index: usize) -> f64 {
     if amplitude_modifiers.is_empty() {
         1.0
     } else {
@@ -354,7 +354,7 @@ fn compute_normalization_factor(target_amplitude: f64, octave_amplitudes: &[f64]
     if input_deviation == 0.0 {
         return 0.0;
     }
-    let input_sum_deviation = input_deviation * std::f64::consts::SQRT_2;
+    let input_sum_deviation = input_deviation * SQRT_2;
     let target_deviation = target_amplitude * TARGET_DEVIATION;
     target_deviation / input_sum_deviation
 }

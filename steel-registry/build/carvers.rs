@@ -59,7 +59,7 @@ struct CaveConfigJson {
     floor_level: FloatProvider,
 }
 
-fn default_start_vertical_radius_multiplier() -> FloatProvider {
+const fn default_start_vertical_radius_multiplier() -> FloatProvider {
     FloatProvider::Constant(1.0)
 }
 

@@ -318,7 +318,7 @@ impl PlayerRespawnJob {
         if state.is_bed()
             && Player::bed_rule_value_allows_in_world(
                 world,
-                world.dimension_type.bed_rule.can_set_spawn,
+                Player::bed_rule_for(world, state).can_set_spawn,
             )
         {
             let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);

@@ -69,9 +69,7 @@ impl FeatureDecorationRunner {
             }
             BlockStateProviderKind::RotatedBlock { state, direction } => {
                 let state = Self::sample_block_state_provider(level, registry, random, state, pos);
-                let axis = direction
-                    .map(|direction| direction.axis())
-                    .unwrap_or_else(|| Self::random_axis(random));
+                let axis = direction.map_or_else(|| Self::random_axis(random), Direction::axis);
                 state.set_value(&BlockStateProperties::AXIS, axis)
             }
             BlockStateProviderKind::RandomizedInt {

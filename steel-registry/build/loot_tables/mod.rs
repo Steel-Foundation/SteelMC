@@ -71,14 +71,14 @@ enum LootTableValueJson {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 enum ModifierJson {
-    Single(LootFunctionJson),
+    Single(Box<LootFunctionJson>),
     Sequence(Vec<LootFunctionJson>),
 }
 
 impl ModifierJson {
     fn functions(&self) -> Vec<&LootFunctionJson> {
         match self {
-            Self::Single(function) => vec![function],
+            Self::Single(function) => vec![function.as_ref()],
             Self::Sequence(functions) => functions.iter().collect(),
         }
     }

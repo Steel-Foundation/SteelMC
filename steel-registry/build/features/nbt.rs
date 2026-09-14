@@ -320,7 +320,7 @@ pub(super) fn generate_block_predicate_nbt(predicate: &BlockPredicate) -> TokenS
     }
 }
 
-fn direction_name(direction: steel_utils::Direction) -> &'static str {
+const fn direction_name(direction: steel_utils::Direction) -> &'static str {
     match direction {
         steel_utils::Direction::Down => "down",
         steel_utils::Direction::Up => "up",

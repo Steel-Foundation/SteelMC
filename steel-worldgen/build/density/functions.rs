@@ -547,8 +547,9 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         // TODO: Implement Beardifier for structure terrain adaptation.
         // Constant(0.0) is correct when structures are not yet generated.
         DensityFunctionData::Beardifier {} => DensityFunction::Constant(Constant { value: 0.0 }),
-        DensityFunctionData::EndIslands {} => DensityFunction::EndIslands,
-        DensityFunctionData::EndOuterIslands {} => DensityFunction::EndIslands,
+        DensityFunctionData::EndIslands {} | DensityFunctionData::EndOuterIslands {} => {
+            DensityFunction::EndIslands
+        }
 
         DensityFunctionData::Slice {
             axis,

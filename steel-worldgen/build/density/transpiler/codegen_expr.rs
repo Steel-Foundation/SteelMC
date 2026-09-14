@@ -1207,7 +1207,8 @@ impl TranspileContext {
             DensityFunction::YClampedGradient(_)
             | DensityFunction::Shift(_)
             | DensityFunction::BlendedNoise(_)
-            | DensityFunction::WeirdScaledSampler(_) => false,
+            | DensityFunction::WeirdScaledSampler(_)
+            | DensityFunction::DistanceToPoint(_) => false,
 
             DensityFunction::Mapped(m) => self.is_y_independent(&m.input),
             DensityFunction::Clamp(c) => self.is_y_independent(&c.input),
@@ -1239,7 +1240,6 @@ impl TranspileContext {
             DensityFunction::Slice(s) => {
                 matches!(s.axis, Axis::Y) || self.is_y_independent(&s.input)
             }
-            DensityFunction::DistanceToPoint(_) => false,
 
             // A non-flat `Reference` is Y-dependent. The flatness analyzer
             // would have promoted it to `flat_cached` if it were Y-indep.

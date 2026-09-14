@@ -8,7 +8,7 @@ use crate::{
     },
     entity::{Entity, ai::path::PathComputationType, dismount_helper},
     player::Player,
-    world::{ScheduledTickAccess, World},
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 use glam::DVec3;
 use steel_macros::block_behavior;
@@ -16,10 +16,10 @@ use steel_registry::blocks::properties::{BedPart, BoolProperty, EnumProperty};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
 };
-use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
-use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
+use steel_registry::{vanilla_blocks, vanilla_custom_stats};
+use steel_utils::{
+    BlockPos, BlockStateId, Direction, axis::Axis, translations, types::UpdateFlags,
+};
 
 const BED_BOUNCE_SCALE: f64 = 0.660_000_026_226_043_7;
 const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
@@ -34,7 +34,7 @@ const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 /// entities exist.
 #[block_behavior]
 pub struct BedBlock {
-    block: BlockRef,
+    pub(super) block: BlockRef,
 }
 
 impl BedBlock {
@@ -63,19 +63,23 @@ impl BedBlock {
         )
     }
 
-    fn head_state_and_pos(
+    pub(super) fn head_state_and_pos(
         &self,
         world: &Arc<World>,
         state: BlockStateId,
         pos: BlockPos,
     ) -> Option<(BlockStateId, BlockPos)> {
-        if state.get_value(BED_PART) == BedPart::Head {
-            return Some((state, pos));
+        let part = state.get_value(BED_PART);
+        let other_pos = Self::neighbor_direction(&part, state.get_value(FACING)).relative(pos);
+        let other_state = world.get_block_state(other_pos);
+        if other_state.get_block() != self.block || other_state.get_value(BED_PART) == part {
+            return None;
         }
 
-        let head_pos = state.get_value(FACING).relative(pos);
-        let head_state = world.get_block_state(head_pos);
-        (head_state.get_block() == self.block).then_some((head_state, head_pos))
+        match part {
+            BedPart::Head => Some((state, pos)),
+            BedPart::Foot => Some((other_state, other_pos)),
+        }
     }
 
     const fn neighbor_direction(part: &BedPart, facing: Direction) -> Direction {
@@ -280,6 +284,16 @@ impl BlockBehavior for BedBlock {
         true
     }
 
+    fn get_sleep_height(
+        &self,
+        state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+    ) -> Option<f64> {
+        let shape = state.get_static_outline_shape();
+        (!shape.is_empty()).then(|| shape.max(Axis::Y))
+    }
+
     fn player_will_destroy(
         &self,
         state: BlockStateId,
@@ -341,8 +355,6 @@ impl BlockBehavior for BedBlock {
         let head_state = state.set_value(BED_PART, BedPart::Head);
 
         world.set_block(head_pos, head_state, UpdateFlags::UPDATE_ALL);
-        world.update_neighbors_at(pos, &vanilla_blocks::AIR);
-        world.update_neighbor_shapes_at(state, pos, UpdateFlags::UPDATE_ALL, World::UPDATE_LIMIT);
     }
 
     fn use_without_item(
@@ -358,7 +370,7 @@ impl BlockBehavior for BedBlock {
             return InteractionResult::Consume;
         };
 
-        if world.dimension_type.bed_rule.explodes {
+        if world.dimension_type.bed_rule.destroy_on_use {
             // TODO: When WOrld::explode foundation exists display the bedrule error remove both halves and create the bad respawn point explosion
             return InteractionResult::SuccessServer;
         }
@@ -367,16 +379,17 @@ impl BlockBehavior for BedBlock {
             // TODO: Mirror vanilla `kickVillagerOutOfBed`: find a sleeping
             // villager in this bed AABB and call `stopSleeping` once villager
             // sleeping exists.
-            player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
-                key: "block.minecraft.bed.occupied".into(),
-                fallback: None,
-                args: None,
-            }));
+            player.send_overlay_message(
+                &translations::BLOCK_MINECRAFT_BED_OCCUPIED.msg().component(),
+            );
             return InteractionResult::SuccessServer;
         }
 
-        if let Err(problem) = player.start_sleep_in_bed(head_pos)
-            && let Some(message) = problem.message()
+        if let Err(problem) = player.start_sleep_in_bed(
+            head_pos,
+            &world.dimension_type.bed_rule,
+            &vanilla_custom_stats::SLEEP_IN_BED,
+        ) && let Some(message) = problem.message()
         {
             player.send_overlay_message(message);
         }

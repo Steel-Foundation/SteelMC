@@ -21,10 +21,11 @@ pub use building::{
     HayBlock, HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
     LayeredCauldronBlock, MagmaBlock, MudBlock, NetherrackBlock, PotentSulfurBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
-    SoulSandBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
-    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
-    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
-    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
+    SoulSandBlock, SpongeBlock, StairBlock, StrawBedBlock, TrapDoorBlock, WallBlock,
+    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
+    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
+    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
+    WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
