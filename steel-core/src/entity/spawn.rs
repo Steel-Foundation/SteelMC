@@ -5,6 +5,7 @@ use simdnbt::borrow::read_compound;
 use steel_math::{DEGREE_360, wrap_degrees};
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::entity_variant::FoxVariant;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::nbt::merge_nbt_compounds;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty};
@@ -275,6 +276,17 @@ fn entity_y_offset(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpawnGroupData {
     AgeableMob(AgeableMobGroupData),
+    Fox(FoxGroupData),
+}
+
+impl SpawnGroupData {
+    #[must_use]
+    pub const fn ageable_group_data(self) -> AgeableMobGroupData {
+        match self {
+            Self::AgeableMob(data) => data,
+            Self::Fox(data) => data.ageable,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -334,6 +346,38 @@ impl AgeableMobGroupData {
         let spawn_baby = self.needs_baby_spawn_roll() && baby_roll() <= self.baby_spawn_chance;
         self.increase_group_size_by_one();
         spawn_baby
+    }
+}
+
+/// A spawn group that shares one coat variant and disables the generic baby roll.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FoxGroupData {
+    variant: FoxVariant,
+    ageable: AgeableMobGroupData,
+}
+
+impl FoxGroupData {
+    #[must_use]
+    pub const fn new(variant: FoxVariant) -> Self {
+        Self {
+            variant,
+            ageable: AgeableMobGroupData::with_should_spawn_baby(false),
+        }
+    }
+
+    #[must_use]
+    pub const fn variant(self) -> FoxVariant {
+        self.variant
+    }
+
+    /// How many foxes have been spawned before this one.
+    #[must_use]
+    pub const fn group_size(self) -> i32 {
+        self.ageable.group_size()
+    }
+
+    pub fn advance_group(&mut self, baby_roll: impl FnOnce() -> f32) {
+        let _ = self.ageable.finalize_ageable_spawn(baby_roll);
     }
 }
 
