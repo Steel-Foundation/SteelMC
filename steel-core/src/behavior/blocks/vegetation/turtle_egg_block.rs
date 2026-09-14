@@ -26,8 +26,8 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
 use crate::player::Player;
-use crate::world::World;
 use crate::world::game_event::GameEventContext;
+use crate::world::{LevelReader, World};
 
 /// Cracking stages a turtle egg passes through before it hatches.
 const MAX_HATCH_LEVEL: u8 = 2;
@@ -73,11 +73,13 @@ impl TurtleEggBlock {
         Self { block }
     }
 
-    /// Returns whether the block below `pos` is a sand type (sand, red sand, or
-    /// suspicious sand). Turtle eggs only crack and hatch on top of sand.
-    fn on_sand(world: &Arc<World>, pos: BlockPos) -> bool {
-        world
-            .get_block_state(pos.below())
+    pub(crate) fn on_sand(level: &dyn LevelReader, pos: BlockPos) -> bool {
+        Self::is_sand(level, pos.below())
+    }
+
+    pub(crate) fn is_sand(level: &dyn LevelReader, pos: BlockPos) -> bool {
+        level
+            .get_block_state(pos)
             .get_block()
             .has_tag(&BlockTag::SAND)
     }

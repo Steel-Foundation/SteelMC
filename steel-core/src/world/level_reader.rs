@@ -20,6 +20,8 @@ use crate::world::game_event::GameEventContext;
 
 use super::World;
 
+pub const OVERWORLD_SEA_LEVEL: i32 = 63;
+
 /// Read-only level access needed by block behavior and worldgen predicates.
 pub trait LevelReader {
     /// Gets the block state at a position.
@@ -65,6 +67,11 @@ pub trait LevelReader {
     /// Returns this dimension's vanilla ambient light factor.
     fn ambient_light(&self) -> f32 {
         0.0
+    }
+
+    /// Returns sea level.
+    fn sea_level(&self) -> i32 {
+        OVERWORLD_SEA_LEVEL
     }
 
     /// Returns the minimum build height.
