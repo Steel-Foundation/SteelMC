@@ -124,7 +124,7 @@ where
     }
 
     /// Add a custom [`SuggestionProvider`] to the corresponding argument
-    /// does nothing if the node isn't a argument
+    /// does nothing if the node isn't an argument
     #[must_use]
     pub(crate) fn suggests(
         self,
@@ -134,7 +134,7 @@ where
     }
 
     /// Add a custom [`SuggestionProvider`] wrap in an Arc to the corresponding argument
-    /// does nothing if the node isn't a argument
+    /// does nothing if the node isn't an argument
     #[must_use]
     pub(crate) fn suggests_arc(
         mut self,
