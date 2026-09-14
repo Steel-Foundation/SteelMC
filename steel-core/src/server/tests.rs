@@ -734,7 +734,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         let pearl_uuid = [7; 16];
         let root = PersistentRootVehicle {
             attach: root_uuid,
-            entity: test_persistent_entity(&vanilla_entities::MINECART, root_uuid),
+            entity: test_persistent_entity(&vanilla_entities::PIG, root_uuid),
         };
         let mut pearl_entity = test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid);
         let mut pearl_nbt = NbtCompound::new();
