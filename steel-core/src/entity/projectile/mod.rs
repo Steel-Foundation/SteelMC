@@ -694,15 +694,18 @@ pub trait Projectile: Entity + ProjectileEventSource {
 ///
 /// Mirrors vanilla `Projectile.spawnProjectileFromRotation` + `spawnProjectile`:
 /// create the projectile at the eye minus 0.1, set its owner, shoot it with
-/// `shootFromRotation`, add it to the world, then run `applyOnProjectileSpawned`
-/// (the `minecraft:projectile_spawned` enchantment effects). `create` receives
-/// the spawn position and must return the concrete projectile type. Returns
-/// `None` when the world rejects the projectile so the caller can fail the use.
+/// `shootFromRotation` (adding `pitch_offset` degrees to the player's pitch,
+/// vanilla's `z` argument), add it to the world, then run
+/// `applyOnProjectileSpawned` (the `minecraft:projectile_spawned` enchantment
+/// effects). `create` receives the spawn position and must return the
+/// concrete projectile type. Returns `None` when the world rejects the
+/// projectile so the caller can fail the use.
 #[must_use]
 pub fn spawn_throwable_item_projectile<E>(
     world: &Arc<World>,
     player: &Player,
     item_stack: &mut ItemStack,
+    pitch_offset: f32,
     power: f32,
     uncertainty: f32,
     create: impl FnOnce(DVec3) -> E,
@@ -727,7 +730,7 @@ where
     entity.set_item_clamped(item_stack.clone());
 
     let (yaw, player_pitch) = player.rotation();
-    entity.shoot_from_rotation(player, player_pitch, yaw, 0.0, power, uncertainty);
+    entity.shoot_from_rotation(player, player_pitch, yaw, pitch_offset, power, uncertainty);
 
     let entity: SharedEntity = Arc::new(entity);
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
@@ -892,14 +895,22 @@ mod tests {
     use steel_registry::{
         blocks::properties::{BlockStateProperties, Tilt},
         entity_type::EntityTypeRef,
-        init_vanilla_registry, vanilla_blocks, vanilla_entities,
+        init_vanilla_registry, vanilla_blocks, vanilla_entities, vanilla_items,
     };
     use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
 
     use crate::{
         behavior::init_behaviors,
-        entity::{EntityBase, entities::FireworkRocketEntity},
-        test_support::{test_world, world_border_projectile_test_world},
+        block_entity::init_block_entities,
+        entity::{
+            EntityBase,
+            entities::{FireworkRocketEntity, SnowballEntity},
+            next_entity_id,
+        },
+        test_support::{
+            TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
+            world_border_projectile_test_world,
+        },
     };
 
     struct OwnerCollisionProjectile {
@@ -1081,6 +1092,7 @@ mod tests {
     fn base_block_hit_dispatches_vanilla_block_callbacks() {
         init_vanilla_registry();
         init_behaviors();
+        init_block_entities();
 
         let world = Arc::clone(test_world());
         let chunk_map = Arc::clone(&world.chunk_map);
@@ -1208,5 +1220,44 @@ mod tests {
         projectile.set_owner_entity(Some(&owner));
 
         assert!(projectile.is_outside_owner_collision_range());
+    }
+
+    #[test]
+    fn spawn_helper_applies_the_pitch_offset_to_the_initial_velocity() {
+        init_vanilla_registry();
+        let world = fresh_test_world("projectile_spawn_pitch_offset");
+        let position = DVec3::new(0.5, 80.0, 0.5);
+        insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(position));
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Thrower", 1).build();
+        player.base().set_position_local(position);
+        player.base().set_rotation((0.0, 0.0));
+        let mut stack = ItemStack::new(&vanilla_items::SNOWBALL);
+
+        let thrown = spawn_throwable_item_projectile(
+            &world,
+            &player,
+            &mut stack,
+            -20.0,
+            0.7,
+            0.0,
+            |spawn_pos| {
+                SnowballEntity::new(
+                    &vanilla_entities::SNOWBALL,
+                    next_entity_id(),
+                    spawn_pos,
+                    Arc::downgrade(&world),
+                )
+            },
+        )
+        .expect("snowball should spawn");
+
+        // Vanilla shootFromRotation: direction (−sin yaw·cos pitch, −sin(pitch + offset), cos yaw·cos pitch), normalized, scaled by power.
+        let expected =
+            DVec3::new(0.0, f64::from(20.0_f32.to_radians().sin()), 1.0).normalize() * 0.7;
+        assert!(
+            (thrown.velocity() - expected).length() < 1e-6,
+            "{:?} != {expected:?}",
+            thrown.velocity()
+        );
     }
 }
