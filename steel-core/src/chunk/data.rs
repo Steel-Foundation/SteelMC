@@ -1168,7 +1168,7 @@ mod tests {
     use crate::behavior::{BlockEntityCreation, init_behaviors};
     use crate::block_entity::{
         BlockEntityLifecycleExt as _, SharedBlockEntity,
-        entities::{RawBlockEntity, SignBlockEntity},
+        entities::{SignBlockEntity, UnimplementedBlockEntity},
         init_block_entities,
     };
     use crate::chunk::{
@@ -1622,7 +1622,7 @@ mod tests {
                 .is_some()
         );
         proto.set_pending_block_entity(pos);
-        let stale_entity: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+        let stale_entity: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
             &vanilla_block_entity_types::CHEST,
             Weak::new(),
             pos,
