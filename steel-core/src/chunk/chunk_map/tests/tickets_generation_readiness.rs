@@ -1,6 +1,6 @@
 use super::*;
 use crate::chunk::chunk_pyramid::GENERATION_PYRAMID;
-use crate::test_support::advance_test_game_time;
+use crate::test_support::advance_test_game_time_to;
 
 #[test]
 fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
@@ -390,7 +390,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("pending_tick_readiness_anchor");
-    advance_test_game_time(&world, 100 - world.game_time());
+    advance_test_game_time_to(&world, 100);
     let center_pos = ChunkPos::new(0, 0);
     let tick_pos = BlockPos::new(1, 64, 1);
     let mut center = None;
@@ -440,7 +440,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
         .expect("the center should remain Full");
     assert_eq!(full.scheduled_tick_snapshot().block[0].delay, 5);
 
-    advance_test_game_time(&world, 200 - world.game_time());
+    advance_test_game_time_to(&world, 200);
     world
         .unpack_scheduled_ticks(center_pos)
         .expect("repeated readiness unpack should remain valid");

@@ -908,7 +908,7 @@ pub fn get_cauldron_fill_fluid_type(
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::advance_test_game_time;
+    use crate::test_support::advance_test_game_time_to;
     use std::sync::Weak;
 
     use super::*;
@@ -1082,7 +1082,7 @@ mod tests {
         let (behavior, dripstone) = stalactite_setup(&world, pos);
         behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
 
-        advance_test_game_time(&world, 51 - world.game_time());
+        advance_test_game_time_to(&world, 51);
         world.chunk_map.tick_game(&world, 51, 0, true);
 
         let cauldron_state = world.get_block_state(pos.below());
@@ -1108,7 +1108,7 @@ mod tests {
         let (behavior, dripstone) = stalactite_setup(&world, pos);
         behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
 
-        advance_test_game_time(&world, 51 - world.game_time());
+        advance_test_game_time_to(&world, 51);
         world.chunk_map.tick_game(&world, 51, 0, true);
 
         let cauldron_state = world.get_block_state(pos.below());
@@ -1158,7 +1158,7 @@ mod tests {
         let (behavior, dripstone) = stalactite_setup(&world, pos);
         behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
 
-        advance_test_game_time(&world, 51 - world.game_time());
+        advance_test_game_time_to(&world, 51);
         world.chunk_map.tick_game(&world, 51, 0, true);
 
         assert_eq!(

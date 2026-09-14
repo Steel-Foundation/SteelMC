@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::advance_test_game_time;
+use crate::test_support::advance_test_game_time_to;
 
 #[test]
 fn sparse_scheduler_collects_a_registered_chunk_owned_tick() {
@@ -14,7 +14,7 @@ fn sparse_scheduler_collects_a_registered_chunk_owned_tick() {
 
     // This focused test enters `ChunkMap` directly, so mirror the world
     // phase that advances game time before scheduled-tick collection.
-    advance_test_game_time(&world, 1 - world.game_time());
+    advance_test_game_time_to(&world, 1);
     world.chunk_map.tick_game(&world, 1, 0, true);
 
     assert!(!world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
@@ -30,7 +30,7 @@ fn block_callback_ticks_respect_the_block_fluid_phase_boundary() {
     let callback_block_pos = BlockPos::new(2, 64, 1);
     let callback_fluid_pos = BlockPos::new(3, 64, 1);
     insert_ready_full_chunk(&world, chunk_pos);
-    advance_test_game_time(&world, 20 - world.game_time());
+    advance_test_game_time_to(&world, 20);
     world.schedule_block_tick(
         initial_block_pos,
         &vanilla_blocks::STONE,
@@ -79,7 +79,7 @@ fn earlier_live_insertion_replaces_the_sparse_container_head() {
     world.schedule_block_tick(later_pos, &vanilla_blocks::STONE, 10, TickPriority::Normal);
     world.schedule_block_tick(earlier_pos, &vanilla_blocks::STONE, 1, TickPriority::Normal);
     world.schedule_block_tick(earlier_pos, &vanilla_blocks::STONE, 20, TickPriority::High);
-    advance_test_game_time(&world, 1 - world.game_time());
+    advance_test_game_time_to(&world, 1);
     world.chunk_map.tick_game(&world, 1, 0, true);
 
     assert!(!world.has_scheduled_block_tick(earlier_pos, &vanilla_blocks::STONE));

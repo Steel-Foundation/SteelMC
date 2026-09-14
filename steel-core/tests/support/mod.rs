@@ -159,7 +159,7 @@ pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| {
         let world = create_test_world("test_cross_world_damage");
-        advance_test_game_time(&world, 100 - world.game_time());
+        advance_test_game_time_to(&world, 100);
         world
     })
 }
@@ -524,26 +524,24 @@ pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> World
 }
 
 /// Advances through the same owner operation used before production worker dispatch.
-pub(crate) fn advance_test_game_time(world: &Arc<World>, ticks: i64) {
-    assert!(ticks >= 0, "test clock advancement cannot move backward");
-    let config = ResolvedDomainConfig {
-        name: world.domain().to_owned(),
-        default_world: world.key.clone(),
-        worlds: vec![world.key.clone()],
-    };
-    let mut worlds = WorldMap::new(world.domain().to_owned(), &[config], &[]);
-    worlds.insert(world.key.clone(), Arc::clone(world));
-    worlds
-        .validate_game_times()
-        .expect("single-world fixture must own its clock");
-    for _ in 0..ticks {
-        worlds.advance_domain_game_times();
+pub(crate) fn advance_test_game_time_to(world: &World, target: i64) {
+    let mut level_data = world.level_data.write();
+    assert!(
+        level_data.owns_game_time(),
+        "single-world fixture must own its clock"
+    );
+    assert!(
+        target >= world.game_time(),
+        "test clock cannot move backward"
+    );
+    while world.game_time() < target {
+        level_data.advance_game_time();
     }
 }
 
 pub(crate) fn tick_test_world(world: &Arc<World>, tick_count: u64, runs_normally: bool) {
     if runs_normally {
-        advance_test_game_time(world, 1);
+        advance_test_game_time_to(world, world.game_time() + 1);
     }
     world.tick_game(tick_count, runs_normally);
 }

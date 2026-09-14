@@ -71,7 +71,7 @@ impl BlockEntity for DaylightDetectorBlockEntity {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::advance_test_game_time;
+    use crate::test_support::advance_test_game_time_to;
     use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_world_clocks};
     use steel_utils::ChunkPos;
@@ -105,7 +105,7 @@ mod tests {
             11
         );
 
-        advance_test_game_time(&world, 1 - world.game_time());
+        advance_test_game_time_to(&world, 1);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
         detector.tick(&world);
         assert_eq!(
