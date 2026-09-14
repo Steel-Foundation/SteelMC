@@ -206,11 +206,6 @@ struct TickingReadinessCandidate {
     target: TickingReadiness,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DeferredChunkRevival {
-    load_level: ChunkTicketLevel,
-}
-
 #[derive(Default)]
 struct ReadinessReconcileResult {
     snapshot_changed: bool,
@@ -226,8 +221,6 @@ pub struct ChunkMap {
     pub(crate) chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Map of chunks currently being unloaded.
     pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
-    /// Ticket states waiting for an unloading holder's save preparation to finish.
-    deferred_revivals: SyncMutex<FxHashMap<ChunkPos, DeferredChunkRevival>>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for generation, save, and unload tasks.
@@ -382,7 +375,6 @@ impl ChunkMap {
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
-            deferred_revivals: SyncMutex::new(FxHashMap::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(
@@ -969,7 +961,7 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("process_unloads").entered();
             let start = Instant::now();
-            self.process_pending_unloads();
+            self.process_unloads();
             timings.scheduling.process_unloads = start.elapsed();
         }
 
@@ -987,7 +979,7 @@ impl ChunkMap {
         let _source_phase_guard = self.source_phase_guard.lock();
         let mut timings = self.run_chunk_source_updates();
         let start = Instant::now();
-        self.process_pending_unloads();
+        self.process_unloads();
         timings.process_unloads = start.elapsed();
         timings
     }
@@ -1042,8 +1034,6 @@ impl ChunkMap {
             timings.ticket_updates = start.elapsed();
             batch
         };
-
-        self.merge_deferred_revivals(&mut batch.load_changes);
 
         {
             let _span = tracing::trace_span!("block_entity_unloads").entered();
@@ -1165,24 +1155,9 @@ impl ChunkMap {
             timings.run_generation = start.elapsed();
         }
 
-        let through_receipt = batch.through_receipt;
-        // A staged revival has not published the ticket's holder state yet. A later
-        // phase returns the same watermark and commits it after every revival lands.
-        if self.deferred_revivals.lock().is_empty() {
-            self.scheduling.publish_committed(through_receipt);
-        }
+        self.scheduling.publish_committed(batch.through_receipt);
         self.scheduling.recycle_update_batch(batch);
         timings
-    }
-
-    fn process_pending_unloads(self: &Arc<Self>) {
-        let staged_revivals = self
-            .deferred_revivals
-            .lock()
-            .keys()
-            .copied()
-            .collect::<FxHashSet<_>>();
-        self.process_unloads(&staged_revivals);
     }
 
     /// Returns full chunks whose simulation level currently allows entity ticks.
