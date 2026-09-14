@@ -23,10 +23,12 @@ use text_components::TextComponent;
 
 /// The default line width of text shown by a text display.
 pub const DEFAULT_LINE_WIDTH: i32 = 200;
+
 /// The default text opacity of text shown by a text display.
 ///
 /// `-1` corresponds to full opacity.
 pub const DEFAULT_TEXT_OPACITY: i8 = -1;
+
 /// The default background color of text shown by a text display.
 pub const DEFAULT_BACKGROUND_COLOR: i32 = 0x4000_0000;
 

@@ -39,9 +39,7 @@ pub const DEFAULT_WIDTH: f32 = 0.0;
 /// The default height of a display entity.
 pub const DEFAULT_HEIGHT: f32 = 0.0;
 
-/// The default glow color override of a display entity.
-///
-/// `-1` corresponds to no override.
+/// The default glow color override of a display entity. `-1` corresponds to no override.
 pub const DEFAULT_GLOW_COLOR_OVERRIDE: i32 = -1;
 
 /// The abstract display trait used by all display entities.
