@@ -42,7 +42,7 @@ const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
-/// Vanilla `LivingEntity.DAMAGE_SOURCE_TIMEOUT`, measured in game ticks.
+/// Time before the last damage source expires, in game ticks.
 const DAMAGE_SOURCE_TIMEOUT: i64 = 40;
 
 /// Runtime mob-effect state.

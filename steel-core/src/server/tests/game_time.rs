@@ -1,6 +1,8 @@
 use std::path::Path;
+use steel_utils::Identifier;
 
 use super::*;
+use crate::config::{DomainConfig, WorldEntryConfig};
 use crate::level_data::LevelData;
 use crate::server::world_tick_workers::WorldTickWorkers;
 use crate::test_support::test_domain;
@@ -201,23 +203,49 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
     with_server_runtime(|runtime| {
         runtime.block_on(async {
             let root = test_storage_root("game-time-primary-last");
-            let config_text = format!(
-                r#"
-save_path = '{}'
-[domains.custom]
-default = true
-[[domains.custom.worlds]]
-name = "derived"
-generator = "minecraft:flat"
-[[domains.custom.worlds]]
-name = "authority"
-generator = "minecraft:flat"
-default = true
-[domains.custom.worlds.config]
-dimension_type = "minecraft:the_end"
-"#,
-                root.display()
-            );
+            let worlds_config = || WorldsConfig {
+                save_path: root.to_string_lossy().into_owned(),
+                seed: None,
+                default_gamemode: None,
+                difficulty: None,
+                storage: None,
+                player_storage: None,
+                domains: [(
+                    "custom".to_owned(),
+                    DomainConfig {
+                        default: true,
+                        seed: None,
+                        default_gamemode: None,
+                        difficulty: None,
+                        storage: None,
+                        worlds: [("derived", false), ("authority", true)]
+                            .into_iter()
+                            .map(|(name, default)| WorldEntryConfig {
+                                name: name.to_owned(),
+                                generator: Identifier::vanilla_static("flat"),
+                                default,
+                                seed: None,
+                                default_gamemode: None,
+                                difficulty: None,
+                                storage: None,
+                                nether_portal_target: None,
+                                end_portal_target: None,
+                                config: default.then(|| {
+                                    toml::Value::Table(
+                                        [(
+                                            "dimension_type".to_owned(),
+                                            toml::Value::String("minecraft:the_end".to_owned()),
+                                        )]
+                                        .into_iter()
+                                        .collect(),
+                                    )
+                                }),
+                            })
+                            .collect(),
+                    },
+                )]
+                .into(),
+            };
             let config = || {
                 let mut config = RuntimeConfig::clone(&test_runtime_config());
                 config.services_server = Some(UNROUTABLE_SERVICES.to_owned());
@@ -228,7 +256,7 @@ dimension_type = "minecraft:the_end"
                     Arc::clone(runtime),
                     CancellationToken::new(),
                     config(),
-                    toml::from_str(&config_text).expect("world config"),
+                    worlds_config(),
                     PermissionGroupManager::transient(PermissionGroupsConfig::default())
                         .expect("permissions"),
                 )
@@ -341,23 +369,43 @@ fn game_time_rejects_ephemeral_primary_before_touching_derived_save() {
             .expect("fixture save");
             write_legacy_game_time(&path, 2_000).await;
             let original = fs::read(&path).await.expect("original save");
-            let config_text = format!(
-                r#"
-save_path = '{}'
-[domains.custom]
-default = true
-[[domains.custom.worlds]]
-name = "derived"
-generator = "minecraft:flat"
-storage = {{ type = "steel:disk" }}
-[[domains.custom.worlds]]
-name = "lobby"
-generator = "minecraft:flat"
-default = true
-storage = {{ type = "steel:ram" }}
-"#,
-                root.display()
-            );
+            let worlds_config = WorldsConfig {
+                save_path: root.to_string_lossy().into_owned(),
+                seed: None,
+                default_gamemode: None,
+                difficulty: None,
+                storage: None,
+                player_storage: None,
+                domains: [(
+                    "custom".to_owned(),
+                    DomainConfig {
+                        default: true,
+                        seed: None,
+                        default_gamemode: None,
+                        difficulty: None,
+                        storage: None,
+                        worlds: [("derived", "disk", false), ("lobby", "ram", true)]
+                            .into_iter()
+                            .map(|(name, backend, default)| WorldEntryConfig {
+                                name: name.to_owned(),
+                                generator: Identifier::vanilla_static("flat"),
+                                default,
+                                seed: None,
+                                default_gamemode: None,
+                                difficulty: None,
+                                storage: Some(StorageSelection {
+                                    kind: Identifier::new_static("steel", backend),
+                                    config: None,
+                                }),
+                                nether_portal_target: None,
+                                end_portal_target: None,
+                                config: None,
+                            })
+                            .collect(),
+                    },
+                )]
+                .into(),
+            };
             let mut config = RuntimeConfig::clone(&test_runtime_config());
             config.services_server = Some(UNROUTABLE_SERVICES.to_owned());
             let cancel = CancellationToken::new();
@@ -365,7 +413,7 @@ storage = {{ type = "steel:ram" }}
                 Arc::clone(runtime),
                 cancel.clone(),
                 config,
-                toml::from_str(&config_text).expect("world config"),
+                worlds_config,
                 PermissionGroupManager::transient(PermissionGroupsConfig::default())
                     .expect("permissions"),
             )
