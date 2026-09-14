@@ -5,13 +5,11 @@ use std::fmt::Debug;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
+use std::time::{Duration, Instant};
 use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::SyncMutex};
 use tokio::sync::{Notify, oneshot};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
-
-#[cfg(feature = "slow_chunk_gen")]
-use std::time::Duration;
 
 /// When `true`, each chunk generation stage sleeps 200 ms after completing.
 /// Set by the spawn progress display to make the terminal grid visible.
@@ -28,6 +26,7 @@ use crate::chunk::light::{
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::EntityVisibility;
+use crate::fatal::fatal_shutdown_requested;
 use crate::worldgen::WorldGenContext;
 use crate::{
     ChunkMap,
@@ -188,6 +187,47 @@ pub struct ChunkHolder {
     changed_blocks_per_section: Box<[SyncMutex<FxHashSet<PackedSectionBlockPos>>]>,
     /// Changed light sections grouped by light layer.
     changed_light_sections: SyncMutex<ChangedLightSectionSets>,
+    /// Backoff after failing to acquire this chunk from storage.
+    storage_backoff: SyncMutex<Option<StorageBackoff>>,
+}
+
+/// Tracks consecutive storage-acquire failures for one chunk.
+///
+/// The ticket wanting the chunk outlives the failure, so without a delay the
+/// scheduler re-drives the same failing load every epoch.
+struct StorageBackoff {
+    /// Consecutive failures, saturating.
+    failures: u32,
+    /// Earliest instant the chunk may be scheduled again.
+    retry_after: Instant,
+}
+
+/// First retry delay after a storage failure.
+const STORAGE_RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+/// Ceiling for the doubling retry delay.
+const STORAGE_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
+impl StorageBackoff {
+    /// Doubles the delay for each failure, up to [`STORAGE_RETRY_MAX_DELAY`].
+    fn after_failure(current: Option<&Self>, now: Instant) -> (Self, u32, Duration) {
+        let failures = current.map_or(0, |state| state.failures).saturating_add(1);
+        let delay = STORAGE_RETRY_BASE_DELAY
+            .saturating_mul(1u32 << failures.saturating_sub(1).min(6))
+            .min(STORAGE_RETRY_MAX_DELAY);
+        (
+            Self {
+                failures,
+                retry_after: now + delay,
+            },
+            failures,
+            delay,
+        )
+    }
+
+    /// Whether scheduling should still be held back at `now`.
+    fn is_active(&self, now: Instant) -> bool {
+        now < self.retry_after
+    }
 }
 
 struct StatusWorkClaim {
@@ -312,6 +352,7 @@ impl ChunkHolder {
             full_publications,
             changed_blocks_per_section,
             changed_light_sections: SyncMutex::new(ChangedLightSectionSets::default()),
+            storage_backoff: SyncMutex::new(None),
         }
     }
 
@@ -532,6 +573,32 @@ impl ChunkHolder {
         self.changed_blocks_per_section.len()
     }
 
+    /// Records a failed acquire, returning the failure count and the delay
+    /// before another attempt is allowed.
+    fn note_storage_failure(&self) -> (u32, Duration) {
+        let mut backoff = self.storage_backoff.lock();
+        let (next, failures, delay) =
+            StorageBackoff::after_failure(backoff.as_ref(), Instant::now());
+        *backoff = Some(next);
+        (failures, delay)
+    }
+
+    /// Clears the storage backoff after a successful acquire.
+    fn clear_storage_failure(&self) {
+        let mut backoff = self.storage_backoff.lock();
+        if backoff.is_some() {
+            *backoff = None;
+        }
+    }
+
+    /// Whether this chunk is still waiting out a storage backoff.
+    fn storage_backoff_active(&self) -> bool {
+        self.storage_backoff
+            .lock()
+            .as_ref()
+            .is_some_and(|state| state.is_active(Instant::now()))
+    }
+
     /// Checks if the given status is disallowed.
     pub fn is_status_disallowed(&self, status: ChunkStatus) -> bool {
         let allowed = self.highest_allowed_status.load(Ordering::Acquire);
@@ -556,6 +623,10 @@ impl ChunkHolder {
         }
 
         if self.try_chunk(status).is_some() {
+            return false;
+        }
+
+        if self.storage_backoff_active() {
             return false;
         }
 
@@ -889,12 +960,28 @@ impl ChunkHolder {
     ) -> Option<()> {
         let target_status = step.target_status;
         let chunk_exists = match storage.acquire_chunk(holder.pos).await {
-            Ok(chunk_exists) => chunk_exists,
+            Ok(chunk_exists) => {
+                holder.clear_storage_failure();
+                chunk_exists
+            }
             Err(error) => {
-                tracing::error!(
-                    chunk = ?holder.pos,
-                    "Failed to acquire chunk storage before load/generation: {error}",
-                );
+                let (failures, delay) = holder.note_storage_failure();
+                if fatal_shutdown_requested() {
+                    // Shutdown is already underway; every ticketed chunk would
+                    // otherwise repeat the same cause on its way out.
+                    tracing::debug!(chunk = ?holder.pos, "Chunk storage unavailable: {error}");
+                } else if failures == 1 {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to acquire chunk storage before load/generation, retrying in {delay:?}: {error}",
+                    );
+                } else {
+                    tracing::debug!(
+                        chunk = ?holder.pos,
+                        failures,
+                        "Chunk storage still unavailable, retrying in {delay:?}: {error}",
+                    );
+                }
                 return None;
             }
         };
@@ -1732,5 +1819,40 @@ mod tests {
 
         assert!(holder.try_revive_from_unloading());
         assert!(holder.try_begin_save_preparation().is_none());
+    }
+    /// Each failure must push the next attempt further out, or the scheduler
+    /// re-drives the same failing load every epoch.
+    #[test]
+    fn storage_backoff_escalates_and_caps() {
+        let now = Instant::now();
+
+        let (first, failures, delay) = StorageBackoff::after_failure(None, now);
+        assert_eq!(failures, 1);
+        assert_eq!(delay, STORAGE_RETRY_BASE_DELAY);
+        assert!(
+            first.is_active(now),
+            "the chunk must be held back immediately"
+        );
+        assert!(
+            !first.is_active(now + delay),
+            "the chunk must be retryable once the window elapses"
+        );
+
+        let (second, failures, delay) = StorageBackoff::after_failure(Some(&first), now);
+        assert_eq!(failures, 2);
+        assert_eq!(delay, STORAGE_RETRY_BASE_DELAY * 2);
+
+        // Escalation must stop at the ceiling rather than growing without bound.
+        let mut state = second;
+        for _ in 0..20 {
+            let (next, _, delay) = StorageBackoff::after_failure(Some(&state), now);
+            assert!(
+                delay <= STORAGE_RETRY_MAX_DELAY,
+                "delay {delay:?} exceeded the {STORAGE_RETRY_MAX_DELAY:?} ceiling"
+            );
+            state = next;
+        }
+        let (_, _, delay) = StorageBackoff::after_failure(Some(&state), now);
+        assert_eq!(delay, STORAGE_RETRY_MAX_DELAY);
     }
 }

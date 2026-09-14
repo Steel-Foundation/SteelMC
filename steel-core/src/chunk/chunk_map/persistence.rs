@@ -3,6 +3,7 @@ use super::{
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
+use crate::fatal::fatal_shutdown_requested;
 use tokio::sync::oneshot;
 
 impl ChunkMap {
@@ -103,7 +104,13 @@ impl ChunkMap {
                     .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids),
                 Ok(false) => Self::mark_chunk_dirty_for_save_retry(chunk_holder),
                 Err(e) => {
-                    tracing::error!("Error saving chunk: {e}");
+                    if fatal_shutdown_requested() {
+                        // Shutdown is already underway; every dirty chunk would
+                        // otherwise repeat the same cause on its way out.
+                        tracing::debug!(chunk = ?chunk_pos, "Chunk storage unavailable: {e}");
+                    } else {
+                        tracing::error!("Error saving chunk: {e}");
+                    }
                     Self::mark_chunk_dirty_for_save_retry(chunk_holder);
                 }
             }

@@ -13,6 +13,7 @@ use crate::player::{KnownPlayers, Player};
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
@@ -113,15 +114,15 @@ impl FilePlayerDataStorage {
         let domain_dir = self.domain_players_dir(domain);
         let path = Self::player_data_file(&domain_dir, uuid);
         let _guard = self.file_lock(&path).await;
-        if !Self::recover_missing_atomic_path_locked(&path).await? {
-            return Ok(None);
+        let data = Self::load_recovering_from_backup_locked(&path, |bytes| {
+            decode_player_file(bytes)?.into_persistent()
+        })
+        .await?;
+        if data.is_some() {
+            log::debug!("Loaded player data for {uuid} in domain {domain}");
         }
-        let bytes = fs::read(&path).await?;
-        let file = decode_player_file(&bytes)?;
-        let data = file.into_persistent()?;
-        log::debug!("Loaded player data for {uuid} in domain {domain}");
 
-        Ok(Some(data))
+        Ok(data)
     }
 
     pub(crate) async fn load_domain_player_stats(
@@ -152,14 +153,12 @@ impl FilePlayerDataStorage {
     pub(crate) async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
         let path = Self::player_data_file(&self.global_players_dir(), uuid);
         let _guard = self.file_lock(&path).await;
-        if !Self::recover_missing_atomic_path_locked(&path).await? {
-            return Ok(None);
-        }
-        let bytes = fs::read(&path).await?;
-        let file = decode_global_file(&bytes)?;
-        Ok(Some(GlobalPlayerData {
-            last_active_domain: file.last_active_domain,
-        }))
+        Self::load_recovering_from_backup_locked(&path, |bytes| {
+            decode_global_file(bytes).map(|file| GlobalPlayerData {
+                last_active_domain: file.last_active_domain,
+            })
+        })
+        .await
     }
 
     pub(crate) async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
@@ -363,6 +362,95 @@ impl FilePlayerDataStorage {
             Some(extension) => format!("{extension}_old"),
             None => "old".to_owned(),
         })
+    }
+
+    /// Where a damaged file is set aside. Timestamped so a later corruption
+    /// cannot overwrite the evidence from an earlier one.
+    pub(crate) fn quarantine_path(path: &Path, stamp: u64) -> PathBuf {
+        let extension = path.extension().and_then(|value| value.to_str());
+        path.with_extension(match extension {
+            Some(extension) => format!("{extension}_corrupt_{stamp}"),
+            None => format!("corrupt_{stamp}"),
+        })
+    }
+
+    /// Reads and decodes `path`, falling back to the atomic-write backup when
+    /// the live file's bytes are damaged.
+    ///
+    /// The backup is only consulted for [`io::ErrorKind::InvalidData`], which
+    /// `decode_file` reserves for damage. An [`io::ErrorKind::Unsupported`]
+    /// file is intact but written by another format version, and the backup
+    /// carries that same version, so it propagates untouched.
+    ///
+    /// On a successful recovery the damaged file is quarantined rather than
+    /// deleted and the backup is promoted into its place, so the next read
+    /// finds the recovered generation. Quarantining happens first: if the
+    /// process stops between the two renames, the live path is missing while
+    /// the backup is intact, which is the state
+    /// `recover_missing_atomic_path_locked` repairs on the next read.
+    ///
+    /// The recovered generation is one save behind.
+    async fn load_recovering_from_backup_locked<T, F>(
+        path: &Path,
+        decode: F,
+    ) -> io::Result<Option<T>>
+    where
+        F: Fn(&[u8]) -> io::Result<T>,
+    {
+        if !Self::recover_missing_atomic_path_locked(path).await? {
+            return Ok(None);
+        }
+
+        let bytes = fs::read(path).await?;
+        let damage = match decode(&bytes) {
+            Ok(value) => return Ok(Some(value)),
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => error,
+            Err(error) => return Err(error),
+        };
+
+        let backup_path = Self::atomic_backup_path(path);
+        if !fs::try_exists(&backup_path).await? {
+            tracing::error!(
+                path = %path.display(),
+                error = %damage,
+                "Player data file is corrupt and has no backup to recover from"
+            );
+            return Err(damage);
+        }
+
+        let backup_bytes = fs::read(&backup_path).await?;
+        let recovered = match decode(&backup_bytes) {
+            Ok(value) => value,
+            Err(backup_error) => {
+                tracing::error!(
+                    path = %path.display(),
+                    error = %damage,
+                    backup_error = %backup_error,
+                    "Player data file and its backup are both unreadable"
+                );
+                return Err(damage);
+            }
+        };
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let quarantine = Self::quarantine_path(path, stamp);
+        fs::rename(path, &quarantine).await?;
+        fs::rename(&backup_path, path).await?;
+        if let Some(parent) = path.parent() {
+            Self::sync_parent(parent).await?;
+        }
+
+        tracing::warn!(
+            path = %path.display(),
+            quarantined = %quarantine.display(),
+            error = %damage,
+            "Recovered a corrupt player data file from its backup; the restored \
+             data is one save behind and the damaged file was set aside"
+        );
+
+        Ok(Some(recovered))
     }
 
     async fn recover_missing_atomic_path_locked(final_path: &Path) -> io::Result<bool> {
