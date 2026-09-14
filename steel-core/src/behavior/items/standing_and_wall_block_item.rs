@@ -161,6 +161,21 @@ impl ItemBehavior for StandingAndWallBlockItem {
         let placed_state = context.world.get_block_state(place_pos);
 
         let block = self.get_block_for_state(new_state);
+
+        if placed_state.get_block() == block {
+            if let Some(block_entity) = place_context.world.get_block_entity(place_pos) {
+                place_context.with_item(|item| block_entity.apply_components_from_item(item));
+                block_entity.set_changed();
+            }
+            let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
+            placed_behavior.set_placed_by(
+                placed_state,
+                context.world,
+                place_pos,
+                place_context.source(),
+            );
+        }
+
         let sound_type = &block.config.sound_type;
         context.world.play_block_sound(
             sound_type.place_sound,

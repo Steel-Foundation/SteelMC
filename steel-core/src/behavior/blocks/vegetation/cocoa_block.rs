@@ -18,6 +18,7 @@ use crate::{
     behavior::{
         BlockBehavior, blocks::vegetation::bonemealable::Bonemealable, context::BlockPlaceContext,
     },
+    block_entity::SharedBlockEntity,
     entity::ai::path::PathComputationType,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -123,6 +124,7 @@ impl BlockBehavior for CocoaBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::COCOA_BEANS))
