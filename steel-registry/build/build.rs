@@ -86,9 +86,11 @@ mod enchantments;
 mod generator_functions;
 mod shared_structs;
 mod tags;
+mod advancements;
 
 const FMT: bool = cfg!(feature = "fmt");
 
+const ADVANCEMENTS: &str = "advancements";
 const ATTRIBUTES: &str = "attributes";
 const BLOCKS: &str = "blocks";
 const BLOCK_TAGS: &str = "block_tags";
@@ -252,6 +254,7 @@ pub fn main() {
         (features::build_configured(), CONFIGURED_FEATURES),
         (features::build_placed(), PLACED_FEATURES),
         (custom_stats::build(), CUSTOM_STATS),
+        (advancements::build(),ADVANCEMENTS)
     ];
 
     // Track which files we're generating this run
