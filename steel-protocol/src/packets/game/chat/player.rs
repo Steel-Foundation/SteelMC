@@ -49,6 +49,7 @@ pub struct CPlayerChat {
 
 impl CPlayerChat {
     #[must_use]
+    #[expect(clippy::too_many_arguments)]
     pub const fn new(
         sender: Uuid,
         index: i32,

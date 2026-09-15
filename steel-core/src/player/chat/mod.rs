@@ -121,22 +121,31 @@ impl ChatState {
     }
 }
 
+/// Mirror vanilla `OutgoingChatMessage`, by creating either a `Player`, sending a `CPlayerChat` packet,
+/// or a `Disguised`, sending a `CDisguisedChat` packet (used for console, command block, or when the player cannot sign the message)
 pub enum OutgoingChatMessage {
     /// Signed or unsigned chat message from a genuine player session
     Player {
-        packet: CPlayerChat,
+        /// The packet to send to the client
+        packet: Box<CPlayerChat>,
+        /// the signature, if None, switch to a disguised packet
         signature: Option<[u8; 256]>,
+        /// the last time the player sent a chat message
         sender_last_seen: LastSeen,
     },
     /// Unsigned message (console, command block)
-    Disguised { content: TextComponent },
+    Disguised {
+        /// The content of the message
+        content: TextComponent,
+    },
 }
 
 impl OutgoingChatMessage {
     /// Determines whether to track as a signed player packet or disguised system packet.
+    #[must_use]
     pub fn create(
         content: TextComponent,
-        player_chat_data: Option<(CPlayerChat, Option<[u8; 256]>, LastSeen)>,
+        player_chat_data: Option<(Box<CPlayerChat>, Option<[u8; 256]>, LastSeen)>,
     ) -> Self {
         match player_chat_data {
             Some((packet, signature, sender_last_seen)) => Self::Player {
@@ -180,15 +189,14 @@ impl OutgoingChatMessage {
                 packet.previous_messages.clone_from(&previous_messages);
 
                 // Send the packet
-                recipient.send_packet(packet);
+                recipient.send_packet(*packet);
 
                 // AFTER sending, update the recipient's cache using vanilla's push algorithm
                 // This adds all lastSeen signatures + current signature to the cache
                 {
                     let mut chat = recipient.chat().lock();
                     if let Some(signature) = signature {
-                        chat.signature_cache
-                            .push(&sender_last_seen, Some(signature));
+                        chat.signature_cache.push(sender_last_seen, Some(signature));
 
                         log::debug!("  Added signature to recipient's cache and pending list");
 
@@ -220,7 +228,12 @@ impl OutgoingChatMessage {
     }
 
     /// Builds an outgoing message payload from a command execution context.
-    pub fn from_command(source: &CommandSource, argument_name: &str, message: String) -> Self {
+    #[must_use]
+    pub(crate) fn from_command(
+        source: &CommandSource,
+        argument_name: &str,
+        message: String,
+    ) -> Self {
         let Some(player) = source.player() else {
             return Self::Disguised {
                 content: TextComponent::plain(message),
@@ -255,20 +268,19 @@ impl OutgoingChatMessage {
             };
         }
 
-        let (timestamp, salt, sender_index, sender_last_seen) = match signing_ctx {
-            Some(sc) => (
+        let (timestamp, salt, sender_index, sender_last_seen) = if let Some(sc) = signing_ctx {
+            (
                 sc.timestamp as i64,
                 sc.salt,
                 sc.sender_index,
                 sc.last_seen.clone(),
-            ),
-            None => {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as i64;
-                (now, 0, 0, LastSeen::default())
-            }
+            )
+        } else {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            (now, 0, 0, LastSeen::default())
         };
 
         let packet = CPlayerChat::new(
@@ -284,7 +296,7 @@ impl OutgoingChatMessage {
         );
 
         Self::Player {
-            packet,
+            packet: Box::new(packet),
             signature: Some(sig_array),
             sender_last_seen,
         }
@@ -461,6 +473,9 @@ impl Player {
         Ok((link, last_seen))
     }
 
+    /// Add interaction to the message, by :
+    /// - Adding a click event, which suggests `/tell {player}`
+    /// - Adding a hover event, which shows the player's name
     pub fn interactive_name(&self) -> TextComponent {
         let name = self.gameprofile.name.clone();
         TextComponent::plain(name.clone())
@@ -567,7 +582,7 @@ impl Player {
 
         let outgoing = if self.server().enforces_secure_chat() {
             OutgoingChatMessage::Player {
-                packet: chat_packet,
+                packet: Box::new(chat_packet),
                 signature,
                 sender_last_seen: last_seen,
             }
@@ -731,22 +746,23 @@ impl Player {
         }
     }
 
+    /// Handles a chat command packet from the client, with only unsigned arguments
     pub fn handle_command(self: &Arc<Self>, packet: SChatCommand, server: &Arc<Server>) {
         // check if this has a signed argument, in this case, do nothing
-        if server.enforces_secure_chat() {
-            if server.command_requires_signed_arguments(
+        if server.enforces_secure_chat()
+            && server.command_requires_signed_arguments(
                 &packet.command,
                 CommandSender::Player(Arc::clone(self)),
-            ) {
-                // Client sent an unsigned command (SChatCommand) when signed arguments are required
-                log::error!(
-                    "Received unsigned command packet from {}, but the command requires signable arguments: {}",
-                    self.gameprofile.name,
-                    packet.command
-                );
-                self.send_message(&CHAT_DISABLED_INVALID_SIGNATURE.msg().component());
-                return;
-            }
+            )
+        {
+            // Client sent an unsigned command (SChatCommand) when signed arguments are required
+            log::error!(
+                "Received unsigned command packet from {}, but the command requires signable arguments: {}",
+                self.gameprofile.name,
+                packet.command
+            );
+            self.send_message(&CHAT_DISABLED_INVALID_SIGNATURE.msg().component());
+            return;
         }
 
         self.reset_last_action_time();
@@ -765,6 +781,7 @@ impl Player {
         self.detect_command_rate_spam();
     }
 
+    /// Handles a chat command packet from the client. Can contain signed arguments
     pub fn handle_signed_command(
         self: &Arc<Self>,
         packet: SChatCommandSigned,
@@ -813,20 +830,13 @@ impl Player {
                 }
             };
 
-            let session = match chat.chat_session.clone() {
-                Some(session) => session,
-                None => {
-                    drop(chat);
-                    self.disconnect(CHAT_DISABLED_MISSING_PROFILE_KEY.msg());
-                    return;
-                }
+            let Some(session) = chat.chat_session.clone() else {
+                drop(chat);
+                self.disconnect(CHAT_DISABLED_MISSING_PROFILE_KEY.msg());
+                return;
             };
 
-            let argument_value = packet
-                .command
-                .split_once(' ')
-                .map(|(_, arg)| arg)
-                .unwrap_or("");
+            let argument_value = packet.command.split_once(' ').map_or("", |(_, arg)| arg);
 
             let mut sender_index = 0;
             for entry in &packet.argument_signatures {
@@ -883,17 +893,25 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Player;
+    use crate::player::chat::{
+        ChatSessionUpdateOutcome, ChatState,
+        message_chain::SignedMessageChain,
+        profile_key::{
+            ProfilePublicKeyData, RemoteChatSession, RemoteChatSessionData, ValidationError, system_time_from_millis,
+        },
+        signature_cache::LastSeen,
+        validate_chat_session_update,
+    };
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use steel_crypto::{
         CryptError, SignatureValidator, generate_key_pair, signature::SignatureUpdater,
     };
-    use uuid::Uuid;
-
-    use super::{
-        ChatSessionUpdateOutcome, ChatState, Player, profile_key, validate_chat_session_update,
+    use steel_utils::translations::{
+        CHAT_DISABLED_CHAIN_BROKEN, CHAT_DISABLED_INVALID_SIGNATURE,
+        CHAT_DISABLED_MISSING_PROFILE_KEY,
     };
-
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use super::*;
+    use uuid::Uuid;
 
     struct FixedValidator(bool);
 
@@ -907,12 +925,12 @@ mod tests {
         }
     }
 
-    fn session(expires_at_millis: i64) -> profile_key::RemoteChatSessionData {
+    fn session(expires_at_millis: i64) -> RemoteChatSessionData {
         let (_, public_key) = generate_key_pair().expect("test player key should generate");
-        profile_key::RemoteChatSessionData {
+        RemoteChatSessionData {
             session_id: Uuid::new_v4(),
-            profile_public_key: profile_key::ProfilePublicKeyData::new(
-                profile_key::system_time_from_millis(expires_at_millis),
+            profile_public_key: ProfilePublicKeyData::new(
+                system_time_from_millis(expires_at_millis),
                 public_key,
                 vec![1],
             ),
@@ -950,7 +968,7 @@ mod tests {
     #[test]
     fn unchanged_profile_key_does_not_reset_the_session() {
         let current = session(2);
-        let new_session = profile_key::RemoteChatSessionData {
+        let new_session = RemoteChatSessionData {
             session_id: Uuid::new_v4(),
             profile_public_key: current.profile_public_key.clone(),
         };
@@ -1007,7 +1025,7 @@ mod tests {
                 Uuid::new_v4(),
                 Some(&FixedValidator(false)),
             ),
-            ChatSessionUpdateOutcome::Invalid(profile_key::ValidationError::InvalidSignature)
+            ChatSessionUpdateOutcome::Invalid(ValidationError::InvalidSignature)
         ));
     }
 
@@ -1016,9 +1034,9 @@ mod tests {
         let session_id = Uuid::new_v4();
         let player_uuid = Uuid::new_v4();
 
-        let session_data = profile_key::RemoteChatSessionData {
+        let session_data = RemoteChatSessionData {
             session_id,
-            profile_public_key: profile_key::ProfilePublicKeyData::new(
+            profile_public_key: ProfilePublicKeyData::new(
                 SystemTime::now() + Duration::from_secs(3600),
                 public_key,
                 vec![1],
@@ -1030,10 +1048,7 @@ mod tests {
             .expect("session should validate");
 
         let mut chat = ChatState::new(1, 1);
-        chat.message_chain = Some(SignedMessageChain::new(
-            player_uuid,
-            session.session_id,
-        ));
+        chat.message_chain = Some(SignedMessageChain::new(player_uuid, session.session_id));
 
         (chat, session)
     }
@@ -1043,7 +1058,10 @@ mod tests {
         let (mut chat, session) = test_chat_state_with_session();
 
         // Break chain manually first
-        chat.message_chain.as_mut().expect("message chain should exist").break_chain();
+        chat.message_chain
+            .as_mut()
+            .expect("message chain should exist")
+            .break_chain();
 
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1086,7 +1104,7 @@ mod tests {
         );
 
         assert!(res.is_err());
-        // Verify the chain itself was NOT broken by expiration
+        // Verify expiration did NOT break the chain itself
         assert!(!chat.message_chain.as_ref().unwrap().is_broken());
     }
 

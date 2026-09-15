@@ -387,12 +387,11 @@ where
 
     pub(crate) fn has_signed_arguments(&self, parse: &ParseResults<'_, S, R>) -> bool {
         for parsed_node in parse.context().nodes() {
-            if let Some(node) = self.node(parsed_node.node()) {
-                if let CommandNodeData::Argument(_, arg_data) = &node.data {
-                    if arg_data.argument_type().is_signed() {
-                        return true;
-                    }
-                }
+            if let Some(node) = self.node(parsed_node.node())
+                && let CommandNodeData::Argument(_, arg_data) = &node.data
+                && arg_data.argument_type().is_signed()
+            {
+                return true;
             }
         }
         false

@@ -1,5 +1,5 @@
 use crate::player::LastSeen;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// Binary cryptographic signature supplied by the official client (typically 256 bytes for RSA-SHA256).
 pub type MessageSignature = Box<[u8]>;
@@ -11,11 +11,11 @@ pub struct CommandSigningContext {
     pub timestamp: u64,
     /// Random 64-bit salt used to prevent signature replay attacks.
     pub salt: i64,
-    /// Map associating each signed Brigadier argument name to its raw binary signature.
-    pub argument_signatures: HashMap<Box<str>, MessageSignature>,
+    /// Map associating each signed Brigadier argument name with its raw binary signature.
+    pub argument_signatures: FxHashMap<Box<str>, MessageSignature>,
     /// Window of previously received message signatures acknowledged by the client when submitting this command.
     pub last_seen: LastSeen,
-    /// Monotonically increasing index of this message within the player's secure chat session chain.
+    /// Monotonically increasing the index of this message within the player's secure chat session chain.
     pub sender_index: i32,
 }
 

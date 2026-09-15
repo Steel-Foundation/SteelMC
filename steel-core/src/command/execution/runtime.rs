@@ -407,7 +407,7 @@ where
         self.typed_argument(name)
     }
 
-    /// Return a &str from a SignedMessage
+    /// Return a &str from a `SignedMessage`
     pub(crate) fn message(&self, name: &str) -> Result<&str, CommandSyntaxError> {
         self.typed_argument::<MessageValue>(name)
             .map(|value| value.0.as_ref())

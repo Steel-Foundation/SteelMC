@@ -460,7 +460,8 @@ impl<'source> CommandSource<'source> {
     }
 
     /// Return the signing context (salt, timestamp, ...) of this command source (if it exists)
-    pub fn signing_context(self) -> Option<&'source CommandSigningContext> {
+    #[must_use]
+    pub const fn signing_context(self) -> Option<&'source CommandSigningContext> {
         self.inner.signing_context()
     }
 }
@@ -665,6 +666,11 @@ pub trait CommandArgumentParser:
 
     /// Returns the vanilla command-tree parser and optional server suggestion provider.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 impl<P> SteelArgumentParser for P
@@ -700,6 +706,10 @@ where
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         CommandArgumentParser::protocol_argument(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        CommandArgumentParser::is_signed(self)
     }
 }
 

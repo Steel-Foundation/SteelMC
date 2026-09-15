@@ -130,9 +130,7 @@ trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool;
 
     /// Returns whether this argument type requires cryptographic signatures.
-    fn is_signed(&self) -> bool {
-        false
-    }
+    fn is_signed(&self) -> bool;
 }
 
 impl<P> ErasedSteelArgumentParser for P
@@ -161,6 +159,10 @@ where
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool {
         other.downcast_ref::<P>() == Some(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        SteelArgumentParser::is_signed(self)
     }
 }
 
@@ -382,10 +384,6 @@ impl SteelArgumentType {
         &self,
     ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         self.0.protocol_argument_erased()
-    }
-
-    pub(crate) fn is_signed(&self) -> bool {
-        self.0.is_signed()
     }
 
     #[cfg(test)]

@@ -28,7 +28,6 @@ use steel_registry::{
     world_clock::WorldClockRef,
 };
 use steel_utils::translations;
-use text_components::interactivity::{ClickEvent, HoverEvent};
 use text_components::{Modifier, TextComponent, format::Color};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
@@ -451,7 +450,7 @@ impl CommandSource {
     }
 
     #[must_use]
-    pub fn signing_context(&self) -> Option<&CommandSigningContext> {
+    pub const fn signing_context(&self) -> Option<&CommandSigningContext> {
         self.signing_context.as_ref()
     }
 
@@ -514,14 +513,18 @@ impl CommandSource {
         }
     }
 
+    pub fn sender_name(&self) -> TextComponent {
+        match self.player() {
+            Some(player) => player.interactive_name(),
+            None => TextComponent::plain(self.sender.to_string()),
+        }
+    }
+
     pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
-        match self.sender().get_player() {
-            Some(player) => player.bind_chat_type(registry_id),
-            None => ChatTypeBound {
-                registry_id,
-                sender_name: TextComponent::plain(self.sender().to_string()),
-                target_name: None,
-            },
+        ChatTypeBound {
+            registry_id,
+            sender_name: self.sender_name(),
+            target_name: None,
         }
     }
 }
