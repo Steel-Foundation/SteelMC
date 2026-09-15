@@ -1,7 +1,9 @@
-use crate::advancement::Advancement;
+use crate::advancement::{Advancement, AdvancementTree};
 use rustc_hash::FxHashMap;
+use std::sync::RwLock;
 use steel_utils::Identifier;
 
+pub static ADVANCEMENT_TREE: RwLock<AdvancementTree> = RwLock::new(AdvancementTree::default());
 pub type AdvancementRef = &'static Advancement;
 
 pub struct AdvancementRegistry {
@@ -10,7 +12,14 @@ pub struct AdvancementRegistry {
     allows_registering: bool,
 }
 
+impl Default for AdvancementRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AdvancementRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             advancements: Vec::new(),
