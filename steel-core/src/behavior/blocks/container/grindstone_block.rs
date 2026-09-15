@@ -63,7 +63,7 @@ impl BlockBehavior for GrindstoneBlock {
     ) -> InteractionResult {
         let inventory = player.inventory.clone();
         player.open_menu(
-            TextComponent::translated(translations::CONTAINER_REPAIR.msg()),
+            TextComponent::translated(translations::CONTAINER_GRINDSTONE_TITLE.msg()),
             move |context| grindstone(inventory, context.container_id, pos, context.world),
         );
         InteractionResult::Success
