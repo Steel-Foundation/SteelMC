@@ -24,10 +24,11 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
 ) {
     let (target, speed_modifier) = {
         let mut navigation = mob.mob_base().navigation().lock();
-        let mob_position =
+        let temp_mob_position =
             ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float());
         let context = NavigationTickContext {
-            mob_position,
+            temp_mob_position,
+            mob_position: mob.position(),
             mob_bounding_box_width: mob.bounding_box().width(),
             mob_speed: mob.get_speed(),
             game_time,
