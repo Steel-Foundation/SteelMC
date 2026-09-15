@@ -28,6 +28,7 @@ use super::{
     },
 };
 use crate::command::brigadier::ArgumentSuggestionContext;
+use crate::command::signing_context::CommandSigningContext;
 use crate::{
     entity::SharedEntity,
     permission::{PermissionExpr, PermissionState},
@@ -456,6 +457,11 @@ impl<'source> CommandSource<'source> {
     /// Sends red failure feedback to the original sender.
     pub fn send_failure(self, message: TextComponent) {
         self.inner.send_failure(message);
+    }
+
+    /// Return the signing context (salt, timestamp, ...) of this command source (if it exists)
+    pub fn signing_context(self) -> Option<&'source CommandSigningContext> {
+        self.inner.signing_context()
     }
 }
 

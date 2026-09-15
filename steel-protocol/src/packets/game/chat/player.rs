@@ -1,5 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::{C_DISGUISED_CHAT, C_PLAYER_CHAT};
+use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::{
     codec::{BitSet, VarInt},
     serial::PrefixedWrite,
@@ -20,6 +21,16 @@ pub struct ChatTypeBound {
     pub target_name: Option<TextComponent>,
 }
 
+impl Default for ChatTypeBound {
+    fn default() -> Self {
+        Self {
+            registry_id: vanilla_chat_types::CHAT.id() as i32,
+            sender_name: TextComponent::new(),
+            target_name: None,
+        }
+    }
+}
+
 #[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_PLAYER_CHAT)]
 pub struct CPlayerChat {
@@ -37,10 +48,8 @@ pub struct CPlayerChat {
 }
 
 impl CPlayerChat {
-    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
-        global_index: i32,
         sender: Uuid,
         index: i32,
         message_signature: Option<Box<[u8]>>,
@@ -49,11 +58,10 @@ impl CPlayerChat {
         salt: i64,
         previous_messages: Box<[PreviousMessage]>,
         unsigned_content: Option<TextComponent>,
-        filter_type: FilterType,
         chat_type: ChatTypeBound,
     ) -> Self {
         Self {
-            global_index,
+            global_index: 0, // Assigned when sending the message
             sender,
             index,
             message_signature,
@@ -62,7 +70,7 @@ impl CPlayerChat {
             salt,
             previous_messages,
             unsigned_content,
-            filter_type,
+            filter_type: FilterType::PassThrough, // Change only on Reamls
             chat_type,
         }
     }

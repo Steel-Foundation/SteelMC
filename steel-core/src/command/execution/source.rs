@@ -1,16 +1,5 @@
 use std::{collections::BTreeSet, ptr, sync::Arc};
 
-use glam::DVec3;
-use steel_math::{DEGREE_90, wrap_degrees};
-use steel_registry::{
-    vanilla_game_rules::{
-        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
-    },
-    world_clock::WorldClockRef,
-};
-use steel_utils::translations;
-use text_components::{Modifier, TextComponent, format::Color};
-
 use super::{CommandExecutionContext, GameProfileArgument};
 use crate::command::signing_context::CommandSigningContext;
 use crate::{
@@ -29,6 +18,18 @@ use crate::{
     server::Server,
     world::World,
 };
+use glam::DVec3;
+use steel_math::{DEGREE_90, wrap_degrees};
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{
+    vanilla_game_rules::{
+        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
+    },
+    world_clock::WorldClockRef,
+};
+use steel_utils::translations;
+use text_components::interactivity::{ClickEvent, HoverEvent};
+use text_components::{Modifier, TextComponent, format::Color};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -510,6 +511,29 @@ impl CommandSource {
             && self.world.get_game_rule(&LOG_ADMIN_COMMANDS)
         {
             CommandSender::Console.send_message(&broadcast);
+        }
+    }
+
+    pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
+        let sender_name = match self.sender().get_player() {
+            Some(player) => {
+                let name = player.gameprofile.name.clone();
+                TextComponent::plain(name.clone())
+                    .insertion(name.clone())
+                    .click_event(ClickEvent::suggest_command(format!("/tell {name} ")))
+                    .hover_event(HoverEvent::show_entity(
+                        "minecraft:player",
+                        player.gameprofile.id,
+                        Some(name),
+                    ))
+            }
+            None => TextComponent::plain(self.sender().to_string()),
+        };
+
+        ChatTypeBound {
+            registry_id,
+            sender_name,
+            target_name: None,
         }
     }
 }

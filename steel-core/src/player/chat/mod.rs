@@ -16,8 +16,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::game::{
-    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat,
-    SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, SChat, SChatAck,
+    SChatCommand, SChatCommandSigned, SChatSessionUpdate,
 };
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
@@ -26,6 +26,7 @@ use text_components::TextComponent;
 use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 
+use crate::command::execution::CommandSource;
 use crate::command::sender::CommandSender;
 use crate::command::signing_context::CommandSigningContext;
 use crate::entity::Entity;
@@ -215,6 +216,77 @@ impl OutgoingChatMessage {
                 let packet = CDisguisedChat::new(content, chat_type.clone(), recipient);
                 recipient.send_packet(packet);
             }
+        }
+    }
+
+    /// Builds an outgoing message payload from a command execution context.
+    pub fn from_command(source: &CommandSource, argument_name: &str, message: String) -> Self {
+        let Some(player) = source.player() else {
+            return Self::Disguised {
+                content: TextComponent::plain(message),
+            };
+        };
+
+        // If secure chat is not enforced, fall back to disguised
+        if !source.server().enforces_secure_chat() {
+            return Self::Disguised {
+                content: TextComponent::plain(message),
+            };
+        }
+
+        let signing_ctx = source.signing_context();
+        let raw_sig = signing_ctx
+            .as_ref()
+            .and_then(|sc| sc.get_argument_signature(argument_name));
+
+        // If the command context did not provide a valid signature, fallback or disguised
+        let Some(raw_sig) = raw_sig else {
+            return Self::Disguised {
+                content: TextComponent::plain(message),
+            };
+        };
+
+        let mut sig_array = [0u8; 256];
+        if raw_sig.len() == 256 {
+            sig_array.copy_from_slice(raw_sig);
+        } else {
+            return Self::Disguised {
+                content: TextComponent::plain(message),
+            };
+        }
+
+        let (timestamp, salt, sender_index, sender_last_seen) = match signing_ctx {
+            Some(sc) => (
+                sc.timestamp as i64,
+                sc.salt,
+                sc.sender_index,
+                sc.last_seen.clone(),
+            ),
+            None => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                (now, 0, 0, LastSeen::default())
+            }
+        };
+
+        let packet = CPlayerChat::new(
+            player.gameprofile.id,
+            sender_index,
+            Some(Box::new(sig_array) as Box<[u8]>),
+            message,
+            timestamp,
+            salt,
+            Box::new([]),
+            None,
+            ChatTypeBound::default(),
+        );
+
+        Self::Player {
+            packet,
+            signature: Some(sig_array),
+            sender_last_seen,
         }
     }
 }
@@ -455,7 +527,6 @@ impl Player {
         };
 
         let chat_packet = CPlayerChat::new(
-            0,
             player.gameprofile.id,
             sender_index,
             signature.clone(),
@@ -463,8 +534,7 @@ impl Player {
             packet.timestamp,
             packet.salt,
             Box::new([]),
-            Some(TextComponent::plain(chat_message.clone())),
-            FilterType::PassThrough,
+            None,
             chat_type.clone(),
         );
 
@@ -711,6 +781,9 @@ impl Player {
             }
         }
 
+        self.reset_last_action_time();
+
+        // Unpack last seen
         let (last_seen, sender_index) = {
             let mut chat = self.chat().lock();
 
@@ -733,7 +806,7 @@ impl Player {
             };
 
             let session = match chat.chat_session.clone() {
-                Some(s) => s,
+                Some(session) => session,
                 None => {
                     drop(chat);
                     self.disconnect(CHAT_DISABLED_MISSING_PROFILE_KEY.msg());
@@ -771,8 +844,6 @@ impl Player {
 
             (last_seen_sigs, sender_index)
         };
-
-        self.reset_last_action_time();
 
         let signing_context = CommandSigningContext::new(
             packet.timestamp as u64,
