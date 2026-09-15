@@ -121,6 +121,48 @@ impl ChatState {
     }
 }
 
+/// Errors occurring during cryptographic chat validation and chain progression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatValidationError {
+    /// The player has not sent or validated a profile public key session.
+    MissingProfileKey,
+    /// The message chain has been broken by previous validation failures.
+    ChainBroken,
+    /// The message timestamp is older than the server expiration threshold.
+    Expired {
+        /// Age of the message in seconds.
+        age: u64,
+        /// Maximum allowed age in seconds.
+        max_age: u64,
+    },
+    /// The message timestamp arrived out of chronological sequence.
+    OutOfOrderChat,
+    /// The player's Mojang profile public key has expired.
+    ExpiredProfileKey,
+    /// Cryptographic signature evaluation failed or was forged.
+    InvalidSignature,
+    /// Chain verification failed with a specific component payload.
+    Failed(Box<TextComponent>),
+    /// Other unclassified validation failures.
+    Other(Box<TextComponent>),
+}
+
+impl ChatValidationError {
+    /// Converts the validation error into a renderable chat text component.
+    #[must_use]
+    pub fn into_component(self) -> TextComponent {
+        match self {
+            Self::MissingProfileKey => CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component(),
+            Self::ChainBroken => CHAT_DISABLED_CHAIN_BROKEN.msg().component(),
+            Self::Expired{age, max_age} => TextComponent::plain(format!("Message expired (age: {age}s, max: {max_age}s)")),
+            Self::OutOfOrderChat => CHAT_DISABLED_OUT_OF_ORDER_CHAT.msg().component(),
+            Self::ExpiredProfileKey => CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component(),
+            Self::InvalidSignature => CHAT_DISABLED_INVALID_SIGNATURE.msg().component(),
+            Self::Failed(component) | Self::Other(component) => *component,
+        }
+    }
+}
+
 /// Mirror vanilla `OutgoingChatMessage`, by creating either a `Player`, sending a `CPlayerChat` packet,
 /// or a `Disguised`, sending a `CDisguisedChat` packet (used for console, command block, or when the player cannot sign the message)
 pub enum OutgoingChatMessage {
@@ -365,14 +407,14 @@ impl Player {
         salt: i64,
         last_seen: LastSeen,
         signature: &[u8; 256],
-    ) -> Result<message_chain::SignedMessageLink, TextComponent> {
+    ) -> Result<message_chain::SignedMessageLink, ChatValidationError> {
         let chain = chat
             .message_chain
             .as_mut()
-            .ok_or_else(|| CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component())?;
+            .ok_or(ChatValidationError::MissingProfileKey)?;
 
         if chain.is_broken() {
-            return Err(CHAT_DISABLED_CHAIN_BROKEN.msg().component());
+            return Err(ChatValidationError::ChainBroken);
         }
 
         let message_time = UNIX_EPOCH + Duration::from_millis(timestamp);
@@ -380,11 +422,7 @@ impl Player {
         let message_age = now.duration_since(message_time).unwrap_or(Duration::ZERO);
 
         if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
-            return Err(TextComponent::plain(format!(
-                "Message expired (age: {}s, max: {}s)",
-                message_age.as_secs(),
-                MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
-            )));
+            return Err(ChatValidationError::Expired{age: message_age.as_secs(), max_age: MESSAGE_EXPIRES_AFTER_SERVER.as_secs()});
         }
 
         let body = message_chain::SignedMessageBody::new(
@@ -395,17 +433,11 @@ impl Player {
         );
 
         let link = chain.validate_and_advance(&body).map_err(|err| match err {
-            message_chain::ChainError::OutOfOrderChat => {
-                CHAT_DISABLED_OUT_OF_ORDER_CHAT.msg().component()
-            }
-            message_chain::ChainError::ChainBroken => CHAT_DISABLED_CHAIN_BROKEN.msg().component(),
-            message_chain::ChainError::ExpiredProfileKey => {
-                CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component()
-            }
-            message_chain::ChainError::MissingProfileKey => {
-                CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component()
-            }
-            _ => TextComponent::plain(format!("Chain validation failed: {err}")),
+            message_chain::ChainError::OutOfOrderChat => ChatValidationError::OutOfOrderChat,
+            message_chain::ChainError::ChainBroken => ChatValidationError::ChainBroken,
+            message_chain::ChainError::ExpiredProfileKey => ChatValidationError::ExpiredProfileKey,
+            message_chain::ChainError::MissingProfileKey => ChatValidationError::MissingProfileKey,
+            _ => ChatValidationError::Failed(Box::new(TextComponent::plain("Chain validation failed: {err}"))),
         })?;
 
         let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
@@ -415,12 +447,12 @@ impl Player {
             Ok(true) => Ok(link),
             Ok(false) => {
                 chain.break_chain();
-                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
+                Err(ChatValidationError::InvalidSignature)
             }
             Err(err) => {
                 log::error!("Signature cryptographic evaluation failed: {err}");
                 chain.break_chain();
-                Err(CHAT_DISABLED_INVALID_SIGNATURE.msg().component())
+                Err(ChatValidationError::InvalidSignature)
             }
         }
     }
@@ -428,24 +460,24 @@ impl Player {
     fn verify_chat_signature(
         &self,
         packet: &SChat,
-    ) -> Result<(message_chain::SignedMessageLink, LastSeen), TextComponent> {
+    ) -> Result<(message_chain::SignedMessageLink, LastSeen), ChatValidationError> {
         let mut chat = self.chat().lock();
         let session = chat
             .chat_session
             .clone()
-            .ok_or_else(|| CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component())?;
+            .ok_or(ChatValidationError::MissingProfileKey)?;
 
         let signature = packet
             .signature
             .as_ref()
-            .ok_or_else(|| CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component())?;
+            .ok_or(ChatValidationError::MissingProfileKey)?;
 
         if session
             .profile_public_key
             .data()
             .has_expired_with_grace(profile_key::EXPIRY_GRACE_PERIOD)
         {
-            return Err(CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component());
+            return Err(ChatValidationError::ExpiredProfileKey);
         }
 
         let last_seen_signatures = chat
@@ -453,9 +485,7 @@ impl Player {
             .apply_update(packet.acknowledged, packet.offset, packet.checksum)
             .map_err(|e| {
                 log::error!("Message acknowledgment validation failed: {e}");
-                MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED
-                    .msg()
-                    .component()
+                ChatValidationError::Other(Box::new(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg().component()))
             })?;
 
         let last_seen = LastSeen::new(last_seen_signatures);
@@ -509,7 +539,7 @@ impl Player {
                     log::warn!(
                         "Failed to update secure chat state for {}: '{}'",
                         self.gameprofile.name,
-                        err.clone().color(Color::Red)
+                        err.clone().into_component().color(Color::Red)
                     );
                     Some(Err(err))
                 }
@@ -522,7 +552,7 @@ impl Player {
             match &verification_result {
                 Some(Ok(_)) => {}
                 Some(Err(err)) => {
-                    self.disconnect(format!("Chat message validation failed: {err}"));
+                    self.disconnect(err.clone().into_component());
                     return;
                 }
                 None => {
@@ -854,7 +884,7 @@ impl Player {
                     }
                     Err(err_component) => {
                         drop(chat);
-                        self.send_message(&err_component);
+                        self.send_message(&err_component.into_component());
                         return;
                     }
                 }
@@ -894,22 +924,12 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::super::Player;
-    use crate::player::chat::{
-        ChatSessionUpdateOutcome, ChatState,
-        message_chain::SignedMessageChain,
-        profile_key::{
-            ProfilePublicKeyData, RemoteChatSession, RemoteChatSessionData, ValidationError, system_time_from_millis,
-        },
-        signature_cache::LastSeen,
-        validate_chat_session_update,
-    };
+    use crate::player::chat::{ChatSessionUpdateOutcome, ChatState, ChatValidationError, message_chain::SignedMessageChain, profile_key::{
+        ProfilePublicKeyData, RemoteChatSession, RemoteChatSessionData, ValidationError, system_time_from_millis,
+    }, signature_cache::LastSeen, validate_chat_session_update};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use steel_crypto::{
         CryptError, SignatureValidator, generate_key_pair, signature::SignatureUpdater,
-    };
-    use steel_utils::translations::{
-        CHAT_DISABLED_CHAIN_BROKEN, CHAT_DISABLED_INVALID_SIGNATURE,
-        CHAT_DISABLED_MISSING_PROFILE_KEY,
     };
     use uuid::Uuid;
 
@@ -1081,7 +1101,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            CHAT_DISABLED_CHAIN_BROKEN.msg().component()
+            ChatValidationError::ChainBroken
         );
     }
 
@@ -1134,7 +1154,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            CHAT_DISABLED_INVALID_SIGNATURE.msg().component()
+            ChatValidationError::InvalidSignature
         );
 
         // Crucial: The chain MUST now be permanently broken
@@ -1152,7 +1172,7 @@ mod tests {
         );
         assert_eq!(
             next_res.unwrap_err(),
-            CHAT_DISABLED_CHAIN_BROKEN.msg().component()
+            ChatValidationError::ChainBroken
         );
     }
 
@@ -1178,7 +1198,7 @@ mod tests {
 
         assert_eq!(
             res.unwrap_err(),
-            CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component()
+            ChatValidationError::MissingProfileKey
         );
     }
 }
