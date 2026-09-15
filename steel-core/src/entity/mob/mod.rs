@@ -1213,6 +1213,14 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
     }
 
+    /// Whether this mob can see `target`.
+    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+        self.mob_base()
+            .sensing()
+            .lock()
+            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
+    }
+
     /// Returns vanilla `Mob.getMaxHeadXRot`.
     fn max_head_x_rot(&self) -> f32 {
         40.0
