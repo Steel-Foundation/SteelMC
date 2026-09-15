@@ -1122,7 +1122,10 @@ mod tests {
         );
 
         assert!(res.is_err());
-        assert_eq!(res.expect_err("The result should be an error"), ChatValidationError::ChainBroken);
+        assert_eq!(
+            res.expect_err("The result should be an error"),
+            ChatValidationError::ChainBroken
+        );
     }
 
     #[test]
@@ -1131,7 +1134,10 @@ mod tests {
 
         // Message timestamp from 10 minutes in the past
         let old_time = SystemTime::now() - Duration::from_secs(600);
-        let old_ms = old_time.duration_since(UNIX_EPOCH).expect("system time should be after Unix epoch").as_millis() as u64;
+        let old_ms = old_time
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after Unix epoch")
+            .as_millis() as u64;
 
         let res = Player::verify_and_advance_chain(
             &mut chat,
@@ -1145,7 +1151,13 @@ mod tests {
 
         assert!(res.is_err());
         // Verify expiration did NOT break the chain itself
-        assert!(!chat.message_chain.as_ref().expect("The message chain should exist").is_broken());
+        assert!(
+            !chat
+                .message_chain
+                .as_ref()
+                .expect("The message chain should exist")
+                .is_broken()
+        );
     }
 
     #[test]
@@ -1172,10 +1184,18 @@ mod tests {
 
         // Verification must fail with invalid signature error
         assert!(res.is_err());
-        assert_eq!(res.expect_err("The result should be an error"), ChatValidationError::InvalidSignature);
+        assert_eq!(
+            res.expect_err("The result should be an error"),
+            ChatValidationError::InvalidSignature
+        );
 
         // Crucial: The chain MUST now be permanently broken
-        assert!(chat.message_chain.as_ref().expect("The message chain should exist").is_broken());
+        assert!(
+            chat.message_chain
+                .as_ref()
+                .expect("The message chain should exist")
+                .is_broken()
+        );
 
         // Subsequent message should immediately fail with CHAIN_BROKEN
         let next_res = Player::verify_and_advance_chain(
@@ -1187,7 +1207,10 @@ mod tests {
             LastSeen::default(),
             &bogus_signature,
         );
-        assert_eq!(next_res.expect_err("The result should be an error"), ChatValidationError::ChainBroken);
+        assert_eq!(
+            next_res.expect_err("The result should be an error"),
+            ChatValidationError::ChainBroken
+        );
     }
 
     #[test]
@@ -1210,6 +1233,9 @@ mod tests {
             &[0u8; 256],
         );
 
-        assert_eq!(res.expect_err("The result should be an error"), ChatValidationError::MissingProfileKey);
+        assert_eq!(
+            res.expect_err("The result should be an error"),
+            ChatValidationError::MissingProfileKey
+        );
     }
 }

@@ -10,8 +10,8 @@ use super::{
     SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
     command_suggestions_packet, sleep, spawn_blocking,
 };
-use steel_registry::vanilla_custom_stats;
 use crate::command::signing_context::CommandSigningContext;
+use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
 
