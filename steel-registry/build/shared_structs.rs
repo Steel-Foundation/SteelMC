@@ -114,3 +114,14 @@ pub struct TextComponentJson {
     #[serde(default)]
     pub(crate) color: Option<String>,
 }
+
+#[derive(Deserialize, Debug)]
+pub struct ItemStackTemplateJson {
+    pub(crate) id: Identifier,
+    #[serde(default = "one")]
+    pub(crate) count: i32,
+}
+
+fn one() -> i32 {
+    1
+}
