@@ -94,6 +94,7 @@ pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
 pub mod zombie_nautilus_variant;
+pub mod advancement;
 
 pub use consume_effect::{ConsumeEffectData, ConsumeEffectType, ConsumeEffectTypeRef};
 pub use dye_color::DyeColor;
@@ -477,3 +478,8 @@ pub mod vanilla_placed_features;
 #[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_advancements.rs"]
+pub mod vanilla_advancements;
