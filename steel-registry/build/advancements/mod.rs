@@ -1,6 +1,6 @@
-use crate::advancements::criteria::{CriterionJson, parse_criteria};
+use crate::advancements::criterion::{CriterionJson, parse_criteria};
 use crate::advancements::display::{AdvancementDisplayJson, parse_display};
-use crate::generator_functions::*;
+use crate::generator_functions::{generate_identifier, generate_option, generate_vec};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 use steel_utils::Identifier;
 
-mod criteria;
+mod criterion;
 mod display;
 
 #[derive(Deserialize)]
@@ -48,7 +48,7 @@ impl ToTokens for AdvancementRewardsJson {
         let loots = generate_vec(&self.loots, |loot| {
             let name = Ident::new(&loot.path.to_shouty_snake_case(), Span::call_site());
             quote! {
-                &*vanilla_loot_tabels::#name
+                &*vanilla_lo::#name
             }
         });
         let function = generate_option(&self.function, generate_identifier);

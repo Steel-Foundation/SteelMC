@@ -91,6 +91,6 @@ pub struct ItemStackTemplateJson {
     pub(crate) count: i32,
 }
 
-fn one() -> i32 {
+const fn one() -> i32 {
     1
 }

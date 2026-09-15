@@ -1,16 +1,21 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
+use steel_utils::Identifier;
 
 #[derive(Deserialize)]
-pub(crate) struct CriterionJson {}
+pub(crate) struct CriterionJson {
+    trigger: Identifier,
+    instance: Value,
+}
 
 impl ToTokens for CriterionJson {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         tokens.extend(quote! {
-            Criterion::new() // TODO
-        })
+            Criterion.default() // TODO when predicate are implemented
+        });
     }
 }
 
