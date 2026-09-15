@@ -344,7 +344,7 @@ impl Player {
         val
     }
 
-    // Verify signature, advance chain, and handle breaking on error
+    /// Verify signature, advance chain, and handle breaking on error
     fn verify_and_advance_chain(
         chat: &mut ChatState,
         session: &RemoteChatSession,
@@ -892,6 +892,9 @@ mod tests {
         ChatSessionUpdateOutcome, ChatState, Player, profile_key, validate_chat_session_update,
     };
 
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use super::*;
+
     struct FixedValidator(bool);
 
     impl SignatureValidator for FixedValidator {
@@ -1006,5 +1009,158 @@ mod tests {
             ),
             ChatSessionUpdateOutcome::Invalid(profile_key::ValidationError::InvalidSignature)
         ));
+    }
+
+    fn test_chat_state_with_session() -> (ChatState, RemoteChatSession) {
+        let (_private_key, public_key) = generate_key_pair().expect("keys should generate");
+        let session_id = Uuid::new_v4();
+        let player_uuid = Uuid::new_v4();
+
+        let session_data = profile_key::RemoteChatSessionData {
+            session_id,
+            profile_public_key: profile_key::ProfilePublicKeyData::new(
+                SystemTime::now() + Duration::from_secs(3600),
+                public_key,
+                vec![1],
+            ),
+        };
+
+        let session = session_data
+            .validate(player_uuid, &FixedValidator(true))
+            .expect("session should validate");
+
+        let mut chat = ChatState::new(1, 1);
+        chat.message_chain = Some(SignedMessageChain::new(
+            player_uuid,
+            session.session_id,
+        ));
+
+        (chat, session)
+    }
+
+    #[test]
+    fn broken_chain_rejects_immediately() {
+        let (mut chat, session) = test_chat_state_with_session();
+
+        // Break chain manually first
+        chat.message_chain.as_mut().expect("message chain should exist").break_chain();
+
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let res = Player::verify_and_advance_chain(
+            &mut chat,
+            &session,
+            "test message",
+            now_ms,
+            0,
+            LastSeen::default(),
+            &[0u8; 256],
+        );
+
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            CHAT_DISABLED_CHAIN_BROKEN.msg().component()
+        );
+    }
+
+    #[test]
+    fn expired_message_is_rejected_without_breaking_chain() {
+        let (mut chat, session) = test_chat_state_with_session();
+
+        // Message timestamp from 10 minutes in the past
+        let old_time = SystemTime::now() - Duration::from_secs(600);
+        let old_ms = old_time.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+
+        let res = Player::verify_and_advance_chain(
+            &mut chat,
+            &session,
+            "expired message",
+            old_ms,
+            0,
+            LastSeen::default(),
+            &[0u8; 256],
+        );
+
+        assert!(res.is_err());
+        // Verify the chain itself was NOT broken by expiration
+        assert!(!chat.message_chain.as_ref().unwrap().is_broken());
+    }
+
+    #[test]
+    fn invalid_signature_breaks_the_chain() {
+        let (mut chat, session) = test_chat_state_with_session();
+
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        // Dummy invalid signature bytes
+        let bogus_signature = [0x55u8; 256];
+
+        let res = Player::verify_and_advance_chain(
+            &mut chat,
+            &session,
+            "forged message",
+            now_ms,
+            0,
+            LastSeen::default(),
+            &bogus_signature,
+        );
+
+        // Verification must fail with invalid signature error
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            CHAT_DISABLED_INVALID_SIGNATURE.msg().component()
+        );
+
+        // Crucial: The chain MUST now be permanently broken
+        assert!(chat.message_chain.as_ref().unwrap().is_broken());
+
+        // Subsequent message should immediately fail with CHAIN_BROKEN
+        let next_res = Player::verify_and_advance_chain(
+            &mut chat,
+            &session,
+            "next message",
+            now_ms,
+            0,
+            LastSeen::default(),
+            &bogus_signature,
+        );
+        assert_eq!(
+            next_res.unwrap_err(),
+            CHAT_DISABLED_CHAIN_BROKEN.msg().component()
+        );
+    }
+
+    #[test]
+    fn missing_message_chain_fails_cleanly() {
+        let (mut chat, session) = test_chat_state_with_session();
+        chat.message_chain = None;
+
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let res = Player::verify_and_advance_chain(
+            &mut chat,
+            &session,
+            "no profile",
+            now_ms,
+            0,
+            LastSeen::default(),
+            &[0u8; 256],
+        );
+
+        assert_eq!(
+            res.unwrap_err(),
+            CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component()
+        );
     }
 }

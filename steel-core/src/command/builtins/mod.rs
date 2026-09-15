@@ -165,6 +165,7 @@ mod tests {
                 "perms",
                 "playsound",
                 "return",
+                "say",
                 "seed",
                 "setblock",
                 "spawnpoint",
