@@ -5,7 +5,10 @@
 
 mod java;
 
-pub use java::{BundleBuilder, JavaConnection, JavaNetworkWriter, OutboundPacket};
+pub use java::{
+    BundleBuilder, JavaConnection, JavaNetworkReader, JavaNetworkWriter, JavaTransportRead,
+    JavaTransportWrite, OutboundPacket,
+};
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
 
 use enum_dispatch::enum_dispatch;

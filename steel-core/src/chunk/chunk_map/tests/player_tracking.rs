@@ -1,5 +1,6 @@
 use super::*;
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
+use crate::test_support::tick_test_world;
 use uuid::Uuid;
 
 #[test]
@@ -186,7 +187,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(world.chunk_map.light_update_touches_chunk(center));
     player.ack_block_changes_up_to(1);
 
-    world.tick_game(1, true);
+    tick_test_world(&world, 1, true);
 
     assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
     assert!(!holder.has_changes_to_broadcast());

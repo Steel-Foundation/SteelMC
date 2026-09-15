@@ -3309,7 +3309,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
         let mut movement = delta;
         if mover_type == MoverType::Piston {
-            let game_time = world.level_data.read().game_time();
+            let game_time = world.game_time();
             movement = self.base().limit_piston_movement(movement, game_time);
             if movement == DVec3::ZERO {
                 return None;
