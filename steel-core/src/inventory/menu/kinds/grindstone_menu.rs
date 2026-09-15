@@ -238,8 +238,8 @@ impl GrindstoneKind {
         item.set(REPAIR_COST, repair_cost);
         if item.is(&vanilla_items::ENCHANTED_BOOK) {
             if new_enchantments.is_empty() {
-                // Vanilla `transmuteCopy`: keeps the item's other components (custom
-                // name, lore) instead of discarding them into a fresh stack.
+                // Clear before transmuting: BOOK has no default to sanitize against.
+                item.set(STORED_ENCHANTMENTS, new_enchantments);
                 item.set_item(&vanilla_items::BOOK.key);
                 return item;
             }
