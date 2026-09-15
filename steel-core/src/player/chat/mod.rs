@@ -460,6 +460,28 @@ impl Player {
 
         Ok((link, last_seen))
     }
+
+    pub fn interactive_name(&self) -> TextComponent {
+        let name = self.gameprofile.name.clone();
+        TextComponent::plain(name.clone())
+            .insertion(name.clone())
+            .click_event(ClickEvent::suggest_command(format!("/tell {name} ")))
+            .hover_event(HoverEvent::show_entity(
+                "minecraft:player",
+                self.uuid(),
+                Some(name),
+            ))
+    }
+
+    /// Binds a vanilla chat type to this player as the sender.
+    pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
+        ChatTypeBound {
+            registry_id,
+            sender_name: self.interactive_name(),
+            target_name: None,
+        }
+    }
+
     /// Handles a chat message from the player.
     pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
         player.reset_last_action_time();
@@ -510,21 +532,7 @@ impl Player {
 
         let registry_id = vanilla_chat_types::CHAT.id() as i32;
 
-        let chat_type = ChatTypeBound {
-            registry_id,
-            sender_name: TextComponent::plain(player.gameprofile.name.clone())
-                .insertion(player.gameprofile.name.clone())
-                .click_event(ClickEvent::suggest_command(format!(
-                    "/tell {} ",
-                    player.gameprofile.name
-                )))
-                .hover_event(HoverEvent::show_entity(
-                    "minecraft:player",
-                    self.uuid(),
-                    Some(player.gameprofile.name.clone()),
-                )),
-            target_name: None,
-        };
+        let chat_type = player.bind_chat_type(registry_id);
 
         let chat_packet = CPlayerChat::new(
             player.gameprofile.id,

@@ -515,25 +515,13 @@ impl CommandSource {
     }
 
     pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
-        let sender_name = match self.sender().get_player() {
-            Some(player) => {
-                let name = player.gameprofile.name.clone();
-                TextComponent::plain(name.clone())
-                    .insertion(name.clone())
-                    .click_event(ClickEvent::suggest_command(format!("/tell {name} ")))
-                    .hover_event(HoverEvent::show_entity(
-                        "minecraft:player",
-                        player.gameprofile.id,
-                        Some(name),
-                    ))
-            }
-            None => TextComponent::plain(self.sender().to_string()),
-        };
-
-        ChatTypeBound {
-            registry_id,
-            sender_name,
-            target_name: None,
+        match self.sender().get_player() {
+            Some(player) => player.bind_chat_type(registry_id),
+            None => ChatTypeBound {
+                registry_id,
+                sender_name: TextComponent::plain(self.sender().to_string()),
+                target_name: None,
+            },
         }
     }
 }
