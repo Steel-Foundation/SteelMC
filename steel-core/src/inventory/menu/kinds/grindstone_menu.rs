@@ -46,7 +46,15 @@ pub fn grindstone(
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::GRINDSTONE, container_id);
 
-    let input = builder.section_all(&input_container);
+    let input = builder.section_all_with(
+        &input_container,
+        SectionKind::restricted(|_index, item_stack| {
+            item_stack.is_damageable_item()
+                || item_stack
+                    .get_enchantments_for_crafting()
+                    .is_some_and(|e| !e.is_empty())
+        }),
+    );
     let result = builder.result_slot(GrindstoneResultHandler::new(
         input_container.clone(),
         result_container.clone(),
