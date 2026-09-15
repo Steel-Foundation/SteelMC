@@ -182,7 +182,7 @@ impl Server {
             );
             return;
         }
-        let source = CommandSource::new(CommandSender::Player(shared_player), server);
+        let source = CommandSource::new(CommandSender::Player(shared_player), server, None);
         let commands = {
             let dispatcher = self.command_dispatcher.read();
             command_tree_packet(&dispatcher, &source)

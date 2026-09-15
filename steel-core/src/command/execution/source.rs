@@ -1,16 +1,7 @@
 use std::{collections::BTreeSet, ptr, sync::Arc};
 
-use glam::DVec3;
-use steel_math::{DEGREE_90, wrap_degrees};
-use steel_registry::{
-    vanilla_game_rules::{
-        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
-    },
-    world_clock::WorldClockRef,
-};
-use steel_utils::translations;
-use text_components::{Modifier, TextComponent, format::Color};
-
+use super::{CommandExecutionContext, GameProfileArgument};
+use crate::command::signing_context::CommandSigningContext;
 use crate::{
     command::{
         brigadier::CommandSyntaxError,
@@ -27,8 +18,17 @@ use crate::{
     server::Server,
     world::World,
 };
-
-use super::{CommandExecutionContext, GameProfileArgument};
+use glam::DVec3;
+use steel_math::{DEGREE_90, wrap_degrees};
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{
+    vanilla_game_rules::{
+        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
+    },
+    world_clock::WorldClockRef,
+};
+use steel_utils::translations;
+use text_components::{Modifier, TextComponent, format::Color};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -255,10 +255,15 @@ pub(crate) struct CommandSource {
     effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
+    signing_context: Option<CommandSigningContext>,
 }
 
 impl CommandSource {
-    pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
+    pub(crate) fn new(
+        sender: CommandSender,
+        server: Arc<Server>,
+        signing_context: Option<CommandSigningContext>,
+    ) -> Self {
         let player = sender.get_player().map(Arc::clone);
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
@@ -309,6 +314,7 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
+            signing_context,
         }
     }
 
@@ -443,6 +449,11 @@ impl CommandSource {
         self.silent
     }
 
+    #[must_use]
+    pub const fn signing_context(&self) -> Option<&CommandSigningContext> {
+        self.signing_context.as_ref()
+    }
+
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
         if self.silent {
             return;
@@ -499,6 +510,21 @@ impl CommandSource {
             && self.world.get_game_rule(&LOG_ADMIN_COMMANDS)
         {
             CommandSender::Console.send_message(&broadcast);
+        }
+    }
+
+    pub fn sender_name(&self) -> TextComponent {
+        match self.player() {
+            Some(player) => player.interactive_name(),
+            None => TextComponent::plain(self.sender.to_string()),
+        }
+    }
+
+    pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
+        ChatTypeBound {
+            registry_id,
+            sender_name: self.sender_name(),
+            target_name: None,
         }
     }
 }

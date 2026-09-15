@@ -374,7 +374,8 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     steel_utils::console!("{}", message);
     if let Some(server) = SERVER.get()
         && server
-            .submit_command(CommandSender::Console, message)
+            // None because console can't be reported to Microsoft (no signed messages)
+            .submit_command(CommandSender::Console, message, None)
             .is_err()
     {
         log::warn!("Command queue is full");

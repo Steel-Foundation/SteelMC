@@ -10,6 +10,7 @@ use super::{
     SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
     command_suggestions_packet, sleep, spawn_blocking,
 };
+use crate::command::signing_context::CommandSigningContext;
 use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
@@ -379,11 +380,15 @@ impl Server {
             handled += 1;
 
             match request {
-                CommandRequest::Execute { owner, command } => {
+                CommandRequest::Execute {
+                    owner,
+                    command,
+                    signing_context,
+                } => {
                     if !owner.is_current(self) {
                         continue;
                     }
-                    self.execute_command_request(pending, owner, &command);
+                    self.execute_command_request(pending, owner, &command, signing_context);
                 }
                 CommandRequest::Suggestions {
                     owner,
@@ -412,8 +417,9 @@ impl Server {
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
         owner: CommandExecutionOwner,
         command: &str,
+        signing_context: Option<CommandSigningContext>,
     ) {
-        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
+        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self), signing_context);
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
@@ -460,7 +466,7 @@ impl Server {
         sender: CommandSender,
         input: &str,
     ) -> Result<Suggestions, SuggestionError> {
-        let source = CommandSource::new(sender, Arc::clone(self));
+        let source = CommandSource::new(sender, Arc::clone(self), None);
         let mut reader = StringReader::new(input);
         if reader.peek() == Some('/') {
             reader.skip();
