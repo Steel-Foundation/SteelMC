@@ -231,21 +231,23 @@ impl GrindstoneKind {
             .for_each(|(id, level)| new_enchantments.set(id.clone(), *level));
 
         let mut repair_cost = 0;
-
         for _ in 0..new_enchantments.len() {
             repair_cost = AnvilKind::calculate_increased_repair_cost(repair_cost);
         }
 
+        item.set(REPAIR_COST, repair_cost);
         if item.is(&vanilla_items::ENCHANTED_BOOK) {
             if new_enchantments.is_empty() {
-                return ItemStack::new(&vanilla_items::BOOK);
+                // Vanilla `transmuteCopy`: keeps the item's other components (custom
+                // name, lore) instead of discarding them into a fresh stack.
+                item.set_item(&vanilla_items::BOOK.key);
+                return item;
             }
             item.set(STORED_ENCHANTMENTS, new_enchantments);
         } else {
             item.set(ENCHANTMENTS, new_enchantments);
         }
 
-        item.set(REPAIR_COST, repair_cost);
         item
     }
 }
