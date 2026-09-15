@@ -458,6 +458,7 @@ const fn fastutil_mix(value: u64) -> u64 {
 mod tests {
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::{
         PATH_TYPE_CACHE_MASK, Path, PathType, PathTypeCache, PathTypeSet, PathfindingContext,
@@ -480,11 +481,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 

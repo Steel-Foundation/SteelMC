@@ -66,7 +66,7 @@ impl VecDelta {
 
     /// Returns the number of steps, which the reader needs to tell the two forms apart.
     #[must_use]
-    pub fn step_count(&self) -> i32 {
+    pub const fn step_count(&self) -> i32 {
         match self {
             Self::Linear { .. } => 0,
             Self::Stepped(steps) => steps.len() as i32,

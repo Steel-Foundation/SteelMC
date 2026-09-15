@@ -59,7 +59,7 @@ struct CaveConfigJson {
     floor_level: FloatProvider,
 }
 
-fn default_start_vertical_radius_multiplier() -> FloatProvider {
+const fn default_start_vertical_radius_multiplier() -> FloatProvider {
     FloatProvider::Constant(1.0)
 }
 
@@ -223,12 +223,10 @@ fn generate_int_provider(i: &IntProvider) -> TokenStream {
         IntProvider::VeryBiasedToBottom {
             min_inclusive,
             max_inclusive,
-            inner,
         } => quote! {
             IntProvider::VeryBiasedToBottom {
                 min_inclusive: #min_inclusive,
                 max_inclusive: #max_inclusive,
-                inner: #inner,
             }
         },
         IntProvider::Trapezoid { min, max, plateau } => quote! {

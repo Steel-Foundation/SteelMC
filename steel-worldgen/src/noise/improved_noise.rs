@@ -3,17 +3,14 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use crate::random::Random;
-use std::ops;
 use std::simd::Simd;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
-#[cfg(target_feature = "avx512f")]
-use std::simd::f64x4;
 use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 use std::simd::ptr::SimdConstPtr;
-use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
+use std::simd::{Mask, Select, StdFloat};
 use steel_math::{
-    GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp2, lerp3, lerp3_simd,
-    smoothstep, smoothstep_derivative, smoothstep_simd,
+    GRADIENT_F32, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp, lerp_simd, lerp2,
+    lerp2_simd, lerp3, lerp3_simd, smoothstep, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
@@ -79,53 +76,311 @@ impl ImprovedNoise {
         }
     }
 
-    /// Sample noise at the given coordinates.
+    /// Samples the 26.3 float-based `PerlinNoise` implementation.
     ///
-    /// This is the standard 3D Perlin noise sampling without Y scaling.
+    /// Vanilla keeps coordinates and offsets as doubles, then converts the
+    /// fractional coordinates and every interpolation operation to `float`.
     #[inline]
     #[must_use]
-    pub fn noise(&self, x: f64, y: f64, z: f64) -> f64 {
-        let x = x + self.xo;
-        let y = y + self.yo;
-        let z = z + self.zo;
+    pub fn noise(&self, x: f64, y: f64, z: f64) -> f32 {
+        let x = steel_math::wrap(x) + self.xo;
+        let y = steel_math::wrap(y) + self.yo;
+        let z = steel_math::wrap(z) + self.zo;
+        let floor_x = fast_floor(x);
+        let floor_y = fast_floor(y);
+        let floor_z = fast_floor(z);
+        self.sample_and_lerp(
+            floor_x,
+            floor_y,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            (y - f64::from(floor_y)) as f32,
+            (z - f64::from(floor_z)) as f32,
+            (y - f64::from(floor_y)) as f32,
+        )
+    }
 
-        let xf = fast_floor(x);
-        let yf = fast_floor(y);
-        let zf = fast_floor(z);
+    /// Samples noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn noise_xz(&self, x: f64, z: f64) -> f32 {
+        let x = steel_math::wrap(x) + self.xo;
+        let z = steel_math::wrap(z) + self.zo;
+        let floor_x = fast_floor(x);
+        let floor_z = fast_floor(z);
+        self.sample_and_lerp(
+            floor_x,
+            self.yo_floor,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            self.yo_fraction as f32,
+            (z - f64::from(floor_z)) as f32,
+            self.yo_fraction as f32,
+        )
+    }
 
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
+    /// Samples noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn noise_xy(&self, x: f64, y: f64) -> f32 {
+        let x = steel_math::wrap(x) + self.xo;
+        let y = steel_math::wrap(y) + self.yo;
+        let floor_x = fast_floor(x);
+        let floor_y = fast_floor(y);
+        self.sample_and_lerp(
+            floor_x,
+            floor_y,
+            self.zo_floor,
+            (x - f64::from(floor_x)) as f32,
+            (y - f64::from(floor_y)) as f32,
+            self.zo_fraction as f32,
+            (y - f64::from(floor_y)) as f32,
+        )
+    }
 
-        self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+    /// samples one X/Z column of the floatvalued Perlin noise impl
+    #[inline]
+    #[must_use]
+    pub fn noise_y_simd<const N: usize>(&self, x: f64, ys: Simd<f64, N>, z: f64) -> Simd<f32, N> {
+        let x = steel_math::wrap(x) + self.xo;
+        let z = steel_math::wrap(z) + self.zo;
+        let ys = steel_math::wrap_simd(ys) + Simd::splat(self.yo);
+        let floor_x = fast_floor(x);
+        let floor_z = fast_floor(z);
+        let floor_ys = fast_floor_simd::<f64, i32, N>(ys);
+        let relative_ys = (ys - floor_ys.cast()).cast();
+
+        self.sample_and_lerp_y_simd(
+            floor_x,
+            floor_ys,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            relative_ys,
+            (z - f64::from(floor_z)) as f32,
+            relative_ys,
+        )
+    }
+
+    /// Samples the float-based `SmearedPerlinNoise` used by 26.3's blended
+    /// terrain noise.
+    #[inline]
+    #[must_use]
+    pub fn smeared_noise(
+        &self,
+        original_x: f64,
+        original_y: f64,
+        original_z: f64,
+        fudge_y_scale: f64,
+    ) -> f32 {
+        let x = steel_math::wrap(original_x) + self.xo;
+        let y = steel_math::wrap(original_y) + self.yo;
+        let z = steel_math::wrap(original_z) + self.zo;
+        let floor_x = fast_floor(x);
+        let floor_y = fast_floor(y);
+        let floor_z = fast_floor(z);
+        let relative_y = y - f64::from(floor_y);
+        let fudge_limit = if original_y >= 0.0 && original_y < relative_y {
+            original_y
+        } else {
+            relative_y
+        };
+        let fudge = (fudge_limit / fudge_y_scale + f64::from(1.0e-7_f32)).floor() * fudge_y_scale;
+        self.sample_and_lerp(
+            floor_x,
+            floor_y,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            (relative_y - fudge) as f32,
+            (z - f64::from(floor_z)) as f32,
+            relative_y as f32,
+        )
+    }
+
+    /// Samples smeared noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn smeared_noise_xz(&self, x: f64, z: f64, fudge_y_scale: f64) -> f32 {
+        self.smeared_noise(x, 0.0, z, fudge_y_scale)
+    }
+
+    /// Samples smeared noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn smeared_noise_xy(&self, x: f64, y: f64, fudge_y_scale: f64) -> f32 {
+        self.smeared_noise(x, y, 0.0, fudge_y_scale)
+    }
+
+    /// Samples an X/Z column of float-based `SmearedPerlinNoise` values.
+    ///
+    /// Coordinates and the vertical fudge stay in `f64`, as in vanilla. The
+    /// gradients and interpolation remain in `f32` lanes.
+    #[inline]
+    #[must_use]
+    pub fn smeared_noise_y_simd<const N: usize>(
+        &self,
+        original_x: f64,
+        original_ys: Simd<f64, N>,
+        original_z: f64,
+        fudge_y_scale: f64,
+    ) -> Simd<f32, N> {
+        let x = steel_math::wrap(original_x) + self.xo;
+        let ys = steel_math::wrap_simd(original_ys) + Simd::splat(self.yo);
+        let z = steel_math::wrap(original_z) + self.zo;
+        let floor_x = fast_floor(x);
+        let floor_ys = fast_floor_simd::<f64, i32, N>(ys);
+        let floor_z = fast_floor(z);
+        let relative_ys = ys - floor_ys.cast();
+        let zero = Simd::splat(0.0);
+        let fudge_limits = (original_ys.simd_ge(zero) & original_ys.simd_lt(relative_ys))
+            .select(original_ys, relative_ys);
+        let fudge = (fudge_limits / Simd::splat(fudge_y_scale)
+            + Simd::splat(f64::from(1.0e-7_f32)))
+        .floor()
+            * Simd::splat(fudge_y_scale);
+
+        self.sample_and_lerp_y_simd(
+            floor_x,
+            floor_ys,
+            floor_z,
+            (x - f64::from(floor_x)) as f32,
+            (relative_ys - fudge).cast(),
+            (z - f64::from(floor_z)) as f32,
+            relative_ys.cast(),
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla PerlinNoise.sampleAndLerp"
+    )]
+    fn sample_and_lerp(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        relative_x: f32,
+        relative_y: f32,
+        relative_z: f32,
+        original_relative_y: f32,
+    ) -> f32 {
+        let x1 = x.wrapping_add(1);
+        let y1 = y.wrapping_add(1);
+        let z1 = z.wrapping_add(1);
+        let relative_x1 = relative_x - 1.0;
+        let relative_y1 = relative_y - 1.0;
+        let relative_z1 = relative_z - 1.0;
+
+        let d000 = grad_dot_flat(&self.p, x, y, z, relative_x, relative_y, relative_z);
+        let d100 = grad_dot_flat(&self.p, x1, y, z, relative_x1, relative_y, relative_z);
+        let d010 = grad_dot_flat(&self.p, x, y1, z, relative_x, relative_y1, relative_z);
+        let d110 = grad_dot_flat(&self.p, x1, y1, z, relative_x1, relative_y1, relative_z);
+        let d001 = grad_dot_flat(&self.p, x, y, z1, relative_x, relative_y, relative_z1);
+        let d101 = grad_dot_flat(&self.p, x1, y, z1, relative_x1, relative_y, relative_z1);
+        let d011 = grad_dot_flat(&self.p, x, y1, z1, relative_x, relative_y1, relative_z1);
+        let d111 = grad_dot_flat(&self.p, x1, y1, z1, relative_x1, relative_y1, relative_z1);
+        let x_alpha = smoothstep(relative_x);
+        let y_alpha = smoothstep(original_relative_y);
+        let z_alpha = smoothstep(relative_z);
+        let xz0 = lerp2(x_alpha, y_alpha, d000, d100, d010, d110);
+        let xz1 = lerp2(x_alpha, y_alpha, d001, d101, d011, d111);
+        lerp(z_alpha, xz0, xz1)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors scalar sample_and_lerp with SIMD Y lanes"
+    )]
+    #[inline]
+    fn sample_and_lerp_y_simd<const N: usize>(
+        &self,
+        x: i32,
+        ys: Simd<i32, N>,
+        z: i32,
+        relative_x: f32,
+        relative_ys: Simd<f32, N>,
+        relative_z: f32,
+        original_relative_ys: Simd<f32, N>,
+    ) -> Simd<f32, N> {
+        let x = x as u8;
+        let z = z as u8;
+        let x0 = self.p[x as usize];
+        let x1 = self.p[x.wrapping_add(1) as usize];
+        let ys = ys.cast::<u8>();
+
+        let mut h000 = [0_usize; N];
+        let mut h100 = [0_usize; N];
+        let mut h010 = [0_usize; N];
+        let mut h110 = [0_usize; N];
+        let mut h001 = [0_usize; N];
+        let mut h101 = [0_usize; N];
+        let mut h011 = [0_usize; N];
+        let mut h111 = [0_usize; N];
+
+        for lane in 0..N {
+            let y = ys[lane];
+            let xy00 = self.p[x0.wrapping_add(y) as usize];
+            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+            let xy10 = self.p[x1.wrapping_add(y) as usize];
+            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+            h000[lane] = self.p[xy00.wrapping_add(z) as usize] as usize;
+            h100[lane] = self.p[xy10.wrapping_add(z) as usize] as usize;
+            h010[lane] = self.p[xy01.wrapping_add(z) as usize] as usize;
+            h110[lane] = self.p[xy11.wrapping_add(z) as usize] as usize;
+            h001[lane] = self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize;
+            h101[lane] = self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize;
+            h011[lane] = self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize;
+            h111[lane] = self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        }
+
+        let relative_xs = Simd::splat(relative_x);
+        let relative_zs = Simd::splat(relative_z);
+        let one = Simd::splat(1.0);
+        let relative_x1 = relative_xs - one;
+        let relative_y1 = relative_ys - one;
+        let relative_z1 = relative_zs - one;
+
+        let d000 = grad_dot_simd(h000, relative_xs, relative_ys, relative_zs);
+        let d100 = grad_dot_simd(h100, relative_x1, relative_ys, relative_zs);
+        let d010 = grad_dot_simd(h010, relative_xs, relative_y1, relative_zs);
+        let d110 = grad_dot_simd(h110, relative_x1, relative_y1, relative_zs);
+        let d001 = grad_dot_simd(h001, relative_xs, relative_ys, relative_z1);
+        let d101 = grad_dot_simd(h101, relative_x1, relative_ys, relative_z1);
+        let d011 = grad_dot_simd(h011, relative_xs, relative_y1, relative_z1);
+        let d111 = grad_dot_simd(h111, relative_x1, relative_y1, relative_z1);
+
+        let x_alpha = smoothstep_simd(relative_xs);
+        let y_alpha = smoothstep_simd(original_relative_ys);
+        let z_alpha = smoothstep_simd(relative_zs);
+        let xz0 = lerp2_simd(x_alpha, y_alpha, d000, d100, d010, d110);
+        let xz1 = lerp2_simd(x_alpha, y_alpha, d001, d101, d011, d111);
+        lerp_simd(z_alpha, xz0, xz1)
     }
 
     /// Calculate Perlin noise using SIMD vectors.
     #[inline]
     #[must_use]
-    pub fn noise_simd<F, const N: usize>(
+    pub fn noise_simd<const N: usize>(
         &self,
-        x: Simd<F, N>,
-        y: Simd<F, N>,
-        z: Simd<F, N>,
-    ) -> Simd<F, N>
+        x: Simd<f32, N>,
+        y: Simd<f32, N>,
+        z: Simd<f32, N>,
+    ) -> Simd<f32, N>
     where
-        F: SimdElement + SimdCast,
-        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
-            + SimdPartialOrd
-            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
-            + ops::Add<Output = Simd<F, N>>
-            + ops::Sub<Output = Simd<F, N>>
-            + ops::Mul<Output = Simd<F, N>>
-            + ops::Neg<Output = Simd<F, N>>,
+        Simd<f32, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd<Mask = Mask<i32, N>>
+            + SimdPartialEq<Mask = Mask<i32, N>>
+            + std::ops::Add<Output = Simd<f32, N>>
+            + std::ops::Sub<Output = Simd<f32, N>>
+            + std::ops::Mul<Output = Simd<f32, N>>
+            + std::ops::Neg<Output = Simd<f32, N>>,
     {
         let x = x + Simd::splat(self.xo).cast();
         let y = y + Simd::splat(self.yo).cast();
         let z = z + Simd::splat(self.zo).cast();
 
-        let xf = fast_floor_simd::<F, i32, N>(x);
-        let yf = fast_floor_simd::<F, i32, N>(y);
-        let zf = fast_floor_simd::<F, i32, N>(z);
+        let xf = fast_floor_simd::<f32, i32, N>(x);
+        let yf = fast_floor_simd::<f32, i32, N>(y);
+        let zf = fast_floor_simd::<f32, i32, N>(z);
 
         let xr = x - xf.cast();
         let yr = y - yf.cast();
@@ -134,69 +389,29 @@ impl ImprovedNoise {
         self.sample_and_lerp_simd(xf, yf, zf, xr, yr, zr, yr)
     }
 
-    /// Sample noise at `(x, 0.0, z)`.
-    #[inline]
-    #[must_use]
-    pub fn noise_xz(&self, x: f64, z: f64) -> f64 {
-        let x = x + self.xo;
-        let z = z + self.zo;
-
-        let xf = fast_floor(x);
-        let zf = fast_floor(z);
-
-        let xr = x - f64::from(xf);
-        let zr = z - f64::from(zf);
-
-        self.sample_and_lerp(
-            xf,
-            self.yo_floor,
-            zf,
-            xr,
-            self.yo_fraction,
-            zr,
-            self.yo_fraction,
-        )
-    }
-
-    /// Sample noise at `(x, y, 0.0)`.
-    #[inline]
-    #[must_use]
-    pub fn noise_xy(&self, x: f64, y: f64) -> f64 {
-        let x = x + self.xo;
-        let y = y + self.yo;
-
-        let xf = fast_floor(x);
-        let yf = fast_floor(y);
-
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-
-        self.sample_and_lerp(xf, yf, self.zo_floor, xr, yr, self.zo_fraction, yr)
-    }
-
     /// Sample noise at the given coordinates, accumulating partial derivatives.
     ///
-    /// Returns the noise value and adds the partial derivatives (dx, dy, dz)
-    /// into `derivative_out`. Used by `BlendedNoise` for terrain generation.
+    /// Returns the float noise value and adds the partial derivatives (dx, dy, dz)
+    /// into `derivative_out`. Matches vanilla's `PerlinNoise.noiseWithDerivative`.
     #[must_use]
     pub fn noise_with_derivative(
         &self,
         x: f64,
         y: f64,
         z: f64,
-        derivative_out: &mut [f64; 3],
-    ) -> f64 {
-        let x = x + self.xo;
-        let y = y + self.yo;
-        let z = z + self.zo;
+        derivative_out: &mut [f32; 3],
+    ) -> f32 {
+        let x = steel_math::wrap(x) + self.xo;
+        let y = steel_math::wrap(y) + self.yo;
+        let z = steel_math::wrap(z) + self.zo;
 
         let xf = fast_floor(x);
         let yf = fast_floor(y);
         let zf = fast_floor(z);
 
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
+        let xr = (x - f64::from(xf)) as f32;
+        let yr = (y - f64::from(yf)) as f32;
+        let zr = (z - f64::from(zf)) as f32;
 
         self.sample_with_derivative(xf, yf, zf, xr, yr, zr, derivative_out)
     }
@@ -215,7 +430,7 @@ impl ImprovedNoise {
         clippy::similar_names,
         reason = "yr_fudge and y_fudge match vanilla naming"
     )]
-    pub fn noise_with_y_scale(&self, x: f64, y: f64, z: f64, y_scale: f64, y_fudge: f64) -> f64 {
+    pub fn noise_with_y_scale(&self, x: f64, y: f64, z: f64, y_scale: f64, y_fudge: f64) -> f32 {
         let x = x + self.xo;
         let y = y + self.yo;
         let z = z + self.zo;
@@ -244,89 +459,14 @@ impl ImprovedNoise {
         } else {
             0.0
         };
-        self.sample_and_lerp(xf, yf, zf, xr, yr - yr_fudge, zr, yr)
-    }
-
-    /// Sample noise at grid point and interpolate.
-    ///
-    /// The 8 corner gradient-dot products are evaluated as 2 × `f64x4` so the
-    /// per-lane math stays identical to the scalar path (`((gx*xr) + (gy*yr)) + (gz*zr)`),
-    /// which preserves bit-identical output. Inspired by C2ME's `c2me-opts-math`
-    /// flat-gradient SIMD form.
-    #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
-    fn sample_and_lerp(
-        &self,
-        x: i32,
-        y: i32,
-        z: i32,
-        xr: f64,
-        yr: f64,
-        zr: f64,
-        yr_original: f64,
-    ) -> f64 {
-        let (d000, d100, d010, d110, d001, d101, d011, d111) = {
-            #[cfg(target_feature = "avx512f")]
-            {
-                let x = x as u8;
-                let y = y as u8;
-                let z = z as u8;
-                let x0 = self.p[x as usize];
-                let x1 = self.p[x.wrapping_add(1) as usize];
-
-                let xy00 = self.p[x0.wrapping_add(y) as usize];
-                let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
-                let xy10 = self.p[x1.wrapping_add(y) as usize];
-                let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
-
-                let h_z0 = [
-                    self.p[xy00.wrapping_add(z) as usize] as usize,
-                    self.p[xy10.wrapping_add(z) as usize] as usize,
-                    self.p[xy01.wrapping_add(z) as usize] as usize,
-                    self.p[xy11.wrapping_add(z) as usize] as usize,
-                ];
-                let h_z1 = [
-                    self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                ];
-
-                let xr_v = f64x4::from_array([xr, xr - 1.0, xr, xr - 1.0]);
-                let yr_v = f64x4::from_array([yr, yr, yr - 1.0, yr - 1.0]);
-                let zr_v0 = f64x4::splat(zr);
-                let zr_v1 = f64x4::splat(zr - 1.0);
-
-                let [d000, d100, d010, d110] = grad_dot_simd(h_z0, xr_v, yr_v, zr_v0).to_array();
-                let [d001, d101, d011, d111] = grad_dot_simd(h_z1, xr_v, yr_v, zr_v1).to_array();
-                (d000, d100, d010, d110, d001, d101, d011, d111)
-            }
-
-            #[cfg(not(target_feature = "avx512f"))]
-            {
-                let px1 = x.wrapping_add(1);
-                let py1 = y.wrapping_add(1);
-                let pz1 = z.wrapping_add(1);
-                let xr1 = xr - 1.0;
-                let yr1 = yr - 1.0;
-                let zr1 = zr - 1.0;
-
-                let d000 = grad_dot_flat(&self.p, x, y, z, xr, yr, zr);
-                let d100 = grad_dot_flat(&self.p, px1, y, z, xr1, yr, zr);
-                let d010 = grad_dot_flat(&self.p, x, py1, z, xr, yr1, zr);
-                let d110 = grad_dot_flat(&self.p, px1, py1, z, xr1, yr1, zr);
-                let d001 = grad_dot_flat(&self.p, x, y, pz1, xr, yr, zr1);
-                let d101 = grad_dot_flat(&self.p, px1, y, pz1, xr1, yr, zr1);
-                let d011 = grad_dot_flat(&self.p, x, py1, pz1, xr, yr1, zr1);
-                let d111 = grad_dot_flat(&self.p, px1, py1, pz1, xr1, yr1, zr1);
-                (d000, d100, d010, d110, d001, d101, d011, d111)
-            }
-        };
-
-        let alpha_x = smoothstep(xr);
-        let alpha_y = smoothstep(yr_original);
-        let alpha_z = smoothstep(zr);
-        lerp3(
-            alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
+        self.sample_and_lerp(
+            xf,
+            yf,
+            zf,
+            xr as f32,
+            (yr - yr_fudge) as f32,
+            zr as f32,
+            yr as f32,
         )
     }
 
@@ -341,22 +481,21 @@ impl ImprovedNoise {
 
     /// Sample noise at grid point and interpolate.
     #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
-    fn sample_and_lerp_simd<F, const N: usize>(
+    fn sample_and_lerp_simd<const N: usize>(
         &self,
         x: Simd<i32, N>,
         y: Simd<i32, N>,
         z: Simd<i32, N>,
-        xr: Simd<F, N>,
-        yr: Simd<F, N>,
-        zr: Simd<F, N>,
-        yr_original: Simd<F, N>,
-    ) -> Simd<F, N>
+        xr: Simd<f32, N>,
+        yr: Simd<f32, N>,
+        zr: Simd<f32, N>,
+        yr_original: Simd<f32, N>,
+    ) -> Simd<f32, N>
     where
-        F: SimdElement + SimdCast,
-        Simd<F, N>: ops::Mul<Output = Simd<F, N>>
-            + ops::Add<Output = Simd<F, N>>
-            + ops::Sub<Output = Simd<F, N>>
-            + ops::Neg<Output = Simd<F, N>>,
+        Simd<f32, N>: std::ops::Mul<Output = Simd<f32, N>>
+            + std::ops::Add<Output = Simd<f32, N>>
+            + std::ops::Sub<Output = Simd<f32, N>>
+            + std::ops::Neg<Output = Simd<f32, N>>,
     {
         let x = x.cast::<u8>();
         let y = y.cast::<u8>();
@@ -393,32 +532,17 @@ impl ImprovedNoise {
 
         // Calculate gradient dot products at each corner
         let d000 = grad_dot_simd(h000, xr, yr, zr);
-        let d100 = grad_dot_simd(h100, xr - Simd::splat(1.0).cast::<F>(), yr, zr);
-        let d010 = grad_dot_simd(h010, xr, yr - Simd::splat(1.0).cast::<F>(), zr);
-        let d110 = grad_dot_simd(
-            h110,
-            xr - Simd::splat(1.0).cast::<F>(),
-            yr - Simd::splat(1.0).cast::<F>(),
-            zr,
-        );
-        let d001 = grad_dot_simd(h001, xr, yr, zr - Simd::splat(1.0).cast::<F>());
-        let d101 = grad_dot_simd(
-            h101,
-            xr - Simd::splat(1.0).cast::<F>(),
-            yr,
-            zr - Simd::splat(1.0).cast::<F>(),
-        );
-        let d011 = grad_dot_simd(
-            h011,
-            xr,
-            yr - Simd::splat(1.0).cast::<F>(),
-            zr - Simd::splat(1.0).cast::<F>(),
-        );
+        let d100 = grad_dot_simd(h100, xr - Simd::splat(1.0), yr, zr);
+        let d010 = grad_dot_simd(h010, xr, yr - Simd::splat(1.0), zr);
+        let d110 = grad_dot_simd(h110, xr - Simd::splat(1.0), yr - Simd::splat(1.0), zr);
+        let d001 = grad_dot_simd(h001, xr, yr, zr - Simd::splat(1.0));
+        let d101 = grad_dot_simd(h101, xr - Simd::splat(1.0), yr, zr - Simd::splat(1.0));
+        let d011 = grad_dot_simd(h011, xr, yr - Simd::splat(1.0), zr - Simd::splat(1.0));
         let d111 = grad_dot_simd(
             h111,
-            xr - Simd::splat(1.0).cast::<F>(),
-            yr - Simd::splat(1.0).cast::<F>(),
-            zr - Simd::splat(1.0).cast::<F>(),
+            xr - Simd::splat(1.0),
+            yr - Simd::splat(1.0),
+            zr - Simd::splat(1.0),
         );
 
         // Apply smoothstep interpolation
@@ -431,10 +555,10 @@ impl ImprovedNoise {
         )
     }
 
-    /// Generic N-lane form of [`Self::noise_with_y_scale_4x`]. Each lane runs the
+    /// Generic N-lane form of the Y-scaled float sampler. Each lane runs the
     /// exact per-lane math of the scalar [`Self::noise_with_y_scale`], so any
     /// supported lane width yields bit-identical per-lane results — only the
-    /// SIMD batch size changes. `f64x4` ≡ `noise_with_y_scale_simd::<4>`.
+    /// SIMD batch size changes.
     #[inline]
     #[must_use]
     pub fn noise_with_y_scale_simd<const N: usize>(
@@ -444,7 +568,7 @@ impl ImprovedNoise {
         z: f64,
         y_scale: f64,
         y_fudges: Simd<f64, N>,
-    ) -> Simd<f64, N> {
+    ) -> Simd<f32, N> {
         // Shared x/z offset and floor
         let x = x + self.xo;
         let z = z + self.zo;
@@ -472,84 +596,14 @@ impl ImprovedNoise {
 
         let yrs_adjusted = yrs - yr_fudge;
 
-        self.sample_and_lerp_y_simd(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
-    }
-
-    /// Vectorized sample-and-lerp for N Y values sharing x/z grid position.
-    /// Generic counterpart of [`Self::sample_and_lerp_4x`].
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "mirrors scalar sample_and_lerp with Nx SIMD y-batching"
-    )]
-    #[inline]
-    fn sample_and_lerp_y_simd<const N: usize>(
-        &self,
-        xf: i32,
-        zf: i32,
-        xr: f64,
-        zr: f64,
-        ys_floor: Simd<i32, N>,
-        yrs: Simd<f64, N>,
-        yrs_original: Simd<f64, N>,
-    ) -> Simd<f64, N> {
-        let xf = xf as u8;
-        let zf = zf as u8;
-        // Shared x permutation lookups (2 instead of 2×N)
-        let x0 = self.p[xf as usize];
-        let x1 = self.p[xf.wrapping_add(1) as usize];
-
-        let yf = ys_floor.cast();
-
-        // Per-lane y-dependent permutation lookups
-        let mut h000 = [0usize; N];
-        let mut h100 = [0usize; N];
-        let mut h010 = [0usize; N];
-        let mut h110 = [0usize; N];
-        let mut h001 = [0usize; N];
-        let mut h101 = [0usize; N];
-        let mut h011 = [0usize; N];
-        let mut h111 = [0usize; N];
-
-        for i in 0..N {
-            let y = yf[i];
-            let xy00 = self.p[x0.wrapping_add(y) as usize];
-            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
-            let xy10 = self.p[x1.wrapping_add(y) as usize];
-            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
-            h000[i] = self.p[xy00.wrapping_add(zf) as usize] as usize;
-            h100[i] = self.p[xy10.wrapping_add(zf) as usize] as usize;
-            h010[i] = self.p[xy01.wrapping_add(zf) as usize] as usize;
-            h110[i] = self.p[xy11.wrapping_add(zf) as usize] as usize;
-            h001[i] = self.p[xy00.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-            h101[i] = self.p[xy10.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-            h011[i] = self.p[xy01.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-            h111[i] = self.p[xy11.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-        }
-
-        // Vectorized gradient dot products
-        let xr_v: Simd<f64, N> = Simd::splat(xr);
-        let zr_v: Simd<f64, N> = Simd::splat(zr);
-        let one: Simd<f64, N> = Simd::splat(1.0);
-        let xr_m1 = xr_v - one;
-        let yr_m1 = yrs - one;
-        let zr_m1 = zr_v - one;
-
-        let d000 = grad_dot_simd(h000, xr_v, yrs, zr_v);
-        let d100 = grad_dot_simd(h100, xr_m1, yrs, zr_v);
-        let d010 = grad_dot_simd(h010, xr_v, yr_m1, zr_v);
-        let d110 = grad_dot_simd(h110, xr_m1, yr_m1, zr_v);
-        let d001 = grad_dot_simd(h001, xr_v, yrs, zr_m1);
-        let d101 = grad_dot_simd(h101, xr_m1, yrs, zr_m1);
-        let d011 = grad_dot_simd(h011, xr_v, yr_m1, zr_m1);
-        let d111 = grad_dot_simd(h111, xr_m1, yr_m1, zr_m1);
-
-        // Smoothstep — x and z are shared across lanes
-        let x_alpha: Simd<f64, N> = Simd::splat(smoothstep(xr));
-        let y_alpha = smoothstep_simd(yrs_original);
-        let z_alpha: Simd<f64, N> = Simd::splat(smoothstep(zr));
-
-        lerp3_simd(
-            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+        self.sample_and_lerp_y_simd(
+            xf,
+            ys_floor,
+            zf,
+            xr as f32,
+            yrs_adjusted.cast(),
+            zr as f32,
+            yrs.cast(),
         )
     }
 
@@ -560,11 +614,11 @@ impl ImprovedNoise {
         x: i32,
         y: i32,
         z: i32,
-        xr: f64,
-        yr: f64,
-        zr: f64,
-        derivative_out: &mut [f64; 3],
-    ) -> f64 {
+        xr: f32,
+        yr: f32,
+        zr: f32,
+        derivative_out: &mut [f32; 3],
+    ) -> f32 {
         let x = x as u8;
         let y = y as u8;
         let z = z as u8;
@@ -585,14 +639,14 @@ impl ImprovedNoise {
         let h011 = self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize;
         let h111 = self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize;
 
-        let g000 = Simd::from_array(GRADIENT[h000 & 15]);
-        let g100 = Simd::from_array(GRADIENT[h100 & 15]);
-        let g010 = Simd::from_array(GRADIENT[h010 & 15]);
-        let g110 = Simd::from_array(GRADIENT[h110 & 15]);
-        let g001 = Simd::from_array(GRADIENT[h001 & 15]);
-        let g101 = Simd::from_array(GRADIENT[h101 & 15]);
-        let g011 = Simd::from_array(GRADIENT[h011 & 15]);
-        let g111 = Simd::from_array(GRADIENT[h111 & 15]);
+        let g000 = Simd::from_array(GRADIENT_F32[h000 & 15]);
+        let g100 = Simd::from_array(GRADIENT_F32[h100 & 15]);
+        let g010 = Simd::from_array(GRADIENT_F32[h010 & 15]);
+        let g110 = Simd::from_array(GRADIENT_F32[h110 & 15]);
+        let g001 = Simd::from_array(GRADIENT_F32[h001 & 15]);
+        let g101 = Simd::from_array(GRADIENT_F32[h101 & 15]);
+        let g011 = Simd::from_array(GRADIENT_F32[h011 & 15]);
+        let g111 = Simd::from_array(GRADIENT_F32[h111 & 15]);
 
         // Gradient dot products at each corner
         let d000 = grad_dot(h000, xr, yr, zr);
@@ -663,17 +717,20 @@ impl ImprovedNoise {
     }
 }
 
-/// Helps the compiler factor permutation reads in the scalar path.
-#[cfg(not(target_feature = "avx512f"))]
+/// Matches vanilla's shared permutation lookup and typed gradient dot product.
 #[inline]
-fn grad_dot_flat(p: &[u8; 256], px: i32, py: i32, pz: i32, fx: f64, fy: f64, fz: f64) -> f64 {
+fn gradient_hash(p: &[u8; 256], px: i32, py: i32, pz: i32) -> usize {
     let qx = (px & 0xFF) as u8;
     let qy = (py & 0xFF) as u8;
     let qz = (pz & 0xFF) as u8;
     let a = p[qx as usize];
     let b = p[a.wrapping_add(qy) as usize];
-    let hash = p[b.wrapping_add(qz) as usize];
-    grad_dot(hash as usize, fx, fy, fz)
+    p[b.wrapping_add(qz) as usize] as usize
+}
+
+#[inline]
+fn grad_dot_flat(p: &[u8; 256], px: i32, py: i32, pz: i32, fx: f32, fy: f32, fz: f32) -> f32 {
+    grad_dot(gradient_hash(p, px, py, pz), fx, fy, fz)
 }
 
 #[cfg(test)]
@@ -738,57 +795,89 @@ mod tests {
     }
 
     #[test]
-    fn test_noise_simd_matches_scalar() {
+    fn smeared_noise_y_simd_matches_scalar() {
         let mut rng = Xoroshiro::from_seed(42);
         let noise = ImprovedNoise::new(&mut rng);
+        let ys = [-64.0, -56.0, -48.0, -40.0, -32.0, -24.0, -16.0, -8.0];
+        let simd = noise.smeared_noise_y_simd(
+            20_000_068.0,
+            std::simd::f64x8::from_array(ys),
+            -19_999_796.0,
+            5475.296,
+        );
 
-        let batches = [
+        for (&y, &value) in ys.iter().zip(simd.as_array()) {
+            assert_eq!(
+                value.to_bits(),
+                noise
+                    .smeared_noise(20_000_068.0, y, -19_999_796.0, 5475.296)
+                    .to_bits(),
+                "Y={y}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_noise_y_simd_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+        let columns = [
+            (0.0, 0.0, [0.0, 1.25, -5.5, 1000.75]),
             (
-                [0.0, 1.25, -5.5, 1000.75],
-                [0.0, 64.5, -20.25, 255.75],
-                [0.0, -30.75, 4096.5, -1000.25],
-            ),
-            (
-                [
-                    255.25 - noise.xo,
-                    256.25 - noise.xo,
-                    -1.75 - noise.xo,
-                    -256.25 - noise.xo,
-                ],
+                255.25 - noise.xo,
+                -256.25 - noise.zo,
                 [
                     255.5 - noise.yo,
                     256.5 - noise.yo,
                     -1.5 - noise.yo,
                     -256.5 - noise.yo,
                 ],
-                [
-                    255.75 - noise.zo,
-                    256.75 - noise.zo,
-                    -1.25 - noise.zo,
-                    -256.25 - noise.zo,
-                ],
             ),
+            (33_554_432.0, -33_554_432.0, [64.0, 64.5, 65.0, 65.5]),
         ];
 
-        for (xs, ys, zs) in batches {
-            let simd = noise.noise_simd(
-                f64x4::from_array(xs),
-                f64x4::from_array(ys),
-                f64x4::from_array(zs),
-            );
-            for i in 0..4 {
-                let scalar = noise.noise(xs[i], ys[i], zs[i]);
-                #[expect(
-                    clippy::float_cmp,
-                    reason = "SIMD path must be bit-identical to scalar noise for vanilla determinism"
-                )]
-                let matches = scalar == simd[i];
-                assert!(
-                    matches,
-                    "Mismatch at ({}, {}, {}): scalar={}, simd={}",
-                    xs[i], ys[i], zs[i], scalar, simd[i],
-                );
+        for (x, z, ys) in columns {
+            let simd = noise.noise_y_simd(x, f64x4::from_array(ys), z);
+            for (lane, y) in ys.into_iter().enumerate() {
+                assert_eq!(simd[lane].to_bits(), noise.noise(x, y, z).to_bits());
             }
+        }
+    }
+
+    #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(12_345);
+        let noise = ImprovedNoise::new(&mut rng);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            assert_eq!(noise.noise_xz(a, b), noise.noise(a, 0.0, b));
+            assert_eq!(noise.noise_xy(a, b), noise.noise(a, b, 0.0));
+        }
+    }
+
+    #[test]
+    fn test_zero_axis_smeared_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(12_345);
+        let noise = ImprovedNoise::new(&mut rng);
+        let fudge_y_scale = 5475.296;
+        let samples = [(0.0, 0.0), (1.25, -30.75), (-1000.0, 4096.5)];
+
+        for &(a, b) in &samples {
+            assert_eq!(
+                noise.smeared_noise_xz(a, b, fudge_y_scale),
+                noise.smeared_noise(a, 0.0, b, fudge_y_scale),
+            );
+            assert_eq!(
+                noise.smeared_noise_xy(a, b, fudge_y_scale),
+                noise.smeared_noise(a, b, 0.0, fudge_y_scale),
+            );
         }
     }
 
@@ -880,40 +969,6 @@ mod tests {
     }
 
     #[test]
-    fn test_noise_matches_zero_y_scale_path() {
-        let mut rng = Xoroshiro::from_seed(42);
-        let noise = ImprovedNoise::new(&mut rng);
-
-        for (x, y, z) in [
-            (0.0, 0.0, 0.0),
-            (1.25, 64.5, -30.75),
-            (-1000.0, -20.25, 4096.5),
-        ] {
-            assert!(
-                (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
-            );
-        }
-    }
-
-    #[test]
-    fn test_zero_axis_helpers_match_full_noise() {
-        let mut rng = Xoroshiro::from_seed(12_345);
-        let noise = ImprovedNoise::new(&mut rng);
-        let samples = [
-            (0.0, 0.0),
-            (1.25, -30.75),
-            (-1000.0, 4096.5),
-            (33_554_431.5, -33_554_432.25),
-            (-0.000_000_1, 0.000_000_1),
-        ];
-
-        for &(a, b) in &samples {
-            assert_eq!(noise.noise_xz(a, b), noise.noise(a, 0.0, b));
-            assert_eq!(noise.noise_xy(a, b), noise.noise(a, b, 0.0));
-        }
-    }
-
-    #[test]
     fn test_improved_noise_range() {
         let mut rng = Xoroshiro::from_seed(42);
         let noise = ImprovedNoise::new(&mut rng);
@@ -949,29 +1004,6 @@ mod tests {
         )]
         let all_same = v1 == v2 && v2 == v3 && v3 == v4;
         assert!(!all_same, "All noise values are the same - unexpected");
-    }
-
-    #[test]
-    fn test_noise_with_derivative_matches_noise() {
-        let mut rng = Xoroshiro::from_seed(42);
-        let noise = ImprovedNoise::new(&mut rng);
-
-        // noise_with_derivative should return the same value as noise()
-        // (when no y_scale/y_fudge is used)
-        for &(x, y, z) in &[
-            (0.0, 0.0, 0.0),
-            (1.5, 2.3, 3.7),
-            (-5.2, 64.0, 100.3),
-            (0.25, 0.25, 0.25),
-        ] {
-            let v1 = noise.noise(x, y, z);
-            let mut deriv = [0.0; 3];
-            let v2 = noise.noise_with_derivative(x, y, z, &mut deriv);
-            assert!(
-                (v1 - v2).abs() < 1e-12,
-                "Value mismatch at ({x}, {y}, {z}): {v1} vs {v2}",
-            );
-        }
     }
 
     #[test]

@@ -60,14 +60,16 @@ pub(super) struct TranspileContext {
     /// name instead of recomputing. Covers `Reference`, `Noise`,
     /// `ShiftedNoise`, and other expensive nodes.
     pub(super) cse_bindings: FxHashMap<u64, Ident>,
-    /// CSE bindings for the SIMD (`_4x`) codegen path. Kept separate from
-    /// `cse_bindings` because SIMD bindings hold `f64x4` values: if the scalar
-    /// 4×-lane fallback (`gen_simd_scalar_fallback`) looked one up it would emit
-    /// an `f64x4` where an `f64` is expected. Same fingerprint keys, disjoint
+    /// CSE bindings for SIMD codegen. Kept separate from
+    /// `cse_bindings` because SIMD bindings hold vector values: if the scalar
+    /// lane fallback (`gen_simd_scalar_fallback`) looked one up it would emit a
+    /// vector where an `f32` is expected. Same fingerprint keys, disjoint
     /// codegen scopes.
     pub(super) cse_bindings_simd: FxHashMap<u64, Ident>,
     /// Counter for generating unique CSE variable names.
     pub(super) cse_counter: usize,
+    /// Disables range-choice input reuse while emitting a nested material rule.
+    pub(super) disable_range_choice_input_cse: bool,
     /// Inline `Noise` nodes with `y_scale == 0.0` found inside non-flat
     /// functions. These are Y-independent but get recomputed per Y corner;
     /// caching them in the column cache avoids ~48 redundant evaluations per
@@ -98,6 +100,7 @@ impl TranspileContext {
             cse_bindings: FxHashMap::default(),
             cse_bindings_simd: FxHashMap::default(),
             cse_counter: 0,
+            disable_range_choice_input_cse: false,
             inline_flat_noises: BTreeMap::new(),
         }
     }

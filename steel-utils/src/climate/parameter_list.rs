@@ -18,8 +18,8 @@ use super::PARAMETER_COUNT;
 use super::types::{Parameter, ParameterPoint, TargetPoint};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-/// Maximum children per tree node. Matches vanilla's `CHILDREN_PER_NODE` = 6.
-const CHILDREN_PER_NODE: usize = 6;
+/// Maximum children per tree node. Matches vanilla's `CHILDREN_PER_NODE` = 19.
+const CHILDREN_PER_NODE: usize = 19;
 
 /// R-Tree node used during construction only. After building, the tree is
 /// flattened into a `Vec<FlatNode>` for search.
@@ -205,8 +205,8 @@ fn sort_bucket_subtrees(
 
 /// Compute the expected bucket size from vanilla's formula.
 fn expected_children_count(total: usize) -> usize {
-    let log_base_6 = ((total as f64) - 0.01).ln() / (CHILDREN_PER_NODE as f64).ln();
-    (CHILDREN_PER_NODE as f64).powf(log_base_6.floor()) as usize
+    let log_base_children = ((total as f64) - 0.01).ln() / (CHILDREN_PER_NODE as f64).ln();
+    (CHILDREN_PER_NODE as f64).powf(log_base_children.floor()) as usize
 }
 
 /// Snapshot the current entry order into buckets and compute total cost.

@@ -937,8 +937,10 @@ impl<N: DimensionNoises> Aquifer<N> {
 
         // fluid_level_spread is evaluated at grid coordinates (not block coordinates)
         self.cache.ensure(cell_x, cell_z, noises);
-        let spread =
-            noises.router_fluid_level_spread(&mut self.cache, cell_x, cell_y, cell_z) * 10.0;
+        let spread = f64::from(
+            noises.router_fluid_level_spread(&mut self.cache, cell_x, cell_y, cell_z) as f32
+                * 10.0_f32,
+        );
         let spread_quantized = quantize(spread, 3);
         let target = cell_middle_y + spread_quantized;
 

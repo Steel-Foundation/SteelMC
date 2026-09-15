@@ -213,10 +213,6 @@ impl Player {
     ///
     /// Panics if the server cannot restore the player to the last accepted position after rejecting
     /// invalid movement. That indicates world entity state refused an authoritative correction.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "matches vanilla handleMovePlayer; splitting would hurt readability"
-    )]
     pub fn handle_move_player(&self, packet: SMovePlayer) {
         if Self::is_invalid_position(
             packet.get_x(0.0),
@@ -434,7 +430,7 @@ impl Player {
                 position: Some(target_pos),
                 rotation: (target_yaw, target_pitch),
                 on_ground: is_on_ground,
-                horizontal_collision: horizontal_collision,
+                horizontal_collision,
                 movement: client_delta,
                 reset_fall_distance: moved_upwards,
             },

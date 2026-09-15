@@ -12,21 +12,21 @@ use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 use steel_worldgen::density::{ColumnCache, DimensionNoises};
 
 /// Veininess magnitude must exceed this (after edge roundoff) to place any vein block.
-const VEININESS_THRESHOLD: f64 = 0.4;
+const VEININESS_THRESHOLD: f32 = 0.4;
 /// Within this many blocks of the vein type's Y boundary, the threshold tightens.
-const EDGE_ROUNDOFF_BEGIN: f64 = 20.0;
+const EDGE_ROUNDOFF_BEGIN: f32 = 20.0;
 /// Maximum tightening applied at the very edge of the Y range.
-const MAX_EDGE_ROUNDOFF: f64 = -0.2;
+const MAX_EDGE_ROUNDOFF: f32 = -0.2;
 /// Probability of NOT skipping a vein block (nextFloat must be <= this).
 const VEIN_SOLIDNESS: f32 = 0.7;
 /// Minimum richness (at veininess = 0.4).
-const MIN_RICHNESS: f64 = 0.1;
+const MIN_RICHNESS: f32 = 0.1;
 /// Maximum richness (at veininess >= 0.6).
-const MAX_RICHNESS: f64 = 0.3;
+const MAX_RICHNESS: f32 = 0.3;
 /// Probability of placing a raw ore block instead of ore.
 const CHANCE_OF_RAW_ORE_BLOCK: f32 = 0.02;
 /// Vein gap noise must be above this to place ore (otherwise filler).
-const SKIP_ORE_IF_GAP_BELOW: f64 = -0.3;
+const SKIP_ORE_IF_GAP_BELOW: f32 = -0.3;
 
 /// A vein type with its Y range and block variants.
 struct VeinType {
@@ -89,6 +89,45 @@ impl OreVeinifier {
         }
     }
 
+    /// Applies one `OreVeinRule` from the material-rule datapack.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches the Vanilla ore-vein rule inputs"
+    )]
+    #[must_use]
+    pub fn try_apply_material_rule(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        density: f32,
+        richness: f32,
+        filler_gap: impl FnOnce() -> f32,
+        ore: BlockStateId,
+        raw_ore: BlockStateId,
+        filler: BlockStateId,
+        raw_ore_chance: f32,
+    ) -> Option<BlockStateId> {
+        if density <= 0.0 {
+            return None;
+        }
+
+        let mut random = self.ore_splitter.at(x, y, z);
+        if random.next_f32() > density {
+            return None;
+        }
+
+        if random.next_f32() < richness && filler_gap() < 0.0 {
+            if random.next_f32() < raw_ore_chance {
+                Some(raw_ore)
+            } else {
+                Some(ore)
+            }
+        } else {
+            Some(filler)
+        }
+    }
+
     /// Check if this solid block should be replaced with an ore vein block,
     /// using trilinearly interpolated vein density values.
     ///
@@ -101,7 +140,7 @@ impl OreVeinifier {
         &self,
         noises: &N,
         cache: &mut N::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[f32],
         world_x: i32,
         world_y: i32,
         world_z: i32,
@@ -110,7 +149,7 @@ impl OreVeinifier {
             noises.combine_vein_toggle(cache, interpolated, 0, world_y, 0)
         } else {
             cache.ensure(world_x, world_z, noises);
-            noises.router_vein_toggle(cache, world_x, world_y, world_z)
+            noises.router_vein_toggle(cache, world_x, world_y, world_z) as f32
         };
 
         // Select vein type based on sign of vein_toggle
@@ -132,7 +171,7 @@ impl OreVeinifier {
         // Edge roundoff: tighten threshold near Y boundaries
         let dist_from_edge = dist_from_top.min(dist_from_bottom);
         let edge_roundoff = map_clamped(
-            f64::from(dist_from_edge),
+            dist_from_edge as f32,
             0.0,
             EDGE_ROUNDOFF_BEGIN,
             MAX_EDGE_ROUNDOFF,
@@ -156,7 +195,7 @@ impl OreVeinifier {
             noises.combine_vein_ridged(cache, interpolated, 0, world_y, 0)
         } else {
             cache.ensure(world_x, world_z, noises);
-            noises.router_vein_ridged(cache, world_x, world_y, world_z)
+            noises.router_vein_ridged(cache, world_x, world_y, world_z) as f32
         };
         if vein_ridged >= 0.0 {
             return None;
@@ -171,10 +210,10 @@ impl OreVeinifier {
             MAX_RICHNESS,
         );
 
-        if (f64::from(rng.next_f32())) < richness {
+        if rng.next_f32() < richness {
             // vein_gap has no Interpolated marker — evaluate directly
             cache.ensure(world_x, world_z, noises);
-            let vein_gap = noises.router_vein_gap(cache, world_x, world_y, world_z);
+            let vein_gap = noises.router_vein_gap(cache, world_x, world_y, world_z) as f32;
             if vein_gap > SKIP_ORE_IF_GAP_BELOW {
                 // Place ore (2% chance of raw ore block)
                 if rng.next_f32() < CHANCE_OF_RAW_ORE_BLOCK {
@@ -189,6 +228,40 @@ impl OreVeinifier {
         } else {
             // Below richness threshold: filler block
             Some(vein_type.filler)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OreVeinifier;
+    use crate::random::{Random, xoroshiro::Xoroshiro};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+
+    #[test]
+    fn rejected_material_rules_do_not_sample_filler_gap() {
+        init_vanilla_registry();
+        let splitter = Xoroshiro::from_seed(13579).next_positional();
+        let veinifier = OreVeinifier::new(&splitter);
+        let ore = vanilla_blocks::COPPER_ORE.default_state();
+        let raw = vanilla_blocks::RAW_COPPER_BLOCK.default_state();
+        let filler = vanilla_blocks::GRANITE.default_state();
+        for (density, richness, expected) in [(0.0, 1.0, None), (1.0, 0.0, Some(filler))] {
+            assert_eq!(
+                veinifier.try_apply_material_rule(
+                    12,
+                    20,
+                    -34,
+                    density,
+                    richness,
+                    || panic!("Vanilla rejects before sampling the gap"),
+                    ore,
+                    raw,
+                    filler,
+                    0.02,
+                ),
+                expected,
+            );
         }
     }
 }

@@ -6,7 +6,10 @@
 //! bundles the per-chunk references that every carver method threads
 //! through.
 
-use std::{cell::Cell, sync::LazyLock};
+use std::{
+    cell::Cell,
+    sync::{Arc, LazyLock},
+};
 
 use glam::IVec3;
 use smallvec::SmallVec;
@@ -17,12 +20,13 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::ChunkPos;
 use steel_utils::{BlockPos, BlockStateId, Identifier};
-use steel_worldgen::density::DimensionNoises;
+use steel_worldgen::density::{ColumnCache, DimensionNoises};
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
 use crate::chunk::heightmap::Heightmap;
-use crate::worldgen::generator::{CarversPhase, GenerationChunk};
+use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
 use crate::worldgen::surface::SurfaceSystem;
+use steel_worldgen::noise::OreVeinifier;
 use steel_worldgen::noise::{Aquifer, AquiferResult};
 
 pub mod canyon;
@@ -61,10 +65,14 @@ pub struct SourceChunk {
 ///
 /// Mirrors vanilla's `CarvingContext` and borrows the Aquifer retained from Noise.
 pub struct CarvingContext<'a, N: DimensionNoises> {
+    /// Density functions for material-rule evaluation.
+    pub noises: &'a N,
     /// Dimension minimum Y (inclusive).
     pub min_y: i32,
     /// Dimension vertical extent in blocks (`max_y = min_y + gen_depth - 1`).
     pub gen_depth: i32,
+    /// Dimension sea level used by relative vertical anchors.
+    pub sea_level: i32,
     /// Surface system (biome-specific surface noise + clay bands).
     pub surface_system: &'a SurfaceSystem,
     /// Aquifer for this chunk, retained from Noise or reconstructed after a disk reload.
@@ -80,6 +88,12 @@ pub struct CarvingContext<'a, N: DimensionNoises> {
     pub chunk_min_x: i32,
     /// Chunk NW block Z — anchors `psl_corners`.
     pub chunk_min_z: i32,
+    /// Density/richness values prefilled for material ore rules during noise fill.
+    pub material_ore_vein_values: Arc<[f32]>,
+    /// Positional random source and block states for material ore rules.
+    pub ore_veinifier: Option<&'a OreVeinifier>,
+    /// Material-rule column cache for direct filler-gap sampling.
+    pub material_cache: N::ColumnCache,
 }
 
 impl<N: DimensionNoises> CarvingContext<'_, N> {
@@ -116,7 +130,7 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
     /// depends on whether the carved block was replaced with a fluid.
     #[must_use]
     pub fn top_material(
-        &self,
+        &mut self,
         biome_id: u16,
         block_x: i32,
         block_y: i32,
@@ -124,6 +138,32 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
         steep: bool,
         under_fluid: bool,
     ) -> Option<BlockStateId> {
+        let value_count = N::material_ore_vein_value_count();
+        let mut ore_vein_results = SmallVec::<[Option<BlockStateId>; 2]>::new();
+        ore_vein_results.resize(value_count / 2, None);
+        if let Some(ore_veinifier) = self.ore_veinifier {
+            let local_x = (block_x - self.chunk_min_x) as usize;
+            let local_z = (block_z - self.chunk_min_z) as usize;
+            let relative_y = (block_y - self.min_y) as usize;
+            let offset = (relative_y * 16 * 16 + local_z * 16 + local_x) * value_count;
+            if let Some(values) = self
+                .material_ore_vein_values
+                .get(offset..offset + value_count)
+            {
+                self.material_cache.ensure(block_x, block_z, self.noises);
+                N::fill_prefilled_material_ore_vein_results(
+                    self.noises,
+                    &mut self.material_cache,
+                    ore_veinifier,
+                    values,
+                    block_x,
+                    block_y,
+                    block_z,
+                    &mut ore_vein_results,
+                );
+            }
+        }
+
         // Surface noise inputs (same helpers build_surface uses per column).
         let surface_depth = self.surface_system.get_surface_depth(block_x, block_z);
         let surface_secondary = self.surface_system.get_surface_secondary(block_x, block_z);
@@ -159,6 +199,7 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
             N::surface_rule_block_states(),
         );
 
+        ctx = ctx.with_ore_vein_results(&ore_vein_results);
         N::try_apply_surface_rule(&mut ctx)
     }
 }
@@ -283,14 +324,6 @@ pub(super) fn horizontal_tunnel_radius(progress_arg: f32, thickness: f32) -> f64
     1.5 + f64::from(radius_offset)
 }
 
-/// Decision returned by the per-block carve-state computation.
-enum CarveState {
-    /// Place this block.
-    Place(BlockStateId),
-    /// Aquifer barrier / "don't carve" — skip block.
-    Skip,
-}
-
 /// The references every carver method needs. Bundled so `carve_ellipsoid`,
 /// `carve_block`, `create_tunnel`, `create_room`, `carve_cave`,
 /// `carve_canyon`, and `do_carve` can all be `&mut self` methods instead of
@@ -305,14 +338,14 @@ where
     /// Noise generators for this dimension.
     pub noises: &'a N,
     /// Chunk being carved into.
-    pub chunk: GenerationChunk<'a, CarversPhase>,
+    pub chunk: GenerationChunk<'a, TerrainPhase>,
     /// Chunk NW block X (cached; `ctx.chunk_min_x` mirrors this).
     pub chunk_min_x: i32,
     /// Chunk NW block Z (cached; `ctx.chunk_min_z` mirrors this).
     pub chunk_min_z: i32,
     /// Biome lookup (vanilla `BiomeManager.getBiome`-style, fuzzed).
     pub biome_getter: &'a mut F,
-    /// Carving mask for the chunk (lazily created on the proto chunk).
+    /// Carving mask for this Terrain operation.
     pub mask: &'a mut CarvingMask,
     /// Block IDs cached once per carver session.
     pub ids: CarverBlockIds,
@@ -371,8 +404,6 @@ where
                     continue;
                 }
 
-                let mut has_grass = false;
-
                 // Scan top-down; range is exclusive of min_y (matches vanilla's
                 // `worldY > minY`).
                 for world_y in (min_y + 1..=max_y).rev() {
@@ -380,12 +411,8 @@ where
                     if skip_checker.should_skip(xd, yd, zd, world_y) {
                         continue;
                     }
-                    if !self.mask.set_if_unset(x_idx, world_y, z_idx) {
-                        continue;
-                    }
-                    if self.carve_block(world_x, world_y, world_z, &mut has_grass) {
-                        carved = true;
-                    }
+                    self.mask.set(x_idx, world_y, z_idx);
+                    carved = true;
                 }
             }
         }
@@ -393,44 +420,50 @@ where
         carved
     }
 
-    /// Per-block carve decision + placement. Mirrors vanilla's
-    /// `NoiseBasedChunkGenerator.applyCarvingMask` per-position body.
-    fn carve_block(
-        &mut self,
-        world_x: i32,
-        world_y: i32,
-        world_z: i32,
-        has_grass: &mut bool,
-    ) -> bool {
-        let pos = BlockPos::new(world_x, world_y, world_z);
-        let existing = self.chunk.get_block_state(pos);
+    /// Applies the shared output mask after every carver has marked its geometry.
+    pub fn apply_carving_mask(&mut self) {
+        let mut ranges = Vec::new();
+        self.mask
+            .visit(|x, z, bottom_y, top_y| ranges.push((x, z, bottom_y, top_y)));
 
-        // Track grass/mycelium for the top-material rewrite later.
-        if existing == self.ids.grass_block || existing == self.ids.mycelium {
-            *has_grass = true;
-        }
+        for (local_x, local_z, bottom_y, top_y) in ranges {
+            let world_x = self.chunk_min_x + local_x;
+            let world_z = self.chunk_min_z + local_z;
+            let mut has_grass = false;
 
-        if !can_replace_block(existing) {
-            return false;
-        }
+            for world_y in (bottom_y..=top_y).rev() {
+                let pos = BlockPos::new(world_x, world_y, world_z);
+                let existing = self.chunk.get_block_state(pos);
+                if !can_replace_block(existing) {
+                    continue;
+                }
+                if existing == self.ids.grass_block || existing == self.ids.mycelium {
+                    has_grass = true;
+                }
 
-        let state = match self.get_carve_state(world_x, world_y, world_z) {
-            CarveState::Place(id) => id,
-            CarveState::Skip => return false,
-        };
+                let state = match self.ctx.aquifer.compute_substance(
+                    self.noises,
+                    world_x,
+                    world_y,
+                    world_z,
+                    0.0,
+                ) {
+                    AquiferResult::Solid => continue,
+                    AquiferResult::Fluid(state) => state,
+                    AquiferResult::Air => self.ids.air,
+                };
+                self.chunk.set_block_state(pos, state);
+                if self.ctx.aquifer.should_schedule_fluid_update() && state.has_fluid() {
+                    self.chunk.mark_pos_for_postprocessing(pos);
+                }
 
-        self.chunk.set_block_state(pos, state);
-        if self.ctx.aquifer.should_schedule_fluid_update() && state.has_fluid() {
-            self.chunk.mark_pos_for_postprocessing(pos);
-        }
-
-        // Top-material rewrite: only when we just turned a grass/mycelium
-        // block into something carved, and the block directly below is plain
-        // dirt.
-        if *has_grass {
-            let below_pos = BlockPos::new(world_x, world_y - 1, world_z);
-            if self.chunk.get_block_state(below_pos) == self.ids.dirt {
-                let under_fluid = !self.ids.is_air_like(state);
+                if !has_grass {
+                    continue;
+                }
+                let below_pos = BlockPos::new(world_x, world_y - 1, world_z);
+                if self.chunk.get_block_state(below_pos) != self.ids.dirt {
+                    continue;
+                }
                 let steep = self.steep_material_condition(world_x, world_z);
                 let biome_id =
                     (self.biome_getter)(BlockPos(IVec3::new(world_x, world_y - 1, world_z)));
@@ -440,7 +473,7 @@ where
                     world_y - 1,
                     world_z,
                     steep,
-                    under_fluid,
+                    state.has_fluid(),
                 ) {
                     self.chunk.set_block_state(below_pos, top);
                     if top.has_fluid() {
@@ -449,8 +482,6 @@ where
                 }
             }
         }
-
-        true
     }
 
     fn steep_material_condition(&self, world_x: i32, world_z: i32) -> bool {
@@ -461,22 +492,6 @@ where
             return false;
         };
         steep
-    }
-
-    /// Vanilla's `NoiseBasedChunkGenerator.applyCarvingMask` substance
-    /// computation (`aquifer.computeSubstance`).
-    fn get_carve_state(&mut self, x: i32, y: i32, z: i32) -> CarveState {
-        // No per-carver lava level anymore — Aquifer's own fixed floor
-        // (`LAVA_LEVEL`) decides this uniformly.
-        match self
-            .ctx
-            .aquifer
-            .compute_substance(self.noises, x, y, z, 0.0)
-        {
-            AquiferResult::Solid => CarveState::Skip,
-            AquiferResult::Fluid(id) => CarveState::Place(id),
-            AquiferResult::Air => CarveState::Place(self.ids.air),
-        }
     }
 }
 
@@ -527,11 +542,16 @@ pub fn can_reach(
 #[cfg(test)]
 mod tests {
     use crate::chunk::heightmap::{Heightmap, HeightmapType};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::steep_material_condition;
 
     fn flat_world_surface(highest_taken: i32) -> Heightmap {
-        let mut heightmap = Heightmap::new(HeightmapType::WorldSurfaceWg, 0, 384);
+        let mut heightmap = Heightmap::new(
+            HeightmapType::WorldSurfaceWg,
+            0,
+            OverworldNoiseSettings::HEIGHT,
+        );
         for x in 0..16 {
             for z in 0..16 {
                 heightmap.set_height(x, z, highest_taken + 1);
@@ -542,22 +562,22 @@ mod tests {
 
     #[test]
     fn steep_material_condition_matches_vanilla_asymmetry() {
-        let mut heightmap = flat_world_surface(63);
+        let mut heightmap = flat_world_surface(OverworldNoiseSettings::SEA_LEVEL);
         heightmap.set_height(5, 4, 61);
         heightmap.set_height(5, 6, 65);
         assert!(steep_material_condition(&heightmap, 5, 5));
 
-        let mut heightmap = flat_world_surface(63);
+        let mut heightmap = flat_world_surface(OverworldNoiseSettings::SEA_LEVEL);
         heightmap.set_height(5, 4, 65);
         heightmap.set_height(5, 6, 61);
         assert!(!steep_material_condition(&heightmap, 5, 5));
 
-        let mut heightmap = flat_world_surface(63);
+        let mut heightmap = flat_world_surface(OverworldNoiseSettings::SEA_LEVEL);
         heightmap.set_height(4, 5, 65);
         heightmap.set_height(6, 5, 61);
         assert!(steep_material_condition(&heightmap, 5, 5));
 
-        let mut heightmap = flat_world_surface(63);
+        let mut heightmap = flat_world_surface(OverworldNoiseSettings::SEA_LEVEL);
         heightmap.set_height(4, 5, 61);
         heightmap.set_height(6, 5, 65);
         assert!(!steep_material_condition(&heightmap, 5, 5));

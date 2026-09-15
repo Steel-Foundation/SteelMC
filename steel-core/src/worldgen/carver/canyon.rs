@@ -64,12 +64,12 @@ where
 
         let state = CanyonState {
             x: f64::from(source_min_x + random.next_i32_bounded(16)),
-            y: f64::from(
-                config
-                    .base
-                    .y
-                    .sample(random, self.ctx.min_y, self.ctx.gen_depth),
-            ),
+            y: f64::from(config.base.y.sample(
+                random,
+                self.ctx.min_y,
+                self.ctx.gen_depth,
+                self.ctx.sea_level,
+            )),
             z: f64::from(source_min_z + random.next_i32_bounded(16)),
             horizontal_rotation: random.next_f32() * TAU,
             vertical_rotation: config.vertical_rotation.sample(random),

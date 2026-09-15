@@ -66,17 +66,13 @@ impl OverworldClimateSampler {
 
         // Density functions return f64 but vanilla truncates to float before quantizing.
         // The f64→f32→f64 round-trip through quantize_coord is intentional for parity.
-        let temp =
-            overworld::router_temperature(&self.noises, cache, block_x, block_y, block_z) as f32;
-        let humidity =
-            overworld::router_vegetation(&self.noises, cache, block_x, block_y, block_z) as f32;
-        let cont = overworld::router_continentalness(&self.noises, cache, block_x, block_y, block_z)
-            as f32;
-        let erosion =
-            overworld::router_erosion(&self.noises, cache, block_x, block_y, block_z) as f32;
-        let depth = overworld::router_depth(&self.noises, cache, block_x, block_y, block_z) as f32;
-        let weirdness =
-            overworld::router_ridges(&self.noises, cache, block_x, block_y, block_z) as f32;
+        let temp = overworld::router_temperature(&self.noises, cache, block_x, block_y, block_z);
+        let humidity = overworld::router_vegetation(&self.noises, cache, block_x, block_y, block_z);
+        let cont =
+            overworld::router_continentalness(&self.noises, cache, block_x, block_y, block_z);
+        let erosion = overworld::router_erosion(&self.noises, cache, block_x, block_y, block_z);
+        let depth = overworld::router_depth(&self.noises, cache, block_x, block_y, block_z);
+        let weirdness = overworld::router_ridges(&self.noises, cache, block_x, block_y, block_z);
 
         TargetPoint::new(
             quantize_coord(f64::from(temp)),

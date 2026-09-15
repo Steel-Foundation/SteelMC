@@ -731,6 +731,7 @@ mod tests {
     use glam::DVec3;
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId, WorldAabb};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::{NavigationPathRequest, NavigationTickContext, PathNavigation};
     use crate::behavior::init_behaviors;
@@ -782,11 +783,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 

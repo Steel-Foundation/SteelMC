@@ -1,0 +1,722 @@
+[
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3191371210
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3192026844
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 1053970005
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3198675400
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1059008784
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1045093436
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1012619868
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 3199013342
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 1057656713
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 1039164812
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 1050715784
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 0
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 1057508863
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 1040325644
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 1050409078
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 1035806864
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 1057811534
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 1037797842
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 1059937765
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 3183290512
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 1033150921
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 1040465279
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 3194918854
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 1051574410
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3202198937
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3181201665
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3198008578
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3194612879
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 1025578329
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 3191724949
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 3190292729
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 3189437522
+  },
+  {
+    "sampler": "normal",
+    "seed": 0,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 3191489086
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 0,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1057739606
+  },
+  {
+    "sampler": "blended",
+    "seed": 0,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1053950368
+  },
+  {
+    "sampler": "frozen_temperature",
+    "seed": 0,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1048935275
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3206060884
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 1007080040
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 1050308222
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1044338928
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1050225784
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 3143114144
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 1051155228
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 3195938897
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 3183808598
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 1051226538
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 3195395094
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 3179354697
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 1051046762
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 3196224067
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 3198973804
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 3161091516
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 3124498432
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 3186958833
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 1046092598
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3193420412
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3189789278
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 1035050596
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 1039106332
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 1025766241
+  },
+  {
+    "sampler": "normal",
+    "seed": 13579,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 3204505246
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": 13579,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1044736850
+  },
+  {
+    "sampler": "blended",
+    "seed": 13579,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1050610819
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3204754963
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3205088260
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 0,
+    "y": -56,
+    "z": -10000,
+    "value_bits": 3174235730
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 3192882695
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1050210418
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 20000068,
+    "y": 296,
+    "z": -19999796,
+    "value_bits": 1029767856
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 3198725726
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 1054980618
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "value_bits": 3163513609
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 3199199124
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 1054866620
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "value_bits": 3177747466
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 3198261332
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 1055028642
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": -1,
+    "y": -1,
+    "z": -1,
+    "value_bits": 3198114447
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 3180975230
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 3191429094
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 16777217,
+    "y": 100,
+    "z": -16777217,
+    "value_bits": 1053116632
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3191318104
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 3196172005
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 29999980,
+    "y": -64,
+    "z": -29999980,
+    "value_bits": 1038426056
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 1046686715
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 3192633990
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": 54545,
+    "y": 63,
+    "z": 34234,
+    "value_bits": 3199136261
+  },
+  {
+    "sampler": "normal",
+    "seed": -1,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1039968610
+  },
+  {
+    "sampler": "legacy_nether",
+    "seed": -1,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 3192283635
+  },
+  {
+    "sampler": "blended",
+    "seed": -1,
+    "x": -842,
+    "y": 319,
+    "z": 425,
+    "value_bits": 1046389629
+  }
+]

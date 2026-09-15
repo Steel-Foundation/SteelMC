@@ -93,10 +93,8 @@ impl NetherClimateSampler {
         let block_y = f64::from(block_y);
         let block_z = f64::from(block_z);
 
-        let temp =
-            nether::router_temperature(&self.noises, cache, block_x, block_y, block_z) as f32;
-        let humidity =
-            nether::router_vegetation(&self.noises, cache, block_x, block_y, block_z) as f32;
+        let temp = nether::router_temperature(&self.noises, cache, block_x, block_y, block_z);
+        let humidity = nether::router_vegetation(&self.noises, cache, block_x, block_y, block_z);
 
         // Nether noise router has continentalness, erosion, depth, ridges all as constant 0.
         TargetPoint::new(

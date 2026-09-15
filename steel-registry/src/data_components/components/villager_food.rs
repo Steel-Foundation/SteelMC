@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn persistent_codec_round_trips_positive_nutrition() {
         let value = VillagerFood::new(4);
-        assert_eq!(parse(value.clone().to_nbt_tag()), Some(value));
+        assert_eq!(parse(value.to_nbt_tag()), Some(value));
     }
 
     #[test]

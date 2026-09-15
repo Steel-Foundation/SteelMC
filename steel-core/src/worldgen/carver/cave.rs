@@ -68,12 +68,12 @@ where
 
         for _ in 0..cave_count {
             let x = f64::from(source_min_x + random.next_i32_bounded(16));
-            let y = f64::from(
-                config
-                    .base
-                    .y
-                    .sample(random, self.ctx.min_y, self.ctx.gen_depth),
-            );
+            let y = f64::from(config.base.y.sample(
+                random,
+                self.ctx.min_y,
+                self.ctx.gen_depth,
+                self.ctx.sea_level,
+            ));
             let z = f64::from(source_min_z + random.next_i32_bounded(16));
 
             let horizontal_radius_multiplier =

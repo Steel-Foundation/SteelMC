@@ -278,10 +278,10 @@ pub(super) fn sign_text_component_token(value: &Value) -> TokenStream {
     let object = value
         .as_object()
         .unwrap_or_else(|| panic!("sign_text component must be an object"));
-    let messages = object
-        .get("messages")
-        .map(|value| sign_text_lines(value, "messages"))
-        .unwrap_or_else(|| panic!("sign_text.messages must be present"));
+    let messages = object.get("messages").map_or_else(
+        || panic!("sign_text.messages must be present"),
+        |value| sign_text_lines(value, "messages"),
+    );
     let filtered_messages = object.get("filtered_messages").map_or_else(
         || quote! { None },
         |value| {

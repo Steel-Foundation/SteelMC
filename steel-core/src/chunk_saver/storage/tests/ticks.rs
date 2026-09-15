@@ -31,7 +31,6 @@ fn persisted_proto_ticks_deduplicate_while_full_ticks_retain_saved_entries() {
         Vec::new(),
         Vec::new(),
         ChunkStorage::light_to_persistent(&ChunkLightData::for_valid_world_height(0, 16)),
-        None,
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -42,7 +41,7 @@ fn persisted_proto_ticks_deduplicate_while_full_ticks_retain_saved_entries() {
     let proto_loaded = ChunkStorage::persistent_to_chunk(
         &persistent,
         pos,
-        ChunkStatus::Carvers,
+        ChunkStatus::Terrain,
         0,
         16,
         Weak::new(),

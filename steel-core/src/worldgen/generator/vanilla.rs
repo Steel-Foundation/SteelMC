@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::{cell::Cell, marker::PhantomData};
+use std::{cell::Cell, marker::PhantomData, sync::Arc};
 
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
@@ -25,12 +25,11 @@ use steel_worldgen::surface::{
 use crate::chunk::Chunk;
 use crate::chunk::heightmap::{Heightmap, HeightmapType};
 use crate::worldgen::carver::{
-    CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk,
+    CarveRun, CarverBlockIds, CarvingContext, CarvingMask, PreliminarySurfaceCorners, SourceChunk,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::{
-    CarversPhase, ChunkGenerator, GenerationChunk, NoisePhase, SurfacePhase,
-    worldgen_region_random_from_splitter,
+    ChunkGenerator, GenerationChunk, TerrainPhase, worldgen_region_random_from_splitter,
 };
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
@@ -53,17 +52,24 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
     /// Concrete state stored transiently on the generating chunk.
     type State: DowncastType + Send + Sync;
 
-    /// Wraps the Aquifer after the Noise stage.
-    fn wrap_post_noise_aquifer(aquifer: Aquifer<Self>) -> Self::State;
+    /// Wraps the Noise-stage state for the remaining Terrain work.
+    fn wrap_post_noise_state(
+        aquifer: Aquifer<Self>,
+        material_ore_vein_values: Arc<[f32]>,
+    ) -> Self::State;
 
     /// Recovers the concrete Aquifer at a later generation stage.
     fn post_noise_aquifer(state: &mut Self::State) -> &mut Aquifer<Self>;
+
+    /// Gets the prefilled material ore density/richness values.
+    fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]>;
 }
 
 /// Steel-owned post-Noise state for the built-in dimensions.
 #[doc(hidden)]
 pub struct SteelPostNoiseState<N: DimensionNoises> {
     aquifer: Aquifer<N>,
+    material_ore_vein_values: Arc<[f32]>,
 }
 
 // SAFETY: Each key uniquely identifies this exact Steel-owned specialization.
@@ -88,12 +94,22 @@ macro_rules! impl_post_noise_state_type {
         impl VanillaPostNoiseStateType for $noises {
             type State = SteelPostNoiseState<Self>;
 
-            fn wrap_post_noise_aquifer(aquifer: Aquifer<Self>) -> Self::State {
-                SteelPostNoiseState { aquifer }
+            fn wrap_post_noise_state(
+                aquifer: Aquifer<Self>,
+                material_ore_vein_values: Arc<[f32]>,
+            ) -> Self::State {
+                SteelPostNoiseState {
+                    aquifer,
+                    material_ore_vein_values,
+                }
             }
 
             fn post_noise_aquifer(state: &mut Self::State) -> &mut Aquifer<Self> {
                 &mut state.aquifer
+            }
+
+            fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]> {
+                Arc::clone(&state.material_ore_vein_values)
             }
         }
     };
@@ -114,15 +130,6 @@ impl_post_noise_state_type!(EndNoises);
 pub struct VanillaGenerator<N: DimensionNoises> {
     /// Biome source for this dimension. Determines biomes at each quart position.
     biome_source: BiomeSourceKind,
-    /// Representative biome for source-carver lookup when every possible
-    /// biome from `biome_source` has the same carver list.
-    ///
-    /// Vanilla still samples each source biome in `apply_carvers`; Steel skips
-    /// that sampling only when the source's full possible-biome set proves the
-    /// carver list is uniform. If future biome sources can produce mixed
-    /// carver lists this remains `None` and the vanilla per-source lookup is
-    /// used.
-    uniform_carver_biome: Option<BiomeRef>,
     /// Noise generators for this dimension's density functions.
     /// Boxed because noise structs can be large.
     noises: Box<N>,
@@ -188,7 +195,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         let noise_params = get_noise_parameters();
         let noises = N::create(seed, &splitter, &noise_params);
 
-        let ore_veinifier = if N::Settings::ORE_VEINS_ENABLED {
+        let ore_veinifier = if N::Settings::MATERIAL_ORE_VEINS_ENABLED {
             Some(OreVeinifier::new(&splitter))
         } else {
             None
@@ -213,12 +220,10 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         let surface_extension_biomes = SurfaceExtensionBiomes::from_possible(&possible_biomes);
         let structure_generator =
             StructureGenerator::vanilla(seed as i64, world_path, &biome_source, thread_pool);
-        let uniform_carver_biome = Self::uniform_carver_biome(&possible_biomes);
         let feature_runner = FeatureDecorationRunner::new(&possible_biome_refs, &REGISTRY);
 
         Self {
             biome_source,
-            uniform_carver_biome,
             noises: Box::new(noises),
             splitter,
             ore_veinifier,
@@ -232,27 +237,12 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             _phantom: PhantomData,
         }
     }
-
-    fn uniform_carver_biome(possible_biomes: &FxHashSet<Identifier>) -> Option<BiomeRef> {
-        let mut possible_biomes = possible_biomes.iter();
-        let first_key = possible_biomes.next()?;
-        let first = REGISTRY.biomes.by_key(first_key)?;
-
-        possible_biomes
-            .all(|key| {
-                REGISTRY
-                    .biomes
-                    .by_key(key)
-                    .is_some_and(|biome| biome.carvers == first.carvers)
-            })
-            .then_some(first)
-    }
 }
 
 impl<N: VanillaPostNoiseStateType> VanillaGenerator<N> {
     fn preliminary_surface_corners(
         &self,
-        chunk: GenerationChunk<'_, SurfacePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         chunk_min_x: i32,
         chunk_min_z: i32,
     ) -> PreliminarySurfaceCorners {
@@ -396,9 +386,13 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         chunk.mark_dirty();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "mirrors Vanilla's terrain fill stage"
+    )]
     fn fill_from_noise(
         &self,
-        chunk: GenerationChunk<'_, NoisePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         beardifier: Option<&Beardifier>,
     ) {
         let pos = chunk.pos();
@@ -415,7 +409,6 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
 
         let default_block_id = self.default_block_id;
-        let ore_veinifier = &self.ore_veinifier;
         let mut aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,
@@ -437,11 +430,15 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         let mut world_surface_wg =
             Heightmap::new(HeightmapType::WorldSurfaceWg, min_y, N::Settings::HEIGHT);
 
+        let material_value_count = N::material_ore_vein_value_count();
+        let mut material_ore_vein_values =
+            vec![0.0_f32; 16 * 16 * N::Settings::HEIGHT as usize * material_value_count];
+        let mut material_cache = N::ColumnCache::default();
         noise_chunk.fill(
             noises,
             &mut column_cache,
             beardifier,
-            |local_x, world_y, local_z, density, interpolated, cache| {
+            |local_x, world_y, local_z, density, interpolated, _| {
                 // Flush when we move to a new column
                 if local_x != prev_x || local_z != prev_z {
                     if !pending_writes.is_empty() {
@@ -456,24 +453,42 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
 
-                match aquifer.compute_substance(noises, world_x, world_y, world_z, density) {
+                if material_value_count != 0 {
+                    material_cache.ensure(world_x, world_z, noises);
+                    let offset =
+                        (relative_y * 16 * 16 + local_z * 16 + local_x) * material_value_count;
+                    noises.fill_material_ore_vein_values(
+                        &mut material_cache,
+                        interpolated,
+                        world_x,
+                        world_y,
+                        world_z,
+                        &mut material_ore_vein_values[offset..offset + material_value_count],
+                    );
+                }
+
+                let substance = aquifer.compute_substance(
+                    noises,
+                    world_x,
+                    world_y,
+                    world_z,
+                    f64::from(density),
+                );
+                match substance {
                     AquiferResult::Solid => {
-                        let block = ore_veinifier
-                            .as_ref()
-                            .and_then(|ov| {
-                                ov.compute_interpolated(
-                                    noises,
-                                    cache,
-                                    interpolated,
-                                    world_x,
-                                    world_y,
-                                    world_z,
-                                )
-                            })
-                            .unwrap_or(default_block_id);
-                        pending_writes.push((local_x, relative_y, local_z, block));
-                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, block);
-                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, block);
+                        pending_writes.push((local_x, relative_y, local_z, default_block_id));
+                        ocean_floor_wg.update_for_initial_fill(
+                            local_x,
+                            world_y,
+                            local_z,
+                            default_block_id,
+                        );
+                        world_surface_wg.update_for_initial_fill(
+                            local_x,
+                            world_y,
+                            local_z,
+                            default_block_id,
+                        );
                     }
                     AquiferResult::Fluid(id) => {
                         pending_writes.push((local_x, relative_y, local_z, id));
@@ -494,30 +509,33 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         if !pending_writes.is_empty() {
             chunk.write_block_batch(&pending_writes);
         }
+        let material_ore_vein_values = Arc::from(material_ore_vein_values);
 
         chunk.replace_noise_heightmaps(ocean_floor_wg, world_surface_wg);
-
-        if N::Settings::AQUIFERS_ENABLED {
-            chunk.install_post_noise_state(N::wrap_post_noise_aquifer(aquifer));
-        }
+        chunk.install_post_noise_state(N::wrap_post_noise_state(aquifer, material_ore_vein_values));
     }
 
     #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn build_surface(
         &self,
-        chunk: GenerationChunk<'_, SurfacePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         neighbor_biomes: &dyn Fn(IVec3) -> u16,
     ) {
         let min_y = N::Settings::MIN_Y;
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
         let chunk_min_z = pos.0.y * 16;
-        let default_block_id = self.default_block_id;
         let surface_rule_block_states = N::surface_rule_block_states();
         let surface_rule_uses_biome = N::surface_rule_uses_biome();
         let surface_rule_uses_preliminary_surface = N::surface_rule_uses_preliminary_surface();
         let surface_rule_uses_surface_secondary = N::surface_rule_uses_surface_secondary();
         let surface_rule_uses_steep = N::surface_rule_uses_steep();
+        let material_ore_vein_values = chunk
+            .with_post_noise_state_mut::<N::State, _>(N::material_ore_vein_values)
+            .unwrap_or_else(|| Arc::from([]));
+        let material_ore_vein_value_count = N::material_ore_vein_value_count();
+        let material_ore_vein_count = material_ore_vein_value_count / 2;
+        let mut material_cache = N::ColumnCache::default();
         let lazy_surface_rule_biome =
             surface_rule_uses_biome && surface_rule_uses_preliminary_surface;
         let surface_needs_min_surface_level =
@@ -543,6 +561,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
         let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut column_buf: Vec<BlockStateId> = Vec::new();
+        let mut material_ore_vein_results: SmallVec<[Option<BlockStateId>; 2]> = SmallVec::new();
         let condition_noise_values = N::surface_noise_ids()
             .iter()
             .map(|_| Cell::new(0.0))
@@ -691,45 +710,62 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                     stone_depth_above += 1;
                     let stone_depth_below = y - next_ceiling_stone_y + 1;
 
-                    // Only apply surface rules to the default block
-                    if state == default_block_id {
-                        let eager_biome_id = if surface_rule_uses_biome && !lazy_surface_rule_biome
+                    material_ore_vein_results.clear();
+                    material_ore_vein_results.resize(material_ore_vein_count, None);
+                    if let Some(ore_veinifier) = &self.ore_veinifier {
+                        let offset = (relative_y * 16 * 16 + local_z * 16 + local_x)
+                            * material_ore_vein_value_count;
+                        if let Some(values) = material_ore_vein_values
+                            .get(offset..offset + material_ore_vein_value_count)
                         {
-                            biome_col.as_mut().map(|biome_col| biome_col.get(y))
-                        } else {
-                            None
-                        };
-                        let biome_provider = if lazy_surface_rule_biome {
-                            biome_col
-                                .as_mut()
-                                .map(|biome_col| biome_col as &mut dyn SurfaceBiomeProvider)
-                        } else {
-                            None
-                        };
-
-                        let mut ctx = SurfaceRuleContext::new(
-                            block_x,
-                            block_z,
-                            surface_depth,
-                            surface_secondary,
-                            min_surface_level,
-                            steep,
-                            y,
-                            stone_depth_above,
-                            stone_depth_below,
-                            water_height,
-                            eager_biome_id,
-                            biome_provider,
-                            &self.surface_system,
-                            &condition_noise_cache,
-                            surface_rule_block_states,
-                        );
-
-                        let rule_result = N::try_apply_surface_rule(&mut ctx);
-
-                        if let Some(new_block) = rule_result {
-                            pending_writes.push((relative_y, new_block));
+                            material_cache.ensure(block_x, block_z, &self.noises);
+                            N::fill_prefilled_material_ore_vein_results(
+                                &self.noises,
+                                &mut material_cache,
+                                ore_veinifier,
+                                values,
+                                block_x,
+                                y,
+                                block_z,
+                                &mut material_ore_vein_results,
+                            );
                         }
+                    }
+
+                    let eager_biome_id = if surface_rule_uses_biome && !lazy_surface_rule_biome {
+                        biome_col.as_mut().map(|biome_col| biome_col.get(y))
+                    } else {
+                        None
+                    };
+                    let biome_provider = if lazy_surface_rule_biome {
+                        biome_col
+                            .as_mut()
+                            .map(|biome_col| biome_col as &mut dyn SurfaceBiomeProvider)
+                    } else {
+                        None
+                    };
+
+                    let mut ctx = SurfaceRuleContext::new(
+                        block_x,
+                        block_z,
+                        surface_depth,
+                        surface_secondary,
+                        min_surface_level,
+                        steep,
+                        y,
+                        stone_depth_above,
+                        stone_depth_below,
+                        water_height,
+                        eager_biome_id,
+                        biome_provider,
+                        &self.surface_system,
+                        &condition_noise_cache,
+                        surface_rule_block_states,
+                    )
+                    .with_ore_vein_results(&material_ore_vein_results);
+
+                    if let Some(new_block) = N::try_apply_surface_rule(&mut ctx) {
+                        pending_writes.push((relative_y, new_block));
                     }
                 }
 
@@ -765,16 +801,8 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         }
     }
 
-    fn apply_carvers(&self, chunk: GenerationChunk<'_, CarversPhase>) {
-        if self
-            .uniform_carver_biome
-            .is_some_and(|biome| biome.carvers.is_empty())
-        {
-            chunk.clear_post_noise_state();
-            return;
-        }
-
-        chunk.consume_post_noise_state::<N::State, _>(|retained_state| {
+    fn apply_carvers(&self, chunk: GenerationChunk<'_, TerrainPhase>) {
+        chunk.consume_post_noise_state::<N::State, _>(|mut retained_state| {
             chunk.prime_world_surface_heightmap();
 
             let pos = chunk.pos();
@@ -783,6 +811,10 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             let min_y = N::Settings::MIN_Y;
             let height = N::Settings::HEIGHT;
             let noises = &*self.noises;
+
+            let material_ore_vein_values = retained_state
+                .as_deref_mut()
+                .map_or_else(|| Arc::from([]), N::material_ore_vein_values);
 
             let mut rebuilt_aquifer = None;
             let aquifer = if let Some(state) = retained_state {
@@ -813,23 +845,25 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             };
 
             let mut ctx = CarvingContext {
+                noises,
                 min_y,
                 gen_depth: height,
+                sea_level: N::Settings::SEA_LEVEL,
                 surface_system: &self.surface_system,
                 aquifer,
                 default_block_id: self.default_block_id,
                 psl_corners,
                 chunk_min_x,
                 chunk_min_z,
+                material_ore_vein_values,
+                ore_veinifier: self.ore_veinifier.as_ref(),
+                material_cache: N::ColumnCache::default(),
             };
 
             let ids = CarverBlockIds::load();
 
-            // Pre-fetch the 17×17 source-chunk carver lists. Done up front so we
-            // can later close over `biome_sampler` mutably inside `biome_getter`.
-            // Vanilla samples every source biome here; when this generator's full
-            // possible-biome set has a uniform carver list, the representative
-            // biome gives the same carver keys without 289 climate lookups.
+            // Pre-fetch the 17×17 source-chunk carver lists before borrowing the
+            // sampler for the top-material biome lookup.
             let mut biome_sampler = self.biome_source.chunk_sampler();
             let mut source_biomes: SmallVec<[SourceChunk; CARVER_SOURCE_CHUNK_COUNT]> =
                 SmallVec::new();
@@ -837,13 +871,9 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 for dz in -8i32..=8 {
                     let sx = pos.0.x + dx;
                     let sz = pos.0.y + dz;
-                    let biome = if let Some(biome) = self.uniform_carver_biome {
-                        biome
-                    } else {
-                        let qx = (sx * 16) >> 2;
-                        let qz = (sz * 16) >> 2;
-                        biome_sampler.sample(qx, 0, qz)
-                    };
+                    let qx = (sx * 16) >> 2;
+                    let qz = (sz * 16) >> 2;
+                    let biome = biome_sampler.sample(qx, 0, qz);
                     source_biomes.push(SourceChunk {
                         pos: ChunkPos::new(sx, sz),
                         biome,
@@ -867,20 +897,24 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 })
             };
 
-            chunk.with_carving_mask(|mask| {
-                let mut run = CarveRun {
-                    ctx: &mut ctx,
-                    noises,
-                    chunk,
-                    chunk_min_x,
-                    chunk_min_z,
-                    biome_getter: &mut biome_getter,
-                    mask,
-                    ids,
-                };
+            let context_min_y = chunk.min_y().max(min_y);
+            let context_height = chunk.height().min(height);
+            let mut mask = CarvingMask::for_worldgen_context(context_min_y, context_height);
+            let mut run = CarveRun {
+                ctx: &mut ctx,
+                noises,
+                chunk,
+                chunk_min_x,
+                chunk_min_z,
+                biome_getter: &mut biome_getter,
+                mask: &mut mask,
+                ids,
+            };
 
-                run.run_all(&source_biomes, seed_i64, &mut random);
-            });
+            run.run_all(&source_biomes, seed_i64, &mut random);
+            if !run.mask.is_empty() {
+                run.apply_carving_mask();
+            }
         });
     }
 
@@ -1245,10 +1279,8 @@ mod tests {
         heightmap::HeightmapType,
         section::{ChunkSection, Sections},
     };
-    use crate::worldgen::carving_mask::CarvingMask;
     use crate::worldgen::generator::{
-        CarversPhase, ChunkGenerator as _, GenerationChunk, NoisePhase, SurfacePhase,
-        context::OverworldGenerator,
+        ChunkGenerator as _, GenerationChunk, TerrainPhase, context::OverworldGenerator,
     };
 
     fn make_overworld_chunk() -> Chunk {
@@ -1333,36 +1365,26 @@ mod tests {
 
         for chunk in [&warm, &cold] {
             generator.create_biomes(chunk);
-            generator.fill_from_noise(GenerationChunk::<NoisePhase>::for_test(chunk), None);
+            generator.fill_from_noise(GenerationChunk::<TerrainPhase>::for_test(chunk), None);
         }
         assert!(has_overworld_post_noise_state(&warm));
         assert!(has_overworld_post_noise_state(&cold));
 
         cold.clear_transient_generation_state();
         for chunk in [&warm, &cold] {
-            generator.build_surface(GenerationChunk::<SurfacePhase>::for_test(chunk), &|quart| {
+            generator.build_surface(GenerationChunk::<TerrainPhase>::for_test(chunk), &|quart| {
                 self_neighbor_biome(chunk, quart)
             });
         }
         assert!(has_overworld_post_noise_state(&warm));
         assert!(!has_overworld_post_noise_state(&cold));
 
-        generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(&warm));
-        generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(&cold));
+        generator.apply_carvers(GenerationChunk::<TerrainPhase>::for_test(&warm));
+        generator.apply_carvers(GenerationChunk::<TerrainPhase>::for_test(&cold));
         assert!(!has_overworld_post_noise_state(&warm));
         assert!(!has_overworld_post_noise_state(&cold));
 
         assert_eq!(blocks(&warm), blocks(&cold));
-        assert_eq!(
-            warm.carving_mask
-                .read()
-                .as_ref()
-                .map(CarvingMask::to_packed_u64s),
-            cold.carving_mask
-                .read()
-                .as_ref()
-                .map(CarvingMask::to_packed_u64s)
-        );
         assert_eq!(&*warm.postprocessing.lock(), &*cold.postprocessing.lock());
         for x in 0..16 {
             for z in 0..16 {

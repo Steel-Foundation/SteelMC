@@ -111,12 +111,10 @@ fn generate_int_provider(provider: &IntProvider) -> TokenStream {
         IntProvider::VeryBiasedToBottom {
             min_inclusive,
             max_inclusive,
-            inner,
         } => quote! {
             IntProvider::VeryBiasedToBottom {
                 min_inclusive: #min_inclusive,
                 max_inclusive: #max_inclusive,
-                inner: #inner,
             }
         },
         IntProvider::Trapezoid { min, max, plateau } => quote! {

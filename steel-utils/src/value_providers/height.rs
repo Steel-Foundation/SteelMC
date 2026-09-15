@@ -5,7 +5,7 @@ use crate::random::Random;
 use super::VerticalAnchor;
 
 /// An `int`-valued provider parameterised by world-generation bounds
-/// (`min_y`, `height`).
+/// (`min_y`, `height`, `sea_level`).
 ///
 /// Mirrors vanilla's `HeightProvider` hierarchy.
 #[derive(Debug, Clone, Copy)]
@@ -55,15 +55,21 @@ impl HeightProvider {
     /// Matches vanilla's `HeightProvider.sample` — including the "empty range
     /// returns min" fallback (vanilla logs a warning once; we silently fall
     /// back to `min` since this branch isn't hit in practice).
-    pub fn sample<R: Random + ?Sized>(self, random: &mut R, min_y: i32, height: i32) -> i32 {
+    pub fn sample<R: Random + ?Sized>(
+        self,
+        random: &mut R,
+        min_y: i32,
+        height: i32,
+        sea_level: i32,
+    ) -> i32 {
         match self {
-            Self::Constant(anchor) => anchor.resolve_y(min_y, height),
+            Self::Constant(anchor) => anchor.resolve_y(min_y, height, sea_level),
             Self::Uniform {
                 min_inclusive,
                 max_inclusive,
             } => {
-                let min = min_inclusive.resolve_y(min_y, height);
-                let max = max_inclusive.resolve_y(min_y, height);
+                let min = min_inclusive.resolve_y(min_y, height, sea_level);
+                let max = max_inclusive.resolve_y(min_y, height, sea_level);
                 if min > max {
                     min
                 } else {
@@ -75,8 +81,8 @@ impl HeightProvider {
                 max_inclusive,
                 plateau,
             } => {
-                let min = min_inclusive.resolve_y(min_y, height);
-                let max = max_inclusive.resolve_y(min_y, height);
+                let min = min_inclusive.resolve_y(min_y, height, sea_level);
+                let max = max_inclusive.resolve_y(min_y, height, sea_level);
                 if min > max {
                     min
                 } else {
@@ -96,8 +102,8 @@ impl HeightProvider {
                 max_inclusive,
                 inner,
             } => {
-                let min = min_inclusive.resolve_y(min_y, height);
-                let max = max_inclusive.resolve_y(min_y, height);
+                let min = min_inclusive.resolve_y(min_y, height, sea_level);
+                let max = max_inclusive.resolve_y(min_y, height, sea_level);
                 if max - min - inner < 0 {
                     min
                 } else {
@@ -110,8 +116,8 @@ impl HeightProvider {
                 max_inclusive,
                 inner,
             } => {
-                let min = min_inclusive.resolve_y(min_y, height);
-                let max = max_inclusive.resolve_y(min_y, height);
+                let min = min_inclusive.resolve_y(min_y, height, sea_level);
+                let max = max_inclusive.resolve_y(min_y, height, sea_level);
                 if max - min - inner < 0 {
                     min
                 } else {

@@ -24,12 +24,13 @@ pub use super::components::{
     ItemAttributeModifierEntry, ItemAttributeModifiers, ItemContainerContents, ItemDamageFunction,
     ItemEnchantments, ItemLore, ItemLoreTooLong, ItemUseAnimation, JukeboxPlayable, KineticWeapon,
     KineticWeaponCondition, LodestoneTracker, MapDecorationEntry, MapDecorations, MapId,
-    MapPostProcessing, MobVisibility, OminousBottleAmplifier, PaintingVariantComponent,
-    PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesPotteryPattern,
-    ProvidesTrimMaterial, Rarity, Recipes, Repairable, SeededContainerLoot, SignText,
-    SulfurCubeContent, SuspiciousStewEffect, SuspiciousStewEffects, SwingAnimation,
-    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
-    UseRemainder, VillagerFood, Weapon, WritableBookContent, WrittenBookContent,
+    MapItemColor, MapPostProcessing, MobVisibility, OminousBottleAmplifier,
+    PaintingVariantComponent, PiercingWeapon, PotDecorations, PotionContents,
+    ProvidesBannerPatterns, ProvidesPotteryPattern, ProvidesTrimMaterial, Rarity, Recipes,
+    Repairable, SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffect,
+    SuspiciousStewEffects, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
+    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood, Weapon,
+    WritableBookContent, WrittenBookContent,
 };
 pub use crate::ItemStackTemplate;
 pub use crate::block_transformer::BlockTransformerComponent;

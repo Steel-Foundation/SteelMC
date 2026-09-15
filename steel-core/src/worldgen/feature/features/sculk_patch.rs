@@ -16,8 +16,6 @@ const SCULK_DEFAULT_SPREAD_TYPES: [SculkSpreadType; 3] = [
     SculkSpreadType::WrapAround,
 ];
 const SCULK_SAME_SPACE_SPREAD_TYPES: [SculkSpreadType; 1] = [SculkSpreadType::SamePosition];
-const SCULK_CATALYST_CHANCE: f32 = 0.5;
-const SCULK_EXTRA_RARE_GROWTHS_MAX: i32 = 2;
 
 #[derive(Clone, Copy)]
 enum SculkSpreadType {
@@ -139,51 +137,6 @@ impl FeatureDecorationRunner {
             spreader.clear();
         }
 
-        let below = origin.below();
-        let below_state = region.block_state(below);
-        if random.next_f32() <= SCULK_CATALYST_CHANCE
-            && shapes::is_offset_shape_full_block(below_state.get_collision_shape_at(below))
-        {
-            let catalyst = vanilla_blocks::SCULK_CATALYST.default_state();
-            if region.set_block_state(origin, catalyst, UpdateFlags::UPDATE_ALL) {
-                Self::set_empty_block_entity(
-                    region,
-                    origin,
-                    &vanilla_block_entity_types::SCULK_CATALYST,
-                    catalyst,
-                );
-            }
-        }
-
-        let extra_growths = random.next_i32_bounded(SCULK_EXTRA_RARE_GROWTHS_MAX + 1);
-        for _ in 0..extra_growths {
-            let candidate = origin.offset(
-                random.next_i32_bounded(5) - 2,
-                0,
-                random.next_i32_bounded(5) - 2,
-            );
-            let below = candidate.below();
-            if !region.block_state(candidate).is_air()
-                || !region
-                    .block_state(below)
-                    .is_face_sturdy_at(below, Direction::Up)
-            {
-                continue;
-            }
-
-            let shrieker = vanilla_blocks::SCULK_SHRIEKER
-                .default_state()
-                .set_value(&BlockStateProperties::CAN_SUMMON, true);
-            if region.set_block_state(candidate, shrieker, UpdateFlags::UPDATE_ALL) {
-                Self::set_empty_block_entity(
-                    region,
-                    candidate,
-                    &vanilla_block_entity_types::SCULK_SHRIEKER,
-                    shrieker,
-                );
-            }
-        }
-
         true
     }
 
@@ -290,17 +243,16 @@ impl FeatureDecorationRunner {
             return;
         }
 
-        let transfer_pos = Self::sculk_get_valid_movement_pos(region, cursor.pos, random);
+        let transfer_pos =
+            Self::sculk_get_valid_movement_pos(region, cursor.pos, random, origin, spreader);
         if let Some(transfer_pos) = transfer_pos {
             Self::sculk_on_discharged(region, current_state, cursor.pos);
             cursor.pos = transfer_pos;
-            if spreader.is_world_generation
-                && !Self::sculk_horizontal_close_to_origin(cursor.pos, origin, 15.0)
-            {
-                cursor.charge = 0;
-                return;
-            }
             current_state = region.block_state(transfer_pos);
+        } else if spreader.is_world_generation {
+            Self::sculk_on_discharged(region, current_state, cursor.pos);
+            cursor.charge = 0;
+            return;
         }
 
         if !matches!(
@@ -531,12 +483,9 @@ impl FeatureDecorationRunner {
             starting_face,
             spread_direction,
             same_space_only,
-        )?;
-        if Self::sculk_vein_spread_to_face(region, &spread_pos, post_process) {
-            Some(spread_pos)
-        } else {
-            None
-        }
+        );
+        spread_pos
+            .filter(|spread_pos| Self::sculk_vein_spread_to_face(region, spread_pos, post_process))
     }
 
     fn sculk_vein_get_spread_from_face_toward_direction(
@@ -768,10 +717,20 @@ impl FeatureDecorationRunner {
         region: &WorldGenRegion<'_>,
         pos: BlockPos,
         random: &mut WorldgenRandom,
+        origin: BlockPos,
+        spreader: &SculkSpreader,
     ) -> Option<BlockPos> {
         let mut sculk_position = pos;
-        for offset in Self::sculk_randomized_non_corner_neighbor_offsets(random) {
+        let offsets = Self::sculk_randomized_non_corner_neighbor_offsets(random);
+        for offset in offsets {
             let neighbor = pos.offset(offset.x(), offset.y(), offset.z());
+            if spreader.is_world_generation {
+                let dx = i64::from(origin.x()) - i64::from(neighbor.x());
+                let dz = i64::from(origin.z()) - i64::from(neighbor.z());
+                if dx * dx + dz * dz > 144 {
+                    continue;
+                }
+            }
             let transferee = region.block_state(neighbor);
             if matches!(Self::sculk_behavior(transferee), SculkBehaviorKind::Default)
                 || !Self::sculk_is_movement_unobstructed(region, pos, neighbor)
@@ -967,10 +926,10 @@ impl FeatureDecorationRunner {
         charge: i32,
     ) -> i32 {
         let no_growth_radius = spreader.no_growth_radius as f32;
-        let dx = (pos.x() - origin.x()) as f32;
-        let dy = (pos.y() - origin.y()) as f32;
-        let dz = (pos.z() - origin.z()) as f32;
-        let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+        let dx = f64::from(pos.x()) - f64::from(origin.x());
+        let dy = f64::from(pos.y()) - f64::from(origin.y());
+        let dz = f64::from(pos.z()) - f64::from(origin.z());
+        let distance = (dx * dx + dy * dy + dz * dz).sqrt() as f32;
         let outer_distance_squared = (distance - no_growth_radius) * (distance - no_growth_radius);
         let max_reach = (24 - spreader.no_growth_radius) as f32;
         let max_reach_squared = max_reach * max_reach;
@@ -981,12 +940,6 @@ impl FeatureDecorationRunner {
     fn sculk_closer_than(pos: BlockPos, origin: BlockPos, radius: i32) -> bool {
         let radius_squared = i64::from(radius) * i64::from(radius);
         Self::sculk_distance_squared(pos, origin) < radius_squared
-    }
-
-    fn sculk_horizontal_close_to_origin(pos: BlockPos, origin: BlockPos, radius: f64) -> bool {
-        let dx = f64::from(pos.x() - origin.x());
-        let dz = f64::from(pos.z() - origin.z());
-        dx * dx + dz * dz < radius * radius
     }
 
     fn sculk_distance_squared(left: BlockPos, right: BlockPos) -> i64 {

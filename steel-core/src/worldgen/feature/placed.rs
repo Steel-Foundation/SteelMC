@@ -218,6 +218,7 @@ impl FeatureDecorationRunner {
                         random,
                         region.generation_min_y(),
                         region.generation_height(),
+                        region.sea_level(),
                     ),
                     origin.z(),
                 );
@@ -439,8 +440,81 @@ impl FeatureDecorationRunner {
                     );
                 }
             }
-            PlacementModifier::RandomlySelected { .. } | PlacementModifier::Cuboid { .. } => {
-                todo!("{modifier:?} placement modifier")
+            PlacementModifier::RandomlySelected { placements } => {
+                let Ok(count) = i32::try_from(placements.len()) else {
+                    panic!("vanilla randomly selected placement count exceeds i32")
+                };
+
+                let index = random.next_i32_bounded(count) as usize;
+                let modifier = &placements[index];
+                match modifier {
+                    PlacementModifier::Offset { x, y, z } => {
+                        let position = BlockPos::new(
+                            origin.x() + x.sample(random),
+                            origin.y() + y.sample(random),
+                            origin.z() + z.sample(random),
+                        );
+                        placed = Self::place_placed_feature_from_modifier(
+                            region,
+                            registry,
+                            random,
+                            position,
+                            feature,
+                            biome_filter,
+                            biome_zoom_seed,
+                            modifier_index + 1,
+                        );
+                    }
+                    _ => panic!("unsupported nested vanilla placement modifier: {modifier:?}"),
+                }
+            }
+            PlacementModifier::Cuboid {
+                xz_size,
+                y_size,
+                include_edges,
+                include_interior,
+            } => {
+                let height = y_size.sample(random);
+                let width = xz_size.sample(random);
+                let length = xz_size.sample(random);
+                for x in 0..=width {
+                    for y in 0..=height {
+                        for z in 0..=length {
+                            let included =
+                                (*include_edges || x != 0 && x != width || y != 0 && y != height)
+                                    && (*include_edges
+                                        || z != 0 && z != length
+                                        || y != 0 && y != height)
+                                    && (*include_edges
+                                        || x != 0 && x != width
+                                        || z != 0 && z != length)
+                                    && (*include_interior
+                                        || x == 0
+                                        || x == width
+                                        || y == 0
+                                        || y == height
+                                        || z == 0
+                                        || z == length);
+                            if !included {
+                                continue;
+                            }
+                            let position =
+                                BlockPos::new(origin.x() + x, origin.y() + y, origin.z() + z);
+                            if Self::place_placed_feature_from_modifier(
+                                region,
+                                registry,
+                                random,
+                                position,
+                                feature,
+                                biome_filter,
+                                biome_zoom_seed,
+                                modifier_index + 1,
+                            ) {
+                                placed = true;
+                            }
+                        }
+                    }
+                }
             }
         }
 

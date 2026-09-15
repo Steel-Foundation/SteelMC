@@ -9,8 +9,7 @@ use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::Chunk;
 use crate::worldgen::generator::{
-    CarversPhase, ChunkGenerator, GenerationChunk, NoisePhase, SurfacePhase,
-    xoroshiro_worldgen_region_random,
+    ChunkGenerator, GenerationChunk, TerrainPhase, xoroshiro_worldgen_region_random,
 };
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
@@ -35,6 +34,13 @@ pub struct FlatChunkGenerator {
 }
 
 impl FlatChunkGenerator {
+    /// Vanilla `FlatLevelSource.getMinY()`.
+    pub(crate) const MIN_Y: i32 = 0;
+    /// Vanilla `FlatLevelSource.getGenDepth()`.
+    pub(crate) const HEIGHT: i32 = 384;
+    /// Vanilla `FlatLevelSource.getSeaLevel()`.
+    pub(crate) const SEA_LEVEL: i32 = -63;
+
     /// Creates a new `FlatChunkGenerator`.
     #[must_use]
     pub fn new(bedrock: BlockStateId, dirt: BlockStateId, grass: BlockStateId) -> Self {
@@ -44,7 +50,7 @@ impl FlatChunkGenerator {
     /// Creates a new flat generator with explicit block layers from bottom upwards.
     #[must_use]
     pub fn new_layers(layers: Vec<BlockStateId>) -> Self {
-        Self::new_layers_with_structures(layers, 0, 63, None)
+        Self::new_layers_with_structures(layers, 0, Self::SEA_LEVEL, None)
     }
 
     /// Creates a flat generator with optional structure generation.
@@ -209,11 +215,11 @@ impl StructureGenerationContext for FlatGenerationContext<'_> {
 
 impl ChunkGenerator for FlatChunkGenerator {
     fn min_y(&self) -> i32 {
-        0
+        Self::MIN_Y
     }
 
     fn gen_depth(&self) -> i32 {
-        384
+        Self::HEIGHT
     }
 
     fn noise_biome(&self, _quart_x: i32, _quart_y: i32, _quart_z: i32) -> BiomeRef {
@@ -285,7 +291,7 @@ impl ChunkGenerator for FlatChunkGenerator {
 
     fn fill_from_noise(
         &self,
-        chunk: GenerationChunk<'_, NoisePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         _beardifier: Option<&Beardifier>,
     ) {
         let max_relative_y = chunk.section_count() * 16;
@@ -301,12 +307,12 @@ impl ChunkGenerator for FlatChunkGenerator {
 
     fn build_surface(
         &self,
-        _chunk: GenerationChunk<'_, SurfacePhase>,
+        _chunk: GenerationChunk<'_, TerrainPhase>,
         _neighbor_biomes: &dyn Fn(IVec3) -> u16,
     ) {
     }
 
-    fn apply_carvers(&self, _chunk: GenerationChunk<'_, CarversPhase>) {}
+    fn apply_carvers(&self, _chunk: GenerationChunk<'_, TerrainPhase>) {}
 
     fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource {
         xoroshiro_worldgen_region_random(world_seed, center)

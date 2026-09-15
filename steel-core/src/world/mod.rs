@@ -703,6 +703,10 @@ impl LevelReader for World {
     fn height(&self) -> i32 {
         self.get_height()
     }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
 }
 
 impl LevelReader for Arc<World> {
@@ -754,6 +758,10 @@ impl LevelReader for Arc<World> {
 
     fn height(&self) -> i32 {
         self.as_ref().get_height()
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.as_ref().sea_level
     }
 }
 

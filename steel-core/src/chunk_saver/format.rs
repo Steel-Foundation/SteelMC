@@ -58,7 +58,7 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v20: Added chunk-owned light section persistence.
 /// v21: Matched vanilla scheduled-tick persistence by rebuilding sub-tick order on load.
 /// v22: Preserve Vanilla pending `DUMMY` block entities across chunk stages.
-pub const FORMAT_VERSION: u16 = 22;
+pub const FORMAT_VERSION: u16 = 23;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -381,8 +381,6 @@ pub struct PersistentChunk<'a> {
     pub heightmaps: Vec<PersistentHeightmap>,
     /// Chunk-owned light sections.
     pub light: PersistentLightData,
-    /// Proto chunk carving mask as Steel's packed bitset layout.
-    pub carving_mask: Option<Vec<u64>>,
     /// Pending postprocessing offsets grouped by section index.
     pub postprocessing: Vec<Vec<u16>>,
     /// Structure starts originating in this chunk.

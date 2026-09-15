@@ -93,9 +93,11 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     // Imports are emitted here so each dimension's output is self-contained
     // when wrapped in a module by the caller.
     quote! {
-        use std::simd::f64x4;
+        use std::simd::Simd;
         use std::simd::Select;
+        use std::simd::cmp::SimdOrd;
         use std::simd::cmp::SimdPartialOrd;
+        use std::simd::num::SimdInt;
         use std::simd::num::SimdFloat;
 
         use steel_worldgen::density::spline_eval;

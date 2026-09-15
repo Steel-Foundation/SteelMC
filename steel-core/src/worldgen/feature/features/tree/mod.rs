@@ -331,6 +331,10 @@ impl<L: LevelAccessor + ?Sized> LevelReader for TreeWritePreflight<'_, L> {
     fn height(&self) -> i32 {
         self.level.height()
     }
+
+    fn sea_level(&self) -> i32 {
+        self.level.sea_level()
+    }
 }
 
 impl<L: LevelAccessor + ?Sized> ScheduledTickAccess for TreeWritePreflight<'_, L> {
@@ -434,10 +438,10 @@ impl TreeBounds {
         let mut bounds: Option<Self> = None;
         for &pos in placement
             .roots
-            .insertion_order()
-            .chain(placement.trunks.insertion_order())
-            .chain(placement.foliage.insertion_order())
-            .chain(placement.decorations.insertion_order())
+            .java_order()
+            .chain(placement.trunks.java_order())
+            .chain(placement.foliage.java_order())
+            .chain(placement.decorations.java_order())
         {
             match &mut bounds {
                 Some(bounds) => bounds.include(pos),
@@ -485,6 +489,7 @@ const fn abs_i32(value: i32) -> i32 {
 mod tests {
     use super::*;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     struct WriteTestLevel {
         can_write: bool,
@@ -500,11 +505,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 
