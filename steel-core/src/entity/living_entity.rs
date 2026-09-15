@@ -4,6 +4,8 @@ use steel_registry::{DyeColor, vanilla_custom_stats};
 use super::*;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
+/// Ground friction of an ordinary block; anything at or below it needs no speed boost.
+const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
 /// The scale that cancels default ground friction, kept as the inlined literal
 /// so the arithmetic matches.
 const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
@@ -2405,6 +2407,10 @@ pub trait LivingEntity: Entity {
             return self.get_flying_speed();
         }
 
+        if block_friction <= DEFAULT_BLOCK_FRICTION {
+            return self.get_speed();
+        }
+
         let cubed = block_friction * block_friction * block_friction;
         self.get_speed() * (DEFAULT_FRICTION_SPEED_SCALE / cubed)
     }
@@ -3187,7 +3193,6 @@ mod tests {
     const WARMUP_TICKS: usize = 40;
     const MEASURED_TICKS: usize = 20;
     const SPEED_TOLERANCE: f64 = 1e-4;
-    const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
     const PIG_MOVEMENT_SPEED: f32 = 0.25;
     const ICE_SLIDE_RATIO: f64 = 5.0;
 
@@ -3307,6 +3312,35 @@ mod tests {
             "ice should keep the pig sliding, got {} against {}",
             on_ice.coasted,
             on_grass.coasted
+        );
+    }
+
+    #[test]
+    fn ground_below_default_friction_gets_no_speed_boost() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+
+        let world = fresh_test_world("pig_grippy_ground");
+        let pig = ENTITIES
+            .create(
+                &vanilla_entities::PIG,
+                next_entity_id(),
+                DVec3::new(8.5, 64.0, 2.5),
+                Arc::downgrade(&world),
+            )
+            .expect("pig factory should produce an entity");
+        let mob = pig.as_mob().expect("a pig is a mob");
+        mob.set_on_ground(true);
+        mob.set_speed(PIG_MOVEMENT_SPEED);
+
+        let grippy = compute_modified_friction(DEFAULT_BLOCK_FRICTION, 2.0);
+        assert!(
+            (mob.get_friction_influenced_speed(grippy) - PIG_MOVEMENT_SPEED).abs() < f32::EPSILON
+        );
+        assert!(
+            mob.get_friction_influenced_speed(vanilla_blocks::ICE.config.friction)
+                < PIG_MOVEMENT_SPEED
         );
     }
 }
