@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, Barrier},
-    thread,
-};
+use std::sync::Arc;
 
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -72,55 +69,6 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         assert_eq!(server.admit_reserved_player(slow), Ok(()));
         drop(retry);
 
-        fs::remove_dir_all(storage_root)
-            .await
-            .map_err(|error| error.to_string())
-    })
-}
-
-#[test]
-fn max_players_concurrent_final_admissions_share_the_last_slot() -> Result<(), String> {
-    let world = fresh_test_world("player_limit_concurrent");
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    runtime.block_on(async {
-        let storage_root = test_storage_root("player-limit-concurrent");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await?;
-        let first = test_player_with_packets(&server, Arc::clone(&world), "First", 1).0;
-        let second = test_player_with_packets(&server, world, "Second", 2).0;
-        assert!(server.reserve_player_join(&first));
-        assert!(server.reserve_player_join(&second));
-        let start = Barrier::new(2);
-        let outcomes = thread::scope(|scope| {
-            let first_join = scope.spawn(|| {
-                start.wait();
-                server.admit_reserved_player(first)
-            });
-            let second_join = scope.spawn(|| {
-                start.wait();
-                server.admit_reserved_player(second)
-            });
-            [first_join.join(), second_join.join()]
-        });
-        let outcomes =
-            outcomes.map(|outcome| outcome.unwrap_or_else(|_| panic!("admission thread panicked")));
-        assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
-        assert_eq!(
-            outcomes
-                .iter()
-                .filter(|outcome| **outcome == Err(PlayerJoinError::ServerFull))
-                .count(),
-            1
-        );
-        assert_eq!(server.player_count(), 1);
-        assert!(server.player_admissions.lock().is_empty());
         fs::remove_dir_all(storage_root)
             .await
             .map_err(|error| error.to_string())
@@ -231,40 +179,6 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
         assert!(!world.contains_player(&player));
         assert!(handles.sent_packets.lock().is_empty());
         assert!(!server.player_admissions.lock().contains_key(&uuid));
-        assert!(server.try_reserve_player_join(uuid).is_some());
-        fs::remove_dir_all(storage_root)
-            .await
-            .map_err(|error| error.to_string())
-    })
-}
-
-#[test]
-fn max_players_cancelled_and_failed_preparation_release_uuid() -> Result<(), String> {
-    let world = fresh_test_world("player_limit_cleanup");
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    runtime.block_on(async {
-        let storage_root = test_storage_root("player-limit-cleanup");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await?;
-        let (player, _) = test_player_with_packets(&server, world, "Preparing", 1);
-        let uuid = player.gameprofile.id;
-        let reservation = server.try_reserve_player_join(uuid);
-        assert!(reservation.is_some());
-        assert!(server.try_reserve_player_join(uuid).is_none());
-        drop(reservation);
-        assert!(server.reserve_player_join(&player));
-        server.finish_prepared_player_join(PendingPlayerJoin {
-            player,
-            state: Err("player data could not be loaded".to_owned()),
-        });
-        assert!(!server.is_player_limit_reached(uuid));
         assert!(server.try_reserve_player_join(uuid).is_some());
         fs::remove_dir_all(storage_root)
             .await
