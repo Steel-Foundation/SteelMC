@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
-use syn::{Data, DeriveInput, Fields, Ident, Meta, parse_macro_input};
+use quote::{format_ident, quote};
+use syn::{Data, DeriveInput, Fields, Ident, Meta, Variant, parse_macro_input};
 
 use crate::strategy::{ALLOWED_TYPES, Strategy};
 
@@ -16,7 +16,7 @@ pub(super) fn derive(input: TokenStream) -> TokenStream {
 
     match input.data {
         Data::Struct(value) => write_to_struct(value, name, &input.generics, &input.attrs),
-        Data::Enum(_) => write_to_enum(name, input.attrs),
+        Data::Enum(value) => write_to_enum(value, name, input.attrs),
         Data::Union(_) => panic!("Write can only be derived for structs and enums"),
     }
 }
@@ -292,7 +292,7 @@ fn write_to_struct(
     }
 }
 
-fn write_to_enum(name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
+fn write_to_enum(s: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
     let mut strategy: Option<Strategy> = None;
     let mut bound: Option<syn::LitInt> = None;
 
@@ -349,6 +349,20 @@ fn write_to_enum(name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
                 }
             }
         }
+        // Write enum with dispatch based on enum variant
+        "Dispatched" => {
+            let branches = s
+                .variants
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, variant)| dispatch_enum_variant_match_branch(ordinal, variant));
+
+            quote! {
+                match self {
+                    #(#branches),*
+                }
+            }
+        }
         // Write as primitive numeric type (u8, i32, etc.)
         s if ALLOWED_TYPES.contains(&s) => {
             let enum_type = Ident::new(s, Span::call_site());
@@ -359,7 +373,7 @@ fn write_to_enum(name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
         }
         s => panic!(
             "Unknown write strategy for enum: `{s}`. \
-            Expected one of: VarInt, Prefixed, or a primitive type ({ALLOWED_TYPES:?})"
+            Expected one of: VarInt, Prefixed, Dispatched, or a primitive type ({ALLOWED_TYPES:?})"
         ),
     };
 
@@ -373,4 +387,71 @@ fn write_to_enum(name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
             }
         }
     })
+}
+
+fn dispatch_enum_variant_match_branch(
+    ordinal: usize,
+    variant: Variant,
+) -> proc_macro2::TokenStream {
+    let variant_ident = variant.ident;
+    let ordinal =
+        i32::try_from(ordinal).expect("enum variant ordinal is too large to fit in an i32");
+    match variant.fields {
+        Fields::Named(fields) => {
+            let writers = fields.named.iter().map(|f| {
+                let field_name = f.ident.as_ref().expect("should have a named field");
+                let FieldWriteAttributes { strategy, bound } = parse_write_attributes(f);
+
+                if let Some(strat) = strategy {
+                    generate_write_code(&strat, quote! { (*#field_name) }, bound.as_ref())
+                } else {
+                    quote! {
+                        #field_name.write(writer)?;
+                    }
+                }
+            });
+
+            let field_names = fields.named.iter().map(|f| {
+                let field_name = f.ident.as_ref().expect("should have a named field");
+                quote! {
+                    #field_name
+                }
+            });
+
+            quote! {
+                Self::#variant_ident { #(#field_names),* } => {
+                    steel_utils::codec::VarInt(#ordinal).write(writer)?;
+                    #(#writers)*
+                }
+            }
+        }
+        Fields::Unnamed(fields) => {
+            let writers = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                let ident = format_ident!("value{i}");
+                let FieldWriteAttributes { strategy, bound } = parse_write_attributes(f);
+
+                if let Some(strat) = strategy {
+                    generate_write_code(&strat, quote! { (*#ident) }, bound.as_ref())
+                } else {
+                    quote! {
+                        #ident.write(writer)?;
+                    }
+                }
+            });
+
+            let values = (0..fields.unnamed.len()).map(|i| format_ident!("value{i}"));
+
+            quote! {
+                Self::#variant_ident( #(#values),* ) => {
+                    steel_utils::codec::VarInt(#ordinal).write(writer)?;
+                    #(#writers)*
+                }
+            }
+        }
+        Fields::Unit => {
+            quote! {
+                Self::#variant_ident => steel_utils::codec::VarInt(#ordinal).write(writer)?
+            }
+        }
+    }
 }
