@@ -12,7 +12,6 @@ use crate::world::World;
 
 pub mod armor;
 pub mod arrow;
-pub mod boat;
 pub mod bucket;
 pub mod consumables;
 pub mod default;
@@ -23,7 +22,6 @@ pub mod tools;
 
 pub use armor::ArmorDispenseBehavior;
 pub use arrow::ArrowDispenseBehavior;
-pub use boat::BoatDispenseBehavior;
 pub use bucket::BucketDispenseBehavior;
 pub use consumables::{
     BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
@@ -96,10 +94,9 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     );
 
     // boat
-    registry.set_behavior(
-        &vanilla_items::OAK_BOAT,
-        Box::new(BoatDispenseBehavior::new(&vanilla_entities::OAK_BOAT)),
-    );
+    // TODO: boats (boat.rs) — spawn position/water checks are ported but
+    // entity spawning itself is unfinished; currently falls through to
+    // DefaultDispenseBehavior (or silently consumes the item over water).
 
     // bucket
     registry.set_behavior(
