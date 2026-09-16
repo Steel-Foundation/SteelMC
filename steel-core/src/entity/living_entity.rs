@@ -2420,7 +2420,7 @@ pub trait LivingEntity: Entity {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::AIR_DRAG_MODIFIER)
-            .unwrap_or(NO_FRICTION_MODIFIER) as f32
+            .unwrap_or(vanilla_attributes::AIR_DRAG_MODIFIER.default_value) as f32
     }
 
     /// The entity's friction modifier attribute.
