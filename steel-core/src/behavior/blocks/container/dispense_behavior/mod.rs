@@ -13,24 +13,24 @@ use crate::world::World;
 pub mod armor;
 pub mod arrow;
 pub mod boat;
-pub mod bone_meal;
 pub mod bucket;
+pub mod consumables;
 pub mod default;
-pub mod flint_and_steel;
-pub mod honeycomb;
 pub mod projectile;
 pub mod tnt;
+pub mod tools;
 
 pub use armor::ArmorDispenseBehavior;
 pub use arrow::ArrowDispenseBehavior;
 pub use boat::BoatDispenseBehavior;
-pub use bone_meal::BoneMealDispenseBehavior;
 pub use bucket::BucketDispenseBehavior;
+pub use consumables::{
+    BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
+};
 pub use default::DefaultDispenseBehavior;
-pub use flint_and_steel::FlintAndSteelDispenseBehavior;
-pub use honeycomb::HoneycombDispenseBehavior;
 pub use projectile::ProjectileDispenseBehavior;
 pub use tnt::TntDispenseBehavior;
+pub use tools::FlintAndSteelDispenseBehavior;
 
 pub trait DispenseItemBehavior: Send + Sync {
     fn dispense(
@@ -164,6 +164,11 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         &vanilla_items::HONEYCOMB,
         Box::new(HoneycombDispenseBehavior),
     );
+    registry.set_behavior(
+        &vanilla_items::GLOWSTONE,
+        Box::new(GlowstoneDispenseBehavior),
+    );
+    // TODO: shears, brush, carved pumpkin — see tools.rs / consumables.rs
 
     registry
 });

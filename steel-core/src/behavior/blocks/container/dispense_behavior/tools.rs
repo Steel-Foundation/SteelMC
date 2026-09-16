@@ -15,13 +15,9 @@ use crate::behavior::blocks::container::dispenser_block::FACING;
 use crate::world::World;
 
 fn can_light(state: BlockStateId) -> bool {
-    let Some(lit) = state.try_get_value(&BlockStateProperties::LIT) else {
-        return false;
-    };
-    if lit {
-        return false;
-    }
-    true
+    !state
+        .try_get_value(&BlockStateProperties::LIT)
+        .unwrap_or(true)
 }
 
 pub struct FlintAndSteelDispenseBehavior;
@@ -74,3 +70,10 @@ impl DispenseItemBehavior for FlintAndSteelDispenseBehavior {
         item
     }
 }
+
+// TODO: ShearsDispenseBehavior — needs beehive honey-level tracking
+// (beehive_block.rs has none yet) and a generic Shearable dispatch covering
+// sheep/mooshroom/snow golem/bogged, which doesn't exist. Only Sheep has its
+// own shear() today; that alone would silently diverge from vanilla.
+
+// TODO: BrushDispenseBehavior — needs the Armadillo entity, which doesn't exist.
