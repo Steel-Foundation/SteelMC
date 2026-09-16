@@ -1,4 +1,5 @@
-use crate::advancement::{Advancement, AdvancementTree};
+use crate::advancement::Advancement;
+use crate::advancement::tree::AdvancementTree;
 use rustc_hash::FxHashMap;
 use std::sync::RwLock;
 use steel_utils::Identifier;
@@ -6,10 +7,12 @@ use steel_utils::Identifier;
 pub static ADVANCEMENT_TREE: RwLock<AdvancementTree> = RwLock::new(AdvancementTree::default());
 pub type AdvancementRef = &'static Advancement;
 
+/// equivalent of the `AdvancementTree` of the minecraft source code
 pub struct AdvancementRegistry {
     advancements: Vec<AdvancementRef>,
     by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
+    roots: Vec<usize>,
+    tasks: Vec<usize>,
 }
 
 impl Default for AdvancementRegistry {
@@ -24,20 +27,31 @@ impl AdvancementRegistry {
         Self {
             advancements: Vec::new(),
             by_key: FxHashMap::default(),
-            allows_registering: true,
+            roots: Vec::new(),
+            tasks: Vec::new(),
         }
     }
 
-    pub fn register(&mut self, advancement: AdvancementRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register loot tables after the registry has been frozen"
-        );
-
+    pub(crate) fn register(&mut self, advancement: AdvancementRef) -> usize {
         let id = self.advancements.len();
         self.by_key.insert(advancement.key.clone(), id);
         self.advancements.push(advancement);
         id
+    }
+
+    pub(crate) fn register_multiple(&mut self, advancements: Vec<AdvancementRef>) {
+        for advancement in &advancements {
+            let is_root = advancement.is_root();
+            let idx = self.register(*advancement);
+            if is_root {
+                self.roots.push(idx);
+            }
+        }
+    }
+
+    pub fn register_and_load(&mut self, advancements: Vec<AdvancementRef>) {
+        self.register_multiple(advancements);
+        self.reload()
     }
 
     pub fn iter(&self) -> impl Iterator<Item=(usize, AdvancementRef)> + '_ {
@@ -45,5 +59,13 @@ impl AdvancementRegistry {
             .iter()
             .enumerate()
             .map(|(id, &table)| (id, table))
+    }
+
+    pub fn reload(&mut self) {
+        for advancement in self.roots {
+            let advancement = self.advancements[advancement];
+            positioner::run(self, &advancement);
+        }
+        self.allows_registering = false;
     }
 }

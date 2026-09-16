@@ -1,4 +1,3 @@
-use crate::advancement::Advancement;
 use crate::advancement::registry::{ADVANCEMENT_TREE, AdvancementRef};
 use rustc_hash::FxHashMap;
 use std::fmt::Display;
@@ -8,7 +7,7 @@ use steel_utils::Identifier;
 pub struct AdvancementNode {
     pub children: Vec<usize>,
     pub parent: Option<usize>,
-    pub value: &'static Advancement,
+    pub value: AdvancementRef,
 }
 
 impl AdvancementNode {
@@ -17,7 +16,7 @@ impl AdvancementNode {
     }
 
     #[must_use]
-    pub fn new(value: &'static Advancement, parent: Option<usize>) -> Self {
+    pub fn new(value: AdvancementRef, parent: Option<usize>) -> Self {
         Self {
             value,
             parent,
@@ -37,6 +36,13 @@ impl AdvancementNode {
             advancement_node = &ADVANCEMENT_TREE.read().unwrap().nodes_vector[*parent];
         }
         advancement_node
+    }
+
+    #[inline]
+    pub const fn set_location(&mut self, x: f32, y: f32) {
+        if let Some(display) = self.value.display {
+            *display.location.write().unwrap() = (x, y);
+        };
     }
 }
 
