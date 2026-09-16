@@ -33,13 +33,13 @@ fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
     insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
     let attacker: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
-        701,
+        1,
         DVec3::ZERO,
         Arc::downgrade(&world),
     ));
     let projectile: SharedEntity = Arc::new(SnowballEntity::new(
         &vanilla_entities::SNOWBALL,
-        702,
+        2,
         DVec3::ZERO,
         Arc::downgrade(&world),
     ));
