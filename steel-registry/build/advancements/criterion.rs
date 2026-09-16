@@ -6,15 +6,17 @@ use std::collections::BTreeMap;
 use steel_utils::Identifier;
 
 #[derive(Deserialize)]
+#[expect(dead_code)]
 pub(crate) struct CriterionJson {
     trigger: Identifier,
-    instance: Value,
+    #[serde(default)]
+    conditions: Value,
 }
 
 impl ToTokens for CriterionJson {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         tokens.extend(quote! {
-            Criterion.default() // TODO when predicate are implemented
+            Box::new(Criterion::<ImpossibleInstance, ImpossibleTrigger>::default()) as Box<dyn AnyCriterion> // TODO when predicate are implemented
         });
     }
 }

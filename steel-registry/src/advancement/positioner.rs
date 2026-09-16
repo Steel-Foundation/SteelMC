@@ -1,12 +1,10 @@
 use crate::advancement::registry::AdvancementRegistry;
-use crate::advancement::tree::AdvancementTree;
 
-// calculate the positions of AdvancementNodes using the Reingold-Tilford algorithm the same used by minecraft.
-
+/// calculate the positions of advancement nodes using the Reingold-Tilford algorithm the same used by minecraft.
+///
+/// the resulting x position are random so can't really be compared to vanilla
 pub fn run(tree: &mut AdvancementRegistry, root_index: usize) {
-    let root_node = if let Some(node) = tree.nodes_vector.get(root_index) {
-        node
-    } else {
+    let Some(root_node) = tree.adv_nodes.get(root_index) else {
         eprintln!("AdvancementNode index out of bounds");
         return;
     };
@@ -14,6 +12,7 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) {
         eprintln!("Can't position children of an invisible root!");
         return;
     }
+    //store everything inside a vector to not have to deal with pointer
     let mut nodes: Vec<TreeNodePosition> = Vec::with_capacity(32);
     let root_idx = nodes.len();
     nodes.push(TreeNodePosition {
@@ -33,19 +32,19 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) {
 
     let mut previous_idx = None;
     for child in root_node.children.clone() {
-        previous_idx = Self::add_child(&mut nodes, tree, root_idx, child, previous_idx);
+        previous_idx = TreeNodePosition::add_child(&mut nodes, tree, root_idx, child, previous_idx);
     }
 
-    Self::first_walk(&mut nodes, root_idx);
+    TreeNodePosition::first_walk(&mut nodes, root_idx);
 
     let root_y = nodes[root_idx].y;
-    let min = Self::second_walk(&mut nodes, root_idx, 0.0, 0, root_y);
+    let min = TreeNodePosition::second_walk(&mut nodes, root_idx, 0.0, 0, root_y);
 
     if min < 0.0 {
-        Self::third_walk(&mut nodes, root_idx, -min);
+        TreeNodePosition::third_walk(&mut nodes, -min);
     }
 
-    Self::finalize_position(tree, &nodes, root_idx);
+    TreeNodePosition::finalize_position(tree, &nodes, root_idx);
 }
 
 struct TreeNodePosition {
@@ -66,12 +65,12 @@ struct TreeNodePosition {
 impl TreeNodePosition {
     fn add_child(
         nodes: &mut Vec<TreeNodePosition>,
-        tree: &mut AdvancementTree,
+        tree: &mut AdvancementRegistry,
         parent_idx: usize,
         adv_node_idx: usize,
         mut previous_idx: Option<usize>,
     ) -> Option<usize> {
-        let adv_node = tree.nodes_vector.get(adv_node_idx)?;
+        let adv_node = tree.adv_nodes.get(adv_node_idx)?;
         if adv_node.has_display() {
             let child_idx = nodes.len();
             let node = &mut nodes[parent_idx];
@@ -130,7 +129,7 @@ impl TreeNodePosition {
             let node = &mut nodes[idx];
             let first_child_idx = node.children[0];
             let last_child_idx = node.children[num_children - 1];
-            let midpoint = (nodes[first_child_idx].y + nodes[last_child_idx].y) / 2.0;
+            let midpoint = f32::midpoint(nodes[first_child_idx].y, nodes[last_child_idx].y);
 
             if let Some(prev_sib) = nodes[idx].previous_sibling {
                 nodes[idx].y = nodes[prev_sib].y + 1.0;
@@ -167,33 +166,10 @@ impl TreeNodePosition {
         min
     }
 
-    /// Third walk of the tree positioning algorithm.
-    ///
-    /// This function adjusts all y-coordinates of the tree by adding a uniform offset, ensuring
-    /// all coordinates are non-negative. It traverses the tree recursively, applying the same
-    /// offset to each node and its descendants.
-    ///
-    /// # Arguments
-    ///
-    /// * `nodes` - A mutable reference to the vector of `TreeNodePosition` representing the tree structure.
-    /// * `idx` - The index of the current node being processed in the `nodes` vector.
-    /// * `offset` - The y-coordinate offset to apply. This is typically the negation of the minimum
-    /// y value found in the second walk.
-    ///
-    /// # Algorithm Details
-    ///
-    /// - Adds the offset to the current node's y-coordinate
-    /// - Recursively applies the same offset to all children
-    /// - Uses a simple post-order traversal to ensure uniform adjustment across the entire tree
-    ///
-    /// # Note
-    ///
-    /// This is the third of three passes. It only executes if the minimum y value found in
-    /// the second walk was negative, ensuring all final positions are non-negative.
-    fn third_walk(nodes: &mut Vec<TreeNodePosition>, _idx: usize, offset: f32) {
-        nodes.iter_mut().for_each(|node| {
+    fn third_walk(nodes: &mut [TreeNodePosition], offset: f32) {
+        for node in nodes.iter_mut() {
             node.y += offset;
-        });
+        }
     }
 
     fn execute_shifts(nodes: &mut [TreeNodePosition], idx: usize) {
@@ -223,9 +199,8 @@ impl TreeNodePosition {
     }
 
     fn apportion(nodes: &mut [TreeNodePosition], idx: usize, mut default_ancestor: usize) -> usize {
-        let prev_sib = match nodes[idx].previous_sibling {
-            Some(p) => p,
-            None => return default_ancestor,
+        let Some(prev_sib) = nodes[idx].previous_sibling else {
+            return default_ancestor;
         };
         let parent_idx = nodes[idx].parent.expect("Tree invariant broken: no parent");
         let mut inner_right = idx;
@@ -299,7 +274,7 @@ impl TreeNodePosition {
         default_ancestor: usize,
     ) -> usize {
         let ancestor = nodes[idx].ancestor;
-        let parent_idx = nodes[other].parent.unwrap();
+        let parent_idx = nodes[other].parent.expect("Tree invariant broken");
 
         if nodes[parent_idx].children.contains(&ancestor) {
             ancestor
@@ -308,35 +283,8 @@ impl TreeNodePosition {
         }
     }
 
-    /// Final walk of the tree positioning algorithm.
-    ///
-    /// This function applies the computed positions to the actual advancement nodes in the tree,
-    /// finalizing their display locations. It traverses the tree recursively and updates each node's
-    /// position coordinates in the tree structure.
-    ///
-    /// # Arguments
-    ///
-    /// * `tree` - A mutable reference to the `AdvancementTree`. This tree is updated with the
-    ///   computed x and y positions from the `TreeNodePosition` nodes.
-    /// * `nodes` - A reference to the vector of `TreeNodePosition` containing the computed positions
-    ///   for each node in the tree.
-    /// * `idx` - The index of the current node being processed in the `nodes` vector.
-    ///
-    /// # Algorithm Details
-    ///
-    /// - Retrieves the computed x and y positions from the `TreeNodePosition` at the given index
-    /// - Sets these positions on the corresponding advancement node in the tree
-    /// - Recursively processes all children, updating their positions as well
-    /// - Uses a post-order traversal to ensure all nodes are properly positioned
-    ///
-    /// # Note
-    ///
-    /// This is the fourth and final pass. It should only be called after all three positioning walks
-    /// (first, second, and third) have been completed successfully. This function transfers the
-    /// computed positions from the internal `TreeNodePosition` structures back to the actual
-    /// `AdvancementNode` display information.
-    fn finalize_position(tree: &mut AdvancementTree, nodes: &[TreeNodePosition], idx: usize) {
-        tree.nodes_vector[nodes[idx].node].set_location(nodes[idx].x as f32, nodes[idx].y);
+    fn finalize_position(tree: &mut AdvancementRegistry, nodes: &[TreeNodePosition], idx: usize) {
+        tree.adv_nodes[nodes[idx].node].set_location(nodes[idx].x as f32, nodes[idx].y);
         for &child_idx in &nodes[idx].children {
             Self::finalize_position(tree, nodes, child_idx);
         }

@@ -69,8 +69,7 @@ pub(crate) fn parse_display(display: &AdvancementDisplayJson) -> TokenStream {
             show_toast: #show_toast,
             announce_chat: #announce_to_chat,
             hidden: #hidden,
-            x: 0f32,
-            y: 0f32,
+            location: SyncRwLock::new((0f32,0f32)),
         }
     }
 }
