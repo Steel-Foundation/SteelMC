@@ -101,7 +101,7 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
-        // The client expects Play packets after acknowledging the end of configuration.
+        // Admission can reject the join; the client already expects Play disconnect packets.
         self.protocol.store(ConnectionProtocol::Play);
         let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
             self.kick(TextComponent::translated(

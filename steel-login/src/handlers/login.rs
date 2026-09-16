@@ -50,7 +50,7 @@ impl JavaTcpClient {
         profile: GameProfile,
         reader_encryption: Option<[u8; 16]>,
     ) -> ConnectionAction {
-        // Vanilla rejects a full server before compression and duplicate-session eviction.
+        // Reject full-server logins before evicting an existing session.
         if self.server.is_player_limit_reached(profile.id) {
             self.kick(TextComponent::translated(
                 translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg(),
