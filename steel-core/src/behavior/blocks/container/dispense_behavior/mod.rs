@@ -16,6 +16,7 @@ pub mod boat;
 pub mod bucket;
 pub mod consumables;
 pub mod default;
+pub mod potion;
 pub mod projectile;
 pub mod tnt;
 pub mod tools;
@@ -28,6 +29,7 @@ pub use consumables::{
     BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
 };
 pub use default::DefaultDispenseBehavior;
+pub use potion::GlassBottleDispenseBehavior;
 pub use projectile::ProjectileDispenseBehavior;
 pub use tnt::TntDispenseBehavior;
 pub use tools::FlintAndSteelDispenseBehavior;
@@ -168,7 +170,22 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         &vanilla_items::GLOWSTONE,
         Box::new(GlowstoneDispenseBehavior),
     );
+    registry.set_behavior(
+        &vanilla_items::GLASS_BOTTLE,
+        Box::new(GlassBottleDispenseBehavior),
+    );
     // TODO: shears, brush, carved pumpkin — see tools.rs / consumables.rs
+
+    // TODO: shulker box + dyed shulker box (container.rs) — needs generic
+    // block-item placement dispatch, which dispensers don't have yet.
+    // TODO: chest (container.rs) — needs ChestBlock, which doesn't exist.
+    // TODO: minecart, chest/furnace/hopper/tnt/command-block minecarts
+    // (minecarts.rs) — need minecart entities plus rail-slope detection for
+    // the drop-vs-place branch, neither of which is ported yet.
+    // TODO: armor stand (spawn_egg.rs) — needs the ArmorStand entity.
+    // TODO: plain Potion (potion.rs) — a water bottle in front of the
+    // dispenser converts CONVERTABLE_TO_MUD blocks to mud; deferred pending
+    // verification that the tag exists in Steel.
 
     registry
 });

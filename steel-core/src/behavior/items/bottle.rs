@@ -73,7 +73,7 @@ impl ItemBehavior for BottleItem {
 }
 
 /// Vanilla `PotionContents.createItemStack(Items.POTION, Potions.WATER)`.
-fn water_potion_stack() -> ItemStack {
+pub(crate) fn water_potion_stack() -> ItemStack {
     let mut stack = ItemStack::new(&vanilla_items::POTION);
     stack.set(
         POTION_CONTENTS,
