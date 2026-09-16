@@ -29,7 +29,7 @@ use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
     vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS, vanilla_items,
 };
-use steel_utils::{BlockPos, ChunkPos, UuidExt as _, types::UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, UuidExt as _, translations, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
 use tokio::{
@@ -48,6 +48,7 @@ use crate::command::execution::{
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
@@ -62,10 +63,11 @@ use crate::player::player_data::PersistentSlot;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::portal::WorldChangeRequest;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, insert_ready_full_chunk,
-    test_world,
+    TestPlayerBuilder, fresh_test_derived_world, fresh_test_world, fresh_test_world_in_domain,
+    insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
+use steel_registry::vanilla_damage_types;
 
 use super::DEBUG_STACK_SIZE;
 use super::known_players::{
@@ -90,6 +92,7 @@ use super::{
 struct TestConnection {
     sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
     closed: AtomicBool,
+    disconnect_reason: Arc<SyncMutex<Option<TextComponent>>>,
 }
 
 impl NetworkConnection for TestConnection {
@@ -105,7 +108,10 @@ impl NetworkConnection for TestConnection {
         self.sent_packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, reason: TextComponent) {
+        *self.disconnect_reason.lock() = Some(reason);
+        self.close();
+    }
 
     fn tick(&self) {}
 
@@ -211,6 +217,7 @@ async fn test_server_with_worlds(
     for world in loaded_worlds {
         worlds.insert(world.key.clone(), Arc::clone(world));
     }
+    worlds.validate_game_times()?;
     let scoreboards = DomainScoreboards::load(&worlds)
         .await
         .map_err(|error| format!("test scoreboards should load: {error}"))?;
@@ -286,7 +293,7 @@ mod connection_lifecycle;
 )]
 fn saved_location_planning_honors_explicit_world_selection() {
     let saved_world = fresh_test_world_in_domain("target", "saved");
-    let selected_world = fresh_test_world_in_domain("target", "selected");
+    let selected_world = fresh_test_derived_world(&saved_world, "selected");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -730,7 +737,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         let pearl_uuid = [7; 16];
         let root = PersistentRootVehicle {
             attach: root_uuid,
-            entity: test_persistent_entity(&vanilla_entities::MINECART, root_uuid),
+            entity: test_persistent_entity(&vanilla_entities::PIG, root_uuid),
         };
         let mut pearl_entity = test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid);
         let mut pearl_nbt = NbtCompound::new();
@@ -1554,6 +1561,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
+        let damage = DamageSource::environment(&vanilla_damage_types::GENERIC);
+        player
+            .living_base()
+            .record_last_damage_source(&damage, source_world.game_time());
 
         let target_before_switch = server
             .player_data_storage
@@ -1563,6 +1574,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
 
         let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
+        assert!(
+            player.last_damage_source().is_some(),
+            "request must preserve source history"
+        );
         server.process_domain_switches();
 
         for tick in 1..=10_000 {
@@ -1578,6 +1593,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         assert!(server.jobs.is_empty(), "domain switch job should finish");
         assert!(Arc::ptr_eq(&player.get_world(), &target_world));
 
+        assert!(
+            player.last_damage_source().is_none(),
+            "committed target restore must clear source history"
+        );
         assert_default_domain_data(&player);
 
         drop(player);
@@ -2019,7 +2038,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
 )]
 fn player_world_selection_uses_one_token_owned_route() {
     let source_world = fresh_test_world_in_domain("alpha", "source");
-    let sibling_world = fresh_test_world_in_domain("alpha", "sibling");
+    let sibling_world = fresh_test_derived_world(&source_world, "sibling");
     let stale_sibling_world = fresh_test_world_in_domain("alpha", "sibling");
     let target_world = fresh_test_world_in_domain("beta", "target");
     let domains = [
@@ -2143,7 +2162,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 #[test]
 fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
     let source_world = fresh_test_world_in_domain("alpha", "safe_source");
-    let target_world = fresh_test_world_in_domain("alpha", "safe_target");
+    let target_world = fresh_test_derived_world(&source_world, "safe_target");
     init_behaviors();
     {
         let mut level_data = target_world.level_data.write();
@@ -2368,17 +2387,38 @@ fn test_player_with_connection(
         .build()
 }
 
+struct TestConnectionHandles {
+    connection: Arc<PlayerConnection>,
+    sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+    disconnect_reason: Arc<SyncMutex<Option<TextComponent>>>,
+}
+
+fn test_connection() -> TestConnectionHandles {
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let disconnect_reason = Arc::new(SyncMutex::new(None));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+        disconnect_reason: Arc::clone(&disconnect_reason),
+    })));
+    TestConnectionHandles {
+        connection,
+        sent_packets,
+        disconnect_reason,
+    }
+}
+
 fn test_player_with_packets(
     server: &Arc<Server>,
     world: Arc<World>,
     name: &str,
     entity_id: i32,
 ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
-    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
-    let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
-        sent_packets: Arc::clone(&sent_packets),
-        closed: AtomicBool::new(false),
-    })));
+    let TestConnectionHandles {
+        connection,
+        sent_packets,
+        ..
+    } = test_connection();
     let player = test_player_with_connection(server, world, name, entity_id, connection);
     (player, sent_packets)
 }
@@ -2390,11 +2430,11 @@ fn test_player_with_uuid_and_packets(
     name: &str,
     entity_id: i32,
 ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
-    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
-    let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
-        sent_packets: Arc::clone(&sent_packets),
-        closed: AtomicBool::new(false),
-    })));
+    let TestConnectionHandles {
+        connection,
+        sent_packets,
+        ..
+    } = test_connection();
     let player = TestPlayerBuilder::new(world, name, entity_id)
         .uuid(uuid)
         .connection(connection)
@@ -3110,8 +3150,8 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 
 #[test]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
-    let source_world = fresh_test_world_in_domain("survival", "the_end");
     let target_world = fresh_test_world_in_domain("survival", "overworld");
+    let source_world = fresh_test_derived_world(&target_world, "the_end");
     prepare_respawn_test_world(&source_world);
     prepare_respawn_test_world(&target_world);
     let runtime = Builder::new_current_thread().enable_all().build();
@@ -3989,3 +4029,73 @@ fn offline_startup_still_requests_the_services_keys() {
         });
     });
 }
+
+#[test]
+fn save_and_shutdown_writes_player_and_world_data() {
+    with_server_runtime(|runtime| {
+        runtime.block_on(async {
+            let save_root = test_storage_root("save-and-shutdown");
+            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
+                .await
+                .expect("an offline server should start");
+
+            server.save_and_shutdown().await;
+
+            assert!(save_root.join("global/known_players.dat").is_file());
+            assert!(
+                save_root
+                    .join("minecraft/worlds/overworld/level.toml")
+                    .is_file()
+            );
+
+            shutdown_server(&server, &save_root).await;
+        });
+    });
+}
+
+#[test]
+fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
+    let world = fresh_test_world_in_domain("survival", "shutdown-disconnect");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let storage_root = test_storage_root("shutdown-disconnect");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let TestConnectionHandles {
+            connection,
+            disconnect_reason,
+            ..
+        } = test_connection();
+        let player =
+            test_player_with_connection(&server, Arc::clone(&world), "TestPlayer", 1, connection);
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+        server.save_and_shutdown().await;
+
+        assert_eq!(
+            disconnect_reason.lock().clone(),
+            Some(TextComponent::from(
+                translations::MULTIPLAYER_DISCONNECT_SERVER_SHUTDOWN.msg()
+            ))
+        );
+        assert!(
+            server.process_player_disconnects().is_empty(),
+            "shutdown should claim the removal so a later tick does not repeat it"
+        );
+
+        shutdown_server(&server, &storage_root).await;
+    });
+}
+
+mod game_time;
