@@ -72,33 +72,14 @@ impl DispenseBehaviorRegistry {
 pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::new(|| {
     let mut registry = DispenseBehaviorRegistry::new();
 
+    // armor
     for (_, item) in REGISTRY.items.iter() {
         if item.components.has(EQUIPPABLE) {
             registry.set_behavior(item, Box::new(ArmorDispenseBehavior));
         }
     }
-    registry.set_behavior(
-        &vanilla_items::WATER_BUCKET,
-        Box::new(BucketDispenseBehavior),
-    );
-    registry.set_behavior(
-        &vanilla_items::LAVA_BUCKET,
-        Box::new(BucketDispenseBehavior),
-    );
-    registry.set_behavior(&vanilla_items::BUCKET, Box::new(BucketDispenseBehavior));
 
-    registry.set_behavior(
-        &vanilla_items::BONE_MEAL,
-        Box::new(BoneMealDispenseBehavior),
-    );
-
-    registry.set_behavior(
-        &vanilla_items::FLINT_AND_STEEL,
-        Box::new(FlintAndSteelDispenseBehavior),
-    );
-
-    registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
-
+    // arrow
     registry.set_behavior(
         &vanilla_items::ARROW,
         Box::new(ArrowDispenseBehavior::new(&vanilla_entities::ARROW)),
@@ -114,7 +95,52 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         Box::new(ArrowDispenseBehavior::new(&vanilla_entities::ARROW)),
     );
 
-    // Projectiles
+    // boat
+    registry.set_behavior(
+        &vanilla_items::OAK_BOAT,
+        Box::new(BoatDispenseBehavior::new(&vanilla_entities::OAK_BOAT)),
+    );
+
+    // bucket
+    registry.set_behavior(
+        &vanilla_items::WATER_BUCKET,
+        Box::new(BucketDispenseBehavior),
+    );
+    registry.set_behavior(
+        &vanilla_items::LAVA_BUCKET,
+        Box::new(BucketDispenseBehavior),
+    );
+    registry.set_behavior(&vanilla_items::BUCKET, Box::new(BucketDispenseBehavior));
+    // TODO: mob buckets (salmon, cod, pufferfish, tropical fish, axolotl,
+    // sulfur cube, tadpole, powder snow) — vanilla empties them into a mob
+    // entity at the target block, but none of those entities/spawn paths
+    // are ported yet. Currently fall through to DefaultDispenseBehavior.
+
+    // consumables
+    registry.set_behavior(
+        &vanilla_items::BONE_MEAL,
+        Box::new(BoneMealDispenseBehavior),
+    );
+    registry.set_behavior(
+        &vanilla_items::HONEYCOMB,
+        Box::new(HoneycombDispenseBehavior),
+    );
+    registry.set_behavior(
+        &vanilla_items::GLOWSTONE,
+        Box::new(GlowstoneDispenseBehavior),
+    );
+    // TODO: carved pumpkin — see consumables.rs
+
+    // potion
+    registry.set_behavior(
+        &vanilla_items::GLASS_BOTTLE,
+        Box::new(GlassBottleDispenseBehavior),
+    );
+    // TODO: plain Potion (potion.rs) — a water bottle in front of the
+    // dispenser converts CONVERTABLE_TO_MUD blocks to mud; deferred pending
+    // verification that the tag exists in Steel.
+
+    // projectile
     registry.set_behavior(
         &vanilla_items::EGG,
         Box::new(ProjectileDispenseBehavior::new(
@@ -157,35 +183,28 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         )),
     );
 
-    registry.set_behavior(
-        &vanilla_items::OAK_BOAT,
-        Box::new(BoatDispenseBehavior::new(&vanilla_entities::OAK_BOAT)),
-    );
+    // tnt
+    registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
 
+    // tools
     registry.set_behavior(
-        &vanilla_items::HONEYCOMB,
-        Box::new(HoneycombDispenseBehavior),
+        &vanilla_items::FLINT_AND_STEEL,
+        Box::new(FlintAndSteelDispenseBehavior),
     );
-    registry.set_behavior(
-        &vanilla_items::GLOWSTONE,
-        Box::new(GlowstoneDispenseBehavior),
-    );
-    registry.set_behavior(
-        &vanilla_items::GLASS_BOTTLE,
-        Box::new(GlassBottleDispenseBehavior),
-    );
-    // TODO: shears, brush, carved pumpkin — see tools.rs / consumables.rs
+    // TODO: shears, brush — see tools.rs
 
-    // TODO: shulker box + dyed shulker box (container.rs) — needs generic
-    // block-item placement dispatch, which dispensers don't have yet.
-    // TODO: chest (container.rs) — needs ChestBlock, which doesn't exist.
-    // TODO: minecart, chest/furnace/hopper/tnt/command-block minecarts
-    // (minecarts.rs) — need minecart entities plus rail-slope detection for
-    // the drop-vs-place branch, neither of which is ported yet.
-    // TODO: armor stand (spawn_egg.rs) — needs the ArmorStand entity.
-    // TODO: plain Potion (potion.rs) — a water bottle in front of the
-    // dispenser converts CONVERTABLE_TO_MUD blocks to mud; deferred pending
-    // verification that the tag exists in Steel.
+    // container (blocked — see container.rs plan in PR)
+    // TODO: shulker box + dyed shulker box — needs generic block-item
+    // placement dispatch, which dispensers don't have yet.
+    // TODO: chest — needs ChestBlock, which doesn't exist.
+
+    // minecarts (blocked — see minecarts.rs plan in PR)
+    // TODO: minecart, chest/furnace/hopper/tnt/command-block minecarts —
+    // need minecart entities plus rail-slope detection for the
+    // drop-vs-place branch, neither of which is ported yet.
+
+    // spawn_egg (blocked — see spawn_egg.rs plan in PR)
+    // TODO: armor stand — needs the ArmorStand entity.
 
     registry
 });
