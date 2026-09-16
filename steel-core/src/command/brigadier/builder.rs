@@ -142,7 +142,7 @@ where
     ) -> Self {
         debug_assert!(
             !matches!(self.data, CommandNodeData::Argument(_, _)),
-            "suggests_arc must be called on an argument node"
+            "suggests must be called on an argument node"
         );
         if let CommandNodeData::Argument(_, data) = &mut self.data {
             data.custom_suggestions = Some(suggestion);
