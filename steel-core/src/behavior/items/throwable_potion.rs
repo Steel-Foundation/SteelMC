@@ -1,10 +1,4 @@
 //! Splash/lingering potion item behaviors (`SplashPotionItem`, `LingeringPotionItem`).
-//!
-//! Both extend vanilla `ThrowablePotionItem extends PotionItem`: they inherit
-//! `PotionItem.useOn` (water-to-mud conversion) verbatim via [`potion_use_on`],
-//! and `ThrowablePotionItem.use` throws a potion projectile with a `-20`-degree
-//! pitch offset. Only splash potions throw today; lingering potions still need
-//! `AreaEffectCloud`.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -23,8 +17,6 @@ use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::SplashPotionEntity;
 use crate::entity::next_entity_id;
 
-/// Vanilla `SplashPotionItem.use`'s sound plus `ThrowablePotionItem`'s
-/// `PROJECTILE_SHOOT_POWER`, pitch offset and throw spread.
 const THROW: ThrowParams = ThrowParams {
     sound: &sound_events::ENTITY_SPLASH_POTION_THROW,
     sound_source: SoundSource::Players,
@@ -35,9 +27,7 @@ const THROW: ThrowParams = ThrowParams {
 };
 
 /// Splash-potion behavior providing Vanilla's potion-content-dependent name.
-// TODO: Implement the `ProjectileItem` dispenser dispatch. Vanilla
-// `ThrowablePotionItem.createDispenseConfig` halves the default uncertainty and
-// scales the default power by 1.25.
+// TODO: Implement the `ProjectileItem` dispenser dispatch.
 // TODO: Add the inherited water default instance when Steel has item-specific
 // default-stack factories.
 #[item_behavior]
@@ -68,8 +58,7 @@ impl ItemBehavior for SplashPotionItem {
 
 /// Lingering-potion behavior providing Vanilla's potion-content-dependent name.
 // TODO: Implement `use` and the `ProjectileItem` dispenser dispatch. Blocked on
-// `AreaEffectCloud` (not implemented) and the lingering potion entity; the throw
-// itself is [`THROW`] with `ENTITY_LINGERING_POTION_THROW` on `SoundSource::Neutral`.
+// `AreaEffectCloud` (not implemented) and the lingering potion entity.
 // TODO: Add the inherited water default instance when Steel has item-specific
 // default-stack factories.
 #[item_behavior]
