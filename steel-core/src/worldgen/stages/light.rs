@@ -341,7 +341,7 @@ mod tests {
 
         let (sky_updates, block_updates) = run_light_stage(&cache, &center_holder, false);
 
-        assert!(sky_updates.is_empty());
+        assert_eq!(sky_updates.len(), 0);
         assert!(block_updates.contains(&SectionPos::new(0, 0, 0)));
         assert_eq!(
             light_value(&center_holder, LightLayer::Block, source_pos),
@@ -426,7 +426,7 @@ mod tests {
 
         let (sky_updates, _block_updates) = run_loaded_light_stage(&cache, &center_holder, false);
 
-        assert!(sky_updates.is_empty());
+        assert_eq!(sky_updates.len(), 0);
         assert_eq!(light_value(&center_holder, LightLayer::Block, block_pos), 7);
     }
 

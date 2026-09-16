@@ -8,12 +8,10 @@ use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::world::{
-    LevelReader, SignalQueryContext, World, get_best_neighbor_signal, is_redstone_conductor,
-};
+use crate::behavior::BLOCK_BEHAVIORS;
+use crate::world::{LevelReader, SignalQueryContext, World};
 
 use crate::behavior::blocks::redstone::java_hash::sort_small_map_positions;
-use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 
 /// Persistent evaluator used by `RedStoneWireBlock` when redstone experiments are disabled.
 pub(super) struct DefaultRedstoneWireEvaluator {
@@ -52,37 +50,171 @@ impl DefaultRedstoneWireEvaluator {
     }
 
     fn calculate_target_strength(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
-        let block_signal =
-            get_best_neighbor_signal(level, pos, SignalQueryContext::without_wire_signals());
-        if block_signal == MAX_REDSTONE_SIGNAL {
-            return block_signal;
-        }
-        block_signal.max(self.get_incoming_wire_signal(level, pos))
-    }
+        // This is vanilla's `calculateTargetStrength` with Lithium's
+        // `getNeighborSignal(..., false, false)` calculation inlined.
+        let context = SignalQueryContext::without_wire_signals();
+        let center_state = level.get_block_state(pos);
+        let ignore_center_signal =
+            center_state.is_air() || center_state.get_block() == self.wire_block;
+        let below_pos = pos.below();
+        let above_pos = pos.above();
+        let below_state = level.get_block_state(below_pos);
+        let above_state = level.get_block_state(above_pos);
 
-    fn get_incoming_wire_signal(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
-        let mut wire_signal = MIN_REDSTONE_SIGNAL;
+        let (below_signal, _) = self.get_signal_from_vertical(
+            level,
+            below_pos,
+            below_state,
+            Direction::Down,
+            context,
+            ignore_center_signal,
+        );
+        if below_signal == 15 {
+            return 15;
+        }
+
+        let (above_signal, above_is_conductor) = self.get_signal_from_vertical(
+            level,
+            above_pos,
+            above_state,
+            Direction::Up,
+            context,
+            ignore_center_signal,
+        );
+        let mut signal = below_signal.max(above_signal);
+        if signal == 15 {
+            return 15;
+        }
 
         for direction in Direction::HORIZONTAL {
             let neighbor_pos = pos.relative(direction);
             let neighbor_state = level.get_block_state(neighbor_pos);
-            wire_signal = wire_signal.max(self.get_wire_signal(neighbor_state));
+            if neighbor_state.get_block() == self.wire_block {
+                signal = signal.max(self.get_wire_signal(neighbor_state) - 1);
+            } else {
+                // This branch is the non-wire part of Lithium's
+                // `getSignalFromSide`. The wire/step checks remain here so the
+                // already-fetched state and conductor result can be reused.
+                let (neighbor_signal, neighbor_is_conductor) = self.get_non_wire_signal(
+                    level,
+                    neighbor_pos,
+                    neighbor_state,
+                    direction,
+                    context,
+                    ignore_center_signal,
+                );
+                signal = signal.max(neighbor_signal);
+                if signal == 15 {
+                    return 15;
+                }
 
-            let above_pos = pos.above();
-            if is_redstone_conductor(level, neighbor_state, neighbor_pos)
-                && !is_redstone_conductor(level, level.get_block_state(above_pos), above_pos)
-            {
-                let above_neighbor_pos = neighbor_pos.above();
-                wire_signal = wire_signal
-                    .max(self.get_wire_signal(level.get_block_state(above_neighbor_pos)));
-            } else if !is_redstone_conductor(level, neighbor_state, neighbor_pos) {
-                let below_neighbor_pos = neighbor_pos.below();
-                wire_signal = wire_signal
-                    .max(self.get_wire_signal(level.get_block_state(below_neighbor_pos)));
+                if signal < 14 {
+                    if neighbor_is_conductor && !above_is_conductor {
+                        let above_neighbor_pos = neighbor_pos.above();
+                        signal = signal.max(
+                            self.get_wire_signal(level.get_block_state(above_neighbor_pos)) - 1,
+                        );
+                    } else if !neighbor_is_conductor {
+                        let below_neighbor_pos = neighbor_pos.below();
+                        signal = signal.max(
+                            self.get_wire_signal(level.get_block_state(below_neighbor_pos)) - 1,
+                        );
+                    }
+                }
+            }
+
+            if signal == 15 {
+                return 15;
             }
         }
 
-        MIN_REDSTONE_SIGNAL.max(wire_signal - 1)
+        signal
+    }
+
+    /// Translation of Lithium's `getSignalFromVertical`.
+    fn get_signal_from_vertical(
+        &self,
+        level: &dyn LevelReader,
+        pos: BlockPos,
+        state: BlockStateId,
+        direction: Direction,
+        context: SignalQueryContext,
+        ignore_center_signal: bool,
+    ) -> (i32, bool) {
+        if state.get_block() == self.wire_block {
+            return (0, false);
+        }
+
+        self.get_non_wire_signal(level, pos, state, direction, context, ignore_center_signal)
+    }
+
+    /// Shared translation of the non-wire work in Lithium's
+    /// `getSignalFromVertical` and `getSignalFromSide`.
+    fn get_non_wire_signal(
+        &self,
+        level: &dyn LevelReader,
+        pos: BlockPos,
+        state: BlockStateId,
+        direction: Direction,
+        context: SignalQueryContext,
+        ignore_center_signal: bool,
+    ) -> (i32, bool) {
+        if state.is_air() {
+            return (0, false);
+        }
+
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        let mut signal = behavior.get_signal(state, level, pos, direction, context);
+        let is_conductor = behavior.is_redstone_conductor(state, level, pos);
+        if is_conductor && signal < 15 {
+            signal = signal.max(self.get_direct_signal_to(
+                level,
+                pos,
+                direction.opposite(),
+                context,
+                ignore_center_signal,
+            ));
+        }
+
+        (signal, is_conductor)
+    }
+
+    /// Translation of Lithium's `getDirectSignalTo`.
+    ///
+    /// Lithium always ignores the direction back to the wire. Steel also runs
+    /// this path after replacement, so that direction is ignored only while the
+    /// center is still wire or air.
+    fn get_direct_signal_to(
+        &self,
+        level: &dyn LevelReader,
+        pos: BlockPos,
+        direction_to_center: Direction,
+        context: SignalQueryContext,
+        ignore_center_signal: bool,
+    ) -> i32 {
+        let mut signal = 0;
+        for direction in Direction::ALL {
+            if direction == direction_to_center && ignore_center_signal {
+                continue;
+            }
+
+            let neighbor_pos = pos.relative(direction);
+            let neighbor_state = level.get_block_state(neighbor_pos);
+            if neighbor_state.is_air() || neighbor_state.get_block() == self.wire_block {
+                continue;
+            }
+
+            signal = signal.max(
+                BLOCK_BEHAVIORS
+                    .get_behavior(neighbor_state.get_block())
+                    .get_direct_signal(neighbor_state, level, neighbor_pos, direction, context),
+            );
+            if signal == 15 {
+                return 15;
+            }
+        }
+
+        signal
     }
 
     fn get_wire_signal(&self, state: BlockStateId) -> i32 {
@@ -119,12 +251,105 @@ fn java_hash_set_update_order(pos: BlockPos) -> [BlockPos; 7] {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
+    use steel_utils::ChunkPos;
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::TestLevel;
+    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
+    use crate::world::{get_best_neighbor_signal, is_redstone_conductor};
+
+    struct CountingLevel {
+        level: TestLevel,
+        block_state_reads: Cell<usize>,
+    }
+
+    impl CountingLevel {
+        fn new(level: TestLevel) -> Self {
+            Self {
+                level,
+                block_state_reads: Cell::new(0),
+            }
+        }
+
+        fn block_state_reads(&self) -> usize {
+            self.block_state_reads.get()
+        }
+    }
+
+    impl LevelReader for CountingLevel {
+        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+            self.block_state_reads.set(self.block_state_reads.get() + 1);
+            self.level.get_block_state(pos)
+        }
+
+        fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+            self.level.raw_brightness(pos, sky_darkening)
+        }
+
+        fn min_y(&self) -> i32 {
+            self.level.min_y()
+        }
+
+        fn height(&self) -> i32 {
+            self.level.height()
+        }
+    }
+
+    fn powered_wire(power: u8) -> BlockStateId {
+        vanilla_blocks::REDSTONE_WIRE
+            .default_state()
+            .set_value(&BlockStateProperties::POWER, power)
+    }
+
+    fn calculate_target_strength_reference(level: &dyn LevelReader, pos: BlockPos) -> i32 {
+        let block_signal =
+            get_best_neighbor_signal(level, pos, SignalQueryContext::without_wire_signals());
+        if block_signal == 15 {
+            return 15;
+        }
+
+        let evaluator = DefaultRedstoneWireEvaluator::new(&vanilla_blocks::REDSTONE_WIRE);
+        block_signal.max(get_incoming_wire_signal_reference(&evaluator, level, pos))
+    }
+
+    fn get_incoming_wire_signal_reference(
+        evaluator: &DefaultRedstoneWireEvaluator,
+        level: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> i32 {
+        let mut signal = 0;
+        let above_pos = pos.above();
+        let above_is_conductor =
+            is_redstone_conductor(level, level.get_block_state(above_pos), above_pos);
+
+        for direction in Direction::HORIZONTAL {
+            let neighbor_pos = pos.relative(direction);
+            let neighbor_state = level.get_block_state(neighbor_pos);
+            signal = signal.max(evaluator.get_wire_signal(neighbor_state));
+
+            if is_redstone_conductor(level, neighbor_state, neighbor_pos) && !above_is_conductor {
+                signal = signal
+                    .max(evaluator.get_wire_signal(level.get_block_state(neighbor_pos.above())));
+            } else if !is_redstone_conductor(level, neighbor_state, neighbor_pos) {
+                signal = signal
+                    .max(evaluator.get_wire_signal(level.get_block_state(neighbor_pos.below())));
+            }
+        }
+
+        signal.saturating_sub(1)
+    }
+
+    fn assert_matches_reference(level: &dyn LevelReader, pos: BlockPos) {
+        let evaluator = DefaultRedstoneWireEvaluator::new(&vanilla_blocks::REDSTONE_WIRE);
+        assert_eq!(
+            evaluator.calculate_target_strength(level, pos),
+            calculate_target_strength_reference(level, pos),
+        );
+    }
 
     const POWER: &IntProperty = &BlockStateProperties::POWER;
 
@@ -190,5 +415,122 @@ mod tests {
         let evaluator = DefaultRedstoneWireEvaluator::new(&vanilla_blocks::REDSTONE_WIRE);
 
         assert_eq!(evaluator.calculate_target_strength(&level, pos), 14);
+    }
+
+    #[test]
+    fn target_strength_matches_vanilla() {
+        init_vanilla_registry();
+        init_behaviors();
+        let pos = BlockPos::new(0, 64, 0);
+        let stone = vanilla_blocks::STONE.default_state();
+        let redstone_block = vanilla_blocks::REDSTONE_BLOCK.default_state();
+
+        let cases = [
+            TestLevel::default(),
+            TestLevel::default().with_block(pos.east(), redstone_block),
+            TestLevel::default().with_block(pos.east(), powered_wire(15)),
+            TestLevel::default()
+                .with_block(pos.east(), stone)
+                .with_block(pos.east().above(), powered_wire(9)),
+            TestLevel::default()
+                .with_block(pos.east(), vanilla_blocks::GLASS.default_state())
+                .with_block(pos.east().below(), powered_wire(9)),
+            TestLevel::default()
+                .with_block(pos.above(), stone)
+                .with_block(pos.east(), stone)
+                .with_block(pos.east().above(), powered_wire(15)),
+            TestLevel::default()
+                .with_block(pos.east(), stone)
+                .with_block(pos.east().east(), redstone_block),
+            TestLevel::default()
+                .with_block(pos.north(), redstone_block)
+                .with_block(pos.east(), powered_wire(12)),
+        ];
+
+        for level in &cases {
+            assert_matches_reference(level, pos);
+        }
+    }
+
+    #[test]
+    fn target_strength_uses_fewer_block_state_reads() {
+        init_vanilla_registry();
+        init_behaviors();
+        let pos = BlockPos::new(0, 64, 0);
+        let level = TestLevel::default()
+            .with_block(pos.east(), vanilla_blocks::STONE.default_state())
+            .with_block(pos.east().above(), powered_wire(12))
+            .with_block(pos.north(), powered_wire(10));
+        let reference_level = CountingLevel::new(level);
+        let optimized_level = CountingLevel::new(
+            TestLevel::default()
+                .with_block(pos.east(), vanilla_blocks::STONE.default_state())
+                .with_block(pos.east().above(), powered_wire(12))
+                .with_block(pos.north(), powered_wire(10)),
+        );
+        let evaluator = DefaultRedstoneWireEvaluator::new(&vanilla_blocks::REDSTONE_WIRE);
+
+        let reference_signal = calculate_target_strength_reference(&reference_level, pos);
+        let optimized_signal = evaluator.calculate_target_strength(&optimized_level, pos);
+
+        assert_eq!(optimized_signal, reference_signal);
+        assert!(
+            optimized_level.block_state_reads() < reference_level.block_state_reads(),
+            "optimized reads: {}, reference reads: {}",
+            optimized_level.block_state_reads(),
+            reference_level.block_state_reads(),
+        );
+    }
+
+    #[test]
+    fn live_world_wire_line_settles_after_source_toggle() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("wire_evaluator_source_toggle");
+        let wire_start = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wire_start));
+
+        let source_pos = wire_start.west();
+        assert!(world.set_block(
+            source_pos.below(),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        for offset in 0..4 {
+            assert!(world.set_block(
+                wire_start.offset(offset, -1, 0),
+                vanilla_blocks::STONE.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            ));
+            assert!(world.set_block(
+                wire_start.offset(offset, 0, 0),
+                vanilla_blocks::REDSTONE_WIRE.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            ));
+        }
+
+        assert!(world.set_block(
+            source_pos,
+            vanilla_blocks::REDSTONE_BLOCK.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        for (offset, power) in [15_u8, 14, 13, 12].into_iter().enumerate() {
+            assert_eq!(
+                world
+                    .get_block_state(wire_start.offset(offset as i32, 0, 0))
+                    .get_value(&BlockStateProperties::POWER),
+                power,
+            );
+        }
+
+        assert!(world.remove_block(source_pos, false));
+        for offset in 0..4 {
+            assert_eq!(
+                world
+                    .get_block_state(wire_start.offset(offset, 0, 0))
+                    .get_value(&BlockStateProperties::POWER),
+                0,
+            );
+        }
     }
 }

@@ -895,7 +895,7 @@ mod tests {
         let result = particle.write(&mut encoded);
 
         assert!(result.is_err());
-        assert!(encoded.is_empty());
+        assert_eq!(encoded.len(), 0);
     }
 
     #[test]
@@ -926,7 +926,7 @@ mod tests {
         let mut encoded = Vec::new();
         let result = BlockParticleOption::new(invalid_state).write_network(&mut encoded);
         assert!(result.is_err());
-        assert!(encoded.is_empty());
+        assert_eq!(encoded.len(), 0);
     }
 
     #[test]

@@ -16,10 +16,7 @@ use steel_registry::data_components::vanilla_components::FIREWORKS;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::FireworkRocketEntityData;
-use steel_registry::{
-    sound_events, vanilla_damage_type_tags, vanilla_damage_types, vanilla_game_events,
-    vanilla_items,
-};
+use steel_registry::{sound_events, vanilla_damage_types, vanilla_game_events, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
@@ -32,7 +29,6 @@ use crate::entity::{
     RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
-use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
 const INITIAL_VERTICAL_VELOCITY: f64 = 0.05;
@@ -97,14 +93,6 @@ impl FireworkRocketEntity {
                 attached_to_entity: None,
             }),
         }
-    }
-
-    fn is_base_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_removed()
-            || self.is_invulnerable() && !source.bypasses_invulnerability()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
-                && self.is_fall_damage_immune()
     }
 
     /// Creates a normally launched rocket at an exact position.
@@ -318,11 +306,7 @@ impl FireworkRocketEntity {
     fn explode(&self, world: &Arc<World>) {
         self.broadcast_entity_event(EntityStatus::FireworksExplode);
         let owner = self.get_owner();
-        world.game_event_at(
-            &vanilla_game_events::EXPLODE,
-            self.position(),
-            &GameEventContext::new(owner.as_deref(), None),
-        );
+        self.game_event_with_source_entity(&vanilla_game_events::EXPLODE, owner.as_deref());
         self.deal_explosion_damage(world);
         self.set_removed(RemovalReason::Discarded);
     }
@@ -420,13 +404,6 @@ impl Entity for FireworkRocketEntity {
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
-    }
-
-    fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
-        if !self.is_base_invulnerable_to(source) {
-            self.mark_hurt();
-        }
-        false
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -577,12 +554,12 @@ mod tests {
         );
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert!(!rocket.hurt(test_world(), &source, 1.0));
+        assert!(!Entity::hurt(&rocket, test_world(), &source, 1.0));
         assert!(rocket.hurt_marked());
 
         rocket.clear_hurt_mark();
         rocket.set_invulnerable(true);
-        assert!(!rocket.hurt(test_world(), &source, 1.0));
+        assert!(!Entity::hurt(&rocket, test_world(), &source, 1.0));
         assert!(!rocket.hurt_marked());
     }
 

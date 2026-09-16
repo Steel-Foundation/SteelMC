@@ -677,7 +677,7 @@ fn only_popped_containers_report_a_persistence_change() {
     let pending_pos = ChunkPos::new(1, 0);
     let scheduler = scheduler_with_block_lists([(empty_pos, empty), (pending_pos, pending)]);
     let before_deadline = begin_block_tick_at(&scheduler, 1, &[empty_pos, pending_pos], 1);
-    assert!(before_deadline.changed_containers.is_empty());
+    assert_eq!(before_deadline.changed_containers.len(), 0);
     let selected = begin_block_tick_at(&scheduler, 3, &[empty_pos, pending_pos], 1);
     assert_eq!(selected.changed_containers, vec![1]);
 }

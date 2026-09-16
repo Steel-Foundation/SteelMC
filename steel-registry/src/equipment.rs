@@ -1,5 +1,8 @@
 //! Shared equipment slot definitions.
 
+use crate::item_stack::ItemStack;
+use steel_utils::entity_events::EntityStatus;
+
 /// Equipment slot types for categorization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EquipmentSlotType {
@@ -122,6 +125,29 @@ impl EquipmentSlot {
         }
     }
 
+    /// Returns vanilla `EquipmentSlot.countLimit`: the maximum stack size this
+    /// slot will hold, or `0` for no limit. Hand slots are unlimited; armor,
+    /// body, and saddle slots hold a single item.
+    #[must_use]
+    pub const fn count_limit(self) -> i32 {
+        match self.slot_type() {
+            EquipmentSlotType::Hand => 0,
+            _ => 1,
+        }
+    }
+
+    /// Returns vanilla `EquipmentSlot.limit`: splits `to_equip` down to this
+    /// slot's [`count_limit`](Self::count_limit), leaving the remainder in place.
+    /// An unlimited slot takes the whole stack.
+    pub fn limit(self, to_equip: &mut ItemStack) -> ItemStack {
+        let count_limit = self.count_limit();
+        if count_limit > 0 {
+            to_equip.split(count_limit)
+        } else {
+            to_equip.split(to_equip.count())
+        }
+    }
+
     /// Returns true if this is an armor slot (humanoid or animal).
     #[must_use]
     pub const fn is_armor(self) -> bool {
@@ -159,6 +185,21 @@ impl EquipmentSlot {
             EquipmentSlot::Head => "head",
             EquipmentSlot::Body => "body",
             EquipmentSlot::Saddle => "saddle",
+        }
+    }
+}
+
+impl From<EquipmentSlot> for EntityStatus {
+    fn from(value: EquipmentSlot) -> Self {
+        match value {
+            EquipmentSlot::MainHand => EntityStatus::MainhandBreak,
+            EquipmentSlot::OffHand => EntityStatus::OffhandBreak,
+            EquipmentSlot::Head => EntityStatus::HeadBreak,
+            EquipmentSlot::Chest => EntityStatus::ChestBreak,
+            EquipmentSlot::Legs => EntityStatus::LegsBreak,
+            EquipmentSlot::Feet => EntityStatus::FeetBreak,
+            EquipmentSlot::Body => EntityStatus::BodyBreak,
+            EquipmentSlot::Saddle => EntityStatus::SaddleBreak,
         }
     }
 }

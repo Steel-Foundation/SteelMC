@@ -17,7 +17,6 @@ use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::LeashFenceKnotEntity;
-use crate::entity::mob::LeashAttachment;
 use crate::entity::{Animal, DEATH_DURATION, ItemSteerable, RemovalReason, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, test_world};

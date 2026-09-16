@@ -8,6 +8,7 @@ const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;
 const SILVER_RATIO_64: u64 = 0x6A09_E667_F3BC_C909;
 
 /// A Xoroshiro128++ random number generator.
+#[derive(Clone)]
 pub struct Xoroshiro {
     seed_lo: u64,
     seed_hi: u64,
@@ -178,7 +179,6 @@ impl PositionalRandom for XoroshiroSplitter {
 #[expect(
     clippy::unreadable_literal,
     clippy::cast_sign_loss,
-    clippy::float_cmp,
     reason = "test vectors from vanilla Java; raw literals and casts are intentional"
 )]
 mod tests {

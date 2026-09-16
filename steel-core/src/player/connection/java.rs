@@ -1,7 +1,7 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::{Arc, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_protocol::packet_reader::TCPNetworkDecoder;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket};
@@ -29,25 +29,34 @@ use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
 use text_components::{Modifier, TextComponent, format::Color};
-use tokio::io::{BufReader, BufWriter};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader, BufWriter};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
-use crate::player::Player;
 use crate::player::connection::NetworkConnection;
+use crate::player::{Player, PlayerSession};
 use crate::server::Server;
 
+/// Boxed read half of a Java client transport (a TCP socket or an in-memory pipe).
+pub type JavaTransportRead = Box<dyn AsyncRead + Send + Unpin>;
+/// Boxed write half of a Java client transport.
+pub type JavaTransportWrite = Box<dyn AsyncWrite + Send + Unpin>;
+/// Packet decoder over the read half of a Java client transport.
+pub type JavaNetworkReader = TCPNetworkDecoder<BufReader<JavaTransportRead>>;
 /// Shared Java socket writer.
-pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+pub type JavaNetworkWriter =
+    Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<JavaTransportWrite>>>>>;
+
+const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Outbound packet queue message for Java connections.
 pub enum OutboundPacket {
     /// Normal packet write that may be interrupted by connection shutdown.
     Packet(EncodedPacket),
-    /// Final disconnect packet that must be flushed before closing the socket.
+    /// Final disconnect packet that is flushed on a bounded best-effort basis.
     Disconnect(EncodedPacket),
 }
 
@@ -264,6 +273,7 @@ impl ScheduledPlayPacket {
                 }
             }
             ScheduledPlayPacketKind::ChatCommand(packet) => {
+                player.reset_last_action_time();
                 if server
                     .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
                     .is_err()
@@ -310,7 +320,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
                 player.handle_set_carried_item(packet);
             }
-            ScheduledPlayPacketKind::Swing(packet) => player.swing(packet.hand, false),
+            ScheduledPlayPacketKind::Swing(packet) => player.handle_animate(packet),
             ScheduledPlayPacketKind::PlayerAction(packet) => {
                 player.handle_player_action(packet);
             }
@@ -387,7 +397,7 @@ pub struct JavaConnection {
     network_writer: JavaNetworkWriter,
     id: u64,
 
-    player: Weak<Player>,
+    session: Arc<PlayerSession>,
     keep_alive_tracker: SyncMutex<KeepAliveTracker>,
     latency: SyncMutex<u32>,
 }
@@ -400,7 +410,7 @@ impl JavaConnection {
         compression: Option<CompressionInfo>,
         network_writer: JavaNetworkWriter,
         id: u64,
-        player: Weak<Player>,
+        session: Arc<PlayerSession>,
     ) -> Self {
         Self {
             outgoing_packets,
@@ -408,7 +418,7 @@ impl JavaConnection {
             compression,
             network_writer,
             id,
-            player,
+            session,
             keep_alive_tracker: SyncMutex::new(KeepAliveTracker {
                 alive_time: 0,
                 alive_pending: false,
@@ -426,8 +436,28 @@ impl JavaConnection {
         network_writer.write_packet(packet).await
     }
 
-    async fn release_network_writer(&self) {
-        self.network_writer.lock().await.take();
+    async fn finish_disconnect(&self, disconnect_packet: Option<EncodedPacket>) {
+        let finish = async {
+            let Some(mut network_writer) = self.network_writer.lock().await.take() else {
+                return Ok(());
+            };
+            let Some(packet) = disconnect_packet else {
+                return Ok(());
+            };
+            network_writer.write_packet(&packet).await
+        };
+
+        match timeout(DISCONNECT_FLUSH_TIMEOUT, finish).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => log::debug!(
+                "Best-effort disconnect write for client {} failed: {error}",
+                self.id
+            ),
+            Err(_) => log::debug!(
+                "Best-effort disconnect write for client {} timed out",
+                self.id
+            ),
+        }
     }
 
     /// Ticks the connection.
@@ -603,7 +633,7 @@ impl JavaConnection {
                 server.schedule_play_packet(player, packet, payload_bytes);
             }
             DecodedPlayPacket::Immediate(packet) => {
-                self.handle_immediate_packet(packet, &player);
+                self.handle_immediate_packet(packet);
             }
         }
         Ok(())
@@ -775,15 +805,15 @@ impl JavaConnection {
         })
     }
 
-    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket, player: &Player) {
+    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket) {
         match packet {
             ImmediatePlayPacket::KeepAlive(packet) => self.handle_keep_alive(packet),
             ImmediatePlayPacket::PingRequest(packet) => {
-                player.send_packet(CPongResponse::new(packet.time));
+                self.send_packet(CPongResponse::new(packet.time));
             }
             ImmediatePlayPacket::ChunkBatchReceived(packet) => {
-                player
-                    .chunk_sender
+                self.session
+                    .chunk_sender()
                     .lock()
                     .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
             }
@@ -792,11 +822,7 @@ impl JavaConnection {
     }
 
     /// Listens for packets from the client.
-    pub async fn listener(
-        &self,
-        mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-        server: Arc<Server>,
-    ) {
+    pub async fn listener(&self, mut reader: JavaNetworkReader, server: Arc<Server>) {
         loop {
             select! {
                 () = self.wait_for_close() => {
@@ -805,7 +831,7 @@ impl JavaConnection {
                 packet = reader.get_raw_packet() => {
                     match packet {
                         Ok(packet) => {
-                            if let Some(player) = self.player.upgrade()
+                            if let Some(player) = self.session.current_player()
                                 && let Err(err) = self.process_packet(packet, player, &server) {
                                 log::warn!(
                                     "Failed to get packet from client {}: {err}",
@@ -826,12 +852,11 @@ impl JavaConnection {
     /// Sends packets to the client.
     ///
     pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
-        loop {
+        let disconnect_packet = loop {
             select! {
                 biased;
                 () = self.wait_for_close() => {
-                    self.write_queued_disconnect(&mut sender_recv).await;
-                    break;
+                    break Self::take_queued_disconnect(&mut sender_recv);
                 }
                 outbound = sender_recv.recv() => {
                     if let Some(outbound) = outbound {
@@ -841,25 +866,21 @@ impl JavaConnection {
                         };
 
                         if close_after_write {
-                            if let Err(err) = self.write_packet_now(&packet).await {
-                                log::warn!("Failed to send disconnect packet to client {}: {err}", self.id);
-                            }
                             self.close();
-                            break;
+                            break Some(packet);
                         }
 
                         let write_result = self.write_packet_now(&packet);
                         select! {
                             biased;
                             () = self.wait_for_close() => {
-                                self.write_queued_disconnect(&mut sender_recv).await;
-                                break;
+                                break Self::take_queued_disconnect(&mut sender_recv);
                             },
                             result = write_result => {
                                 if let Err(err) = result {
                                     log::warn!("Failed to send packet to client {}: {err}", self.id);
                                     self.close();
-                                    break;
+                                    break None;
                                 }
                             }
                         }
@@ -869,23 +890,18 @@ impl JavaConnection {
                         //    self.id
                         //);
                         self.close();
+                        break None;
                     }
                 }
             }
-        }
-
-        self.release_network_writer().await;
-
-        let Some(player) = self.player.upgrade() else {
-            return;
         };
-        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
-            return;
-        }
-        player.server().queue_player_disconnect(player);
+
+        self.finish_disconnect(disconnect_packet).await;
     }
 
-    async fn write_queued_disconnect(&self, sender_recv: &mut UnboundedReceiver<OutboundPacket>) {
+    fn take_queued_disconnect(
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+    ) -> Option<EncodedPacket> {
         let mut disconnect_packet = None;
         loop {
             match sender_recv.try_recv() {
@@ -894,16 +910,7 @@ impl JavaConnection {
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
         }
-
-        let Some(packet) = disconnect_packet else {
-            return;
-        };
-        if let Err(err) = self.write_packet_now(&packet).await {
-            log::warn!(
-                "Failed to send disconnect packet to client {} during close: {err}",
-                self.id
-            );
-        }
+        disconnect_packet
     }
 }
 
@@ -951,7 +958,7 @@ impl NetworkConnection for JavaConnection {
     }
 
     fn close(&self) {
-        self.cancel_token.cancel();
+        JavaConnection::close(self);
     }
 
     fn closed(&self) -> bool {
@@ -972,6 +979,11 @@ mod tests {
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
     use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
+    use tokio::{
+        io::{AsyncReadExt as _, duplex},
+        sync::mpsc,
+        task,
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -1000,7 +1012,7 @@ mod tests {
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
         let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };
@@ -1360,5 +1372,47 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[tokio::test]
+    async fn sender_writes_packets_through_a_boxed_transport() {
+        let (server_end, mut client_end) = duplex(1024);
+        let transport: JavaTransportWrite = Box::new(server_end);
+        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(Some(
+            TCPNetworkEncoder::new(BufWriter::new(transport)),
+        )));
+        let (outgoing_packets, outgoing_receiver) = mpsc::unbounded_channel();
+        let cancel_token = CancellationToken::new();
+        let connection = Arc::new(JavaConnection::new(
+            outgoing_packets,
+            cancel_token.clone(),
+            None,
+            network_writer,
+            1,
+            Arc::new(PlayerSession::new(10, 10)),
+        ));
+        let sender = task::spawn({
+            let connection = Arc::clone(&connection);
+            async move { connection.sender(outgoing_receiver).await }
+        });
+
+        let Ok(packet) =
+            EncodedPacket::from_bare(CKeepAlive { id: 7 }, None, ConnectionProtocol::Play)
+        else {
+            panic!("keep alive should encode");
+        };
+        let expected = packet.encoded_data.as_slice().to_vec();
+        connection.send_encoded(packet);
+
+        let mut received = vec![0; expected.len()];
+        let Ok(_) = client_end.read_exact(&mut received).await else {
+            panic!("client end should receive the framed packet");
+        };
+        assert_eq!(received, expected);
+
+        cancel_token.cancel();
+        let Ok(()) = sender.await else {
+            panic!("sender task should finish after cancellation");
+        };
     }
 }

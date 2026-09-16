@@ -166,6 +166,6 @@ mod test {
     #[test]
     fn empty_packed_u64s_are_omitted() {
         let mask = CarvingMask::new(384, -64);
-        assert!(mask.to_packed_u64s().is_empty());
+        assert_eq!(mask.to_packed_u64s().len(), 0);
     }
 }

@@ -162,7 +162,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             &sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
             pos,
             1.0,
-            0.8 + rng.random::<f32>() * 0.4,
+            rng.random_range(0.8..1.2),
             Some(player.id()),
         );
 
@@ -251,10 +251,7 @@ impl Vegetation for SweetBerryBushBlock {}
 mod tests {
     use std::sync::Weak;
 
-    use steel_registry::{
-        entity_type::{EntityDimensions, EntityTypeRef},
-        init_vanilla_registry, vanilla_blocks,
-    };
+    use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks};
     use steel_utils::locks::SyncMutex;
 
     use super::*;
@@ -273,12 +270,7 @@ mod tests {
     impl TestEntity {
         fn living(entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(
-                    1,
-                    DVec3::ZERO,
-                    EntityDimensions::new(0.6, 1.8, 1.62),
-                    Weak::<World>::new(),
-                ),
+                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::<World>::new()),
                 entity_type,
                 is_living: true,
                 uses_client_movement_packets: false,
@@ -388,7 +380,7 @@ mod tests {
 
         SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(0), &entity);
 
-        assert!(entity.damage_events().is_empty());
+        assert_eq!(entity.damage_events().len(), 0);
     }
 
     #[test]
@@ -399,7 +391,7 @@ mod tests {
 
         SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(1), &entity);
 
-        assert!(entity.damage_events().is_empty());
+        assert_eq!(entity.damage_events().len(), 0);
     }
 
     #[test]

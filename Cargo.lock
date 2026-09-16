@@ -2665,7 +2665,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "steel"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "chrono",
  "crossterm",
@@ -2695,7 +2695,7 @@ dependencies = [
 
 [[package]]
 name = "steel-core"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "arc-swap",
  "base64 0.23.0",
@@ -2748,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "steel-crypto"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "log",
  "rand 0.10.2",
@@ -2759,7 +2759,7 @@ dependencies = [
 
 [[package]]
 name = "steel-login"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "base64 0.23.0",
  "crossbeam",
@@ -2783,7 +2783,7 @@ dependencies = [
 
 [[package]]
 name = "steel-macros"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2792,11 +2792,11 @@ dependencies = [
 
 [[package]]
 name = "steel-math"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 
 [[package]]
 name = "steel-protocol"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "aes",
  "cfb8",
@@ -2809,6 +2809,7 @@ dependencies = [
  "serde_json",
  "simdnbt",
  "steel-macros",
+ "steel-math",
  "steel-registry",
  "steel-utils",
  "text_components",
@@ -2819,8 +2820,9 @@ dependencies = [
 
 [[package]]
 name = "steel-registry"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
+ "bitflags",
  "flate2",
  "glam",
  "heck",
@@ -2832,6 +2834,8 @@ dependencies = [
  "serde",
  "serde_json",
  "simdnbt",
+ "smallvec",
+ "steel-math",
  "steel-utils",
  "text_components",
  "tracing",
@@ -2840,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "steel-utils"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "bitflags",
  "crc32c",
@@ -2863,6 +2867,7 @@ dependencies = [
  "sha1",
  "simdnbt",
  "steel-macros",
+ "steel-math",
  "text_components",
  "tokio",
  "toml",
@@ -2875,7 +2880,7 @@ dependencies = [
 
 [[package]]
 name = "steel-worldgen"
-version = "0.15.2+mc26.2"
+version = "0.15.3+mc26.2"
 dependencies = [
  "criterion",
  "glam",

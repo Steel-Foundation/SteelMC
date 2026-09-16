@@ -7,6 +7,7 @@ authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
+steel-math.workspace = true
 steel-macros.workspace = true
 
 # Async runtime

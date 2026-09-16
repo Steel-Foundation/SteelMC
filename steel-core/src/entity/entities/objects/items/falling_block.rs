@@ -18,8 +18,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::FallingBlockEntityData;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
-    REGISTRY, vanilla_blocks, vanilla_damage_type_tags, vanilla_damage_types, vanilla_entities,
-    vanilla_fluids,
+    REGISTRY, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::UpdateFlags};
@@ -380,14 +379,6 @@ impl FallingBlockEntity {
         }
         self.try_place_carried_block(world, pos, current_state, is_stuck_in_water, block);
     }
-
-    fn is_base_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_removed()
-            || self.is_invulnerable() && !source.bypasses_invulnerability()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
-                && self.is_fall_damage_immune()
-    }
 }
 
 impl Entity for FallingBlockEntity {
@@ -452,7 +443,7 @@ impl Entity for FallingBlockEntity {
     }
 
     fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
-        if !self.is_base_invulnerable_to(source) {
+        if !self.is_invulnerable_to_base(source) {
             self.mark_hurt();
         }
         false

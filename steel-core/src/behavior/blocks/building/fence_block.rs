@@ -6,6 +6,9 @@ use std::sync::Arc;
 
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::items::LeadItem;
+use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -13,6 +16,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -176,6 +180,18 @@ impl BlockBehavior for FenceBlock {
             // Vertical directions don't affect fence connections
             Direction::Up | Direction::Down => state,
         }
+    }
+
+    fn use_without_item(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        LeadItem::bind_player_mobs(player, world, pos)
     }
 }
 

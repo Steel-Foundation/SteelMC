@@ -965,7 +965,7 @@ mod tests {
         else {
             panic!("ocean monument should use its procedural payload");
         };
-        assert!(!data.child_pieces.is_empty());
+        assert_ne!(data.child_pieces.len(), 0);
         assert!(matches!(
             data.child_pieces[0].kind,
             OceanMonumentChildPieceKind::EntryRoom { .. }

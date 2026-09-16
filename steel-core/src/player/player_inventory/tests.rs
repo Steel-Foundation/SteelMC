@@ -7,6 +7,19 @@ use std::{
     thread,
 };
 
+use crate::{
+    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity, next_entity_id},
+    inventory::{
+        click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft},
+        container::{Container, SimpleContainer},
+        equipment::{EntityEquipment, EquipmentSlot},
+        lock::ContainerLockGuard,
+        menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
+    },
+    player::{Player, PlayerConnection, ResetReason, connection::NetworkConnection},
+    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world},
+    world::World,
+};
 use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::{
@@ -23,21 +36,6 @@ use steel_utils::{
     types::{GameType, InteractionHand},
 };
 use text_components::TextComponent;
-use uuid::Uuid;
-
-use crate::{
-    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity, next_entity_id},
-    inventory::{
-        click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft},
-        container::{Container, SimpleContainer},
-        equipment::{EntityEquipment, EquipmentSlot},
-        lock::ContainerLockGuard,
-        menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
-    },
-    player::{Player, PlayerConnection, ResetReason, connection::NetworkConnection},
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world},
-    world::World,
-};
 
 use super::{
     EquipmentSwapResult, InvalidHotbarSlot, MenuItemDisposition, MenuRemovalStatus, PlayerInventory,
@@ -78,6 +76,63 @@ fn vanilla_inventory_nbt_contains_main_slots_only() {
         items[0].string("id").map(ToString::to_string),
         Some("minecraft:stone".to_owned())
     );
+}
+
+#[test]
+fn replacement_copy_preserves_all_logical_slots_and_selection() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        source.set_item(
+            slot,
+            ItemStack::with_count(&vanilla_items::OAK_LOG, slot as i32 + 1),
+        );
+    }
+    source.set_selected_slot(8);
+
+    let replacement = source.replacement_copy();
+
+    assert_eq!(replacement.get_selected_slot(), 8);
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        assert_eq!(replacement.get_item(slot), source.get_item(slot));
+    }
+}
+
+#[test]
+fn replacement_copy_does_not_drain_or_share_storage_with_source() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    sword.set_damage_value(3);
+    source.set_item(0, sword);
+    source.set_item(
+        PlayerInventory::SLOT_OFFHAND,
+        ItemStack::with_count(&vanilla_items::OAK_LOG, 4),
+    );
+    source.set_selected_slot(1);
+
+    let mut replacement = source.replacement_copy();
+
+    assert_eq!(source.get_item(0).get_damage_value(), 3);
+    assert_eq!(source.get_item(PlayerInventory::SLOT_OFFHAND).count(), 4);
+
+    source.get_item_mut(0).set_damage_value(7);
+    source
+        .get_item_mut(PlayerInventory::SLOT_OFFHAND)
+        .set_count(2);
+    source.set_selected_slot(2);
+
+    assert_eq!(replacement.get_item(0).get_damage_value(), 3);
+    assert_eq!(
+        replacement.get_item(PlayerInventory::SLOT_OFFHAND).count(),
+        4
+    );
+    assert_eq!(replacement.get_selected_slot(), 1);
+
+    replacement.get_item_mut(0).set_damage_value(11);
+    assert_eq!(source.get_item(0).get_damage_value(), 7);
 }
 
 #[test]
@@ -412,10 +467,10 @@ fn main_inventory_search_does_not_use_equipment_slots() {
     }
     inventory.set(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
 
-    assert_eq!(inventory.get_free_slot(), -1);
+    assert_eq!(inventory.get_free_slot(), None);
     assert_eq!(
         inventory.find_slot_matching_item(&ItemStack::new(&vanilla_items::STONE)),
-        -1
+        None
     );
 }
 
@@ -731,7 +786,7 @@ fn equippable_stack_moves_one_item_and_returns_old_equipment_to_inventory() {
 }
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
 }
@@ -1131,19 +1186,14 @@ fn disconnected_menu_removal_drops_transient_items() {
         state: Arc::clone(&probe_state),
         container: Arc::clone(&transient),
     })));
-    let observer = TestPlayerBuilder::new(
-        Arc::clone(&world),
-        Uuid::from_u128(2),
-        "Observer",
-        next_entity_id(),
-    )
-    .connection(observer_connection)
-    .build();
+    let observer = TestPlayerBuilder::new(Arc::clone(&world), "Observer", next_entity_id())
+        .connection(observer_connection)
+        .build();
     assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
     observer
-        .chunk_sender
+        .chunk_sender()
         .lock()
         .mark_chunk_sent_for_test(ChunkPos::new(0, 0));
 
@@ -1333,14 +1383,9 @@ fn malformed_non_quickcraft_click_resets_active_drag() {
         state: Arc::clone(&probe_state),
         container: SimpleContainer::new(1).into_shared(),
     })));
-    let player = TestPlayerBuilder::new(
-        Arc::clone(test_world()),
-        Uuid::from_u128(1),
-        "TestPlayer",
-        1,
-    )
-    .connection(connection)
-    .build();
+    let player = TestPlayerBuilder::new(Arc::clone(test_world()), "TestPlayer", 1)
+        .connection(connection)
+        .build();
     player.set_client_loaded(true);
     let out_of_range_slot = {
         let mut menu = player.inventory_menu.lock();

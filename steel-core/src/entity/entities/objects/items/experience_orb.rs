@@ -6,12 +6,13 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
+use steel_math::DEGREE_360;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt as _;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
-use steel_registry::{vanilla_damage_type_tags, vanilla_entities};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
@@ -195,11 +196,11 @@ impl ExperienceOrbEntity {
     }
 
     fn initialize_spawn_movement(&self) {
-        let yaw = rand::random::<f32>() * 360.0;
+        let yaw = rand::random_range(0.0..DEGREE_360);
         let velocity = DVec3::new(
-            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
-            f64::from(rand::random::<f32>()) * 0.2 * 2.0,
-            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+            f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
+            f64::from(rand::random_range(0.0f32..0.2)) * 2.0,
+            f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
         );
         self.base.set_rotation((yaw, 0.0));
         self.base.set_velocity(velocity);
@@ -355,14 +356,6 @@ impl ExperienceOrbEntity {
         self.set_velocity(velocity);
     }
 
-    fn is_base_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_removed()
-            || self.is_invulnerable() && !source.bypasses_invulnerability()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
-                && self.is_fall_damage_immune()
-    }
-
     /// Attempts to have a player pick up this experience orb.
     pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
         if player.take_xp_delay() != 0 {
@@ -495,7 +488,7 @@ impl Entity for ExperienceOrbEntity {
     }
 
     fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
-        if self.is_base_invulnerable_to(source) {
+        if self.is_invulnerable_to_base(source) {
             return false;
         }
 

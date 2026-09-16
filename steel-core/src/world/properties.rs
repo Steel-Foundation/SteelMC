@@ -1,10 +1,26 @@
 use super::{
     ADVANCE_TIME, BlockPos, CChangeDifficulty, ChunkPos, Difficulty, Digest, ErasedGameRuleRef,
     GameRule, GameRuleValue, GameRuleValueType, LevelDataManager, OffsetVoxelShape, Ordering,
-    Player, REGISTRY, SectionPos, Sha256, World,
+    Player, REGISTRY, SectionPos, Sha256, World, vanilla_dimension_types,
 };
 
 impl World {
+    /// Vanilla `Level.MAX_LEVEL_SIZE`.
+    pub const MAX_LEVEL_SIZE: i32 = 30_000_000;
+    /// Vanilla `Level.MAX_ENTITY_SPAWN_Y`.
+    pub const MAX_ENTITY_SPAWN_Y: i32 = 20_000_000;
+    /// Vanilla `Level.MIN_ENTITY_SPAWN_Y`.
+    pub const MIN_ENTITY_SPAWN_Y: i32 = -20_000_000;
+
+    /// Returns whether this world uses the vanilla End dimension type.
+    ///
+    /// Steel world keys are domain-scoped, so End gameplay semantics cannot rely on the
+    /// vanilla `minecraft:the_end` level key.
+    #[must_use]
+    pub fn is_end_dimension_type(&self) -> bool {
+        self.dimension_type == &vanilla_dimension_types::THE_END
+    }
+
     /// Returns vanilla level difficulty.
     pub fn difficulty(&self) -> Difficulty {
         self.level_data.read().data().difficulty
@@ -54,6 +70,12 @@ impl World {
             && self.is_in_valid_bounds_horizontal(block_pos)
     }
 
+    /// Returns whether a block position is within vanilla's absolute world bounds.
+    pub const fn is_in_world_bounds(&self, block_pos: BlockPos) -> bool {
+        !self.is_outside_build_height(block_pos.0.y)
+            && Self::is_in_world_bounds_horizontal(block_pos)
+    }
+
     /// Returns whether the block position is within vanilla spawnable bounds.
     #[must_use]
     pub const fn is_in_spawnable_bounds(block_pos: BlockPos) -> bool {
@@ -62,14 +84,14 @@ impl World {
     }
 
     pub(super) const fn is_in_world_bounds_horizontal(block_pos: BlockPos) -> bool {
-        block_pos.0.x >= -30_000_000
-            && block_pos.0.z >= -30_000_000
-            && block_pos.0.x < 30_000_000
-            && block_pos.0.z < 30_000_000
+        block_pos.0.x >= -Self::MAX_LEVEL_SIZE
+            && block_pos.0.z >= -Self::MAX_LEVEL_SIZE
+            && block_pos.0.x < Self::MAX_LEVEL_SIZE
+            && block_pos.0.z < Self::MAX_LEVEL_SIZE
     }
 
     pub(super) const fn is_outside_spawnable_height(y: i32) -> bool {
-        y < -20_000_000 || y >= 20_000_000
+        y < Self::MIN_ENTITY_SPAWN_Y || y >= Self::MAX_ENTITY_SPAWN_Y
     }
 
     /// Returns the maximum build height (one above the highest placeable block).

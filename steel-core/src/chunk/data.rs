@@ -1168,7 +1168,7 @@ mod tests {
     use crate::behavior::{BlockEntityCreation, init_behaviors};
     use crate::block_entity::{
         BlockEntityLifecycleExt as _, SharedBlockEntity,
-        entities::{RawBlockEntity, SignBlockEntity},
+        entities::{SignBlockEntity, UnimplementedBlockEntity},
         init_block_entities,
     };
     use crate::chunk::{
@@ -1500,7 +1500,7 @@ mod tests {
         proto.set_pending_block_entity(pos);
 
         assert!(proto.promote_pending_block_entity(pos).is_some());
-        assert!(proto.pending_block_entity_positions().is_empty());
+        assert_eq!(proto.pending_block_entity_positions().len(), 0);
     }
 
     #[test]
@@ -1529,7 +1529,7 @@ mod tests {
         );
 
         assert!(!proto.set_pending_block_entity_if_state(pos, copper));
-        assert!(proto.pending_block_entity_positions().is_empty());
+        assert_eq!(proto.pending_block_entity_positions().len(), 0);
         assert!(proto.set_pending_block_entity_if_state(pos, exposed));
 
         let stone = vanilla_blocks::STONE.default_state();
@@ -1545,7 +1545,7 @@ mod tests {
         assert!(!proto.remove_block_entity_if_state(pos, exposed));
         assert_eq!(proto.pending_block_entity_positions(), [pos]);
         assert!(proto.remove_block_entity_if_state(pos, stone));
-        assert!(proto.pending_block_entity_positions().is_empty());
+        assert_eq!(proto.pending_block_entity_positions().len(), 0);
     }
 
     #[test]
@@ -1622,7 +1622,7 @@ mod tests {
                 .is_some()
         );
         proto.set_pending_block_entity(pos);
-        let stale_entity: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+        let stale_entity: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
             &vanilla_block_entity_types::CHEST,
             Weak::new(),
             pos,

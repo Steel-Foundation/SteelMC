@@ -290,7 +290,7 @@ impl World {
     }
 }
 
-fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
+pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
     let min_x = aabb.min_x().floor() as i32;
     let max_x = aabb.max_x().ceil() as i32;
     let min_y = aabb.min_y().floor() as i32;

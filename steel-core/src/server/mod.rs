@@ -38,7 +38,7 @@ use crate::entity::{
 };
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
-use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
+use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
     OP_GROUP, PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
@@ -63,6 +63,7 @@ use crate::portal::{
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
+pub(crate) use crate::server::packet_processor::PlayerPacketTransition;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::service_keys::ServiceKeyStore;
 use crate::server::worlds::WorldMap;
@@ -74,13 +75,11 @@ use crossbeam::queue::SegQueue;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
+use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
-    num::NonZero,
-    path::Path,
     sync::{Arc, mpsc},
-    thread,
     time::{Duration, Instant},
 };
 use steel_crypto::{key_store::KeyStore, signature::ProfileKeyValidator};
@@ -101,6 +100,7 @@ use steel_utils::{
     BlockPos, ChunkPos, Identifier,
     locks::{AsyncMutex, SyncMutex, SyncRwLock},
     text::DisplayResolutor,
+    threading::{DEBUG_STACK_SIZE, available_worker_threads},
     translations,
 };
 use text_components::{Modifier, TextComponent, format::Color};
@@ -168,32 +168,12 @@ fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Optio
     cap_positive_thread_count(configured_threads, available_worker_threads())
 }
 
-fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
-    packet_workers_for_available(configured_workers, available_worker_threads())
-}
-
-fn available_worker_threads() -> usize {
-    thread::available_parallelism().map_or(4, NonZero::get)
-}
-
 fn cap_positive_thread_count(
     configured_threads: Option<usize>,
     available_threads: usize,
 ) -> Option<usize> {
     let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
     Some(configured_threads.min(available_threads.max(1)))
-}
-
-fn packet_workers_for_available(
-    configured_workers: Option<usize>,
-    available_threads: usize,
-) -> usize {
-    let available_threads = available_threads.max(1);
-    if let Some(configured_workers) = configured_workers.filter(|&workers| workers > 0) {
-        return configured_workers.min(available_threads);
-    }
-
-    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 #[cfg(test)]
@@ -256,10 +236,6 @@ fn is_end_return_transition(
 
 fn is_nether_dimension_type(world: &World) -> bool {
     world.dimension_type == &vanilla_dimension_types::THE_NETHER
-}
-
-fn is_end_dimension_type(world: &World) -> bool {
-    world.dimension_type == &vanilla_dimension_types::THE_END
 }
 
 fn can_entity_return_from_end_to_overworld(
@@ -384,6 +360,7 @@ use permissions::validate_player_permission_group_update;
 mod player_admission;
 mod player_lifecycle;
 
+pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
@@ -413,8 +390,15 @@ pub struct Server {
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
+    /// Wakes verified logins waiting for an older session with the same UUID to leave.
+    player_admission_changed: Notify,
+    /// Wakes connection lifecycle work waiting for a specific server tick.
+    server_tick_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
+    /// If this is equal to 0, no kicking will happen.
+    pub player_idle_timeout: AtomicI32,
     /// Command scoreboards isolated by Steel domain.
     pub scoreboards: DomainScoreboards,
     /// Command NBT storage isolated by Steel domain.
@@ -477,6 +461,26 @@ impl Drop for GameTickTaskGuard {
 }
 
 impl Server {
+    /// Returns the current server tick number.
+    pub fn current_tick(&self) -> u64 {
+        self.tick_rate_manager.read().tick_count
+    }
+
+    /// Waits until the server reaches `target_tick`.
+    pub async fn wait_until_tick(&self, target_tick: u64) {
+        loop {
+            let tick_changed = self.server_tick_changed.notified();
+            tokio::pin!(tick_changed);
+            tick_changed.as_mut().enable();
+
+            if self.current_tick() >= target_tick {
+                return;
+            }
+
+            tick_changed.await;
+        }
+    }
+
     pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
         let mut suggestions = self
             .command_permission_keys
@@ -546,13 +550,14 @@ impl Server {
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
-        init_globals()?;
+        init_globals();
         log::info!(
             "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
         );
 
         // Authlib starts this fetch alongside server initialization and waits on first use.
-        // Steel completes the same initial attempt before opening its listener.
+        // It runs whatever the login mode, because `handle_chat_session_update` reads these
+        // keys with no online-mode gate, as vanilla does.
         let service_keys = Arc::new(
             ServiceKeyStore::new(config.services_server.as_deref())
                 .map_err(|error| format!("failed to configure Minecraft services keys: {error}"))?,
@@ -566,6 +571,8 @@ impl Server {
             .validate_and_resolve(&generator_registry, &storage_registry)
             .map_err(|e| format!("failed to validate worlds.toml: {e}"))?;
 
+        let mut world_storage = storage_registry.resolve_worlds(&resolved_worlds)?;
+
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
             if let Some(chunk_generation_threads) =
@@ -575,7 +582,7 @@ impl Server {
             }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
-                builder = builder.stack_size(8 * 1024 * 1024);
+                builder = builder.stack_size(DEBUG_STACK_SIZE);
             }
             builder
                 .build()
@@ -614,19 +621,12 @@ impl Server {
             &resolved_worlds.worlds,
         );
 
-        for world_entry in &resolved_worlds.worlds {
-            let default_world_path = resolved_worlds
-                .save_path
-                .join(&world_entry.domain)
-                .join("worlds")
-                .join(&world_entry.name);
-            let storage_output = storage_registry
-                .create(
-                    &world_entry.storage,
-                    &resolved_worlds.save_path,
-                    Path::new(&default_world_path),
-                )
-                .map_err(|e| format!("failed to create storage for {}: {e}", world_entry.key))?;
+        let mut construct_world = async |world_entry: &ResolvedWorldConfig,
+                                         game_time_source: GameTimeSource|
+               -> Result<Arc<World>, String> {
+            let storage_output = world_storage
+                .remove(&world_entry.key)
+                .ok_or_else(|| format!("world {} has no resolved storage", world_entry.key))?;
             let world_seed = LevelDataManager::load_seed_or_default(
                 storage_output.level_data_path.as_deref(),
                 world_entry.seed,
@@ -653,6 +653,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
+                    game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
                         .level_data_path
@@ -677,8 +678,34 @@ impl Server {
                 .initialize_spawn_if_needed()
                 .await
                 .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
-            worlds.insert(world_entry.key.clone(), world);
+            Ok(world)
+        };
+        for domain in &resolved_worlds.domains {
+            let primary_config = resolved_worlds
+                .worlds
+                .iter()
+                .find(|world| world.key == domain.default_world && world.domain == domain.name)
+                .ok_or_else(|| {
+                    format!(
+                        "domain {} has no configured primary {}",
+                        domain.name, domain.default_world
+                    )
+                })?;
+            let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
+            let clock = Arc::clone(&primary.game_time);
+            worlds.insert(primary_config.key.clone(), primary);
+            for world_entry in resolved_worlds
+                .worlds
+                .iter()
+                .filter(|world| world.domain == domain.name && world.key != domain.default_world)
+            {
+                let world =
+                    construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
+                        .await?;
+                worlds.insert(world_entry.key.clone(), world);
+            }
         }
+        worlds.validate_game_times()?;
 
         let scoreboards = DomainScoreboards::load(&worlds)
             .await
@@ -694,7 +721,9 @@ impl Server {
             .map(|permission| permission.as_str().to_owned())
             .collect();
 
-        if service_keys_ready.await.is_err() {
+        // Steel finishes the initial attempt before opening its listener, except offline,
+        // where `enforces_secure_chat` needs online mode so nothing acts on the result.
+        if config.online_mode && service_keys_ready.await.is_err() {
             log::error!("Minecraft services key fetch task stopped before its initial attempt");
         }
 
@@ -706,8 +735,11 @@ impl Server {
             worlds,
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
+            player_admission_changed: Notify::new(),
+            server_tick_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
@@ -790,6 +822,31 @@ impl Server {
     ) {
         self.packet_processor
             .schedule(player, packet, payload_bytes);
+    }
+
+    /// Pauses later packets while `player` is replaced by a new incarnation.
+    pub(crate) fn begin_player_packet_transition(
+        &self,
+        player: &Arc<Player>,
+    ) -> Option<PlayerPacketTransition> {
+        if player.connection.closed() || !player.session.is_current_player(player) {
+            return None;
+        }
+        self.packet_processor.pause_player_session(&player.session)
+    }
+
+    /// Resumes packets retained by an exact player-replacement transition.
+    pub(crate) fn finish_player_packet_transition(
+        &self,
+        transition: PlayerPacketTransition,
+    ) -> bool {
+        self.packet_processor.resume_player_session(transition)
+    }
+
+    /// Discards all pending packet work for a closed player session.
+    pub(crate) fn discard_player_packets(&self, player: &Player) {
+        self.packet_processor
+            .discard_player_session(&player.session);
     }
 
     /// Returns Brigadier completions visible to a command sender.

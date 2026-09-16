@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
 use steel_core::player::connection::JavaConnection;
-use steel_core::player::{ClientInformation, Player};
+use steel_core::player::{ClientInformation, Player, PlayerSession};
 use steel_protocol::packets::common::CCustomPayload;
 use steel_protocol::packets::common::{SClientInformation, SCustomPayload};
 use steel_protocol::packets::config::CFinishConfiguration;
@@ -13,7 +13,8 @@ use steel_protocol::packets::config::CSelectKnownPacks;
 use steel_protocol::packets::config::SSelectKnownPacks;
 use steel_protocol::packets::shared_implementation::KnownPack;
 use steel_protocol::utils::ConnectionProtocol;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 use crate::tcp_client::{ConnectionAction, ConnectionUpdate, JavaTcpClient};
 
@@ -30,13 +31,14 @@ impl JavaTcpClient {
     pub async fn handle_client_information(&self, packet: SClientInformation) {
         log::debug!("Client information packet: {packet:?}");
 
-        // Convert packet to our ClientInformation struct and store it
+        // TODO: Centralize the minimum with config validation when zero view distance is supported.
         let info = ClientInformation {
             language: packet.language,
             view_distance: packet
                 .view_distance
-                .clamp(2, i32::from(self.server.config.view_distance).max(2))
-                as u8,
+                .max(2)
+                .cast_unsigned()
+                .min(self.server.config.view_distance.max(2)),
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
             model_customization: packet.model_customization,
@@ -99,34 +101,48 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
+        // Admission can reject the join; the client already expects Play disconnect packets.
         self.protocol.store(ConnectionProtocol::Play);
+        let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
+            self.kick(TextComponent::translated(
+                translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
+            ))
+            .await;
+            return ConnectionAction::none();
+        };
 
         let client_info = self.client_information.lock().await.clone();
 
         let world = self.server.overworld().clone();
         let entity_id = next_entity_id();
 
-        let player = Arc::new_cyclic(|player_weak| {
-            let java_connection = JavaConnection::new(
-                self.outgoing_queue.clone(),
-                self.cancel_token.clone(),
-                self.compression.load(),
-                self.network_writer.clone(),
-                self.id,
-                player_weak.clone(),
-            );
-            let connection = Arc::new(PlayerConnection::Java(java_connection));
-
-            Player::new(
-                gameprofile,
-                connection,
-                world,
-                Arc::downgrade(&self.server),
-                self.server.config.clone(),
-                entity_id,
-                client_info,
-            )
-        });
+        let session = Arc::new(PlayerSession::new(
+            self.server.config.chat_spam_threshold_seconds,
+            self.server.config.command_spam_threshold_seconds,
+        ));
+        let java_connection = JavaConnection::new(
+            self.outgoing_queue.clone(),
+            self.cancel_token.clone(),
+            self.compression.load(),
+            self.network_writer.clone(),
+            self.id,
+            Arc::clone(&session),
+        );
+        let connection = Arc::new(PlayerConnection::Java(java_connection));
+        let player = Arc::new(Player::new(
+            gameprofile,
+            connection,
+            Arc::clone(&session),
+            world,
+            Arc::downgrade(&self.server),
+            self.server.config.clone(),
+            entity_id,
+            client_info,
+        ));
+        assert!(
+            session.bind_initial_player(&player),
+            "new client session was already bound to a player"
+        );
 
         let connection = Arc::clone(&player.connection);
         if self
@@ -142,7 +158,7 @@ impl JavaTcpClient {
             () = self.connection_updated.notified() => {}
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
-        self.server.queue_player_join(player);
+        reservation.queue_player_join(player);
 
         ConnectionAction::upgrade(connection)
     }

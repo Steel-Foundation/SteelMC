@@ -58,10 +58,6 @@ pub fn cos(angle: f64) -> f32 {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "tests compare exact f32 table entries, not approximations"
-)]
 mod test {
     use super::*;
 

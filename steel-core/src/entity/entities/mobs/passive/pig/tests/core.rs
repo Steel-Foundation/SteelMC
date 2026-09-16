@@ -139,7 +139,7 @@ fn pig_ridden_speed_uses_item_steering_boost_factor() {
         DVec3::ZERO,
         Arc::downgrade(&world),
     );
-    let controller = TestPlayerBuilder::new(world, Uuid::from_u128(2), "Controller", 2).build();
+    let controller = TestPlayerBuilder::new(world, "Controller", 2).build();
     let base_ridden_speed = 0.25_f32 * 0.225;
 
     assert_eq!(

@@ -139,7 +139,7 @@ impl TargetGoalBase {
     }
 }
 
-fn follow_distance(mob: &dyn PathfinderMob) -> f64 {
+pub(super) fn follow_distance(mob: &dyn PathfinderMob) -> f64 {
     mob.attributes()
         .lock()
         .required_value(vanilla_attributes::FOLLOW_RANGE)

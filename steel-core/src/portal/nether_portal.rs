@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_math::DEGREE_90;
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
@@ -182,7 +183,7 @@ fn create_dimension_transition(
     let output_rotation = if portal_axis == target_axis {
         0.0
     } else {
-        90.0
+        DEGREE_90
     };
     let offset_right = entity_width / 2.0 + (width - entity_width) * offset.x;
     let offset_up = (height - entity_height) * offset.y;

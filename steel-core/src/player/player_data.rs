@@ -4,17 +4,21 @@
 
 use rustc_hash::FxHashSet;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::Stat;
 use steel_utils::types::GameType;
-
-use crate::{
-    chunk_saver::{ChunkStorage, PersistentEntity},
-    entity::{Entity, EntityFireFreezeState, LivingEntity},
-    inventory::container::Container,
-};
 
 use super::{
     Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
     player_inventory::PlayerInventory,
+};
+use crate::player::stats_counter::StatState;
+use crate::{
+    chunk_saver::{ChunkStorage, PersistentEntity},
+    entity::{Entity, EntityFireFreezeState, LivingEntity},
+    inventory::{
+        container::Container,
+        ender_chest::{ENDER_CHEST_SLOTS, PlayerEnderChestContainer},
+    },
 };
 
 /// Current data version for player saves.
@@ -116,6 +120,12 @@ pub struct PersistentPlayerData {
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
+
+    /// Vanilla `EnderChest` items.
+    pub ender_items: Vec<PersistentSlot>,
+
+    /// The tracked statistics of the player with their counters.
+    pub stats: Vec<PersistentStat>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -167,6 +177,15 @@ pub struct PersistentSlot {
     pub item: ItemStack,
 }
 
+/// Represents a tracked stat with its counter.
+#[derive(Debug, Clone)]
+pub struct PersistentStat {
+    /// The stat being tracked.
+    pub stat: Stat,
+    /// The current count of this stat.
+    pub count: i32,
+}
+
 impl PersistentPlayerData {
     /// Extracts persistent data from a live player.
     #[must_use]
@@ -194,6 +213,18 @@ impl PersistentPlayerData {
             }
         }
 
+        let ender_chest_inventory = player.ender_chest_inventory.lock();
+        let mut ender_items = Vec::new();
+        for slot in 0..ENDER_CHEST_SLOTS {
+            let item = ender_chest_inventory.get_item(slot);
+            if !item.is_empty() {
+                ender_items.push(PersistentSlot {
+                    slot: slot as i8,
+                    item: item.clone(),
+                });
+            }
+        }
+
         let (experience_level, experience_progress, experience_total) = {
             let lock = player.experience.lock();
             (lock.level(), lock.progress(), lock.total_points())
@@ -202,6 +233,7 @@ impl PersistentPlayerData {
         let root_vehicle = Self::root_vehicle_from_player(player)
             .or_else(|| player.pending_root_vehicle_for_current_world());
         let ender_pearls = Self::ender_pearls_from_player(player);
+        let stats = Self::stats_from_player(player);
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -245,6 +277,8 @@ impl PersistentPlayerData {
             respawn_config: player.respawn_config(),
 
             ender_pearls,
+            ender_items,
+            stats,
         }
     }
 
@@ -268,6 +302,15 @@ impl PersistentPlayerData {
                 .filter(|pearl| seen.insert(pearl.entity.uuid)),
         );
         pearls
+    }
+
+    /// Snapshots the player's tracked stats and their counters for persistence.
+    fn stats_from_player(player: &Player) -> Vec<PersistentStat> {
+        player
+            .stats()
+            .into_iter()
+            .map(|(stat, count)| PersistentStat { stat, count })
+            .collect()
     }
 
     fn root_vehicle_from_player(player: &Player) -> Option<PersistentRootVehicle> {
@@ -299,7 +342,9 @@ impl Player {
         self.set_health(self.get_max_health());
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
+        *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
         *self.food_data.lock() = FoodData::new();
+        self.stats.lock().reset();
 
         let mut experience = Experience::default();
         experience.dirty = true;
@@ -431,6 +476,19 @@ impl PersistentPlayerData {
             inventory.set_selected_slot(selected);
         }
 
+        {
+            let mut ender_chest_inventory = player.ender_chest_inventory.lock();
+            for slot in 0..ENDER_CHEST_SLOTS {
+                ender_chest_inventory.set_item(slot, ItemStack::empty());
+            }
+            for slot_data in &self.ender_items {
+                let slot_index = slot_data.slot as usize;
+                if slot_index < ENDER_CHEST_SLOTS {
+                    ender_chest_inventory.set_item(slot_index, slot_data.item.clone());
+                }
+            }
+        }
+
         // Food data
         {
             let mut food = player.food_data.lock();
@@ -450,5 +508,20 @@ impl PersistentPlayerData {
         }
         player.set_score(self.score);
         player.set_seen_credits(self.seen_credits);
+
+        // Statistics
+        {
+            let mut stats = player.stats.lock();
+
+            // This resets all counters to zero, but also marks them as non-persistent. However, they still need
+            // to be sent to the client the next time they are queried.
+            // This is important so that stale data from the previous domain doesn't stay in the client's cache.
+            // We then populate the counter with all the serialized stat counters from the new domain.
+            stats.reset();
+
+            for PersistentStat { stat, count } in &self.stats {
+                stats.stats.insert(*stat, (*count, StatState::Dirty));
+            }
+        }
     }
 }

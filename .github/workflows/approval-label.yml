@@ -1,0 +1,110 @@
+name: Approval label
+
+# Privileged half of the approval-label pair. Runs via workflow_run so the
+# token gets normal write permissions even when the triggering review came
+# from a fork PR (workflow_run never gets the fork read-only downgrade that
+# pull_request_review does — see approval-label-capture.yml).
+
+on:
+  workflow_run:
+    workflows: ["Approval label (capture)"]
+    types: [completed]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  label:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PR number
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: pr_number
+
+      - name: Add/remove per-reviewer labels based on review state
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const issue_number = parseInt(fs.readFileSync("pr_number.txt", "utf8").trim(), 10);
+
+            // One (state -> label prefix/color) entry per review state we track.
+            // Both prefixes are mutually exclusive per reviewer since they're
+            // derived from the same latest-review-per-user map below.
+            const STATE_CONFIG = {
+              APPROVED:          { prefix: "approved-by-",          color: "0e8a16" },
+              CHANGES_REQUESTED: { prefix: "changes-requested-by-", color: "d73a4a" },
+            };
+
+            const { owner, repo } = context.repo;
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number: issue_number,
+            });
+
+            // Keep only each reviewer's most recent review (a user can review
+            // more than once; a dismissed review keeps its own id and its
+            // state flips to DISMISSED in place, so this is enough).
+            const latestByUser = new Map();
+            for (const r of reviews.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))) {
+              if (r.user) latestByUser.set(r.user.login, r.state);
+            }
+
+            // Only reviews from collaborators with write+ access count — anyone
+            // with read access can submit an approve/request-changes review,
+            // but GitHub itself ignores those for branch protection purposes.
+            const WRITE_LEVELS = new Set(["admin", "write"]);
+            const isWriteCollaborator = async login => {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner, repo, username: login,
+              });
+              return WRITE_LEVELS.has(data.permission);
+            };
+
+            const labelFor = (state, login) => `${STATE_CONFIG[state].prefix}${login.toLowerCase()}`;
+
+            const eligible = [];
+            for (const [login, state] of latestByUser) {
+              if (STATE_CONFIG[state] && await isWriteCollaborator(login)) {
+                eligible.push([login, state]);
+              }
+            }
+
+            const wanted = new Set(eligible.map(([login, state]) => labelFor(state, login)));
+
+            const managedPrefixes = Object.values(STATE_CONFIG).map(c => c.prefix);
+            const current = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner, repo, issue_number,
+            });
+            const currentManaged = current
+              .map(l => l.name)
+              .filter(name => managedPrefixes.some(p => name.startsWith(p)));
+
+            const toAdd = [...wanted].filter(l => !currentManaged.includes(l));
+            const toRemove = currentManaged.filter(l => !wanted.has(l));
+
+            for (const name of toAdd) {
+              const prefix = managedPrefixes.find(p => name.startsWith(p));
+              const color = Object.values(STATE_CONFIG).find(c => c.prefix === prefix).color;
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({ owner, repo, name, color });
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+            if (toAdd.length) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: toAdd });
+            }
+            for (const name of toRemove) {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+            }

@@ -163,13 +163,7 @@ mod wrap_tests {
         for case in cases {
             let wrapped = wrap_simd(f64x4::from_array(case)).to_array();
             for (input, actual) in case.into_iter().zip(wrapped) {
-                #[expect(
-                    clippy::float_cmp,
-                    reason = "SIMD wrap must be bit-identical to scalar wrap per lane"
-                )]
-                {
-                    assert_eq!(actual, wrap(input));
-                }
+                assert_eq!(actual, wrap(input));
             }
         }
     }

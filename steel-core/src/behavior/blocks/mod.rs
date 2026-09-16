@@ -16,60 +16,42 @@ pub mod vegetation;
 
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BrushableBlock,
-    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock,
-    DropExperienceBlock, FenceBlock, FenceGateBlock, GlazedTerracottaBlock, HayBlock,
-    HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
-    LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock, PowderSnowBlock,
-    RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock, SpongeBlock,
-    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
+    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, ConduitBlock, DoorBlock,
+    DropExperienceBlock, FenceBlock, FenceGateBlock, FrostedIceBlock, GlazedTerracottaBlock,
+    HayBlock, HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
+    LayeredCauldronBlock, MagmaBlock, MudBlock, NetherrackBlock, PotentSulfurBlock,
+    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
+    SoulSandBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
+    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
     WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
-    AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock,
+    AnvilBlock, BarrelBlock, BeehiveBlock, BlastFurnaceBlock, ChiseledBookShelfBlock,
+    CraftingTableBlock, EnderChestBlock, FurnaceBlock, ShulkerBoxBlock, SmokerBlock,
 };
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
-    EndRodBlock, LanternBlock, StandingSignBlock, TorchBlock, WallBannerBlock,
+    EndRodBlock, JukeboxBlock, LanternBlock, StandingSignBlock, TorchBlock, WallBannerBlock,
     WallHangingSignBlock, WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
-    WeatheringLanternBlock,
+    WeatheringLanternBlock, is_facing_front_text,
 };
-pub use falling::{ConcretePowderBlock, FallingBlock, SandBlock};
+pub use falling::{ConcretePowderBlock, DragonEggBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
     RespawnAnchorBlock, SoulFireBlock,
 };
 pub use redstone::{
-    ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock, DetectorRailBlock,
-    LeverBlock, MovingPistonBlock, NoteBlock, ObserverBlock, PistonBaseBlock, PistonHeadBlock,
-    PoweredBlock, PoweredRailBlock, PressurePlateBlock, PressurePlateSensitivity, RailBlock,
-    RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
-    RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock, TripWireHookBlock,
-    WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
+    BellBlock, ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock,
+    DetectorRailBlock, LeverBlock, LightningRodBlock, MovingPistonBlock, NoteBlock, ObserverBlock,
+    PistonBaseBlock, PistonHeadBlock, PoweredBlock, PoweredRailBlock, PressurePlateBlock,
+    PressurePlateSensitivity, RailBlock, RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock,
+    RedstoneTorchBlock, RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock,
+    TripWireHookBlock, WeatheringCopperBulbBlock, WeatheringLightningRodBlock,
+    WeightedPressurePlateBlock,
 };
 pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
-pub use vegetation::{
-    AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,
-    CactusBlock, CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock,
-    DoublePlantBlock, FlowerBlock, MangroveLeavesBlock, MultifaceBlock, NetherSproutsBlock,
-    NetherWartBlock, PitcherCropBlock, PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock,
-    StemBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, TintedParticleLeavesBlock, TorchflowerCropBlock,
-    UntintedParticleLeavesBlock,
-};
-pub use vegetation::{
-    BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,
-    BigDripleafStemBlock, BushBlock, CarpetBlock, CaveVinesBlock, CaveVinesPlantBlock,
-    ChorusFlowerBlock, ChorusPlantBlock, CoralFanBlock, CoralPlantBlock, CoralWallFanBlock,
-    DirtPathBlock, DryVegetationBlock, EyeblossomBlock, EyeblossomType, FarmlandBlock,
-    FireflyBushBlock, FlowerBedBlock, GlowLichenBlock, HangingMossBlock, HangingRootsBlock,
-    KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock,
-    MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock, PointedDripstoneBlock,
-    SaplingBlock, SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock,
-    SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
-    TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
-    WoolCarpetBlock,
-};
+pub(crate) use utils::multiface_face_property;
+pub use vegetation::*;

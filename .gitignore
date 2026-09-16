@@ -8,6 +8,7 @@
 /steel-utils/build_assets/builtin_datapacks
 /steel-utils/build_assets/.asset-extract.lock
 /steel-utils/build_assets/en_us.json
+/steel-utils/build_assets/deprecated.json
 
 # Config
 /config
@@ -35,8 +36,15 @@ profile.json.syms.json
 # ICE crash reports
 rustc-ice-*
 
+# Nix
+/.direnv
+/result
+/result-*
+
 # IDE
 .vscode/settings.json
 .idea
 
 .DS_STORE
+.gitcraft-tmp/
+/.vs

@@ -1146,6 +1146,7 @@ fn place_tree(
         config,
         context.origin,
         context.biome_zoom_seed,
+        FeatureDecorationRunner::place_configured_feature_kind,
     )
 }
 

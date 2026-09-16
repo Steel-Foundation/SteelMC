@@ -116,7 +116,7 @@ mod tests {
         assert!(cooldowns.is_on_cooldown(&stack));
 
         for _ in 0..19 {
-            assert!(cooldowns.tick().is_empty());
+            assert_eq!(cooldowns.tick().len(), 0);
             assert!(cooldowns.is_on_cooldown(&stack));
         }
 

@@ -11,13 +11,16 @@ pub use input::PlayerInput;
 pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
-use glam::DVec3;
+use glam::{DVec3, Vec3Swizzles};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::stat::custom::CustomStatRef;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
-use steel_registry::vanilla_mob_effects;
+use steel_registry::{vanilla_custom_stats, vanilla_entities, vanilla_mob_effects};
 use steel_utils::translations;
 use steel_utils::types::GameType;
 
@@ -29,7 +32,6 @@ use crate::physics::{
     is_colliding_with_new_shapes, movement_error_delta,
 };
 use crate::player::Player;
-use crate::player::food_data::food_constants;
 use crate::world::World;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
@@ -45,6 +47,9 @@ pub const CLAMP_HORIZONTAL: f64 = 3.0E7;
 /// Vertical position clamping limit (matches vanilla).
 pub const CLAMP_VERTICAL: f64 = 2.0E7;
 
+/// The threshold of the client delta of a player in order to reset their action time.
+pub const RESET_ACTION_TIME_DELTA_THRESHOLD: f64 = 1E-5;
+
 /// Clamps a horizontal coordinate to vanilla limits.
 #[must_use]
 pub fn clamp_horizontal(value: f64) -> f64 {
@@ -58,16 +63,29 @@ pub fn clamp_vertical(value: f64) -> f64 {
 }
 
 #[must_use]
-pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
+pub(crate) fn custom_stat_from_riding_vehicle(
+    vehicle_entity_type: EntityTypeRef,
+) -> Option<CustomStatRef> {
+    if vehicle_entity_type.is_abstract_minecart {
+        Some(&vanilla_custom_stats::MINECART_ONE_CM)
+    } else if vehicle_entity_type.is_abstract_boat {
+        Some(&vanilla_custom_stats::BOAT_ONE_CM)
+    } else if vehicle_entity_type == &vanilla_entities::PIG {
+        Some(&vanilla_custom_stats::PIG_ONE_CM)
+    } else if vehicle_entity_type.is_abstract_horse {
+        Some(&vanilla_custom_stats::HORSE_ONE_CM)
+    } else if vehicle_entity_type == &vanilla_entities::STRIDER {
+        Some(&vanilla_custom_stats::STRIDER_ONE_CM)
+    } else if vehicle_entity_type == &vanilla_entities::HAPPY_GHAST {
+        Some(&vanilla_custom_stats::HAPPY_GHAST_ONE_CM)
+    } else if vehicle_entity_type.is_abstract_nautilus {
+        Some(&vanilla_custom_stats::NAUTILUS_ONE_CM)
+    } else {
+        None
     }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
+
+const FLOATING_Y_THRESHOLD: f64 = -0.03125;
 
 #[derive(Debug, Clone, Copy)]
 struct PlayerFloatingValidation {
@@ -82,7 +100,7 @@ struct PlayerFloatingValidation {
 
 impl PlayerFloatingValidation {
     fn can_violate(self) -> bool {
-        self.y_dist >= -0.03125
+        self.y_dist >= FLOATING_Y_THRESHOLD
             && !self.player_stands_on_something
             && !self.is_spectator
             && !self.server_allows_flight
@@ -376,16 +394,6 @@ impl Player {
         // post-move residual used by moved-wrongly validation.
         let floating_check = Some((player_stands_on_something, move_delta.y));
 
-        if packet.on_ground && self.is_sprinting() {
-            let dx = move_delta.x;
-            let dz = move_delta.z;
-
-            let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
-            if cm > 0 {
-                self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01);
-            }
-        }
-
         let client_delta = target_pos - start_pos;
         match self.apply_accepted_client_movement(
             &world,
@@ -415,6 +423,8 @@ impl Player {
                 return;
             }
         }
+
+        self.check_movement_statistics(client_delta);
         world.chunk_map.update_player_status(self);
 
         if let Some((player_stands_on_something, y_dist)) = floating_check {
@@ -429,10 +439,7 @@ impl Player {
         self.movement
             .lock()
             .mark_last_good_position(self.position());
-
-        self.movement
-            .lock()
-            .set_last_known_client_movement(client_delta);
+        self.handle_player_known_movement(client_delta);
     }
 
     /// Handles a controlled-vehicle movement packet.
@@ -598,9 +605,8 @@ impl Player {
                 return;
             }
         }
-        self.movement
-            .lock()
-            .set_last_known_client_movement(client_delta);
+        self.handle_player_known_movement(client_delta);
+        self.check_movement_statistics(client_delta);
         world.chunk_map.update_player_status(self);
         self.record_client_vehicle_floating(
             &world,
@@ -611,6 +617,15 @@ impl Player {
         self.movement
             .lock()
             .mark_vehicle_last_good_position(vehicle.id(), vehicle.position());
+    }
+
+    fn handle_player_known_movement(&self, client_delta: DVec3) {
+        if client_delta.length_squared() > RESET_ACTION_TIME_DELTA_THRESHOLD {
+            self.reset_last_action_time();
+        }
+        self.movement
+            .lock()
+            .set_last_known_client_movement(client_delta);
     }
 
     fn record_client_floating(
@@ -646,7 +661,7 @@ impl Player {
         y_dist: f64,
         vehicle_rests_on_something: bool,
     ) {
-        let client_is_floating = y_dist >= -0.03125
+        let client_is_floating = y_dist >= FLOATING_Y_THRESHOLD
             && !vehicle_rests_on_something
             && !self.config.allow_flight
             && !vehicle.is_flying_vehicle()
@@ -866,8 +881,7 @@ impl Player {
             return;
         }
 
-        // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
-        // lastActionTime = Util.getMillis(), preventing idle-kick. Add when idle-kick system is implemented.
+        self.reset_last_action_time();
 
         self.set_crouching(input.shift());
     }
@@ -888,8 +902,7 @@ impl Player {
             return;
         }
 
-        // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
-        // noActionTime = 0, preventing idle-kick. Add when idle-kick system is implemented.
+        self.reset_last_action_time();
 
         match packet.action {
             PlayerCommandAction::StartSprinting => {
@@ -917,10 +930,129 @@ impl Player {
 
         // Dirty shared flags are synced once per tick by sync_entity_data().
     }
+
+    /// Checks new player non-riding movement provided to award stats for it,
+    /// and also causes food exhaustion in some cases.
+    ///
+    /// Mirrors Vanilla's `ServerPlayer.checkMovementStatistics`.
+    pub fn check_movement_statistics(&self, delta_movement: DVec3) {
+        if self.is_passenger() || delta_movement == DVec3::ZERO {
+            return;
+        }
+        if self.is_swimming() {
+            self.award_3d_distance_stat(&vanilla_custom_stats::SWIM_ONE_CM, delta_movement, 0.01);
+        } else if self.is_eye_in_water() {
+            self.award_3d_distance_stat(
+                &vanilla_custom_stats::WALK_UNDER_WATER_ONE_CM,
+                delta_movement,
+                0.01,
+            );
+        } else if self.is_in_water() {
+            self.award_horizontal_distance_stat(
+                &vanilla_custom_stats::WALK_ON_WATER_ONE_CM,
+                delta_movement,
+                0.01,
+            );
+        } else if self.on_climbable() && delta_movement.y > 0.0 {
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::CLIMB_ONE_CM,
+                (delta_movement.y * 100.0).round() as i32,
+            );
+        } else if self.on_ground() {
+            if self.is_sprinting() {
+                self.award_horizontal_distance_stat(
+                    &vanilla_custom_stats::SPRINT_ONE_CM,
+                    delta_movement,
+                    0.1,
+                );
+            } else if self.is_crouching() {
+                self.award_horizontal_distance_stat(
+                    &vanilla_custom_stats::CROUCH_ONE_CM,
+                    delta_movement,
+                    0.0,
+                );
+            } else {
+                self.award_horizontal_distance_stat(
+                    &vanilla_custom_stats::WALK_ONE_CM,
+                    delta_movement,
+                    0.0,
+                );
+            }
+        } else if self.is_fall_flying() {
+            self.award_3d_distance_stat(&vanilla_custom_stats::AVIATE_ONE_CM, delta_movement, 0.0);
+        } else {
+            self.award_horizontal_distance_stat_with_lower_bound(
+                &vanilla_custom_stats::FLY_ONE_CM,
+                delta_movement,
+                0.0,
+                25,
+            );
+        }
+    }
+
+    /// Checks new player riding movement provided to award stats for it,
+    /// and also causes food exhaustion in some cases.
+    ///
+    /// Mirrors Vanilla's `ServerPlayer.checkRidingStatistics`.
+    pub fn check_riding_statistics(&self, delta_movement: DVec3) {
+        if delta_movement == DVec3::ZERO {
+            return;
+        }
+        let Some(vehicle) = self.vehicle() else {
+            return;
+        };
+
+        if let Some(stat) = custom_stat_from_riding_vehicle(vehicle.entity_type()) {
+            let distance = (delta_movement.length() as f32 * 100.0).round() as i32;
+            self.award_custom_stat_with_count(stat, distance);
+        }
+    }
+
+    fn award_3d_distance_stat(
+        &self,
+        stat: CustomStatRef,
+        delta_movement: DVec3,
+        exhaust_multiplier: f32,
+    ) {
+        let distance = (delta_movement.length() as f32 * 100.0).round() as i32;
+        if distance > 0 {
+            self.award_custom_stat_with_count(stat, distance);
+            self.cause_food_exhaustion(exhaust_multiplier * distance as f32 * 0.01);
+        }
+    }
+
+    fn award_horizontal_distance_stat(
+        &self,
+        stat: CustomStatRef,
+        delta_movement: DVec3,
+        exhaust_multiplier: f32,
+    ) {
+        self.award_horizontal_distance_stat_with_lower_bound(
+            stat,
+            delta_movement,
+            exhaust_multiplier,
+            0,
+        );
+    }
+
+    fn award_horizontal_distance_stat_with_lower_bound(
+        &self,
+        stat: CustomStatRef,
+        delta_movement: DVec3,
+        exhaust_multiplier: f32,
+        lower_bound: i32,
+    ) {
+        let horizontal_distance = (delta_movement.xz().length() as f32 * 100.0).round() as i32;
+        if horizontal_distance > lower_bound {
+            self.award_custom_stat_with_count(stat, horizontal_distance);
+            if exhaust_multiplier != 0.0 {
+                self.cause_food_exhaustion(exhaust_multiplier * horizontal_distance as f32 * 0.01);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
-#[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
 mod tests {
     use super::*;
 
@@ -943,6 +1075,46 @@ mod tests {
         assert_eq!(wrap_degrees(181.0), -179.0);
         assert_eq!(wrap_degrees(-181.0), 179.0);
         assert_eq!(wrap_degrees(90.0), 90.0);
+    }
+
+    #[test]
+    fn sprinting_charges_food_exhaustion_once_per_move() {
+        use std::sync::Arc;
+
+        use steel_utils::ChunkPos;
+
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+        let world = fresh_test_world("sprint_exhaustion_single_charge");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "SprintTester", 1).build();
+        player.set_client_loaded(true);
+
+        let start = DVec3::new(8.0, 64.0, 8.0);
+        player.base().set_position_local(start);
+        player.movement.lock().reset_for_position_sync(start);
+        player.set_sprinting(true);
+        player.food_data.lock().exhaustion_level = 0.0;
+
+        // A 0.25-block ground sprint. Vanilla `handleMovePlayer` runs the sprint
+        // exhaustion once, inside `checkMovementStatistics`: `Player.SPRINTING`
+        // costs 0.1 per meter, so 0.1 * 0.25 = 0.025.
+        player.handle_move_player(SMovePlayer {
+            position: start + DVec3::new(0.25, 0.0, 0.0),
+            y_rot: 0.0,
+            x_rot: 0.0,
+            on_ground: true,
+            horizontal_collision: false,
+            has_pos: true,
+            has_rot: false,
+        });
+
+        let exhaustion = player.food_data.lock().exhaustion_level;
+        assert!(
+            (exhaustion - 0.025).abs() < 1e-4,
+            "sprinting should charge exhaustion once (0.025), got {exhaustion}"
+        );
     }
 
     #[test]

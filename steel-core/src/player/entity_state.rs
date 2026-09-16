@@ -123,6 +123,12 @@ impl Player {
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
+    /// Returns true if the player wants to stop riding (is holding the shift key)
+    pub fn wants_to_stop_riding(&self) -> bool {
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_shift_key_down)
+    }
+
     /// Sets whether the player is shifting (sneaking).
     pub fn set_crouching(&self, crouching: bool) {
         self.set_shared_shift_key_down(crouching);

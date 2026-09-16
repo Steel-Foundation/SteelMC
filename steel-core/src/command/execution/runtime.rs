@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
+    ContextChain, SuggestionProvider,
 };
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
@@ -21,7 +21,7 @@ use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::G
 use text_components::TextComponent;
 
 use super::{
-    BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
+    BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
     ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
@@ -131,6 +131,19 @@ where
     S: ExecutionCommandSource,
 {
     CommandNodeBuilder::argument(name, argument_type.into())
+}
+
+/// Creates an argument backed by Steel's runtime model. This argument will override its argument type's
+/// suggestions to have its own.
+pub(crate) fn argument_with_suggestions<S>(
+    name: impl Into<Box<str>>,
+    argument_type: impl Into<SteelArgumentType>,
+    custom_suggestions: impl SuggestionProvider<S, SteelArgumentType> + 'static,
+) -> CommandNodeBuilder<S, SteelCommandRuntime>
+where
+    S: ExecutionCommandSource,
+{
+    CommandNodeBuilder::argument_with_suggestions(name, argument_type.into(), custom_suggestions)
 }
 
 impl<S> CommandNodeBuilder<S, SteelCommandRuntime>
@@ -287,6 +300,10 @@ where
         &self,
         name: &str,
     ) -> Result<&BlockPredicate, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn block_input(&self, name: &str) -> Result<&BlockInput, CommandSyntaxError> {
         self.typed_argument(name)
     }
 

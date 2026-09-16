@@ -4,6 +4,8 @@ mod condition;
 mod source;
 mod store;
 
+pub(super) use condition::{ensure_region_chunks_block_ticking, loaded_block_position};
+
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 

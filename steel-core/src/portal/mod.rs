@@ -9,6 +9,7 @@ use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
+use steel_math::DEGREE_90;
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::vanilla_game_rules::{
@@ -379,7 +380,7 @@ fn resolve_rotation(
 }
 
 const fn clamp_pitch(pitch: f32) -> f32 {
-    pitch.clamp(-90.0, 90.0)
+    pitch.clamp(-DEGREE_90, DEGREE_90)
 }
 
 fn resolve_velocity(

@@ -1,4 +1,8 @@
+use smallvec::SmallVec;
+
 use super::prelude::*;
+
+const INLINE_CAPACITY: usize = 32;
 
 /// Block-position set for feature code that vanilla models as `HashSet<BlockPos>`.
 ///
@@ -7,13 +11,12 @@ use super::prelude::*;
 /// on JVM bucket ordering.
 #[derive(Default)]
 pub(super) struct JavaBlockPosSet {
-    entries: Vec<BlockPos>,
-    present: FxHashSet<BlockPos>,
+    entries: SmallVec<[BlockPos; INLINE_CAPACITY]>,
 }
 
 impl JavaBlockPosSet {
     pub(super) fn insert(&mut self, pos: BlockPos) -> bool {
-        if !self.present.insert(pos) {
+        if self.entries.contains(&pos) {
             return false;
         }
 
@@ -21,37 +24,28 @@ impl JavaBlockPosSet {
         true
     }
 
-    pub(super) fn remove(&mut self, pos: BlockPos) -> bool {
-        if !self.present.remove(&pos) {
-            return false;
-        }
-
-        self.entries.retain(|entry| *entry != pos);
-        true
-    }
-
     pub(super) fn contains(&self, pos: BlockPos) -> bool {
-        self.present.contains(&pos)
+        self.entries.contains(&pos)
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.present.is_empty()
+        self.entries.is_empty()
     }
 
     pub(super) fn insertion_order(&self) -> impl Iterator<Item = &BlockPos> {
-        self.entries
-            .iter()
-            .filter(|pos| self.present.contains(*pos))
+        self.entries.iter()
     }
 
     pub(super) fn java_ordered_positions(&self) -> Vec<BlockPos> {
-        self.insertion_order().copied().collect()
+        self.entries.to_vec()
     }
 
     pub(super) fn pop_java_ordered_position(&mut self) -> Option<BlockPos> {
-        let pos = self.java_ordered_positions().into_iter().next()?;
-        self.remove(pos);
-        Some(pos)
+        if self.entries.is_empty() {
+            return None;
+        }
+
+        Some(self.entries.remove(0))
     }
 }
 
@@ -68,18 +62,21 @@ mod tests {
     }
 
     #[test]
-    fn removed_positions_do_not_iterate() {
+    fn popped_positions_do_not_iterate() {
         let mut set = JavaBlockPosSet::default();
         for x in 0..4 {
             assert!(set.insert(BlockPos::new(x, 0, 0)));
         }
 
-        assert!(set.remove(BlockPos::new(1, 0, 0)));
+        assert_eq!(
+            set.pop_java_ordered_position(),
+            Some(BlockPos::new(0, 0, 0))
+        );
 
         assert_eq!(
             set.java_ordered_positions(),
             [
-                BlockPos::new(0, 0, 0),
+                BlockPos::new(1, 0, 0),
                 BlockPos::new(2, 0, 0),
                 BlockPos::new(3, 0, 0)
             ]
@@ -94,7 +91,7 @@ mod tests {
 
         assert!(set.insert(first));
         assert!(set.insert(second));
-        assert!(set.remove(first));
+        assert_eq!(set.pop_java_ordered_position(), Some(first));
         assert!(set.insert(first));
 
         assert_eq!(set.java_ordered_positions(), [second, first]);

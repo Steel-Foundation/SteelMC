@@ -258,7 +258,10 @@ fn redirect_targets_must_belong_to_the_dispatcher() {
             target: foreign_target,
         },
     );
-    assert!(node_names(&second_dispatcher, second_dispatcher.root()).is_empty());
+    assert_eq!(
+        node_names(&second_dispatcher, second_dispatcher.root()).len(),
+        0
+    );
 }
 
 #[test]
@@ -272,7 +275,7 @@ fn redirected_nodes_cannot_have_children() {
             name: "alias".into(),
         },
     );
-    assert!(node_names(&dispatcher, root).is_empty());
+    assert_eq!(node_names(&dispatcher, root).len(), 0);
 }
 
 #[test]

@@ -56,10 +56,9 @@ impl BlockBehavior for HangingMossBlock {
         // multiface rule (support OR collision face full) or is more hanging
         // moss of the same kind.
         let above_pos = pos.above();
-        if MultifaceBlock::can_attach_to(world, above_pos, Direction::Up) {
-            return true;
-        }
-        world.get_block_state(above_pos).get_block() == self.block
+        let above_state = world.get_block_state(above_pos);
+        MultifaceBlock::can_attach_to_state(world, Direction::Up, above_pos, above_state)
+            || above_state.get_block() == self.block
     }
     fn update_shape(
         &self,

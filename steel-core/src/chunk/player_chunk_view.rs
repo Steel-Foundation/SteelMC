@@ -178,8 +178,8 @@ mod tests {
         );
 
         // Just verify something happened
-        assert!(!added.is_empty());
-        assert!(!removed.is_empty());
+        assert_ne!(added.len(), 0);
+        assert_ne!(removed.len(), 0);
 
         // Verify intersection logic worked by ensuring we have balanced adds/removes for shift
         // (Rough check)

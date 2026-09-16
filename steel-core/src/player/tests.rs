@@ -1,28 +1,12 @@
+use std::io::Cursor;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-use glam::DVec3;
-use steel_protocol::packets::game::EquipmentSlotItem;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::data_component_predicate::DataComponentMatchers;
-use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
-use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-use steel_registry::{
-    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack, vanilla_attributes,
-    vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules, vanilla_items,
-    vanilla_menu_types,
-};
-use steel_utils::locks::IntoShared as _;
-use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
-use uuid::Uuid;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, damage::DamageSource,
-    entities::ItemEntity, next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
+    damage::DamageSource, entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
     click::{Click, DragKind, QuickCraft},
@@ -31,23 +15,226 @@ use crate::inventory::{
     menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
 };
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
+use crate::player::game_mode::PlayerGameModeState;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
     insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
+use glam::DVec3;
+use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::packets::common::{
+    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
+};
+use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::data_component_predicate::DataComponentMatchers;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
+use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::packets::play::C_REMOVE_ENTITIES;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::{
+    RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
+    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
+    vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
+};
+use steel_utils::codec::VarInt;
+use steel_utils::locks::{IntoShared as _, SyncMutex};
+use steel_utils::serial::ReadFrom;
+use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use text_components::TextComponent;
+use uuid::Uuid;
 
 use super::{
-    DEATH_DURATION, Player, PlayerPermissionState, ResetReason,
+    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
+    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
+    PlayerPermissionState, ResetReason,
+    connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
     game_mode::block_breaking::BlockBreakAction,
     lifecycle::nullable_game_mode_id,
     player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
+    player_inventory::MenuItemDisposition,
 };
 
+const PLAYER_MAIN_HAND_METADATA_INDEX: u8 = 15;
+const PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX: u8 = 16;
+const BYTE_ENTITY_DATA_SERIALIZER_ID: i32 = 0;
+const HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID: i32 = 42;
+
+const MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET: u8 = 0xff;
+const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
+
+#[test]
+fn client_information_initializes_player_cosmetic_metadata() {
+    let world = fresh_test_world("initial_player_cosmetic_metadata");
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1)
+        .uuid(Uuid::from_u128(1))
+        .client_information(ClientInformation {
+            model_customization: MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET,
+            main_hand: HumanoidArm::Left,
+            ..ClientInformation::default()
+        })
+        .build();
+
+    let values = player.pack_all_entity_data();
+    let Some(main_hand) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MAIN_HAND_METADATA_INDEX)
+    else {
+        panic!("initial metadata should include the non-default main hand");
+    };
+    assert_eq!(
+        main_hand.serializer_id,
+        HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID
+    );
+    assert!(matches!(
+        main_hand.value,
+        EntityData::HumanoidArm(HumanoidArm::Left)
+    ));
+
+    let Some(model_customization) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX)
+    else {
+        panic!("initial metadata should include the model customization byte");
+    };
+    assert_eq!(
+        model_customization.serializer_id,
+        BYTE_ENTITY_DATA_SERIALIZER_ID
+    );
+    let expected_model_customization = MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET.cast_signed();
+    assert!(matches!(
+        model_customization.value,
+        EntityData::Byte(value) if value == expected_model_customization
+    ));
+    assert!(player.shows_hat());
+}
+
+#[test]
+fn play_client_information_dirties_changed_cosmetic_metadata_once() {
+    let world = fresh_test_world("updated_player_cosmetic_metadata");
+    let player = test_player(world);
+    let _ = player.pack_dirty_entity_data();
+
+    let packet = SClientInformation {
+        language: "en_us".to_owned(),
+        view_distance: 8,
+        chat_visibility: ChatVisibility::Full,
+        chat_colors: true,
+        model_customization: CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK,
+        main_hand: HumanoidArm::Left,
+        text_filtering_enabled: false,
+        allows_listing: true,
+        particle_status: ParticleStatus::All,
+    };
+    player.handle_client_information(packet.clone());
+
+    let Some(values) = player.pack_dirty_entity_data() else {
+        panic!("changed client information should dirty player metadata");
+    };
+    assert_eq!(values.len(), 2);
+
+    let Some(main_hand) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MAIN_HAND_METADATA_INDEX)
+    else {
+        panic!("changed metadata should include the main hand");
+    };
+    assert_eq!(
+        main_hand.serializer_id,
+        HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID
+    );
+    assert!(matches!(
+        main_hand.value,
+        EntityData::HumanoidArm(HumanoidArm::Left)
+    ));
+
+    let Some(model_customization) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX)
+    else {
+        panic!("changed metadata should include model customization");
+    };
+    assert_eq!(
+        model_customization.serializer_id,
+        BYTE_ENTITY_DATA_SERIALIZER_ID
+    );
+    let expected_model_customization = CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK.cast_signed();
+    assert!(matches!(
+        model_customization.value,
+        EntityData::Byte(value) if value == expected_model_customization
+    ));
+
+    player.handle_client_information(packet);
+    assert!(player.pack_dirty_entity_data().is_none());
+}
+
+struct RecordingConnection {
+    sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+    closed: AtomicBool,
+}
+
+impl NetworkConnection for RecordingConnection {
+    fn compression(&self) -> Option<CompressionInfo> {
+        None
+    }
+
+    fn send_encoded(&self, packet: EncodedPacket) {
+        self.sent_packets.lock().push(packet);
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        self.sent_packets.lock().extend(packets);
+    }
+
+    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+    fn tick(&self) {}
+
+    fn latency(&self) -> i32 {
+        0
+    }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
+
+    fn closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+}
+
+fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    let Ok(_) = VarInt::read(&mut cursor) else {
+        return Vec::new();
+    };
+    let Ok(packet_id) = VarInt::read(&mut cursor) else {
+        return Vec::new();
+    };
+    if packet_id.0 != C_REMOVE_ENTITIES {
+        return Vec::new();
+    }
+    let Ok(entity_count) = VarInt::read(&mut cursor) else {
+        return Vec::new();
+    };
+
+    let mut entity_ids = Vec::new();
+    for _ in 0..entity_count.0 {
+        let Ok(entity_id) = VarInt::read(&mut cursor) else {
+            return Vec::new();
+        };
+        entity_ids.push(entity_id.0);
+    }
+    entity_ids
+}
+
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
 }
@@ -410,7 +597,57 @@ fn death_keeps_menu_items_until_entity_removal() {
 }
 
 #[test]
-fn death_respawn_drops_menu_items_exactly_once() {
+fn death_removes_tracked_entities_from_dead_players_client() {
+    init_vanilla_registry();
+    let world = fresh_test_world("death_entity_pairing_cleanup");
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
+        .connection(connection)
+        .build();
+    let item: SharedEntity = Arc::new(ItemEntity::new(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::ZERO,
+        Arc::downgrade(&world),
+    ));
+
+    world.entity_tracker().add(
+        &item,
+        |_| vec![player.id()],
+        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
+    );
+    assert_eq!(
+        world.entity_tracker().tracking_player_ids(item.id()),
+        vec![player.id()]
+    );
+    sent_packets.lock().clear();
+
+    for _ in 0..DEATH_DURATION {
+        player.tick_death();
+    }
+
+    let removed_ids = sent_packets
+        .lock()
+        .iter()
+        .flat_map(removed_entity_ids)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        removed_ids,
+        vec![item.id()],
+        "vanilla removes every entity pairing from a dead player's client"
+    );
+    assert_eq!(
+        world.entity_tracker().tracking_player_ids(item.id()).len(),
+        0
+    );
+}
+
+#[test]
+fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
     init_vanilla_registry();
     let world = fresh_test_world("death_respawn_menu_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
@@ -443,18 +680,20 @@ fn death_respawn_drops_menu_items_exactly_once() {
 
     player.set_health(0.0);
     player.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
-    player.reset_state_for_death_respawn();
-    let _ = player.base.clear_removed();
-    player.reset(Arc::clone(&world), ResetReason::Respawn);
+    assert_eq!(
+        player.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
+        MenuRemovalStatus::Complete
+    );
+    let replacement = player.new_respawn_replacement(Arc::clone(&world), false, false, true);
     {
-        let mut inventory_menu = player.inventory_menu.lock();
+        let mut inventory_menu = replacement.inventory_menu.lock();
         assert_eq!(inventory_menu.behavior().quickcraft(), None);
         *inventory_menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STICK);
         inventory_menu.clicked(
             Click::QuickCraft(QuickCraft::Start {
                 kind: DragKind::Left,
             }),
-            &player,
+            &replacement,
         );
         assert_eq!(inventory_menu.behavior().quickcraft(), Some(DragKind::Left));
     }
@@ -686,8 +925,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
     init_vanilla_registry();
     let world = Arc::clone(test_world());
     let source = test_player(Arc::clone(&world));
-    let target =
-        TestPlayerBuilder::new(world, Uuid::from_u128(2), "Target", next_entity_id()).build();
+    let target = TestPlayerBuilder::new(world, "Target", next_entity_id()).build();
     let mut helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     let Some(mut equippable) = helmet.get_equippable().cloned() else {
         panic!("diamond helmet should have equippable data");
@@ -769,11 +1007,14 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
         }]
     );
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
-fn death_respawn_redetects_unchanged_kept_equipment() {
+fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
@@ -798,11 +1039,11 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         }]
     );
 
-    // Both keep-inventory and spectator respawns retain the same stack while
-    // Steel resets the reused player's transient attributes.
-    player.reset_state_for_death_respawn();
+    // Both keep-inventory and spectator respawns retain the stack, while the
+    // replacement starts with fresh transient attributes and equipment caches.
+    let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
     assert_eq!(
-        player
+        replacement
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ARMOR)
@@ -810,13 +1051,13 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         base_armor.to_bits()
     );
     assert!(ItemStack::matches(
-        player.inventory.lock().get_ref(EquipmentSlot::Head),
+        replacement.inventory.lock().get_ref(EquipmentSlot::Head),
         &helmet
     ));
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    LivingEntity::detect_equipment_updates(replacement.as_ref());
     {
-        let attributes = player.attributes().lock();
+        let attributes = replacement.attributes().lock();
         assert_eq!(
             attributes
                 .required_value(vanilla_attributes::ARMOR)
@@ -831,19 +1072,22 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         );
     }
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(replacement.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet,
         }]
     );
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    LivingEntity::detect_equipment_updates(replacement.as_ref());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(replacement.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
-fn death_respawn_discards_stale_pending_equipment_change() {
+fn fresh_death_respawn_discards_stale_pending_equipment_change() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.inventory.lock().set(
@@ -856,11 +1100,11 @@ fn death_respawn_discards_stale_pending_equipment_change() {
         .inventory
         .lock()
         .set(EquipmentSlot::Head, ItemStack::empty());
-    player.reset_state_for_death_respawn();
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
+    LivingEntity::detect_equipment_updates(replacement.as_ref());
 
     assert!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty(),
+        LivingEntity::drain_dirty_equipment(replacement.as_ref()).is_empty(),
         "respawn must not emit equipment queued by the removed living entity"
     );
 }
@@ -911,7 +1155,10 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
     assert!(player.inventory.lock().swap_hands());
     LivingEntity::detect_equipment_updates(player.as_ref());
 
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
@@ -1123,5 +1370,239 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
         world
             .get_block_state(pos)
             .get_value(&BlockStateProperties::LIT)
+    );
+}
+
+#[test]
+fn creative_drop_throttle_survives_respawn_replacement() {
+    init_vanilla_registry();
+
+    for restore_all in [false, true] {
+        let world = fresh_test_world("creative_drop_throttle_survives_respawn_replacement");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = test_player(Arc::clone(&world));
+        *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
+
+        let drop_packet = || SSetCreativeModeSlot {
+            slot_num: -1,
+            item_stack: ItemStack::new(&vanilla_items::DIAMOND),
+        };
+        for _ in 0..(DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP) {
+            player.handle_set_creative_mode_slot(drop_packet());
+        }
+        let dropped_before_respawn = world.entity_manager().count();
+
+        let replacement =
+            player.new_respawn_replacement(Arc::clone(&world), restore_all, true, true);
+        replacement.handle_set_creative_mode_slot(drop_packet());
+        assert_eq!(world.entity_manager().count(), dropped_before_respawn);
+
+        replacement.tick_throttlers();
+        replacement.handle_set_creative_mode_slot(drop_packet());
+        assert_eq!(world.entity_manager().count(), dropped_before_respawn + 1);
+    }
+}
+
+#[test]
+fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_has_room");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .any(|item| item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert!(dropped.is_empty());
+}
+
+#[test]
+fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_full");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+    }
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .all(|item| !item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+/// Regression test: drinking a honey bottle from a full inventory, through
+/// the real tick loop, must not lose the glass bottle remainder to the
+/// emptied hand slot being seen as free room and then overwritten.
+#[test]
+fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tick_loop() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5));
+    }
+
+    player.start_using_item(InteractionHand::MainHand);
+    for _ in 0..40 {
+        player.tick_active_item_use();
+    }
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(hand_item.is(&vanilla_items::HONEY_BOTTLE));
+    assert_eq!(hand_item.count(), 4);
+
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+#[test]
+fn throttle_player_dropping_items_from_creative_menu() {
+    const DROPS_ALLOWED_BEFORE_THROTTLE: i32 =
+        DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP;
+
+    init_vanilla_registry();
+
+    let item = &*vanilla_items::DIAMOND;
+    let packet = SSetCreativeModeSlot {
+        slot_num: -1,
+        item_stack: ItemStack::new(item),
+    };
+
+    let world = fresh_test_world("throttle_player_dropping_items_from_creative_menu");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    let check_drop_count = |expected_count: i32| {
+        let item_dropped_stat = vanilla_stat_types::ITEM_DROPPED.get(item);
+        let drop_custom_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::DROP);
+
+        assert_eq!(
+            world.entity_manager().count(),
+            expected_count as usize,
+            "entity counts in the world did not match"
+        );
+        let stats = player.stats.lock();
+        assert_eq!(
+            stats.get(&item_dropped_stat),
+            expected_count,
+            "ITEM_DROPPED stat counts did not match"
+        );
+        assert_eq!(
+            stats.get(&drop_custom_stat),
+            expected_count,
+            "DROP custom stat counts did not match"
+        );
+    };
+
+    *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
+
+    // Ensure no remainder for easier logic in the test
+    assert_eq!(
+        DROP_SPAM_THROTTLER_INCREMENT_STEP * DROPS_ALLOWED_BEFORE_THROTTLE,
+        DROP_SPAM_THROTTLER_THRESHOLD,
+        "test assumes that threshold is perfectly divisible by increment step, but that is false"
+    );
+
+    for _ in 0..(DROPS_ALLOWED_BEFORE_THROTTLE + 5) {
+        player.handle_set_creative_mode_slot(packet.clone());
+    }
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
+
+    // Decay the Throttler just enough to allow the player drop one more stack.
+    player.tick();
+    player.handle_set_creative_mode_slot(packet.clone());
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
+
+    // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
+    for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
+        player.tick();
+    }
+    player.handle_set_creative_mode_slot(packet.clone());
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
+
+    // Decay the Throttler just enough to allow the player drop one more stack.
+    player.tick();
+    player.handle_set_creative_mode_slot(packet);
+    check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
+}
+
+#[test]
+fn sword_does_not_destroy_blocks_in_creative() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world = fresh_test_world("sword_does_not_destroy_blocks_in_creative");
+    let pos = BlockPos::new(1, 64, 0);
+    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let dirt = vanilla_blocks::DIRT.default_state();
+    assert!(world.set_block(pos, dirt, UpdateFlags::UPDATE_ALL,));
+    let player = test_player(Arc::clone(&world));
+    player.restore_game_modes(GameType::Creative, None);
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    player.block_breaking.lock().handle_block_break_action(
+        &player,
+        &world,
+        pos,
+        BlockBreakAction::Start,
+        Direction::Up,
+    );
+    assert_eq!(
+        world.get_block_state(pos),
+        dirt,
+        "swords should not destroy blocks when player is in creative mode."
     );
 }

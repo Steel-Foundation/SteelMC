@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::{DowncastType, Identifier};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 use text_components::TextComponent;
 
 pub mod item;
@@ -110,6 +110,11 @@ pub struct ItemRegistry {
     block_items_by_id: Vec<bool>,
     tags: RegistryTags,
     allows_registering: bool,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the item registry.
+unsafe impl DowncastType for ItemRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/item");
 }
 
 impl Default for ItemRegistry {

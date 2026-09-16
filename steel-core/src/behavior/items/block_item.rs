@@ -2,16 +2,25 @@
 
 use steel_macros::item_behavior;
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    blocks::{BlockRef, block_state_ext::BlockStateExt, shapes::OffsetVoxelShape},
+    sound_event::SoundEventRef,
     vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
-use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
 use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::world::game_event::GameEventContext;
+use crate::{
+    behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext},
+    player::Player,
+};
+
+pub(super) enum SurvivalCheck {
+    Required,
+    Skipped,
+}
 
 /// Behavior for items that place blocks.
 #[item_behavior]
@@ -32,12 +41,51 @@ impl BlockItem {
 
     pub(super) fn place_with(
         &self,
-        mut context: BlockPlaceContext<'_>,
+        context: BlockPlaceContext<'_>,
         place_block: impl FnOnce(&BlockPlaceContext<'_>, BlockStateId) -> bool,
+    ) -> InteractionResult {
+        self.place_with_policy(
+            context,
+            Some,
+            SurvivalCheck::Required,
+            place_block,
+            self.block.config.sound_type.place_sound,
+        )
+    }
+
+    pub(super) fn place_with_sound_and_block(
+        &self,
+        context: BlockPlaceContext<'_>,
+        place_block: impl FnOnce(&BlockPlaceContext<'_>, BlockStateId) -> bool,
+        place_sound: SoundEventRef,
+    ) -> InteractionResult {
+        self.place_with_policy(
+            context,
+            Some,
+            SurvivalCheck::Required,
+            place_block,
+            place_sound,
+        )
+    }
+
+    #[expect(
+        clippy::manual_midpoint,
+        reason = "Matches vanilla BlockItem::place's sound volume formula"
+    )]
+    pub(super) fn place_with_policy<'a>(
+        &self,
+        context: BlockPlaceContext<'a>,
+        update_context: impl FnOnce(BlockPlaceContext<'a>) -> Option<BlockPlaceContext<'a>>,
+        survival_check: SurvivalCheck,
+        place_block: impl FnOnce(&BlockPlaceContext<'a>, BlockStateId) -> bool,
+        place_sound: SoundEventRef,
     ) -> InteractionResult {
         if !context.can_place() {
             return InteractionResult::Fail;
         }
+        let Some(mut context) = update_context(context) else {
+            return InteractionResult::Fail;
+        };
         let place_pos = context.place_pos();
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
@@ -45,11 +93,32 @@ impl BlockItem {
             return InteractionResult::Fail;
         };
 
-        if !behavior.can_survive(new_state, context.world, place_pos) {
+        if matches!(survival_check, SurvivalCheck::Required)
+            && !behavior.can_survive(new_state, context.world.as_ref(), place_pos)
+        {
             return InteractionResult::Fail;
         }
 
-        let collision_shape = new_state.get_collision_shape_at(place_pos);
+        let collision_context = context.player().map_or_else(
+            BlockCollisionContext::placement_without_entity,
+            |player| {
+                BlockCollisionContext::with_position(player.position().y, player.is_descending())
+            },
+        );
+        let collision_shape = OffsetVoxelShape::new(
+            behavior.get_collision_shape(
+                new_state,
+                context.world.as_ref(),
+                place_pos,
+                collision_context,
+            ),
+            behavior.get_collision_shape_offset(
+                new_state,
+                context.world.as_ref(),
+                place_pos,
+                collision_context,
+            ),
+        );
         if !context.world.is_unobstructed(collision_shape, place_pos) {
             return InteractionResult::Fail;
         }
@@ -60,17 +129,20 @@ impl BlockItem {
 
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
+            if let Some(block_entity) = context.world.get_block_entity(place_pos) {
+                context.with_item(|item| block_entity.apply_components_from_item(item));
+                block_entity.set_changed();
+            }
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
 
         // Play place sound (exclude the placing player, they hear it client-side)
-        let sound_type = &self.block.config.sound_type;
         context.world.play_block_sound(
-            sound_type.place_sound,
+            place_sound,
             place_pos,
-            sound_type.volume,
-            sound_type.pitch,
+            (self.block.config.sound_type.volume + 1.0) / 2.0,
+            self.block.config.sound_type.pitch * 0.8,
             context.player().map(Entity::id),
         );
         context.world.game_event(
@@ -82,7 +154,8 @@ impl BlockItem {
             ),
         );
 
-        context.with_item_mut(|item| item.shrink(1));
+        let has_infinite_materials = context.player().is_some_and(Player::has_infinite_materials);
+        context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }
@@ -92,7 +165,7 @@ impl BlockItem {
         self.place_with(context, Self::place_block)
     }
 
-    fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
+    pub(super) fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
         context
             .world
             .set_block(context.place_pos(), state, Self::PLACE_BLOCK_FLAGS)
@@ -102,6 +175,12 @@ impl BlockItem {
 impl ItemBehavior for BlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.place(context.build_place_context())
+    }
+
+    fn can_fit_inside_container_items(&self) -> bool {
+        BLOCK_BEHAVIORS
+            .get_behavior(self.block)
+            .fits_inside_container_items()
     }
 }
 

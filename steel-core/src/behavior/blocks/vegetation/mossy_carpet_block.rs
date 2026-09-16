@@ -78,8 +78,7 @@ impl MossyCarpetBlock {
         pos: BlockPos,
         direction: Direction,
     ) -> bool {
-        direction != Direction::Up
-            && MultifaceBlock::can_attach_to(world, pos.relative(direction), direction)
+        direction != Direction::Up && MultifaceBlock::can_attach_to(world, pos, direction)
     }
 
     /// Vanilla `MossyCarpetBlock.getUpdatedState`.
@@ -247,5 +246,34 @@ impl Bonemealable for MossyCarpetBlock {
         if !topper.is_air() {
             world.set_block(pos.above(), topper, UpdateFlags::UPDATE_ALL);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::init_vanilla_registry;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn updated_state_walls_up_against_the_supporting_block() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let pos = BlockPos::new(0, 64, 0);
+        let level =
+            TestLevel::default().with_block(pos.north(), vanilla_blocks::STONE.default_state());
+
+        let updated = MossyCarpetBlock::updated_state(
+            vanilla_blocks::PALE_MOSS_CARPET.default_state(),
+            &level,
+            pos,
+            true,
+        );
+
+        assert_eq!(updated.get_value(NORTH_WALL), WallSide::Low);
+        assert_eq!(updated.get_value(SOUTH_WALL), WallSide::None);
     }
 }
