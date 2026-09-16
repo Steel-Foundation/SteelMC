@@ -1,4 +1,6 @@
 use crate::ItemStackTemplate;
+use std::ops::Deref;
+use std::sync::RwLock;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -11,8 +13,13 @@ pub struct DisplayInfo {
     pub show_toast: bool,
     pub announce_chat: bool,
     pub hidden: bool,
-    pub x: f32,
-    pub y: f32,
+    pub location: RwLock<(f32, f32)>,
+}
+
+impl DisplayInfo {
+    pub fn position(&self) -> (f32, f32) {
+        self.location.read().unwrap().deref().clone()
+    }
 }
 
 pub enum AdvancementType {

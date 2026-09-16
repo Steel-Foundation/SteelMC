@@ -12,6 +12,7 @@ pub mod registry;
 pub mod display;
 pub mod criterion;
 pub mod tree;
+pub mod positioner;
 
 pub struct Advancement {
     pub key: Identifier,
@@ -21,6 +22,14 @@ pub struct Advancement {
     pub send_telemetry_event: bool,
     pub requirements: Vec<Vec<&'static str>>,
     pub rewards: AdvancementRewards,
+}
+
+impl Advancement {
+    #[inline]
+    #[must_use]
+    pub fn is_root(&self) -> bool {
+        self.parent.is_none()
+    }
 }
 
 impl PartialEq for &Advancement {
