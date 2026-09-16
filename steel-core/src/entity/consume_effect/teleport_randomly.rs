@@ -82,6 +82,8 @@ fn teleport_randomly(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::consume_effect::TeleportRandomlyConsumeEffect;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::types::UpdateFlags;
@@ -105,7 +107,7 @@ mod tests {
                 insert_ready_full_chunk(&world, ChunkPos::new(x, z));
             }
         }
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         let origin = player.position();
 
         teleport_randomly(
@@ -139,7 +141,7 @@ mod tests {
                 );
             }
         }
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         let origin = player.position();
 
         teleport_randomly(

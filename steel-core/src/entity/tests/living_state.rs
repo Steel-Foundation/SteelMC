@@ -1,13 +1,14 @@
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
     init_vanilla_registry();
 
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0);
-    let entity_ref: &dyn Entity = &entity;
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
+    let entity_ref: SharedEntity = entity.clone();
 
-    entity_ref.tick();
+    Arc::clone(&entity_ref).tick();
 
     assert_eq!(entity.living_base().death_time(), 1);
 }

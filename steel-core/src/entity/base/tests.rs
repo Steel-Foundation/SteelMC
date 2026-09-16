@@ -99,7 +99,7 @@ impl Entity for FallDamageTestEntity {
     }
 
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         _source: &DamageSource,

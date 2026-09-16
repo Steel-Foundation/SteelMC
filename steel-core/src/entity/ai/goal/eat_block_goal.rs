@@ -1,6 +1,7 @@
 //! Vanilla `EatBlockGoal`: a mob stops moving and chews for a fixed duration before
 //! eating an edible block and running `Mob.ate`.
 
+use crate::entity::SharedEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::level_events;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -89,7 +90,7 @@ impl Goal for EatBlockGoal {
         self.eat_animation_tick = 0;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         self.eat_animation_tick = (self.eat_animation_tick - 1).max(0);
         if self.eat_animation_tick != reduced_tick_delay(EAT_BLOCK_TICK) {
             return;
@@ -129,6 +130,8 @@ impl Goal for EatBlockGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -140,7 +143,6 @@ mod tests {
     use crate::entity::SharedEntity;
     use crate::entity::entities::{PigEntity, SheepEntity};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-    use crate::world::World;
     use steel_utils::Downcast as _;
 
     #[test]
@@ -155,7 +157,7 @@ mod tests {
         assert_eq!(goal.get_eat_animation_tick(), 20);
     }
 
-    fn sheep_on_grass_world(name: &'static str) -> (Arc<World>, SharedEntity) {
+    fn sheep_on_grass_world(name: &'static str) -> (TestWorld, SharedEntity) {
         use steel_registry::vanilla_blocks;
         use steel_registry::vanilla_entities;
         use steel_utils::ChunkPos;
@@ -195,7 +197,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(mob);
         for _ in 0..18 {
-            goal.tick(mob);
+            goal.tick(mob, &shared);
         }
 
         let sheep = shared
@@ -225,7 +227,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(mob);
         for _ in 0..18 {
-            goal.tick(mob);
+            goal.tick(mob, &shared);
         }
 
         let sheep = shared

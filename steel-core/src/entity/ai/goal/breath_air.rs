@@ -1,4 +1,6 @@
+use crate::entity::SharedEntity;
 use glam::DVec3;
+use std::sync::Arc;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_blocks;
@@ -48,7 +50,7 @@ impl Goal for BreathAirGoal {
         mob.mob_base().navigation().lock().stop();
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
         find_air_position(mob);
         let input = mob.travel_input();
         mob.move_relative(
@@ -59,7 +61,7 @@ impl Goal for BreathAirGoal {
                 f64::from(input.forward()),
             ),
         );
-        mob.move_entity(MoverType::SelfMovement, mob.velocity());
+        Arc::clone(entity).move_entity(MoverType::SelfMovement, mob.velocity());
     }
 }
 
@@ -167,10 +169,16 @@ mod tests {
     fn breath_air_goal_tick_applies_travel_input_to_velocity() {
         init_vanilla_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let mob_entity: SharedEntity = mob.clone();
         mob.set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         assert!(mob.velocity().length_squared() > 0.0);
     }

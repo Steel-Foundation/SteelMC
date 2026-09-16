@@ -244,6 +244,8 @@ fn area_too_large(limit: i32, area: i64) -> CommandSyntaxError {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use steel_registry::{init_vanilla_registry, vanilla_game_rules};
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb, types::UpdateFlags};
 
@@ -283,7 +285,7 @@ mod tests {
         assert!(node.is_executable());
     }
 
-    fn setup_world(key: &'static str, chunk: ChunkPos) -> Arc<World> {
+    fn setup_world(key: &'static str, chunk: ChunkPos) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();

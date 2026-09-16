@@ -31,7 +31,7 @@ impl ShearsItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
-            &GameEventContext::new(Some(context.player), Some(new_state)),
+            &GameEventContext::new(Some(context.player.as_ref()), Some(new_state)),
         );
     }
 }
@@ -69,6 +69,8 @@ impl ItemBehavior for ShearsItem {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use std::io::Cursor;
     use std::sync::Arc;
 
@@ -160,7 +162,7 @@ mod tests {
     }
 
     struct ShearsFixture {
-        world: Arc<World>,
+        world: TestWorld,
         _holder: Arc<ChunkHolder>,
         player: Arc<Player>,
         _observer: Arc<Player>,

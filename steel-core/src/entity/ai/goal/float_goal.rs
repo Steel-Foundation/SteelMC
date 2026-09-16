@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::{MobBase, PathfinderMob};
 
@@ -27,7 +28,7 @@ impl Goal for FloatGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         if rand::random::<f32>() < FLOAT_JUMP_CHANCE {
             mob.mob_base().controls().lock().jump_control.jump();
         }

@@ -118,6 +118,7 @@ impl Server {
             players_to_save.push((player, domain, data));
         }
 
+        self.damage_history.clear();
         log::info!("Saving world data...");
         let command_data = self.save_command_data().await;
         match command_data.scoreboards {
@@ -585,6 +586,7 @@ impl Server {
     ) -> Result<(), WorldTickWorkerError> {
         if runs_normally {
             self.worlds.advance_domain_game_times();
+            self.damage_history.expire();
         }
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {

@@ -1,6 +1,8 @@
 use crate::config::ResolvedDomainConfig;
+use crate::entity::damage::DamageHistory;
 use crate::server::worlds::WorldMap;
 use std::cell::{Cell, RefCell};
+use std::ops::Deref;
 use std::slice;
 use std::sync::{Arc, OnceLock, Weak};
 
@@ -81,14 +83,14 @@ impl Entity for TestEntity {
 
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
-    WORLD.get_or_init(|| create_test_world("test"))
+    WORLD.get_or_init(|| create_static_test_world("test", Difficulty::Normal))
 }
 
-pub(crate) fn fresh_test_world(key: &'static str) -> Arc<World> {
+pub(crate) fn fresh_test_world(key: &'static str) -> TestWorld {
     create_test_world(key)
 }
 
-pub(crate) fn fresh_test_world_in_domain(domain: &'static str, key: &'static str) -> Arc<World> {
+pub(crate) fn fresh_test_world_in_domain(domain: &'static str, key: &'static str) -> TestWorld {
     create_test_world_with_key(Identifier::new_static(domain, key), Difficulty::Normal)
 }
 
@@ -96,7 +98,7 @@ pub(crate) fn fresh_test_world_with_dimension_type(
     domain: &'static str,
     key: &'static str,
     dimension_type: DimensionTypeRef,
-) -> Arc<World> {
+) -> TestWorld {
     create_test_world_with_key_and_dimension_type(
         Identifier::new_static(domain, key),
         Difficulty::Normal,
@@ -158,7 +160,7 @@ pub(crate) fn insert_full_chunk(
 pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| {
-        let world = create_test_world("test_cross_world_damage");
+        let world = create_static_test_world("test_cross_world_damage", Difficulty::Normal);
         advance_test_game_time_to(&world, 100);
         world
     })
@@ -166,13 +168,13 @@ pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {
 
 pub(crate) fn hard_damage_test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
-    WORLD.get_or_init(|| create_test_world_with_difficulty("test_hard_damage", Difficulty::Hard))
+    WORLD.get_or_init(|| create_static_test_world("test_hard_damage", Difficulty::Hard))
 }
 
 pub(crate) fn world_border_projectile_test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| {
-        let world = create_test_world("test_world_border_projectile");
+        let world = create_static_test_world("test_world_border_projectile", Difficulty::Normal);
         let result = world.set_world_border_size(10.0);
         assert!(
             result.is_ok(),
@@ -183,6 +185,7 @@ pub(crate) fn world_border_projectile_test_world() -> &'static Arc<World> {
 }
 
 struct TestWorldResources {
+    damage_history: Arc<DamageHistory>,
     runtime: Arc<Runtime>,
     generation_pool: Arc<rayon::ThreadPool>,
 }
@@ -190,6 +193,7 @@ struct TestWorldResources {
 fn test_world_resources() -> &'static TestWorldResources {
     static RESOURCES: OnceLock<TestWorldResources> = OnceLock::new();
     RESOURCES.get_or_init(|| TestWorldResources {
+        damage_history: Arc::new(DamageHistory::default()),
         runtime: Arc::new(
             Builder::new_multi_thread()
                 .worker_threads(1)
@@ -207,15 +211,15 @@ fn test_world_resources() -> &'static TestWorldResources {
     })
 }
 
-fn create_test_world(key: &'static str) -> Arc<World> {
+fn create_test_world(key: &'static str) -> TestWorld {
     create_test_world_with_difficulty(key, Difficulty::Normal)
 }
 
-fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) -> Arc<World> {
+fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) -> TestWorld {
     create_test_world_with_key(Identifier::vanilla_static(key), difficulty)
 }
 
-fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<World> {
+fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> TestWorld {
     create_test_world_with_key_and_dimension_type(
         key,
         difficulty,
@@ -227,8 +231,38 @@ fn create_test_world_with_key_and_dimension_type(
     key: Identifier,
     difficulty: Difficulty,
     dimension_type: DimensionTypeRef,
-) -> Arc<World> {
+) -> TestWorld {
     create_test_world_with_time_source(key, difficulty, dimension_type, GameTimeSource::Primary)
+}
+
+/// Owns damage history for test worlds constructed without a server.
+#[derive(Clone)]
+pub(crate) struct TestWorld {
+    world: Arc<World>,
+    history: Arc<DamageHistory>,
+}
+
+impl Deref for TestWorld {
+    type Target = Arc<World>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.world
+    }
+}
+
+thread_local! {
+    // Weak so entities are destroyed during test teardown, before thread-local collectors.
+    static DAMAGE_HISTORY: RefCell<Weak<DamageHistory>> = RefCell::default();
+}
+
+fn create_static_test_world(key: &'static str, difficulty: Difficulty) -> Arc<World> {
+    create_test_world_with_damage_history(
+        Identifier::vanilla_static(key),
+        difficulty,
+        &vanilla_dimension_types::OVERWORLD,
+        GameTimeSource::Primary,
+        &test_world_resources().damage_history,
+    )
 }
 
 pub(crate) fn create_test_world_with_time_source(
@@ -236,6 +270,32 @@ pub(crate) fn create_test_world_with_time_source(
     difficulty: Difficulty,
     dimension_type: DimensionTypeRef,
     game_time_source: GameTimeSource,
+) -> TestWorld {
+    let history = DAMAGE_HISTORY.with(|slot| {
+        let mut weak = slot.borrow_mut();
+        if let Some(history) = weak.upgrade() {
+            return history;
+        }
+        let history = Arc::new(DamageHistory::default());
+        *weak = Arc::downgrade(&history);
+        history
+    });
+    let world = create_test_world_with_damage_history(
+        key,
+        difficulty,
+        dimension_type,
+        game_time_source,
+        &history,
+    );
+    TestWorld { world, history }
+}
+
+pub(crate) fn create_test_world_with_damage_history(
+    key: Identifier,
+    difficulty: Difficulty,
+    dimension_type: DimensionTypeRef,
+    game_time_source: GameTimeSource,
+    history: &Arc<DamageHistory>,
 ) -> Arc<World> {
     init_vanilla_registry();
     let resources = test_world_resources();
@@ -257,6 +317,7 @@ pub(crate) fn create_test_world_with_time_source(
             dimension_type,
             0,
             WorldConfig {
+                damage_history: Arc::downgrade(history),
                 game_time_source,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,
@@ -494,8 +555,21 @@ impl LevelAccessor for TestLevel {
     }
 }
 
+pub(crate) struct TestDomain {
+    worlds: WorldMap,
+    _history: Arc<DamageHistory>,
+}
+
+impl Deref for TestDomain {
+    type Target = WorldMap;
+
+    fn deref(&self) -> &Self::Target {
+        &self.worlds
+    }
+}
+
 /// Explicit isolated domain binding, including worlds constructed with the production role.
-pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> WorldMap {
+pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> TestDomain {
     let primary_name = names.first().expect("test domain needs a primary");
     let primary = fresh_test_world_in_domain(domain, primary_name);
     let config = ResolvedDomainConfig {
@@ -514,13 +588,16 @@ pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> World
             &vanilla_dimension_types::OVERWORLD,
             GameTimeSource::Derived(Arc::clone(&primary.game_time)),
         );
-        worlds.insert(world.key.clone(), world);
+        worlds.insert(world.key.clone(), Arc::clone(&world));
     }
-    worlds.insert(primary.key.clone(), primary);
+    worlds.insert(primary.key.clone(), Arc::clone(&primary));
     worlds
         .validate_game_times()
         .expect("test domain must be correctly bound");
-    worlds
+    TestDomain {
+        worlds,
+        _history: Arc::clone(&primary.history),
+    }
 }
 
 /// Advances through the same owner operation used before production worker dispatch.
@@ -546,7 +623,7 @@ pub(crate) fn tick_test_world(world: &Arc<World>, tick_count: u64, runs_normally
     world.tick_game(tick_count, runs_normally);
 }
 
-pub(crate) fn fresh_test_derived_world(primary: &Arc<World>, name: &'static str) -> Arc<World> {
+pub(crate) fn fresh_test_derived_world(primary: &Arc<World>, name: &'static str) -> TestWorld {
     create_test_world_with_time_source(
         Identifier::new(primary.domain().to_owned(), name.to_owned()),
         Difficulty::Normal,

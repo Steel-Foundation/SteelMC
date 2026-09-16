@@ -152,6 +152,8 @@ impl Goal for NearestAttackableTargetGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -166,7 +168,7 @@ mod tests {
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (Arc<World>, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
+    ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(name);

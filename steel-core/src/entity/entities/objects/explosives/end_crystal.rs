@@ -1,5 +1,6 @@
 //! Minimal End Crystal entity implementation for End spike worldgen.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -88,7 +89,7 @@ impl Entity for EndCrystalEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
 

@@ -58,7 +58,7 @@ impl ItemBehavior for BottleItem {
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         context.inv.with_item(|item| {
@@ -127,7 +127,7 @@ mod tests {
         player
     }
 
-    fn use_bottle(player: &Player, world: &Arc<World>, count: i32) -> InteractionResult {
+    fn use_bottle(player: &Arc<Player>, world: &Arc<World>, count: i32) -> InteractionResult {
         player.inventory.lock().set_item_in_hand(
             InteractionHand::MainHand,
             ItemStack::with_count(&vanilla_items::GLASS_BOTTLE, count),

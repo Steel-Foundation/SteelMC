@@ -8,6 +8,7 @@ mod movement;
 mod persistence;
 mod relationships;
 
+use crate::entity::damage::DamageHistory;
 pub use fire_freeze::EntityFireFreezeState;
 pub use movement::{
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
@@ -381,6 +382,8 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    /// Latest history owner, retained weakly even after the entity leaves its world.
+    damage_history: SyncMutex<Weak<DamageHistory>>,
     /// Generation counter for this runtime construction of the entity.
     generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
@@ -452,6 +455,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            damage_history: SyncMutex::new(Weak::new()),
             generation: EntityGeneration::next(),
             id,
             uuid,
@@ -482,6 +486,21 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    pub(crate) fn damage_history(&self) -> Option<Arc<DamageHistory>> {
+        self.damage_history.lock().upgrade()
+    }
+
+    pub(crate) fn bind_damage_history(&self, history: &Arc<DamageHistory>) {
+        *self.damage_history.lock() = Arc::downgrade(history);
+    }
+
+    /// Clears transient history at the committed target-domain restore point.
+    pub(crate) fn clear_last_damage_source(&self) {
+        if let Some(history) = self.damage_history() {
+            history.clear_victim(self.generation());
+        }
     }
 
     /// Gets the generation counter of this runtime construction of the entity.

@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::CSetEntityMotion;
@@ -139,12 +140,12 @@ impl MaceItem {
 }
 
 impl ItemBehavior for MaceItem {
-    fn get_item_damage_source(&self, attacker: &dyn LivingEntity) -> Option<DamageSource> {
-        Self::can_smash_attack(attacker).then(|| {
+    fn get_item_damage_source(&self, attacker: &SharedEntity) -> Option<DamageSource> {
+        let living = attacker.as_living_entity()?;
+        Self::can_smash_attack(living).then(|| {
             DamageSource::environment(&vanilla_damage_types::MACE_SMASH)
-                .with_causing_entity(attacker.id())
-                .with_direct_entity(attacker.id())
-                .with_source_position(attacker.position())
+                .with_causing_entity(attacker.clone())
+                .with_direct_entity(attacker.clone())
         })
     }
 

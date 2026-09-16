@@ -1,3 +1,7 @@
+mod item_in_use;
+
+use item_in_use::EnchantedItemInUse;
+
 use steel_registry::enchantment_effect::{
     DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
     EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentTarget, EntityPredicate,
@@ -8,7 +12,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, MobEffectInstance};
+use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
@@ -38,17 +42,14 @@ impl<'a> EnchantmentDamageContext<'a> {
 
     #[must_use]
     pub(crate) fn from_damage_source(
-        world: &World,
         this_entity_type: EntityTypeRef,
         damage_source: &'a DamageSource,
     ) -> Self {
         let attacker_entity_type = damage_source
-            .causing_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id))
+            .causing_entity()
             .map(|entity| entity.entity_type());
         let direct_attacker_entity_type = damage_source
-            .direct_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id))
+            .direct_entity()
             .map(|entity| entity.entity_type());
         Self::new(
             this_entity_type,
@@ -68,24 +69,19 @@ impl<'a> EnchantmentDamageContext<'a> {
 }
 
 pub(crate) struct EnchantmentPostAttackContext<'a> {
-    victim: &'a dyn Entity,
-    attacker: Option<&'a dyn Entity>,
-    direct_attacker: Option<&'a dyn Entity>,
+    victim: &'a SharedEntity,
+    attacker: Option<&'a SharedEntity>,
+    direct_attacker: Option<&'a SharedEntity>,
     damage_source: &'a DamageSource,
 }
 
 impl<'a> EnchantmentPostAttackContext<'a> {
     #[must_use]
-    pub(crate) const fn new(
-        victim: &'a dyn Entity,
-        attacker: Option<&'a dyn Entity>,
-        direct_attacker: Option<&'a dyn Entity>,
-        damage_source: &'a DamageSource,
-    ) -> Self {
+    pub(crate) const fn new(victim: &'a SharedEntity, damage_source: &'a DamageSource) -> Self {
         Self {
             victim,
-            attacker,
-            direct_attacker,
+            attacker: damage_source.causing_entity(),
+            direct_attacker: damage_source.direct_entity(),
             damage_source,
         }
     }
@@ -93,13 +89,13 @@ impl<'a> EnchantmentPostAttackContext<'a> {
     fn damage_context(&self) -> EnchantmentDamageContext<'a> {
         EnchantmentDamageContext::new(
             self.victim.entity_type(),
-            self.attacker.map(Entity::entity_type),
-            self.direct_attacker.map(Entity::entity_type),
+            self.attacker.map(|entity| entity.entity_type()),
+            self.direct_attacker.map(|entity| entity.entity_type()),
             self.damage_source,
         )
     }
 
-    fn affected_entity(&self, target: EnchantmentTarget) -> Option<&'a dyn Entity> {
+    fn affected_entity(&self, target: EnchantmentTarget) -> Option<&'a SharedEntity> {
         match target {
             EnchantmentTarget::Attacker => self.attacker,
             EnchantmentTarget::DamagingEntity => self.direct_attacker,
@@ -156,12 +152,10 @@ pub(crate) fn modify_smash_damage_per_fallen_block(
 }
 
 pub(crate) fn is_immune_to_damage<V: LivingEntity + ?Sized>(
-    world: &World,
     victim: &V,
     damage_source: &DamageSource,
 ) -> bool {
-    let context =
-        EnchantmentDamageContext::from_damage_source(world, victim.entity_type(), damage_source);
+    let context = EnchantmentDamageContext::from_damage_source(victim.entity_type(), damage_source);
 
     for slot in EquipmentSlot::ALL {
         let mut slot_matches = false;
@@ -177,12 +171,10 @@ pub(crate) fn is_immune_to_damage<V: LivingEntity + ?Sized>(
 }
 
 pub(crate) fn get_damage_protection<V: LivingEntity + ?Sized>(
-    world: &World,
     victim: &V,
     damage_source: &DamageSource,
 ) -> f32 {
-    let context =
-        EnchantmentDamageContext::from_damage_source(world, victim.entity_type(), damage_source);
+    let context = EnchantmentDamageContext::from_damage_source(victim.entity_type(), damage_source);
     let mut protection = 0.0;
 
     for slot in EquipmentSlot::ALL {
@@ -208,7 +200,7 @@ pub(crate) fn do_post_attack_effects_from_item(
     let mut item = item.copy_with_count(item.count());
     let _ = apply_post_attack_effects(
         world,
-        &mut item,
+        &mut EnchantedItemInUse::Stack(&mut item),
         Some(EquipmentSlot::MainHand),
         EnchantmentTarget::Attacker,
         context,
@@ -223,18 +215,19 @@ pub(crate) fn do_post_attack_effects_with_item_source(
 ) {
     if let Some(living_victim) = victim.as_living_entity() {
         for slot in EquipmentSlot::ALL {
-            let mut item_broke = false;
+            let mut item = EnchantedItemInUse::Equipped {
+                owner: living_victim,
+                slot,
+            };
             let mut item_ref = &*vanilla_items::AIR;
-            living_victim.with_equipment_slot_mut(slot, &mut |item| {
-                item_ref = item.item;
-                item_broke = apply_post_attack_effects(
-                    world,
-                    item,
-                    Some(slot),
-                    EnchantmentTarget::Victim,
-                    context,
-                );
-            });
+            item.with_item(&mut |stack| item_ref = stack.item);
+            let item_broke = apply_post_attack_effects(
+                world,
+                &mut item,
+                Some(slot),
+                EnchantmentTarget::Victim,
+                context,
+            );
             if item_broke {
                 living_victim.on_equipped_item_broken(item_ref, slot);
             }
@@ -244,7 +237,7 @@ pub(crate) fn do_post_attack_effects_with_item_source(
     let mut source = source.copy_with_count(source.count());
     let _ = apply_post_attack_effects(
         world,
-        &mut source,
+        &mut EnchantedItemInUse::Stack(&mut source),
         Some(EquipmentSlot::MainHand),
         EnchantmentTarget::Attacker,
         context,
@@ -344,15 +337,18 @@ fn item_damage_immunity_matches(
 
 fn apply_post_attack_effects(
     world: &World,
-    item: &mut ItemStack,
+    item: &mut EnchantedItemInUse<'_>,
     slot: Option<EquipmentSlot>,
     enchanted_target: EnchantmentTarget,
     context: &EnchantmentPostAttackContext<'_>,
 ) -> bool {
-    if slot.is_some() && item.is_empty() {
-        return false;
-    }
-    let Some(enchantments) = item.get_enchantments().cloned() else {
+    let mut enchantments = None;
+    item.with_item(&mut |stack| {
+        if slot.is_none() || !stack.is_empty() {
+            enchantments = stack.get_enchantments().cloned();
+        }
+    });
+    let Some(enchantments) = enchantments else {
         return false;
     };
     let damage_context = context.damage_context();
@@ -389,7 +385,7 @@ fn apply_post_attack_effects(
                 world,
                 &effect.effect,
                 level,
-                affected_entity,
+                affected_entity.as_ref(),
                 Some(enchanted_entity),
                 item,
             );
@@ -405,7 +401,7 @@ pub(crate) fn on_projectile_spawned(
     world: &World,
     weapon: &mut ItemStack,
     projectile: &dyn Entity,
-    owner: Option<&dyn Entity>,
+    owner: Option<&SharedEntity>,
 ) {
     let Some(enchantments) = weapon.get_enchantments() else {
         return;
@@ -427,8 +423,14 @@ pub(crate) fn on_projectile_spawned(
         let level = level as i32;
         for effect in enchantment.effects.projectile_spawned {
             if entity_requirements_match(effect.requirements, projectile, level) {
-                let _ =
-                    apply_entity_effect(world, &effect.effect, level, projectile, owner, weapon);
+                let _ = apply_entity_effect(
+                    world,
+                    &effect.effect,
+                    level,
+                    projectile,
+                    owner,
+                    &mut EnchantedItemInUse::Stack(weapon),
+                );
             }
         }
     }
@@ -473,8 +475,8 @@ fn apply_entity_effect(
     effect: &EnchantmentEntityEffect,
     level: i32,
     entity: &dyn Entity,
-    enchanted_entity: Option<&dyn Entity>,
-    enchanted_item: &mut ItemStack,
+    enchanted_entity: Option<&SharedEntity>,
+    enchanted_item: &mut EnchantedItemInUse<'_>,
 ) -> bool {
     if !entity_effect_is_supported(effect) {
         return false;
@@ -513,8 +515,8 @@ fn apply_supported_entity_effect(
     effect: &EnchantmentEntityEffect,
     level: i32,
     entity: &dyn Entity,
-    enchanted_entity: Option<&dyn Entity>,
-    enchanted_item: &mut ItemStack,
+    enchanted_entity: Option<&SharedEntity>,
+    enchanted_item: &mut EnchantedItemInUse<'_>,
 ) -> bool {
     match effect {
         EnchantmentEntityEffect::AllOf(effects) => {
@@ -534,7 +536,7 @@ fn apply_supported_entity_effect(
         EnchantmentEntityEffect::ChangeItemDamage { amount } => {
             let amount = amount.calculate(level) as i32;
             let has_infinite_materials = enchanted_entity
-                .and_then(Entity::as_living_entity)
+                .and_then(|entity| entity.as_living_entity())
                 .is_some_and(LivingEntity::has_infinite_materials);
             enchanted_item.hurt_and_break(amount, has_infinite_materials)
         }
@@ -549,8 +551,8 @@ fn apply_supported_entity_effect(
             let mut source = DamageSource::environment(damage_type);
             if let Some(enchanted_entity) = enchanted_entity {
                 source = source
-                    .with_causing_entity(enchanted_entity.id())
-                    .with_direct_entity(enchanted_entity.id());
+                    .with_causing_entity(enchanted_entity.clone())
+                    .with_direct_entity(enchanted_entity.clone());
             }
             entity.hurt(world, &source, damage);
             false
@@ -679,7 +681,14 @@ fn apply_supported_post_piercing_entity_effect(
         }
         EnchantmentEntityEffect::Ignite { .. } | EnchantmentEntityEffect::ApplyMobEffect { .. } => {
             let mut ignored_item = ItemStack::empty();
-            apply_supported_entity_effect(world, effect, level, user, Some(user), &mut ignored_item)
+            apply_supported_entity_effect(
+                world,
+                effect,
+                level,
+                user,
+                None,
+                &mut EnchantedItemInUse::Stack(&mut ignored_item),
+            )
         }
         EnchantmentEntityEffect::DamageEntity { .. }
         | EnchantmentEntityEffect::Unsupported { .. } => false,
@@ -999,7 +1008,7 @@ fn damage_source_predicate_matches(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::data_components::vanilla_components::{ENCHANTMENTS, ItemEnchantments};
@@ -1029,7 +1038,12 @@ mod tests {
     impl TestLivingEntity {
         fn new(id: i32, entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    id,
+                    DVec3::ZERO,
+                    entity_type.dimensions,
+                    Arc::downgrade(test_world()),
+                ),
                 living_base: LivingEntityBase::new(entity_type),
                 health: SyncMutex::new(20.0),
                 broken_slots: SyncMutex::new(Vec::new()),
@@ -1055,6 +1069,13 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
+        }
+
+        fn with_weapon_item(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
+            let equipment = self.living_base.equipment().try_lock().expect(
+                "entity effects must release equipment locks before inspecting source weapons",
+            );
+            visitor(Some(equipment.get_ref(EquipmentSlot::MainHand)));
         }
     }
 
@@ -1252,7 +1273,7 @@ mod tests {
         );
         let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
 
-        assert_f32_eq(get_damage_protection(test_world(), &victim, &source), 8.0);
+        assert_f32_eq(get_damage_protection(&victim, &source), 8.0);
     }
 
     #[test]
@@ -1270,7 +1291,7 @@ mod tests {
         );
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert_f32_eq(get_damage_protection(test_world(), &victim, &source), 0.0);
+        assert_f32_eq(get_damage_protection(&victim, &source), 0.0);
     }
 
     #[test]
@@ -1287,7 +1308,7 @@ mod tests {
         victim.equip(EquipmentSlot::Chest, broken_chestplate);
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert_f32_eq(get_damage_protection(test_world(), &victim, &source), 0.0);
+        assert_f32_eq(get_damage_protection(&victim, &source), 0.0);
     }
 
     #[test]
@@ -1303,12 +1324,10 @@ mod tests {
         victim.equip(EquipmentSlot::Feet, boots);
 
         assert!(is_immune_to_damage(
-            test_world(),
             &victim,
             &DamageSource::environment(&vanilla_damage_types::HOT_FLOOR)
         ));
         assert!(!is_immune_to_damage(
-            test_world(),
             &victim,
             &DamageSource::environment(&vanilla_damage_types::IN_FIRE)
         ));
@@ -1322,7 +1341,6 @@ mod tests {
         wrong_slot_victim.equip(EquipmentSlot::Head, helmet);
 
         assert!(!is_immune_to_damage(
-            test_world(),
             &wrong_slot_victim,
             &DamageSource::environment(&vanilla_damage_types::HOT_FLOOR)
         ));
@@ -1332,22 +1350,18 @@ mod tests {
     fn post_attack_ignite_applies_to_direct_melee_victim() {
         init_vanilla_registry();
 
-        let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
-        let victim = TestLivingEntity::new(2, &vanilla_entities::ZOMBIE);
+        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let victim = Arc::new(TestLivingEntity::new(2, &vanilla_entities::ZOMBIE));
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("fire_aspect"),
             2,
         );
         let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.id())
-            .with_direct_entity(attacker.id());
-        let context = EnchantmentPostAttackContext::new(
-            &victim,
-            Some(&attacker),
-            Some(&attacker),
-            &damage_source,
-        );
+            .with_causing_entity(attacker.clone())
+            .with_direct_entity(attacker.clone());
+        let victim_entity: SharedEntity = victim.clone();
+        let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
         do_post_attack_effects_from_item(test_world(), &stack, &context);
 
@@ -1358,7 +1372,6 @@ mod tests {
     fn projectile_spawned_effect_ignites_firework() {
         init_vanilla_registry();
 
-        let owner = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let projectile = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             2,
@@ -1371,7 +1384,7 @@ mod tests {
             1,
         );
 
-        on_projectile_spawned(test_world(), &mut rocket, &projectile, Some(&owner));
+        on_projectile_spawned(test_world(), &mut rocket, &projectile, None);
 
         assert_eq!(projectile.remaining_fire_ticks(), 2_000);
     }
@@ -1380,26 +1393,22 @@ mod tests {
     fn post_attack_effects_match_enchantment_slot() {
         init_vanilla_registry();
 
-        let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
-        let victim = TestLivingEntity::new(2, &vanilla_entities::ZOMBIE);
+        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let victim = Arc::new(TestLivingEntity::new(2, &vanilla_entities::ZOMBIE));
         let mut stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("fire_aspect"),
             1,
         );
         let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.id())
-            .with_direct_entity(attacker.id());
-        let context = EnchantmentPostAttackContext::new(
-            &victim,
-            Some(&attacker),
-            Some(&attacker),
-            &damage_source,
-        );
+            .with_causing_entity(attacker.clone())
+            .with_direct_entity(attacker.clone());
+        let victim_entity: SharedEntity = victim.clone();
+        let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
         apply_post_attack_effects(
             test_world(),
-            &mut stack,
+            &mut EnchantedItemInUse::Stack(&mut stack),
             Some(EquipmentSlot::Head),
             EnchantmentTarget::Attacker,
             &context,
@@ -1408,7 +1417,7 @@ mod tests {
 
         apply_post_attack_effects(
             test_world(),
-            &mut stack,
+            &mut EnchantedItemInUse::Stack(&mut stack),
             Some(EquipmentSlot::MainHand),
             EnchantmentTarget::Attacker,
             &context,
@@ -1420,8 +1429,8 @@ mod tests {
     fn post_attack_change_item_damage_calls_equipped_break_hook() {
         init_vanilla_registry();
 
-        let attacker = TestLivingEntity::new(1, &vanilla_entities::ZOMBIE);
-        let victim = TestLivingEntity::new(2, &vanilla_entities::PLAYER);
+        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::ZOMBIE));
+        let victim = Arc::new(TestLivingEntity::new(2, &vanilla_entities::PLAYER));
         let mut chestplate = enchanted_item(
             &vanilla_items::DIAMOND_CHESTPLATE,
             Identifier::vanilla_static("thorns"),
@@ -1431,17 +1440,13 @@ mod tests {
         victim.equip(EquipmentSlot::Chest, chestplate);
 
         let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.id())
-            .with_direct_entity(attacker.id());
-        let context = EnchantmentPostAttackContext::new(
-            &victim,
-            Some(&attacker),
-            Some(&attacker),
-            &damage_source,
-        );
+            .with_causing_entity(attacker.clone())
+            .with_direct_entity(attacker.clone());
+        let victim_entity: SharedEntity = victim.clone();
+        let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
         let source = ItemStack::empty();
 
-        do_post_attack_effects_with_item_source(test_world(), &victim, &source, &context);
+        do_post_attack_effects_with_item_source(test_world(), victim.as_ref(), &source, &context);
 
         let mut chestplate_broke = false;
         victim.with_equipment_slot(EquipmentSlot::Chest, &mut |stack| {
@@ -1466,23 +1471,19 @@ mod tests {
     fn post_attack_ignite_skips_indirect_damage_source() {
         init_vanilla_registry();
 
-        let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
-        let direct_entity = TestLivingEntity::new(2, &vanilla_entities::PLAYER);
-        let victim = TestLivingEntity::new(3, &vanilla_entities::ZOMBIE);
+        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let direct_entity = Arc::new(TestLivingEntity::new(2, &vanilla_entities::PLAYER));
+        let victim = Arc::new(TestLivingEntity::new(3, &vanilla_entities::ZOMBIE));
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("fire_aspect"),
             2,
         );
         let damage_source = DamageSource::environment(&vanilla_damage_types::ARROW)
-            .with_causing_entity(attacker.id())
-            .with_direct_entity(direct_entity.id());
-        let context = EnchantmentPostAttackContext::new(
-            &victim,
-            Some(&attacker),
-            Some(&direct_entity),
-            &damage_source,
-        );
+            .with_causing_entity(attacker.clone())
+            .with_direct_entity(direct_entity.clone());
+        let victim_entity: SharedEntity = victim.clone();
+        let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
         do_post_attack_effects_from_item(test_world(), &stack, &context);
 
@@ -1493,29 +1494,21 @@ mod tests {
     fn post_attack_mob_effect_matches_victim_predicate() {
         init_vanilla_registry();
 
-        let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
-        let spider = TestLivingEntity::new(2, &vanilla_entities::SPIDER);
-        let zombie = TestLivingEntity::new(3, &vanilla_entities::ZOMBIE);
+        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let spider = Arc::new(TestLivingEntity::new(2, &vanilla_entities::SPIDER));
+        let zombie = Arc::new(TestLivingEntity::new(3, &vanilla_entities::ZOMBIE));
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("bane_of_arthropods"),
             1,
         );
         let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.id())
-            .with_direct_entity(attacker.id());
-        let spider_context = EnchantmentPostAttackContext::new(
-            &spider,
-            Some(&attacker),
-            Some(&attacker),
-            &damage_source,
-        );
-        let zombie_context = EnchantmentPostAttackContext::new(
-            &zombie,
-            Some(&attacker),
-            Some(&attacker),
-            &damage_source,
-        );
+            .with_causing_entity(attacker.clone())
+            .with_direct_entity(attacker.clone());
+        let spider_entity: SharedEntity = spider.clone();
+        let spider_context = EnchantmentPostAttackContext::new(&spider_entity, &damage_source);
+        let zombie_entity: SharedEntity = zombie.clone();
+        let zombie_context = EnchantmentPostAttackContext::new(&zombie_entity, &damage_source);
 
         do_post_attack_effects_from_item(test_world(), &stack, &spider_context);
         do_post_attack_effects_from_item(test_world(), &stack, &zombie_context);

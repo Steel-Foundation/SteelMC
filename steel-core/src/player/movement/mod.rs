@@ -12,6 +12,7 @@ pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
 use glam::{DVec3, Vec3Swizzles};
+use std::sync::Arc;
 use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
@@ -217,7 +218,7 @@ impl Player {
         clippy::too_many_lines,
         reason = "matches vanilla handleMovePlayer; splitting would hurt readability"
     )]
-    pub fn handle_move_player(&self, packet: SMovePlayer) {
+    pub fn handle_move_player(self: &Arc<Self>, packet: SMovePlayer) {
         if Self::is_invalid_position(
             packet.get_x(0.0),
             packet.get_y(0.0),
@@ -342,7 +343,10 @@ impl Player {
             self.jump_from_ground();
         }
 
-        if self.move_entity(MoverType::Player, move_delta).is_none() {
+        if Arc::clone(self)
+            .move_entity(MoverType::Player, move_delta)
+            .is_none()
+        {
             if let Err(error) = self.teleport(start_pos, target_yaw, target_pitch) {
                 panic!(
                     "failed to correct rejected player {} movement: {error}",
@@ -361,7 +365,7 @@ impl Player {
             && !in_impulse_grace;
 
         let new_aabb = self.bounding_box().translate(target_pos - self.position());
-        let collision_world = WorldCollisionProvider::for_entity(&world, self);
+        let collision_world = WorldCollisionProvider::for_entity(&world, self.as_ref());
         let old_collision = collision_world.has_entity_context_collision(
             old_aabb,
             self.position().y,
@@ -385,7 +389,7 @@ impl Player {
                 );
             }
             self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
-            self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+            Arc::clone(self).do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
             self.remove_latest_movement_recording();
             return;
         }
@@ -395,7 +399,7 @@ impl Player {
         let floating_check = Some((player_stands_on_something, move_delta.y));
 
         let client_delta = target_pos - start_pos;
-        match self.apply_accepted_client_movement(
+        match Arc::clone(self).apply_accepted_client_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),
@@ -519,7 +523,10 @@ impl Player {
             vehicle.reset_fall_distance();
         }
 
-        if vehicle.move_entity(MoverType::Player, move_delta).is_none() {
+        if Arc::clone(&vehicle)
+            .move_entity(MoverType::Player, move_delta)
+            .is_none()
+        {
             self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
             return;
         }
@@ -574,7 +581,7 @@ impl Player {
         }
 
         let client_delta = target_pos - old_position;
-        match vehicle.apply_accepted_client_vehicle_movement(
+        match Arc::clone(&vehicle).apply_accepted_client_vehicle_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),

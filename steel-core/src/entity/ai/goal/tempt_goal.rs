@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -150,7 +151,7 @@ impl Goal for TemptGoal {
         self.is_running = false;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(player) = &self.player else {
             return;
         };

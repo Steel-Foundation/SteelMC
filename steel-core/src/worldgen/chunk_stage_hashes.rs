@@ -254,6 +254,7 @@ fn create_test_world(
             dim_type,
             seed as i64,
             WorldConfig {
+                damage_history: Weak::new(),
                 game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,

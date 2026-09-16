@@ -568,6 +568,7 @@ fn build_feature_fixture_at(
             .expect("feature benchmark generation pool should build"),
     );
     let world_config = WorldConfig {
+        damage_history: Weak::new(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -839,6 +840,7 @@ fn build_concurrent_feature_fixture(
             .expect("feature benchmark generation pool should build"),
     );
     let world_config = WorldConfig {
+        damage_history: Weak::new(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -930,6 +932,7 @@ fn build_concurrent_full_pipeline_fixture(
             .expect("full-pipeline benchmark generation pool should build"),
     );
     let world_config = WorldConfig {
+        damage_history: Weak::new(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -1025,6 +1028,7 @@ fn build_concurrent_light_fixture(
             .expect("light benchmark generation pool should build"),
     );
     let world_config = WorldConfig {
+        damage_history: Weak::new(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,

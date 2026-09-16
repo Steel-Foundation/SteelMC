@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use std::iter::empty;
 use std::sync::Weak;
 
@@ -225,12 +226,12 @@ impl LivingEntity for EndermiteEntity {
         Some(&sound_events::ENTITY_ENDERMITE_DEATH)
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = self.default_ai_step(entity);
         if self.level().is_some() && !self.is_persistence_required() {
             let mut lifetime = self.lifetime.lock();
             *lifetime += 1;
@@ -247,8 +248,8 @@ impl Mob for EndermiteEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {

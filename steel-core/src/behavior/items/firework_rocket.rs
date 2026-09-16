@@ -63,12 +63,13 @@ impl ItemBehavior for FireworkRocketItem {
         );
         rocket.set_owner_uuid(Some(context.player.uuid()));
         let rocket = Self::add_rocket(context.world, rocket);
+        let owner: SharedEntity = context.player.clone();
         context.inv.with_item(|item| {
             enchantment_helper::on_projectile_spawned(
                 context.world,
                 item,
                 rocket.as_ref(),
-                Some(context.player),
+                Some(&owner),
             );
             item.shrink_one();
         });
@@ -98,17 +99,18 @@ impl ItemBehavior for FireworkRocketItem {
             next_entity_id(),
             Arc::downgrade(context.world),
             source_item,
-            context.player,
+            context.player.as_ref(),
         );
         let rocket = Self::add_rocket(context.world, rocket);
         let has_infinite_materials = context.player.has_infinite_materials();
+        let owner: SharedEntity = context.player.clone();
         context.inv.with_item(|itemstack| {
             let item = itemstack.item();
             enchantment_helper::on_projectile_spawned(
                 context.world,
                 itemstack,
                 rocket.as_ref(),
-                Some(context.player),
+                Some(&owner),
             );
             itemstack.consume_one(has_infinite_materials);
             context

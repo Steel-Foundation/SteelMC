@@ -33,6 +33,7 @@ use crate::command::{
     command_tree_packet, create_registered_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
+use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
@@ -374,6 +375,7 @@ use jobs::teleport::{
 
 /// The main server struct.
 pub struct Server {
+    pub(crate) damage_history: Arc<DamageHistory>,
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
     /// Runtime permission groups and their persistence boundary.
@@ -621,6 +623,7 @@ impl Server {
             &resolved_worlds.worlds,
         );
 
+        let damage_history = Arc::new(DamageHistory::default());
         let mut construct_world = async |world_entry: &ResolvedWorldConfig,
                                          game_time_source: GameTimeSource|
                -> Result<Arc<World>, String> {
@@ -653,6 +656,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
+                    damage_history: Arc::downgrade(&damage_history),
                     game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
@@ -728,6 +732,7 @@ impl Server {
         }
 
         Ok(Server {
+            damage_history,
             config,
             permission_groups,
             cancel_token,

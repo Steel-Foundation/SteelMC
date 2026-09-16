@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -41,11 +42,12 @@ impl ItemBehavior for PotionItem {
         stack: &mut ItemStack,
         world: &Arc<World>,
         user: &dyn LivingEntity,
+        entity: &SharedEntity,
     ) -> ItemStack {
         let contents =
             stack.get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
         let duration_scale = stack.get_or_default(vanilla_components::POTION_DURATION_SCALE, 1.0);
-        apply_potion_contents(&contents, world, user, duration_scale);
+        apply_potion_contents(&contents, world, user, entity, duration_scale);
         finish_consuming_stack(stack, world, user)
     }
 

@@ -28,7 +28,6 @@ use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
-use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
@@ -42,8 +41,6 @@ const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
-/// Time before the last damage source expires, in game ticks.
-const DAMAGE_SOURCE_TIMEOUT: i64 = 40;
 
 /// Runtime mob-effect state.
 ///
@@ -615,8 +612,6 @@ struct LivingEntityState {
     last_hurt_by_mob_timestamp: i32,
     last_hurt_mob: Option<WeakEntity>,
     last_hurt_mob_timestamp: i32,
-    last_damage_source: Option<DamageSource>,
-    last_damage_stamp: i64,
     absorption_amount: f32,
     skip_drop_experience: bool,
     death_time: i32,
@@ -651,8 +646,6 @@ impl LivingEntityState {
             last_hurt_by_mob_timestamp: 0,
             last_hurt_mob: None,
             last_hurt_mob_timestamp: 0,
-            last_damage_source: None,
-            last_damage_stamp: 0,
             absorption_amount: 0.0,
             skip_drop_experience: false,
             death_time: 0,
@@ -1511,29 +1504,6 @@ impl LivingEntityBase {
             state.invulnerable_time = 20;
             Some((true, amount))
         }
-    }
-
-    /// Records vanilla `LivingEntity.lastDamageSource` after successful damage.
-    pub fn record_last_damage_source(&self, source: &DamageSource, game_time: i64) {
-        let mut state = self.state.lock();
-        state.last_damage_source = Some(source.clone());
-        state.last_damage_stamp = game_time;
-    }
-
-    /// Drops transient damage history when target-domain player state is restored.
-    pub(crate) fn clear_last_damage_source(&self) {
-        let mut state = self.state.lock();
-        state.last_damage_source = None;
-        state.last_damage_stamp = 0;
-    }
-
-    /// Returns vanilla `LivingEntity.getLastDamageSource()`.
-    pub fn last_damage_source(&self, game_time: i64) -> Option<DamageSource> {
-        let mut state = self.state.lock();
-        if game_time.wrapping_sub(state.last_damage_stamp) > DAMAGE_SOURCE_TIMEOUT {
-            state.last_damage_source = None;
-        }
-        state.last_damage_source.clone()
     }
 
     /// Sets vanilla `LivingEntity.lastHurtByPlayer` and memory time.
