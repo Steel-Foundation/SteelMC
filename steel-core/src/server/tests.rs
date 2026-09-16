@@ -48,6 +48,7 @@ use crate::command::execution::{
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
@@ -62,10 +63,11 @@ use crate::player::player_data::PersistentSlot;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::portal::WorldChangeRequest;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, insert_ready_full_chunk,
-    test_world,
+    TestPlayerBuilder, fresh_test_derived_world, fresh_test_world, fresh_test_world_in_domain,
+    insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
+use steel_registry::vanilla_damage_types;
 
 use super::DEBUG_STACK_SIZE;
 use super::known_players::{
@@ -215,6 +217,7 @@ async fn test_server_with_worlds(
     for world in loaded_worlds {
         worlds.insert(world.key.clone(), Arc::clone(world));
     }
+    worlds.validate_game_times()?;
     let scoreboards = DomainScoreboards::load(&worlds)
         .await
         .map_err(|error| format!("test scoreboards should load: {error}"))?;
@@ -290,7 +293,7 @@ mod connection_lifecycle;
 )]
 fn saved_location_planning_honors_explicit_world_selection() {
     let saved_world = fresh_test_world_in_domain("target", "saved");
-    let selected_world = fresh_test_world_in_domain("target", "selected");
+    let selected_world = fresh_test_derived_world(&saved_world, "selected");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1558,6 +1561,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
+        let damage = DamageSource::environment(&vanilla_damage_types::GENERIC);
+        player
+            .living_base()
+            .record_last_damage_source(&damage, source_world.game_time());
 
         let target_before_switch = server
             .player_data_storage
@@ -1567,6 +1574,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
 
         let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
+        assert!(
+            player.last_damage_source().is_some(),
+            "request must preserve source history"
+        );
         server.process_domain_switches();
 
         for tick in 1..=10_000 {
@@ -1582,6 +1593,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         assert!(server.jobs.is_empty(), "domain switch job should finish");
         assert!(Arc::ptr_eq(&player.get_world(), &target_world));
 
+        assert!(
+            player.last_damage_source().is_none(),
+            "committed target restore must clear source history"
+        );
         assert_default_domain_data(&player);
 
         drop(player);
@@ -2023,7 +2038,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
 )]
 fn player_world_selection_uses_one_token_owned_route() {
     let source_world = fresh_test_world_in_domain("alpha", "source");
-    let sibling_world = fresh_test_world_in_domain("alpha", "sibling");
+    let sibling_world = fresh_test_derived_world(&source_world, "sibling");
     let stale_sibling_world = fresh_test_world_in_domain("alpha", "sibling");
     let target_world = fresh_test_world_in_domain("beta", "target");
     let domains = [
@@ -2147,7 +2162,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 #[test]
 fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
     let source_world = fresh_test_world_in_domain("alpha", "safe_source");
-    let target_world = fresh_test_world_in_domain("alpha", "safe_target");
+    let target_world = fresh_test_derived_world(&source_world, "safe_target");
     init_behaviors();
     {
         let mut level_data = target_world.level_data.write();
@@ -3135,8 +3150,8 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 
 #[test]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
-    let source_world = fresh_test_world_in_domain("survival", "the_end");
     let target_world = fresh_test_world_in_domain("survival", "overworld");
+    let source_world = fresh_test_derived_world(&target_world, "the_end");
     prepare_respawn_test_world(&source_world);
     prepare_respawn_test_world(&target_world);
     let runtime = Builder::new_current_thread().enable_all().build();
@@ -4082,3 +4097,5 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
         shutdown_server(&server, &storage_root).await;
     });
 }
+
+mod game_time;

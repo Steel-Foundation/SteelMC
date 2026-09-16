@@ -577,12 +577,15 @@ impl Server {
     }
 
     #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
-    async fn tick_worlds_game(
+    pub(super) async fn tick_worlds_game(
         &self,
         workers: &WorldTickWorkers,
         tick_count: u64,
         runs_normally: bool,
     ) -> Result<(), WorldTickWorkerError> {
+        if runs_normally {
+            self.worlds.advance_domain_game_times();
+        }
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
