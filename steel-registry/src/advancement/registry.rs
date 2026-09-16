@@ -111,7 +111,7 @@ impl AdvancementRegistry {
         None
     }
 
-    fn register_alls(&mut self, advancements: &[AdvancementRef]) {
+    fn register_all(&mut self, advancements: &[AdvancementRef]) {
         let mut advancements_to_add: Vec<AdvancementRef> = advancements.to_vec();
 
         while !advancements_to_add.is_empty() {
@@ -151,7 +151,7 @@ impl AdvancementRegistry {
     }
 
     pub fn load(&mut self, advancements: &[AdvancementRef]) {
-        self.register_alls(advancements);
+        self.register_all(advancements);
         for advancement in self.roots.clone() {
             let node = self.adv_nodes.get(advancement).expect("unable to get the node");
             if node.has_display() {
