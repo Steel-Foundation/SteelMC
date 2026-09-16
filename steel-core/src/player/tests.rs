@@ -37,7 +37,7 @@ use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
     vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
-    vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
+    vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, SyncMutex};
@@ -925,6 +925,71 @@ fn player_damage_hurts_armor_equipment() {
     assert_eq!(
         inventory.get_ref(EquipmentSlot::Chest).get_damage_value(),
         2,
+    );
+}
+
+#[test]
+fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("player_attack_thorns");
+    let attacker = test_player(Arc::clone(&world));
+    let victim = TestPlayerBuilder::new(Arc::clone(&world), "Victim", 2).build();
+    victim.set_client_loaded(true);
+    {
+        let mut inventory = attacker.inventory.lock();
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+        inventory.set(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+        );
+    }
+    let mut chestplate = ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE);
+    // Vanilla's 15% chance per level makes level 7 activate on every attack.
+    chestplate.set_enchantments(&[(vanilla_enchantments::THORNS.key.clone(), 7)], false);
+    // Leave one durability for the incoming hit and two for the Thorns effect.
+    chestplate.set_damage_value(chestplate.get_max_damage() - 3);
+    victim
+        .inventory
+        .lock()
+        .set(EquipmentSlot::Chest, chestplate);
+    LivingEntity::detect_equipment_updates(attacker.as_ref());
+    LivingEntity::detect_equipment_updates(victim.as_ref());
+    let attacker_health = attacker.get_health();
+    let victim_health = victim.get_health();
+    let target: SharedEntity = victim.clone();
+
+    assert!(attacker.attack(&target));
+
+    assert!(victim.get_health() < victim_health);
+    assert!(attacker.get_health() < attacker_health);
+    let retaliation = attacker.last_damage_source().expect("Thorns retaliation");
+    assert_eq!(retaliation.damage_type, &vanilla_damage_types::THORNS);
+    assert!(Arc::ptr_eq(
+        retaliation.causing_entity().expect("Thorns owner"),
+        &target,
+    ));
+    assert_eq!(
+        attacker
+            .inventory
+            .lock()
+            .get_ref(EquipmentSlot::Head)
+            .get_damage_value(),
+        1,
+    );
+    assert!(
+        victim
+            .inventory
+            .lock()
+            .get_ref(EquipmentSlot::Chest)
+            .is_empty()
+    );
+    assert_eq!(
+        victim
+            .stats
+            .lock()
+            .get(&vanilla_stat_types::ITEM_BROKEN.get(&vanilla_items::DIAMOND_CHESTPLATE)),
+        1,
     );
 }
 

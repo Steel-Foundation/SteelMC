@@ -64,25 +64,33 @@ fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
             .try_add_entity(replacement)
             .expect("replacement registration");
     }
+    let weak_attacker = Arc::downgrade(&attacker);
+    let weak_projectile = Arc::downgrade(&projectile);
     let retained = source.clone();
-    drop(source);
-    assert!(Arc::ptr_eq(
-        retained.causing_entity().expect("attacker"),
-        &attacker
+    drop((source, attacker, projectile));
+    assert!(Weak::ptr_eq(
+        &Arc::downgrade(retained.causing_entity().expect("attacker")),
+        &weak_attacker
     ));
-    assert!(Arc::ptr_eq(
-        retained.direct_entity().expect("projectile"),
-        &projectile
+    assert!(Weak::ptr_eq(
+        &Arc::downgrade(retained.direct_entity().expect("projectile")),
+        &weak_projectile
     ));
     assert!(retained.causing_entity().expect("attacker").is_removed());
     assert!(retained.scales_with_difficulty());
     assert!(!retained.is_direct());
-    for entity in [&attacker, &projectile] {
+    for entity in [
+        retained.causing_entity().expect("attacker"),
+        retained.direct_entity().expect("projectile"),
+    ] {
         world
             .get_entity_by_id(entity.id())
             .expect("replacement")
             .set_removed(RemovalReason::Discarded);
     }
+    drop(retained);
+    assert!(weak_attacker.upgrade().is_none());
+    assert!(weak_projectile.upgrade().is_none());
 }
 
 #[test]
