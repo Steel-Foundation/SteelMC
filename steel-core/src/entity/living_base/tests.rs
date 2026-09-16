@@ -1,12 +1,11 @@
 use glam::DVec3;
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items, vanilla_mob_effects,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_entities,
+    vanilla_entity_data::PlayerEntityData, vanilla_items, vanilla_mob_effects,
 };
 use steel_utils::{BlockPos, types::InteractionHand};
 
 use crate::behavior::init_behaviors;
-use crate::entity::damage::DamageSource;
 use crate::inventory::equipment::EquipmentSlot;
 
 use super::{
@@ -58,23 +57,6 @@ fn fall_damage_starts_above_safe_fall_distance() {
         LivingEntityBase::calculate_fall_damage(4.0, 1.0, 3.0, 1.0),
         1
     );
-}
-
-#[test]
-fn last_damage_source_expires_after_vanilla_window() {
-    init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PIG);
-    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-
-    assert!(base.last_damage_source(0).is_none());
-
-    base.record_last_damage_source(&source, 10);
-
-    let last_source = base
-        .last_damage_source(50)
-        .expect("last damage source should remain valid for 40 ticks");
-    assert_eq!(last_source.damage_type, &vanilla_damage_types::GENERIC);
-    assert!(base.last_damage_source(51).is_none());
 }
 
 #[test]

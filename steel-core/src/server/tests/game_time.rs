@@ -54,10 +54,9 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         .expect("server");
         let workers = WorldTickWorkers::spawn(server.worlds.values()).expect("workers");
         let player = test_player(&server, Arc::clone(&primary));
-        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-        player
-            .living_base()
-            .record_last_damage_source(&source, primary.game_time());
+        let source = DamageSource::environment(&vanilla_damage_types::GENERIC)
+            .with_causing_entity(player.clone());
+        player.record_last_damage_source(&source);
         let mut server_iteration = 0;
         let transfer_age = 39;
         for _ in 0..transfer_age {

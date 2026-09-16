@@ -251,7 +251,7 @@ impl Entity for EnderPearlEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         // Vanilla `ThrownEnderpearl.tick`: vanish if the owner died (gamerule),
         // otherwise run the throwable projectile movement/collision loop and keep
         // the pearl's chunk loaded via the ENDER_PEARL ticket.
@@ -266,7 +266,7 @@ impl Entity for EnderPearlEntity {
             return;
         }
 
-        self.throwable_projectile_tick();
+        Arc::clone(&self).throwable_projectile_tick();
 
         if self.is_alive() {
             self.update_ender_pearl_ticket(&world);
@@ -329,22 +329,22 @@ impl Projectile for EnderPearlEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `ThrownEnderpearl.onHitEntity`: deal 0 damage with a `thrown`
         // source so the hit entity registers the impact without being hurt.
-        let mut damage =
-            DamageSource::environment(&vanilla_damage_types::THROWN).with_direct_entity(self.id());
+        let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
+            .with_direct_entity(self.clone());
         if let Some(owner) = self.get_owner() {
-            damage = damage.with_causing_entity(owner.id());
+            damage = damage.with_causing_entity(owner);
         }
         if let Some(world) = entity.level() {
             entity.hurt(&world, &damage, 0.0);
         }
     }
 
-    fn on_hit(&self, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        self.projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {

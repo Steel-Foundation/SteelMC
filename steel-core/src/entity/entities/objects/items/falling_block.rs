@@ -390,7 +390,7 @@ impl Entity for FallingBlockEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         let block_state = self.block_state();
         if block_state.is_air() {
             self.set_removed(RemovalReason::Discarded);
@@ -403,7 +403,7 @@ impl Entity for FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = self.move_entity(MoverType::SelfMovement, self.velocity());
+        let _ = Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
         if let Some(world) = self.level()
@@ -450,7 +450,7 @@ impl Entity for FallingBlockEntity {
     }
 
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         _damage_modifier: f32,
         _source: &DamageSource,
@@ -478,10 +478,10 @@ impl Entity for FallingBlockEntity {
             .map_or_else(
                 || {
                     DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
-                        .with_direct_entity(self.id())
-                        .with_causing_entity(self.id())
+                        .with_direct_entity(self.clone())
+                        .with_causing_entity(self.clone())
                 },
-                |fallable| fallable.get_fall_damage_source(self),
+                |fallable| fallable.get_fall_damage_source(&self),
             );
         let damage = (fall_distance as f32 * damage_per_distance)
             .floor()

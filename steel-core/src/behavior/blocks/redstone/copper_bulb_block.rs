@@ -217,7 +217,7 @@ mod tests {
         assert!(first_rise.get_value(LIT));
         let behavior = BLOCK_BEHAVIORS.get_behavior(first_rise.get_block());
         assert_eq!(
-            behavior.get_analog_output_signal(first_rise, &world, pos, Direction::North),
+            behavior.get_analog_output_signal(first_rise, world.as_ref(), pos, Direction::North),
             15
         );
 

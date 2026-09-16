@@ -1,6 +1,7 @@
 //! Shared vanilla entity tick helpers.
 
 use rustc_hash::FxHashSet;
+use std::sync::Arc;
 
 use super::{Entity, SharedEntity};
 
@@ -62,7 +63,7 @@ fn tick_passenger(
     if can_tick(entity) && ticked_entities.insert(entity.id()) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        entity.ride_tick();
+        Arc::clone(entity).ride_tick();
         post_tick(entity);
 
         for passenger in entity.passengers() {

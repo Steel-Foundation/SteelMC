@@ -63,7 +63,7 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
     context.world.game_event(
         &vanilla_game_events::BLOCK_CHANGE,
         pos,
-        &GameEventContext::new(Some(context.player), Some(state)),
+        &GameEventContext::new(Some(context.player.as_ref()), Some(state)),
     );
 
     let has_infinite_materials = context.player.has_infinite_materials();

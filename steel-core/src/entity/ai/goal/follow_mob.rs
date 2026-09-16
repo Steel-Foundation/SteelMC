@@ -110,7 +110,7 @@ impl Goal for FollowMobGoal {
         mob.set_pathfinding_malus(PathType::Water, self.old_water_cost);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(following_mob) = &self.following_mob else {
             return;
         };
@@ -224,7 +224,13 @@ mod tests {
     fn follow_mob_goal_looks_at_following_mob() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let mob_entity: SharedEntity = mob.clone();
         let following_mob: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
@@ -233,7 +239,7 @@ mod tests {
         ));
         goal.following_mob = Some(Arc::clone(&following_mob));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         let wanted_position = mob
             .mob_base()

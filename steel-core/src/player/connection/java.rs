@@ -1012,7 +1012,7 @@ mod tests {
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
         let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };

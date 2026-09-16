@@ -543,7 +543,7 @@ impl Entity for ItemEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         // Check if item is empty
         if self.get_item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
@@ -584,7 +584,9 @@ impl Entity for ItemEntity {
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
-            if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
+            if let Some(result) =
+                Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity())
+            {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {
                     return;

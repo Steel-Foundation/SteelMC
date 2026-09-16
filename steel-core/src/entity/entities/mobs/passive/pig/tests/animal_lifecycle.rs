@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn pig_uses_vanilla_animal_fire_path_malus() {
@@ -129,7 +130,12 @@ fn pig_animal_love_ticks_only_for_adults() {
 fn pig_damage_resets_vanilla_animal_love_time() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(test_world()),
+    );
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     pig.set_in_love_time(20);
 
@@ -142,11 +148,17 @@ fn pig_damage_resets_vanilla_animal_love_time() {
 fn pig_death_tick_removes_after_vanilla_death_duration() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Weak::new(),
+    ));
+    let pig_entity: SharedEntity = pig.clone();
     pig.set_health(0.0);
 
     for _ in 0..DEATH_DURATION {
-        LivingEntity::tick_living_entity(&pig);
+        LivingEntity::tick_living_entity(pig.as_ref(), &pig_entity);
     }
 
     assert_eq!(pig.removal_reason(), Some(RemovalReason::Killed));

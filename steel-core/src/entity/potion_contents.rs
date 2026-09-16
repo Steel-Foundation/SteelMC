@@ -2,11 +2,12 @@
 //! `LivingEntity`/`World`, which can't live alongside the data in
 //! `steel_registry::data_components::PotionContents`.
 
+use crate::entity::SharedEntity;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::data_components::PotionContents;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
-use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
+use crate::entity::{LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
 /// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
@@ -14,11 +15,12 @@ pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,
     user: &dyn LivingEntity,
+    entity: &SharedEntity,
     duration_scale: f32,
 ) {
     // Vanilla passes the drinker itself as both `source` and `owner` when it
     // is a player (`null` otherwise), attributing instantaneous damage to it.
-    let damage_source_entity = user.as_player().map(Entity::id);
+    let damage_source_entity = user.as_player().map(|_| entity);
     for effect in contents.all_effects() {
         let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect.effect());
         if let Some(instantaneous) = behavior.as_instantaneous() {
@@ -66,6 +68,9 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::SharedEntity;
+    use std::sync::Arc;
+
     use steel_registry::data_components::PotionContents;
     use steel_registry::{
         MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
@@ -109,7 +114,8 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let player_entity: SharedEntity = player.clone();
         player.set_health(1.0);
 
         let contents = PotionContents::new(
@@ -123,7 +129,7 @@ mod tests {
             None,
         );
 
-        apply_potion_contents(&contents, &world, player.as_ref(), 1.0);
+        apply_potion_contents(&contents, &world, player.as_ref(), &player_entity, 1.0);
 
         // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
         assert_eq!(player.get_health(), 5.0);

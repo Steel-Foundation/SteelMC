@@ -1,5 +1,6 @@
 //! `HealOrHarmMobEffect` behavior (Instant Health / Instant Damage).
 
+use crate::entity::SharedEntity;
 use steel_registry::vanilla_damage_types;
 
 use super::{InstantaneousMobEffect, MobEffectBehavior};
@@ -52,8 +53,8 @@ impl InstantaneousMobEffect for HealOrHarmBehavior {
         world: &World,
         user: &dyn LivingEntity,
         amplifier: i32,
-        direct_entity: Option<i32>,
-        causing_entity: Option<i32>,
+        direct_entity: Option<&SharedEntity>,
+        causing_entity: Option<&SharedEntity>,
         scale: f32,
     ) {
         if self.is_harm == user.is_inverted_heal_and_harm() {
@@ -66,11 +67,11 @@ impl InstantaneousMobEffect for HealOrHarmBehavior {
             } else {
                 &vanilla_damage_types::MAGIC
             });
-            if let Some(entity_id) = direct_entity {
-                source = source.with_direct_entity(entity_id);
-            }
-            if let Some(entity_id) = causing_entity {
-                source = source.with_causing_entity(entity_id);
+            if let Some(direct) = direct_entity {
+                source = source.with_direct_entity(direct.clone());
+                if let Some(cause) = causing_entity {
+                    source = source.with_causing_entity(cause.clone());
+                }
             }
             // Vanilla truncates via a Java `(int)` cast; `as i32` on a
             // non-negative f32 truncates the same way.

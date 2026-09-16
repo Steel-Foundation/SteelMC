@@ -71,7 +71,7 @@ const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
     let world = fresh_test_world("initial_player_cosmetic_metadata");
-    let player = TestPlayerBuilder::new(world, "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
         .uuid(Uuid::from_u128(1))
         .client_information(ClientInformation {
             model_customization: MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET,
@@ -117,7 +117,7 @@ fn client_information_initializes_player_cosmetic_metadata() {
 #[test]
 fn play_client_information_dirties_changed_cosmetic_metadata_once() {
     let world = fresh_test_world("updated_player_cosmetic_metadata");
-    let player = test_player(world);
+    let player = test_player(Arc::clone(&world));
     let _ = player.pack_dirty_entity_data();
 
     let packet = SClientInformation {
@@ -443,10 +443,11 @@ fn ai_step_copies_player_yaw_to_head_yaw() {
     init_vanilla_registry();
     init_behaviors();
     let player = test_player(Arc::clone(test_world()));
+    let player_entity: SharedEntity = player.clone();
     player.set_rotation((90.0, 15.0));
     player.set_y_head_rot(-45.0);
 
-    let _ = player.ai_step();
+    let _ = player.ai_step(&player_entity);
 
     assert_eq!(player.y_head_rot().to_bits(), 90.0_f32.to_bits());
 }
@@ -852,17 +853,24 @@ fn hurt_uses_explicit_world_difficulty() {
 }
 
 #[test]
-fn conditional_damage_does_not_scale_for_player_or_unresolved_causes() {
+fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
     let world = hard_damage_test_world();
-    let causing_player = test_player(Arc::clone(world));
-    let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
-
-    assert!(!source.scales_with_difficulty(Some(causing_player.as_ref())));
-
-    let target = test_player(Arc::clone(world));
-    let unresolved_source = source.with_causing_entity(2);
-    assert!(target.hurt(world, &unresolved_source, 4.0));
-    assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
+    let causing_player: SharedEntity = test_player(Arc::clone(world));
+    let object: SharedEntity = Arc::new(ItemEntity::new(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::ZERO,
+        Arc::downgrade(world),
+    ));
+    for cause in [None, Some(causing_player), Some(object)] {
+        let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+        if let Some(cause) = cause {
+            source = source.with_causing_entity(cause);
+        }
+        let target = test_player(Arc::clone(world));
+        assert!(target.hurt(world, &source, 4.0));
+        assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
+    }
 }
 
 #[test]
@@ -1472,6 +1480,7 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
     let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
+    let player_entity: SharedEntity = player.clone();
 
     {
         let mut inventory = player.inventory.lock();
@@ -1483,7 +1492,7 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
 
     player.start_using_item(InteractionHand::MainHand);
     for _ in 0..40 {
-        player.tick_active_item_use();
+        player.tick_active_item_use(&player_entity);
     }
 
     let hand_item = player
@@ -1559,19 +1568,19 @@ fn throttle_player_dropping_items_from_creative_menu() {
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    player.tick();
+    Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
     for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
-        player.tick();
+        Arc::clone(&player).tick();
     }
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    player.tick();
+    Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }

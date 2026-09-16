@@ -1,6 +1,7 @@
 use super::door_interact::DoorInteractGoal;
 use super::selector::{Goal, GoalControls};
 use crate::entity::PathfinderMob;
+use crate::entity::SharedEntity;
 
 const FORGET_TICKS: i32 = 20;
 
@@ -47,7 +48,7 @@ impl Goal for OpenDoorGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         self.forget_time -= 1;
         self.door_interact.tick(mob);
     }
@@ -55,6 +56,8 @@ impl Goal for OpenDoorGoal {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -88,14 +91,15 @@ mod tests {
     fn open_door_goal_uses_vanilla_forget_time() {
         init_vanilla_registry();
         let mut goal = OpenDoorGoal::new(true);
-        let mob = pig();
+        let mob = Arc::new(pig());
+        let mob_entity: SharedEntity = mob.clone();
 
-        goal.start(&mob);
+        goal.start(mob.as_ref());
 
         assert_eq!(goal.forget_time, FORGET_TICKS);
-        assert!(goal.can_continue_to_use(&mob));
+        assert!(goal.can_continue_to_use(mob.as_ref()));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(goal.forget_time, FORGET_TICKS - 1);
     }

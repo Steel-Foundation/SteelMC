@@ -1,3 +1,4 @@
+use crate::test_support::TestWorld;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
@@ -113,7 +114,7 @@ impl GameEventListener for RecordingGameEventListener {
     }
 }
 
-fn jukebox_world(key: &'static str) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
+fn jukebox_world(key: &'static str) -> (TestWorld, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
     init_globals();
     let world = fresh_test_world(key);
     let pos = BlockPos::new(8, 64, 8);

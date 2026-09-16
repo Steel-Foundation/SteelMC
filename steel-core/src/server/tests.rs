@@ -1,5 +1,6 @@
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use std::ptr;
 use std::sync::atomic::AtomicI32;
 use std::thread;
 use std::{
@@ -64,7 +65,7 @@ use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::portal::WorldChangeRequest;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_derived_world, fresh_test_world, fresh_test_world_in_domain,
-    insert_ready_full_chunk, test_world,
+    insert_ready_full_chunk,
 };
 use crate::world::World;
 use steel_registry::vanilla_damage_types;
@@ -242,7 +243,21 @@ async fn test_server_with_worlds(
     let config = test_runtime_config();
     let registry_cache = RegistryCache::new(config.compression);
 
+    let damage_history = loaded_worlds[0]
+        .damage_history
+        .upgrade()
+        .expect("test history");
+    assert!(
+        loaded_worlds.iter().all(|world| {
+            world
+                .damage_history
+                .upgrade()
+                .is_some_and(|history| Arc::ptr_eq(&history, &damage_history))
+        }),
+        "test worlds must share the server's history owner"
+    );
     Ok(Arc::new(Server {
+        damage_history,
         config,
         permission_groups,
         cancel_token: CancellationToken::new(),
@@ -1561,10 +1576,9 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
-        let damage = DamageSource::environment(&vanilla_damage_types::GENERIC);
-        player
-            .living_base()
-            .record_last_damage_source(&damage, source_world.game_time());
+        let damage = DamageSource::environment(&vanilla_damage_types::GENERIC)
+            .with_causing_entity(player.clone());
+        player.record_last_damage_source(&damage);
 
         let target_before_switch = server
             .player_data_storage
@@ -1684,7 +1698,7 @@ fn command_world_scope_survives_entity_transforms() {
 
 #[test]
 fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
-    let world = Arc::clone(test_world());
+    let world = fresh_test_world("server_test");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1715,7 +1729,7 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
             "Initiator",
             31,
         );
-        let (receiver, _) = test_player_with_packets(&server, world, "Receiver", 32);
+        let (receiver, _) = test_player_with_packets(&server, Arc::clone(&world), "Receiver", 32);
         assert!(server.online_players.insert(Arc::clone(&initiator)));
         assert!(server.online_players.insert(Arc::clone(&receiver)));
 
@@ -2702,8 +2716,13 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
             "TestPlayer",
             1,
         );
-        let (observer, observer_packets) =
-            test_player_with_uuid_and_packets(&server, world, Uuid::from_u128(2), "Observer", 2);
+        let (observer, observer_packets) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            Uuid::from_u128(2),
+            "Observer",
+            2,
+        );
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(server.online_players.insert(Arc::clone(&observer)));
 
@@ -3125,6 +3144,11 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
+        let old_entity: SharedEntity = old_player.clone();
+        let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
+            .with_causing_entity(old_entity.clone())
+            .with_direct_entity(old_entity);
+        old_player.record_last_damage_source(&source);
         old_player.set_health(0.0);
         old_player.respawn();
         assert_eq!(server.jobs.len(), 1);
@@ -3132,6 +3156,13 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 
         let replacement = current_respawn_replacement(&server, &world, &old_player);
         assert_eq!(replacement.get_health(), replacement.get_max_health());
+        assert!(replacement.last_damage_source().is_none());
+        assert!(old_player.last_damage_source().is_some());
+        let retained = source.causing_entity().expect("retained old player");
+        assert!(ptr::eq(
+            retained.as_player().expect("player"),
+            old_player.as_ref()
+        ));
         assert!(!replacement.experience.lock().dirty);
         assert!(old_player.is_removed());
         assert_eq!(old_player.removal_reason(), Some(RemovalReason::Killed));
@@ -3141,7 +3172,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         world.chunk_map.stop_generation_refill_loop();
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
-        drop((old_player, replacement, server));
+        drop((source, old_player, replacement, server));
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }
@@ -3149,6 +3180,10 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "exercises the complete End respawn ownership lifecycle"
+)]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
     let target_world = fresh_test_world_in_domain("survival", "overworld");
     let source_world = fresh_test_derived_world(&target_world, "the_end");
@@ -3192,6 +3227,10 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         ));
         let old_owner: SharedEntity = old_player.clone();
         pearl.set_owner_entity(Some(&old_owner));
+        let source = DamageSource::environment(&vanilla_damage_types::THROWN)
+            .with_causing_entity(old_owner.clone())
+            .with_direct_entity(pearl.clone());
+        old_player.record_last_damage_source(&source);
         let shared_pearl: SharedEntity = pearl.clone();
         if let Err(error) = source_world.try_add_entity(Arc::clone(&shared_pearl)) {
             panic!("test pearl should be added: {error}");
@@ -3216,6 +3255,12 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
 
         let replacement = current_respawn_replacement(&server, &target_world, &old_player);
         assert!(replacement.has_seen_credits());
+        assert!(replacement.last_damage_source().is_none());
+        assert!(old_player.last_damage_source().is_some());
+        assert!(Arc::ptr_eq(
+            source.causing_entity().expect("original owner"),
+            &old_owner
+        ));
         assert!(!replacement.has_won_game());
         assert!(!replacement.experience.lock().dirty);
         assert_eq!(
@@ -3230,7 +3275,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         );
 
         assert!(replacement.ender_pearls().is_empty());
-        pearl.tick();
+        Arc::clone(&pearl).tick();
         assert!(
             pearl
                 .projectile_owner()
@@ -3451,7 +3496,7 @@ fn permission_updates_reject_only_new_unknown_group_assignments() {
 
 #[test]
 fn command_source_and_operator_checks_use_published_subject_state() {
-    let world = Arc::clone(test_world());
+    let world = fresh_test_world("server_test");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -3465,7 +3510,7 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player_with_uuid(&server, world, uuid);
+        let player = test_player_with_uuid(&server, Arc::clone(&world), uuid);
         let permission = permission_key("minecraft.command.stop");
         let stale_player_permissions =
             PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
@@ -3521,7 +3566,7 @@ fn command_source_and_operator_checks_use_published_subject_state() {
 
 #[test]
 fn renamed_join_message_only_reaches_existing_players() {
-    let world = Arc::clone(test_world());
+    let world = fresh_test_world("server_test");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -3540,7 +3585,7 @@ fn renamed_join_message_only_reaches_existing_players() {
         let (existing_player, existing_packets) =
             test_player_with_packets(&server, Arc::clone(&world), "ExistingPlayer", 1);
         let (joining_player, joining_packets) =
-            test_player_with_packets(&server, world, "NewName", 2);
+            test_player_with_packets(&server, Arc::clone(&world), "NewName", 2);
         assert!(server.online_players.insert(existing_player));
         assert!(server.online_players.insert(Arc::clone(&joining_player)));
 

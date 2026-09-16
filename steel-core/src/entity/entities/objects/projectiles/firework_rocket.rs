@@ -203,7 +203,7 @@ impl FireworkRocketEntity {
         self.get_hit_result_on_move_vector()
     }
 
-    fn tick_free_flying(&self) -> Option<ProjectileHit> {
+    fn tick_free_flying(self: &Arc<Self>) -> Option<ProjectileHit> {
         if !self.is_shot_at_angle() {
             let horizontal_acceleration = if self.horizontal_collision() {
                 1.0
@@ -220,7 +220,7 @@ impl FireworkRocketEntity {
 
         let movement = self.velocity();
         let hit = self.get_hit_result_on_move_vector();
-        self.move_entity(MoverType::SelfMovement, movement);
+        Arc::clone(self).move_entity(MoverType::SelfMovement, movement);
         self.apply_effects_from_blocks();
         self.set_velocity(movement);
         hit
@@ -239,16 +239,16 @@ impl FireworkRocketEntity {
         self.explosion_count() != 0
     }
 
-    fn fireworks_damage_source(&self) -> DamageSource {
+    fn fireworks_damage_source(self: &Arc<Self>) -> DamageSource {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
-            .with_direct_entity(self.id());
+            .with_direct_entity(self.clone());
         if let Some(owner) = self.get_owner() {
-            source = source.with_causing_entity(owner.id());
+            source = source.with_causing_entity(owner);
         }
         source
     }
 
-    fn deal_explosion_damage(&self, world: &Arc<World>) {
+    fn deal_explosion_damage(self: &Arc<Self>, world: &Arc<World>) {
         let explosion_count = self.explosion_count();
         if explosion_count == 0 {
             return;
@@ -303,7 +303,7 @@ impl FireworkRocketEntity {
         }
     }
 
-    fn explode(&self, world: &Arc<World>) {
+    fn explode(self: &Arc<Self>, world: &Arc<World>) {
         self.broadcast_entity_event(EntityStatus::FireworksExplode);
         let owner = self.get_owner();
         self.game_event_with_source_entity(&vanilla_game_events::EXPLODE, owner.as_deref());
@@ -341,7 +341,7 @@ impl Entity for FireworkRocketEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.projectile_base_tick();
         let Some(world) = self.level() else {
             return;
@@ -356,7 +356,7 @@ impl Entity for FireworkRocketEntity {
             && self.is_alive()
             && let Some(hit) = &hit
         {
-            self.hit_target_or_deflect_self(hit);
+            Arc::clone(&self).hit_target_or_deflect_self(hit);
             self.mark_velocity_sync();
         }
 
@@ -446,13 +446,13 @@ impl Projectile for FireworkRocketEntity {
         (delta.x, delta.z)
     }
 
-    fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, _entity: &SharedEntity, _location: DVec3) {
         if let Some(world) = self.level() {
             self.explode(&world);
         }
     }
 
-    fn on_hit_block(&self, hit: &ClipHitResult) {
+    fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             self.run_hit_block_entity_inside(&world, hit);
             if self.has_explosion() {
@@ -664,17 +664,17 @@ mod tests {
     #[test]
     fn firework_damage_source_has_no_raw_position() {
         init_vanilla_registry();
-        let rocket = FireworkRocketEntity::new(
+        let rocket = Arc::new(FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             23,
             DVec3::new(1.0, 2.0, 3.0),
             Weak::new(),
-        );
+        ));
 
         let source = rocket.fireworks_damage_source();
 
-        assert_eq!(source.direct_entity_id, Some(23));
-        assert!(source.source_position.is_none());
+        assert_eq!(source.direct_entity().map(|entity| entity.id()), Some(23));
+        assert!(source.source_position_raw().is_none());
     }
 
     #[test]

@@ -973,7 +973,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     let world = fresh_test_world("heal_or_harm_inversion");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world)
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &living, 0);
@@ -983,7 +983,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         "instant health heals a living mob"
     );
 
-    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let zombie = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world)
         .with_entity_type(&vanilla_entities::ZOMBIE)
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &zombie, 0);
@@ -993,7 +993,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         "instant health hurts an inverted (undead) mob"
     );
 
-    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world)
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &living, 0);
@@ -1003,7 +1003,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         "instant damage hurts a living mob"
     );
 
-    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let zombie = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world)
         .with_entity_type(&vanilla_entities::ZOMBIE)
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &zombie, 0);

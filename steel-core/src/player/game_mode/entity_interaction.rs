@@ -9,6 +9,7 @@ use super::{
 };
 use crate::player::food_data::food_constants;
 use std::ops::Add;
+use std::sync::Arc;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
 
@@ -36,20 +37,23 @@ impl Player {
         DVec3::new(position.x, self.get_eye_y(), position.z)
     }
 
-    fn damage_source_for_attack_type(&self, damage_type: &'static DamageType) -> DamageSource {
+    fn damage_source_for_attack_type(
+        self: &Arc<Self>,
+        damage_type: &'static DamageType,
+    ) -> DamageSource {
         DamageSource::environment(damage_type)
-            .with_causing_entity(self.id())
-            .with_direct_entity(self.id())
-            .with_source_position(self.position())
+            .with_causing_entity(self.clone())
+            .with_direct_entity(self.clone())
     }
 
-    fn attack_damage_source(&self, attacking_item: &ItemStack) -> DamageSource {
+    fn attack_damage_source(self: &Arc<Self>, attacking_item: &ItemStack) -> DamageSource {
         if let Some(damage_type) = attacking_item.get_damage_type() {
             return self.damage_source_for_attack_type(damage_type);
         }
+        let attacker: SharedEntity = self.clone();
         if let Some(source) = ITEM_BEHAVIORS
             .get_behavior(attacking_item.item())
-            .get_item_damage_source(self)
+            .get_item_damage_source(&attacker)
         {
             return source;
         }
@@ -278,7 +282,11 @@ impl Player {
             && !self.is_passenger_of_same_vehicle(target)
     }
 
-    pub(super) fn piercing_attack(&self, item_stack: &ItemStack, piercing_weapon: &PiercingWeapon) {
+    pub(super) fn piercing_attack(
+        self: &Arc<Self>,
+        item_stack: &ItemStack,
+        piercing_weapon: &PiercingWeapon,
+    ) {
         let world = self.get_world();
         let base_damage = self
             .attributes()
@@ -296,7 +304,7 @@ impl Player {
         }
 
         self.reset_attack_strength_ticker();
-        enchantment_helper::do_post_piercing_attack_effects(&world, self);
+        enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
         if hit_something {
             self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
         }
@@ -305,7 +313,7 @@ impl Player {
     }
 
     fn stab_attack(
-        &self,
+        self: &Arc<Self>,
         target: &SharedEntity,
         base_damage: f32,
         deals_damage: bool,
@@ -358,7 +366,7 @@ impl Player {
             return false;
         }
 
-        self.item_attack_interaction(entity, &damage_source, damage_dealt);
+        self.item_attack_interaction(target, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
@@ -379,7 +387,7 @@ impl Player {
     ///
     /// Returns `true` if the target accepted damage.
     #[must_use]
-    pub fn attack(&self, target: &SharedEntity) -> bool {
+    pub fn attack(self: &Arc<Self>, target: &SharedEntity) -> bool {
         let entity = target.as_ref();
         if self.cannot_attack(entity) {
             return false;
@@ -414,7 +422,7 @@ impl Player {
         let mut base_damage = attack_damage * Self::base_damage_scale_factor(attack_strength_scale);
         base_damage += ITEM_BEHAVIORS
             .get_behavior(attacking_item.item())
-            .get_attack_damage_bonus(self, entity, base_damage, &damage_source);
+            .get_attack_damage_bonus(self.as_ref(), entity, base_damage, &damage_source);
         let total_damage = base_damage + magic_boost;
         let full_strength_attack = attack_strength_scale > 0.9;
         let knockback_attack = self.is_sprinting() && full_strength_attack;
@@ -443,24 +451,24 @@ impl Player {
                     + sprint_knockback,
                 old_movement,
             );
-            self.item_attack_interaction(entity, &damage_source, true);
+            self.item_attack_interaction(target, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         }
 
         let world = self.get_world();
-        enchantment_helper::do_post_piercing_attack_effects(&world, self);
+        enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
         was_hurt
     }
 
     fn item_attack_interaction(
         &self,
-        entity: &dyn Entity,
+        target: &SharedEntity,
         damage_source: &DamageSource,
         apply_to_target: bool,
     ) {
-        let post_attack_context =
-            EnchantmentPostAttackContext::new(entity, Some(self), Some(self), damage_source);
+        let entity = target.as_ref();
+        let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
         let (source_item, item_hurt_enemy) = {
             let mut inventory = self.inventory.lock();
             inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
@@ -569,7 +577,7 @@ impl Player {
     }
 
     /// Handles a client request to attack an entity.
-    pub fn handle_attack(&self, packet: SAttack) {
+    pub fn handle_attack(self: &Arc<Self>, packet: SAttack) {
         if !self.has_client_loaded() || self.is_spectator() {
             return;
         }

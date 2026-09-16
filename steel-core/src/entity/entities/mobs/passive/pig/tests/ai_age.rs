@@ -1,6 +1,7 @@
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::test_support::insert_ready_full_chunk;
+use std::sync::Arc;
 use steel_utils::{ChunkPos, types::UpdateFlags};
 
 #[test]
@@ -37,10 +38,16 @@ fn pig_breeding_offspring_inherits_parent_variant() {
 fn pig_mob_ai_increments_no_action_time() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Weak::new(),
+    ));
+    let pig_entity: SharedEntity = pig.clone();
 
     pig.set_no_action_time(12);
-    Mob::mob_server_ai_step(&pig);
+    Mob::mob_server_ai_step(pig.as_ref(), &pig_entity);
 
     assert_eq!(pig.no_action_time(), 13);
 }
@@ -49,7 +56,12 @@ fn pig_mob_ai_increments_no_action_time() {
 fn pig_damage_resets_no_action_time() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(test_world()),
+    );
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     pig.set_no_action_time(42);
@@ -189,24 +201,24 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
     ));
 
     let initial_position = DVec3::new(8.75, 80.0, 8.5);
-    let pig = PigEntity::new(
+    let pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         initial_position,
         Arc::downgrade(&world),
-    );
+    ));
     pig.set_no_ai(true);
     pig.set_age(-1);
 
     assert!(pig.is_first_tick());
-    assert!(AgeableMob::is_baby(&pig));
+    assert!(AgeableMob::is_baby(pig.as_ref()));
 
     pig.set_age(0);
 
     assert_eq!(pig.base().dimensions(), vanilla_entities::PIG.dimensions);
     assert_eq!(pig.position(), initial_position);
 
-    pig.tick();
+    Arc::clone(&pig).tick();
 
     assert!(!pig.is_first_tick());
     assert_eq!(pig.position(), initial_position);

@@ -155,7 +155,7 @@ impl Entity for ThrownEggEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.throwable_projectile_tick();
     }
 
@@ -207,22 +207,22 @@ impl Projectile for ThrownEggEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `ThrownEgg.onHitEntity`: super.onHitEntity() (no-op), then
         // deal 0 damage with a `thrown` source so the hit registers the impact.
-        let mut damage =
-            DamageSource::environment(&vanilla_damage_types::THROWN).with_direct_entity(self.id());
+        let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
+            .with_direct_entity(self.clone());
         if let Some(owner) = self.get_owner() {
-            damage = damage.with_causing_entity(owner.id());
+            damage = damage.with_causing_entity(owner);
         }
         if let Some(world) = entity.level() {
             entity.hurt(&world, &damage, 0.0);
         }
     }
 
-    fn on_hit(&self, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEgg.onHit`: super.onHit() then the server-side hatch.
-        self.projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         let Some(world) = self.level() else {
             return;

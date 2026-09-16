@@ -1,12 +1,13 @@
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn living_ride_tick_resets_fall_distance() {
     init_vanilla_registry();
 
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     entity.set_fall_distance(7.0);
-    let entity_ref: &dyn Entity = &entity;
+    let entity_ref: SharedEntity = entity.clone();
 
     entity_ref.ride_tick();
 

@@ -26,7 +26,7 @@ impl Player {
         self.reset_inner_after(new_world, ResetReason::WorldChange, true, || {
             restore_state();
             // Damage timestamps belong to the source domain's clock.
-            self.living_base.clear_last_damage_source();
+            self.base.clear_last_damage_source();
         });
     }
 
