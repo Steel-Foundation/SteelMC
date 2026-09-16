@@ -31,7 +31,8 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::loot_table::{
-    DamageSourceInfo, EntityRef, EntityRefFlags, LootContext, LootTableRef,
+    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
+    LootContext, LootTableRef,
 };
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -1351,7 +1352,25 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
     }
 }
 
-pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
+/// Clones every equipment slot of `entity` (vanilla `LivingEntity.getItemBySlot`) so loot
+/// predicates can read it without holding the equipment lock while the table rolls.
+pub(crate) fn living_loot_equipment<E: LivingEntity + ?Sized>(entity: &E) -> EntityEquipmentSlots {
+    EquipmentSlot::ALL.map(|slot| {
+        let mut item_stack = ItemStack::empty();
+        entity.with_equipment_slot(slot, &mut |item| item_stack = item.clone());
+        item_stack
+    })
+}
+
+/// [`living_loot_equipment`] for any entity; `None` for non-living entities.
+pub(crate) fn loot_equipment(entity: &dyn Entity) -> Option<EntityEquipmentSlots> {
+    entity.as_living_entity().map(living_loot_equipment)
+}
+
+pub(crate) fn entity_loot_ref<'a>(
+    entity: &'a dyn Entity,
+    equipment: Option<&'a EntityEquipmentSlots>,
+) -> EntityRef<'a> {
     let living_entity = entity.as_living_entity();
     let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
@@ -1363,8 +1382,8 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
             is_swimming: entity.is_swimming(),
             is_baby: living_entity.is_some_and(LivingEntity::is_baby),
         },
-        // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
-        equipment: None,
+        equipment: equipment.map(EntityEquipmentRef::new),
+        // TODO: Include custom name once loot contexts can snapshot entity data.
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),

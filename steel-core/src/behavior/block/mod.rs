@@ -36,7 +36,9 @@ use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
-use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref};
+use crate::entity::{
+    Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref, loot_equipment,
+};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
@@ -73,8 +75,12 @@ pub(crate) fn drop_from_block_interact_loot_table(
 
     // TODO: Add the block entity to the context when it can be done.
 
+    let interacting_equipment = interacting_entity.and_then(loot_equipment);
     if let Some(interacting_entity) = interacting_entity {
-        ctx = ctx.with_interacting_entity(entity_loot_ref(interacting_entity));
+        ctx = ctx.with_interacting_entity(entity_loot_ref(
+            interacting_entity,
+            interacting_equipment.as_ref(),
+        ));
     }
 
     if let Some(tool) = tool {
