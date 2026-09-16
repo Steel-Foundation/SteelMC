@@ -141,7 +141,7 @@ where
         suggestion: Arc<impl SuggestionProvider<S, R::Argument> + 'static>,
     ) -> Self {
         debug_assert!(
-            !matches!(self.data, CommandNodeData::Argument(_, _)),
+            matches!(self.data, CommandNodeData::Argument(_, _)),
             "suggests must be called on an argument node"
         );
         if let CommandNodeData::Argument(_, data) = &mut self.data {
