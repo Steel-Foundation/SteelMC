@@ -125,18 +125,23 @@ impl WorldTickWorkers {
 #[cfg(test)]
 mod tests {
     use futures::executor::block_on;
+    use tokio::sync::oneshot::error::TryRecvError;
 
     use super::WorldTickWorkers;
-    use crate::test_support::fresh_test_world;
+    use crate::test_support::test_domain;
 
     #[test]
     fn persistent_workers_tick_every_world_across_boundaries() {
-        let first = fresh_test_world("persistent_worker_first");
-        let second = fresh_test_world("persistent_worker_second");
-        let Ok(workers) = WorldTickWorkers::spawn([&first, &second]) else {
+        let worlds = test_domain("workers", &["primary", "derived"]);
+        let first = worlds.default_world("workers").expect("primary");
+        let second = worlds
+            .get(&steel_utils::Identifier::new_static("workers", "derived"))
+            .expect("derived");
+        let Ok(workers) = WorldTickWorkers::spawn([first, second]) else {
             panic!("world tick workers should start");
         };
 
+        worlds.advance_domain_game_times();
         let Ok(first_tick) = block_on(workers.tick_all(1, true)) else {
             panic!("world tick workers should finish the first tick");
         };
@@ -144,11 +149,47 @@ mod tests {
         assert_eq!(first.game_time(), 1);
         assert_eq!(second.game_time(), 1);
 
+        worlds.advance_domain_game_times();
         let Ok(second_tick) = block_on(workers.tick_all(2, true)) else {
             panic!("world tick workers should finish the second tick");
         };
         assert_eq!(second_tick.len(), 2);
         assert_eq!(first.game_time(), 2);
         assert_eq!(second.game_time(), 2);
+    }
+
+    #[test]
+    fn shared_time_is_published_while_primary_worker_is_delayed() {
+        let worlds = test_domain("delayed", &["primary", "derived"]);
+        let primary = worlds.default_world("delayed").expect("primary");
+        let derived = worlds
+            .get(&steel_utils::Identifier::new_static("delayed", "derived"))
+            .expect("derived");
+        let workers = WorldTickWorkers::spawn([primary, derived]).expect("workers");
+        for tick in 1..=2 {
+            worlds.advance_domain_game_times();
+            // Holding primary level data delays its world-local time phase, while
+            // the shared counter remains readable without this lock.
+            let guard = primary.level_data.write();
+            let mut primary_response = workers.workers[0]
+                .start_tick(tick, true)
+                .expect("dispatch primary");
+            let derived_response = workers.workers[1]
+                .start_tick(tick, true)
+                .expect("dispatch derived");
+            block_on(derived_response).expect("derived completes while primary is delayed");
+            assert!(matches!(
+                primary_response.try_recv(),
+                Err(TryRecvError::Empty)
+            ));
+            for world in worlds.values() {
+                assert_eq!(world.game_time(), tick as i64);
+            }
+            drop(guard);
+            block_on(primary_response).expect("primary completes after release");
+            for world in worlds.values() {
+                assert_eq!(world.game_time(), tick as i64);
+            }
+        }
     }
 }

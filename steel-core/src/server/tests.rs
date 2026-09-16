@@ -48,6 +48,7 @@ use crate::command::execution::{
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
@@ -62,10 +63,11 @@ use crate::player::player_data::PersistentSlot;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::portal::WorldChangeRequest;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, insert_ready_full_chunk,
-    test_world,
+    TestPlayerBuilder, fresh_test_derived_world, fresh_test_world, fresh_test_world_in_domain,
+    insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
+use steel_registry::vanilla_damage_types;
 
 use super::DEBUG_STACK_SIZE;
 use super::known_players::{
@@ -160,8 +162,12 @@ impl NetworkConnection for RecordingConnection {
 }
 
 fn test_runtime_config() -> Arc<RuntimeConfig> {
+    test_runtime_config_with_max_players(1)
+}
+
+fn test_runtime_config_with_max_players(max_players: u32) -> Arc<RuntimeConfig> {
     Arc::new(RuntimeConfig {
-        max_players: 1,
+        max_players,
         view_distance: 2,
         simulation_distance: 2,
         online_mode: false,
@@ -189,17 +195,27 @@ async fn test_server(
     player_permission_states: PermissionSubjectIndex,
     storage_root: &Path,
 ) -> Result<Arc<Server>, String> {
+    test_server_with_max_players(world, player_permission_states, storage_root, 1).await
+}
+
+async fn test_server_with_max_players(
+    world: Arc<World>,
+    player_permission_states: PermissionSubjectIndex,
+    storage_root: &Path,
+    max_players: u32,
+) -> Result<Arc<Server>, String> {
     let domain = ResolvedDomainConfig {
         name: world.domain().to_owned(),
         default_world: world.key.clone(),
         worlds: vec![world.key.clone()],
     };
-    test_server_with_worlds(
+    test_server_with_worlds_and_config(
         domain.name.clone(),
         slice::from_ref(&domain),
         slice::from_ref(&world),
         player_permission_states,
         storage_root,
+        test_runtime_config_with_max_players(max_players),
     )
     .await
 }
@@ -211,10 +227,30 @@ async fn test_server_with_worlds(
     player_permission_states: PermissionSubjectIndex,
     storage_root: &Path,
 ) -> Result<Arc<Server>, String> {
+    test_server_with_worlds_and_config(
+        default_domain,
+        domains,
+        loaded_worlds,
+        player_permission_states,
+        storage_root,
+        test_runtime_config(),
+    )
+    .await
+}
+
+async fn test_server_with_worlds_and_config(
+    default_domain: String,
+    domains: &[ResolvedDomainConfig],
+    loaded_worlds: &[Arc<World>],
+    player_permission_states: PermissionSubjectIndex,
+    storage_root: &Path,
+    config: Arc<RuntimeConfig>,
+) -> Result<Arc<Server>, String> {
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
     for world in loaded_worlds {
         worlds.insert(world.key.clone(), Arc::clone(world));
     }
+    worlds.validate_game_times()?;
     let scoreboards = DomainScoreboards::load(&worlds)
         .await
         .map_err(|error| format!("test scoreboards should load: {error}"))?;
@@ -236,7 +272,6 @@ async fn test_server_with_worlds(
         .collect();
     let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
         .map_err(|error| format!("test permission groups should resolve: {error}"))?;
-    let config = test_runtime_config();
     let registry_cache = RegistryCache::new(config.compression);
 
     Ok(Arc::new(Server {
@@ -282,6 +317,7 @@ async fn test_server_with_worlds(
 }
 
 mod connection_lifecycle;
+mod player_limit;
 
 #[test]
 #[expect(
@@ -290,7 +326,7 @@ mod connection_lifecycle;
 )]
 fn saved_location_planning_honors_explicit_world_selection() {
     let saved_world = fresh_test_world_in_domain("target", "saved");
-    let selected_world = fresh_test_world_in_domain("target", "selected");
+    let selected_world = fresh_test_derived_world(&saved_world, "selected");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -734,7 +770,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         let pearl_uuid = [7; 16];
         let root = PersistentRootVehicle {
             attach: root_uuid,
-            entity: test_persistent_entity(&vanilla_entities::MINECART, root_uuid),
+            entity: test_persistent_entity(&vanilla_entities::PIG, root_uuid),
         };
         let mut pearl_entity = test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid);
         let mut pearl_nbt = NbtCompound::new();
@@ -1558,6 +1594,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
+        let damage = DamageSource::environment(&vanilla_damage_types::GENERIC);
+        player
+            .living_base()
+            .record_last_damage_source(&damage, source_world.game_time());
 
         let target_before_switch = server
             .player_data_storage
@@ -1567,6 +1607,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
 
         let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
+        assert!(
+            player.last_damage_source().is_some(),
+            "request must preserve source history"
+        );
         server.process_domain_switches();
 
         for tick in 1..=10_000 {
@@ -1582,6 +1626,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         assert!(server.jobs.is_empty(), "domain switch job should finish");
         assert!(Arc::ptr_eq(&player.get_world(), &target_world));
 
+        assert!(
+            player.last_damage_source().is_none(),
+            "committed target restore must clear source history"
+        );
         assert_default_domain_data(&player);
 
         drop(player);
@@ -2023,7 +2071,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
 )]
 fn player_world_selection_uses_one_token_owned_route() {
     let source_world = fresh_test_world_in_domain("alpha", "source");
-    let sibling_world = fresh_test_world_in_domain("alpha", "sibling");
+    let sibling_world = fresh_test_derived_world(&source_world, "sibling");
     let stale_sibling_world = fresh_test_world_in_domain("alpha", "sibling");
     let target_world = fresh_test_world_in_domain("beta", "target");
     let domains = [
@@ -2147,7 +2195,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 #[test]
 fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
     let source_world = fresh_test_world_in_domain("alpha", "safe_source");
-    let target_world = fresh_test_world_in_domain("alpha", "safe_target");
+    let target_world = fresh_test_derived_world(&source_world, "safe_target");
     init_behaviors();
     {
         let mut level_data = target_world.level_data.write();
@@ -2574,10 +2622,11 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
 
     runtime.block_on(async {
         let storage_root = test_storage_root("join-player-info-before-spawn");
-        let server = test_server(
+        let server = test_server_with_max_players(
             Arc::clone(&world),
             PermissionSubjectIndex::new(),
             &storage_root,
+            2,
         )
         .await;
         let Ok(server) = server else {
@@ -3135,8 +3184,8 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 
 #[test]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
-    let source_world = fresh_test_world_in_domain("survival", "the_end");
     let target_world = fresh_test_world_in_domain("survival", "overworld");
+    let source_world = fresh_test_derived_world(&target_world, "the_end");
     prepare_respawn_test_world(&source_world);
     prepare_respawn_test_world(&target_world);
     let runtime = Builder::new_current_thread().enable_all().build();
@@ -4082,3 +4131,5 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
         shutdown_server(&server, &storage_root).await;
     });
 }
+
+mod game_time;

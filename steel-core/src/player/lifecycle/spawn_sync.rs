@@ -23,7 +23,11 @@ impl Player {
     ) where
         F: FnOnce(),
     {
-        self.reset_inner_after(new_world, ResetReason::WorldChange, true, restore_state);
+        self.reset_inner_after(new_world, ResetReason::WorldChange, true, || {
+            restore_state();
+            // Damage timestamps belong to the source domain's clock.
+            self.living_base.clear_last_damage_source();
+        });
     }
 
     fn reset_inner_after<F>(

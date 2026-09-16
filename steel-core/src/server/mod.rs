@@ -38,7 +38,7 @@ use crate::entity::{
 };
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
-use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
+use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
     OP_GROUP, PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
@@ -79,7 +79,6 @@ use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
-    path::Path,
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
@@ -572,6 +571,8 @@ impl Server {
             .validate_and_resolve(&generator_registry, &storage_registry)
             .map_err(|e| format!("failed to validate worlds.toml: {e}"))?;
 
+        let mut world_storage = storage_registry.resolve_worlds(&resolved_worlds)?;
+
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
             if let Some(chunk_generation_threads) =
@@ -620,19 +621,12 @@ impl Server {
             &resolved_worlds.worlds,
         );
 
-        for world_entry in &resolved_worlds.worlds {
-            let default_world_path = resolved_worlds
-                .save_path
-                .join(&world_entry.domain)
-                .join("worlds")
-                .join(&world_entry.name);
-            let storage_output = storage_registry
-                .create(
-                    &world_entry.storage,
-                    &resolved_worlds.save_path,
-                    Path::new(&default_world_path),
-                )
-                .map_err(|e| format!("failed to create storage for {}: {e}", world_entry.key))?;
+        let mut construct_world = async |world_entry: &ResolvedWorldConfig,
+                                         game_time_source: GameTimeSource|
+               -> Result<Arc<World>, String> {
+            let storage_output = world_storage
+                .remove(&world_entry.key)
+                .ok_or_else(|| format!("world {} has no resolved storage", world_entry.key))?;
             let world_seed = LevelDataManager::load_seed_or_default(
                 storage_output.level_data_path.as_deref(),
                 world_entry.seed,
@@ -659,6 +653,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
+                    game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
                         .level_data_path
@@ -683,8 +678,34 @@ impl Server {
                 .initialize_spawn_if_needed()
                 .await
                 .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
-            worlds.insert(world_entry.key.clone(), world);
+            Ok(world)
+        };
+        for domain in &resolved_worlds.domains {
+            let primary_config = resolved_worlds
+                .worlds
+                .iter()
+                .find(|world| world.key == domain.default_world && world.domain == domain.name)
+                .ok_or_else(|| {
+                    format!(
+                        "domain {} has no configured primary {}",
+                        domain.name, domain.default_world
+                    )
+                })?;
+            let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
+            let clock = Arc::clone(&primary.game_time);
+            worlds.insert(primary_config.key.clone(), primary);
+            for world_entry in resolved_worlds
+                .worlds
+                .iter()
+                .filter(|world| world.domain == domain.name && world.key != domain.default_world)
+            {
+                let world =
+                    construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
+                        .await?;
+                worlds.insert(world_entry.key.clone(), world);
+            }
         }
+        worlds.validate_game_times()?;
 
         let scoreboards = DomainScoreboards::load(&worlds)
             .await
