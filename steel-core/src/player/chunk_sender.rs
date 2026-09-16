@@ -51,7 +51,7 @@ struct ChunkBatchPacing {
     desired_chunks_per_tick: f32,
     /// Accumulated credit; preparation floors this to select whole chunks only.
     batch_quota: f32,
-    /// Send window in batches: one until the first ACK is applied, then ten.
+    /// Starts at one batch; the first ACK opens the full send window.
     max_unacknowledged_batches: u16,
     /// Accepted ACK rates in arrival order, bounded by the outstanding batch count.
     accepted_feedback: SmallVec<[f32; MAX_UNACKNOWLEDGED_BATCHES as usize]>,
@@ -203,7 +203,6 @@ impl ChunkSender {
         }
     }
 
-    /// Encodes and sends a packet through the connection.
     fn send_packet<P: ClientPacket>(connection: &PlayerConnection, packet: P) {
         let encoded =
             EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
@@ -402,7 +401,6 @@ impl ChunkSender {
     ) -> Vec<PreparedChunk> {
         let mut candidates: Vec<ChunkPos> = self.pending_chunks.iter().copied().collect();
 
-        // Sort by distance to player
         candidates.sort_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
 
         let mut chunks_to_send = Vec::new();
@@ -437,10 +435,7 @@ impl ChunkSender {
         dx.saturating_mul(dx).saturating_add(dz.saturating_mul(dz))
     }
 
-    /// Handles the acknowledgement of a chunk batch from the client.
-    ///
-    /// The client sends back its desired chunks per tick based on how fast it can
-    /// process chunks. Accepted feedback is applied at the next prepare boundary.
+    /// Queues accepted client rate feedback for the next prepare boundary.
     pub fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) -> bool {
         self.pacing.record_feedback(desired_chunks_per_tick)
     }

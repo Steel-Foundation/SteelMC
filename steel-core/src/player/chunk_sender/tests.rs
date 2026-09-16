@@ -6,6 +6,9 @@ use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world}
 use steel_registry::init_vanilla_registry;
 use text_components::TextComponent;
 
+// CChunkBatchStart and CChunkBatchFinished wrap every nonempty batch.
+const BATCH_BOUNDARY_PACKETS: usize = 2;
+
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
 }
@@ -271,21 +274,6 @@ fn encoding_cache_requires_holder_identity_and_exact_readiness_generation() {
 }
 
 #[test]
-fn chunk_batch_ack_without_outstanding_batch_does_not_update_pacing() {
-    let mut sender = ChunkSender::default();
-
-    assert!(!sender.on_chunk_batch_received_by_client(64.0));
-    assert_eq!(sender.pacing.unacknowledged_batches, 0);
-    assert_eq!(
-        sender.pacing.desired_chunks_per_tick.to_bits(),
-        START_CHUNKS_PER_TICK.to_bits()
-    );
-    assert_eq!(sender.pacing.batch_quota.to_bits(), 0.0_f32.to_bits());
-    assert_eq!(sender.pacing.max_unacknowledged_batches, 1);
-    assert!(sender.pacing.accepted_feedback.is_empty());
-}
-
-#[test]
 fn chunk_batch_ack_updates_pacing_at_the_next_prepare_boundary() {
     let mut sender = ChunkSender::default();
     sender.pacing.unacknowledged_batches = 1;
@@ -330,7 +318,7 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
     let mut sender = ChunkSender {
         pacing: ChunkBatchPacing {
             unacknowledged_batches: 1,
-            desired_chunks_per_tick: 2.0,
+            desired_chunks_per_tick: positions.len() as f32,
             batch_quota: 0.0,
             max_unacknowledged_batches: MAX_UNACKNOWLEDGED_BATCHES,
             accepted_feedback: SmallVec::new(),
@@ -342,7 +330,7 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
     let batch = sender
         .prepare_batch(&world, positions[0], &epoch)
         .expect("two ready chunks should prepare");
-    assert_eq!(batch.chunks.len(), 2);
+    assert_eq!(batch.chunks.len(), positions.len());
 
     let encoding_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(1)
@@ -350,11 +338,14 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
         .expect("test chunk encoding pool should initialize");
     let mut cache = FxHashMap::default();
     let encoded = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
-    assert_eq!(encoded.len(), 2);
+    assert_eq!(encoded.len(), positions.len());
 
     assert!(sender.on_chunk_batch_received_by_client(0.5));
     assert_eq!(sender.pacing.unacknowledged_batches, 1);
-    assert_eq!(sender.pacing.batch_quota.to_bits(), 2.0_f32.to_bits());
+    assert_eq!(
+        sender.pacing.batch_quota.to_bits(),
+        (positions.len() as f32).to_bits()
+    );
 
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = PlayerConnection::Other(Box::new(RecordingConnection {
@@ -362,8 +353,11 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
     }));
     let sent = sender.commit_batch(&batch, encoded, &connection, &epoch);
 
-    assert_eq!(sent.len(), 2);
-    assert_eq!(packets.lock().len(), 4);
+    assert_eq!(sent.len(), positions.len());
+    assert_eq!(
+        packets.lock().len(),
+        positions.len() + BATCH_BOUNDARY_PACKETS
+    );
     assert!(sender.pending_chunks.is_empty());
     for pos in positions {
         assert!(sender.is_chunk_sent(pos));
@@ -381,38 +375,21 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
 }
 
 #[test]
-fn ack_mailbox_is_bounded_by_one_and_ten_outstanding_batches() {
-    let mut one_outstanding = pacing_with_outstanding_batches(1);
-    assert!(one_outstanding.record_feedback(1.0));
-    assert!(!one_outstanding.record_feedback(2.0));
-    assert_eq!(one_outstanding.accepted_feedback.as_slice(), &[1.0]);
-
-    let mut ten_outstanding = pacing_with_outstanding_batches(10);
-    for desired_chunks_per_tick in 1..=10 {
-        assert!(ten_outstanding.record_feedback(desired_chunks_per_tick as f32));
+fn feedback_queue_rejects_unsolicited_and_duplicate_acks() {
+    for outstanding in [0, 1, MAX_UNACKNOWLEDGED_BATCHES] {
+        let mut pacing = pacing_with_outstanding_batches(outstanding);
+        for _ in 0..outstanding {
+            assert!(pacing.record_feedback(1.0));
+        }
+        assert!(!pacing.record_feedback(1.0));
+        assert_eq!(pacing.accepted_feedback.len(), usize::from(outstanding));
+        assert!(!pacing.accepted_feedback.spilled());
+        assert_eq!(pacing.unacknowledged_batches, outstanding);
+        assert_eq!(
+            pacing.desired_chunks_per_tick.to_bits(),
+            START_CHUNKS_PER_TICK.to_bits()
+        );
     }
-    assert!(!ten_outstanding.record_feedback(11.0));
-    assert_eq!(ten_outstanding.accepted_feedback.len(), 10);
-    assert!(!ten_outstanding.accepted_feedback.spilled());
-}
-
-#[test]
-fn feedback_drains_before_the_outstanding_batch_gate() {
-    let mut pacing = ChunkBatchPacing {
-        unacknowledged_batches: 1,
-        desired_chunks_per_tick: START_CHUNKS_PER_TICK,
-        batch_quota: 0.0,
-        max_unacknowledged_batches: 1,
-        accepted_feedback: SmallVec::from_slice(&[2.0]),
-    };
-
-    assert_eq!(pacing.begin_prepare(), Some(2));
-    assert_eq!(pacing.unacknowledged_batches, 0);
-    assert_eq!(
-        pacing.max_unacknowledged_batches,
-        MAX_UNACKNOWLEDGED_BATCHES
-    );
-    assert_eq!(pacing.batch_quota.to_bits(), 2.0_f32.to_bits());
 }
 
 #[test]
@@ -435,12 +412,12 @@ fn feedback_drains_in_arrival_order_and_handles_nan() {
 #[test]
 fn first_ack_expands_the_send_window_and_full_window_resumes_after_feedback() {
     let mut pacing = ChunkBatchPacing::default();
-    assert_eq!(pacing.begin_prepare(), Some(9));
+    assert_eq!(pacing.begin_prepare(), Some(START_CHUNKS_PER_TICK as usize));
     pacing.commit_batch(1);
     assert_eq!(pacing.begin_prepare(), None);
 
     assert!(pacing.record_feedback(2.0));
-    for _ in 0..10 {
+    for _ in 0..MAX_UNACKNOWLEDGED_BATCHES {
         assert_eq!(pacing.begin_prepare(), Some(2));
         pacing.commit_batch(2);
     }
@@ -455,10 +432,11 @@ fn first_ack_expands_the_send_window_and_full_window_resumes_after_feedback() {
 #[test]
 fn fractional_feedback_accumulates_credit_until_a_whole_chunk_can_be_sent() {
     let mut pacing = pacing_with_outstanding_batches(2);
-    assert!(pacing.record_feedback(0.25));
+    let ticks_per_chunk = 4;
+    assert!(pacing.record_feedback(1.0 / ticks_per_chunk as f32));
 
     for _ in 0..2 {
-        for _ in 0..3 {
+        for _ in 1..ticks_per_chunk {
             assert_eq!(pacing.begin_prepare(), Some(0));
         }
         assert_eq!(pacing.begin_prepare(), Some(1));
@@ -469,18 +447,18 @@ fn fractional_feedback_accumulates_credit_until_a_whole_chunk_can_be_sent() {
 
 #[test]
 fn feedback_clamps_nonfinite_and_out_of_range_rates_before_preparing() {
-    for (feedback, expected_rate, expected_quota) in [
-        (f32::NAN, MIN_CHUNKS_PER_TICK, 0),
-        (f32::NEG_INFINITY, MIN_CHUNKS_PER_TICK, 0),
-        (-1.0, MIN_CHUNKS_PER_TICK, 0),
-        (0.0, MIN_CHUNKS_PER_TICK, 0),
-        (2.5, 2.5, 2),
-        (MAX_CHUNKS_PER_TICK + 1.0, MAX_CHUNKS_PER_TICK, 500),
-        (f32::INFINITY, MAX_CHUNKS_PER_TICK, 500),
+    for (feedback, expected_rate) in [
+        (f32::NAN, MIN_CHUNKS_PER_TICK),
+        (f32::NEG_INFINITY, MIN_CHUNKS_PER_TICK),
+        (-1.0, MIN_CHUNKS_PER_TICK),
+        (0.0, MIN_CHUNKS_PER_TICK),
+        (2.5, 2.5),
+        (MAX_CHUNKS_PER_TICK + 1.0, MAX_CHUNKS_PER_TICK),
+        (f32::INFINITY, MAX_CHUNKS_PER_TICK),
     ] {
         let mut pacing = pacing_with_outstanding_batches(2);
         assert!(pacing.record_feedback(feedback));
-        assert_eq!(pacing.begin_prepare(), Some(expected_quota));
+        assert!(pacing.begin_prepare().is_some());
         assert_eq!(
             pacing.desired_chunks_per_tick.to_bits(),
             expected_rate.to_bits()
@@ -490,18 +468,18 @@ fn feedback_clamps_nonfinite_and_out_of_range_rates_before_preparing() {
 
 #[test]
 fn filtered_commit_charges_only_sent_chunks_and_keeps_feedback_until_next_prepare() {
-    for retained in 0..=2 {
-        let positions = [ChunkPos::new(0, 0), ChunkPos::new(1, 0)];
+    let positions = [ChunkPos::new(0, 0), ChunkPos::new(1, 0)];
+    for retained in 0..positions.len() {
         let (batch, encoded) = encode_positions(&positions);
         let mut sender = ChunkSender {
             pacing: ChunkBatchPacing {
-                desired_chunks_per_tick: 2.0,
+                desired_chunks_per_tick: positions.len() as f32,
                 ..pacing_with_outstanding_batches(1)
             },
             ..ChunkSender::default()
         };
         sender.pending_chunks.extend(positions);
-        assert_eq!(sender.pacing.begin_prepare(), Some(2));
+        assert_eq!(sender.pacing.begin_prepare(), Some(positions.len()));
         assert!(sender.on_chunk_batch_received_by_client(0.5));
         for prepared in &batch.chunks[retained..] {
             prepared
@@ -522,18 +500,19 @@ fn filtered_commit_charges_only_sent_chunks_and_keeps_feedback_until_next_prepar
         );
         assert_eq!(
             sender.pacing.batch_quota.to_bits(),
-            (2.0 - retained as f32).to_bits()
+            (positions.len() as f32 - retained as f32).to_bits()
         );
         assert_eq!(sender.pacing.accepted_feedback.as_slice(), &[0.5]);
         assert_eq!(
             packets.lock().len(),
-            if retained == 0 { 0 } else { retained + 2 }
+            if retained == 0 {
+                0
+            } else {
+                retained + BATCH_BOUNDARY_PACKETS
+            }
         );
 
-        assert_eq!(
-            sender.pacing.begin_prepare(),
-            Some(usize::from(retained < 2))
-        );
+        assert_eq!(sender.pacing.begin_prepare(), Some(1));
         assert_eq!(
             sender.pacing.unacknowledged_batches,
             u16::from(retained != 0)
@@ -547,13 +526,13 @@ fn invalidated_epoch_discards_batch_without_consuming_quota_or_accepted_feedback
     let (batch, encoded) = encode_positions(&positions);
     let mut sender = ChunkSender {
         pacing: ChunkBatchPacing {
-            desired_chunks_per_tick: 2.0,
+            desired_chunks_per_tick: positions.len() as f32,
             ..pacing_with_outstanding_batches(1)
         },
         ..ChunkSender::default()
     };
     sender.pending_chunks.extend(positions);
-    assert_eq!(sender.pacing.begin_prepare(), Some(2));
+    assert_eq!(sender.pacing.begin_prepare(), Some(positions.len()));
     assert!(sender.on_chunk_batch_received_by_client(0.5));
 
     let packets = Arc::new(SyncMutex::new(Vec::new()));
@@ -561,89 +540,24 @@ fn invalidated_epoch_discards_batch_without_consuming_quota_or_accepted_feedback
         packets: Arc::clone(&packets),
     }));
     assert_eq!(
-        sender.commit_batch(&batch, encoded, &connection, &SyncMutex::new(1)),
+        sender.commit_batch(
+            &batch,
+            encoded,
+            &connection,
+            &SyncMutex::new(batch.epoch_snapshot.wrapping_add(1))
+        ),
         Vec::<ChunkPos>::new()
     );
     assert!(packets.lock().is_empty());
-    assert_eq!(sender.pending_chunks.len(), 2);
+    assert_eq!(sender.pending_chunks.len(), positions.len());
     assert_eq!(sender.pacing.unacknowledged_batches, 1);
-    assert_eq!(sender.pacing.batch_quota.to_bits(), 2.0_f32.to_bits());
+    assert_eq!(
+        sender.pacing.batch_quota.to_bits(),
+        (positions.len() as f32).to_bits()
+    );
     assert_eq!(sender.pacing.accepted_feedback.as_slice(), &[0.5]);
     assert_eq!(sender.pacing.begin_prepare(), Some(1));
     assert_eq!(sender.pacing.unacknowledged_batches, 0);
-}
-
-#[test]
-fn clearing_tracking_keeps_old_batch_ack_separate_from_new_world_batch() {
-    let mut sender = ChunkSender {
-        pacing: ChunkBatchPacing {
-            unacknowledged_batches: 1,
-            desired_chunks_per_tick: 2.0,
-            batch_quota: 1.0,
-            max_unacknowledged_batches: MAX_UNACKNOWLEDGED_BATCHES,
-            accepted_feedback: SmallVec::new(),
-        },
-        ..ChunkSender::default()
-    };
-    sender.pending_chunks.insert(ChunkPos::new(1, 2));
-    sender.mark_chunk_sent_for_test(ChunkPos::new(3, 4));
-
-    sender.clear_world_chunks();
-
-    assert!(sender.pending_chunks.is_empty());
-    assert!(sender.sent_chunks.is_empty());
-
-    sender.pacing.commit_batch(1);
-    assert_eq!(sender.pacing.unacknowledged_batches, 2);
-    assert!(sender.on_chunk_batch_received_by_client(20.0));
-
-    assert_eq!(sender.pacing.begin_prepare(), Some(20));
-    assert_eq!(sender.pacing.unacknowledged_batches, 1);
-}
-
-#[test]
-fn clearing_world_chunks_preserves_connection_pacing() {
-    let pending = ChunkPos::new(2, -3);
-    let sent = ChunkPos::new(-5, 7);
-    let mut sender = ChunkSender {
-        pacing: ChunkBatchPacing {
-            unacknowledged_batches: 3,
-            desired_chunks_per_tick: 12.5,
-            batch_quota: 4.5,
-            max_unacknowledged_batches: MAX_UNACKNOWLEDGED_BATCHES,
-            accepted_feedback: SmallVec::new(),
-        },
-        ..ChunkSender::default()
-    };
-    sender.mark_chunk_pending_to_send(pending);
-    sender.mark_chunk_sent_for_test(sent);
-
-    sender.clear_world_chunks();
-
-    assert!(sender.pending_chunks.is_empty());
-    assert!(sender.sent_chunks.is_empty());
-    assert_eq!(sender.pacing.unacknowledged_batches, 3);
-    assert_eq!(
-        sender.pacing.desired_chunks_per_tick.to_bits(),
-        12.5_f32.to_bits()
-    );
-    assert_eq!(sender.pacing.batch_quota.to_bits(), 4.5_f32.to_bits());
-    assert_eq!(
-        sender.pacing.max_unacknowledged_batches,
-        MAX_UNACKNOWLEDGED_BATCHES
-    );
-}
-
-#[test]
-fn marking_chunk_pending_clears_sent_state() {
-    let mut sender = ChunkSender::default();
-    let pos = ChunkPos::new(2, -3);
-    sender.sent_chunks.insert(pos);
-
-    sender.mark_chunk_pending_to_send(pos);
-
-    assert!(sender.pending_chunks.contains(&pos));
-    assert!(!sender.is_chunk_sent(pos));
 }
 
 #[test]

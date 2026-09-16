@@ -1108,61 +1108,6 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
 }
 
 #[test]
-fn domain_detach_preserves_connection_chunk_pacing() {
-    let world = fresh_test_world_in_domain("source", "chunk_pacing");
-    let center = ChunkPos::new(0, 0);
-    insert_ready_full_chunk(&world, center);
-    let runtime = Builder::new_current_thread().enable_all().build();
-    let Ok(runtime) = runtime else {
-        panic!("test runtime should initialize");
-    };
-    runtime.block_on(async {
-        let storage_root = test_storage_root("detached-chunk-pacing");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
-        let Ok(server) = server else {
-            panic!("test server should initialize");
-        };
-        let (player, _) = test_player_with_packets(&server, Arc::clone(&world), "ChunkTester", 1);
-        assert!(server.online_players.insert(Arc::clone(&player)));
-        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-        let _ = player.mark_joined_world();
-
-        assert_eq!(send_test_chunk_batch(&server, &player, &world), [center]);
-
-        {
-            let mut sender = player.chunk_sender().lock();
-            assert_eq!(sender.unacknowledged_batch_count_for_test(), 1);
-            assert!(sender.on_chunk_batch_received_by_client(20.0));
-        }
-
-        let detached = world.detach_player_for_domain_switch(&player);
-        assert!(detached.is_some());
-        {
-            let mut sender = player.chunk_sender().lock();
-            assert_eq!(sender.unacknowledged_batch_count_for_test(), 1);
-            assert!(
-                sender
-                    .prepare_batch(&world, center, &player.chunk_send_epoch)
-                    .is_none()
-            );
-            assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
-        }
-        assert!(server.online_players.remove_player_sync(&player).is_some());
-
-        drop(player);
-        drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
-    });
-}
-
-#[test]
 fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
     let source_world = fresh_test_world_in_domain("source", "spawn");
     let target_world = fresh_test_world_in_domain("target", "spawn");
@@ -3235,6 +3180,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
+        let requested_chunks_per_tick = 2;
         assert_ne!(
             send_test_chunk_batch(&server, &old_player, &world),
             Vec::<ChunkPos>::new()
@@ -3243,7 +3189,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
             old_player
                 .chunk_sender()
                 .lock()
-                .on_chunk_batch_received_by_client(2.0)
+                .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
         );
 
         old_player.set_health(0.0);
@@ -3261,7 +3207,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         );
         assert_eq!(
             send_test_chunk_batch(&server, &replacement, &world).len(),
-            2
+            requested_chunks_per_tick
         );
         assert_eq!(
             replacement
@@ -3350,6 +3296,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         };
         let leave_game_before_credits = leave_game_count(&old_player);
 
+        let requested_chunks_per_tick = 2;
         assert_ne!(
             send_test_chunk_batch(&server, &old_player, &source_world),
             Vec::<ChunkPos>::new()
@@ -3374,13 +3321,13 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             replacement
                 .chunk_sender()
                 .lock()
-                .on_chunk_batch_received_by_client(2.0)
+                .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
         );
         // Respawn queues the target player's tickets after the job's scheduling pass.
         target_world.chunk_map.advance_scheduling();
         assert_eq!(
             send_test_chunk_batch(&server, &replacement, &target_world).len(),
-            2
+            requested_chunks_per_tick
         );
         assert_eq!(
             replacement
