@@ -1,47 +1,63 @@
 use steel_utils::Identifier;
 
-pub struct Criterion<T> {
-    trigger: &'static dyn CriterionTrigger<T>,
-    instance: T,
-}
 
-struct ImpossibleTrigger;
+pub struct ImpossibleInstance;
+impl CriterionTriggerInstance for ImpossibleInstance {}
 
-struct ImpossibleInstance;
-impl CriterionTriggerInstance for ImpossibleTrigger {}
+pub struct ImpossibleTrigger;
 impl CriterionTrigger<ImpossibleInstance> for ImpossibleTrigger {
     fn id(&self) -> Identifier {
         Identifier::vanilla_static("impossible")
     }
 
-    fn parse_instance(_instance: String) -> ImpossibleInstance {
+    fn parse_instance(&self, _instance: String) -> ImpossibleInstance {
         ImpossibleInstance
     }
 }
 
+pub trait AnyCriterion: Send + Sync {
+    fn id(&self) -> Identifier;
+}
+
+impl<T, G> AnyCriterion for Criterion<T, G>
+where
+    T: CriterionTriggerInstance + 'static,
+    G: CriterionTrigger<T> + 'static,
+{
+    fn id(&self) -> Identifier {
+        self.trigger.id()
+    }
+}
+
+#[expect(dead_code)]
+pub struct Criterion<T: CriterionTriggerInstance + 'static, G: CriterionTrigger<T> + ?Sized + 'static> {
+    trigger: &'static G,
+    instance: Box<T>,
+}
+
 static IMPOSSIBLE_TRIGGER: ImpossibleTrigger = ImpossibleTrigger;
 
-impl Default for Criterion<_> {
-    const fn default() -> Self {
-        Self {
+impl<T: CriterionTriggerInstance, G: CriterionTrigger<T> + ?Sized> Criterion<T, G> {
+    pub fn new(trigger: &'static G, instance: T) -> Self {
+        Self { trigger, instance: Box::new(instance) }
+    }
+}
+
+impl Default for Criterion<ImpossibleInstance, ImpossibleTrigger> {
+    fn default() -> Self {
+        Criterion {
             trigger: &IMPOSSIBLE_TRIGGER,
-            instance: ImpossibleInstance,
+            instance: Box::new(ImpossibleInstance),
         }
     }
 }
 
-impl<T> Criterion<T> {
-    pub fn new(trigger: impl CriterionTrigger<T>, instance: T) -> Self {
-        Self { trigger, instance }
-    }
-}
-
-pub trait CriterionTrigger<T>
+pub trait CriterionTrigger<T>: Send + Sync
 where
     T: CriterionTriggerInstance,
 {
     fn id(&self) -> Identifier;
-    fn parse_instance(instance: String) -> T;
+    fn parse_instance(&self, instance: String) -> T;
 }
 
-pub trait CriterionTriggerInstance {}
+pub trait CriterionTriggerInstance: Send + Sync {}
