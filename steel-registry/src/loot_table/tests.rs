@@ -420,6 +420,31 @@ fn enchanted_count_increase_limit_caps_the_stack_not_the_bonus() {
 }
 
 #[test]
+fn random_chance_with_enchanted_bonus_reads_attacker_not_tool() {
+    init_test_registries();
+    let condition = LootCondition::RandomChanceWithEnchantedBonus {
+        enchantment: Identifier::vanilla_static("looting"),
+        unenchanted_chance: 0.0,
+        enchanted_chance: EnchantedChance::Constant(1.0),
+    };
+    let player_key = Identifier::vanilla_static("player");
+    let looting_sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "looting", 3);
+    let looting_equipment = equipment_with(EquipmentSlot::MainHand, looting_sword.clone());
+    let empty_equipment = EntityEquipmentSlots::default();
+
+    let mut rng = test_rng();
+    let mut tool_only = LootContext::new(&mut rng)
+        .with_tool(&looting_sword)
+        .with_killer_entity(living_entity_ref(&player_key, &empty_equipment));
+    assert!(!condition.test(&mut tool_only));
+
+    let mut rng = test_rng();
+    let mut attacker_only = LootContext::new(&mut rng)
+        .with_killer_entity(living_entity_ref(&player_key, &looting_equipment));
+    assert!(condition.test(&mut attacker_only));
+}
+
+#[test]
 fn test_uniform_get_int_reaches_inclusive_max() {
     // Vanilla UniformGenerator.getInt uses Mth.nextInt(rand, min, max), which
     // samples the integer range inclusively; a uniform 1..3 count must yield 3.
