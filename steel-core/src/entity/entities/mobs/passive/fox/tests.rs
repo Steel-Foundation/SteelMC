@@ -10,8 +10,8 @@ use steel_utils::types::UpdateFlags;
 
 use crate::behavior::init_behaviors;
 use crate::entity::ai::goal::{FloatGoal, Goal, GoalControls};
-use crate::entity::entities::PigEntity;
 use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
+use crate::entity::entities::{ChickenEntity, PigEntity};
 use crate::entity::{EntityFluidContact, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -824,4 +824,88 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     fox.set_interested(false);
     fox.set_faceplanted(true);
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
+}
+
+#[test]
+fn fox_stalks_chickens_but_not_other_animals() {
+    init_vanilla_registry();
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let pig = PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
+
+    assert!(goals::is_stalkable_prey(&chicken));
+    assert!(!goals::is_stalkable_prey(&pig));
+}
+
+#[test]
+fn a_red_fox_hunts_land_prey_first_and_a_snow_fox_later() {
+    let (world, red) = world_with_fox("fox_target_priority");
+    red.set_target_goals();
+    red.set_target_goals();
+    assert_eq!(
+        red.mob_base()
+            .target_selector()
+            .lock()
+            .available_goal_priorities(),
+        vec![FOX_FAVORITE_PREY_PRIORITY],
+        "the prey goal is registered once"
+    );
+
+    let snow = FoxEntity::new(
+        &vanilla_entities::FOX,
+        2,
+        DVec3::ZERO,
+        Arc::downgrade(&world),
+    );
+    snow.set_variant(FoxVariant::Snow);
+    snow.set_target_goals();
+    assert_eq!(
+        snow.mob_base()
+            .target_selector()
+            .lock()
+            .available_goal_priorities(),
+        vec![FOX_OTHER_PREY_PRIORITY]
+    );
+}
+
+#[test]
+fn a_stalking_fox_crouches_once_its_prey_is_close() {
+    let (world, fox) = world_with_fox("fox_stalk");
+    let chicken: SharedEntity = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
+        next_entity_id(),
+        DVec3::new(15.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&chicken))
+        .expect("prey should attach to the loaded chunk");
+    assert!(Mob::set_target(fox.as_ref(), Some(&chicken)));
+
+    let mut goal = StalkPreyGoal;
+    assert!(goal.can_use(fox.as_ref()), "distant prey is worth stalking");
+
+    chicken
+        .teleport_to(DVec3::new(11.0, 65.0, 8.0))
+        .expect("the chicken moves within the loaded chunk");
+    assert!(
+        !goal.can_use(fox.as_ref()),
+        "close prey is pounced, not stalked"
+    );
+    goal.tick(fox.as_ref());
+    assert!(fox.is_crouching());
+    assert!(fox.is_interested());
+
+    goal.stop(fox.as_ref());
+    assert!(fox.is_crouching(), "an open path keeps the fox crouched");
+
+    assert!(world.set_block(
+        BlockPos::new(10, 66, 8),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    goal.stop(fox.as_ref());
+    assert!(
+        !fox.is_crouching(),
+        "a blocked path makes the fox give up the crouch"
+    );
 }

@@ -95,6 +95,8 @@ const CROUCH_STEP: f32 = 0.2;
 const FULLY_CROUCHED: f32 = 5.0;
 
 const FOX_PREY_TARGET_INTERVAL: i32 = 10;
+const FOX_FAVORITE_PREY_PRIORITY: i32 = 4;
+const FOX_OTHER_PREY_PRIORITY: i32 = 6;
 
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
 const FOX_HELD_EMERALD_ODDS: f32 = 0.05;
@@ -115,6 +117,7 @@ pub struct FoxEntity {
     entity_data: SyncMutex<FoxEntityData>,
     ticks_since_eaten: SyncMutex<i32>,
     crouch_amount: SyncMutex<f32>,
+    target_goals_set: SyncMutex<bool>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `FoxEntity`.
@@ -175,11 +178,7 @@ impl FoxEntity {
             goal_selector.add_goal(12, FoxLookAtPlayerGoal::new(24.0));
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
 
-            let mut target_selector = mob_base.target_selector().lock();
             // TODO(fox-goals): target 3 DefendTrustedTargetGoal (needs the trust/defend gate)
-            target_selector.add_goal(4, target_stalkable_prey());
-            // TODO(fox-goals): target NearestAttackableTarget for baby turtles on land (needs the Turtle entity, #490)
-            // TODO(fox-goals): target NearestAttackableTarget for schooling fish (needs the fish mobs)
         }
 
         let fox = Self {
@@ -192,6 +191,7 @@ impl FoxEntity {
             entity_data: SyncMutex::new(entity_data),
             ticks_since_eaten: SyncMutex::new(0),
             crouch_amount: SyncMutex::new(0.0),
+            target_goals_set: SyncMutex::new(false),
         };
         fox.set_can_pick_up_loot(true);
         fox
@@ -371,6 +371,25 @@ impl FoxEntity {
         let mut entity_data = self.entity_data.lock();
         entity_data.trusted_id_0.set(None);
         entity_data.trusted_id_1.set(None);
+    }
+
+    /// Registers the prey targeting once, ranked by what this coat hunts first.
+    fn set_target_goals(&self) {
+        {
+            let mut set = self.target_goals_set.lock();
+            if *set {
+                return;
+            }
+            *set = true;
+        }
+        let land_prey_priority = match self.variant() {
+            FoxVariant::Red => FOX_FAVORITE_PREY_PRIORITY,
+            FoxVariant::Snow => FOX_OTHER_PREY_PRIORITY,
+        };
+        let mut target_selector = self.mob_base.target_selector().lock();
+        target_selector.add_goal(land_prey_priority, target_stalkable_prey());
+        // TODO(fox-goals): baby turtles on land share the land prey priority (needs the Turtle
+        // entity, #490); schooling fish take the other priority (needs the fish mobs).
     }
 
     fn trusted_ids(&self) -> Vec<Uuid> {
@@ -606,7 +625,7 @@ fn target_stalkable_prey() -> NearestAttackableTargetGoal {
         FOX_PREY_TARGET_INTERVAL,
         false,
         false,
-        |target, _| target.entity_type() == &vanilla_entities::CHICKEN,
+        |target, _| goals::is_stalkable_prey(target),
     )
 }
 
@@ -703,6 +722,7 @@ impl Entity for FoxEntity {
                 }
             }
         }
+        self.set_target_goals();
     }
 }
 
@@ -901,6 +921,7 @@ impl Mob for FoxEntity {
                 }
             });
         self.set_variant(variant);
+        self.set_target_goals();
 
         if rand::random::<f32>() < FOX_SPAWN_HELD_ITEM_CHANCE {
             self.living_base()

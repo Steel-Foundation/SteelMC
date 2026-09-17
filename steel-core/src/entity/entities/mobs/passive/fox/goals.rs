@@ -646,7 +646,7 @@ impl Goal for FoxPounceGoal {
     }
 }
 
-fn is_stalkable_prey(target: &SharedEntity) -> bool {
+pub(super) fn is_stalkable_prey(target: &dyn Entity) -> bool {
     // TODO(fox-prey): vanilla also stalks rabbits; the Rabbit mob is not in the tree yet.
     target.entity_type() == &vanilla_entities::CHICKEN
 }
@@ -666,8 +666,8 @@ impl Goal for StalkPreyGoal {
         if fox.is_sleeping() {
             return false;
         }
-        let Some(target) =
-            Mob::target(fox).filter(|target| target.is_alive() && is_stalkable_prey(target))
+        let Some(target) = Mob::target(fox)
+            .filter(|target| target.is_alive() && is_stalkable_prey(target.as_ref()))
         else {
             return false;
         };
@@ -695,11 +695,7 @@ impl Goal for StalkPreyGoal {
             fox.set_interested(true);
             fox.set_crouching(true);
             mob.mob_base().navigation().lock().stop();
-            mob.mob_base().controls().lock().look_control.set_look_at(
-                target.position(),
-                mob.max_head_y_rot(),
-                mob.max_head_x_rot(),
-            );
+            look_at_eyes(mob, target, mob.max_head_y_rot(), mob.max_head_x_rot());
         } else {
             fox.set_interested(false);
             fox.set_crouching(false);
@@ -717,11 +713,7 @@ impl Goal for StalkPreyGoal {
         let Some(target) = Mob::target(fox) else {
             return;
         };
-        mob.mob_base().controls().lock().look_control.set_look_at(
-            target.position(),
-            mob.max_head_y_rot(),
-            mob.max_head_x_rot(),
-        );
+        look_at_eyes(mob, &target, mob.max_head_y_rot(), mob.max_head_x_rot());
         if mob.position().distance_squared(target.position()) <= STALK_CROUCH_DISTANCE_SQ {
             fox.set_interested(true);
             fox.set_crouching(true);
@@ -729,37 +721,5 @@ impl Goal for StalkPreyGoal {
         } else {
             mob.move_to_pos(target.position(), STALK_SPEED);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Weak};
-
-    use glam::DVec3;
-    use steel_registry::{init_vanilla_registry, vanilla_entities};
-
-    use super::is_stalkable_prey;
-    use crate::entity::SharedEntity;
-    use crate::entity::entities::{ChickenEntity, PigEntity};
-
-    #[test]
-    fn fox_stalks_chickens_but_not_other_animals() {
-        init_vanilla_registry();
-        let chicken: SharedEntity = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let pig: SharedEntity = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
-            2,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-
-        assert!(is_stalkable_prey(&chicken));
-        assert!(!is_stalkable_prey(&pig));
     }
 }
