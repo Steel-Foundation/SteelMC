@@ -191,8 +191,7 @@ impl TurtleEggBlock {
         }
     }
 
-    /// Spawns one baby turtle in the nest, homed on the block. `index` fans a
-    /// cluster's babies apart.
+    /// Spawns one baby turtle in the nest, homed on the block.
     fn hatch_baby_turtle(world: &Arc<World>, pos: BlockPos, index: u8) {
         let spawn_pos = DVec3::new(
             f64::from(pos.x()) + HATCHLING_NEST_OFFSET + f64::from(index) * HATCHLING_SPACING,
