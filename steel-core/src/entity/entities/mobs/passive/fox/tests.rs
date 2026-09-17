@@ -2,8 +2,8 @@ use std::io::Cursor;
 
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use steel_registry::{
-    REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_entities,
-    vanilla_items,
+    REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
+    vanilla_entities, vanilla_game_rules, vanilla_items,
 };
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -245,10 +245,16 @@ fn fox_saves_and_loads_trusted_players() {
         .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
     let loaded = new_fox();
+    let stranger = Uuid::from_u128(0x5eed);
+    loaded.add_trusted(stranger);
     loaded.load_additional((&borrowed).into());
 
     assert!(loaded.trusts(first));
     assert!(loaded.trusts(second));
+    assert!(
+        !loaded.trusts(stranger),
+        "loading replaces the trusted list"
+    );
 }
 
 #[test]
@@ -285,10 +291,21 @@ fn fox_does_not_search_for_items_with_a_full_mouth() {
 
     let mut goal = FoxSearchForItemsGoal;
     assert!(
-        !goal.can_use(fox.as_ref()),
+        !(0..SEARCH_ATTEMPTS).any(|_| goal.can_use(fox.as_ref())),
         "a fox with a full mouth does not search for items"
     );
+
+    fox.living_base()
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::MainHand, ItemStack::empty());
+    assert!(
+        (0..SEARCH_ATTEMPTS).any(|_| goal.can_use(fox.as_ref())),
+        "an empty-mouthed fox goes after the item"
+    );
 }
+
+const SEARCH_ATTEMPTS: u32 = 100;
 
 #[test]
 fn fox_sleep_goal_stays_usable_while_sleeping() {
@@ -335,13 +352,19 @@ fn fox_kit_inherits_a_parent_variant() {
 
     let parent = new_fox();
     let partner = new_fox();
-    parent.set_variant(FoxVariant::Snow);
+    parent.set_variant(FoxVariant::Red);
     partner.set_variant(FoxVariant::Snow);
 
-    let offspring = new_fox();
-    parent.initialize_breed_offspring(&partner, &offspring);
+    let kit_variants: Vec<FoxVariant> = (0..SEARCH_ATTEMPTS)
+        .map(|_| {
+            let offspring = new_fox();
+            parent.initialize_breed_offspring(&partner, &offspring);
+            offspring.variant()
+        })
+        .collect();
 
-    assert_eq!(offspring.variant(), FoxVariant::Snow);
+    assert!(kit_variants.contains(&FoxVariant::Red));
+    assert!(kit_variants.contains(&FoxVariant::Snow));
 }
 
 #[test]
@@ -380,12 +403,14 @@ fn fox_kit_trusts_the_only_feeding_player() {
 #[test]
 fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
     let (world, fox) = world_with_fox("fox_death_drop");
+    assert!(world.set_game_rule(&vanilla_game_rules::MOB_DROPS, false));
+    fox.set_baby(true);
     fox.living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::SWEET_BERRIES),
     );
 
-    LivingEntity::drop_custom_death_equipment(fox.as_ref(), &world);
+    fox.drop_all_death_loot(&DamageSource::environment(&vanilla_damage_types::GENERIC));
 
     let mut mouth_empty = false;
     fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |held| {
@@ -403,7 +428,38 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
                 .map(ItemEntity::get_item)
         })
         .any(|stack| stack.is(&vanilla_items::SWEET_BERRIES));
-    assert!(dropped, "the mouth item is dropped into the world");
+    assert!(
+        dropped,
+        "a baby fox with mob drops off still drops its mouth item"
+    );
+}
+
+#[test]
+fn a_dispenser_only_puts_things_in_a_foxs_mouth() {
+    init_vanilla_registry();
+    let fox = new_fox();
+
+    assert!(fox.can_dispenser_equip_into_slot(EquipmentSlot::MainHand));
+    assert!(!fox.can_dispenser_equip_into_slot(EquipmentSlot::Head));
+
+    fox.set_can_pick_up_loot(false);
+    assert!(!fox.can_dispenser_equip_into_slot(EquipmentSlot::MainHand));
+}
+
+#[test]
+fn a_fox_waking_up_drops_every_pose() {
+    let (_world, fox) = world_with_fox("fox_wake_clears_states");
+    fox.set_sleeping(true);
+    fox.set_sitting(true);
+    fox.set_crouching(true);
+    fox.set_interested(true);
+
+    FoxSleepGoal::new().stop(fox.as_ref());
+
+    assert!(!fox.is_sleeping());
+    assert!(!fox.is_sitting());
+    assert!(!fox.is_crouching());
+    assert!(!fox.is_interested());
 }
 
 fn fox_holding(name: &'static str, item: ItemStack) -> (Arc<World>, Arc<FoxEntity>) {
