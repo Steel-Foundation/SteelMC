@@ -34,7 +34,6 @@ fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
 }
 
 fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
-    let fox = as_fox(mob)?;
     let world = mob.level()?;
     let search = mob.bounding_box().inflate(SEARCH_RANGE);
     world
@@ -42,8 +41,7 @@ fn first_wanted_item(mob: &dyn PathfinderMob) -> Option<DVec3> {
         .into_iter()
         .find_map(|entity| {
             let item = entity.downcast_ref::<ItemEntity>()?;
-            (!item.has_pickup_delay() && Mob::can_hold_item(fox, &item.get_item()))
-                .then(|| item.position())
+            (!item.has_pickup_delay() && item.is_alive()).then(|| item.position())
         })
 }
 
@@ -64,7 +62,7 @@ impl Goal for FoxSearchForItemsGoal {
         if Mob::target(fox).is_some() || fox.last_hurt_by_mob().is_some() || !fox.can_move() {
             return false;
         }
-        if rand::random_range(0..reduced_tick_delay(SEARCH_CHECK_TICKS).max(1)) != 0 {
+        if rand::random_range(0..reduced_tick_delay(SEARCH_CHECK_TICKS)) != 0 {
             return false;
         }
         first_wanted_item(mob).is_some()
@@ -77,6 +75,9 @@ impl Goal for FoxSearchForItemsGoal {
     }
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {
+        if mob.has_item_in_slot(EquipmentSlot::MainHand) {
+            return;
+        }
         if let Some(target) = first_wanted_item(mob) {
             mob.move_to_pos(target, SEARCH_SPEED);
         }
@@ -104,7 +105,9 @@ impl PerchAndSearchGoal {
         let angle = TAU * rand::random::<f64>();
         self.rel_x = angle.cos();
         self.rel_z = angle.sin();
-        self.look_time = PERCH_MIN_LOOK_TICKS + rand::random_range(0..PERCH_EXTRA_LOOK_TICKS);
+        self.look_time = reduced_tick_delay(
+            PERCH_MIN_LOOK_TICKS + rand::random_range(0..PERCH_EXTRA_LOOK_TICKS),
+        );
     }
 }
 
@@ -146,10 +149,6 @@ impl Goal for PerchAndSearchGoal {
         }
     }
 
-    fn requires_update_every_tick(&self) -> bool {
-        true
-    }
-
     fn tick(&mut self, mob: &dyn PathfinderMob) {
         self.look_time -= 1;
         if self.look_time <= 0 {
@@ -179,7 +178,7 @@ pub(crate) struct FoxSleepGoal {
 impl FoxSleepGoal {
     pub(crate) fn new() -> Self {
         Self {
-            countdown: rand::random_range(0..SLEEP_WAIT_TICKS.max(1)),
+            countdown: rand::random_range(0..SLEEP_WAIT_TICKS),
         }
     }
 
@@ -227,16 +226,17 @@ impl Goal for FoxSleepGoal {
             fox.set_sitting(false);
             fox.set_crouching(false);
             fox.set_interested(false);
+            fox.set_jumping(false);
             fox.set_sleeping(true);
         }
         mob.mob_base().navigation().lock().stop();
+        mob.set_wanted_position(mob.position(), 0.0);
     }
 
     fn stop(&mut self, mob: &dyn PathfinderMob) {
-        self.countdown = rand::random_range(0..SLEEP_WAIT_TICKS.max(1));
+        self.countdown = rand::random_range(0..SLEEP_WAIT_TICKS);
         if let Some(fox) = as_fox(mob) {
-            fox.set_sleeping(false);
-            fox.set_sitting(false);
+            fox.clear_states();
         }
     }
 }

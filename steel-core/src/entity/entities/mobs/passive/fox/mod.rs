@@ -38,8 +38,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
+    MobBase, PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -325,14 +325,19 @@ impl FoxEntity {
         })
     }
 
-    /// Adds a trusted entity uuid, filling the first free trusted slot.
-    pub fn add_trusted(&self, uuid: Uuid) {
+    pub(crate) fn add_trusted(&self, uuid: Uuid) {
         let mut entity_data = self.entity_data.lock();
         if entity_data.trusted_id_0.get().is_none() {
             entity_data.trusted_id_0.set(Some(uuid));
         } else {
             entity_data.trusted_id_1.set(Some(uuid));
         }
+    }
+
+    fn clear_trusted(&self) {
+        let mut entity_data = self.entity_data.lock();
+        entity_data.trusted_id_0.set(None);
+        entity_data.trusted_id_1.set(None);
     }
 
     fn trusted_ids(&self) -> Vec<Uuid> {
@@ -373,8 +378,8 @@ impl FoxEntity {
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
-    #[must_use]
     /// Whether an item stack is fox food.
+    #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
             .items
@@ -539,7 +544,6 @@ impl FoxEntity {
     }
 }
 
-/// React: chicken, rabbit, hostiles. Ignore: fox, creative, spectating, trusted
 fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
     let entity_type = target.entity_type();
     if entity_type == &vanilla_entities::FOX {
@@ -621,14 +625,12 @@ impl Entity for FoxEntity {
         nbt.insert("Sitting", self.is_sitting());
         nbt.insert("Crouching", self.is_crouching());
 
-        let trusted = self.trusted_ids();
-        if !trusted.is_empty() {
-            let ids = trusted
-                .iter()
-                .map(|uuid| uuid.to_int_array().to_vec())
-                .collect();
-            nbt.insert("Trusted", NbtTag::List(NbtList::IntArray(ids)));
-        }
+        let trusted = self
+            .trusted_ids()
+            .iter()
+            .map(|uuid| uuid.to_int_array().to_vec())
+            .collect();
+        nbt.insert("Trusted", NbtTag::List(NbtList::IntArray(trusted)));
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -648,6 +650,7 @@ impl Entity for FoxEntity {
         if let Some(crouching) = nbt.byte("Crouching") {
             self.set_crouching(crouching != 0);
         }
+        self.clear_trusted();
         if let Some(trusted) = nbt.list("Trusted")
             && let Some(ids) = trusted.int_arrays()
         {
@@ -687,15 +690,17 @@ impl LivingEntity for FoxEntity {
         Some(&sound_events::ENTITY_FOX_DEATH)
     }
 
-    fn drop_custom_death_equipment(&self, world: &Arc<World>) {
+    fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
+        slot == EquipmentSlot::MainHand && Mob::can_pick_up_loot(self)
+    }
+
+    fn drop_custom_death_equipment(&self) {
         let held = self
             .living_base()
             .equipment()
             .lock()
             .take(EquipmentSlot::MainHand);
-        if !held.is_empty() {
-            self.drop_item_stack(world, held);
-        }
+        self.spawn_at_location(held, 0.0);
     }
 
     fn server_ai_step(&self) {
@@ -704,6 +709,11 @@ impl LivingEntity for FoxEntity {
 
     fn ai_step(&self) -> Option<MoveResult> {
         self.tick_eating();
+        if self.is_sleeping() || self.is_immobile() {
+            self.set_jumping(false);
+            let input = self.travel_input();
+            self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
+        }
         let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
@@ -907,7 +917,7 @@ impl Mob for FoxEntity {
         let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
         world.broadcast_to_nearby(
             chunk_pos,
-            CTakeItemEntity::new(item_entity.id(), self.id(), 1),
+            CTakeItemEntity::new(item_entity.id(), self.id(), item_stack.count()),
             None,
         );
         item_entity.set_removed(RemovalReason::Discarded);

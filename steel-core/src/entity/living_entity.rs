@@ -1010,9 +1010,7 @@ pub trait LivingEntity: Entity {
         let Some(world) = self.level() else {
             return;
         };
-        // Vanilla per-entity equipment that drops on death before the loot rules,
-        // like Fox.dropAllDeathLoot spitting out the held mouth item.
-        self.drop_custom_death_equipment(&world);
+        self.drop_custom_death_equipment();
         if self.should_drop_loot(world.as_ref()) {
             let killed_by_player = self.last_hurt_by_player_memory_time() > 0;
             self.drop_from_loot_table(source, killed_by_player);
@@ -1025,8 +1023,8 @@ pub trait LivingEntity: Entity {
         // TODO: Drop non-mob equipment overrides once those foundations exist.
     }
 
-    /// Equipment dropped on death regardless of loot rules
-    fn drop_custom_death_equipment(&self, _world: &Arc<World>) {}
+    /// Drops equipment that falls out on death even when loot drops are off.
+    fn drop_custom_death_equipment(&self) {}
 
     /// Runs vanilla `LivingEntity.dropExperience`.
     fn drop_experience(&self, world: &Arc<World>, killer_entity_id: Option<i32>) {
