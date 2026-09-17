@@ -13,7 +13,7 @@ pub use signature_cache::{LastSeen, MessageCache};
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
+use log::warn;
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::game::{
     CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, MessageSignature,
@@ -128,13 +128,6 @@ pub enum ChatValidationError {
     MissingProfileKey,
     /// The message chain has been broken by previous validation failures.
     ChainBroken,
-    /// The message timestamp is older than the server expiration threshold.
-    Expired {
-        /// Age of the message in seconds.
-        age: u64,
-        /// Maximum allowed age in seconds.
-        max_age: u64,
-    },
     /// The message timestamp arrived out of chronological sequence.
     OutOfOrderChat,
     /// The player's Mojang profile public key has expired.
@@ -154,9 +147,6 @@ impl ChatValidationError {
         match self {
             Self::MissingProfileKey => CHAT_DISABLED_MISSING_PROFILE_KEY.msg().component(),
             Self::ChainBroken => CHAT_DISABLED_CHAIN_BROKEN.msg().component(),
-            Self::Expired { age, max_age } => {
-                TextComponent::plain(format!("Message expired (age: {age}s, max: {max_age}s)"))
-            }
             Self::OutOfOrderChat => CHAT_DISABLED_OUT_OF_ORDER_CHAT.msg().component(),
             Self::ExpiredProfileKey => CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component(),
             Self::InvalidSignature => CHAT_DISABLED_INVALID_SIGNATURE.msg().component(),
@@ -442,10 +432,7 @@ impl Player {
         let message_age = now.duration_since(message_time).unwrap_or(Duration::ZERO);
 
         if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
-            return Err(ChatValidationError::Expired {
-                age: message_age.as_secs(),
-                max_age: MESSAGE_EXPIRES_AFTER_SERVER.as_secs(),
-            });
+            warn!("Received expired chat: '{}'. Is the client/server system time unsynchronized?", content)
         }
 
         let body = message_chain::SignedMessageBody::new(
