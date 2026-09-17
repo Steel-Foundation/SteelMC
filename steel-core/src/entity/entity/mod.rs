@@ -1408,7 +1408,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         if player.is_secondary_use_active()
-            && mob.can_be_leashed()
+            && Mob::can_be_leashed(mob)
             && self
                 .as_living_entity()
                 .is_none_or(|living| !LivingEntity::is_baby(living))
