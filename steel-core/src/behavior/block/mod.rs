@@ -610,6 +610,11 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
+    /// Returns whether this behavior implements vanilla `LiquidBlock`.
+    fn is_liquid_block(&self) -> bool {
+        false
+    }
+
     /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
     ///
     /// Despite the vanilla name, this returns true for any door block type that
@@ -1219,6 +1224,15 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
         None
+    }
+
+    /// Whether this block's item may be stored inside container items such as
+    /// shulker boxes and bundles.
+    ///
+    /// Vanilla gates this on the item class, but shulker boxes share
+    /// `BlockItem`, so the rule lives on the block instead.
+    fn fits_inside_container_items(&self) -> bool {
+        true
     }
 }
 

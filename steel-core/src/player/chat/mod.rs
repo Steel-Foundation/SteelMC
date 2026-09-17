@@ -7,7 +7,6 @@ pub mod message_chain;
 mod message_validator;
 pub mod profile_key;
 mod signature_cache;
-mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
@@ -29,13 +28,16 @@ use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
 use crate::player::Player;
+use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
-use spam_throttler::TickThrottler;
+
+/// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
+const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
 
 /// All chat-related state for a player.
 ///
-/// Stored behind a single `SyncMutex` on `Player`. The fields were previously
+/// Stored behind a single `SyncMutex` on `PlayerSession`. The fields were previously
 /// individual atomics/mutexes but are always accessed within short critical
 /// sections per-player, so a single lock is simpler with no real contention cost.
 pub struct ChatState {
@@ -111,11 +113,14 @@ impl ChatState {
 }
 
 impl Player {
-    /// Decays the per player chat and command spam counters once per server tick
-    pub fn tick_spam_throttlers(&self) {
-        let mut chat = self.chat.lock();
+    /// Decays the throttlers of the player once per server tick.
+    pub fn tick_throttlers(&self) {
+        let mut chat = self.chat().lock();
         chat.chat_spam_throttler.tick();
         chat.command_spam_throttler.tick();
+        drop(chat);
+
+        self.session.drop_spam_throttler.lock().tick();
     }
 
     const fn should_disconnect_for_rate_spam(
@@ -131,7 +136,7 @@ impl Player {
     pub fn detect_command_rate_spam(&self) {
         let is_operator = self.is_operator();
         let should_disconnect = {
-            let mut chat = self.chat.lock();
+            let mut chat = self.chat().lock();
             Self::should_disconnect_for_rate_spam(&mut chat.command_spam_throttler, is_operator)
         };
 
@@ -143,7 +148,7 @@ impl Player {
     fn detect_chat_rate_spam(&self) {
         let is_operator = self.is_operator();
         let should_disconnect = {
-            let mut chat = self.chat.lock();
+            let mut chat = self.chat().lock();
             Self::should_disconnect_for_rate_spam(&mut chat.chat_spam_throttler, is_operator)
         };
 
@@ -154,7 +159,7 @@ impl Player {
 
     /// Gets the next `messages_received` counter and increments it
     pub fn get_and_increment_messages_received(&self) -> i32 {
-        let mut chat = self.chat.lock();
+        let mut chat = self.chat().lock();
         let val = chat.messages_received;
         chat.messages_received += 1;
         val
@@ -164,9 +169,7 @@ impl Player {
         &self,
         packet: &SChat,
     ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
-        const MESSAGE_EXPIRES_AFTER: Duration = Duration::from_mins(5);
-
-        let mut chat = self.chat.lock();
+        let mut chat = self.chat().lock();
         let session = chat.chat_session.clone().ok_or("No chat session")?;
         let signature = packet.signature.as_ref().ok_or("No signature present")?;
 
@@ -192,10 +195,11 @@ impl Player {
             .duration_since(timestamp)
             .unwrap_or(Duration::from_secs(0));
 
-        if message_age > MESSAGE_EXPIRES_AFTER {
+        if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
             return Err(format!(
-                "Message expired (age: {}s, max: 300s)",
-                message_age.as_secs()
+                "Message expired (age: {}s, max: {}s)",
+                message_age.as_secs(),
+                MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
             ));
         }
 
@@ -277,7 +281,7 @@ impl Player {
         };
 
         let sender_index = {
-            let mut chat = player.chat.lock();
+            let mut chat = player.chat().lock();
             let idx = chat.messages_sent;
             chat.messages_sent += 1;
             idx
@@ -377,7 +381,7 @@ impl Player {
                     self.gameprofile.name,
                     err
                 );
-                let mut chat = self.chat.lock();
+                let mut chat = self.chat().lock();
                 chat.chat_session = Some(session);
                 chat.message_chain = Some(chain);
                 return;
@@ -385,7 +389,7 @@ impl Player {
         };
 
         {
-            let mut chat = self.chat.lock();
+            let mut chat = self.chat().lock();
             chat.chat_session = Some(session);
             chat.message_chain = Some(chain);
         }
@@ -402,12 +406,12 @@ impl Player {
 
     /// Gets a reference to the player's chat session if present
     pub fn chat_session(&self) -> Option<RemoteChatSession> {
-        self.chat.lock().chat_session.clone()
+        self.chat().lock().chat_session.clone()
     }
 
     /// Checks if the player has a valid chat session
     pub fn has_chat_session(&self) -> bool {
-        self.chat.lock().chat_session.is_some()
+        self.chat().lock().chat_session.is_some()
     }
 
     /// Handles a chat session update packet from the client.
@@ -478,7 +482,7 @@ impl Player {
     /// Handles a chat acknowledgment packet from the client.
     pub fn handle_chat_ack(&self, packet: SChatAck) {
         if let Err(err) = self
-            .chat
+            .chat()
             .lock()
             .message_validator
             .apply_offset(packet.offset.0)

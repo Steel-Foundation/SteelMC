@@ -12,6 +12,7 @@ pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
 use glam::{DVec3, Vec3Swizzles};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
@@ -31,7 +32,6 @@ use crate::physics::{
     is_colliding_with_new_shapes, movement_error_delta,
 };
 use crate::player::Player;
-use crate::player::food_data::food_constants;
 use crate::world::World;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
@@ -63,18 +63,6 @@ pub fn clamp_vertical(value: f64) -> f64 {
 }
 
 #[must_use]
-pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
-}
-
-#[must_use]
 pub(crate) fn custom_stat_from_riding_vehicle(
     vehicle_entity_type: EntityTypeRef,
 ) -> Option<CustomStatRef> {
@@ -97,6 +85,8 @@ pub(crate) fn custom_stat_from_riding_vehicle(
     }
 }
 
+const FLOATING_Y_THRESHOLD: f64 = -0.03125;
+
 #[derive(Debug, Clone, Copy)]
 struct PlayerFloatingValidation {
     y_dist: f64,
@@ -110,7 +100,7 @@ struct PlayerFloatingValidation {
 
 impl PlayerFloatingValidation {
     fn can_violate(self) -> bool {
-        self.y_dist >= -0.03125
+        self.y_dist >= FLOATING_Y_THRESHOLD
             && !self.player_stands_on_something
             && !self.is_spectator
             && !self.server_allows_flight
@@ -404,16 +394,6 @@ impl Player {
         // post-move residual used by moved-wrongly validation.
         let floating_check = Some((player_stands_on_something, move_delta.y));
 
-        if packet.on_ground && self.is_sprinting() {
-            let dx = move_delta.x;
-            let dz = move_delta.z;
-
-            let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
-            if cm > 0 {
-                self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01);
-            }
-        }
-
         let client_delta = target_pos - start_pos;
         match self.apply_accepted_client_movement(
             &world,
@@ -681,7 +661,7 @@ impl Player {
         y_dist: f64,
         vehicle_rests_on_something: bool,
     ) {
-        let client_is_floating = y_dist >= -0.03125
+        let client_is_floating = y_dist >= FLOATING_Y_THRESHOLD
             && !vehicle_rests_on_something
             && !self.config.allow_flight
             && !vehicle.is_flying_vehicle()
@@ -1095,6 +1075,46 @@ mod tests {
         assert_eq!(wrap_degrees(181.0), -179.0);
         assert_eq!(wrap_degrees(-181.0), 179.0);
         assert_eq!(wrap_degrees(90.0), 90.0);
+    }
+
+    #[test]
+    fn sprinting_charges_food_exhaustion_once_per_move() {
+        use std::sync::Arc;
+
+        use steel_utils::ChunkPos;
+
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+        let world = fresh_test_world("sprint_exhaustion_single_charge");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "SprintTester", 1).build();
+        player.set_client_loaded(true);
+
+        let start = DVec3::new(8.0, 64.0, 8.0);
+        player.base().set_position_local(start);
+        player.movement.lock().reset_for_position_sync(start);
+        player.set_sprinting(true);
+        player.food_data.lock().exhaustion_level = 0.0;
+
+        // A 0.25-block ground sprint. Vanilla `handleMovePlayer` runs the sprint
+        // exhaustion once, inside `checkMovementStatistics`: `Player.SPRINTING`
+        // costs 0.1 per meter, so 0.1 * 0.25 = 0.025.
+        player.handle_move_player(SMovePlayer {
+            position: start + DVec3::new(0.25, 0.0, 0.0),
+            y_rot: 0.0,
+            x_rot: 0.0,
+            on_ground: true,
+            horizontal_collision: false,
+            has_pos: true,
+            has_rot: false,
+        });
+
+        let exhaustion = player.food_data.lock().exhaustion_level;
+        assert!(
+            (exhaustion - 0.025).abs() < 1e-4,
+            "sprinting should charge exhaustion once (0.025), got {exhaustion}"
+        );
     }
 
     #[test]

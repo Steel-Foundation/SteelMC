@@ -15,7 +15,7 @@ hooks = [
     { id = "no-commit-to-branch", priority = 0, args = ["--branch", "master"] },
     { id = "check-case-conflict", priority = 0 },
     { id = "trailing-whitespace", priority = 5, args = ["--markdown-linebreak-ext=md"] },
-    { id = "end-of-file-fixer", args = ["--fix"], priority = 6  },
+    { id = "end-of-file-fixer", priority = 6 },
     { id = "fix-byte-order-marker", priority = 6 },
 ]
 [[repos]]

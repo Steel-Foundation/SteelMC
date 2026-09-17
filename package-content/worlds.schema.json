@@ -6,7 +6,7 @@
   "properties": {
     "save_path": {
       "type": "string",
-      "description": "Root directory for saves",
+      "description": "Root directory for saves. May be absolute; . and .. components are rejected.",
       "default": "saves"
     },
     "seed": {

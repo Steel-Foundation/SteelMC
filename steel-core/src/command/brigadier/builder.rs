@@ -1,23 +1,23 @@
 //! Command node builders.
 
-use std::sync::Arc;
-
 use super::{
     ArgumentType, BrigadierRuntime, CommandContext, CommandRequirement, CommandRuntime,
-    CommandSyntaxError, NodeId, RegistrationError, RegistrationErrorKind,
+    CommandSyntaxError, NodeId, RegistrationError, RegistrationErrorKind, SuggestionProvider,
     node::{
         CommandNodeData, CommandRedirect, CommandRedirectTarget, UnregisteredCommandNode,
         merge_or_push,
     },
     runtime::{BrigadierExecutor, BrigadierModifier},
 };
+use crate::command::brigadier::node::ArgumentData;
+use std::sync::Arc;
 
 /// Builds one literal or argument command node and its descendants.
 pub(crate) struct CommandNodeBuilder<S, R = BrigadierRuntime>
 where
     R: CommandRuntime<S>,
 {
-    data: CommandNodeData<R::Argument>,
+    data: CommandNodeData<S, R::Argument>,
     children: Vec<Self>,
     executor: Option<Arc<R::Executor>>,
     requirement: CommandRequirement<S>,
@@ -114,10 +114,35 @@ where
     /// Creates an argument for this runtime model.
     pub(crate) fn argument(name: impl Into<Box<str>>, argument_type: R::Argument) -> Self {
         Self {
-            data: CommandNodeData::Argument {
-                name: name.into(),
-                argument_type,
-            },
+            data: CommandNodeData::Argument(name.into(), ArgumentData::new(argument_type)),
+            children: Vec::new(),
+            executor: None,
+            requirement: CommandRequirement::allow_all(),
+            execution_requirement: CommandRequirement::allow_all(),
+            redirect: None,
+        }
+    }
+
+    /// Creates an argument for this runtime model that has a custom [`SuggestionProvider`].
+    pub(crate) fn argument_with_suggestions(
+        name: impl Into<Box<str>>,
+        argument_type: R::Argument,
+        custom_suggestions: impl SuggestionProvider<S, R::Argument> + 'static,
+    ) -> Self {
+        Self::argument_with_suggestions_arc(name, argument_type, Arc::new(custom_suggestions))
+    }
+
+    /// Creates an argument for this runtime model that has a custom [`SuggestionProvider`], wrapped in an [`Arc`].
+    pub(crate) fn argument_with_suggestions_arc(
+        name: impl Into<Box<str>>,
+        argument_type: R::Argument,
+        custom_suggestions: Arc<impl SuggestionProvider<S, R::Argument> + 'static>,
+    ) -> Self {
+        Self {
+            data: CommandNodeData::Argument(
+                name.into(),
+                ArgumentData::with_suggestions(argument_type, custom_suggestions),
+            ),
             children: Vec::new(),
             executor: None,
             requirement: CommandRequirement::allow_all(),

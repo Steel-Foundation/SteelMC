@@ -4,7 +4,7 @@ use super::{
     PendingWorldChangeToken, Player, PlayerAdmissionState, PortalKind, RespawnData, Server,
     SharedEntity, World, WorldChangeRequest, WorldSpawnTeleportJob, can_teleport_between_worlds,
     change_entity_world, clear_pending_world_change, is_allowed_to_enter_portal,
-    is_end_dimension_type, is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
+    is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
 };
 use crate::entity::LivingEntity as _;
 
@@ -142,7 +142,7 @@ impl Server {
             clear_pending_world_change(&entity, pending_token);
             return;
         }
-        if !is_end_dimension_type(&source_world) {
+        if !source_world.is_end_dimension_type() {
             self.queue_end_entry_portal_change(
                 entity,
                 source_world,
@@ -300,7 +300,7 @@ impl Server {
             clear_pending_world_change(&entity, pending_token);
             return;
         }
-        let source_is_end = is_end_dimension_type(&source_world);
+        let source_is_end = source_world.is_end_dimension_type();
         let Some(job) = EndGatewayTeleportJob::new(
             Arc::clone(&entity),
             source_world,

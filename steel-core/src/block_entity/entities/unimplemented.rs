@@ -10,7 +10,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
 
-struct RawBlockEntityState {
+struct UnimplementedBlockEntityState {
     data: NbtCompound,
 }
 
@@ -18,19 +18,19 @@ struct RawBlockEntityState {
 ///
 /// Vanilla has concrete classes for every block entity type. Steel uses this only to preserve
 /// worldgen and disk NBT until the corresponding typed implementation is added.
-pub struct RawBlockEntity {
+pub struct UnimplementedBlockEntity {
     base: BlockEntityBase,
-    state: SyncMutex<RawBlockEntityState>,
+    state: SyncMutex<UnimplementedBlockEntityState>,
 }
 
 // SAFETY: This key identifies the Steel fallback implementation, independently
 // of the Minecraft block-entity registry entry stored inside it.
-unsafe impl DowncastType for RawBlockEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/raw");
+unsafe impl DowncastType for UnimplementedBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/unimplemented");
 }
 
-impl RawBlockEntity {
-    /// Creates a raw block entity without additional NBT.
+impl UnimplementedBlockEntity {
+    /// Creates an unimplemented block entity without additional NBT.
     #[must_use]
     pub fn new(
         block_entity_type: BlockEntityTypeRef,
@@ -41,7 +41,7 @@ impl RawBlockEntity {
         Self::with_data(block_entity_type, level, pos, state, NbtCompound::new())
     }
 
-    /// Creates a raw block entity with already-owned additional NBT.
+    /// Creates an unimplemented block entity with already-owned additional NBT.
     #[must_use]
     pub fn with_data(
         block_entity_type: BlockEntityTypeRef,
@@ -52,12 +52,12 @@ impl RawBlockEntity {
     ) -> Self {
         Self {
             base: BlockEntityBase::new(block_entity_type, level, pos, state),
-            state: SyncMutex::new(RawBlockEntityState { data }),
+            state: SyncMutex::new(UnimplementedBlockEntityState { data }),
         }
     }
 }
 
-impl BlockEntity for RawBlockEntity {
+impl BlockEntity for UnimplementedBlockEntity {
     fn base(&self) -> &BlockEntityBase {
         &self.base
     }
@@ -81,13 +81,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_metadata_replaces_stale_raw_metadata() {
+    fn full_metadata_replaces_stale_unimplemented_metadata() {
         init_vanilla_registry();
         let mut data = NbtCompound::new();
         data.insert("id", "minecraft:chest");
         data.insert("x", 100_i32);
         data.insert("custom", 7_i32);
-        let entity = RawBlockEntity::with_data(
+        let entity = UnimplementedBlockEntity::with_data(
             &vanilla_block_entity_types::BARREL,
             Weak::new(),
             BlockPos::new(2, 70, -4),
@@ -115,7 +115,7 @@ mod tests {
     #[should_panic(expected = "invalid block entity minecraft:barrel state minecraft:stone")]
     fn constructor_rejects_a_type_state_mismatch() {
         init_vanilla_registry();
-        let _ = RawBlockEntity::new(
+        let _ = UnimplementedBlockEntity::new(
             &vanilla_block_entity_types::BARREL,
             Weak::new(),
             BlockPos::new(2, 70, -4),

@@ -155,7 +155,7 @@ impl TurtleEggBlock {
             &sound_events::ENTITY_TURTLE_EGG_BREAK,
             pos,
             0.7,
-            0.9 + rand::random::<f32>() * 0.2,
+            rand::random_range(0.9..1.1),
             None,
         );
 
@@ -235,7 +235,7 @@ impl BlockBehavior for TurtleEggBlock {
                 &sound_events::ENTITY_TURTLE_EGG_CRACK,
                 pos,
                 0.7,
-                0.9 + rand::random::<f32>() * 0.2,
+                rand::random_range(0.9..1.1),
                 None,
             );
             world.set_block(
@@ -253,7 +253,7 @@ impl BlockBehavior for TurtleEggBlock {
                 &sound_events::ENTITY_TURTLE_EGG_HATCH,
                 pos,
                 0.7,
-                0.9 + rand::random::<f32>() * 0.2,
+                rand::random_range(0.9..1.1),
                 None,
             );
             world.remove_block(pos, false);

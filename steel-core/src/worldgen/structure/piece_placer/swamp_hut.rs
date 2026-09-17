@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, StairsShape};
@@ -8,7 +6,6 @@ use steel_registry::{Registry, vanilla_blocks, vanilla_entities};
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
-use crate::entity::{entities::RawEntity, next_entity_id};
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::swamp_hut::SwampHutPieceData;
 
@@ -102,26 +99,18 @@ fn spawn_swamp_hut_mob(
     }
 
     *spawned = true;
-    let entity = Arc::new(RawEntity::new(
-        next_entity_id(),
+    let Some(entity) = StructurePiecePlacer::create_mob(
+        entity_type,
         DVec3::new(
             f64::from(pos.x()) + 0.5,
             f64::from(pos.y()),
             f64::from(pos.z()) + 0.5,
         ),
         placer.weak_world(),
-        entity_type,
-    ));
-    entity.set_persistence_required();
-    entity.snap_to(
-        DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()),
-            f64::from(pos.z()) + 0.5,
-        ),
-        0.0,
-        0.0,
-    );
+        true,
+    ) else {
+        return;
+    };
     let _ = placer.add_fresh_entity(entity);
 }
 

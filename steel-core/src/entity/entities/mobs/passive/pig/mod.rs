@@ -9,6 +9,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
+use steel_registry::data_components::vanilla_components::{PIG_SOUND_VARIANT, PIG_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -237,6 +238,15 @@ impl Entity for PigEntity {
         self.entity_type
     }
 
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(PIG_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(PIG_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
+    }
+
     fn base_tick(&self) {
         Mob::base_tick_mob(self);
     }
@@ -398,20 +408,6 @@ impl AgeableMob for PigEntity {
     fn set_synced_baby(&self, baby: bool) {
         self.entity_data.lock().ageable_mob_mut().baby.set(baby);
     }
-}
-
-impl Animal for PigEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        PigEntity::is_food(item_stack)
-    }
-
-    fn play_eating_sound(&self) {
-        self.play_sound(self.current_sound_set().eat_sound, 1.0, 1.0);
-    }
 
     fn breed_variant_key(&self) -> Option<&Identifier> {
         Some(&self.variant().key)
@@ -421,7 +417,7 @@ impl Animal for PigEntity {
         self.set_variant_by_key(key)
     }
 
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
         let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
@@ -435,6 +431,20 @@ impl Animal for PigEntity {
         if !offspring.set_breed_variant_key(variant_key) {
             log::error!("pig offspring could not inherit breeding variant {variant_key}");
         }
+    }
+}
+
+impl Animal for PigEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        PigEntity::is_food(item_stack)
+    }
+
+    fn play_eating_sound(&self) {
+        self.play_sound(self.current_sound_set().eat_sound, 1.0, 1.0);
     }
 }
 

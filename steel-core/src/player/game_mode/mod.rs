@@ -7,6 +7,7 @@ use std::mem::swap;
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent, COpenSignEditor,
     CPlayerInfoUpdate, CSetCamera, CSetEntityMotion, CSetHeldSlot, GameEventType, PlayerAction,
@@ -40,7 +41,6 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;
-use crate::player::movement::wrap_degrees;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 use steel_utils::axis::Axis;

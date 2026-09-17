@@ -7,6 +7,7 @@ use crate::random::{
 /// Feature decoration always constructs `WorldgenRandom(new XoroshiroRandomSource(...))`.
 /// Sampling then goes through `BitRandomSource.next*`, so it does not match raw
 /// `XoroshiroRandomSource` for `nextInt`, bounded ints, doubles, longs, or gaussians.
+#[derive(Clone)]
 pub struct WorldgenRandom {
     source: Xoroshiro,
     next_gaussian: Option<f64>,

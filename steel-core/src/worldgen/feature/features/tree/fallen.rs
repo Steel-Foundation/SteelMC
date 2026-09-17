@@ -73,6 +73,7 @@ impl FeatureDecorationRunner {
             &config.stump_decorators,
             &mut placement,
             biome_zoom_seed,
+            Self::place_configured_feature_kind,
         );
     }
 
@@ -112,6 +113,7 @@ impl FeatureDecorationRunner {
             &config.log_decorators,
             &mut placement,
             biome_zoom_seed,
+            Self::place_configured_feature_kind,
         );
     }
 

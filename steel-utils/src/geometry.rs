@@ -531,6 +531,52 @@ impl<I: Space> Aabb<DVec3, I> {
     pub fn size(self) -> f64 {
         (self.width() + self.height() + self.depth()) / 3.0
     }
+
+    /// Expands the box only in the direction of `delta`.
+    #[must_use]
+    pub fn expand_towards(self, delta: DVec3) -> Self {
+        Self {
+            min: self.min + delta.min(DVec3::ZERO),
+            max: self.max + delta.max(DVec3::ZERO),
+            p: PhantomData,
+        }
+    }
+
+    /// Shrinks the box in the direction of `delta`.
+    ///
+    /// Positive components move the maximum edge inward, while negative
+    /// components move the minimum edge inward.
+    ///
+    /// Mirrors vanilla `AABB.contract`.
+    #[must_use]
+    pub fn contract(self, delta: DVec3) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        if delta.x < 0.0 {
+            min.x -= delta.x;
+        } else if delta.x > 0.0 {
+            max.x -= delta.x;
+        }
+
+        if delta.y < 0.0 {
+            min.y -= delta.y;
+        } else if delta.y > 0.0 {
+            max.y -= delta.y;
+        }
+
+        if delta.z < 0.0 {
+            min.z -= delta.z;
+        } else if delta.z > 0.0 {
+            max.z -= delta.z;
+        }
+
+        Self {
+            min,
+            max,
+            p: PhantomData,
+        }
+    }
 }
 
 impl Aabb<DVec3, BlockLocal> {
@@ -558,16 +604,6 @@ impl Aabb<DVec3, World> {
             y + height,
             z + half_width,
         )
-    }
-
-    /// Expands the box only in the direction of `delta`.
-    #[must_use]
-    pub fn expand_towards(self, delta: DVec3) -> Self {
-        Self {
-            min: self.min + delta.min(DVec3::ZERO),
-            max: self.max + delta.max(DVec3::ZERO),
-            p: PhantomData,
-        }
     }
 
     /// Returns `true` if this box intersects the full block at `pos`.

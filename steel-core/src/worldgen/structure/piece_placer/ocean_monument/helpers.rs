@@ -176,26 +176,18 @@ pub(super) fn spawn_elder(placer: &mut ScatteredFeaturePlacer<'_, '_>, x: i32, y
         return;
     }
 
-    let entity = Arc::new(RawEntity::new(
-        next_entity_id(),
+    let Some(entity) = StructurePiecePlacer::create_mob(
+        &vanilla_entities::ELDER_GUARDIAN,
         DVec3::new(
             f64::from(pos.x()) + 0.5,
             f64::from(pos.y()),
             f64::from(pos.z()) + 0.5,
         ),
         placer.weak_world(),
-        &vanilla_entities::ELDER_GUARDIAN,
-    ));
-    entity.set_persistence_required();
-    entity.snap_to(
-        DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()),
-            f64::from(pos.z()) + 0.5,
-        ),
-        0.0,
-        0.0,
-    );
+        true,
+    ) else {
+        return;
+    };
     let _ = placer.add_fresh_entity(entity);
 }
 

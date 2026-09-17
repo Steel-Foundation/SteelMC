@@ -1,11 +1,11 @@
 use steel_macros::block_behavior;
+use steel_math::{DEGREE_180, convert_to_rotation_segment};
 use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::{
     BlockStateProperties, Direction, EnumProperty, IntProperty,
 };
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::vanilla_blocks;
-use steel_utils::angle::convert_to_rotation_segment;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
@@ -56,7 +56,7 @@ impl BlockBehavior for BannerBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
             ROTATION_16,
-            convert_to_rotation_segment(context.rotation() + 180.0),
+            convert_to_rotation_segment(context.rotation() + DEGREE_180),
         ))
     }
 }

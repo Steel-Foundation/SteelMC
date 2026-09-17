@@ -66,8 +66,9 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
         &GameEventContext::new(Some(context.player), Some(state)),
     );
 
+    let has_infinite_materials = context.player.has_infinite_materials();
     let item_used = context.inv.with_item(|item| {
-        item.shrink(1);
+        item.consume_one(has_infinite_materials);
         item.item
     });
     context

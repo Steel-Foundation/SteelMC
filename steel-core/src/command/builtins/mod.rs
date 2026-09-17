@@ -19,6 +19,7 @@ mod list;
 mod locate;
 mod operator;
 mod perms;
+mod playsound;
 mod return_command;
 mod seed;
 mod setblock;
@@ -31,6 +32,7 @@ mod teleport;
 mod tellraw;
 mod tick;
 mod time;
+mod title;
 mod weather;
 mod worldborder;
 
@@ -82,6 +84,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
+    builder.register(playsound::registration())?;
     builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
@@ -94,6 +97,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
+    builder.register(title::registration())?;
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
@@ -160,6 +164,7 @@ mod tests {
                 "locate",
                 "op",
                 "perms",
+                "playsound",
                 "return",
                 "seed",
                 "setblock",
@@ -173,6 +178,7 @@ mod tests {
                 "tellraw",
                 "tick",
                 "time",
+                "title",
                 "weather",
                 "worldborder",
                 "invsee"

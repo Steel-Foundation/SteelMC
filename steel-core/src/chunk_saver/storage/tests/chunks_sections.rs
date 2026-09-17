@@ -266,7 +266,7 @@ fn proto_postprocessing_roundtrips_through_persistent_chunk() {
 
 #[test]
 fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(-2, 1);
     let marked = BlockPos::new(-17, -63, 31);

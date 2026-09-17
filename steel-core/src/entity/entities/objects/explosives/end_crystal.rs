@@ -74,23 +74,6 @@ impl EndCrystalEntity {
         *self.entity_data.lock().show_bottom.get()
     }
 
-    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the active world entity manager rejects the snap position. This is an invariant
-    /// failure for loaded end crystals.
-    pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
-        if let Err(error) = self.base.try_set_position(position) {
-            panic!(
-                "failed to commit end crystal {} snap position: {error}",
-                self.base.id()
-            );
-        }
-        self.base.set_rotation((yaw, pitch));
-        self.set_old_position_to_current();
-    }
-
     const fn nbt_bool(value: bool) -> i8 {
         if value { 1 } else { 0 }
     }

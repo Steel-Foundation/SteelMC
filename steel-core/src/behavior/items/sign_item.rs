@@ -68,6 +68,7 @@ impl SignItem {
 
 impl ItemBehavior for SignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        let has_infinite_materials = context.player.has_infinite_materials();
         let mut place_context = context.build_place_context();
         if !place_context.can_place() {
             return InteractionResult::Fail;
@@ -101,7 +102,7 @@ impl ItemBehavior for SignItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
@@ -207,6 +208,7 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
 
 impl ItemBehavior for HangingSignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        let has_infinite_materials = context.player.has_infinite_materials();
         let mut place_context = context.build_place_context();
         if !place_context.can_place() {
             return InteractionResult::Fail;
@@ -271,7 +273,7 @@ impl ItemBehavior for HangingSignItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);

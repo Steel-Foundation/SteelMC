@@ -8,6 +8,7 @@ use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
+use steel_math::DEGREE_360;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
@@ -166,7 +167,7 @@ impl ItemEntity {
         world: Weak<World>,
     ) -> Self {
         // Random yaw rotation for visual variety
-        let yaw = rand::random::<f32>() * 360.0;
+        let yaw = rand::random_range(0.0..DEGREE_360);
 
         let mut entity_data = ItemEntityData::new();
         entity_data.item.set(item);
@@ -185,11 +186,11 @@ impl ItemEntity {
         }
     }
 
-    fn default_spawn_velocity() -> DVec3 {
+    pub(crate) fn default_spawn_velocity() -> DVec3 {
         DVec3::new(
-            rand::random::<f64>() * 0.2 - 0.1,
+            rand::random_range(-0.1..0.1),
             0.2,
-            rand::random::<f64>() * 0.2 - 0.1,
+            rand::random_range(-0.1..0.1),
         )
     }
 
@@ -596,9 +597,9 @@ impl Entity for ItemEntity {
                         && let Some(block_pos) = self.block_pos_below_that_affects_movement()
                     {
                         let block_state = world.get_block_state(block_pos);
-                        f64::from(block_state.get_block().config.friction) * 0.98
+                        f64::from(block_state.get_block().config.friction) * AIR_DRAG
                     } else {
-                        0.98 // Air friction
+                        AIR_DRAG
                     };
 
                     let mut velocity = self.velocity();

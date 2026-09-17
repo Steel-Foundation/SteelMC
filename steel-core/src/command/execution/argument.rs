@@ -349,6 +349,10 @@ impl SteelArgumentType {
         Self::new(StorageKeyParser)
     }
 
+    pub(crate) fn sound() -> Self {
+        Self::new(SoundParser)
+    }
+
     pub(crate) fn world_clock() -> Self {
         Self::new(WorldClockParser)
     }
@@ -1137,6 +1141,24 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::ResourceLocation,
         Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    SoundParser,
+    "steel:command/parser/sound",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY.sound_events.iter().map(|(_, sound)| &sound.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AvailableSounds),
     )
 );
 unit_argument_parser!(

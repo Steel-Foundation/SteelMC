@@ -1,8 +1,8 @@
 //! Ender pearl item behavior (`EnderpearlItem`).
 //!
 //! Throwing an ender pearl spawns a [`EnderPearlEntity`] from the player's eye,
-//! shot along their look direction, and consumes one pearl (creative-mode count
-//! restoration is handled by the caller). Mirrors vanilla `EnderpearlItem.use`.
+//! shot along their look direction, and consumes one pearl unless the player
+//! has infinite materials. Mirrors vanilla `EnderpearlItem.use`.
 
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ impl ItemBehavior for EnderPearlItem {
         let player = context.player;
         let world = context.world;
 
-        let pitch = 0.4 / (rand::random::<f32>() * 0.4 + 0.8);
+        let pitch = 0.4 / rand::random_range(0.8..1.2);
         world.play_sound_at(
             &sound_events::ENTITY_ENDER_PEARL_THROW,
             SoundSource::Neutral,
@@ -61,9 +61,10 @@ impl ItemBehavior for EnderPearlItem {
         player.register_ender_pearl(&entity);
 
         player.award_stat(&vanilla_stat_types::ITEM_USED, thrown_item.item);
-        if !player.has_infinite_materials() {
-            context.inv.with_item(|item| item.shrink(1));
-        }
+        let has_infinite_materials = player.has_infinite_materials();
+        context
+            .inv
+            .with_item(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }
