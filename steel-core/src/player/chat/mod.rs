@@ -442,9 +442,9 @@ impl Player {
             message_chain::ChainError::ChainBroken => ChatValidationError::ChainBroken,
             message_chain::ChainError::ExpiredProfileKey => ChatValidationError::ExpiredProfileKey,
             message_chain::ChainError::MissingProfileKey => ChatValidationError::MissingProfileKey,
-            _ => ChatValidationError::Failed(Box::new(TextComponent::plain(
-                format!("Chain validation failed: {err}"),
-            ))),
+            _ => ChatValidationError::Failed(Box::new(TextComponent::plain(format!(
+                "Chain validation failed: {err}"
+            )))),
         })?;
 
         let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
@@ -900,7 +900,15 @@ impl Player {
                     }
                     Err(err_component) => {
                         drop(chat);
-                        self.send_message(&err_component.into_component());
+                        log::warn!(
+                            "{}",
+                            format!(
+                                "Failed to update secure chat state for {}: '{}'",
+                                self.name(),
+                                err_component.clone().into_component()
+                            )
+                        );
+                        self.send_message(&err_component.into_component().color(Color::Red));
                         return;
                     }
                 }
