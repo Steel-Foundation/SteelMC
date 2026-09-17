@@ -25,6 +25,12 @@ pub(super) enum PlayerAdmissionState {
     Disconnecting,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum PlayerJoinError {
+    DuplicateLogin,
+    ServerFull,
+}
+
 /// A duplicate-session wait ended before the old session finished leaving.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum DuplicatePlayerWaitError {
@@ -255,8 +261,16 @@ impl Server {
             }
         };
 
-        if !self.admit_reserved_player(Arc::clone(&player)) {
-            player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
+        if let Err(error) = self.admit_reserved_player(Arc::clone(&player)) {
+            let reason = match error {
+                PlayerJoinError::DuplicateLogin => {
+                    translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg()
+                }
+                PlayerJoinError::ServerFull => {
+                    translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg()
+                }
+            };
+            player.disconnect(reason);
             return;
         }
 
@@ -300,6 +314,16 @@ impl Server {
         }
     }
 
+    /// Returns whether capacity currently prevents this UUID from joining.
+    ///
+    /// Only online players occupy slots. Final admission repeats the early login check
+    /// under the admissions lock after spawn preparation, matching vanilla's timing.
+    #[must_use]
+    pub fn is_player_limit_reached(&self, uuid: Uuid) -> bool {
+        self.online_players.len() >= self.config.max_players as usize
+            && !self.can_bypass_player_limit(uuid)
+    }
+
     /// Atomically reserves a UUID after configuration's duplicate-session recheck.
     pub fn try_reserve_player_join(self: &Arc<Self>, uuid: Uuid) -> Option<PlayerJoinReservation> {
         let mut admissions = self.player_admissions.lock();
@@ -330,18 +354,25 @@ impl Server {
             .is_none()
     }
 
-    fn admit_reserved_player(&self, player: Arc<Player>) -> bool {
+    pub(super) fn admit_reserved_player(&self, player: Arc<Player>) -> Result<(), PlayerJoinError> {
         let uuid = player.gameprofile.id;
         let mut admissions = self.player_admissions.lock();
         if admissions.get(&uuid) != Some(&PlayerAdmissionState::Joining) {
-            return false;
+            return Err(PlayerJoinError::DuplicateLogin);
         }
 
-        let admitted = self.online_players.insert(player);
+        // Keep the final capacity check and insertion atomic with respect to other joins.
+        let result = if self.is_player_limit_reached(uuid) {
+            Err(PlayerJoinError::ServerFull)
+        } else if self.online_players.insert(player) {
+            Ok(())
+        } else {
+            Err(PlayerJoinError::DuplicateLogin)
+        };
         let _ = admissions.remove(&uuid);
         drop(admissions);
         self.player_admission_changed.notify_waiters();
-        admitted
+        result
     }
 
     pub(super) fn reserve_player_disconnect(&self, player: &Arc<Player>) -> bool {
