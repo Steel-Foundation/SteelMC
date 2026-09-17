@@ -8,12 +8,8 @@ use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::PotionContents;
-use steel_registry::data_components::vanilla_components::POTION_CONTENTS;
-use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{
-    RegistryReference, sound_events, vanilla_game_events, vanilla_items, vanilla_potions,
-};
+use steel_registry::{sound_events, vanilla_game_events, vanilla_items, vanilla_potions};
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::item::ItemBehavior;
@@ -66,25 +62,14 @@ impl ItemBehavior for BottleItem {
                 .player
                 .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
         });
-        create_filled_result(context, water_potion_stack(), true);
+        create_filled_result(
+            context,
+            PotionContents::create_item_stack(&vanilla_items::POTION, &vanilla_potions::WATER),
+            true,
+        );
 
         InteractionResult::Success
     }
-}
-
-/// Vanilla `PotionContents.createItemStack(Items.POTION, Potions.WATER)`.
-fn water_potion_stack() -> ItemStack {
-    let mut stack = ItemStack::new(&vanilla_items::POTION);
-    stack.set(
-        POTION_CONTENTS,
-        PotionContents::new(
-            Some(RegistryReference::new(&vanilla_potions::WATER)),
-            None,
-            Vec::new(),
-            None,
-        ),
-    );
-    stack
 }
 
 #[cfg(test)]

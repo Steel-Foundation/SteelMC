@@ -10,8 +10,11 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{PrefixedRead as _, PrefixedWrite as _, ReadFrom, WriteTo};
 
 use crate::RegistryReference;
+use crate::data_components::vanilla_components::POTION_CONTENTS;
+use crate::item_stack::ItemStack;
+use crate::items::ItemRef;
 use crate::mob_effect_instance::MobEffectInstance;
-use crate::potion::Potion;
+use crate::potion::{Potion, PotionRef};
 
 /// Vanilla `PotionContents.BASE_POTION_COLOR`.
 const BASE_POTION_COLOR: i32 = -13_083_194;
@@ -54,6 +57,18 @@ impl PotionContents {
             custom_effects,
             custom_name,
         }
+    }
+
+    #[must_use]
+    pub const fn of(potion: PotionRef) -> Self {
+        Self::new(Some(RegistryReference::new(potion)), None, Vec::new(), None)
+    }
+
+    #[must_use]
+    pub fn create_item_stack(item: ItemRef, potion: PotionRef) -> ItemStack {
+        let mut stack = ItemStack::new(item);
+        stack.set(POTION_CONTENTS, Self::of(potion));
+        stack
     }
 
     #[must_use]

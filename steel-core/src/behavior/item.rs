@@ -49,6 +49,12 @@ pub trait ItemBehavior: Send + Sync {
             .map_or_else(|| Cow::Owned(TextComponent::new()), Cow::Borrowed)
     }
 
+    /// Returns vanilla `Item.getDefaultInstance`: the canonical single-item
+    /// stack for this item, including component defaults
+    fn get_default_instance(&self, item: ItemRef) -> ItemStack {
+        ItemStack::new(item)
+    }
+
     /// Called when this item is used on a block.
     fn use_on(&self, _context: &mut UseOnContext) -> InteractionResult {
         InteractionResult::Pass
@@ -393,6 +399,13 @@ impl ItemBehaviorRegistry {
         self.behaviors[id].as_ref()
     }
 
+    /// Returns vanilla `Item.getDefaultInstance` for an item, dispatching to
+    /// its behavior's override.
+    #[must_use]
+    pub fn default_instance(&self, item: ItemRef) -> ItemStack {
+        self.get_behavior(item).get_default_instance(item)
+    }
+
     /// Returns vanilla `ItemStack.getHoverName`, including item-specific
     /// `Item.getName(stack)` overrides when no custom name is present.
     #[must_use]
@@ -421,7 +434,7 @@ mod tests {
     use steel_registry::data_components::{Consumable, vanilla_components};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::stat::vanilla_stat_types;
-    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items, vanilla_potions};
     use steel_utils::types::InteractionHand;
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
@@ -430,6 +443,43 @@ mod tests {
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn potion_items_default_to_their_vanilla_base_potion() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        for item in [
+            &vanilla_items::POTION,
+            &vanilla_items::SPLASH_POTION,
+            &vanilla_items::LINGERING_POTION,
+        ] {
+            let stack = ITEM_BEHAVIORS.default_instance(item);
+            assert!(stack.is(item));
+            assert_eq!(stack.count(), 1);
+            let contents = stack
+                .get(vanilla_components::POTION_CONTENTS)
+                .expect("potion default instance carries potion contents");
+            assert!(contents.is(&vanilla_potions::WATER));
+        }
+
+        let arrow = ITEM_BEHAVIORS.default_instance(&vanilla_items::TIPPED_ARROW);
+        let contents = arrow
+            .get(vanilla_components::POTION_CONTENTS)
+            .expect("tipped arrow default instance carries potion contents");
+        assert!(contents.is(&vanilla_potions::POISON));
+    }
+
+    /// Every other item keeps vanilla `Item.getDefaultInstance`'s plain
+    /// `new ItemStack(this)`.
+    #[test]
+    fn items_without_an_override_default_to_a_plain_stack() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let stack = ITEM_BEHAVIORS.default_instance(&vanilla_items::STONE);
+        assert_eq!(stack, ItemStack::new(&vanilla_items::STONE));
+    }
 
     /// Drinking one honey bottle out of a stack must only consume one item:
     /// the leftover bottles stay in hand, and the empty glass bottle it
