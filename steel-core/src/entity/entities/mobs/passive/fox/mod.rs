@@ -736,6 +736,29 @@ impl AgeableMob for FoxEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
+
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
+        let Some(offspring) = offspring.downcast_ref::<FoxEntity>() else {
+            return;
+        };
+        let partner = partner.downcast_ref::<FoxEntity>();
+        let variant = if rand::random::<bool>() {
+            self.variant()
+        } else {
+            partner.map_or_else(|| self.variant(), FoxEntity::variant)
+        };
+        offspring.set_variant(variant);
+
+        let own_cause = self.love_cause_uuid();
+        if let Some(own_cause) = own_cause {
+            offspring.add_trusted(own_cause);
+        }
+        if let Some(partner_cause) = partner.and_then(Animal::love_cause_uuid)
+            && own_cause != Some(partner_cause)
+        {
+            offspring.add_trusted(partner_cause);
+        }
+    }
 }
 
 impl Animal for FoxEntity {
@@ -749,30 +772,6 @@ impl Animal for FoxEntity {
 
     fn play_eating_sound(&self) {
         self.play_sound(&sound_events::ENTITY_FOX_EAT, 1.0, 1.0);
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
-        let variant = if rand::random::<bool>() {
-            self.variant()
-        } else {
-            partner
-                .downcast_ref::<FoxEntity>()
-                .map_or_else(|| self.variant(), FoxEntity::variant)
-        };
-        let Some(offspring) = offspring.downcast_ref::<FoxEntity>() else {
-            return;
-        };
-        offspring.set_variant(variant);
-
-        let own_cause = self.love_cause_uuid();
-        if let Some(own_cause) = own_cause {
-            offspring.add_trusted(own_cause);
-        }
-        if let Some(partner_cause) = partner.love_cause_uuid()
-            && own_cause != Some(partner_cause)
-        {
-            offspring.add_trusted(partner_cause);
-        }
     }
 
     fn check_animal_spawn_rules(
