@@ -11,21 +11,6 @@ mod signature_cache;
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
 
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use log::warn;
-use steel_crypto::{SignatureValidator, public_key_from_bytes};
-use steel_protocol::packets::game::{
-    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, MessageSignature,
-    SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
-};
-use steel_registry::{RegistryEntry, vanilla_chat_types};
-use steel_utils::translations;
-use text_components::Modifier;
-use text_components::TextComponent;
-use text_components::format::Color;
-use text_components::interactivity::{ClickEvent, HoverEvent};
-use text_components::resolving::NoResolutor;
 use crate::command::execution::CommandSource;
 use crate::command::sender::CommandSender;
 use crate::command::signing_context::CommandSigningContext;
@@ -33,13 +18,28 @@ use crate::entity::Entity;
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
 use crate::server::Server;
+use log::warn;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use steel_crypto::{SignatureValidator, public_key_from_bytes};
+use steel_protocol::packets::game::{
+    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, MessageSignature,
+    SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+};
+use steel_registry::{RegistryEntry, vanilla_chat_types};
+use steel_utils::text::DisplayResolutor;
+use steel_utils::translations;
 use steel_utils::translations::{
     CHAT_DISABLED_CHAIN_BROKEN, CHAT_DISABLED_EXPIRED_PROFILE_KEY, CHAT_DISABLED_INVALID_SIGNATURE,
     CHAT_DISABLED_MISSING_PROFILE_KEY, CHAT_DISABLED_OUT_OF_ORDER_CHAT,
     MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED, MULTIPLAYER_DISCONNECT_ILLEGAL_CHARACTERS,
 };
+use text_components::Modifier;
+use text_components::TextComponent;
+use text_components::format::Color;
+use text_components::interactivity::{ClickEvent, HoverEvent};
 
 /// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
@@ -205,7 +205,7 @@ impl OutgoingChatMessage {
     pub fn plain_content(&self) -> String {
         match self {
             Self::Player { packet, .. } => packet.message.clone(),
-            Self::Disguised { content } => content.to_plain(&NoResolutor),
+            Self::Disguised { content } => content.to_plain(&DisplayResolutor),
         }
     }
 
@@ -432,7 +432,10 @@ impl Player {
         let message_age = now.duration_since(message_time).unwrap_or(Duration::ZERO);
 
         if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
-            warn!("Received expired chat: '{}'. Is the client/server system time unsynchronized?", content)
+            warn!(
+                "Received expired chat: '{}'. Is the client/server system time unsynchronized?",
+                content
+            )
         }
 
         let body = message_chain::SignedMessageBody::new(
@@ -607,13 +610,6 @@ impl Player {
             chat_type.clone(),
         );
 
-        let tag = if matches!(verification_result, Some(Ok(_))) {
-            ""
-        } else {
-            "[Not Secure] "
-        };
-        steel_utils::chat!(player.gameprofile.name.clone(), "{tag}{}", chat_message);
-
         let (signature, last_seen) = if let Some(sig_box) = &signature
             && sig_box.0.len() == 256
         {
@@ -631,21 +627,13 @@ impl Player {
             (None, LastSeen::default())
         };
 
-        let outgoing = if self.server().enforces_secure_chat() {
-            OutgoingChatMessage::Player {
-                packet: Box::new(chat_packet),
-                signature,
-                sender_last_seen: last_seen,
-            }
-        } else {
-            OutgoingChatMessage::Disguised {
-                content: TextComponent::plain(chat_message),
-            }
+        let outgoing = OutgoingChatMessage::Player {
+            packet: Box::new(chat_packet),
+            signature,
+            sender_last_seen: last_seen,
         };
 
-        for world in self.server().worlds.values() {
-            world.broadcast_chat(&outgoing, &chat_type);
-        }
+        self.server().broadcast_chat(&outgoing, &chat_type);
 
         self.detect_chat_rate_spam();
     }

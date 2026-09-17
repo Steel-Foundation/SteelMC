@@ -1,12 +1,12 @@
-use steel_protocol::packets::game::ChatTypeBound;
-use steel_registry::{vanilla_chat_types, RegistryEntry};
-use crate::player::chat::OutgoingChatMessage;
 use super::{
     Arc, CEntityEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color, CommandSender,
     CommandSource, DisplayResolutor, Entity, Modifier, Player, Server, SprintReport,
     TabListTickStats, TextComponent, Uuid, client_permission_event, command_tree_packet,
     translations,
 };
+use crate::player::chat::OutgoingChatMessage;
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{RegistryEntry, vanilla_chat_types};
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
@@ -32,7 +32,11 @@ impl Server {
     }
 
     fn log_chat_message(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
-        let tag = if outgoing.is_signed() { "" } else { "[Not Secure] " };
+        let tag = if outgoing.is_signed() {
+            ""
+        } else {
+            "[Not Secure] "
+        };
         let sender_name = chat_type.sender_name.to_plain(&DisplayResolutor);
         let content = outgoing.plain_content();
 
@@ -44,7 +48,9 @@ impl Server {
                 format!("* {sender_name} {content}")
             }
             // Standard chat and fallback
-            _ => format!("<{sender_name}> {content}"),
+            _ => {
+                return steel_utils::chat!(sender_name, "{tag}{}", content);
+            }
         };
 
         steel_utils::console!("{tag}{formatted}");
