@@ -108,3 +108,64 @@ impl DispenseItemBehavior for GlowstoneDispenseBehavior {
 // golem-spawn check that isn't ported (carved_pumpkin_block.rs has none).
 // The fallback (equip via ArmorDispenseBehavior-style logic) exists, but
 // shipping only that half would silently break dispenser golem farms.
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::{init_vanilla_registry, vanilla_items};
+    use steel_utils::{ChunkPos, Direction, types::UpdateFlags};
+
+    use crate::behavior::blocks::container::dispenser_block::DispenserBlock;
+    use crate::behavior::init_behaviors;
+    use crate::block_entity::entities::DispenserBlockEntity;
+    use crate::block_entity::init_block_entities;
+    use crate::inventory::container::Container;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    use super::*;
+
+    #[test]
+    fn dispenser_bonemeal_grows_crop() {
+        init_vanilla_registry();
+        init_block_entities();
+        init_behaviors();
+
+        let world = fresh_test_world("dispenser_bonemeal_crop");
+        let dispenser_pos = BlockPos::new(8, 64, 8);
+        let crop_pos = dispenser_pos.relative(Direction::North);
+        let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(dispenser_pos));
+
+        world.set_block(
+            crop_pos.below(),
+            vanilla_blocks::FARMLAND.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        world.set_block(
+            crop_pos,
+            vanilla_blocks::WHEAT.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+
+        let state = vanilla_blocks::DISPENSER
+            .default_state()
+            .set_value(FACING, Direction::North);
+        let entity = Arc::new(DispenserBlockEntity::new(
+            Arc::downgrade(&world),
+            dispenser_pos,
+            state,
+        ));
+        entity
+            .state
+            .container()
+            .lock()
+            .set_item(0, ItemStack::with_count(&vanilla_items::BONE_MEAL, 1));
+        world.set_block(dispenser_pos, state, UpdateFlags::UPDATE_ALL);
+        world.set_block_entity(entity.clone());
+
+        DispenserBlock::dispense_from(&world, dispenser_pos, state);
+
+        assert_eq!(entity.state.container().lock().get_item(0).count(), 0);
+        let grown = world.get_block_state(crop_pos);
+        assert!(grown.get_value(&BlockStateProperties::AGE_7) > 0);
+    }
+}
