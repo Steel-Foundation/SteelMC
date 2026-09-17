@@ -71,7 +71,7 @@ impl CPlayerChat {
             salt,
             previous_messages,
             unsigned_content,
-            filter_type: FilterType::PassThrough, // Change only on Reamls
+            filter_type: FilterType::PassThrough, // Change only on Realms
             chat_type,
         }
     }
