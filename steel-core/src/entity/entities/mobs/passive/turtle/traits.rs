@@ -8,7 +8,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
@@ -34,6 +33,8 @@ use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
+// TODO(lightning): vanilla `Turtle.thunderHit` kills a struck turtle
+// outright. Steel has no lightning bolt entity or thunder-hit hook yet.
 impl Entity for TurtleEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -86,8 +87,6 @@ impl Entity for TurtleEntity {
         self.play_sound(sound, 0.15, 1.0);
     }
 
-    // TODO(lightning): vanilla `Turtle.thunderHit` kills a struck turtle
-    // outright. Steel has no lightning bolt entity or thunder-hit hook yet.
     fn is_pushed_by_fluid(&self) -> bool {
         false
     }
@@ -180,7 +179,7 @@ impl LivingEntity for TurtleEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -367,11 +366,7 @@ impl PathfinderMob for TurtleEntity {
             return PREFERRED_WALK_TARGET_VALUE;
         }
 
-        if world
-            .get_block_state(pos.below())
-            .get_block()
-            .has_tag(&BlockTag::SAND)
-        {
+        if TurtleEggBlock::on_sand(world.as_ref(), pos) {
             PREFERRED_WALK_TARGET_VALUE
         } else {
             world.pathfinding_cost_from_light_levels(pos)

@@ -7,12 +7,10 @@ use std::sync::Weak;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::TurtleEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
@@ -27,6 +25,7 @@ use self::goals::{
     TurtleBreedGoal, TurtleGoHomeGoal, TurtleGoToWaterGoal, TurtleLayEggGoal, TurtlePanicGoal,
     TurtleRandomStrollGoal, TurtleTravelGoal,
 };
+use crate::behavior::blocks::vegetation::TurtleEggBlock;
 use crate::entity::ai::goal::{LookAtPlayerGoal, TemptGoal};
 use crate::entity::ai::path::PathType;
 use crate::entity::living_entity::gift_loot_items_with_rng;
@@ -35,7 +34,6 @@ use crate::entity::{
     LivingEntity, LivingEntityBase, Mob, MobBase,
 };
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
 
 const BABY_SCALE: f32 = 0.3;
 const ADULT_SCALE: f32 = 1.0;
@@ -292,10 +290,10 @@ impl TurtleEntity {
         let Some(world) = self.level() else {
             return;
         };
-        let below = world.get_block_state(pos.below());
-        if !below.get_block().has_tag(&BlockTag::SAND) {
+        if !TurtleEggBlock::on_sand(world.as_ref(), pos) {
             return;
         }
+        let below = world.get_block_state(pos.below());
 
         world.level_event(
             level_events::PARTICLES_DESTROY_BLOCK,
@@ -303,11 +301,7 @@ impl TurtleEntity {
             level_events::encode_block_state_data(u32::from(below.0)),
             None,
         );
-        world.game_event(
-            &vanilla_game_events::ENTITY_ACTION,
-            pos,
-            &GameEventContext::new(Some(self), None),
-        );
+        self.game_event(&vanilla_game_events::ENTITY_ACTION);
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {

@@ -1,4 +1,5 @@
 use std::ops::RangeInclusive;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::entity_type::EntityAttachment;

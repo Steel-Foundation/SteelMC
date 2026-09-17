@@ -14,6 +14,7 @@ use crate::entity::ai::goal::{
     look_for_water,
 };
 use crate::entity::{AgeableMob, Animal, PathfinderMob};
+use crate::world::LevelReader;
 
 const PANIC_WATER_SEARCH_RANGE: i32 = 7;
 const PANIC_ESCAPE_H: i32 = 5;
@@ -202,7 +203,7 @@ impl Goal for TurtleTravelGoal {
         let xt = f64::from(rand::random_range(-TRAVEL_RANGE_XZ..=TRAVEL_RANGE_XZ));
         let mut yt = f64::from(rand::random_range(-TRAVEL_RANGE_Y..=TRAVEL_RANGE_Y));
         let zt = f64::from(rand::random_range(-TRAVEL_RANGE_XZ..=TRAVEL_RANGE_XZ));
-        if yt + position.y > f64::from(world.sea_level - 1) {
+        if yt + position.y > f64::from(LevelReader::sea_level(&world) - 1) {
             yt = 0.0;
         }
 

@@ -2,12 +2,12 @@ use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 
 use super::{TurtleEntity, as_turtle, closer_to_center_than};
+use crate::behavior::blocks::vegetation::TurtleEggBlock;
 use crate::entity::ai::goal::{Goal, GoalControls, MoveToBlockGoal, reduced_tick_delay};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::entities::ExperienceOrbEntity;
@@ -177,11 +177,7 @@ impl TurtleLayEggGoal {
     pub(crate) fn new(speed_modifier: f64) -> Self {
         Self {
             inner: MoveToBlockGoal::new(speed_modifier, LAY_EGG_SEARCH_RANGE, |level, pos| {
-                level.get_block_state(pos.above()).is_air()
-                    && level
-                        .get_block_state(pos)
-                        .get_block()
-                        .has_tag(&BlockTag::SAND)
+                level.get_block_state(pos.above()).is_air() && TurtleEggBlock::is_sand(level, pos)
             }),
         }
     }
