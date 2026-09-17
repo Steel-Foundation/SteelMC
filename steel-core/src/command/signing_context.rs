@@ -1,8 +1,6 @@
 use crate::player::LastSeen;
 use rustc_hash::FxHashMap;
-
-/// Binary cryptographic signature supplied by the official client (typically 256 bytes for RSA-SHA256).
-pub type MessageSignature = Box<[u8]>;
+use steel_protocol::packets::game::MessageSignature;
 
 /// Signing metadata and argument signatures associated with an executed command.
 #[derive(Clone, Debug)]
@@ -39,8 +37,8 @@ impl CommandSigningContext {
 
     /// Returns the raw binary signature for a specific argument name, if present.
     #[must_use]
-    pub fn get_argument_signature(&self, argument_name: &str) -> Option<&[u8]> {
-        self.argument_signatures.get(argument_name).map(Box::as_ref)
+    pub fn get_argument_signature(&self, argument_name: &str) -> Option<&MessageSignature> {
+        self.argument_signatures.get(argument_name)
     }
 
     /// Returns whether this context contains at least one signed argument.

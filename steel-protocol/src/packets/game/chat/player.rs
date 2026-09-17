@@ -31,13 +31,17 @@ impl Default for ChatTypeBound {
     }
 }
 
+/// Binary cryptographic signature supplied by the official client (typically 256 bytes for RSA-SHA256).
+#[derive(Clone, Debug)]
+pub struct MessageSignature(pub [u8; 256]);
+
 #[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_PLAYER_CHAT)]
 pub struct CPlayerChat {
     pub global_index: i32,
     pub sender: Uuid,
     pub index: i32,
-    pub message_signature: Option<Box<[u8]>>,
+    pub message_signature: Option<MessageSignature>,
     pub message: String,
     pub timestamp: i64,
     pub salt: i64,
@@ -53,7 +57,7 @@ impl CPlayerChat {
     pub const fn new(
         sender: Uuid,
         index: i32,
-        message_signature: Option<Box<[u8]>>,
+        message_signature: Option<MessageSignature>,
         message: String,
         timestamp: i64,
         salt: i64,
@@ -86,7 +90,7 @@ impl steel_utils::serial::WriteTo for CPlayerChat {
         match &self.message_signature {
             Some(sig) => {
                 true.write(writer)?;
-                writer.write_all(sig)?;
+                writer.write_all(&sig.0)?;
             }
             None => false.write(writer)?,
         }

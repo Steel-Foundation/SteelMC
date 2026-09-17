@@ -16,8 +16,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::game::{
-    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, SChat, SChatAck,
-    SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, MessageSignature,
+    SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
 };
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
@@ -304,8 +304,8 @@ impl OutgoingChatMessage {
         };
 
         let mut sig_array = [0u8; 256];
-        if raw_sig.len() == 256 {
-            sig_array.copy_from_slice(raw_sig);
+        if raw_sig.0.len() == 256 {
+            sig_array.copy_from_slice(&raw_sig.0);
         } else {
             return Self::Disguised {
                 content: TextComponent::plain(message),
@@ -330,7 +330,7 @@ impl OutgoingChatMessage {
         let packet = CPlayerChat::new(
             player.gameprofile.id,
             sender_index,
-            Some(Box::new(sig_array) as Box<[u8]>),
+            Some(MessageSignature(sig_array)),
             message,
             timestamp,
             salt,
@@ -576,7 +576,7 @@ impl Player {
         }
 
         let signature = if matches!(verification_result, Some(Ok(_))) {
-            packet.signature.map(|sig| Box::new(sig) as Box<[u8]>)
+            packet.signature.map(MessageSignature)
         } else {
             None
         };
@@ -610,10 +610,10 @@ impl Player {
         steel_utils::chat!(player.gameprofile.name.clone(), "{tag}{}", chat_message);
 
         let (signature, last_seen) = if let Some(sig_box) = &signature
-            && sig_box.len() == 256
+            && sig_box.0.len() == 256
         {
             let mut sig_array = [0u8; 256];
-            sig_array.copy_from_slice(&sig_box[..]);
+            sig_array.copy_from_slice(&sig_box.0[..]);
 
             let last_seen = if let Some(Ok((_, ref last_seen))) = verification_result {
                 last_seen.clone()
@@ -898,17 +898,14 @@ impl Player {
                     Ok(link) => {
                         sender_index = link.index;
                     }
-                    Err(err_component) => {
+                    Err(err) => {
                         drop(chat);
                         log::warn!(
-                            "{}",
-                            format!(
-                                "Failed to update secure chat state for {}: '{}'",
-                                self.name(),
-                                err_component.clone().into_component()
-                            )
+                            "Failed to update secure chat state for {}: '{}'",
+                            self.gameprofile.name,
+                            err.clone().into_component().color(Color::Red)
                         );
-                        self.send_message(&err_component.into_component().color(Color::Red));
+                        self.send_message(&err.into_component().color(Color::Red));
                         return;
                     }
                 }
@@ -923,7 +920,7 @@ impl Player {
             packet
                 .argument_signatures
                 .into_iter()
-                .map(|entry| (entry.name, Box::from(entry.signature))),
+                .map(|entry| (entry.name, MessageSignature(entry.signature))),
             last_seen,
             sender_index,
         );
