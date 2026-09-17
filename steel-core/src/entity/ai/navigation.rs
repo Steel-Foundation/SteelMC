@@ -29,7 +29,7 @@ pub struct NavigationPathRequest<'a> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NavigationTickContext {
     /// The mob position with its Y snapped to the surface it navigates along.
-    pub temp_mob_position: DVec3,
+    pub ground_mob_position: DVec3,
     /// The mob's true position, which the waypoint distance is measured from.
     pub mob_position: DVec3,
     pub mob_bounding_box_width: f64,
@@ -446,7 +446,8 @@ impl PathNavigation {
         }
 
         let target = self.direct_target?;
-        if target.distance_squared(context.temp_mob_position) < DIRECT_TARGET_REACHED_DISTANCE_SQR {
+        if target.distance_squared(context.ground_mob_position) < DIRECT_TARGET_REACHED_DISTANCE_SQR
+        {
             self.stop();
             return None;
         }
@@ -469,10 +470,10 @@ impl PathNavigation {
             return None;
         };
 
-        if context.temp_mob_position.y > target.y
+        if context.ground_mob_position.y > target.y
             && !on_ground
-            && fast_floor(context.temp_mob_position.x) == fast_floor(target.x)
-            && fast_floor(context.temp_mob_position.z) == fast_floor(target.z)
+            && fast_floor(context.ground_mob_position.x) == fast_floor(target.x)
+            && fast_floor(context.ground_mob_position.z) == fast_floor(target.z)
         {
             path.advance();
         }
@@ -578,7 +579,7 @@ impl PathNavigation {
             let should_cut_corner = path
                 .next_node()
                 .is_some_and(|node| can_cut_corner(node.path_type))
-                && should_target_next_node_in_direction(path, context.temp_mob_position);
+                && should_target_next_node_in_direction(path, context.ground_mob_position);
             if is_close_enough_to_current_node || should_cut_corner {
                 path.advance();
             }
@@ -590,7 +591,7 @@ impl PathNavigation {
         }
 
         self.do_stuck_detection(
-            context.temp_mob_position,
+            context.ground_mob_position,
             context.mob_speed,
             context.game_time,
         );
@@ -805,7 +806,7 @@ mod tests {
 
     fn tick_context(mob_position: DVec3) -> NavigationTickContext {
         NavigationTickContext {
-            temp_mob_position: mob_position,
+            ground_mob_position: mob_position,
             mob_position,
             mob_bounding_box_width: 0.9,
             mob_speed: 0.25,
@@ -815,7 +816,7 @@ mod tests {
 
     fn tick_context_standing_in_water(mob_position: DVec3) -> NavigationTickContext {
         NavigationTickContext {
-            temp_mob_position: DVec3::new(
+            ground_mob_position: DVec3::new(
                 mob_position.x,
                 mob_position.y.floor() + 1.0,
                 mob_position.z,
@@ -833,7 +834,7 @@ mod tests {
         game_time: i64,
     ) -> NavigationTickContext {
         NavigationTickContext {
-            temp_mob_position: mob_position,
+            ground_mob_position: mob_position,
             mob_position,
             mob_bounding_box_width: 0.9,
             mob_speed,
