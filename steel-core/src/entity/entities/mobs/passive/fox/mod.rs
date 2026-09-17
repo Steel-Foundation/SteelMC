@@ -46,8 +46,8 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
-    FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
-    FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+    FoxBreedGoal, FoxEatBerriesGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal,
+    FoxPanicGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
@@ -159,8 +159,7 @@ impl FoxEntity {
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FoxFollowParentGoal::new(1.25));
             // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
-            // TODO(fox-goals): 10 FoxEatBerriesGoal (needs berry picking off a sweet
-            // berry bush and off cave vines)
+            goal_selector.add_goal(10, FoxEatBerriesGoal::new(1.2));
             // TODO(fox-goals): 10 LeapAtTargetGoal (needs an attack target)
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(11, FoxSearchForItemsGoal);

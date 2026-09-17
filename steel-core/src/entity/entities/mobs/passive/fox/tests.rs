@@ -1,17 +1,20 @@
 use std::io::Cursor;
 
 use simdnbt::borrow::read_compound as read_borrowed_compound;
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::{
     REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
     vanilla_entities, vanilla_game_rules, vanilla_items,
 };
 use steel_utils::BlockStateId;
+use steel_utils::WorldAabb;
 use steel_utils::types::UpdateFlags;
 
 use crate::behavior::init_behaviors;
 use crate::entity::ai::goal::{FloatGoal, Goal};
 use crate::entity::entities::PigEntity;
-use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
+use crate::entity::entities::mobs::passive::fox::goals::{BERRY_WAIT_TICKS, FOX_FLOAT_WATER_DEPTH};
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{EntityFluidContact, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -732,4 +735,205 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     fox.set_interested(false);
     fox.set_faceplanted(true);
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
+}
+
+#[test]
+fn a_fox_only_walks_over_to_a_bush_worth_picking() {
+    let (world, fox) = berry_world("fox_berry_targets");
+    let bush = vanilla_blocks::SWEET_BERRY_BUSH.default_state();
+    let vine = vanilla_blocks::CAVE_VINES.default_state();
+
+    let notices = |state| {
+        assert!(world.set_block(BERRY_BLOCK_POS, state, UpdateFlags::UPDATE_NONE));
+        FoxEatBerriesGoal::new(1.2).can_use(fox.as_ref())
+    };
+
+    assert!(!notices(bush.set_value(&BlockStateProperties::AGE_3, 1)));
+    assert!(notices(bush.set_value(&BlockStateProperties::AGE_3, 2)));
+    assert!(notices(bush.set_value(&BlockStateProperties::AGE_3, 3)));
+
+    assert!(!notices(
+        vine.set_value(&BlockStateProperties::BERRIES, false)
+    ));
+    assert!(notices(
+        vine.set_value(&BlockStateProperties::BERRIES, true)
+    ));
+
+    assert!(!notices(vanilla_blocks::STONE.default_state()));
+}
+
+fn berry_world(name: &'static str) -> (Arc<World>, Arc<FoxEntity>) {
+    let (world, fox) = world_with_fox(name);
+    for x in 0..16 {
+        for z in 0..16 {
+            let floor = BlockPos::new(x, BERRY_BLOCK_POS.y() - 1, z);
+            assert!(world.set_block(
+                floor,
+                vanilla_blocks::STONE.default_state(),
+                UpdateFlags::UPDATE_NONE
+            ));
+        }
+    }
+    (world, fox)
+}
+
+fn run_berry_goal(fox: &Arc<FoxEntity>) -> Option<u32> {
+    let mut goal = FoxEatBerriesGoal::new(1.2);
+    assert!(
+        goal.can_use(fox.as_ref()),
+        "the fox should spot the berries"
+    );
+    goal.start(fox.as_ref());
+
+    for tick in 0..BERRY_GOAL_TICKS {
+        if !goal.can_continue_to_use(fox.as_ref()) {
+            return Some(tick);
+        }
+        goal.tick(fox.as_ref());
+        fox.tick_path_navigation();
+        fox.tick_move_control();
+        fox.default_ai_step();
+    }
+    None
+}
+
+const BERRY_GOAL_TICKS: u32 = 400;
+const BERRY_BLOCK_POS: BlockPos = BlockPos::new(13, 65, 8);
+
+fn ripe_bush() -> BlockStateId {
+    vanilla_blocks::SWEET_BERRY_BUSH
+        .default_state()
+        .set_value(&BlockStateProperties::AGE_3, 3)
+}
+
+fn berries_dropped_near(world: &Arc<World>, pos: BlockPos) -> i32 {
+    let aabb = WorldAabb::new(
+        f64::from(pos.x()) - 3.0,
+        f64::from(pos.y()) - 3.0,
+        f64::from(pos.z()) - 3.0,
+        f64::from(pos.x()) + 3.0,
+        f64::from(pos.y()) + 3.0,
+        f64::from(pos.z()) + 3.0,
+    );
+    world
+        .get_entities_in_aabb(&aabb)
+        .into_iter()
+        .filter_map(|entity| {
+            entity
+                .downcast_ref::<ItemEntity>()
+                .map(ItemEntity::get_item)
+        })
+        .filter(|stack| stack.is(&vanilla_items::SWEET_BERRIES))
+        .map(|stack| stack.count())
+        .sum()
+}
+
+#[test]
+fn a_fox_waits_at_a_bush_then_pockets_one_berry_and_leaves_it_standing() {
+    let (world, fox) = berry_world("fox_pick_berries");
+    let pos = BERRY_BLOCK_POS;
+    assert!(world.set_block(pos, ripe_bush(), UpdateFlags::UPDATE_NONE));
+    let start = fox.position();
+
+    let ticks = run_berry_goal(&fox).expect("the fox should finish with the bush");
+    let (x, _, z) = pos.get_center();
+    assert!(
+        fox.position().distance(DVec3::new(x, start.y, z))
+            < start.distance(DVec3::new(x, start.y, z)) - 3.0,
+        "the fox should walk over to the bush, ended at {:?}",
+        fox.position()
+    );
+    assert!(
+        i64::from(ticks) > i64::from(BERRY_WAIT_TICKS),
+        "the fox should nose around before taking anything, took {ticks} ticks"
+    );
+
+    let picked = world.get_block_state(pos);
+    assert_eq!(
+        picked.get_block(),
+        &vanilla_blocks::SWEET_BERRY_BUSH,
+        "the bush stays, it is only picked"
+    );
+    assert_eq!(
+        picked.get_value(&BlockStateProperties::AGE_3),
+        1,
+        "a picked bush is left ready to grow back"
+    );
+    assert!(
+        mouth_item(&fox).is(&vanilla_items::SWEET_BERRIES),
+        "an empty mouth takes one berry"
+    );
+    assert!(
+        berries_dropped_near(&world, pos) > 0,
+        "a fully grown bush gives more than the fox can carry, so the rest drop"
+    );
+}
+
+#[test]
+fn a_fox_with_a_full_mouth_drops_everything_it_picks() {
+    let (world, fox) = berry_world("fox_pick_berries_full_mouth");
+    fox.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::EMERALD),
+    );
+    let pos = BERRY_BLOCK_POS;
+    assert!(world.set_block(pos, ripe_bush(), UpdateFlags::UPDATE_NONE));
+
+    run_berry_goal(&fox).expect("the fox should finish with the bush");
+
+    assert!(
+        mouth_item(&fox).is(&vanilla_items::EMERALD),
+        "the fox keeps what it was already holding"
+    );
+    assert!(
+        berries_dropped_near(&world, pos) > 0,
+        "so the whole picking drops instead"
+    );
+}
+
+#[test]
+fn a_fox_leaves_the_bush_alone_when_mob_griefing_is_off() {
+    let (world, fox) = berry_world("fox_pick_berries_no_griefing");
+    assert!(world.set_game_rule(&vanilla_game_rules::MOB_GRIEFING, false));
+    let pos = BERRY_BLOCK_POS;
+    assert!(world.set_block(pos, ripe_bush(), UpdateFlags::UPDATE_NONE));
+
+    assert!(
+        run_berry_goal(&fox).is_none(),
+        "the fox keeps waiting at an untouched bush rather than giving up"
+    );
+
+    assert_eq!(
+        world
+            .get_block_state(pos)
+            .get_value(&BlockStateProperties::AGE_3),
+        3,
+        "the bush is untouched"
+    );
+    assert!(mouth_item(&fox).is_empty(), "and the fox takes nothing");
+    assert_eq!(berries_dropped_near(&world, pos), 0, "and nothing drops");
+}
+
+#[test]
+fn a_fox_strips_a_vine_of_its_glow_berries() {
+    let (world, fox) = berry_world("fox_pick_glow_berries");
+    let pos = BERRY_BLOCK_POS;
+    assert!(
+        world.set_block(
+            pos,
+            vanilla_blocks::CAVE_VINES
+                .default_state()
+                .set_value(&BlockStateProperties::BERRIES, true),
+            UpdateFlags::UPDATE_NONE,
+        )
+    );
+
+    run_berry_goal(&fox).expect("the fox should finish with the vine");
+
+    assert!(
+        !world
+            .get_block_state(pos)
+            .get_value(&BlockStateProperties::BERRIES),
+        "the vine is left bare"
+    );
 }
