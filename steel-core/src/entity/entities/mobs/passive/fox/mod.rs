@@ -56,6 +56,7 @@ use goals::{
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
 const LEAP_AT_TARGET_HEIGHT: f32 = 0.4;
+const DEFEND_GROWL_CHANCE: f32 = 0.05;
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
 const FOX_BABY_HEIGHT: f32 = 0.7 * BABY_SCALE;
@@ -320,6 +321,10 @@ impl FoxEntity {
         self.set_sleeping(false);
         self.set_defending(false);
         self.set_faceplanted(false);
+    }
+
+    pub(crate) fn can_lunge(&self) -> bool {
+        !self.is_sitting() && !self.is_sleeping() && !self.is_crouching() && !self.is_faceplanted()
     }
 
     pub(crate) fn can_move(&self) -> bool {
@@ -776,6 +781,9 @@ impl LivingEntity for FoxEntity {
             self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
         }
         let result = Mob::mob_ai_step(self);
+        if self.is_defending() && rand::random::<f32>() < DEFEND_GROWL_CHANCE {
+            self.play_sound(&sound_events::ENTITY_FOX_AGGRO, 1.0, 1.0);
+        }
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);

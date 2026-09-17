@@ -460,15 +460,26 @@ fn a_pounce_ends_once_the_fox_has_landed() {
 }
 
 #[test]
-fn fox_melee_goal_skips_a_resting_fox() {
+fn fox_melee_goal_skips_a_resting_or_crouched_fox() {
     let (_world, fox) = world_with_fox("fox_melee");
-    fox.set_sleeping(true);
+    assert!(fox.can_lunge(), "an alert fox may attack");
 
-    let mut goal = FoxMeleeAttackGoal::new(1.2);
-    assert!(
-        !goal.can_use(fox.as_ref()),
-        "a sleeping fox does not lunge at prey"
-    );
+    let setters: [fn(&FoxEntity, bool); 4] = [
+        FoxEntity::set_sitting,
+        FoxEntity::set_sleeping,
+        FoxEntity::set_crouching,
+        FoxEntity::set_faceplanted,
+    ];
+    for set in setters {
+        set(&fox, true);
+        assert!(!fox.can_lunge(), "a resting or crouched fox does not lunge");
+        assert!(!FoxMeleeAttackGoal::new(1.2).can_use(fox.as_ref()));
+        set(&fox, false);
+    }
+
+    fox.set_interested(true);
+    FoxMeleeAttackGoal::new(1.2).start(fox.as_ref());
+    assert!(!fox.is_interested(), "attacking ends the fox's curiosity");
 }
 
 #[test]

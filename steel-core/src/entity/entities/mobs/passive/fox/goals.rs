@@ -736,7 +736,7 @@ impl FoxMeleeAttackGoal {
     pub(crate) const fn new(speed_modifier: f64) -> Self {
         Self {
             inner: MeleeAttackGoal::new(speed_modifier, true)
-                .with_attack_sound(&sound_events::ENTITY_FOX_BITE),
+                .with_bite_sound(&sound_events::ENTITY_FOX_BITE),
         }
     }
 }
@@ -747,14 +747,7 @@ impl Goal for FoxMeleeAttackGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(fox) = as_fox(mob) else {
-            return false;
-        };
-        !fox.is_sitting()
-            && !fox.is_sleeping()
-            && !fox.is_crouching()
-            && !fox.is_faceplanted()
-            && self.inner.can_use(mob)
+        as_fox(mob).is_some_and(FoxEntity::can_lunge) && self.inner.can_use(mob)
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
@@ -784,9 +777,8 @@ fn recently_aggressive(attacker: &dyn LivingEntity) -> bool {
 
 pub(crate) struct DefendTrustedTargetGoal {
     inner: NearestAttackableTargetGoal,
-    /// The last-hurt-by timestamp this goal already acted on.
-    timestamp: i32,
-    pending_timestamp: i32,
+    handled_hurt_timestamp: i32,
+    pending_hurt_timestamp: i32,
 }
 
 impl DefendTrustedTargetGoal {
@@ -798,8 +790,8 @@ impl DefendTrustedTargetGoal {
                 false,
                 |attacker, _| recently_aggressive(attacker),
             ),
-            timestamp: 0,
-            pending_timestamp: 0,
+            handled_hurt_timestamp: 0,
+            pending_hurt_timestamp: 0,
         }
     }
 }
@@ -833,7 +825,7 @@ impl Goal for DefendTrustedTargetGoal {
         };
 
         let timestamp = trusted_living.last_hurt_by_mob_timestamp();
-        if timestamp == self.timestamp {
+        if timestamp == self.handled_hurt_timestamp {
             return false;
         }
         let Some(attacker) = trusted_living.last_hurt_by_mob() else {
@@ -847,7 +839,7 @@ impl Goal for DefendTrustedTargetGoal {
         }
 
         self.inner.set_target(Some(attacker));
-        self.pending_timestamp = timestamp;
+        self.pending_hurt_timestamp = timestamp;
         true
     }
 
@@ -859,7 +851,7 @@ impl Goal for DefendTrustedTargetGoal {
         let Some(fox) = as_fox(mob) else {
             return;
         };
-        self.timestamp = self.pending_timestamp;
+        self.handled_hurt_timestamp = self.pending_hurt_timestamp;
         fox.play_sound(&sound_events::ENTITY_FOX_AGGRO, 1.0, 1.0);
         fox.set_defending(true);
         fox.set_sleeping(false);

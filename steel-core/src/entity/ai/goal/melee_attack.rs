@@ -27,7 +27,7 @@ pub(crate) struct MeleeAttackGoal {
     ticks_until_next_path_recalculation: i32,
     ticks_until_next_attack: i32,
     last_can_use_check: i64,
-    attack_sound: Option<SoundEventRef>,
+    bite_sound: Option<SoundEventRef>,
 }
 
 impl MeleeAttackGoal {
@@ -41,13 +41,14 @@ impl MeleeAttackGoal {
             ticks_until_next_path_recalculation: 0,
             ticks_until_next_attack: 0,
             last_can_use_check: 0,
-            attack_sound: None,
+            bite_sound: None,
         }
     }
 
+    /// Bites instead of swinging: skips the arm swing and plays `bite_sound` after the hit.
     #[must_use]
-    pub(crate) const fn with_attack_sound(mut self, attack_sound: SoundEventRef) -> Self {
-        self.attack_sound = Some(attack_sound);
+    pub(crate) const fn with_bite_sound(mut self, bite_sound: SoundEventRef) -> Self {
+        self.bite_sound = Some(bite_sound);
         self
     }
 
@@ -60,11 +61,13 @@ impl MeleeAttackGoal {
         }
 
         self.reset_attack_cooldown();
-        mob.swing(InteractionHand::MainHand, false);
+        if self.bite_sound.is_none() {
+            mob.swing(InteractionHand::MainHand, false);
+        }
         if let Some(world) = mob.level() {
             let _ = mob.do_hurt_target(&world, target);
         }
-        if let Some(sound) = self.attack_sound {
+        if let Some(sound) = self.bite_sound {
             mob.play_sound(sound, 1.0, 1.0);
         }
     }
