@@ -235,9 +235,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.reset_fall_distance();
     }
 
-    /// Sets the owner UUID. Vanilla stores an `EntityReference`; Steel stores the
-    /// UUID and resolves lazily.
-    // TODO: introduce an `EntityReference` type to cache the resolved owner.
+    /// Sets the persisted owner UUID and clears the live owner cache.
     fn set_owner_uuid(&self, owner: Option<Uuid>) {
         let mut state = self.projectile_base().state.lock();
         state.owner = owner;
@@ -264,7 +262,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.projectile_base().state.lock().owner
     }
 
-    /// Resolves the owning entity in the current world (vanilla `Projectile.getOwner`).
+    /// Resolves the cached owner, then looks up its UUID in the current world.
     fn get_owner(&self) -> Option<SharedEntity> {
         let uuid = self.owner_uuid()?;
         if let Some(owner) = self

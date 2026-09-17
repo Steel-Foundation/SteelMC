@@ -2,25 +2,24 @@
 //! `LivingEntity`/`World`, which can't live alongside the data in
 //! `steel_registry::data_components::PotionContents`.
 
-use crate::entity::SharedEntity;
+use crate::entity::LivingEntityRef;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::data_components::PotionContents;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
-use crate::entity::{LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
+use crate::entity::MobEffectInstance as RuntimeMobEffectInstance;
 use crate::world::World;
 
 /// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
 pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,
-    user: &dyn LivingEntity,
-    entity: &SharedEntity,
+    user: LivingEntityRef<'_>,
     duration_scale: f32,
 ) {
     // Vanilla passes the drinker itself as both `source` and `owner` when it
     // is a player (`null` otherwise), attributing instantaneous damage to it.
-    let damage_source_entity = user.as_player().map(|_| entity);
+    let damage_source_entity = user.living().as_player().map(|_| user.entity());
     for effect in contents.all_effects() {
         let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect.effect());
         if let Some(instantaneous) = behavior.as_instantaneous() {
@@ -30,7 +29,7 @@ pub(crate) fn apply_potion_contents(
             // `owner`.
             instantaneous.apply_instantaneous(
                 world,
-                user,
+                user.living(),
                 effect.amplifier(),
                 damage_source_entity,
                 damage_source_entity,
@@ -40,7 +39,8 @@ pub(crate) fn apply_potion_contents(
         }
 
         let scaled_duration = scale_effect_duration(effect.duration(), duration_scale);
-        user.add_mob_effect(to_runtime_instance(&effect, scaled_duration));
+        user.living()
+            .add_mob_effect(to_runtime_instance(&effect, scaled_duration));
     }
 }
 
@@ -68,7 +68,7 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::SharedEntity;
+    use crate::entity::{LivingEntityRef, SharedEntity};
     use std::sync::Arc;
 
     use steel_registry::data_components::PotionContents;
@@ -129,7 +129,12 @@ mod tests {
             None,
         );
 
-        apply_potion_contents(&contents, &world, player.as_ref(), &player_entity, 1.0);
+        apply_potion_contents(
+            &contents,
+            &world,
+            LivingEntityRef::new(&player_entity).expect("player is living"),
+            1.0,
+        );
 
         // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
         assert_eq!(player.get_health(), 5.0);

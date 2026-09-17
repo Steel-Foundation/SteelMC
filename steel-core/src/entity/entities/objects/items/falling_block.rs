@@ -478,11 +478,7 @@ impl Entity for FallingBlockEntity {
             .get_behavior(self.block_state().get_block())
             .as_fallable()
             .map_or_else(
-                || {
-                    DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
-                        .with_direct_entity(self.clone())
-                        .with_causing_entity(self.clone())
-                },
+                || DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, self.clone()),
                 |fallable| fallable.get_fall_damage_source(&self),
             );
         let damage = (fall_distance as f32 * damage_per_distance)

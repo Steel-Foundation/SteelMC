@@ -608,6 +608,7 @@ struct LivingEntityState {
     invulnerable_time: i32,
     last_hurt: f32,
     last_hurt_by_player: Option<Uuid>,
+    last_hurt_by_player_entity: Option<WeakEntity>,
     last_hurt_by_player_memory_time: i32,
     last_hurt_by_mob: Option<WeakEntity>,
     last_hurt_by_mob_timestamp: i32,
@@ -642,6 +643,7 @@ impl LivingEntityState {
             invulnerable_time: 0,
             last_hurt: 0.0,
             last_hurt_by_player: None,
+            last_hurt_by_player_entity: None,
             last_hurt_by_player_memory_time: 0,
             last_hurt_by_mob: None,
             last_hurt_by_mob_timestamp: 0,
@@ -1511,7 +1513,41 @@ impl LivingEntityBase {
     pub fn set_last_hurt_by_player(&self, player_uuid: Uuid, time_to_remember: i32) {
         let mut state = self.state.lock();
         state.last_hurt_by_player = Some(player_uuid);
+        state.last_hurt_by_player_entity = None;
         state.last_hurt_by_player_memory_time = time_to_remember;
+    }
+
+    /// Remembers the live player independently of which world it occupies.
+    pub(crate) fn set_last_hurt_by_player_entity(
+        &self,
+        player: &SharedEntity,
+        time_to_remember: i32,
+    ) {
+        let uuid = player.uuid();
+        let mut state = self.state.lock();
+        state.last_hurt_by_player = Some(uuid);
+        state.last_hurt_by_player_entity = Some(EntityArc::downgrade(player));
+        state.last_hurt_by_player_memory_time = time_to_remember;
+    }
+
+    /// Resolves cached kill credit before falling back to the saved UUID.
+    #[must_use]
+    pub(crate) fn last_hurt_by_player(&self, world: &World) -> Option<SharedEntity> {
+        let (uuid, cached) = {
+            let state = self.state.lock();
+            (
+                state.last_hurt_by_player?,
+                state.last_hurt_by_player_entity.clone(),
+            )
+        };
+        if let Some(player) = cached.and_then(|player| player.upgrade())
+            && !player.is_removed()
+        {
+            return Some(player);
+        }
+        world
+            .get_entity_by_uuid(&uuid)
+            .filter(|entity| entity.as_player().is_some())
     }
 
     /// Returns vanilla `LivingEntity.lastHurtByPlayerMemoryTime`.
@@ -1573,6 +1609,7 @@ impl LivingEntityBase {
             state.last_hurt_by_player_memory_time -= 1;
         } else {
             state.last_hurt_by_player = None;
+            state.last_hurt_by_player_entity = None;
         }
     }
 

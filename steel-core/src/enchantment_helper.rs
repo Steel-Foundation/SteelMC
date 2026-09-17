@@ -548,12 +548,10 @@ fn apply_supported_entity_effect(
             let min_damage = min_damage.calculate(level);
             let max_damage = max_damage.calculate(level);
             let damage = random_between(min_damage, max_damage);
-            let mut source = DamageSource::environment(damage_type);
-            if let Some(enchanted_entity) = enchanted_entity {
-                source = source
-                    .with_causing_entity(enchanted_entity.clone())
-                    .with_direct_entity(enchanted_entity.clone());
-            }
+            let source = match enchanted_entity {
+                Some(entity) => DamageSource::direct(damage_type, entity.clone()),
+                None => DamageSource::environment(damage_type),
+            };
             entity.hurt(world, &source, damage);
             false
         }
@@ -1358,9 +1356,8 @@ mod tests {
             Identifier::vanilla_static("fire_aspect"),
             2,
         );
-        let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.clone())
-            .with_direct_entity(attacker.clone());
+        let damage_source =
+            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
         let victim_entity: SharedEntity = victim.clone();
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
@@ -1401,9 +1398,8 @@ mod tests {
             Identifier::vanilla_static("fire_aspect"),
             1,
         );
-        let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.clone())
-            .with_direct_entity(attacker.clone());
+        let damage_source =
+            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
         let victim_entity: SharedEntity = victim.clone();
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
@@ -1440,9 +1436,8 @@ mod tests {
         chestplate.set_damage_value(chestplate.get_max_damage() - 1);
         victim.equip(EquipmentSlot::Chest, chestplate);
 
-        let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.clone())
-            .with_direct_entity(attacker.clone());
+        let damage_source =
+            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
         let victim_entity: SharedEntity = victim.clone();
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
         let source = ItemStack::empty();
@@ -1503,9 +1498,8 @@ mod tests {
             Identifier::vanilla_static("bane_of_arthropods"),
             1,
         );
-        let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(attacker.clone())
-            .with_direct_entity(attacker.clone());
+        let damage_source =
+            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
         let spider_entity: SharedEntity = spider.clone();
         let spider_context = EnchantmentPostAttackContext::new(&spider_entity, &damage_source);
         let zombie_entity: SharedEntity = zombie.clone();

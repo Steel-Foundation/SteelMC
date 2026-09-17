@@ -657,7 +657,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
-                    damage_history: Arc::downgrade(&damage_history),
+                    damage_history: Arc::clone(&damage_history),
                     game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output

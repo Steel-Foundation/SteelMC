@@ -100,9 +100,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::ARMOR, 20.0);
-    let source = DamageSource::environment(&vanilla_damage_types::MOB_ATTACK)
-        .with_causing_entity(attacker.clone())
-        .with_direct_entity(attacker.clone());
+    let source = DamageSource::direct(&vanilla_damage_types::MOB_ATTACK, attacker.clone());
 
     let removed = attached_world
         .entity_manager()

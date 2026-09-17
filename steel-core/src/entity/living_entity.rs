@@ -563,8 +563,9 @@ pub trait LivingEntity: Entity {
         let Some(entity) = source.causing_entity() else {
             return;
         };
-        if entity.entity_type() == &vanilla_entities::PLAYER {
-            self.set_last_hurt_by_player(entity.uuid(), 100);
+        if entity.as_player().is_some() {
+            self.living_base()
+                .set_last_hurt_by_player_entity(entity, 100);
         }
     }
 
@@ -3060,9 +3061,7 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     let causing_entity = source.causing_entity();
     let direct_entity = source.direct_entity();
     let last_damage_player = if killed_by_player {
-        entity
-            .last_hurt_by_player_uuid()
-            .and_then(|uuid| world.get_entity_by_uuid(&uuid))
+        entity.living_base().last_hurt_by_player(world)
     } else {
         None
     };

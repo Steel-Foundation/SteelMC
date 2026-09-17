@@ -41,9 +41,7 @@ impl Player {
         self: &EntityArc<Self>,
         damage_type: &'static DamageType,
     ) -> DamageSource {
-        DamageSource::environment(damage_type)
-            .with_causing_entity(self.clone())
-            .with_direct_entity(self.clone())
+        DamageSource::direct(damage_type, self.clone())
     }
 
     fn attack_damage_source(self: &EntityArc<Self>, attacking_item: &ItemStack) -> DamageSource {

@@ -872,7 +872,7 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-pub use reference::{EntityArc, EntityWeak};
+pub use reference::{EntityArc, EntityWeak, LivingEntityRef};
 
 /// Shared ownership of an entity through its gameplay interface.
 pub type SharedEntity = EntityArc<dyn Entity>;
@@ -1396,11 +1396,8 @@ pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
     entity: &E,
     world: &World,
 ) -> Option<SharedEntity> {
-    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
-        world
-            .players
-            .get_by_uuid(&uuid)
-            .and_then(|player| world.get_entity_by_id(player.id()))
+    if entity.last_hurt_by_player_uuid().is_some() {
+        entity.living_base().last_hurt_by_player(world)
     } else {
         entity.last_hurt_by_mob()
     }

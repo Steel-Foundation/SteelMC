@@ -103,9 +103,7 @@ fn directness_uses_allocation_identity_and_position_tracks_the_direct_entity() {
     let other = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let environment = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(environment.is_direct());
-    let source = environment
-        .with_direct_entity(first.clone())
-        .with_causing_entity(first.clone());
+    let source = DamageSource::direct(&vanilla_damage_types::GENERIC, first.clone());
     assert!(source.is_direct());
     assert!(!source.clone().with_causing_entity(other).is_direct());
     first
@@ -128,9 +126,7 @@ fn returned_self_damage_source_outlives_history_expiry_without_a_cycle() {
     let player = TestPlayerBuilder::new(Arc::clone(&world), "SelfDamage", 1).build();
     let weak = EntityArc::downgrade(&player);
     let entity: SharedEntity = player.clone();
-    let source = DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
-        .with_causing_entity(entity.clone())
-        .with_direct_entity(entity);
+    let source = DamageSource::direct(&vanilla_damage_types::INDIRECT_MAGIC, entity);
     player.record_last_damage_source(&source);
     let generation = player.generation();
     drop((source, player));

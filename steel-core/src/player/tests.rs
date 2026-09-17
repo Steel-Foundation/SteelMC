@@ -940,10 +940,10 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
     {
         let mut inventory = attacker.inventory.lock();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
-        inventory.set(
-            EquipmentSlot::Head,
-            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
-        );
+        let mut helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
+        helmet.set_enchantments(&[(vanilla_enchantments::THORNS.key.clone(), 7)], false);
+        helmet.set_damage_value(helmet.get_max_damage() - 1);
+        inventory.set(EquipmentSlot::Head, helmet);
     }
     let mut chestplate = ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE);
     // Vanilla's 15% chance per level makes level 7 activate on every attack.
@@ -970,13 +970,20 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
         retaliation.causing_entity().expect("Thorns owner"),
         &target,
     ));
-    assert_eq!(
+    assert!(
         attacker
             .inventory
             .lock()
             .get_ref(EquipmentSlot::Head)
-            .get_damage_value(),
-        1,
+            .is_empty()
+    );
+    assert_eq!(
+        victim
+            .last_damage_source()
+            .expect("original attack")
+            .damage_type,
+        &vanilla_damage_types::PLAYER_ATTACK,
+        "Thorns damage does not initiate another post-attack enchantment pass",
     );
     assert!(
         victim

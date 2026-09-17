@@ -1,4 +1,7 @@
-use std::sync::{Arc, Weak};
+use std::{
+    ptr,
+    sync::{Arc, Weak},
+};
 
 use steel_utils::locks::SyncMutex;
 
@@ -24,16 +27,15 @@ impl DamageHistoryBinding {
         generation: EntityGeneration,
     ) -> Weak<DamageHistoryVictim> {
         let mut victim = self.victim.lock();
-        let history = Arc::downgrade(history);
         if let Some(bound) = &*victim
-            && Weak::ptr_eq(&bound.history, &history)
+            && ptr::eq(bound.history.as_ptr(), Arc::as_ptr(history))
         {
             return Arc::downgrade(bound);
         }
 
         let bound = Arc::new(DamageHistoryVictim {
             generation,
-            history,
+            history: Arc::downgrade(history),
         });
         let lifetime = Arc::downgrade(&bound);
         *victim = Some(bound);

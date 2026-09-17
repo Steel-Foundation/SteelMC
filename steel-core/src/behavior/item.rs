@@ -22,7 +22,7 @@ use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -140,15 +140,14 @@ pub trait ItemBehavior: Send + Sync {
     fn on_use_tick(
         &self,
         _world: &Arc<World>,
-        user: &dyn LivingEntity,
-        _entity: &SharedEntity,
+        user: LivingEntityRef<'_>,
         stack: &mut ItemStack,
         ticks_remaining: i32,
     ) {
         if let Some(consumable) = stack.get(CONSUMABLE)
             && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
         {
-            emit_consume_particles_and_sounds(consumable, user);
+            emit_consume_particles_and_sounds(consumable, user.living());
         }
     }
 
@@ -175,10 +174,9 @@ pub trait ItemBehavior: Send + Sync {
         &self,
         stack: &mut ItemStack,
         world: &Arc<World>,
-        user: &dyn LivingEntity,
-        _entity: &SharedEntity,
+        user: LivingEntityRef<'_>,
     ) -> ItemStack {
-        finish_consuming_stack(stack, world, user)
+        finish_consuming_stack(stack, world, user.living())
     }
 
     /// Called by vanilla `ItemStack.interactLivingEntity`.

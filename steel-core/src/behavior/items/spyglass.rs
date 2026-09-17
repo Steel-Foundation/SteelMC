@@ -1,6 +1,6 @@
 //! Spyglass item behavior.
 
-use crate::entity::SharedEntity;
+use crate::entity::LivingEntityRef;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -50,10 +50,9 @@ impl ItemBehavior for SpyglassItem {
         &self,
         stack: &mut ItemStack,
         _world: &Arc<World>,
-        user: &dyn LivingEntity,
-        _entity: &SharedEntity,
+        user: LivingEntityRef<'_>,
     ) -> ItemStack {
-        Self::stop_using(user);
+        Self::stop_using(user.living());
         stack.copy_with_count(stack.count())
     }
 

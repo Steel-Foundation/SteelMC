@@ -318,7 +318,7 @@ pub(crate) fn create_test_world_with_damage_history(
             dimension_type,
             0,
             WorldConfig {
-                damage_history: Arc::downgrade(history),
+                damage_history: Arc::clone(history),
                 game_time_source,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,

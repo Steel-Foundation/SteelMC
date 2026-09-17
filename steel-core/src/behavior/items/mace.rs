@@ -142,11 +142,8 @@ impl MaceItem {
 impl ItemBehavior for MaceItem {
     fn get_item_damage_source(&self, attacker: &SharedEntity) -> Option<DamageSource> {
         let living = attacker.as_living_entity()?;
-        Self::can_smash_attack(living).then(|| {
-            DamageSource::environment(&vanilla_damage_types::MACE_SMASH)
-                .with_causing_entity(attacker.clone())
-                .with_direct_entity(attacker.clone())
-        })
+        Self::can_smash_attack(living)
+            .then(|| DamageSource::direct(&vanilla_damage_types::MACE_SMASH, attacker.clone()))
     }
 
     fn get_attack_damage_bonus(

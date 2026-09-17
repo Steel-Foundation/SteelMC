@@ -205,8 +205,8 @@ pub enum ConditionalBlockSetResult {
 /// Configuration for creating a new world.
 #[derive(Clone)]
 pub struct WorldConfig {
-    /// Weak link to the server owner of exact recent damage sources.
-    pub damage_history: Weak<DamageHistory>,
+    /// Server-owned history; the caller retains it while the world runs.
+    pub damage_history: Arc<DamageHistory>,
     /// Domain game-time authority, bound during construction.
     pub game_time_source: GameTimeSource,
     /// Storage configuration for chunk persistence.
@@ -426,7 +426,7 @@ impl World {
             chunk_map.start_generation_refill_loop();
 
             Self {
-                damage_history: config.damage_history,
+                damage_history: Arc::downgrade(&config.damage_history),
                 chunk_map,
                 players: PlayerMap::new(),
                 player_area_map: PlayerAreaMap::new(),

@@ -50,6 +50,18 @@ impl DamageSource {
         }
     }
 
+    /// Damage delivered directly by its causing entity.
+    #[must_use]
+    pub fn direct(damage_type: &'static DamageType, entity: SharedEntity) -> Self {
+        let entity = SourceEntity::new(entity);
+        Self {
+            damage_type,
+            causing_entity: Some(entity.clone()),
+            direct_entity: Some(entity),
+            source_position: None,
+        }
+    }
+
     /// Adds the entity ultimately responsible for the damage.
     #[must_use]
     pub fn with_causing_entity(mut self, entity: SharedEntity) -> Self {

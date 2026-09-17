@@ -108,7 +108,7 @@ use crate::entity::{
     LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
     apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
-use crate::entity::{EntityArc, EntityWeak};
+use crate::entity::{EntityArc, EntityWeak, LivingEntityRef};
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -462,7 +462,10 @@ impl Player {
             current.clone()
         };
         let world = self.get_world();
-        behavior.on_use_tick(&world, self, entity, &mut item, active.remaining_ticks());
+        let Some(user) = LivingEntityRef::new(entity) else {
+            panic!("active item use requires a living entity");
+        };
+        behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
 
         if self.active_item_use_hand() != Some(hand) {
             self.inventory.lock().set_item_in_hand(hand, item);
@@ -475,7 +478,7 @@ impl Player {
         let use_on_release = behavior.use_on_release(&item);
         if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
             let stack_before_finish = item.clone();
-            item = behavior.finish_using(&mut item, &world, self, entity);
+            item = behavior.finish_using(&mut item, &world, user);
             self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
         }

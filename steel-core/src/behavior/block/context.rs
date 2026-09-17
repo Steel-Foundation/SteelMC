@@ -81,9 +81,7 @@ pub trait Fallable: Send + Sync {
 
     /// Returns the damage source used when this falling block hurts entities.
     fn get_fall_damage_source(&self, entity: &EntityArc<FallingBlockEntity>) -> DamageSource {
-        DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
-            .with_direct_entity(entity.clone())
-            .with_causing_entity(entity.clone())
+        DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, entity.clone())
     }
 
     /// Returns whether this behavior is in vanilla's `ConcretePowderBlock` hierarchy.

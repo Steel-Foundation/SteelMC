@@ -1,6 +1,6 @@
 //! Brush item behavior for continuous archaeology brushing.
 
-use crate::entity::SharedEntity;
+use crate::entity::LivingEntityRef;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -46,21 +46,20 @@ impl ItemBehavior for BrushItem {
     fn on_use_tick(
         &self,
         world: &Arc<World>,
-        user: &dyn LivingEntity,
-        entity: &SharedEntity,
+        user: LivingEntityRef<'_>,
         stack: &mut ItemStack,
         ticks_remaining: i32,
     ) {
         if ticks_remaining < 0 {
-            release_player_use(user, entity);
+            release_player_use(user);
             return;
         }
 
-        let Some(player) = user.as_player() else {
+        let Some(player) = user.living().as_player() else {
             return;
         };
         let Some((pos, direction)) = calculate_block_hit(world, player) else {
-            player.release_using_item(entity);
+            player.release_using_item(user.entity());
             return;
         };
 
@@ -112,8 +111,8 @@ fn equipped_brush_slot(player: &Player, _stack: &ItemStack) -> EquipmentSlot {
     }
 }
 
-fn release_player_use(user: &dyn LivingEntity, entity: &SharedEntity) {
-    if let Some(player) = user.as_player() {
-        player.release_using_item(entity);
+fn release_player_use(user: LivingEntityRef<'_>) {
+    if let Some(player) = user.living().as_player() {
+        player.release_using_item(user.entity());
     }
 }

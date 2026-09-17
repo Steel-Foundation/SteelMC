@@ -6,11 +6,10 @@ fn removed_self_damaged_entity_keeps_history_while_independently_owned() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "removed_history_owner");
     let player = TestPlayerBuilder::new(Arc::clone(&world), "SelfDamage", 1).build();
-    player.record_last_damage_source(
-        &DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
-            .with_causing_entity(player.clone())
-            .with_direct_entity(player.clone()),
-    );
+    player.record_last_damage_source(&DamageSource::direct(
+        &vanilla_damage_types::INDIRECT_MAGIC,
+        player.clone(),
+    ));
     player.set_removed(RemovalReason::Discarded);
     history.collect_unreachable();
     {
@@ -157,11 +156,10 @@ fn world_membership_roots_history_until_the_entity_is_discarded() {
         Arc::downgrade(&world),
     ));
     world.try_add_entity(pig.clone()).expect("register pig");
-    pig.record_last_damage_source(
-        &DamageSource::environment(&vanilla_damage_types::GENERIC)
-            .with_causing_entity(pig.clone())
-            .with_direct_entity(pig.clone()),
-    );
+    pig.record_last_damage_source(&DamageSource::direct(
+        &vanilla_damage_types::GENERIC,
+        pig.clone(),
+    ));
     let id = pig.id();
     let generation = pig.generation();
     let weak = EntityArc::downgrade(&pig);

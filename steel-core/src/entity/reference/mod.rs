@@ -8,6 +8,9 @@ use std::sync::{Arc, Weak};
 
 use steel_utils::locks::SyncRwLock;
 
+mod living;
+pub use living::LivingEntityRef;
+
 static COLLECTION_GATE: SyncRwLock<()> = SyncRwLock::new(());
 
 struct EntityAllocation<T: ?Sized> {

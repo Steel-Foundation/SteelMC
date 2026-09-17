@@ -25,8 +25,8 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityEventSource, EntitySyncedData,
-    InsideBlockEffectCollector, LivingEntity, Projectile, ProjectileBase, ProjectileHit,
-    RemovalReason, SharedEntity,
+    InsideBlockEffectCollector, LivingEntity, LivingEntityRef, Projectile, ProjectileBase,
+    ProjectileHit, RemovalReason, SharedEntity,
 };
 use crate::entity::{EntityArc, EntityWeak};
 use crate::physics::MoverType;
@@ -110,18 +110,19 @@ impl FireworkRocketEntity {
         rocket
     }
 
-    /// Creates a rocket attached to a living entity that will be resolved from
-    /// its synced runtime ID after the rocket enters the world.
+    /// Creates a rocket attached to the supplied living entity.
     #[must_use]
     pub fn attached_to_living(
         entity_type: EntityTypeRef,
         id: i32,
         world: Weak<World>,
         source_item: ItemStack,
-        attached_to: &dyn LivingEntity,
+        attached_to: LivingEntityRef<'_>,
     ) -> Self {
+        let attached_to = attached_to.entity();
         let rocket = Self::launched(entity_type, id, attached_to.position(), world, source_item);
-        rocket.set_owner_uuid(Some(attached_to.uuid()));
+        rocket.set_owner_entity(Some(attached_to));
+        rocket.state.lock().attached_to_entity = Some(EntityArc::downgrade(attached_to));
         if let Ok(attached_id) = u32::try_from(attached_to.id()) {
             rocket
                 .entity_data
@@ -162,16 +163,10 @@ impl FireworkRocketEntity {
     }
 
     fn attached_entity(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        if let Some(attached) = self
-            .state
-            .lock()
-            .attached_to_entity
-            .as_ref()
-            .and_then(EntityWeak::upgrade)
-            && !attached.is_removed()
-            && attached.as_living_entity().is_some()
-        {
-            return Some(attached);
+        let attached = self.state.lock().attached_to_entity.clone();
+        if let Some(attached) = attached {
+            // A resolved attachment must never rebind through a reused runtime ID.
+            return attached.upgrade();
         }
 
         let attached_id = *self.entity_data.lock().attached_to_target.get();
@@ -497,11 +492,12 @@ mod tests {
     use steel_registry::data_components::vanilla_components::FIREWORKS;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_utils::ChunkPos;
 
     use crate::entity::EntityArc;
     use crate::{
         entity::{Entity, Projectile, entities::PigEntity},
-        test_support::test_world,
+        test_support::{fresh_test_world, insert_ready_full_chunk, test_world},
     };
 
     use super::*;
@@ -574,7 +570,7 @@ mod tests {
             DVec3::new(1.0, 2.0, 3.0),
             Weak::new(),
         ));
-        let Some(living_target) = target.as_living_entity() else {
+        let Some(living_target) = LivingEntityRef::new(&target) else {
             panic!("pig test entity should be living");
         };
         let rocket = FireworkRocketEntity::attached_to_living(
@@ -595,6 +591,52 @@ mod tests {
                 .is(&vanilla_items::FIREWORK_ROCKET)
         );
         assert_eq!(rocket.owner_uuid(), Some(target.uuid()));
+    }
+
+    #[test]
+    fn attached_rocket_keeps_its_target_when_world_ids_are_reused() {
+        let world = fresh_test_world("rocket_attachment_identity");
+        let owner_world = fresh_test_world("rocket_owner_world");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let target: SharedEntity = EntityArc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            19,
+            DVec3::ZERO,
+            Arc::downgrade(&owner_world),
+        ));
+        let rocket = FireworkRocketEntity::attached_to_living(
+            &vanilla_entities::FIREWORK_ROCKET,
+            20,
+            Arc::downgrade(&world),
+            ItemStack::new(&vanilla_items::FIREWORK_ROCKET),
+            LivingEntityRef::new(&target).expect("living target"),
+        );
+        assert!(EntityArc::ptr_eq(
+            &rocket.get_owner().expect("owner in other world"),
+            &target
+        ));
+
+        target.set_removed(RemovalReason::Discarded);
+        let original_generation = target.generation();
+        let replacement: SharedEntity = EntityArc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            target.id(),
+            DVec3::ZERO,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(replacement)
+            .expect("replacement registration");
+        assert!(EntityArc::ptr_eq(
+            &rocket.attached_entity(&world).expect("original attachment"),
+            &target
+        ));
+        drop(target);
+        assert!(
+            rocket
+                .attached_entity(&world)
+                .is_none_or(|entity| entity.generation() == original_generation)
+        );
     }
 
     #[test]
