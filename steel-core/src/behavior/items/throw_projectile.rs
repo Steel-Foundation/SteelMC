@@ -32,8 +32,8 @@ pub(super) struct ThrowParams {
     /// Volume that sound is played at. Every vanilla thrown item uses `0.5`, but
     /// each spells it out at its own call site rather than sharing a constant.
     pub sound_volume: f32,
-    /// `spawnProjectileFromRotation` pitch offset, in degrees.
-    pub pitch_offset: f32,
+    /// `spawnProjectileFromRotation`'s `yOffset`, in degrees.
+    pub y_offset: f32,
     /// The item's `PROJECTILE_SHOOT_POWER`.
     pub power: f32,
     /// `spawnProjectileFromRotation` uncertainty.
@@ -69,7 +69,7 @@ where
         world,
         player,
         &mut thrown_item,
-        params.pitch_offset,
+        params.y_offset,
         params.power,
         params.uncertainty,
         create,

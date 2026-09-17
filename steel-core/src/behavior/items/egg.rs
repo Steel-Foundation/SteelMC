@@ -21,7 +21,7 @@ const THROW: ThrowParams = ThrowParams {
     sound: &sound_events::ENTITY_EGG_THROW,
     sound_source: SoundSource::Players,
     sound_volume: 0.5,
-    pitch_offset: 0.0,
+    y_offset: 0.0,
     power: 1.5,
     uncertainty: 1.0,
 };

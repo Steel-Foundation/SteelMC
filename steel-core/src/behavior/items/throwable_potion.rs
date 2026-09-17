@@ -22,7 +22,7 @@ const THROW: ThrowParams = ThrowParams {
     sound: &sound_events::ENTITY_SPLASH_POTION_THROW,
     sound_source: SoundSource::Players,
     sound_volume: 0.5,
-    pitch_offset: -20.0,
+    y_offset: -20.0,
     power: 0.5,
     uncertainty: 1.0,
 };

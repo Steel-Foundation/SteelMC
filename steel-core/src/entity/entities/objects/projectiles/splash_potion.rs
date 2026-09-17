@@ -24,7 +24,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::damage::DamageSource;
-use crate::entity::potion_contents::to_runtime_instance;
+use crate::entity::potion_contents::to_runtime_instance_icon_from_visibility;
 use crate::entity::{
     AbstractThrownPotion, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity,
     Projectile, ProjectileBase, ProjectileHit, SPLASH_RANGE_SQ, SharedEntity,
@@ -105,7 +105,7 @@ impl SplashPotionEntity {
         });
         // Vanilla builds the new instance first and asks *it* whether it ends
         // within 20 ticks, so the check sees the scaled duration.
-        let scaled_effect = to_runtime_instance(effect, duration);
+        let scaled_effect = to_runtime_instance_icon_from_visibility(effect, duration);
         if scaled_effect.ends_within(MIN_REMAINING_TICKS) {
             return;
         }

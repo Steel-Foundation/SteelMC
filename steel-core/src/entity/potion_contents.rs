@@ -60,6 +60,20 @@ pub(crate) const fn to_runtime_instance(
         .with_show_icon(effect.show_icon())
 }
 
+/// This function exists purely to reproduce Vanilla bug MC-276746, 
+/// where a splash potion's `show_icon` is silently replaced by its 
+/// `show_particles`; drop it if Mojang ever fixes it.
+pub(crate) const fn to_runtime_instance_icon_from_visibility(
+    effect: &RegistryMobEffectInstance,
+    duration: i32,
+) -> RuntimeMobEffectInstance {
+    let visible = effect.show_particles();
+    RuntimeMobEffectInstance::with_duration(effect.effect(), duration, effect.amplifier())
+        .with_ambient(effect.ambient())
+        .with_visible(visible)
+        .with_show_icon(visible)
+}
+
 #[cfg(test)]
 mod tests {
     use steel_registry::data_components::PotionContents;
@@ -68,13 +82,51 @@ mod tests {
     };
     use steel_utils::ChunkPos;
 
-    use super::{apply_potion_contents, scale_effect_duration};
+    use super::{
+        apply_potion_contents, scale_effect_duration, to_runtime_instance,
+        to_runtime_instance_icon_from_visibility,
+    };
     use crate::entity::LivingEntity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     /// Builds a scalable effect instance with the given duration.
     fn effect_lasting(duration: i32) -> RegistryMobEffectInstance {
         RegistryMobEffectInstance::simple(vanilla_mob_effects::LUCK, duration, 0)
+    }
+
+    #[test]
+    fn splash_rebuild_takes_its_icon_flag_from_visibility() {
+        init_vanilla_registry();
+        // Particles on, icon off — the only shape where the two differ.
+        let effect = RegistryMobEffectInstance::new(
+            vanilla_mob_effects::LUCK,
+            100,
+            0,
+            false,
+            true,
+            false,
+            None,
+        );
+
+        let drunk = to_runtime_instance(&effect, 100);
+        assert!(drunk.is_visible());
+        assert!(
+            !drunk.show_icon(),
+            "drinking preserves the source icon flag"
+        );
+
+        let splashed = to_runtime_instance_icon_from_visibility(&effect, 100);
+        assert!(splashed.is_visible());
+        assert!(
+            splashed.show_icon(),
+            "the splash rebuild must take show_icon from visible"
+        );
+
+        // Everything else stays identical between the two paths.
+        assert_eq!(splashed.effect(), drunk.effect());
+        assert_eq!(splashed.duration(), drunk.duration());
+        assert_eq!(splashed.amplifier(), drunk.amplifier());
+        assert_eq!(splashed.is_ambient(), drunk.is_ambient());
     }
 
     /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration
