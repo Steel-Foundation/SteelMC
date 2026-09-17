@@ -22,11 +22,11 @@ use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use self::goals::closer_to_center_than;
 use self::goals::{
-    TurtleBreedGoal, TurtleGoHomeGoal, TurtleGoToWaterGoal, TurtleLayEggGoal, TurtlePanicGoal,
+    TurtleBreedGoal, TurtleGoHomeGoal, TurtleGoToWaterGoal, TurtleLayEggGoal,
     TurtleRandomStrollGoal, TurtleTravelGoal,
 };
 use crate::behavior::blocks::vegetation::TurtleEggBlock;
-use crate::entity::ai::goal::{LookAtPlayerGoal, TemptGoal};
+use crate::entity::ai::goal::{LookAtPlayerGoal, PanicGoal, TemptGoal};
 use crate::entity::ai::path::PathType;
 use crate::entity::living_entity::gift_loot_items_with_rng;
 use crate::entity::{
@@ -48,6 +48,7 @@ const TURTLE_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_atta
 );
 const DEFAULT_STEP_HEIGHT: f32 = 1.0;
 const LAYING_EGG_EMIT_INTERVAL: i32 = 5;
+const PANIC_WATER_SEARCH_RANGE: i32 = 7;
 
 const SWIM_PUSH: f32 = 0.1;
 const SWIM_DRAG: f64 = 0.9;
@@ -124,7 +125,10 @@ impl TurtleEntity {
 
         {
             let mut goal_selector = mob_base.goal_selector().lock();
-            goal_selector.add_goal(0, TurtlePanicGoal::new(1.2));
+            goal_selector.add_goal(
+                0,
+                PanicGoal::new(1.2).always_seeking_water(PANIC_WATER_SEARCH_RANGE),
+            );
             goal_selector.add_goal(1, TurtleBreedGoal::new(1.0));
             goal_selector.add_goal(1, TurtleLayEggGoal::new(1.0));
             goal_selector.add_goal(

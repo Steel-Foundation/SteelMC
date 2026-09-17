@@ -1,98 +1,22 @@
 use std::f64::consts::{FRAC_PI_2, PI};
 
-use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::{vanilla_blocks, vanilla_damage_type_tags};
+use steel_registry::vanilla_blocks;
 use steel_utils::BlockPos;
 
 use super::{
     TOWARD_TARGET_FALLBACK_H, TOWARD_TARGET_FALLBACK_V, TOWARD_TARGET_H, TOWARD_TARGET_V,
     as_turtle, bottom_center,
 };
-use crate::entity::ai::goal::{
-    Goal, GoalControls, MoveToBlockGoal, default_random_pos, default_random_pos_towards,
-    look_for_water,
-};
+use crate::entity::ai::goal::{Goal, GoalControls, MoveToBlockGoal, default_random_pos_towards};
 use crate::entity::{AgeableMob, Animal, PathfinderMob};
 use crate::world::LevelReader;
 
-const PANIC_WATER_SEARCH_RANGE: i32 = 7;
-const PANIC_ESCAPE_H: i32 = 5;
-const PANIC_ESCAPE_V: i32 = 4;
 const GO_TO_WATER_SEARCH_RANGE: i32 = 24;
 const GO_TO_WATER_RECALC_INTERVAL: i32 = 160;
 const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
 const TRAVEL_LOADED_MARGIN: i32 = 34;
-
-/// Always tries to reach water when panicking, falling back to a random
-/// escape position.
-pub(crate) struct TurtlePanicGoal {
-    wanted_position: Option<DVec3>,
-    speed_modifier: f64,
-    is_running: bool,
-}
-
-impl TurtlePanicGoal {
-    pub(crate) const fn new(speed_modifier: f64) -> Self {
-        Self {
-            wanted_position: None,
-            speed_modifier,
-            is_running: false,
-        }
-    }
-
-    fn should_panic(mob: &dyn PathfinderMob) -> bool {
-        mob.last_damage_source()
-            .is_some_and(|source| source.is(&vanilla_damage_type_tags::DamageTypeTag::PANIC_CAUSES))
-    }
-}
-
-impl Goal for TurtlePanicGoal {
-    fn controls(&self) -> GoalControls {
-        GoalControls::MOVE
-    }
-
-    fn is_panic_goal(&self) -> bool {
-        true
-    }
-
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        if !Self::should_panic(mob) {
-            return false;
-        }
-
-        if let Some(water) = look_for_water(mob, PANIC_WATER_SEARCH_RANGE) {
-            self.wanted_position = Some(DVec3::new(
-                f64::from(water.x()),
-                f64::from(water.y()),
-                f64::from(water.z()),
-            ));
-            return true;
-        }
-
-        let Some(position) = default_random_pos(mob, PANIC_ESCAPE_H, PANIC_ESCAPE_V) else {
-            return false;
-        };
-        self.wanted_position = Some(position);
-        true
-    }
-
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        !mob.mob_base().navigation().lock().is_done()
-    }
-
-    fn start(&mut self, mob: &dyn PathfinderMob) {
-        if let Some(wanted_position) = self.wanted_position {
-            mob.move_to_pos(wanted_position, self.speed_modifier);
-        }
-        self.is_running = true;
-    }
-
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
-        self.is_running = false;
-    }
-}
 
 /// Leaves land for the nearest water block.
 pub(crate) struct TurtleGoToWaterGoal {

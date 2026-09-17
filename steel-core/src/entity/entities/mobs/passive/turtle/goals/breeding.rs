@@ -1,4 +1,3 @@
-use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
@@ -8,22 +7,17 @@ use steel_utils::types::UpdateFlags;
 
 use super::{TurtleEntity, as_turtle, closer_to_center_than};
 use crate::behavior::blocks::vegetation::TurtleEggBlock;
-use crate::entity::ai::goal::{Goal, GoalControls, MoveToBlockGoal, reduced_tick_delay};
-use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::ai::goal::{BreedGoal, Goal, GoalControls, MoveToBlockGoal};
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{AgeableMob, Animal, PathfinderMob, SharedEntity};
+use crate::entity::{AgeableMob, Animal, PathfinderMob};
 use crate::world::game_event::GameEventContext;
 
 const EGGS: &IntProperty = &BlockStateProperties::EGGS;
-const PARTNER_SEARCH_RANGE: f64 = 8.0;
-const BREED_DISTANCE_SQR: f64 = 9.0;
-const BREED_TIME: i32 = 60;
 const POST_BREED_AGE: i32 = 6000;
 const LAY_EGG_SEARCH_RANGE: i32 = 16;
 const LAY_EGG_HOME_RANGE: f64 = 9.0;
 const LAY_EGG_DURATION: i32 = 200;
 const POST_LAY_LOVE_TIME: i32 = 600;
-const LOOK_AT_PARTNER_SPEED: f32 = 10.0;
 const MAX_EGGS_LAID: u8 = 4;
 const LAY_EGG_SOUND_VOLUME: f32 = 0.3;
 const LAY_EGG_PITCH_BASE: f32 = 0.9;
@@ -32,47 +26,18 @@ const LAY_EGG_PITCH_SPREAD: f32 = 0.2;
 /// Breeding gives the mother an egg to lay instead of spawning a baby,
 /// and both parents age back to adulthood.
 pub(crate) struct TurtleBreedGoal {
-    partner: Option<SharedEntity>,
-    love_time: i32,
-    speed_modifier: f64,
+    inner: BreedGoal,
 }
 
 impl TurtleBreedGoal {
     pub(crate) const fn new(speed_modifier: f64) -> Self {
         Self {
-            partner: None,
-            love_time: 0,
-            speed_modifier,
+            inner: BreedGoal::new(speed_modifier).with_breed(Self::breed),
         }
     }
 
-    fn find_partner(mob: &dyn PathfinderMob, animal: &dyn Animal) -> Option<SharedEntity> {
-        let world = mob.level()?;
-        let search_box = mob.bounding_box().inflate(PARTNER_SEARCH_RANGE);
-        let partner_targeting = TargetingConditions::for_non_combat()
-            .range(PARTNER_SEARCH_RANGE)
-            .ignore_line_of_sight();
-
-        world.nearest_entity_in_aabb_matching(&search_box, mob.position(), |entity| {
-            let Some(candidate) = entity.as_animal() else {
-                return false;
-            };
-            if !partner_targeting.test(world.as_ref(), Some(mob), candidate) {
-                return false;
-            }
-            if !animal.can_mate(candidate) {
-                return false;
-            }
-
-            !entity
-                .as_pathfinder_mob()
-                .is_some_and(PathfinderMob::is_panicking)
-        })
-    }
-
-    /// Grants the egg, ages up both parents, awards the breeding stat and drops XP.
-    fn breed(mob: &dyn PathfinderMob, turtle: &TurtleEntity, partner_animal: &dyn Animal) {
-        let Some(world) = mob.level() else {
+    fn breed(mob: &dyn PathfinderMob, partner_animal: &dyn Animal) {
+        let (Some(turtle), Some(world)) = (as_turtle(mob), mob.level()) else {
             return;
         };
 
@@ -101,70 +66,23 @@ impl TurtleBreedGoal {
 
 impl Goal for TurtleBreedGoal {
     fn controls(&self) -> GoalControls {
-        GoalControls::MOVE | GoalControls::LOOK
+        self.inner.controls()
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(turtle) = as_turtle(mob) else {
-            return false;
-        };
-        if turtle.has_egg() || !turtle.is_in_love() {
-            return false;
-        }
-
-        self.partner = Self::find_partner(mob, turtle);
-        self.partner.is_some()
+        self.inner.can_use(mob) && as_turtle(mob).is_some_and(|turtle| !turtle.has_egg())
     }
 
-    fn can_continue_to_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
-        let Some(partner) = &self.partner else {
-            return false;
-        };
-        if !partner.is_alive() || self.love_time >= BREED_TIME {
-            return false;
-        }
-        if partner
-            .as_pathfinder_mob()
-            .is_some_and(PathfinderMob::is_panicking)
-        {
-            return false;
-        }
-
-        partner.as_animal().is_some_and(Animal::is_in_love)
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
-        self.partner = None;
-        self.love_time = 0;
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
     }
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {
-        let Some(partner) = &self.partner else {
-            return;
-        };
-        let Some(turtle) = as_turtle(mob) else {
-            return;
-        };
-        let Some(partner_animal) = partner.as_animal() else {
-            return;
-        };
-
-        let partner_position = partner.position();
-        mob.mob_base().controls().lock().look_control.set_look_at(
-            DVec3::new(partner_position.x, partner.get_eye_y(), partner_position.z),
-            LOOK_AT_PARTNER_SPEED,
-            mob.max_head_x_rot(),
-        );
-        mob.move_to_pos(partner_position, self.speed_modifier);
-
-        self.love_time += 1;
-        if self.love_time < reduced_tick_delay(BREED_TIME)
-            || mob.position().distance_squared(partner_position) >= BREED_DISTANCE_SQR
-        {
-            return;
-        }
-
-        Self::breed(mob, turtle, partner_animal);
+        self.inner.tick(mob);
     }
 }
 

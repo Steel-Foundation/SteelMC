@@ -9,8 +9,11 @@ use super::*;
 use crate::behavior::init_behaviors;
 use crate::entity::PathfinderMob;
 use crate::entity::ai::goal::Goal;
+use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::entities::ItemEntity;
-use crate::entity::entities::mobs::passive::turtle::goals::{TurtleLayEggGoal, TurtleTravelGoal};
+use crate::entity::entities::mobs::passive::turtle::goals::{
+    TurtleBreedGoal, TurtleGoHomeGoal, TurtleLayEggGoal, TurtleTravelGoal,
+};
 use crate::entity::{AgeableMob, EntityPose, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
@@ -519,4 +522,99 @@ fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
         turtle.get_walk_target_value(sand_pos),
         PREFERRED_WALK_TARGET_VALUE
     );
+}
+
+const BREED_LOVE_TIME: i32 = 600;
+const BREED_MAX_TICKS: i32 = 100;
+const POST_BREED_AGE: i32 = 6000;
+
+fn turtles_in_love(key: &'static str) -> (Arc<World>, Arc<TurtleEntity>, Arc<TurtleEntity>) {
+    let (world, mother) = turtle_in_world(key, DVec3::new(8.0, 64.0, 8.0));
+    lay_sand_floor(&world, 0..=15);
+    let father = Arc::new(TurtleEntity::new(
+        &vanilla_entities::TURTLE,
+        next_entity_id(),
+        DVec3::new(9.0, 64.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&father) as SharedEntity)
+        .expect("turtle should attach to the loaded test chunk");
+    mother.set_in_love_time(BREED_LOVE_TIME);
+    father.set_in_love_time(BREED_LOVE_TIME);
+    (world, mother, father)
+}
+
+#[test]
+fn breeding_turtles_give_the_mother_an_egg_instead_of_a_baby() {
+    let (world, mother, father) = turtles_in_love("turtle_breed_egg");
+    let mut goal = TurtleBreedGoal::new(1.0);
+
+    assert!(goal.can_use(mother.as_ref()));
+    for _ in 0..BREED_MAX_TICKS {
+        goal.tick(mother.as_ref());
+        if mother.has_egg() {
+            break;
+        }
+    }
+
+    assert!(mother.has_egg());
+    assert_eq!(mother.get_age(), POST_BREED_AGE);
+    assert_eq!(father.get_age(), POST_BREED_AGE);
+    assert!(!mother.is_in_love());
+    assert!(!father.is_in_love());
+
+    let aabb = WorldAabb::new(0.0, 60.0, 0.0, 16.0, 70.0, 16.0);
+    let entities = world.get_entities_in_aabb(&aabb);
+    let turtles = entities
+        .iter()
+        .filter(|entity| entity.entity_type() == &vanilla_entities::TURTLE)
+        .count();
+    let experience: i32 = entities
+        .iter()
+        .filter_map(|entity| entity.as_ref().downcast_ref::<ExperienceOrbEntity>())
+        .map(|orb| orb.value() * orb.count())
+        .sum();
+    assert_eq!(turtles, 2);
+    assert!((1..8).contains(&experience));
+}
+
+#[test]
+fn a_turtle_already_carrying_an_egg_does_not_breed_again() {
+    let (_world, mother, _father) = turtles_in_love("turtle_breed_has_egg");
+    let mut goal = TurtleBreedGoal::new(1.0);
+    assert!(goal.can_use(mother.as_ref()));
+
+    mother.set_has_egg(true);
+
+    assert!(!goal.can_use(mother.as_ref()));
+}
+
+#[test]
+fn a_turtle_carrying_an_egg_heads_home_until_it_is_close() {
+    let (_world, turtle) = turtle_in_world("turtle_go_home", DVec3::new(8.0, 64.0, 8.0));
+    turtle.set_home_pos(BlockPos::new(100, 64, 8));
+    let mut goal = TurtleGoHomeGoal::new(1.0);
+    assert!(!goal.can_use(turtle.as_ref()));
+
+    turtle.set_has_egg(true);
+    assert!(goal.can_use(turtle.as_ref()));
+    goal.start(turtle.as_ref());
+    assert!(turtle.going_home());
+    assert!(goal.can_continue_to_use(turtle.as_ref()));
+
+    turtle.set_home_pos(BlockPos::new(10, 64, 8));
+    assert!(!goal.can_continue_to_use(turtle.as_ref()));
+    goal.stop(turtle.as_ref());
+    assert!(!turtle.going_home());
+}
+
+#[test]
+fn a_baby_turtle_never_heads_home() {
+    let (_world, turtle) = turtle_in_world("turtle_baby_go_home", DVec3::new(8.0, 64.0, 8.0));
+    turtle.set_home_pos(BlockPos::new(100, 64, 8));
+    turtle.set_has_egg(true);
+    turtle.set_baby(true);
+
+    assert!(!TurtleGoHomeGoal::new(1.0).can_use(turtle.as_ref()));
 }

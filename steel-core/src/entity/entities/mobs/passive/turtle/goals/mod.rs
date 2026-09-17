@@ -12,7 +12,7 @@ use crate::entity::PathfinderMob;
 
 pub(super) use breeding::{TurtleBreedGoal, TurtleLayEggGoal};
 pub(super) use land::{TurtleGoHomeGoal, TurtleRandomStrollGoal};
-pub(super) use water::{TurtleGoToWaterGoal, TurtlePanicGoal, TurtleTravelGoal};
+pub(super) use water::{TurtleGoToWaterGoal, TurtleTravelGoal};
 
 pub(super) const TOWARD_TARGET_H: i32 = 16;
 pub(super) const TOWARD_TARGET_V: i32 = 3;
