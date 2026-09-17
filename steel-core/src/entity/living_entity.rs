@@ -4,6 +4,9 @@ use steel_math::DEGREE_90;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
+
+const EQUIP_SOUND_VOLUME: f32 = 1.0;
+const EQUIP_SOUND_PITCH: f32 = 1.0;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
 /// A trait for living entities that can take damage, heal, and die.
@@ -1639,6 +1642,11 @@ pub trait LivingEntity: Entity {
 
     /// Returns the equip sound Steel can currently resolve for this entity.
     fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
+        self.default_equip_sound(slot, stack)
+    }
+
+    /// The equippable's own equip sound, which overrides fall back to.
+    fn default_equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
         let equippable = stack.get_equippable()?;
         (slot == equippable.slot)
             .then(|| equippable.equip_sound.registry_ref())
@@ -1666,9 +1674,19 @@ pub trait LivingEntity: Entity {
 
         let equippable_slot = new_stack.get_equippable().map(|equippable| equippable.slot);
         if equippable_slot == Some(slot)
+            && !self.is_silent()
             && let Some(sound) = self.equip_sound(slot, new_stack)
+            && let Some(world) = self.level()
         {
-            self.play_sound(sound, 1.0, 1.0);
+            // Vanilla excludes nobody here, so the wearer hears their own equip sound.
+            world.play_sound_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                EQUIP_SOUND_VOLUME,
+                EQUIP_SOUND_PITCH,
+                None,
+            );
         }
 
         if self.does_emit_equip_event(slot) {
