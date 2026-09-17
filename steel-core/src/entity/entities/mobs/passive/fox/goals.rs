@@ -511,7 +511,8 @@ impl Goal for FoxSeekShelterGoal {
             return false;
         }
         self.interval = SHELTER_INTERVAL;
-        // TODO(village-poi): vanilla also requires the spot not be in a village (#249).
+        // TODO(village-poi): vanilla also skips spots inside a village, which needs POI
+        // section distance tracking (`sectionsToVillage`) on top of the POI storage.
         level.is_bright_outside()
             && level.can_see_sky(pos)
             && self.flee_sun.set_wanted_pos(mob, &level)

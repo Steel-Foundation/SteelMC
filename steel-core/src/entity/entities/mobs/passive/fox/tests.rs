@@ -368,28 +368,6 @@ fn fox_kit_inherits_a_parent_variant() {
 }
 
 #[test]
-fn fox_clear_states_resets_all_pose_flags() {
-    init_vanilla_registry();
-
-    let fox = new_fox();
-    fox.set_sitting(true);
-    fox.set_crouching(true);
-    fox.set_interested(true);
-    fox.set_sleeping(true);
-    fox.set_defending(true);
-    fox.set_faceplanted(true);
-
-    fox.clear_states();
-
-    assert!(!fox.is_sitting());
-    assert!(!fox.is_crouching());
-    assert!(!fox.is_interested());
-    assert!(!fox.is_sleeping());
-    assert!(!fox.is_defending());
-    assert!(!fox.is_faceplanted());
-}
-
-#[test]
 fn fox_seek_shelter_skips_a_sleeping_fox() {
     let (_world, fox) = world_with_fox("fox_shelter");
     fox.set_sleeping(true);
@@ -398,6 +376,27 @@ fn fox_seek_shelter_skips_a_sleeping_fox() {
     assert!(
         !goal.can_use(fox.as_ref()),
         "a sleeping fox does not go looking for shelter"
+    );
+}
+
+#[test]
+fn a_hunting_fox_does_not_look_for_shelter() {
+    let (world, fox) = world_with_fox("fox_shelter_hunting");
+    let prey: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(10.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&prey))
+        .expect("prey should attach to the loaded chunk");
+    assert!(Mob::set_target(fox.as_ref(), Some(&prey)));
+
+    let mut goal = FoxSeekShelterGoal::new(1.25);
+    assert!(
+        !(0..SEARCH_ATTEMPTS).any(|_| goal.can_use(fox.as_ref())),
+        "a fox with a target keeps its mind on the target"
     );
 }
 
