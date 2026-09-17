@@ -26,9 +26,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             let chat_type = source.bind_chat_type(vanilla_chat_types::SAY_COMMAND.id() as i32);
             let outgoing = OutgoingChatMessage::from_command(source, "message", message);
 
-            for world in source.server().worlds.values() {
-                world.broadcast_chat(&outgoing, &chat_type);
-            }
+            source.server().broadcast_chat(&outgoing, &chat_type);
 
             Ok(1)
         },

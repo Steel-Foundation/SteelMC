@@ -25,7 +25,7 @@ use text_components::Modifier;
 use text_components::TextComponent;
 use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
-
+use text_components::resolving::NoResolutor;
 use crate::command::execution::CommandSource;
 use crate::command::sender::CommandSender;
 use crate::command::signing_context::CommandSigningContext;
@@ -198,6 +198,24 @@ impl OutgoingChatMessage {
                 sender_last_seen,
             },
             None => Self::Disguised { content },
+        }
+    }
+
+    /// Returns true if this message carries an authenticated cryptographic signature.
+    #[must_use]
+    pub fn is_signed(&self) -> bool {
+        match self {
+            Self::Player { signature, .. } => signature.is_some(),
+            Self::Disguised { .. } => false,
+        }
+    }
+
+    /// Returns the plain textual content of the message.
+    #[must_use]
+    pub fn plain_content(&self) -> String {
+        match self {
+            Self::Player { packet, .. } => packet.message.clone(),
+            Self::Disguised { content } => content.to_plain(&NoResolutor),
         }
     }
 

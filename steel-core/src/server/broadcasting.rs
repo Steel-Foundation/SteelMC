@@ -1,3 +1,6 @@
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{vanilla_chat_types, RegistryEntry};
+use crate::player::chat::OutgoingChatMessage;
 use super::{
     Arc, CEntityEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color, CommandSender,
     CommandSource, DisplayResolutor, Entity, Modifier, Player, Server, SprintReport,
@@ -15,6 +18,36 @@ impl Server {
             }
             true
         });
+    }
+
+    /// Logs and broadcasts a player or disguised chat message across all worlds.
+    pub fn broadcast_chat(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
+        // Log console
+        self.log_chat_message(outgoing, chat_type);
+
+        self.online_players.iter_players(|_, player| {
+            outgoing.send_to_player(player, chat_type);
+            true
+        });
+    }
+
+    fn log_chat_message(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
+        let tag = if outgoing.is_signed() { "" } else { "[Not Secure] " };
+        let sender_name = chat_type.sender_name.to_plain(&DisplayResolutor);
+        let content = outgoing.plain_content();
+
+        let formatted = match chat_type.registry_id {
+            id if id == vanilla_chat_types::SAY_COMMAND.id() as i32 => {
+                format!("[{sender_name}] {content}")
+            }
+            id if id == vanilla_chat_types::EMOTE_COMMAND.id() as i32 => {
+                format!("* {sender_name} {content}")
+            }
+            // Standard chat and fallback
+            _ => format!("<{sender_name}> {content}"),
+        };
+
+        steel_utils::console!("{tag}{formatted}");
     }
 
     /// Builds the tab list header/footer with recent and five-second tick statistics.
