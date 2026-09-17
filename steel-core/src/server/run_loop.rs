@@ -210,7 +210,7 @@ impl Server {
 
             if should_sprint_this_tick {
                 next_tick_time = Instant::now();
-                overload_guard.reset(next_tick_time);
+                overload_guard.restart_report_gap(next_tick_time);
             } else {
                 let now = Instant::now();
                 if now < next_tick_time {

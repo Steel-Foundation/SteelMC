@@ -13,13 +13,11 @@ pub(super) struct TickOverloadGuard {
 }
 
 impl TickOverloadGuard {
-    /// A guard that has never reported.
     pub(super) const fn new() -> Self {
         Self { last_report: None }
     }
 
-    /// Forgets the recorded backlog.
-    pub(super) const fn reset(&mut self, now: Instant) {
+    pub(super) const fn restart_report_gap(&mut self, now: Instant) {
         self.last_report = Some(now);
     }
 
@@ -124,12 +122,32 @@ mod tests {
     }
 
     #[test]
-    fn the_first_backlog_is_dropped_without_waiting_for_a_reporting_gap() {
+    fn a_sprint_restarts_the_report_gap() {
         let (now, mut next_tick_time, mut guard) = running_behind(Duration::from_secs(5));
+        guard.restart_report_gap(next_tick_time);
 
         let skipped = guard.skip_backlog_if_overloaded(now, &mut next_tick_time, NANOS_PER_TICK);
 
-        assert_eq!(skipped, 100, "the very first overload is not rate limited");
+        assert_eq!(skipped, 0, "a backlog right after a sprint is replayed");
+    }
+
+    #[test]
+    fn a_backlog_is_dropped_again_once_the_report_gap_has_passed() {
+        let (now, mut next_tick_time, mut guard) = running_behind(Duration::from_secs(5));
+        assert_eq!(
+            guard.skip_backlog_if_overloaded(now, &mut next_tick_time, NANOS_PER_TICK),
+            100
+        );
+
+        let gap = OVERLOAD_WARNING_INTERVAL + TICK * OVERLOAD_WARNING_INTERVAL_TICKS;
+        next_tick_time = now + gap;
+        let later = next_tick_time + Duration::from_secs(5);
+        let skipped = guard.skip_backlog_if_overloaded(later, &mut next_tick_time, NANOS_PER_TICK);
+
+        assert_eq!(
+            skipped, 100,
+            "the gap has run out, so the backlog is dropped"
+        );
     }
 
     #[test]
