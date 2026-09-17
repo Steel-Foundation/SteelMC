@@ -23,7 +23,7 @@ impl Server {
     /// Logs and broadcasts a player or disguised chat message across all worlds.
     pub fn broadcast_chat(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
         // Log console
-        self.log_chat_message(outgoing, chat_type);
+        Self::log_chat_message(outgoing, chat_type);
 
         self.online_players.iter_players(|_, player| {
             outgoing.send_to_player(player, chat_type);
@@ -31,7 +31,7 @@ impl Server {
         });
     }
 
-    fn log_chat_message(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
+    fn log_chat_message(outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
         let tag = if outgoing.is_signed() {
             ""
         } else {
