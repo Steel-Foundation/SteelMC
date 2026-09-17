@@ -33,7 +33,8 @@ use uuid::Uuid;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
-    ClimbOnTopOfPowderSnowGoal, NearestAttackableTargetGoal, WaterAvoidingRandomStrollGoal,
+    ClimbOnTopOfPowderSnowGoal, LeapAtTargetGoal, NearestAttackableTargetGoal,
+    WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
@@ -41,18 +42,20 @@ use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
-    MobBase, PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
+    MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData, next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
-    FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
-    FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal, StalkPreyGoal,
+    DefendTrustedTargetGoal, FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal,
+    FoxMeleeAttackGoal, FoxPanicGoal, FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal,
+    PerchAndSearchGoal, StalkPreyGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
+const LEAP_AT_TARGET_HEIGHT: f32 = 0.4;
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
 const FOX_BABY_HEIGHT: f32 = 0.7 * BABY_SCALE;
@@ -166,19 +169,20 @@ impl FoxEntity {
             goal_selector.add_goal(5, StalkPreyGoal);
             goal_selector.add_goal(6, FoxPounceGoal);
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
-            // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
+            goal_selector.add_goal(7, FoxMeleeAttackGoal::new(1.2));
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FoxFollowParentGoal::new(1.25));
             // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
             // TODO(fox-goals): 10 FoxEatBerriesGoal (needs berry picking off a sweet
             // berry bush and off cave vines)
-            // TODO(fox-goals): 10 LeapAtTargetGoal (needs an attack target)
+            goal_selector.add_goal(10, LeapAtTargetGoal::new(LEAP_AT_TARGET_HEIGHT));
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(11, FoxSearchForItemsGoal);
             goal_selector.add_goal(12, FoxLookAtPlayerGoal::new(24.0));
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
 
-            // TODO(fox-goals): target 3 DefendTrustedTargetGoal (needs the trust/defend gate)
+            let mut target_selector = mob_base.target_selector().lock();
+            target_selector.add_goal(3, DefendTrustedTargetGoal::new());
         }
 
         let fox = Self {
@@ -323,13 +327,6 @@ impl FoxEntity {
     }
 
     #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the avoid-player goal that reads this lands separately"
-        )
-    )]
     pub(crate) fn trusts(&self, uuid: Uuid) -> bool {
         let entity_data = self.entity_data.lock();
         *entity_data.trusted_id_0.get() == Some(uuid)
@@ -876,6 +873,14 @@ impl Mob for FoxEntity {
 
     fn custom_server_ai_step(&self) {
         Animal::custom_server_ai_step_animal(self);
+    }
+
+    fn set_target(&self, target: Option<&SharedEntity>) -> bool {
+        if self.is_defending() && target.is_none() {
+            self.set_defending(false);
+        }
+        self.mob_base()
+            .set_target(target, |target| self.is_valid_target(target))
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {

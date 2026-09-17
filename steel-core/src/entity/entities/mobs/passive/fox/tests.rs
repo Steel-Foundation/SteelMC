@@ -460,6 +460,18 @@ fn a_pounce_ends_once_the_fox_has_landed() {
 }
 
 #[test]
+fn fox_melee_goal_skips_a_resting_fox() {
+    let (_world, fox) = world_with_fox("fox_melee");
+    fox.set_sleeping(true);
+
+    let mut goal = FoxMeleeAttackGoal::new(1.2);
+    assert!(
+        !goal.can_use(fox.as_ref()),
+        "a sleeping fox does not lunge at prey"
+    );
+}
+
+#[test]
 fn fox_kit_trusts_both_parents_love_cause_players() {
     init_vanilla_registry();
 
@@ -846,7 +858,7 @@ fn a_red_fox_hunts_land_prey_first_and_a_snow_fox_later() {
             .target_selector()
             .lock()
             .available_goal_priorities(),
-        vec![FOX_FAVORITE_PREY_PRIORITY],
+        vec![3, FOX_FAVORITE_PREY_PRIORITY],
         "the prey goal is registered once"
     );
 
@@ -863,7 +875,76 @@ fn a_red_fox_hunts_land_prey_first_and_a_snow_fox_later() {
             .target_selector()
             .lock()
             .available_goal_priorities(),
-        vec![FOX_OTHER_PREY_PRIORITY]
+        vec![3, FOX_OTHER_PREY_PRIORITY]
+    );
+}
+
+#[test]
+fn fox_set_target_clears_defending_when_target_is_lost() {
+    let (_world, fox) = world_with_fox("fox_defend_clear");
+    fox.set_defending(true);
+
+    let cleared = Mob::set_target(fox.as_ref(), None);
+
+    assert!(cleared);
+    assert!(
+        !fox.is_defending(),
+        "losing the target always drops isDefending, no matter which goal cleared it"
+    );
+}
+
+#[test]
+fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
+    let (world, fox) = world_with_fox("fox_defend");
+
+    let trusted = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(9.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&trusted) as SharedEntity)
+        .expect("trusted pig should attach to the loaded chunk");
+    fox.add_trusted(trusted.uuid());
+
+    let attacker: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(10.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    trusted.base().advance_tick_count();
+    LivingEntity::set_last_hurt_by_mob(trusted.as_ref(), Some(&attacker));
+    attacker
+        .as_living_entity()
+        .expect("a pig is a living entity")
+        .set_last_hurt_mob(Some(&(Arc::clone(&trusted) as SharedEntity)));
+
+    let mut goal = DefendTrustedTargetGoal::new();
+    assert!(
+        (0..100).any(|_| goal.can_use(fox.as_ref())),
+        "an untrusted attacker on a trusted entity is worth defending against"
+    );
+
+    goal.start(fox.as_ref());
+    assert!(fox.is_defending(), "starting the goal sets isDefending");
+    assert_eq!(
+        Mob::target(fox.as_ref()).map(|target| target.uuid()),
+        Some(attacker.uuid())
+    );
+}
+
+#[test]
+fn fox_registers_its_goals_at_the_vanilla_priorities() {
+    init_vanilla_registry();
+    let fox = new_fox();
+
+    let selector = fox.mob_base().goal_selector().lock();
+    assert_eq!(
+        selector.available_goal_priorities(),
+        vec![0, 0, 2, 3, 5, 6, 7, 7, 8, 10, 11, 11, 12, 13],
+        "the leap comes in at 10, between following a parent and strolling"
     );
 }
 

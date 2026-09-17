@@ -6,13 +6,13 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_math::{RAD_TO_DEG_F64, rot_lerp};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::{vanilla_blocks, vanilla_entities};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, Downcast as _};
 
 use super::FoxEntity;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, PanicGoal,
-    reduced_tick_delay,
+    BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, MeleeAttackGoal,
+    NearestAttackableTargetGoal, PanicGoal, reduced_tick_delay,
 };
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob, SharedEntity};
@@ -48,6 +48,9 @@ const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
 const STALK_CROUCH_DISTANCE_SQ: f64 = 36.0;
 const STALK_SPEED: f64 = 1.5;
+
+const DEFEND_TARGET_INTERVAL: i32 = 10;
+const DEFEND_ATTACKER_GRUDGE_TICKS: i32 = 600;
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
@@ -721,5 +724,149 @@ impl Goal for StalkPreyGoal {
         } else {
             mob.move_to_pos(target.position(), STALK_SPEED);
         }
+    }
+}
+
+/// The fox closes on and bites its target, but not while resting or crouched.
+pub(crate) struct FoxMeleeAttackGoal {
+    inner: MeleeAttackGoal,
+}
+
+impl FoxMeleeAttackGoal {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            inner: MeleeAttackGoal::new(speed_modifier, true)
+                .with_attack_sound(&sound_events::ENTITY_FOX_BITE),
+        }
+    }
+}
+
+impl Goal for FoxMeleeAttackGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        !fox.is_sitting()
+            && !fox.is_sleeping()
+            && !fox.is_crouching()
+            && !fox.is_faceplanted()
+            && self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.set_interested(false);
+        }
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
+    }
+}
+
+fn recently_aggressive(attacker: &dyn LivingEntity) -> bool {
+    attacker.last_hurt_mob().is_some()
+        && attacker.last_hurt_mob_timestamp() < attacker.tick_count() + DEFEND_ATTACKER_GRUDGE_TICKS
+}
+
+pub(crate) struct DefendTrustedTargetGoal {
+    inner: NearestAttackableTargetGoal,
+    /// The last-hurt-by timestamp this goal already acted on.
+    timestamp: i32,
+    pending_timestamp: i32,
+}
+
+impl DefendTrustedTargetGoal {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: NearestAttackableTargetGoal::new_with_interval(
+                DEFEND_TARGET_INTERVAL,
+                false,
+                false,
+                |attacker, _| recently_aggressive(attacker),
+            ),
+            timestamp: 0,
+            pending_timestamp: 0,
+        }
+    }
+}
+
+impl Goal for DefendTrustedTargetGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        let interval = self.inner.random_interval();
+        if interval > 0 && rand::random_range(0..interval) != 0 {
+            return false;
+        }
+        let Some(world) = mob.level() else {
+            return false;
+        };
+
+        let Some(trusted) = fox
+            .trusted_ids()
+            .into_iter()
+            .find_map(|uuid| world.get_entity_by_uuid(&uuid))
+        else {
+            return false;
+        };
+        let Some(trusted_living) = trusted.as_living_entity() else {
+            return false;
+        };
+
+        let timestamp = trusted_living.last_hurt_by_mob_timestamp();
+        if timestamp == self.timestamp {
+            return false;
+        }
+        let Some(attacker) = trusted_living.last_hurt_by_mob() else {
+            return false;
+        };
+        if fox.trusts(attacker.uuid()) {
+            return false;
+        }
+        if !self.inner.can_attack(mob, attacker.as_living_entity()) {
+            return false;
+        }
+
+        self.inner.set_target(Some(attacker));
+        self.pending_timestamp = timestamp;
+        true
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        let Some(fox) = as_fox(mob) else {
+            return;
+        };
+        self.timestamp = self.pending_timestamp;
+        fox.play_sound(&sound_events::ENTITY_FOX_AGGRO, 1.0, 1.0);
+        fox.set_defending(true);
+        fox.set_sleeping(false);
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
     }
 }
