@@ -1,3 +1,5 @@
+use std::mem;
+
 use steel_math::DEGREE_90;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
@@ -1643,6 +1645,46 @@ pub trait LivingEntity: Entity {
             .flatten()
     }
 
+    /// Puts `stack` in `slot` and runs [`on_equip_item`](Self::on_equip_item).
+    fn set_item_slot(&self, slot: EquipmentSlot, stack: ItemStack) {
+        let new_stack = stack.clone();
+        let mut old_stack = stack;
+        self.with_equipment_slot_mut(slot, &mut |current| {
+            mem::swap(current, &mut old_stack);
+        });
+        self.on_equip_item(slot, &old_stack, &new_stack);
+    }
+
+    /// Plays the equip sound and emits the equip game event after `slot` changes.
+    fn on_equip_item(&self, slot: EquipmentSlot, old_stack: &ItemStack, new_stack: &ItemStack) {
+        if self.is_spectator()
+            || ItemStack::is_same_item_same_components(old_stack, new_stack)
+            || self.is_first_tick()
+        {
+            return;
+        }
+
+        let equippable_slot = new_stack.get_equippable().map(|equippable| equippable.slot);
+        if equippable_slot == Some(slot)
+            && let Some(sound) = self.equip_sound(slot, new_stack)
+        {
+            self.play_sound(sound, 1.0, 1.0);
+        }
+
+        if self.does_emit_equip_event(slot) {
+            self.game_event(if equippable_slot.is_some() {
+                &vanilla_game_events::EQUIP
+            } else {
+                &vanilla_game_events::UNEQUIP
+            });
+        }
+    }
+
+    /// Whether a change to `slot` emits an equip game event.
+    fn does_emit_equip_event(&self, _slot: EquipmentSlot) -> bool {
+        true
+    }
+
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.
     fn interact_living_entity_with_equippable(
         &self,
@@ -1686,13 +1728,10 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         if let Some(mob) = self.as_mob() {
             mob.set_guaranteed_drop(slot);
         }
-        // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
 

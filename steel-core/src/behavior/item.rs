@@ -102,6 +102,8 @@ pub trait ItemBehavior: Send + Sync {
 
         match result {
             EquipmentSwapResult::Success(overflow) => {
+                // TODO(equip-hook): run `on_equip_item` for the swapped slot, so armor
+                // put on from the hand plays its equip sound and emits the equip event.
                 if !overflow.is_empty() {
                     let _ = context.player.drop_item(overflow, false, false);
                 }

@@ -716,7 +716,7 @@ pub trait Mob: LivingEntity + Leashable {
 
         let to_equip = slot.limit(&mut item_stack);
         let equipped = to_equip.copy_with_count(to_equip.count());
-        self.living_base().equipment().lock().set(slot, to_equip);
+        self.set_item_slot(slot, to_equip);
         self.set_guaranteed_drop(slot);
         self.set_persistence_required();
         equipped

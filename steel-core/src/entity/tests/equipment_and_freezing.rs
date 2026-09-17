@@ -347,3 +347,77 @@ fn update_fall_flying_stops_when_glider_gate_fails() {
 
     assert!(!entity.is_fall_flying());
 }
+
+fn equip_game_events(
+    name: &'static str,
+    first_tick: bool,
+    changes: &[(EquipmentSlot, ItemStack)],
+) -> Vec<GameEventRef> {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world(name);
+    let position = DVec3::new(0.5, 64.0, 0.5);
+    let section = SectionPos::from_block_pos(BlockPos::from(position));
+    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+    let listener = Arc::new(RecordingGameEventListener::new(position));
+    let _registration = RegisteredGameEventListener::new(&world, section, listener.clone());
+
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world);
+    entity.base().set_position_local(position);
+    entity.base().set_first_tick(first_tick);
+    for (slot, stack) in changes {
+        entity.set_item_slot(*slot, stack.clone());
+    }
+
+    let events = listener.events.lock();
+    events.iter().map(|(event, _)| *event).collect()
+}
+
+#[test]
+fn set_item_slot_emits_equip_for_equippables_and_unequip_otherwise() {
+    let events = equip_game_events(
+        "set_item_slot_equip_events",
+        false,
+        &[
+            (
+                EquipmentSlot::Head,
+                ItemStack::new(&vanilla_items::IRON_HELMET),
+            ),
+            (
+                EquipmentSlot::MainHand,
+                ItemStack::new(&vanilla_items::SWEET_BERRIES),
+            ),
+            (EquipmentSlot::MainHand, ItemStack::empty()),
+        ],
+    );
+
+    assert_eq!(
+        events,
+        vec![
+            &vanilla_game_events::EQUIP,
+            &vanilla_game_events::UNEQUIP,
+            &vanilla_game_events::UNEQUIP,
+        ]
+    );
+}
+
+#[test]
+fn set_item_slot_stays_quiet_for_the_same_item_and_on_the_first_tick() {
+    let helmet = ItemStack::new(&vanilla_items::IRON_HELMET);
+    let same_item = equip_game_events(
+        "set_item_slot_same_item",
+        false,
+        &[
+            (EquipmentSlot::Head, helmet.clone()),
+            (EquipmentSlot::Head, helmet.clone()),
+        ],
+    );
+    assert_eq!(same_item, vec![&vanilla_game_events::EQUIP]);
+
+    let first_tick = equip_game_events(
+        "set_item_slot_first_tick",
+        true,
+        &[(EquipmentSlot::Head, helmet)],
+    );
+    assert_eq!(first_tick, Vec::<GameEventRef>::new());
+}
