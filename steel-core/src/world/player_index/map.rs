@@ -7,26 +7,33 @@ use scc::HashMap;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
+use crate::entity::EntityArc;
 use crate::{entity::Entity, player::Player};
 
 struct PlayerSlot {
-    player: ArcSwap<Player>,
+    player: ArcSwap<EntityArc<Player>>,
 }
 
 impl PlayerSlot {
-    fn new(player: Arc<Player>) -> Self {
+    fn new(player: EntityArc<Player>) -> Self {
         Self {
-            player: ArcSwap::new(player),
+            player: ArcSwap::new(Arc::new(player)),
         }
     }
 
-    fn load(&self) -> Arc<Player> {
-        self.player.load_full()
+    fn load(&self) -> EntityArc<Player> {
+        self.player.load().as_ref().clone()
     }
 
-    fn replace(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
-        let previous = self.player.compare_and_swap(expected, replacement);
-        Arc::ptr_eq(&previous, expected)
+    fn replace(&self, expected: &EntityArc<Player>, replacement: EntityArc<Player>) -> bool {
+        let current = self.player.load_full();
+        if !EntityArc::ptr_eq(&current, expected) {
+            return false;
+        }
+        let previous = self
+            .player
+            .compare_and_swap(&current, Arc::new(replacement));
+        Arc::ptr_eq(&previous, &current)
     }
 }
 
@@ -72,7 +79,7 @@ impl PlayerMap {
     /// Panics if another player already has the same entity ID. Entity IDs are
     /// session-unique; accepting a duplicate would break entity lookup and
     /// packet routing invariants.
-    pub fn insert(&self, player: Arc<Player>) -> bool {
+    pub fn insert(&self, player: EntityArc<Player>) -> bool {
         let uuid = player.gameprofile.id;
         let entity_id = player.id();
         let _mutation = self.mutations.lock();
@@ -98,7 +105,7 @@ impl PlayerMap {
         clippy::unused_async_trait_impl,
         reason = "keeps the existing asynchronous PlayerMap API while mutation is synchronized internally"
     )]
-    pub async fn remove(&self, uuid: &Uuid) -> Option<Arc<Player>> {
+    pub async fn remove(&self, uuid: &Uuid) -> Option<EntityArc<Player>> {
         self.remove_sync(uuid)
     }
 
@@ -112,7 +119,7 @@ impl PlayerMap {
         clippy::unused_async_trait_impl,
         reason = "keeps the existing asynchronous PlayerMap API while mutation is synchronized internally"
     )]
-    pub async fn remove_player(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+    pub async fn remove_player(&self, player: &EntityArc<Player>) -> Option<EntityArc<Player>> {
         self.remove_player_sync(player)
     }
 
@@ -120,7 +127,7 @@ impl PlayerMap {
     ///
     /// Returns the removed player if found. Use this when async is not available
     /// (e.g., during world changes on the tick thread).
-    pub fn remove_sync(&self, uuid: &Uuid) -> Option<Arc<Player>> {
+    pub fn remove_sync(&self, uuid: &Uuid) -> Option<EntityArc<Player>> {
         let _mutation = self.mutations.lock();
         let (_, slot) = self.by_uuid.remove_sync(uuid)?;
         let player = slot.load();
@@ -132,14 +139,14 @@ impl PlayerMap {
     }
 
     /// Removes this exact player from both maps synchronously.
-    pub fn remove_player_sync(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+    pub fn remove_player_sync(&self, player: &EntityArc<Player>) -> Option<EntityArc<Player>> {
         let uuid = player.gameprofile.id;
         let _mutation = self.mutations.lock();
         let slot = self
             .by_uuid
             .read_sync(&uuid, |_, current| Arc::clone(current))?;
         let current = slot.load();
-        if !Arc::ptr_eq(&current, player) {
+        if !EntityArc::ptr_eq(&current, player) {
             return None;
         }
 
@@ -163,7 +170,11 @@ impl PlayerMap {
     /// pointer comparison and replacement form one compare-and-swap operation,
     /// so concurrent attempts using the same expected player cannot both
     /// succeed.
-    pub fn replace_player(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
+    pub fn replace_player(
+        &self,
+        expected: &EntityArc<Player>,
+        replacement: EntityArc<Player>,
+    ) -> bool {
         let uuid = expected.gameprofile.id;
         let entity_id = expected.id();
         if replacement.gameprofile.id != uuid || replacement.id() != entity_id {
@@ -192,13 +203,13 @@ impl PlayerMap {
 
     /// Gets a player by UUID.
     #[must_use]
-    pub fn get_by_uuid(&self, uuid: &Uuid) -> Option<Arc<Player>> {
+    pub fn get_by_uuid(&self, uuid: &Uuid) -> Option<EntityArc<Player>> {
         self.by_uuid.read_sync(uuid, |_, slot| slot.load())
     }
 
     /// Gets a player by entity ID.
     #[must_use]
-    pub fn get_by_entity_id(&self, entity_id: i32) -> Option<Arc<Player>> {
+    pub fn get_by_entity_id(&self, entity_id: i32) -> Option<EntityArc<Player>> {
         self.by_entity_id
             .read_sync(&entity_id, |_, slot| slot.load())
     }
@@ -208,7 +219,7 @@ impl PlayerMap {
     /// The callback returns `true` to continue iteration, `false` to stop.
     pub fn iter_players<F>(&self, mut f: F)
     where
-        F: FnMut(&Uuid, &Arc<Player>) -> bool,
+        F: FnMut(&Uuid, &EntityArc<Player>) -> bool,
     {
         let order = self.order.lock().iter().copied().collect::<Vec<_>>();
         for uuid in order {

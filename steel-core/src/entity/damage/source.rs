@@ -1,5 +1,4 @@
-use crate::player::Player;
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 use glam::DVec3;
 use steel_registry::{
@@ -7,20 +6,35 @@ use steel_registry::{
     vanilla_damage_type_tags,
 };
 
-use crate::entity::SharedEntity;
+use crate::entity::{EntityArc, EntityGeneration, SharedEntity};
+use crate::player::Player;
+
+/// Keeps identity beside its reference so history never calls entity code under its lock.
+#[derive(Clone)]
+struct SourceEntity {
+    entity: SharedEntity,
+    generation: EntityGeneration,
+}
+
+impl SourceEntity {
+    fn new(entity: SharedEntity) -> Self {
+        Self {
+            generation: entity.generation(),
+            entity,
+        }
+    }
+}
 
 /// Describes damage while retaining the exact direct and causing entity allocations.
 ///
-/// Mirrors vanilla's strong entity references: removal and respawn never rebind
-/// attribution. Store recent damage in [`super::DamageHistory`] rather than on
-/// entities, where self or mutual damage would create reference cycles.
+/// Removal and respawn never rebind attribution. Store recent sources in
+/// [`super::DamageHistory`] to avoid self/mutual ownership cycles.
 #[derive(Clone)]
 pub struct DamageSource {
     /// The damage type registry entry.
     pub damage_type: &'static DamageType,
-    causing_entity: Option<SharedEntity>,
-    direct_entity: Option<SharedEntity>,
-    /// Explicit source position, distinct from the direct entity's current position.
+    causing_entity: Option<SourceEntity>,
+    direct_entity: Option<SourceEntity>,
     source_position: Option<DVec3>,
 }
 
@@ -39,27 +53,42 @@ impl DamageSource {
     /// Adds the entity ultimately responsible for the damage.
     #[must_use]
     pub fn with_causing_entity(mut self, entity: SharedEntity) -> Self {
-        self.causing_entity = Some(entity);
+        self.causing_entity = Some(SourceEntity::new(entity));
         self
     }
 
     /// Adds the direct entity that delivered the damage.
     #[must_use]
     pub fn with_direct_entity(mut self, entity: SharedEntity) -> Self {
-        self.direct_entity = Some(entity);
+        self.direct_entity = Some(SourceEntity::new(entity));
         self
     }
 
     /// The original cause (e.g. a projectile's shooter), retained after removal.
     #[must_use]
     pub const fn causing_entity(&self) -> Option<&SharedEntity> {
-        self.causing_entity.as_ref()
+        match &self.causing_entity {
+            Some(source) => Some(&source.entity),
+            None => None,
+        }
     }
 
     /// The original direct entity (e.g. the projectile), retained after removal.
     #[must_use]
     pub const fn direct_entity(&self) -> Option<&SharedEntity> {
-        self.direct_entity.as_ref()
+        match &self.direct_entity {
+            Some(source) => Some(&source.entity),
+            None => None,
+        }
+    }
+
+    pub(super) fn retained_entities(
+        &self,
+    ) -> impl Iterator<Item = (EntityGeneration, &SharedEntity)> {
+        [self.causing_entity.as_ref(), self.direct_entity.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|source| (source.generation, &source.entity))
     }
 
     /// Vanilla `getSourcePosition`, distinct from the raw position sent in packets.
@@ -105,9 +134,9 @@ impl DamageSource {
     /// Returns vanilla `DamageSource.isDirect`.
     #[must_use]
     pub fn is_direct(&self) -> bool {
-        match (&self.causing_entity, &self.direct_entity) {
+        match (self.causing_entity(), self.direct_entity()) {
             (None, None) => true,
-            (Some(cause), Some(direct)) => Arc::ptr_eq(cause, direct),
+            (Some(cause), Some(direct)) => EntityArc::ptr_eq(cause, direct),
             _ => false,
         }
     }
@@ -125,7 +154,7 @@ impl DamageSource {
     /// Whether this damage scales with difficulty for the retained causing entity.
     #[must_use]
     pub fn scales_with_difficulty(&self) -> bool {
-        let causing_entity = self.causing_entity.as_deref();
+        let causing_entity = self.causing_entity();
         match self.damage_type.scaling {
             DamageScaling::Never => false,
             DamageScaling::WhenCausedByLivingNonPlayer => causing_entity.is_some_and(|entity| {
@@ -143,11 +172,11 @@ impl fmt::Debug for DamageSource {
             .field("damage_type", &self.damage_type)
             .field(
                 "causing_entity",
-                &self.causing_entity().map(|entity| entity.generation()),
+                &self.causing_entity.as_ref().map(|source| source.generation),
             )
             .field(
                 "direct_entity",
-                &self.direct_entity().map(|entity| entity.generation()),
+                &self.direct_entity.as_ref().map(|source| source.generation),
             )
             .field("source_position", &self.source_position)
             .finish()

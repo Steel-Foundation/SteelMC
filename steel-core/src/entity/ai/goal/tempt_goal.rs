@@ -1,5 +1,5 @@
+use crate::entity::EntityArc;
 use crate::entity::SharedEntity;
-use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::item_stack::ItemStack;
@@ -16,7 +16,7 @@ const DEFAULT_STOP_DISTANCE: f64 = 2.5;
 type TemptItemPredicate = Box<dyn Fn(&ItemStack) -> bool + Send + Sync>;
 
 pub struct TemptGoal {
-    player: Option<Arc<Player>>,
+    player: Option<EntityArc<Player>>,
     player_position: DVec3,
     player_yaw: f32,
     player_pitch: f32,

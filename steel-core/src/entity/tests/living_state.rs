@@ -1,14 +1,14 @@
 use super::*;
-use std::sync::Arc;
+use crate::entity::EntityArc;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
     init_vanilla_registry();
 
-    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
+    let entity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
     let entity_ref: SharedEntity = entity.clone();
 
-    Arc::clone(&entity_ref).tick();
+    EntityArc::clone(&entity_ref).tick();
 
     assert_eq!(entity.living_base().death_time(), 1);
 }
@@ -83,7 +83,7 @@ fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    let attacker: SharedEntity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let attacker: SharedEntity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     entity.advance_tick_count();
 
     entity.set_last_hurt_by_mob(Some(&attacker));
@@ -107,7 +107,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let target = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let target_entity: SharedEntity = target.clone();
 
     entity.set_last_hurt_mob(Some(&target_entity));

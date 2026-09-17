@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use crate::entity::EntityArc;
 use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::{Entity, Mob, SharedEntity, WeakEntity};
 use glam::DVec3;
@@ -378,7 +377,7 @@ impl LeashWrench {
 impl LeashData {
     pub(crate) fn from_entity(holder: &SharedEntity) -> Self {
         Self {
-            holder: LeashHolder::Entity(Arc::downgrade(holder)),
+            holder: LeashHolder::Entity(EntityArc::downgrade(holder)),
             angular_momentum: 0.0,
         }
     }
@@ -421,7 +420,7 @@ impl LeashData {
     }
 
     pub(super) fn set_holder(&mut self, holder: &SharedEntity) {
-        self.holder = LeashHolder::Entity(Arc::downgrade(holder));
+        self.holder = LeashHolder::Entity(EntityArc::downgrade(holder));
         self.angular_momentum = 0.0;
     }
 

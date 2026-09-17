@@ -1,5 +1,6 @@
 use super::*;
 use crate::behavior::init_behaviors;
+use crate::entity::EntityArc;
 use crate::test_support::insert_ready_full_chunk;
 use std::sync::Arc;
 use steel_utils::{ChunkPos, types::UpdateFlags};
@@ -38,7 +39,7 @@ fn pig_breeding_offspring_inherits_parent_variant() {
 fn pig_mob_ai_increments_no_action_time() {
     init_vanilla_registry();
 
-    let pig = Arc::new(PigEntity::new(
+    let pig = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
@@ -201,7 +202,7 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
     ));
 
     let initial_position = DVec3::new(8.75, 80.0, 8.5);
-    let pig = Arc::new(PigEntity::new(
+    let pig = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         initial_position,
@@ -218,7 +219,7 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
     assert_eq!(pig.base().dimensions(), vanilla_entities::PIG.dimensions);
     assert_eq!(pig.position(), initial_position);
 
-    Arc::clone(&pig).tick();
+    EntityArc::clone(&pig).tick();
 
     assert!(!pig.is_first_tick());
     assert_eq!(pig.position(), initial_position);

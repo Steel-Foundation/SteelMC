@@ -8,6 +8,7 @@ use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
+use crate::entity::EntityArc;
 use crate::entity::{Entity, EntityBase, EntityLevelCallback, InactiveEntityCallback};
 
 use super::*;
@@ -57,7 +58,7 @@ impl ManagerTestEntity {
         position: DVec3,
         entity_type: EntityTypeRef,
     ) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(id, uuid, position, entity_type.dimensions, Weak::new()),
             entity_type,
             always_ticking: false,
@@ -65,7 +66,7 @@ impl ManagerTestEntity {
     }
 
     fn shared_always_ticking(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(
                 id,
                 uuid,
@@ -93,7 +94,7 @@ impl MovingTickTestEntity {
         tick_position: DVec3,
         tick_rotation: (f32, f32),
     ) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(
                 id,
                 uuid,
@@ -118,7 +119,7 @@ impl Entity for MovingTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(self: Arc<Self>) {
+    fn tick(self: EntityArc<Self>) {
         self.default_tick();
         if let Err(error) = self.try_set_position(self.tick_position) {
             panic!("moving tick test entity failed to move during tick: {error}");
@@ -141,7 +142,7 @@ impl AddDuringTickTestEntity {
         manager: Arc<WorldEntityManager>,
         entity_to_add: SharedEntity,
     ) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(
                 id,
                 uuid,
@@ -166,7 +167,7 @@ impl Entity for AddDuringTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(self: Arc<Self>) {
+    fn tick(self: EntityArc<Self>) {
         self.default_tick();
         let Some(entity) = self.entity_to_add.lock().take() else {
             return;
@@ -186,7 +187,7 @@ struct DespawnOnCheckTestEntity {
 
 impl DespawnOnCheckTestEntity {
     fn shared(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(
                 id,
                 uuid,

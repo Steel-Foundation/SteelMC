@@ -1,7 +1,5 @@
 //! Vanilla experience command plus Steel's existing clear extension.
 
-use std::sync::Arc;
-
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -14,6 +12,7 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::entity::Entity;
+use crate::entity::EntityArc;
 use crate::player::Player;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -164,7 +163,7 @@ fn set_experience(
 
 fn send_mutation_success(
     context: &SteelCommandContext<CommandSource>,
-    players: &[Arc<Player>],
+    players: &[EntityArc<Player>],
     amount: i32,
     experience_type: ExperienceType,
     mutation: Mutation,
@@ -235,7 +234,7 @@ fn required_amount(
     context.integer("amount")
 }
 
-fn player_count_result(players: &[Arc<Player>]) -> Result<i32, CommandSyntaxError> {
+fn player_count_result(players: &[EntityArc<Player>]) -> Result<i32, CommandSyntaxError> {
     i32::try_from(players.len()).map_err(|_| {
         CommandSyntaxError::dynamic("Target player count exceeds the command result range")
     })

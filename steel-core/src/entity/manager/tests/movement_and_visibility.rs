@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityArc;
 
 #[test]
 fn committed_move_updates_spatial_index_within_the_same_section() {
@@ -8,7 +9,7 @@ fn committed_move_updates_spatial_index_within_the_same_section() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(EntityArc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -24,7 +25,7 @@ fn committed_move_updates_spatial_index_within_the_same_section() {
     assert!(manager.get_entities_in_aabb(&old_bounds).is_empty());
     let moved = manager.get_entities_in_aabb(&entity.bounding_box());
     assert_eq!(moved.len(), 1);
-    assert!(Arc::ptr_eq(&moved[0], &entity));
+    assert!(EntityArc::ptr_eq(&moved[0], &entity));
 }
 
 #[test]
@@ -56,7 +57,7 @@ fn committed_move_updates_chunk_index_for_loaded_destination() {
     );
     let new_chunk_entities = manager.live_entities_in_chunk(ChunkPos::new(1, 0));
     assert_eq!(new_chunk_entities.len(), 1);
-    assert!(Arc::ptr_eq(&entity, &new_chunk_entities[0]));
+    assert!(EntityArc::ptr_eq(&entity, &new_chunk_entities[0]));
 }
 
 #[test]
@@ -138,20 +139,20 @@ fn chunk_recovery_restores_same_entity_arc_before_final_unload() {
 
     let unload = manager.begin_chunk_unload(chunk);
     assert_eq!(unload.retained.len(), 1);
-    assert!(Arc::ptr_eq(&entity, &unload.retained[0]));
+    assert!(EntityArc::ptr_eq(&entity, &unload.retained[0]));
     assert_eq!(unload.tracking_stopped.len(), 1);
-    assert!(Arc::ptr_eq(&entity, &unload.tracking_stopped[0]));
+    assert!(EntityArc::ptr_eq(&entity, &unload.tracking_stopped[0]));
     assert!(manager.get_by_id(entity.id()).is_none());
 
     let result = manager.on_chunk_loaded(chunk);
     assert_eq!(result.restored.len(), 1);
-    assert!(Arc::ptr_eq(&entity, &result.restored[0]));
+    assert!(EntityArc::ptr_eq(&entity, &result.restored[0]));
     assert!(!result.needs_save);
 
     let Some(live_entity) = manager.get_by_id(entity.id()) else {
         panic!("recovered entity should be live again");
     };
-    assert!(Arc::ptr_eq(&entity, &live_entity));
+    assert!(EntityArc::ptr_eq(&entity, &live_entity));
     assert!(!entity.is_removed());
 }
 
@@ -165,7 +166,7 @@ fn chunk_recovery_refreshes_bounds_changed_while_inactive() {
     let old_bounds = entity.bounding_box();
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(EntityArc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -183,7 +184,7 @@ fn chunk_recovery_refreshes_bounds_changed_while_inactive() {
     assert!(manager.get_entities_in_aabb(&old_bounds).is_empty());
     let restored = manager.get_entities_in_aabb(&new_bounds);
     assert_eq!(restored.len(), 1);
-    assert!(Arc::ptr_eq(&restored[0], &entity));
+    assert!(EntityArc::ptr_eq(&restored[0], &entity));
 }
 
 #[test]
@@ -312,7 +313,7 @@ fn passenger_chunk_unload_hides_passenger_without_unloading_vehicle_tree() {
 
     assert!(unload.retained.is_empty());
     assert_eq!(unload.tracking_stopped.len(), 1);
-    assert!(Arc::ptr_eq(&passenger, &unload.tracking_stopped[0]));
+    assert!(EntityArc::ptr_eq(&passenger, &unload.tracking_stopped[0]));
     assert!(manager.get_by_id(vehicle.id()).is_some());
     assert!(manager.get_by_id(passenger.id()).is_some());
     assert!(manager.get_accessible_by_id(vehicle.id()).is_some());
@@ -327,14 +328,14 @@ fn passenger_chunk_unload_hides_passenger_without_unloading_vehicle_tree() {
 
     let saveable = manager.get_saveable_entities_for_chunk(vehicle_chunk);
     assert_eq!(saveable.len(), 1);
-    assert!(Arc::ptr_eq(&vehicle, &saveable[0]));
+    assert!(EntityArc::ptr_eq(&vehicle, &saveable[0]));
 
     let result = manager.on_chunk_loaded(passenger_chunk);
     assert!(result.restored.is_empty());
     assert!(result.tracking_started.is_empty());
     let changes = manager.update_chunk_visibility(passenger_chunk, EntityVisibility::Ticking);
     assert_eq!(changes.tracking_started.len(), 1);
-    assert!(Arc::ptr_eq(&passenger, &changes.tracking_started[0]));
+    assert!(EntityArc::ptr_eq(&passenger, &changes.tracking_started[0]));
     assert_eq!(manager.get_entities_in_aabb(&passenger_aabb).len(), 1);
 }
 
@@ -357,7 +358,7 @@ fn loaded_entity_tree_can_restore_passenger_in_hidden_chunk() {
         .expect("persisted tree should restore even when passenger chunk is hidden");
 
     assert_eq!(changes.tracking_started.len(), 1);
-    assert!(Arc::ptr_eq(&vehicle, &changes.tracking_started[0]));
+    assert!(EntityArc::ptr_eq(&vehicle, &changes.tracking_started[0]));
     assert!(manager.get_by_id(passenger.id()).is_some());
     assert!(manager.get_accessible_by_id(passenger.id()).is_none());
     assert_eq!(manager.live_entities_in_chunk(passenger_chunk).len(), 1);

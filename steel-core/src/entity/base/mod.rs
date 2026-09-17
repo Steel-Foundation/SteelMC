@@ -8,7 +8,8 @@ mod movement;
 mod persistence;
 mod relationships;
 
-use crate::entity::damage::DamageHistory;
+use crate::entity::EntityArc;
+use crate::entity::damage::DamageHistoryBinding;
 pub use fire_freeze::EntityFireFreezeState;
 pub use movement::{
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
@@ -382,8 +383,7 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
-    /// Latest history owner, retained weakly even after the entity leaves its world.
-    damage_history: SyncMutex<Weak<DamageHistory>>,
+    damage_history: DamageHistoryBinding,
     /// Generation counter for this runtime construction of the entity.
     generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
@@ -455,7 +455,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
-            damage_history: SyncMutex::new(Weak::new()),
+            damage_history: DamageHistoryBinding::default(),
             generation: EntityGeneration::next(),
             id,
             uuid,
@@ -488,19 +488,8 @@ impl EntityBase {
         base
     }
 
-    pub(crate) fn damage_history(&self) -> Option<Arc<DamageHistory>> {
-        self.damage_history.lock().upgrade()
-    }
-
-    pub(crate) fn bind_damage_history(&self, history: &Arc<DamageHistory>) {
-        *self.damage_history.lock() = Arc::downgrade(history);
-    }
-
-    /// Clears transient history at the committed target-domain restore point.
-    pub(crate) fn clear_last_damage_source(&self) {
-        if let Some(history) = self.damage_history() {
-            history.clear_victim(self.generation());
-        }
+    pub(crate) const fn damage_history(&self) -> &DamageHistoryBinding {
+        &self.damage_history
     }
 
     /// Gets the generation counter of this runtime construction of the entity.
@@ -861,8 +850,8 @@ impl EntityBase {
             return;
         }
 
-        passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
-        let passenger_ref = Arc::downgrade(passenger);
+        passenger.base().relationships.lock().vehicle = Some(EntityArc::downgrade(vehicle));
+        let passenger_ref = EntityArc::downgrade(passenger);
         let mut vehicle_relationships = vehicle.base().relationships.lock();
         let first_passenger_is_player = vehicle_relationships
             .first_passenger()

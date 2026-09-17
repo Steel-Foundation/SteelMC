@@ -80,12 +80,13 @@ impl Goal for LeapAtTargetGoal {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::{Entity, Mob, entities::PigEntity};
 
     fn pig(id: i32, position: DVec3) -> PigEntity {
@@ -93,7 +94,7 @@ mod tests {
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
-        Arc::new(pig(id, position))
+        EntityArc::new(pig(id, position))
     }
 
     fn set_target(mob: &PigEntity, target: &SharedEntity) {

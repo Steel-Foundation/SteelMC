@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityArc;
 
 impl Player {
     fn apply_post_teleport_transition(&self, post_transition: &TeleportPostTransition) {
@@ -26,7 +27,7 @@ impl Player {
     /// Applies an ordinary player transition that has already passed server world-change checks.
     /// Cross-domain player state is restored only by the domain-switch workflow.
     pub(crate) fn change_world_within_domain(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         teleport_transition: &TeleportTransition,
     ) -> bool {
         let current_world = self.get_world();

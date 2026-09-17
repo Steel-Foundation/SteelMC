@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use steel_core::entity::EntityArc;
 use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
 use steel_core::player::connection::JavaConnection;
@@ -128,7 +129,7 @@ impl JavaTcpClient {
             Arc::clone(&session),
         );
         let connection = Arc::new(PlayerConnection::Java(java_connection));
-        let player = Arc::new(Player::new(
+        let player = EntityArc::new(Player::new(
             gameprofile,
             connection,
             Arc::clone(&session),

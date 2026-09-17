@@ -6,6 +6,7 @@ use std::{
 use glam::DVec3;
 use tokio::task::JoinHandle;
 
+use crate::entity::EntityArc;
 use crate::{
     chunk::chunk_request::ChunkRequestState,
     entity::{Entity, PendingWorldChangeToken},
@@ -29,7 +30,7 @@ const DOMAIN_SPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
 pub(in crate::server) struct DomainSwitchJob {
     server: Weak<Server>,
-    player: Arc<Player>,
+    player: EntityArc<Player>,
     source_domain: String,
     source_data: Option<Arc<PersistentPlayerData>>,
     target_domain: String,
@@ -66,7 +67,7 @@ impl DomainSwitchJob {
     )]
     pub(in crate::server) fn new(
         server: &Arc<Server>,
-        player: Arc<Player>,
+        player: EntityArc<Player>,
         source_domain: String,
         source_data: PersistentPlayerData,
         target_domain: String,
@@ -76,7 +77,7 @@ impl DomainSwitchJob {
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
         let task_server = Arc::clone(server);
-        let task_player = Arc::clone(&player);
+        let task_player = EntityArc::clone(&player);
         let task_source_domain = source_domain.clone();
         let source_data = Arc::new(source_data);
         let task_source_data = Arc::clone(&source_data);
@@ -150,7 +151,7 @@ impl DomainSwitchJob {
             return JobPoll::Finished;
         };
         server.queue_relocating_player_disconnect(
-            Arc::clone(&self.player),
+            EntityArc::clone(&self.player),
             self.source_domain.clone(),
             source_data,
             self.pending_token,
@@ -247,7 +248,7 @@ impl DomainSwitchJob {
         }
 
         let restores = server.prepare_domain_restores(&self.player, &state);
-        let restore_player = Arc::clone(&self.player);
+        let restore_player = EntityArc::clone(&self.player);
         self.player
             .reset_after_detached_domain_restore(Arc::clone(&state.world), || {
                 Server::apply_domain_player_state(&restore_player, &state);
@@ -263,7 +264,7 @@ impl DomainSwitchJob {
             let target_data = PersistentPlayerData::from_player(&self.player);
             self.source_data = None;
             server.queue_relocating_player_disconnect(
-                Arc::clone(&self.player),
+                EntityArc::clone(&self.player),
                 self.target_domain.clone(),
                 Arc::new(target_data),
                 self.pending_token,
@@ -282,7 +283,7 @@ impl DomainSwitchJob {
                 self.player.gameprofile.id,
                 PlayerAdmissionState::Relocating,
             );
-            server.queue_player_disconnect(Arc::clone(&self.player));
+            server.queue_player_disconnect(EntityArc::clone(&self.player));
             return JobPoll::Finished;
         }
         if !self.player.mark_domain_switch_live(self.pending_token) {
@@ -296,7 +297,7 @@ impl DomainSwitchJob {
                 self.player.gameprofile.id,
                 PlayerAdmissionState::Relocating,
             );
-            server.queue_player_disconnect(Arc::clone(&self.player));
+            server.queue_player_disconnect(EntityArc::clone(&self.player));
             return JobPoll::Finished;
         }
         server

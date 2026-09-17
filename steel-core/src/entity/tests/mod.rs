@@ -34,6 +34,7 @@ use uuid::Uuid;
 
 use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};
 use crate::chunk_saver::ChunkStorage;
+use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{ChestMinecartEntity, PigEntity};
 use crate::entity::mob::Mob;
@@ -67,7 +68,7 @@ struct PushableTestEntity {
 
 impl PushableTestEntity {
     fn shared(id: i32, position: DVec3) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
         })
     }
@@ -499,12 +500,12 @@ struct LeashNotificationTestEntity {
 }
 
 impl LeashNotificationTestEntity {
-    fn new(id: i32) -> Arc<Self> {
+    fn new(id: i32) -> EntityArc<Self> {
         Self::with_position(id, DVec3::ZERO)
     }
 
-    fn with_position(id: i32, position: DVec3) -> Arc<Self> {
-        Arc::new(Self {
+    fn with_position(id: i32, position: DVec3) -> EntityArc<Self> {
+        EntityArc::new(Self {
             base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
             holder_notifications: SyncMutex::new(Vec::new()),
             removed_notifications: SyncMutex::new(Vec::new()),
@@ -546,7 +547,7 @@ struct MultiPassengerTestEntity {
 
 impl MultiPassengerTestEntity {
     fn shared(id: i32) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::new(
                 id,
                 DVec3::ZERO,
@@ -606,7 +607,7 @@ impl KnownMovementTestEntity {
         known_movement: DVec3,
         known_speed: DVec3,
     ) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
             known_movement,
@@ -1079,7 +1080,7 @@ impl LevelReader for EmptyTestLevel {
 
 impl ControlledVehicleTestEntity {
     fn shared(id: i32, controller: Option<SharedEntity>) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::new(
                 id,
                 DVec3::ZERO,

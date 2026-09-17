@@ -15,6 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::entity::EntityArc;
 use crate::{
     entity::{AddEntityError, ENTITIES, EntitySpawnReason, SharedEntity, next_entity_id},
     world::World,
@@ -83,7 +84,7 @@ pub(super) fn create_entity(
         let _ = mob.finalize_spawn(world, EntitySpawnReason::Command, None);
     }
 
-    match world.try_add_entity(Arc::clone(&entity)) {
+    match world.try_add_entity(EntityArc::clone(&entity)) {
         Ok(()) => Ok(entity),
         Err(AddEntityError::DuplicateUuid { .. }) => {
             Err(command_failed(&translations::COMMANDS_SUMMON_FAILED_UUID))

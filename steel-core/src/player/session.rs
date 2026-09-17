@@ -1,7 +1,5 @@
-use std::sync::{
-    Arc, Weak,
-    atomic::{AtomicU64, Ordering},
-};
+use crate::entity::{EntityArc, EntityWeak};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
@@ -28,7 +26,7 @@ pub struct PlayerSession {
 
 enum CurrentPlayerSlot {
     Unbound,
-    Bound(Weak<Player>),
+    Bound(EntityWeak<Player>),
     Closed,
 }
 
@@ -74,7 +72,7 @@ impl PlayerSession {
 
     /// Returns the player entity currently controlled by this connection.
     #[must_use]
-    pub(crate) fn current_player(&self) -> Option<Arc<Player>> {
+    pub(crate) fn current_player(&self) -> Option<EntityArc<Player>> {
         match &*self.current_player.read() {
             CurrentPlayerSlot::Bound(player) => player.upgrade(),
             CurrentPlayerSlot::Unbound | CurrentPlayerSlot::Closed => None,
@@ -83,16 +81,16 @@ impl PlayerSession {
 
     /// Returns whether `player` is the entity currently controlled by this session.
     #[must_use]
-    pub(crate) fn is_current_player(&self, player: &Arc<Player>) -> bool {
+    pub(crate) fn is_current_player(&self, player: &EntityArc<Player>) -> bool {
         self.owns(player)
             && matches!(
                 &*self.current_player.read(),
-                CurrentPlayerSlot::Bound(current) if current.ptr_eq(&Arc::downgrade(player))
+                CurrentPlayerSlot::Bound(current) if current.ptr_eq(&EntityArc::downgrade(player))
             )
     }
 
     /// Binds the first player entity created for this connection.
-    pub fn bind_initial_player(&self, player: &Arc<Player>) -> bool {
+    pub fn bind_initial_player(&self, player: &EntityArc<Player>) -> bool {
         if !self.owns(player) {
             return false;
         }
@@ -101,12 +99,16 @@ impl PlayerSession {
         if !matches!(*current, CurrentPlayerSlot::Unbound) {
             return false;
         }
-        *current = CurrentPlayerSlot::Bound(Arc::downgrade(player));
+        *current = CurrentPlayerSlot::Bound(EntityArc::downgrade(player));
         true
     }
 
     /// Rebinds the connection only if `expected` is still its active player entity.
-    pub(crate) fn replace_player(&self, expected: &Arc<Player>, replacement: &Arc<Player>) -> bool {
+    pub(crate) fn replace_player(
+        &self,
+        expected: &EntityArc<Player>,
+        replacement: &EntityArc<Player>,
+    ) -> bool {
         if !self.owns(expected) || !self.owns(replacement) {
             return false;
         }
@@ -114,16 +116,16 @@ impl PlayerSession {
         let mut current = self.current_player.write();
         if !matches!(
             &*current,
-            CurrentPlayerSlot::Bound(player) if player.ptr_eq(&Arc::downgrade(expected))
+            CurrentPlayerSlot::Bound(player) if player.ptr_eq(&EntityArc::downgrade(expected))
         ) {
             return false;
         }
-        *current = CurrentPlayerSlot::Bound(Arc::downgrade(replacement));
+        *current = CurrentPlayerSlot::Bound(EntityArc::downgrade(replacement));
         true
     }
 
     /// Clears the active player only if `expected` still owns this connection.
-    pub(crate) fn clear_player(&self, expected: &Arc<Player>) -> bool {
+    pub(crate) fn clear_player(&self, expected: &EntityArc<Player>) -> bool {
         if !self.owns(expected) {
             return false;
         }
@@ -131,7 +133,7 @@ impl PlayerSession {
         let mut current = self.current_player.write();
         if !matches!(
             &*current,
-            CurrentPlayerSlot::Bound(player) if player.ptr_eq(&Arc::downgrade(expected))
+            CurrentPlayerSlot::Bound(player) if player.ptr_eq(&EntityArc::downgrade(expected))
         ) {
             return false;
         }
@@ -148,6 +150,7 @@ impl PlayerSession {
 mod tests {
     use std::sync::Arc;
 
+    use crate::entity::EntityArc;
     use crate::{
         entity::Entity as _,
         player::{ClientInformation, Player},
@@ -156,8 +159,11 @@ mod tests {
 
     use super::PlayerSession;
 
-    fn replacement_for(player: &Arc<Player>, session: Arc<PlayerSession>) -> Arc<Player> {
-        Arc::new(Player::new(
+    fn replacement_for(
+        player: &EntityArc<Player>,
+        session: Arc<PlayerSession>,
+    ) -> EntityArc<Player> {
+        EntityArc::new(Player::new(
             player.gameprofile.clone(),
             Arc::clone(&player.connection),
             session,
@@ -189,7 +195,7 @@ mod tests {
         let Some(current) = session.current_player() else {
             panic!("replacement should remain bound to the session");
         };
-        assert!(Arc::ptr_eq(&current, &replacement));
+        assert!(EntityArc::ptr_eq(&current, &replacement));
     }
 
     #[test]

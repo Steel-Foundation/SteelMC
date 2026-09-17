@@ -153,6 +153,7 @@ impl Fallable for BrushableBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityArc;
     use crate::test_support::TestWorld;
 
     use steel_registry::blocks::BlockRef;
@@ -215,7 +216,7 @@ mod tests {
             }
             entity.set_old_position_to_current();
             entity.advance_tick_count();
-            Arc::clone(entity).tick();
+            EntityArc::clone(entity).tick();
         }
         panic!("falling brushable block did not settle within the test limit");
     }

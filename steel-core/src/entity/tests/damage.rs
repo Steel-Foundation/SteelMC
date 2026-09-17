@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityArc;
 
 #[test]
 fn generic_living_hurt_applies_health_damage() {
@@ -75,7 +76,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     assert!(!Arc::ptr_eq(attached_world, explicit_world));
 
     let attacker_id = 1_750_001;
-    let attacker = Arc::new(PigEntity::new(
+    let attacker = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         attacker_id,
         DVec3::ZERO,
@@ -91,7 +92,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     let attacker: SharedEntity = attacker;
     let registration = attached_world
         .entity_manager()
-        .add_live_entity(Arc::clone(&attacker), EntityOwnership::External);
+        .add_live_entity(EntityArc::clone(&attacker), EntityOwnership::External);
     assert!(registration.is_ok());
 
     let victim = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, attached_world);

@@ -1,4 +1,5 @@
 use crate::config::ResolvedDomainConfig;
+use crate::entity::EntityArc;
 use crate::entity::damage::DamageHistory;
 use crate::server::worlds::WorldMap;
 use std::cell::{Cell, RefCell};
@@ -65,7 +66,7 @@ impl TestEntity {
         world: Weak<World>,
         entity_type: EntityTypeRef,
     ) -> SharedEntity {
-        Arc::new(Self::new(id, position, world, entity_type))
+        EntityArc::new(Self::new(id, position, world, entity_type))
     }
 }
 

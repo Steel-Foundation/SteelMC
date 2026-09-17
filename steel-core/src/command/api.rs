@@ -28,6 +28,7 @@ use super::{
     },
 };
 use crate::command::brigadier::ArgumentSuggestionContext;
+use crate::entity::EntityArc;
 use crate::{
     entity::SharedEntity,
     permission::{PermissionExpr, PermissionState},
@@ -379,12 +380,12 @@ impl<'context> CommandContext<'context> {
     }
 
     /// Resolves a player selector and requires at least one result.
-    pub fn players(self, name: &str) -> Result<Vec<Arc<Player>>, CommandError> {
+    pub fn players(self, name: &str) -> Result<Vec<EntityArc<Player>>, CommandError> {
         self.inner.players(name).map_err(CommandError::from)
     }
 
     /// Resolves a single player selector.
-    pub fn player(self, name: &str) -> Result<Arc<Player>, CommandError> {
+    pub fn player(self, name: &str) -> Result<EntityArc<Player>, CommandError> {
         self.inner.player(name).map_err(CommandError::from)
     }
 
@@ -408,7 +409,7 @@ pub struct CommandSource<'source> {
 impl<'source> CommandSource<'source> {
     /// Returns the current execution player, if any.
     #[must_use]
-    pub const fn player(self) -> Option<&'source Arc<Player>> {
+    pub const fn player(self) -> Option<&'source EntityArc<Player>> {
         self.inner.player()
     }
 

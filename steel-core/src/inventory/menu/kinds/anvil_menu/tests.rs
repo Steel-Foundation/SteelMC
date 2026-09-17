@@ -1,3 +1,4 @@
+use crate::entity::EntityArc;
 use crate::test_support::TestWorld;
 use std::sync::Arc;
 
@@ -31,11 +32,11 @@ use steel_utils::{
     types::{GameType, UpdateFlags},
 };
 
-fn test_player(world: Arc<World>) -> Arc<Player> {
+fn test_player(world: Arc<World>) -> EntityArc<Player> {
     TestPlayerBuilder::new(world, "AnvilTester", 1).build()
 }
 
-fn test_anvil(key: &'static str) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
+fn test_anvil(key: &'static str) -> (TestWorld, EntityArc<Player>, BlockPos, Menu) {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);

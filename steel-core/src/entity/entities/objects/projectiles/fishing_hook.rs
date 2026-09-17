@@ -1,3 +1,4 @@
+use crate::entity::EntityArc;
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::projectile::triangle_random;
 use crate::entity::{
@@ -120,7 +121,12 @@ impl FishingHookEntity {
     }
 
     /// Mimics Java's `FishingHook(Player, Level, int, int)` constructor. (But we don't need `level` here)
-    pub fn shoot_from_player(self: &Arc<Self>, player: &Arc<Player>, luck: i32, lure_speed: i32) {
+    pub fn shoot_from_player(
+        self: &EntityArc<Self>,
+        player: &EntityArc<Player>,
+        luck: i32,
+        lure_speed: i32,
+    ) {
         const MAGIC_OFFSET: f64 = 0.010_336_5;
 
         {
@@ -189,7 +195,7 @@ impl FishingHookEntity {
     }
 
     /// Sets the projectile owner and mirrors vanilla's `Player.fishing` update.
-    pub(crate) fn set_owner(self: &Arc<Self>, owner: &SharedEntity) {
+    pub(crate) fn set_owner(self: &EntityArc<Self>, owner: &SharedEntity) {
         self.set_owner_entity(Some(owner));
         if let Some(player) = owner.as_player() {
             player.set_fishing_hook(self);
@@ -223,9 +229,9 @@ impl FishingHookEntity {
     }
 
     /// Determines if the fishing hook should hit a target or be deflected.
-    fn check_collision(self: &Arc<Self>) {
+    fn check_collision(self: &EntityArc<Self>) {
         if let Some(hit_result) = self.get_hit_result_on_move_vector() {
-            Arc::clone(self).hit_target_or_deflect_self(&hit_result);
+            EntityArc::clone(self).hit_target_or_deflect_self(&hit_result);
         }
     }
 
@@ -567,9 +573,9 @@ impl FishingHookEntity {
 
                         orb.set_value(rand::random_range(1..=6));
 
-                        let entity: SharedEntity = Arc::new(orb);
+                        let entity: SharedEntity = EntityArc::new(orb);
 
-                        if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
+                        if let Err(error) = world.try_add_entity(EntityArc::clone(&entity)) {
                             log::error!("Failed to spawn experience orb: {error}");
                         }
 
@@ -588,7 +594,7 @@ impl FishingHookEntity {
     }
 
     /// Modifies the hooked entities velocity in order to simulate a pulling motion.
-    fn pull_entity(&self, entity: &Arc<dyn Entity>) {
+    fn pull_entity(&self, entity: &EntityArc<dyn Entity>) {
         if let Some(owner) = self.get_owner() {
             let base = owner.base();
             let delta = DVec3::new(
@@ -613,7 +619,7 @@ impl FishingHookEntity {
     }
 
     /// Clears owner info if `hook` is `None` and stores it, if it is `Some`
-    fn update_owner_info(&self, hook: Option<&Arc<FishingHookEntity>>) {
+    fn update_owner_info(&self, hook: Option<&EntityArc<FishingHookEntity>>) {
         if let Some(owner) = self.get_owner()
             && let Some(player) = owner.as_player()
         {
@@ -630,7 +636,7 @@ impl FishingHookEntity {
         &self,
         items: Vec<ItemStack>,
         world: Arc<World>,
-        owner: Arc<dyn Entity>,
+        owner: EntityArc<dyn Entity>,
     ) {
         for item_stack in items {
             const SPEED: f64 = 0.1;
@@ -669,7 +675,7 @@ impl FishingHookEntity {
 
     /// Bobber specific ticking logic. We return a `bool` here, so we can return early inside `tick`.
     fn tick_bobber(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         bobber_state: BobberState,
         world: &World,
         is_in_water: bool,
@@ -842,7 +848,7 @@ impl Entity for FishingHookEntity {
     }
 
     /// Responsible for all state-changes.
-    fn tick(self: Arc<Self>) {
+    fn tick(self: EntityArc<Self>) {
         {
             let mut synchronized_random = self.synchronized_random.lock();
             let least_significant_bits = self.uuid().as_u64_pair().1;
@@ -893,7 +899,8 @@ impl Entity for FishingHookEntity {
                             .set_velocity(self.base.velocity().add(DVec3::new(0.0, -0.03, 0.0)));
                     }
 
-                    Arc::clone(&self).move_entity(MoverType::SelfMovement, self.base.velocity());
+                    EntityArc::clone(&self)
+                        .move_entity(MoverType::SelfMovement, self.base.velocity());
                     self.apply_effects_from_blocks();
                     self.update_rotation();
 
@@ -940,8 +947,8 @@ impl Projectile for FishingHookEntity {
     }
 
     /// Stores the hit entity inside `hooked_in`.
-    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
-        self.set_hooked_entity(Some(Arc::clone(entity)));
+    fn on_hit_entity(self: EntityArc<Self>, entity: &SharedEntity, _location: DVec3) {
+        self.set_hooked_entity(Some(EntityArc::clone(entity)));
     }
 }
 
@@ -972,10 +979,11 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
+    use crate::entity::EntityArc;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
-    fn test_hook(world: &Arc<World>, id: i32) -> Arc<FishingHookEntity> {
-        Arc::new(FishingHookEntity::new(
+    fn test_hook(world: &Arc<World>, id: i32) -> EntityArc<FishingHookEntity> {
+        EntityArc::new(FishingHookEntity::new(
             &vanilla_entities::FISHING_BOBBER,
             id,
             DVec3::ZERO,
@@ -998,7 +1006,7 @@ mod tests {
     fn removal_only_clears_the_matching_active_hook() {
         let world = fresh_test_world("fishing_hook_owner_lifecycle");
         let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(2), 40).build();
-        let player_owner = Arc::clone(&player);
+        let player_owner = EntityArc::clone(&player);
         let owner: SharedEntity = player_owner;
         let first = test_hook(&world, 41);
         let second = test_hook(&world, 42);
@@ -1007,7 +1015,7 @@ mod tests {
         assert!(
             player
                 .fishing_hook()
-                .is_some_and(|active| Arc::ptr_eq(&active, &first))
+                .is_some_and(|active| EntityArc::ptr_eq(&active, &first))
         );
 
         second.set_owner(&owner);
@@ -1015,7 +1023,7 @@ mod tests {
         assert!(
             player
                 .fishing_hook()
-                .is_some_and(|active| Arc::ptr_eq(&active, &second))
+                .is_some_and(|active| EntityArc::ptr_eq(&active, &second))
         );
 
         second.set_removed(RemovalReason::Discarded);
@@ -1030,7 +1038,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = Arc::clone(&player);
+        let player_owner = EntityArc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = test_hook(&world, 51);
         hook.set_owner(&owner);
@@ -1105,7 +1113,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = Arc::clone(&player);
+        let player_owner = EntityArc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = test_hook(&world, 201);
         hook.set_owner(&owner);
@@ -1116,7 +1124,7 @@ mod tests {
         hook.try_set_position(player.position())
             .expect("should position hook");
 
-        Arc::clone(&hook).tick();
+        EntityArc::clone(&hook).tick();
 
         let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
         assert!(
@@ -1151,7 +1159,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = Arc::clone(&player);
+        let player_owner = EntityArc::clone(&player);
         let owner: SharedEntity = player_owner;
 
         let hook = test_hook(&world, 301);
@@ -1161,7 +1169,7 @@ mod tests {
         hook.set_velocity(DVec3::ZERO);
         hook.hook_state.lock().bobber_state = BobberState::Bobbing;
 
-        Arc::clone(&hook).tick();
+        EntityArc::clone(&hook).tick();
 
         assert!(
             hook.velocity().y > 0.0,

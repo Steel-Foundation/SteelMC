@@ -1,3 +1,4 @@
+use crate::entity::EntityArc;
 use crate::test_support::TestWorld;
 use std::sync::Arc;
 
@@ -66,7 +67,7 @@ impl Slot for SingleItemSlot {
 
 struct PartialSwapFixture {
     world: TestWorld,
-    player: Arc<Player>,
+    player: EntityArc<Player>,
     target: Shared<SimpleContainer>,
 }
 

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::entity::Entity;
+use crate::entity::EntityArc;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
@@ -188,7 +189,7 @@ impl ItemBehavior for EnderEyeItem {
 
         eye.init_target_pos(target_pos);
 
-        let entity: SharedEntity = Arc::new(eye);
+        let entity: SharedEntity = EntityArc::new(eye);
         if let Err(error) = world.try_add_entity(entity) {
             log::debug!("failed to spawn eye of ender: {error}");
             return InteractionResult::Consume;

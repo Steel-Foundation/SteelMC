@@ -1,3 +1,4 @@
+use crate::entity::EntityArc;
 use std::thread;
 
 use super::*;
@@ -29,7 +30,7 @@ fn aabb_matching_query_filters_accessible_entities() {
     let result = manager.get_entities_in_aabb_matching(&aabb, |entity| entity.id() == 2);
 
     assert_eq!(result.len(), 1);
-    assert!(Arc::ptr_eq(&result[0], &second));
+    assert!(EntityArc::ptr_eq(&result[0], &second));
 }
 
 #[test]
@@ -55,7 +56,7 @@ fn visibility_transitions_separate_tracking_and_ticking() {
 
     let changes = manager.update_chunk_visibility(chunk, EntityVisibility::Tracked);
     assert_eq!(changes.tracking_started.len(), 1);
-    assert!(Arc::ptr_eq(&changes.tracking_started[0], &entity));
+    assert!(EntityArc::ptr_eq(&changes.tracking_started[0], &entity));
     assert!(changes.ticking_started.is_empty());
     manager.tick_entities(0, true);
     assert_eq!(entity.tick_count(), 0);
@@ -63,20 +64,20 @@ fn visibility_transitions_separate_tracking_and_ticking() {
     let changes = manager.update_chunk_visibility(chunk, EntityVisibility::Ticking);
     assert!(changes.tracking_started.is_empty());
     assert_eq!(changes.ticking_started.len(), 1);
-    assert!(Arc::ptr_eq(&changes.ticking_started[0], &entity));
+    assert!(EntityArc::ptr_eq(&changes.ticking_started[0], &entity));
     manager.tick_entities(1, true);
     assert_eq!(entity.tick_count(), 1);
 
     let changes = manager.update_chunk_visibility(chunk, EntityVisibility::Tracked);
     assert!(changes.tracking_stopped.is_empty());
     assert_eq!(changes.ticking_stopped.len(), 1);
-    assert!(Arc::ptr_eq(&changes.ticking_stopped[0], &entity));
+    assert!(EntityArc::ptr_eq(&changes.ticking_stopped[0], &entity));
     manager.tick_entities(2, true);
     assert_eq!(entity.tick_count(), 1);
 
     let changes = manager.update_chunk_visibility(chunk, EntityVisibility::Hidden);
     assert_eq!(changes.tracking_stopped.len(), 1);
-    assert!(Arc::ptr_eq(&changes.tracking_stopped[0], &entity));
+    assert!(EntityArc::ptr_eq(&changes.tracking_stopped[0], &entity));
     assert!(changes.ticking_stopped.is_empty());
     assert!(
         manager
@@ -164,7 +165,7 @@ fn nearest_aabb_matching_query_returns_closest_match() {
     let Some(result) = result else {
         panic!("nearest matching entity should be found");
     };
-    assert!(Arc::ptr_eq(&result, &near_match));
+    assert!(EntityArc::ptr_eq(&result, &near_match));
 }
 
 #[test]
@@ -178,7 +179,11 @@ fn accessible_entities_keep_tracking_start_order() {
     let first = entity(30, 30, DVec3::new(1.0, 80.0, 1.0));
     let second = entity(10, 10, DVec3::new(17.0, 64.0, 1.0));
     let third = entity(20, 20, DVec3::new(2.0, 64.0, 1.0));
-    for entity in [Arc::clone(&first), Arc::clone(&second), Arc::clone(&third)] {
+    for entity in [
+        EntityArc::clone(&first),
+        EntityArc::clone(&second),
+        EntityArc::clone(&third),
+    ] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -217,8 +222,8 @@ fn aabb_queries_use_vanilla_section_order_then_section_insertion_order() {
     let second_same_section = entity(3, 3, DVec3::new(2.0, 64.0, 1.0));
     for entity in [
         later_section,
-        Arc::clone(&first_same_section),
-        Arc::clone(&second_same_section),
+        EntityArc::clone(&first_same_section),
+        EntityArc::clone(&second_same_section),
     ] {
         assert!(
             manager
@@ -243,7 +248,7 @@ fn spatial_cell_reentry_preserves_section_insertion_order() {
 
     let first = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let second = entity(2, 2, DVec3::new(1.5, 64.0, 1.0));
-    for entity in [Arc::clone(&first), second] {
+    for entity in [EntityArc::clone(&first), second] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -271,7 +276,7 @@ fn spatial_query_candidates_skip_distant_entities_in_the_same_section() {
 
     let nearby = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let distant = entity(2, 2, DVec3::new(13.0, 64.0, 1.0));
-    for entity in [Arc::clone(&nearby), distant] {
+    for entity in [EntityArc::clone(&nearby), distant] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -300,7 +305,7 @@ fn bounding_box_change_updates_spatial_index_without_position_change() {
     let old_bounds = entity.bounding_box();
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(EntityArc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -311,7 +316,7 @@ fn bounding_box_change_updates_spatial_index_without_position_change() {
     assert!(manager.get_entities_in_aabb(&old_bounds).is_empty());
     let moved_bounds = manager.get_entities_in_aabb(&new_bounds);
     assert_eq!(moved_bounds.len(), 1);
-    assert!(Arc::ptr_eq(&moved_bounds[0], &entity));
+    assert!(EntityArc::ptr_eq(&moved_bounds[0], &entity));
 }
 
 #[test]
@@ -322,7 +327,7 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(EntityArc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -338,7 +343,7 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
 
     let stale_bounds = WorldAabb::new(4.0, 64.0, 0.0, 5.0, 65.0, 1.0);
     let current_bounds = WorldAabb::new(8.0, 64.0, 0.0, 9.0, 65.0, 1.0);
-    let first_entity = Arc::clone(&entity);
+    let first_entity = EntityArc::clone(&entity);
     let first_update = thread::spawn(move || {
         first_entity.base().set_bounding_box(stale_bounds);
     });
@@ -351,5 +356,5 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     assert!(manager.get_entities_in_aabb(&stale_bounds).is_empty());
     let current = manager.get_entities_in_aabb(&current_bounds);
     assert_eq!(current.len(), 1);
-    assert!(Arc::ptr_eq(&current[0], &entity));
+    assert!(EntityArc::ptr_eq(&current[0], &entity));
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityArc;
 
 #[test]
 fn default_tick_runs_vanilla_entity_base_tick() {
@@ -123,7 +124,8 @@ fn passenger_transition_position_preserves_vehicle_offset() {
 
 #[test]
 fn dimension_transition_persistence_keeps_non_chunk_serializable_entities() {
-    let entity: SharedEntity = Arc::new(TypedTestEntity::new(1, &vanilla_entities::FISHING_BOBBER));
+    let entity: SharedEntity =
+        EntityArc::new(TypedTestEntity::new(1, &vanilla_entities::FISHING_BOBBER));
     entity
         .base()
         .set_position_local(DVec3::new(12.25, 64.0, -8.75));
@@ -154,7 +156,7 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
     init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-    let holder: SharedEntity = Arc::new(PigEntity::new(
+    let holder: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::new(1.0, 0.0, 0.0),

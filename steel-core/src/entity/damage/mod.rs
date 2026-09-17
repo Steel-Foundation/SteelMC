@@ -4,6 +4,7 @@ mod history;
 mod source;
 
 pub use history::DamageHistory;
+pub(crate) use history::DamageHistoryBinding;
 pub use source::DamageSource;
 
 #[cfg(test)]

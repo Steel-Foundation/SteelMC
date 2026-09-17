@@ -5,6 +5,7 @@ use steel_protocol::packets::game::{CGameEvent, GameEventType};
 use steel_registry::{vanilla_custom_stats, vanilla_entities};
 use steel_utils::ChunkPos;
 
+use crate::entity::EntityArc;
 use crate::{
     entity::{
         AddEntityError, Entity, EntityOwnership, LivingEntity, NullEntityCallback,
@@ -26,7 +27,7 @@ impl World {
             .is_some_and(|registered| ptr::eq(registered.as_ref(), player))
     }
 
-    fn loaded_world_memberships(player: &Arc<Player>) -> Vec<Arc<World>> {
+    fn loaded_world_memberships(player: &EntityArc<Player>) -> Vec<Arc<World>> {
         player.server.upgrade().map_or_else(Vec::new, |server| {
             server
                 .worlds
@@ -38,7 +39,7 @@ impl World {
     }
 
     fn reject_duplicate_player_membership(
-        player: &Arc<Player>,
+        player: &EntityArc<Player>,
         target_world: &Arc<World>,
         operation: &str,
     ) -> bool {
@@ -68,7 +69,7 @@ impl World {
         true
     }
 
-    fn take_player_for_removal(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+    fn take_player_for_removal(&self, player: &EntityArc<Player>) -> Option<EntityArc<Player>> {
         if !self.contains_player(player) {
             return None;
         }
@@ -76,16 +77,16 @@ impl World {
         self.players.remove_player_sync(player)
     }
 
-    fn attach_player_entity_callback(self: &Arc<Self>, player: &Arc<Player>) {
+    fn attach_player_entity_callback(self: &Arc<Self>, player: &EntityArc<Player>) {
         let callback = Arc::new(PlayerEntityCallback::new(player.id(), Arc::downgrade(self)));
         player.set_level_callback(callback);
     }
 
     fn try_register_player_entity(
         self: &Arc<Self>,
-        player: &Arc<Player>,
+        player: &EntityArc<Player>,
     ) -> Result<(), AddEntityError> {
-        let entity: SharedEntity = Arc::<Player>::clone(player);
+        let entity: SharedEntity = EntityArc::<Player>::clone(player);
         let lifecycle = self
             .entity_manager()
             .add_live_entity(entity, EntityOwnership::External)?;
@@ -94,7 +95,7 @@ impl World {
         Ok(())
     }
 
-    fn register_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
+    fn register_player_entity(self: &Arc<Self>, player: &EntityArc<Player>) {
         if let Err(error) = self.try_register_player_entity(player) {
             panic!("failed to register player entity: {error}");
         }
@@ -142,7 +143,7 @@ impl World {
         player.set_level_callback(Arc::new(NullEntityCallback));
     }
 
-    pub(crate) fn register_respawned_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
+    pub(crate) fn register_respawned_player_entity(self: &Arc<Self>, player: &EntityArc<Player>) {
         self.register_player_entity(player);
         self.chunk_map.update_player_status(player);
     }
@@ -153,14 +154,14 @@ impl World {
     /// and End-credits respawns insert into an empty target-world player map.
     pub(crate) fn install_respawned_player(
         self: &Arc<Self>,
-        player: Arc<Player>,
-        expected_old_player: Option<&Arc<Player>>,
+        player: EntityArc<Player>,
+        expected_old_player: Option<&EntityArc<Player>>,
     ) -> bool {
         let installed = if let Some(expected_old_player) = expected_old_player {
             self.players
-                .replace_player(expected_old_player, Arc::clone(&player))
+                .replace_player(expected_old_player, EntityArc::clone(&player))
         } else {
-            self.players.insert(Arc::clone(&player))
+            self.players.insert(EntityArc::clone(&player))
         };
         if !installed {
             return false;
@@ -169,7 +170,7 @@ impl World {
         if let Err(error) = self.try_register_player_entity(&player) {
             let rolled_back = if let Some(expected_old_player) = expected_old_player {
                 self.players
-                    .replace_player(&player, Arc::clone(expected_old_player))
+                    .replace_player(&player, EntityArc::clone(expected_old_player))
             } else {
                 self.players.remove_player_sync(&player).is_some()
             };
@@ -197,7 +198,7 @@ impl World {
         true
     }
 
-    pub(crate) fn add_respawned_player(self: &Arc<Self>, player: Arc<Player>) -> bool {
+    pub(crate) fn add_respawned_player(self: &Arc<Self>, player: EntityArc<Player>) -> bool {
         self.install_respawned_player(player, None)
     }
 
@@ -206,8 +207,8 @@ impl World {
     /// Persistence happens asynchronously after the server's pre-tick phase completes.
     pub(crate) fn detach_player_for_disconnect(
         self: &Arc<Self>,
-        player: Arc<Player>,
-    ) -> (Arc<Player>, String, PersistentPlayerData) {
+        player: EntityArc<Player>,
+    ) -> (EntityArc<Player>, String, PersistentPlayerData) {
         assert_eq!(
             player.remove_all_menus(),
             MenuRemovalStatus::Complete,
@@ -244,7 +245,7 @@ impl World {
     ///
     /// Unlike `remove_player`, this is synchronous and skips player data saving and tab list
     /// removal — the player stays in the global tab list since they are only switching worlds.
-    pub(crate) fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
+    pub(crate) fn remove_player_for_world_change(self: &Arc<Self>, player: &EntityArc<Player>) {
         let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
@@ -263,7 +264,7 @@ impl World {
     /// This does not award `LEAVE_GAME` or snapshot persistent player data.
     pub(crate) fn detach_player_for_respawn(
         self: &Arc<Self>,
-        player: &Arc<Player>,
+        player: &EntityArc<Player>,
         retain_player_map_entry: bool,
     ) -> bool {
         if !self.contains_player(player) {
@@ -274,7 +275,7 @@ impl World {
         }
 
         let detached_player = if retain_player_map_entry {
-            Arc::clone(player)
+            EntityArc::clone(player)
         } else {
             let Some(detached_player) = self.players.remove_player_sync(player) else {
                 return false;
@@ -295,14 +296,14 @@ impl World {
     ///
     /// A stale cleanup request cannot detach a newer player incarnation with the
     /// same UUID and numeric entity ID.
-    pub(crate) fn remove_respawned_player(self: &Arc<Self>, player: &Arc<Player>) -> bool {
+    pub(crate) fn remove_respawned_player(self: &Arc<Self>, player: &EntityArc<Player>) -> bool {
         self.detach_player_for_respawn(player, false)
     }
 
     /// Detaches a player for a domain switch and returns its persistence snapshot.
     pub(crate) fn detach_player_for_domain_switch(
         self: &Arc<Self>,
-        player: &Arc<Player>,
+        player: &EntityArc<Player>,
     ) -> Option<(PersistentPlayerData, DomainResidenceToken)> {
         let player = self.take_player_for_removal(player)?;
 
@@ -324,7 +325,11 @@ impl World {
     /// players. On `WorldChange`, this is skipped — the player already exists in all
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
     #[must_use]
-    pub(crate) fn add_player(self: &Arc<Self>, player: Arc<Player>, _reason: ResetReason) -> bool {
+    pub(crate) fn add_player(
+        self: &Arc<Self>,
+        player: EntityArc<Player>,
+        _reason: ResetReason,
+    ) -> bool {
         if Self::reject_duplicate_player_membership(&player, self, "world change") {
             return false;
         }

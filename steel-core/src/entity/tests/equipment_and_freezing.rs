@@ -1,6 +1,6 @@
 use super::*;
 use crate::behavior::blocks::PowderSnowBlock;
-use std::sync::Arc;
+use crate::entity::EntityArc;
 
 #[test]
 fn can_glide_using_matches_vanilla_component_gate() {
@@ -194,7 +194,7 @@ fn living_freezing_damages_fully_frozen_entities_on_frequency() {
 fn default_ai_step_ticks_freezing_after_travel() {
     init_vanilla_registry();
     init_behaviors();
-    let entity = Arc::new(LivingFluidTestEntity::new_in_world(
+    let entity = EntityArc::new(LivingFluidTestEntity::new_in_world(
         0.0,
         0.0,
         true,

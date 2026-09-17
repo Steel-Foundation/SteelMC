@@ -128,12 +128,13 @@ fn no_creative_or_spectator(target: &dyn LivingEntity) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::{Mob, entities::PigEntity};
 
     #[test]
@@ -164,14 +165,14 @@ mod tests {
     fn avoid_entity_goal_sprints_when_close_to_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = Arc::new(PigEntity::new(
+        let mob = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
         let mob_entity: SharedEntity = mob.clone();
-        goal.to_avoid = Some(Arc::new(PigEntity::new(
+        goal.to_avoid = Some(EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(2.0, 0.0, 0.0),
@@ -194,14 +195,14 @@ mod tests {
     fn avoid_entity_goal_walks_when_far_from_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = Arc::new(PigEntity::new(
+        let mob = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
         let mob_entity: SharedEntity = mob.clone();
-        goal.to_avoid = Some(Arc::new(PigEntity::new(
+        goal.to_avoid = Some(EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(8.0, 0.0, 0.0),

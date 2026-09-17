@@ -7,9 +7,9 @@ use super::{
     World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
+use crate::entity::EntityArc;
 use crate::player::food_data::food_constants;
 use std::ops::Add;
-use std::sync::Arc;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
 
@@ -38,7 +38,7 @@ impl Player {
     }
 
     fn damage_source_for_attack_type(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         damage_type: &'static DamageType,
     ) -> DamageSource {
         DamageSource::environment(damage_type)
@@ -46,7 +46,7 @@ impl Player {
             .with_direct_entity(self.clone())
     }
 
-    fn attack_damage_source(self: &Arc<Self>, attacking_item: &ItemStack) -> DamageSource {
+    fn attack_damage_source(self: &EntityArc<Self>, attacking_item: &ItemStack) -> DamageSource {
         if let Some(damage_type) = attacking_item.get_damage_type() {
             return self.damage_source_for_attack_type(damage_type);
         }
@@ -283,7 +283,7 @@ impl Player {
     }
 
     pub(super) fn piercing_attack(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         item_stack: &ItemStack,
         piercing_weapon: &PiercingWeapon,
     ) {
@@ -313,7 +313,7 @@ impl Player {
     }
 
     fn stab_attack(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         target: &SharedEntity,
         base_damage: f32,
         deals_damage: bool,
@@ -387,7 +387,7 @@ impl Player {
     ///
     /// Returns `true` if the target accepted damage.
     #[must_use]
-    pub fn attack(self: &Arc<Self>, target: &SharedEntity) -> bool {
+    pub fn attack(self: &EntityArc<Self>, target: &SharedEntity) -> bool {
         let entity = target.as_ref();
         if self.cannot_attack(entity) {
             return false;
@@ -577,7 +577,7 @@ impl Player {
     }
 
     /// Handles a client request to attack an entity.
-    pub fn handle_attack(self: &Arc<Self>, packet: SAttack) {
+    pub fn handle_attack(self: &EntityArc<Self>, packet: SAttack) {
         if !self.has_client_loaded() || self.is_spectator() {
             return;
         }

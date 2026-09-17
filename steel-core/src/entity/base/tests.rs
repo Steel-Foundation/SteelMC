@@ -16,6 +16,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
+use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
@@ -47,13 +48,13 @@ fn assert_f64_close(left: f64, right: f64) {
 }
 
 fn link_vehicle_and_passenger(vehicle: &SharedEntity, passenger: &SharedEntity) {
-    passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
+    passenger.base().relationships.lock().vehicle = Some(EntityArc::downgrade(vehicle));
     vehicle
         .base()
         .relationships
         .lock()
         .passengers
-        .push(Arc::downgrade(passenger));
+        .push(EntityArc::downgrade(passenger));
 }
 
 struct FallDamageTestEntity {
@@ -62,8 +63,8 @@ struct FallDamageTestEntity {
 }
 
 impl FallDamageTestEntity {
-    fn new(id: i32, uuid: Uuid) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(id: i32, uuid: Uuid) -> EntityArc<Self> {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(
                 id,
                 uuid,
@@ -99,7 +100,7 @@ impl Entity for FallDamageTestEntity {
     }
 
     fn cause_fall_damage(
-        self: Arc<Self>,
+        self: EntityArc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         _source: &DamageSource,

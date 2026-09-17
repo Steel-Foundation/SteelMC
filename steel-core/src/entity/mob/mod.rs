@@ -2,6 +2,7 @@
 
 mod pathfinder;
 
+use crate::entity::EntityArc;
 use crate::entity::leash::{LeashData, Leashable};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
@@ -252,7 +253,7 @@ impl MobBase {
             return false;
         }
 
-        *self.target.lock() = Some(Arc::downgrade(target));
+        *self.target.lock() = Some(EntityArc::downgrade(target));
         true
     }
 

@@ -1022,6 +1022,7 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::{
         EntityBase, LivingEntity, LivingEntityBase, entities::FireworkRocketEntity,
     };
@@ -1350,8 +1351,8 @@ mod tests {
     fn post_attack_ignite_applies_to_direct_melee_victim() {
         init_vanilla_registry();
 
-        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
-        let victim = Arc::new(TestLivingEntity::new(2, &vanilla_entities::ZOMBIE));
+        let attacker = EntityArc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let victim = EntityArc::new(TestLivingEntity::new(2, &vanilla_entities::ZOMBIE));
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("fire_aspect"),
@@ -1393,8 +1394,8 @@ mod tests {
     fn post_attack_effects_match_enchantment_slot() {
         init_vanilla_registry();
 
-        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
-        let victim = Arc::new(TestLivingEntity::new(2, &vanilla_entities::ZOMBIE));
+        let attacker = EntityArc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let victim = EntityArc::new(TestLivingEntity::new(2, &vanilla_entities::ZOMBIE));
         let mut stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("fire_aspect"),
@@ -1429,8 +1430,8 @@ mod tests {
     fn post_attack_change_item_damage_calls_equipped_break_hook() {
         init_vanilla_registry();
 
-        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::ZOMBIE));
-        let victim = Arc::new(TestLivingEntity::new(2, &vanilla_entities::PLAYER));
+        let attacker = EntityArc::new(TestLivingEntity::new(1, &vanilla_entities::ZOMBIE));
+        let victim = EntityArc::new(TestLivingEntity::new(2, &vanilla_entities::PLAYER));
         let mut chestplate = enchanted_item(
             &vanilla_items::DIAMOND_CHESTPLATE,
             Identifier::vanilla_static("thorns"),
@@ -1471,9 +1472,9 @@ mod tests {
     fn post_attack_ignite_skips_indirect_damage_source() {
         init_vanilla_registry();
 
-        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
-        let direct_entity = Arc::new(TestLivingEntity::new(2, &vanilla_entities::PLAYER));
-        let victim = Arc::new(TestLivingEntity::new(3, &vanilla_entities::ZOMBIE));
+        let attacker = EntityArc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let direct_entity = EntityArc::new(TestLivingEntity::new(2, &vanilla_entities::PLAYER));
+        let victim = EntityArc::new(TestLivingEntity::new(3, &vanilla_entities::ZOMBIE));
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("fire_aspect"),
@@ -1494,9 +1495,9 @@ mod tests {
     fn post_attack_mob_effect_matches_victim_predicate() {
         init_vanilla_registry();
 
-        let attacker = Arc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
-        let spider = Arc::new(TestLivingEntity::new(2, &vanilla_entities::SPIDER));
-        let zombie = Arc::new(TestLivingEntity::new(3, &vanilla_entities::ZOMBIE));
+        let attacker = EntityArc::new(TestLivingEntity::new(1, &vanilla_entities::PLAYER));
+        let spider = EntityArc::new(TestLivingEntity::new(2, &vanilla_entities::SPIDER));
+        let zombie = EntityArc::new(TestLivingEntity::new(3, &vanilla_entities::ZOMBIE));
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
             Identifier::vanilla_static("bane_of_arthropods"),

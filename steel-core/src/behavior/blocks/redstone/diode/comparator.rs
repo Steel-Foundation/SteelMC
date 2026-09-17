@@ -394,6 +394,7 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::{EntityBase, SharedEntity};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -486,7 +487,7 @@ mod tests {
         let pos = BlockPos::new(8, 64, 8);
         insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
 
-        let frame: SharedEntity = Arc::new(TestItemFrame {
+        let frame: SharedEntity = EntityArc::new(TestItemFrame {
             base: EntityBase::new(
                 9_001,
                 DVec3::new(8.5, 64.25, 8.5),

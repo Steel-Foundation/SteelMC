@@ -1,5 +1,6 @@
 //! Vanilla moving-piston block entity.
 
+use crate::entity::EntityArc;
 use crate::entity::SharedEntity;
 use std::cell::Cell;
 use std::sync::{Arc, Weak};
@@ -389,7 +390,7 @@ impl PistonMovingState {
         let _no_clip = NoClipGuard::set(piston_direction);
         let (x, y, z) = movement.offset();
         let previous_position = entity.position();
-        Arc::clone(entity).move_entity(
+        EntityArc::clone(entity).move_entity(
             MoverType::Piston,
             DVec3::new(
                 delta * f64::from(x),
@@ -666,6 +667,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
+    use crate::entity::EntityArc;
     use crate::entity::SharedEntity;
     use crate::player::Player;
     use crate::test_support::{
@@ -677,7 +679,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
     use steel_utils::{ChunkPos, types::GameType};
 
-    fn test_player(world: Arc<World>) -> Arc<Player> {
+    fn test_player(world: Arc<World>) -> EntityArc<Player> {
         TestPlayerBuilder::new(world, "PistonTestPlayer", 1).build()
     }
 
@@ -800,7 +802,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(Arc::clone(&entity))
+            .try_add_entity(EntityArc::clone(&entity))
             .expect("test entity should enter the loaded chunk");
 
         piston.tick(&world);

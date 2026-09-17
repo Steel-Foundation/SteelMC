@@ -11,6 +11,7 @@ use steel_utils::types::InteractionHand;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::entity::Entity;
+use crate::entity::EntityArc;
 use crate::fluid::FluidStateExt;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::player::Player;
@@ -615,7 +616,7 @@ impl InventoryAccess {
 /// disjoint fields.
 pub struct UseOnContext<'a> {
     /// The player using the item.
-    pub player: &'a Arc<Player>,
+    pub player: &'a EntityArc<Player>,
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// Information about where the block was hit.
@@ -630,7 +631,7 @@ impl<'a> UseOnContext<'a> {
     /// Creates a new `UseOnContext`.
     #[must_use]
     pub const fn new(
-        player: &'a Arc<Player>,
+        player: &'a EntityArc<Player>,
         hand: InteractionHand,
         hit_result: BlockHitResult,
         world: &'a Arc<World>,
@@ -662,7 +663,7 @@ impl<'a> UseOnContext<'a> {
 /// `inv` is mutably borrowed.
 pub struct UseItemContext<'a> {
     /// The player using the item.
-    pub player: &'a Arc<Player>,
+    pub player: &'a EntityArc<Player>,
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
@@ -675,7 +676,7 @@ impl<'a> UseItemContext<'a> {
     /// Creates a new `UseItemContext`.
     #[must_use]
     pub const fn new(
-        player: &'a Arc<Player>,
+        player: &'a EntityArc<Player>,
         hand: InteractionHand,
         world: &'a Arc<World>,
         inventory: Shared<PlayerInventory>,

@@ -1,18 +1,25 @@
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncMutex;
 
-use crate::entity::EntityGeneration;
+use crate::entity::{EntityBase, EntityGeneration};
 use crate::level_data::GameTime;
 
 use super::DamageSource;
+
+mod binding;
+mod collection;
+
+pub(crate) use binding::DamageHistoryBinding;
+use binding::DamageHistoryVictim;
 
 /// Maximum retained age from vanilla `LivingEntity.getLastDamageSource`.
 const MAX_DAMAGE_SOURCE_AGE_TICKS: i64 = 40;
 
 struct DamageRecord {
+    victim_lifetime: Weak<DamageHistoryVictim>,
     source: DamageSource,
     timestamp: i64,
     clock: Arc<GameTime>,
@@ -26,9 +33,8 @@ impl DamageRecord {
 
 /// Server-owned equivalent of vanilla's per-entity `lastDamageSource` fields.
 ///
-/// Weak links from entities and worlds prevent self/mutual damage cycles.
-/// Expiry retains the victim's clock, which has no world back-reference,
-/// instead of retaining the victim to read its game time.
+/// Entities and worlds link back weakly. Records retain the victim's clock,
+/// which has no world back-reference, to avoid cycles through the victim or world.
 #[derive(Default)]
 pub struct DamageHistory {
     records: SyncMutex<FxHashMap<EntityGeneration, DamageRecord>>,
@@ -36,22 +42,23 @@ pub struct DamageHistory {
 
 impl DamageHistory {
     pub(crate) fn record(
-        &self,
-        victim: EntityGeneration,
+        self: &Arc<Self>,
+        victim: &EntityBase,
         source: &DamageSource,
         clock: &Arc<GameTime>,
     ) {
+        let generation = victim.generation();
         let record = DamageRecord {
+            victim_lifetime: victim.damage_history().bind(self, generation),
             source: source.clone(),
             timestamp: clock.ticks(),
             clock: Arc::clone(clock),
         };
-        let replaced = self.records.lock().insert(victim, record);
+        let replaced = self.records.lock().insert(generation, record);
         // Entity destructors must run outside the history lock.
         drop(replaced);
     }
 
-    /// Returns the latest unexpired source, independently retaining its entities.
     pub(crate) fn last_damage_source(&self, victim: EntityGeneration) -> Option<DamageSource> {
         let (source, expired) = {
             let mut records = self.records.lock();

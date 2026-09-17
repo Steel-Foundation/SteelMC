@@ -5,7 +5,7 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
-use std::{array, mem, sync::Arc};
+use std::{array, mem};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
@@ -27,6 +27,7 @@ use steel_utils::{BlockPos, Identifier};
 use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::entity::EntityArc;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
@@ -1627,7 +1628,9 @@ impl LivingEntityBase {
 
 fn weak_living_entity(target: Option<&SharedEntity>) -> Option<WeakEntity> {
     let target = target?;
-    target.is_living_entity().then(|| Arc::downgrade(target))
+    target
+        .is_living_entity()
+        .then(|| EntityArc::downgrade(target))
 }
 
 fn living_entity_from_weak(entity: &mut Option<WeakEntity>) -> Option<SharedEntity> {

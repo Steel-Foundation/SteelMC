@@ -108,6 +108,7 @@ use crate::entity::{
     LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
     apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
+use crate::entity::{EntityArc, EntityWeak};
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -271,10 +272,10 @@ pub struct Player {
     residence: SyncMutex<PlayerResidenceState>,
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
-    ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
+    ender_pearls: SyncMutex<Vec<EntityWeak<dyn Entity>>>,
 
     /// Active fishing hook, kept weakly because the world owns live entities.
-    pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
+    pub(crate) fishing: SyncMutex<Option<EntityWeak<FishingHookEntity>>>,
 
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
@@ -626,9 +627,9 @@ impl Player {
     }
 
     /// Returns the active fishing hook, clearing a stale reference after removal.
-    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
+    pub fn fishing_hook(&self) -> Option<EntityArc<FishingHookEntity>> {
         let mut fishing = self.fishing.lock();
-        let hook = fishing.as_ref().and_then(Weak::upgrade);
+        let hook = fishing.as_ref().and_then(EntityWeak::upgrade);
         if hook.is_none() {
             *fishing = None;
         }
@@ -636,8 +637,8 @@ impl Player {
     }
 
     /// Records the hook currently owned by this player.
-    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
-        *self.fishing.lock() = Some(Arc::downgrade(hook));
+    pub fn set_fishing_hook(&self, hook: &EntityArc<FishingHookEntity>) {
+        *self.fishing.lock() = Some(EntityArc::downgrade(hook));
     }
 
     /// Clears `hook` if it is still this player's active fishing hook.
@@ -645,7 +646,7 @@ impl Player {
         let mut fishing = self.fishing.lock();
         if fishing
             .as_ref()
-            .and_then(Weak::upgrade)
+            .and_then(EntityWeak::upgrade)
             .is_some_and(|active| ptr::eq(active.as_ref(), hook))
         {
             *fishing = None;
@@ -1115,7 +1116,7 @@ impl Player {
             weak.upgrade()
                 .is_some_and(|p| !p.is_removed() && p.uuid() != uuid)
         });
-        pearls.push(Arc::downgrade(pearl));
+        pearls.push(EntityArc::downgrade(pearl));
         drop(pearls);
         self.remove_pending_ender_pearl(uuid);
     }
@@ -1133,11 +1134,11 @@ impl Player {
     pub fn ender_pearls(&self) -> Vec<SharedEntity> {
         let mut pearls = self.ender_pearls.lock();
         pearls.retain(|weak| weak.upgrade().is_some_and(|p| !p.is_removed()));
-        pearls.iter().filter_map(Weak::upgrade).collect()
+        pearls.iter().filter_map(EntityWeak::upgrade).collect()
     }
 
     /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
-    pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
+    pub(crate) fn rebind_ender_pearls_to(&self, replacement: &EntityArc<Self>) {
         debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
         let replacement_entity: SharedEntity = replacement.clone();
         for pearl in self.ender_pearls() {
@@ -1365,12 +1366,12 @@ impl Entity for Player {
         }
     }
 
-    fn ride_tick(self: Arc<Self>) {
+    fn ride_tick(self: EntityArc<Self>) {
         let pre = self.position();
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            Arc::clone(&self).default_ride_tick();
+            EntityArc::clone(&self).default_ride_tick();
             self.reset_fall_distance();
         }
         self.check_riding_statistics(self.position() - pre);
@@ -1544,7 +1545,7 @@ impl Entity for Player {
     }
 
     fn cause_fall_damage(
-        self: Arc<Self>,
+        self: EntityArc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
