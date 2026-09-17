@@ -822,6 +822,13 @@ impl Mob for FoxEntity {
         !self.is_sleeping()
     }
 
+    fn reset_x_rot_on_tick(&self) -> bool {
+        !self.is_pouncing()
+            && !self.is_crouching()
+            && !self.is_interested()
+            && !self.is_faceplanted()
+    }
+
     fn ambient_sound(&self) -> Option<SoundEventRef> {
         if self.is_sleeping() {
             return Some(&sound_events::ENTITY_FOX_SLEEP);

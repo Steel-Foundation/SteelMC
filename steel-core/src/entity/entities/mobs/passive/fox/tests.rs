@@ -11,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 use crate::behavior::init_behaviors;
 use crate::entity::ai::goal::{FloatGoal, Goal};
 use crate::entity::entities::PigEntity;
-use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
+use crate::entity::entities::mobs::passive::fox::goals::{FACEPLANT_TICKS, FOX_FLOAT_WATER_DEPTH};
 use crate::entity::{EntityFluidContact, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -762,7 +762,32 @@ fn fox_faceplant_goal_runs_while_faceplanted_and_stands_up_on_stop() {
     fox.set_faceplanted(true);
     assert!(goal.can_use(fox.as_ref()));
     goal.start(fox.as_ref());
-    assert!(goal.can_continue_to_use(fox.as_ref()));
+    for _ in 0..FACEPLANT_TICKS {
+        assert!(goal.can_continue_to_use(fox.as_ref()));
+        goal.tick(fox.as_ref());
+    }
+    assert!(
+        !goal.can_continue_to_use(fox.as_ref()),
+        "the fox gets back up once the countdown runs out"
+    );
     goal.stop(fox.as_ref());
     assert!(!fox.is_faceplanted());
+}
+
+#[test]
+fn a_fox_keeps_its_head_tilted_while_focused() {
+    init_vanilla_registry();
+    let fox = new_fox();
+    assert!(Mob::reset_x_rot_on_tick(&fox));
+
+    fox.set_crouching(true);
+    assert!(!Mob::reset_x_rot_on_tick(&fox));
+    fox.set_crouching(false);
+
+    fox.set_interested(true);
+    assert!(!Mob::reset_x_rot_on_tick(&fox));
+    fox.set_interested(false);
+
+    fox.set_faceplanted(true);
+    assert!(!Mob::reset_x_rot_on_tick(&fox));
 }

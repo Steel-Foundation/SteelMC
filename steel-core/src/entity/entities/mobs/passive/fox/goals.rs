@@ -29,7 +29,7 @@ const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
-const FACEPLANT_TICKS: i32 = reduced_tick_delay(40);
+pub(super) const FACEPLANT_TICKS: i32 = reduced_tick_delay(40);
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()

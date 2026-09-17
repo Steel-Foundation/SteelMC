@@ -360,6 +360,11 @@ pub trait Mob: LivingEntity + Leashable {
         true
     }
 
+    /// Whether the look control levels the head pitch at the start of each tick.
+    fn reset_x_rot_on_tick(&self) -> bool {
+        true
+    }
+
     /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
     fn ate(&self) {}
 
@@ -1642,7 +1647,9 @@ pub trait Mob: LivingEntity + Leashable {
         };
 
         let mut rotation = self.rotation();
-        rotation.1 = 0.0;
+        if self.reset_x_rot_on_tick() {
+            rotation.1 = 0.0;
+        }
         if look_control.is_looking_at_target() {
             let position = self.position();
             let wanted_position = look_control.wanted_position();
