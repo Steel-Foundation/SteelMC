@@ -262,7 +262,7 @@ impl Mob for DespawnTestMob {
         self.preferred_weapon_type.lock().clone()
     }
 
-    fn can_be_leashed(&self) -> bool {
+    fn mob_can_be_leashed(&self) -> bool {
         *self.can_be_leashed.lock()
     }
 }

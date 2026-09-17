@@ -609,7 +609,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     /// Returns whether this mob can be leashed, before its leash state is considered.
-    fn can_be_leashed(&self) -> bool {
+    fn mob_can_be_leashed(&self) -> bool {
         // TODO(enemy): return false for enemy mobs once hostile mob foundations exist.
         true
     }
@@ -1726,7 +1726,7 @@ impl<T: Mob> Leashable for T {
     }
 
     fn can_be_leashed(&self) -> bool {
-        Mob::can_be_leashed(self)
+        self.mob_can_be_leashed()
     }
 }
 
