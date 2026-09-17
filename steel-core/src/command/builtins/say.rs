@@ -1,4 +1,4 @@
-//! Vanilla damage entity command.
+//! Vanilla say command.
 
 use super::super::{
     brigadier::CommandNodeBuilder,
