@@ -13,7 +13,7 @@ use crate::entity::ai::goal::{FloatGoal, Goal};
 use crate::entity::entities::PigEntity;
 use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
 use crate::entity::{EntityFluidContact, SharedEntity};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
 use super::*;
 
@@ -732,4 +732,45 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     fox.set_interested(false);
     fox.set_faceplanted(true);
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
+}
+
+#[test]
+fn a_fox_flees_only_untrusted_players_who_are_not_sneaking_or_watching() {
+    let (world, fox) = world_with_fox("fox_flees_players");
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "FoxWalker", 1).build();
+    let player_ref: &dyn LivingEntity = player.as_ref();
+    assert!(
+        fox.flees_from(player_ref),
+        "a survival player scares the fox"
+    );
+
+    fox.set_defending(true);
+    assert!(
+        !fox.flees_from(player_ref),
+        "a defending fox holds its ground"
+    );
+    fox.set_defending(false);
+
+    let synced = player.synced_data().expect("players have synced data");
+    synced.set_shift_key_down(true);
+    assert!(
+        !fox.flees_from(player_ref),
+        "a sneaking player goes unnoticed"
+    );
+    synced.set_shift_key_down(false);
+
+    player.restore_game_modes(GameType::Creative, None);
+    assert!(!fox.flees_from(player_ref), "a creative player is ignored");
+    player.restore_game_modes(GameType::Spectator, None);
+    assert!(!fox.flees_from(player_ref), "a spectator is ignored");
+    player.restore_game_modes(GameType::Survival, None);
+
+    fox.add_trusted(player.uuid());
+    assert!(
+        !fox.flees_from(player_ref),
+        "a trusted player is not fled from"
+    );
+
+    let pig = PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
+    assert!(!fox.flees_from(&pig), "only players are fled from");
 }

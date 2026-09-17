@@ -339,6 +339,17 @@ impl FoxEntity {
         entity_data.trusted_id_1.set(None);
     }
 
+    fn flees_from(&self, target: &dyn LivingEntity) -> bool {
+        let Some(player) = target.as_player() else {
+            return false;
+        };
+        !target.is_discrete()
+            && !player.is_spectator()
+            && player.game_mode() != GameType::Creative
+            && !self.trusts(target.uuid())
+            && !self.is_defending()
+    }
+
     fn trusted_ids(&self) -> Vec<Uuid> {
         let entity_data = self.entity_data.lock();
         [
@@ -574,16 +585,8 @@ fn avoid_untrusted_players() -> AvoidEntityGoal {
         FOX_AVOID_WALK_SPEED,
         FOX_AVOID_SPRINT_SPEED,
         |mob, target, _world| {
-            let Some(player) = target.as_player() else {
-                return false;
-            };
-            if target.is_discrete() || player.is_spectator() || player.has_infinite_materials() {
-                return false;
-            }
-            // TODO(fox-defend): also skip while the fox is defending a trusted
-            // target, once the defend/attack-target system exists.
             mob.downcast_ref::<FoxEntity>()
-                .is_some_and(|fox| !fox.trusts(target.uuid()))
+                .is_some_and(|fox| fox.flees_from(target))
         },
     )
 }

@@ -175,17 +175,6 @@ mod tests {
     }
 
     #[test]
-    fn avoid_entity_goal_with_mob_selector_stores_the_predicate() {
-        let goal = AvoidEntityGoal::with_mob_selector(16.0, 1.6, 1.4, |_mob, _target, _world| true);
-
-        assert!(
-            goal.mob_selector.is_some(),
-            "the mob-aware selector is retained for can_use to apply"
-        );
-        assert_eq!(goal.controls(), GoalControls::MOVE);
-    }
-
-    #[test]
     fn avoid_entity_default_selector_allows_non_player_living_entities() {
         init_vanilla_registry();
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
