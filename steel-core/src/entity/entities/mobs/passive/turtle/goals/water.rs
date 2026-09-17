@@ -13,6 +13,8 @@ use crate::entity::{AgeableMob, Animal, PathfinderMob};
 use crate::world::LevelReader;
 
 const GO_TO_WATER_SEARCH_RANGE: i32 = 24;
+const GO_TO_WATER_SEARCH_START: i32 = -1;
+const TRAVEL_SURFACE_MARGIN: i32 = 1;
 const GO_TO_WATER_RECALC_INTERVAL: i32 = 160;
 const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
@@ -28,7 +30,7 @@ impl TurtleGoToWaterGoal {
             inner: MoveToBlockGoal::new(speed_modifier, GO_TO_WATER_SEARCH_RANGE, |level, pos| {
                 level.get_block_state(pos).get_block() == &vanilla_blocks::WATER
             })
-            .with_vertical_search_start(-1)
+            .with_vertical_search_start(GO_TO_WATER_SEARCH_START)
             .with_recalculate_path_interval(GO_TO_WATER_RECALC_INTERVAL)
             .without_stay_limit(),
         }
@@ -126,7 +128,7 @@ impl Goal for TurtleTravelGoal {
         let xt = f64::from(rand::random_range(-TRAVEL_RANGE_XZ..=TRAVEL_RANGE_XZ));
         let mut yt = f64::from(rand::random_range(-TRAVEL_RANGE_Y..=TRAVEL_RANGE_Y));
         let zt = f64::from(rand::random_range(-TRAVEL_RANGE_XZ..=TRAVEL_RANGE_XZ));
-        if yt + position.y > f64::from(LevelReader::sea_level(&world) - 1) {
+        if yt + position.y > f64::from(LevelReader::sea_level(&world) - TRAVEL_SURFACE_MARGIN) {
             yt = 0.0;
         }
 
