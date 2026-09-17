@@ -187,7 +187,6 @@ impl LivingEntity for TurtleEntity {
         result
     }
 
-    /// The push and drag are flat, so the gravity and surface arguments are unused.
     fn travel_in_water(
         &self,
         input: DVec3,

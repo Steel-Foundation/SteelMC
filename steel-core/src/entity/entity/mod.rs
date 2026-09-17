@@ -3057,7 +3057,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.default_play_swim_sound(volume);
     }
 
-    /// Swim sound with randomized pitch
+    /// Plays the swim sound at `volume` with a random pitch.
     fn default_play_swim_sound(&self, volume: f32) {
         let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * SWIM_SOUND_PITCH_SPREAD;
         self.play_sound(self.swim_sound(), volume, pitch);

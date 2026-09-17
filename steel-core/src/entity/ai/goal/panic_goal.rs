@@ -181,6 +181,8 @@ mod tests {
 
     #[test]
     fn a_goal_always_seeking_water_heads_for_water_without_being_on_fire() {
+        const WATER_SEARCH_RANGE: i32 = 7;
+
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("panic_goal_always_seeks_water");
@@ -205,7 +207,7 @@ mod tests {
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             1.0
         ));
-        let mut goal = PanicGoal::new(1.25).always_seeking_water(7);
+        let mut goal = PanicGoal::new(1.25).always_seeking_water(WATER_SEARCH_RANGE);
 
         assert!(goal.can_use(pig.as_ref()));
         assert_eq!(goal.wanted_position, Some(block_pos_corner(water)));

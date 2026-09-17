@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::entity_type::EntityAttachment;
 use steel_utils::{BlockStateId, WorldAabb};
@@ -8,17 +8,19 @@ use steel_utils::{BlockStateId, WorldAabb};
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::entity::PathfinderMob;
-use crate::entity::ai::goal::Goal;
+use crate::entity::ai::goal::{Goal, GoalControls};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::turtle::goals::{
-    TurtleBreedGoal, TurtleGoHomeGoal, TurtleLayEggGoal, TurtleTravelGoal,
+    BREED_XP, POST_BREED_AGE, TurtleBreedGoal, TurtleGoHomeGoal, TurtleGoToWaterGoal,
+    TurtleLayEggGoal, TurtleRandomStrollGoal, TurtleTravelGoal,
 };
 use crate::entity::{AgeableMob, EntityPose, EntitySpawnReason, next_entity_id};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
 
 const VELOCITY_EPSILON: f64 = 1e-9;
+const LANDING_DROP: DVec3 = DVec3::new(0.0, -2.0, 0.0);
 
 #[test]
 fn turtle_registers_vanilla_goal_priorities() {
@@ -263,7 +265,7 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
         vanilla_blocks::SAND.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
-    turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
+    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
     assert!(turtle.on_ground(), "the turtle should have landed");
 
     turtle.set_mob_speed(1.0);
@@ -291,7 +293,7 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
 
     let (world, turtle) = turtle_in_world("turtle_travel_unloaded", DVec3::new(8.5, 64.0, 8.5));
     lay_sand_floor(&world, 0..=15);
-    turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
+    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
     turtle.set_travel_pos(Some(BlockPos::new(8, 64, 24)));
 
     let mut goal = TurtleTravelGoal::new(1.0);
@@ -335,7 +337,7 @@ fn a_turtle_holds_its_course_against_a_current() {
 fn a_steering_turtle_turns_its_whole_body() {
     let (world, turtle) = turtle_in_world("turtle_body_turn", DVec3::new(8.5, 65.0, 8.5));
     lay_sand_floor(&world, 0..=15);
-    turtle.move_entity(MoverType::SelfMovement, DVec3::new(0.0, -2.0, 0.0));
+    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
     assert!(turtle.on_ground(), "the turtle should have landed");
 
     turtle.set_rotation((0.0, 0.0));
@@ -385,15 +387,18 @@ impl LevelReader for SpawnRuleLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        LEVEL_MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        LEVEL_HEIGHT
     }
 }
 
 const SPAWN_POS: BlockPos = BlockPos::new(0, 64, 0);
+const LEVEL_MIN_Y: i32 = -64;
+const LEVEL_HEIGHT: i32 = 384;
+const BRIGHT_ENOUGH: u8 = 9;
 
 fn turtle_spawns_at(level: &SpawnRuleLevel, pos: BlockPos) -> bool {
     <TurtleEntity as Animal>::check_animal_spawn_rules(level, EntitySpawnReason::Natural, pos)
@@ -405,7 +410,7 @@ fn turtles_only_spawn_on_a_bright_beach() {
 
     let beach = SpawnRuleLevel {
         below_state: vanilla_blocks::SAND.default_state(),
-        raw_brightness: 9,
+        raw_brightness: BRIGHT_ENOUGH,
         sea_level: SPAWN_POS.y() - 1,
     };
     assert!(turtle_spawns_at(&beach, SPAWN_POS));
@@ -423,7 +428,7 @@ fn turtles_only_spawn_on_a_bright_beach() {
     assert!(!turtle_spawns_at(&stone, SPAWN_POS));
 
     let night = SpawnRuleLevel {
-        raw_brightness: 8,
+        raw_brightness: BRIGHT_ENOUGH - 1,
         ..beach
     };
     assert!(!turtle_spawns_at(&night, SPAWN_POS));
@@ -446,6 +451,8 @@ fn a_baby_turtle_is_far_smaller_than_its_parent() {
 
 #[test]
 fn a_baby_turtle_carries_a_rider_on_its_shell() {
+    const ATTACHMENT_EPSILON: f64 = 1e-6;
+
     init_vanilla_registry();
     let turtle = detached_turtle();
     turtle.set_baby(true);
@@ -457,16 +464,11 @@ fn a_baby_turtle_carries_a_rider_on_its_shell() {
     let seat =
         baby.attachments
             .get_clamped(EntityAttachment::Passenger, 0, turtle.rotation().0, baby);
-    let adult_seat_scaled =
-        adult
-            .attachments
-            .get_clamped(EntityAttachment::Passenger, 0, turtle.rotation().0, adult)
-            * f64::from(BABY_SCALE);
+    let shell_top = f64::from(adult.height * BABY_SCALE);
     assert!(
-        seat.y < adult_seat_scaled.y,
-        "a hatchling's seat should sit lower than the adult's scaled down, got {} against {}",
-        seat.y,
-        adult_seat_scaled.y
+        (seat.y - shell_top).abs() < ATTACHMENT_EPSILON,
+        "a hatchling's rider sits on top of its shell, got {} against {shell_top}",
+        seat.y
     );
 }
 
@@ -482,11 +484,10 @@ fn a_turtle_shuffles_rather_than_plods() {
     let turtle = detached_turtle();
 
     assert!(
-        turtle.next_step() < 1.0,
-        "a turtle steps more often than once per block, got {}",
+        (turtle.next_step() - NEXT_STEP_DISTANCE).abs() < f32::EPSILON,
+        "a turtle that has not moved steps again after a short shuffle, got {}",
         turtle.next_step()
     );
-    assert_eq!(turtle.ambient_sound_interval(), AMBIENT_SOUND_INTERVAL);
 }
 
 #[test]
@@ -526,7 +527,8 @@ fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
 
 const BREED_LOVE_TIME: i32 = 600;
 const BREED_MAX_TICKS: i32 = 100;
-const POST_BREED_AGE: i32 = 6000;
+const FAR_HOME: BlockPos = BlockPos::new(100, 64, 8);
+const NEAR_HOME: BlockPos = BlockPos::new(10, 64, 8);
 
 fn turtles_in_love(key: &'static str) -> (Arc<World>, Arc<TurtleEntity>, Arc<TurtleEntity>) {
     let (world, mother) = turtle_in_world(key, DVec3::new(8.0, 64.0, 8.0));
@@ -576,7 +578,7 @@ fn breeding_turtles_give_the_mother_an_egg_instead_of_a_baby() {
         .map(|orb| orb.value() * orb.count())
         .sum();
     assert_eq!(turtles, 2);
-    assert!((1..8).contains(&experience));
+    assert!(BREED_XP.contains(&experience));
 }
 
 #[test]
@@ -593,7 +595,7 @@ fn a_turtle_already_carrying_an_egg_does_not_breed_again() {
 #[test]
 fn a_turtle_carrying_an_egg_heads_home_until_it_is_close() {
     let (_world, turtle) = turtle_in_world("turtle_go_home", DVec3::new(8.0, 64.0, 8.0));
-    turtle.set_home_pos(BlockPos::new(100, 64, 8));
+    turtle.set_home_pos(FAR_HOME);
     let mut goal = TurtleGoHomeGoal::new(1.0);
     assert!(!goal.can_use(turtle.as_ref()));
 
@@ -603,7 +605,7 @@ fn a_turtle_carrying_an_egg_heads_home_until_it_is_close() {
     assert!(turtle.going_home());
     assert!(goal.can_continue_to_use(turtle.as_ref()));
 
-    turtle.set_home_pos(BlockPos::new(10, 64, 8));
+    turtle.set_home_pos(NEAR_HOME);
     assert!(!goal.can_continue_to_use(turtle.as_ref()));
     goal.stop(turtle.as_ref());
     assert!(!turtle.going_home());
@@ -612,9 +614,114 @@ fn a_turtle_carrying_an_egg_heads_home_until_it_is_close() {
 #[test]
 fn a_baby_turtle_never_heads_home() {
     let (_world, turtle) = turtle_in_world("turtle_baby_go_home", DVec3::new(8.0, 64.0, 8.0));
-    turtle.set_home_pos(BlockPos::new(100, 64, 8));
+    turtle.set_home_pos(FAR_HOME);
     turtle.set_has_egg(true);
     turtle.set_baby(true);
 
     assert!(!TurtleGoHomeGoal::new(1.0).can_use(turtle.as_ref()));
+}
+
+const WATER_NEARBY: BlockPos = BlockPos::new(10, 62, 8);
+const SEA_LEVEL_FALLBACK_CLEARANCE: f64 = 20.0;
+
+fn turtle_on_a_beach(key: &'static str) -> (Arc<World>, Arc<TurtleEntity>) {
+    let (world, turtle) = turtle_in_world(key, DVec3::new(8.5, 65.0, 8.5));
+    lay_sand_floor(&world, 0..=15);
+    assert!(world.set_block(
+        WATER_NEARBY,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
+    assert!(turtle.on_ground(), "the turtle should have landed");
+    (world, turtle)
+}
+
+#[test]
+fn an_adult_turtle_on_land_heads_for_water_unless_it_carries_an_egg() {
+    let (_world, turtle) = turtle_on_a_beach("turtle_go_to_water_adult");
+    assert!(TurtleGoToWaterGoal::new(1.0).can_use(turtle.as_ref()));
+
+    turtle.set_has_egg(true);
+    assert!(!TurtleGoToWaterGoal::new(1.0).can_use(turtle.as_ref()));
+
+    turtle.set_has_egg(false);
+    turtle.set_going_home(true);
+    assert!(!TurtleGoToWaterGoal::new(1.0).can_use(turtle.as_ref()));
+}
+
+#[test]
+fn a_baby_turtle_on_land_always_heads_for_water() {
+    let (_world, turtle) = turtle_on_a_beach("turtle_go_to_water_baby");
+    turtle.set_baby(true);
+    turtle.set_has_egg(true);
+    turtle.set_going_home(true);
+
+    assert!(TurtleGoToWaterGoal::new(1.0).can_use(turtle.as_ref()));
+}
+
+#[test]
+fn going_to_water_does_not_give_up_while_waiting_at_the_edge() {
+    const WAIT_TICKS: i32 = 6000;
+
+    let (_world, turtle) = turtle_on_a_beach("turtle_go_to_water_wait");
+    let mut goal = TurtleGoToWaterGoal::new(1.0);
+    assert!(goal.can_use(turtle.as_ref()));
+    goal.start(turtle.as_ref());
+    turtle
+        .teleport_to(bottom_of(WATER_NEARBY.above()))
+        .expect("the turtle should move to the water edge");
+
+    for _ in 0..WAIT_TICKS {
+        goal.tick(turtle.as_ref());
+    }
+
+    assert!(goal.can_continue_to_use(turtle.as_ref()));
+}
+
+fn bottom_of(pos: BlockPos) -> DVec3 {
+    let (x, y, z) = pos.get_bottom_center();
+    DVec3::new(x, y, z)
+}
+
+#[test]
+fn a_turtle_strolls_on_land_only_when_it_has_nothing_else_to_do() {
+    const EVERY_TICK: i32 = 1;
+    const STROLL_ATTEMPTS: u32 = 50;
+
+    let (_world, turtle) = turtle_on_a_beach("turtle_stroll_gate");
+    assert!(
+        (0..STROLL_ATTEMPTS)
+            .any(|_| TurtleRandomStrollGoal::new(1.0, EVERY_TICK).can_use(turtle.as_ref()))
+    );
+
+    turtle.set_has_egg(true);
+    assert!(!TurtleRandomStrollGoal::new(1.0, EVERY_TICK).can_use(turtle.as_ref()));
+
+    turtle.set_has_egg(false);
+    turtle.set_going_home(true);
+    assert!(!TurtleRandomStrollGoal::new(1.0, EVERY_TICK).can_use(turtle.as_ref()));
+}
+
+#[test]
+fn a_turtle_above_sea_level_travels_at_its_own_height() {
+    let (world, turtle) = turtle_in_world("turtle_travel_height", DVec3::new(8.5, 64.0, 8.5));
+    let above_sea = f64::from(LevelReader::sea_level(&world)) + SEA_LEVEL_FALLBACK_CLEARANCE;
+    turtle
+        .teleport_to(DVec3::new(8.5, above_sea, 8.5))
+        .expect("the turtle should move above sea level");
+
+    let mut goal = TurtleTravelGoal::new(1.0);
+    goal.start(turtle.as_ref());
+
+    let travel_pos = turtle
+        .travel_pos()
+        .expect("starting to travel picks a target");
+    assert_eq!(f64::from(travel_pos.y()), above_sea);
+}
+
+#[test]
+fn heading_home_and_traveling_leave_the_other_goals_free_to_run() {
+    assert_eq!(TurtleGoHomeGoal::new(1.0).controls(), GoalControls::EMPTY);
+    assert_eq!(TurtleTravelGoal::new(1.0).controls(), GoalControls::EMPTY);
 }

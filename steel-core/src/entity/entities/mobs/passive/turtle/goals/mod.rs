@@ -10,6 +10,8 @@ use steel_utils::{BlockPos, Downcast as _};
 use super::TurtleEntity;
 use crate::entity::PathfinderMob;
 
+#[cfg(test)]
+pub(super) use breeding::{BREED_XP, POST_BREED_AGE};
 pub(super) use breeding::{TurtleBreedGoal, TurtleLayEggGoal};
 pub(super) use land::{TurtleGoHomeGoal, TurtleRandomStrollGoal};
 pub(super) use water::{TurtleGoToWaterGoal, TurtleTravelGoal};

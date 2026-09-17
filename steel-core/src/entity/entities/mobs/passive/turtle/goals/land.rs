@@ -20,8 +20,6 @@ const GIVE_UP_TICKS: i32 = 600;
 const NEAR_HOME_DISTANCE: f64 = 16.0;
 const AVOID_WATER_V: i32 = 5;
 
-/// Heads back toward the home beach: always when carrying an egg,
-/// otherwise on a rare timer when far from home.
 pub(crate) struct TurtleGoHomeGoal {
     speed_modifier: f64,
     stuck: bool,
@@ -40,7 +38,7 @@ impl TurtleGoHomeGoal {
 
 impl Goal for TurtleGoHomeGoal {
     fn controls(&self) -> GoalControls {
-        GoalControls::MOVE
+        GoalControls::EMPTY
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
@@ -134,7 +132,6 @@ impl Goal for TurtleGoHomeGoal {
     }
 }
 
-/// Strolls only on land, and never while heading home or carrying an egg.
 pub(crate) struct TurtleRandomStrollGoal {
     inner: RandomStrollGoal,
 }

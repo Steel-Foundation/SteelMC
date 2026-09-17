@@ -18,7 +18,6 @@ const TRAVEL_RANGE_XZ: i32 = 512;
 const TRAVEL_RANGE_Y: i32 = 4;
 const TRAVEL_LOADED_MARGIN: i32 = 34;
 
-/// Leaves land for the nearest water block.
 pub(crate) struct TurtleGoToWaterGoal {
     inner: MoveToBlockGoal,
 }
@@ -30,7 +29,8 @@ impl TurtleGoToWaterGoal {
                 level.get_block_state(pos).get_block() == &vanilla_blocks::WATER
             })
             .with_vertical_search_start(-1)
-            .with_recalculate_path_interval(GO_TO_WATER_RECALC_INTERVAL),
+            .with_recalculate_path_interval(GO_TO_WATER_RECALC_INTERVAL)
+            .without_stay_limit(),
         }
     }
 }
@@ -72,7 +72,6 @@ impl Goal for TurtleGoToWaterGoal {
     }
 }
 
-/// Picks a far swim target and wanders to it.
 pub(crate) struct TurtleTravelGoal {
     speed_modifier: f64,
     stuck: bool,
@@ -94,7 +93,7 @@ impl TurtleTravelGoal {
 
 impl Goal for TurtleTravelGoal {
     fn controls(&self) -> GoalControls {
-        GoalControls::MOVE
+        GoalControls::EMPTY
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {

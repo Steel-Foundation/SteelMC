@@ -131,18 +131,7 @@ impl TurtleEntity {
             );
             goal_selector.add_goal(1, TurtleBreedGoal::new(1.0));
             goal_selector.add_goal(1, TurtleLayEggGoal::new(1.0));
-            goal_selector.add_goal(
-                2,
-                TemptGoal::new(
-                    1.1,
-                    |item_stack| {
-                        REGISTRY
-                            .items
-                            .is_in_tag(item_stack.item(), &ItemTag::TURTLE_FOOD)
-                    },
-                    false,
-                ),
-            );
+            goal_selector.add_goal(2, TemptGoal::new(1.1, Self::is_food, false));
             goal_selector.add_goal(3, TurtleGoToWaterGoal::new(1.0));
             goal_selector.add_goal(4, TurtleGoHomeGoal::new(1.0));
             goal_selector.add_goal(7, TurtleTravelGoal::new(1.0));
@@ -175,9 +164,8 @@ impl TurtleEntity {
         malus.set(PathType::DoorOpen, -1.0);
     }
 
-    /// Whether this turtle is carrying an egg to lay.
     #[must_use]
-    pub fn has_egg(&self) -> bool {
+    pub(crate) fn has_egg(&self) -> bool {
         *self.entity_data.lock().has_egg.get()
     }
 
@@ -185,9 +173,8 @@ impl TurtleEntity {
         self.entity_data.lock().has_egg.set(has_egg);
     }
 
-    /// Whether this turtle is in the middle of laying its egg.
     #[must_use]
-    pub fn is_laying_egg(&self) -> bool {
+    pub(crate) fn is_laying_egg(&self) -> bool {
         *self.entity_data.lock().laying_egg.get()
     }
 
@@ -223,20 +210,16 @@ impl TurtleEntity {
         *self.travel_pos.lock() = pos;
     }
 
-    /// This turtle's home beach.
     #[must_use]
-    pub fn home_pos(&self) -> BlockPos {
+    pub(crate) fn home_pos(&self) -> BlockPos {
         *self.home_pos.lock()
     }
 
-    /// Records this turtle's home beach.
-    pub fn set_home_pos(&self, pos: BlockPos) {
+    pub(crate) fn set_home_pos(&self, pos: BlockPos) {
         *self.home_pos.lock() = pos;
     }
 
-    /// Whether an item stack is turtle food (`#turtle_food`, seagrass).
-    #[must_use]
-    pub fn is_food(item_stack: &ItemStack) -> bool {
+    fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
             .items
             .is_in_tag(item_stack.item(), &ItemTag::TURTLE_FOOD)
@@ -282,10 +265,11 @@ impl TurtleEntity {
 
     /// Emits the sand-kicking particles and game event while laying.
     fn tick_laying_egg(&self) {
+        let counter = self.lay_egg_counter();
         if !LivingEntity::is_alive(self)
             || !self.is_laying_egg()
-            || self.lay_egg_counter() < 1
-            || self.lay_egg_counter() % LAYING_EGG_EMIT_INTERVAL != 0
+            || counter < 1
+            || counter % LAYING_EGG_EMIT_INTERVAL != 0
         {
             return;
         }

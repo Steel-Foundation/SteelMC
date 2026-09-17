@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
@@ -13,7 +15,8 @@ use crate::entity::{AgeableMob, Animal, PathfinderMob};
 use crate::world::game_event::GameEventContext;
 
 const EGGS: &IntProperty = &BlockStateProperties::EGGS;
-const POST_BREED_AGE: i32 = 6000;
+pub(crate) const POST_BREED_AGE: i32 = 6000;
+pub(crate) const BREED_XP: Range<i32> = 1..8;
 const LAY_EGG_SEARCH_RANGE: i32 = 16;
 const LAY_EGG_HOME_RANGE: f64 = 9.0;
 const LAY_EGG_DURATION: i32 = 200;
@@ -23,8 +26,6 @@ const LAY_EGG_SOUND_VOLUME: f32 = 0.3;
 const LAY_EGG_PITCH_BASE: f32 = 0.9;
 const LAY_EGG_PITCH_SPREAD: f32 = 0.2;
 
-/// Breeding gives the mother an egg to lay instead of spawning a baby,
-/// and both parents age back to adulthood.
 pub(crate) struct TurtleBreedGoal {
     inner: BreedGoal,
 }
@@ -58,7 +59,7 @@ impl TurtleBreedGoal {
         partner_animal.reset_love();
 
         if world.get_game_rule(&MOB_DROPS) {
-            let xp = rand::random_range(1..8);
+            let xp = rand::random_range(BREED_XP);
             ExperienceOrbEntity::award(&world, mob.position(), xp);
         }
     }
@@ -86,7 +87,6 @@ impl Goal for TurtleBreedGoal {
     }
 }
 
-/// Walks to sand near home and, after a delay, places a turtle egg cluster.
 pub(crate) struct TurtleLayEggGoal {
     inner: MoveToBlockGoal,
 }
