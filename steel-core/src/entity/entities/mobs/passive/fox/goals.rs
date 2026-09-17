@@ -491,27 +491,25 @@ fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
         return false;
     };
     let fox_pos = mob.position();
-    let target_pos = target.position();
-    let zdiff = target_pos.z - fox_pos.z;
-    let xdiff = target_pos.x - fox_pos.x;
-    let slope = zdiff / xdiff;
+    let mut toward = target.position() - fox_pos;
+    toward.y = 0.0;
 
-    for i in 0..PATH_CLEAR_STEPS {
-        let fraction = f64::from(i) / f64::from(PATH_CLEAR_STEPS);
-        let (x, z) = if slope == 0.0 {
-            (xdiff * fraction, 0.0)
-        } else {
-            let z = zdiff * fraction;
-            (z / slope, z)
-        };
-        for j in 1..PATH_CLEAR_HEIGHT {
-            let pos = BlockPos::containing(fox_pos.x + x, fox_pos.y + f64::from(j), fox_pos.z + z);
-            if !world.get_block_state(pos).is_replaceable() {
-                return false;
-            }
-        }
-    }
-    true
+    (0..PATH_CLEAR_STEPS).all(|i| {
+        let step = fox_pos + toward * (f64::from(i) / f64::from(PATH_CLEAR_STEPS));
+        (1..PATH_CLEAR_HEIGHT).all(|j| {
+            let pos = BlockPos::containing(step.x, step.y + f64::from(j), step.z);
+            world.get_block_state(pos).is_replaceable()
+        })
+    })
+}
+
+fn look_at_eyes(mob: &dyn PathfinderMob, target: &SharedEntity, y_speed: f32, x_speed: f32) {
+    let target_pos = target.position();
+    mob.mob_base().controls().lock().look_control.set_look_at(
+        DVec3::new(target_pos.x, target.get_eye_y(), target_pos.z),
+        y_speed,
+        x_speed,
+    );
 }
 
 /// Leaps at the target, faceplanting into snow on a hard miss.
@@ -519,7 +517,7 @@ pub(crate) struct FoxPounceGoal;
 
 impl Goal for FoxPounceGoal {
     fn controls(&self) -> GoalControls {
-        GoalControls::JUMP
+        GoalControls::MOVE | GoalControls::JUMP
     }
 
     fn is_interruptable(&self) -> bool {
@@ -567,13 +565,8 @@ impl Goal for FoxPounceGoal {
         fox.set_pouncing(true);
         fox.set_interested(false);
         if let Some(target) = Mob::target(fox) {
-            let target_pos = target.position();
-            mob.mob_base().controls().lock().look_control.set_look_at(
-                target_pos,
-                POUNCE_LOOK_Y_SPEED,
-                POUNCE_LOOK_X_SPEED,
-            );
-            let toward = (target_pos - mob.position()).normalize_or_zero();
+            look_at_eyes(mob, &target, POUNCE_LOOK_Y_SPEED, POUNCE_LOOK_X_SPEED);
+            let toward = (target.position() - mob.position()).normalize_or_zero();
             let leap = DVec3::new(
                 toward.x * POUNCE_LEAP_HORIZONTAL,
                 POUNCE_LEAP_VERTICAL,
@@ -603,11 +596,7 @@ impl Goal for FoxPounceGoal {
         };
         let target = Mob::target(fox);
         if let Some(target) = &target {
-            mob.mob_base().controls().lock().look_control.set_look_at(
-                target.position(),
-                POUNCE_LOOK_Y_SPEED,
-                POUNCE_LOOK_X_SPEED,
-            );
+            look_at_eyes(mob, target, POUNCE_LOOK_Y_SPEED, POUNCE_LOOK_X_SPEED);
         }
 
         if !fox.is_faceplanted() {

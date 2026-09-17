@@ -288,13 +288,14 @@ impl FoxEntity {
         *self.crouch_amount.lock() = 0.0;
     }
 
-    fn tick_pounce_state(&self) {
-        let target_alive = Mob::target(self).is_some_and(|target| target.is_alive());
-        if !target_alive {
+    fn drop_hunt_without_target(&self) {
+        if !Mob::target(self).is_some_and(|target| target.is_alive()) {
             self.set_crouching(false);
             self.set_interested(false);
         }
+    }
 
+    fn tick_crouch_amount(&self) {
         let mut crouch = self.crouch_amount.lock();
         if self.is_crouching() {
             *crouch = (*crouch + CROUCH_STEP).min(FULLY_CROUCHED);
@@ -611,6 +612,7 @@ impl Entity for FoxEntity {
     fn tick(&self) {
         LivingEntity::tick_living_entity(self);
         self.tick_fox_posture();
+        self.tick_crouch_amount();
     }
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
@@ -736,7 +738,7 @@ impl LivingEntity for FoxEntity {
 
     fn ai_step(&self) -> Option<MoveResult> {
         self.tick_eating();
-        self.tick_pounce_state();
+        self.drop_hunt_without_target();
         if self.is_sleeping() || self.is_immobile() {
             self.set_jumping(false);
             let input = self.travel_input();

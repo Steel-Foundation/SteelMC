@@ -9,7 +9,7 @@ use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
 use crate::behavior::init_behaviors;
-use crate::entity::ai::goal::{FloatGoal, Goal};
+use crate::entity::ai::goal::{FloatGoal, Goal, GoalControls};
 use crate::entity::entities::PigEntity;
 use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
 use crate::entity::{EntityFluidContact, SharedEntity};
@@ -371,6 +371,92 @@ fn fox_kit_inherits_a_parent_variant() {
 fn fox_pounce_goal_commits_once_it_starts() {
     let goal = FoxPounceGoal;
     assert!(!Goal::is_interruptable(&goal));
+    assert_eq!(goal.controls(), GoalControls::MOVE | GoalControls::JUMP);
+}
+
+fn crouched_fox_with_prey(name: &'static str) -> (Arc<World>, Arc<FoxEntity>, SharedEntity) {
+    let (world, fox) = world_with_fox(name);
+    let prey: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(12.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&prey))
+        .expect("prey should attach to the loaded chunk");
+    assert!(Mob::set_target(fox.as_ref(), Some(&prey)));
+
+    fox.set_crouching(true);
+    fox.set_interested(true);
+    while !fox.is_fully_crouched() {
+        fox.tick_crouch_amount();
+    }
+    (world, fox, prey)
+}
+
+#[test]
+fn a_fox_only_pounces_over_open_ground() {
+    let (world, fox, _prey) = crouched_fox_with_prey("fox_pounce_path");
+    let mut goal = FoxPounceGoal;
+    assert!(goal.can_use(fox.as_ref()), "nothing is in the way");
+
+    assert!(world.set_block(
+        BlockPos::new(10, 66, 8),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    assert!(!goal.can_use(fox.as_ref()), "a wall blocks the leap");
+    assert!(!fox.is_crouching(), "a blocked fox stands back up");
+    assert!(!fox.is_interested());
+}
+
+#[test]
+fn a_pouncing_fox_leaps_up_and_toward_its_prey() {
+    let (_world, fox, _prey) = crouched_fox_with_prey("fox_pounce_leap");
+    let mut goal = FoxPounceGoal;
+    goal.start(fox.as_ref());
+
+    let velocity = fox.velocity();
+    assert!(fox.is_pouncing());
+    assert!(velocity.y > 0.0, "the leap goes up, got {velocity:?}");
+    assert!(
+        velocity.x > 0.0,
+        "the leap goes toward the prey, got {velocity:?}"
+    );
+}
+
+#[test]
+fn a_fox_landing_nose_first_in_snow_faceplants() {
+    let (world, fox, _prey) = crouched_fox_with_prey("fox_pounce_snow");
+    assert!(world.set_block(
+        fox.block_position(),
+        vanilla_blocks::SNOW.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    fox.set_on_ground(true);
+    fox.set_rotation((0.0, 30.0));
+    fox.set_velocity(DVec3::new(0.0, -0.1, 0.0));
+
+    FoxPounceGoal.tick(fox.as_ref());
+
+    assert!(fox.is_faceplanted());
+    assert!(Mob::target(fox.as_ref()).is_none(), "the prey gets away");
+}
+
+#[test]
+fn a_pounce_ends_once_the_fox_has_landed() {
+    let (_world, fox, _prey) = crouched_fox_with_prey("fox_pounce_landing");
+    let mut goal = FoxPounceGoal;
+
+    fox.set_on_ground(false);
+    fox.set_velocity(DVec3::new(0.0, 0.5, 0.0));
+    assert!(goal.can_continue_to_use(fox.as_ref()), "still in the air");
+
+    fox.set_on_ground(true);
+    fox.set_velocity(DVec3::ZERO);
+    fox.set_rotation((0.0, 0.0));
+    assert!(!goal.can_continue_to_use(fox.as_ref()), "back on its feet");
 }
 
 #[test]
