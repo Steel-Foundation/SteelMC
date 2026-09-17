@@ -280,11 +280,10 @@ pub enum SpawnGroupData {
 }
 
 impl SpawnGroupData {
-    #[must_use]
-    pub const fn ageable_group_data(self) -> AgeableMobGroupData {
+    pub const fn ageable_group_data_mut(&mut self) -> &mut AgeableMobGroupData {
         match self {
             Self::AgeableMob(data) => data,
-            Self::Fox(data) => data.ageable,
+            Self::Fox(data) => &mut data.ageable,
         }
     }
 }
@@ -374,10 +373,6 @@ impl FoxGroupData {
     #[must_use]
     pub const fn group_size(self) -> i32 {
         self.ageable.group_size()
-    }
-
-    pub fn advance_group(&mut self, baby_roll: impl FnOnce() -> f32) {
-        let _ = self.ageable.finalize_ageable_spawn(baby_roll);
     }
 }
 

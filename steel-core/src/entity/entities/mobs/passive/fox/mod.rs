@@ -441,7 +441,6 @@ impl FoxEntity {
             .is_empty()
     }
 
-    /// A snow coat in snowy biomes, red elsewhere.
     fn biome_variant(&self, world: &Arc<World>) -> FoxVariant {
         world
             .biome_at(self.block_position())
@@ -862,7 +861,7 @@ impl Mob for FoxEntity {
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let mut group = match group_data {
+        let group = match group_data {
             Some(SpawnGroupData::Fox(existing)) => existing,
             _ => FoxGroupData::new(self.biome_variant(world)),
         };
@@ -870,7 +869,7 @@ impl Mob for FoxEntity {
 
         self.set_variant(group.variant());
         if is_baby {
-            self.set_age(self.get_baby_start_age());
+            self.set_baby(true);
         }
         // TODO(fox-goals): the target goals are still blocked on the
         // attack-target foundation (see new_with_base).
@@ -882,8 +881,7 @@ impl Mob for FoxEntity {
                 .set(EquipmentSlot::MainHand, Self::spawn_held_item());
         }
 
-        group.advance_group(rand::random::<f32>);
-        self.finalize_spawn_mob_base(world, spawn_reason, Some(SpawnGroupData::Fox(group)))
+        self.finalize_spawn_ageable_mob(world, spawn_reason, Some(SpawnGroupData::Fox(group)))
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

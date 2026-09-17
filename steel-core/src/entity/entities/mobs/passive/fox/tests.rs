@@ -756,6 +756,12 @@ fn fox_group_shares_variant_and_babies_the_third_member() {
         panic!("a fox spawn returns fox group data");
     };
     assert_eq!(fox_group.group_size(), 3);
+    assert!(
+        !SpawnGroupData::Fox(fox_group)
+            .ageable_group_data_mut()
+            .should_spawn_baby(),
+        "a fox group never rolls the generic baby chance"
+    );
 
     assert_eq!(first.variant(), second.variant());
     assert_eq!(second.variant(), third.variant());
