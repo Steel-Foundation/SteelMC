@@ -128,16 +128,20 @@ impl Default for TargetingConditions {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{init_vanilla_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
     use steel_utils::locks::SyncMutex;
+    use steel_utils::types::UpdateFlags;
+    use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
+    use crate::behavior::init_behaviors;
     use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
-    use crate::test_support::fresh_test_world;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::world::World;
 
     struct HoveringTestMob {
         base: EntityBase,
@@ -148,15 +152,10 @@ mod tests {
     }
 
     impl HoveringTestMob {
-        fn new(id: i32) -> Self {
+        fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
             init_vanilla_registry();
             Self {
-                base: EntityBase::new(
-                    id,
-                    DVec3::ZERO,
-                    vanilla_entities::PIG.dimensions,
-                    Weak::new(),
-                ),
+                base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, world),
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
                 mob_base: MobBase::new(),
                 mob_flags: SyncMutex::new(0),
@@ -207,15 +206,30 @@ mod tests {
 
     #[test]
     fn sight_check_applies_to_a_mob_that_does_not_pathfind() {
+        init_vanilla_registry();
+        init_behaviors();
         let world = fresh_test_world("targeting_sight_check_scope");
-        let targeter = HoveringTestMob::new(1);
-        let target = HoveringTestMob::new(2);
+        let wall = BlockPos::new(2, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wall));
+        let targeter = HoveringTestMob::new(1, DVec3::new(0.5, 64.0, 0.5), Arc::downgrade(&world));
+        let target = HoveringTestMob::new(2, DVec3::new(4.5, 64.0, 0.5), Arc::downgrade(&world));
 
         assert!(
             targeter.as_pathfinder_mob().is_none(),
             "the targeter must not pathfind or this test proves nothing"
         );
 
+        assert!(
+            TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
+            "a mob with a clear view should pick its target"
+        );
+
+        assert!(world.set_block(
+            wall,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        targeter.mob_base().sensing().lock().tick();
         assert!(
             !TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
             "a mob that cannot see its target should not pick it, whether or not it pathfinds"
