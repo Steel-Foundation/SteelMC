@@ -443,7 +443,7 @@ impl Player {
             message_chain::ChainError::ExpiredProfileKey => ChatValidationError::ExpiredProfileKey,
             message_chain::ChainError::MissingProfileKey => ChatValidationError::MissingProfileKey,
             _ => ChatValidationError::Failed(Box::new(TextComponent::plain(
-                "Chain validation failed: {err}",
+                format!("Chain validation failed: {err}"),
             ))),
         })?;
 
