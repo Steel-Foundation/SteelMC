@@ -370,7 +370,7 @@ mod tests {
             &STORY_SMELT_IRON,
         ];
         registry.register_without_load(list);
-        let idx = *registry.by_key.get(&STORY_ROOT.key).unwrap();
+        let idx = *registry.by_key.get(&list[0].key).unwrap();
         let res = run(&mut registry, idx);
         assert!(res.is_ok());
         for (i, adv) in list.iter().enumerate() {
@@ -382,5 +382,35 @@ mod tests {
                 &adv.key
             );
         }
+    }
+
+    #[test]
+    fn root_with_branching_children() {
+        let mut registry = AdvancementRegistry::new();
+        let list: &[AdvancementRef] = &[
+            &END_ROOT,
+            &END_KILL_DRAGON,
+            &END_ENTER_END_GATEWAY,
+            &END_RESPAWN_DRAGON,
+            &END_DRAGON_EGG,
+            &END_DRAGON_BREATH,
+        ];
+        registry.register_without_load(list);
+        let idx = *registry.by_key.get(&list[0].key).unwrap();
+        let res = run(&mut registry, idx);
+        assert!(res.is_ok());
+        let mut locs = [(0f32, 0f32); 6];
+        for (i, adv) in list.iter().enumerate() {
+            locs[i] = get_location(&registry, &adv.key);
+        }
+        let expected = [
+            (0f32, 1.5f32),
+            (1f32, 1.5f32),
+            (2f32, 0f32),
+            (2f32, 1f32),
+            (2f32, 2f32),
+            (2f32, 3f32),
+        ];
+        assert_eq!(locs, expected);
     }
 }

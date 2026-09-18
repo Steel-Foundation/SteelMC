@@ -16,7 +16,6 @@ pub struct AdvancementNode {
 impl AdvancementNode {
     pub fn add_child(&mut self, child: usize) {
         self.children.push(child);
-        println!("{:?}", self);
     }
 
     #[must_use]
