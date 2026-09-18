@@ -352,7 +352,7 @@ mod tests {
                 .location
                 .read()
         });
-        loc.expect(&format!("unbale to get the location of {key}"))
+        loc.unwrap_or_else(|| panic!("unbale to get the location of {key}"))
     }
 
     #[test]
@@ -384,7 +384,7 @@ mod tests {
                 loc,
                 (i as f32, 0f32),
                 "node {} isn't at the right location",
-                &adv.key
+                adv.key
             );
         }
     }
