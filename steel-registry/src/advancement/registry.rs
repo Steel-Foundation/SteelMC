@@ -1,11 +1,12 @@
 use crate::advancement::{Advancement, positioner};
 use rustc_hash::FxHashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use steel_utils::Identifier;
 
 pub type AdvancementRef = &'static Advancement;
 
+#[derive(Debug)]
 pub struct AdvancementNode {
     pub children: Vec<usize>,
     pub parent: Option<usize>,
@@ -15,6 +16,7 @@ pub struct AdvancementNode {
 impl AdvancementNode {
     pub fn add_child(&mut self, child: usize) {
         self.children.push(child);
+        println!("{:?}", self);
     }
 
     #[must_use]
@@ -49,8 +51,8 @@ impl PartialEq<Self> for AdvancementNode {
 impl Eq for AdvancementNode {}
 
 impl Display for AdvancementNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value.key)
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.value.key)
     }
 }
 impl Hash for AdvancementNode {
@@ -86,11 +88,15 @@ impl AdvancementRegistry {
 
     fn register(&mut self, advancement: AdvancementRef, parent_idx: Option<usize>) {
         let id = advancement.key.clone();
-        self.adv_nodes.push(AdvancementNode::new(advancement, parent_idx));
         let node_idx = self.adv_nodes.len();
+        self.adv_nodes
+            .push(AdvancementNode::new(advancement, parent_idx));
         self.by_key.insert(id, node_idx);
         if let Some(parent) = parent_idx {
-            let parent_node = self.adv_nodes.get_mut(parent).expect("unable to get the parent node");
+            let parent_node = self
+                .adv_nodes
+                .get_mut(parent)
+                .expect("unable to get the parent node");
             parent_node.add_child(node_idx);
             self.tasks.push(node_idx);
         } else {
@@ -111,7 +117,7 @@ impl AdvancementRegistry {
         None
     }
 
-    fn register_all(&mut self, advancements: &[AdvancementRef]) {
+    pub(crate) fn register_all(&mut self, advancements: &[AdvancementRef]) {
         let mut advancements_to_add: Vec<AdvancementRef> = advancements.to_vec();
 
         while !advancements_to_add.is_empty() {
@@ -125,11 +131,19 @@ impl AdvancementRegistry {
             if advancements_to_add.len() == len_before && !advancements_to_add.is_empty() {
                 eprintln!(
                     "Couldn't load advancements: {:?}",
-                    advancements_to_add.iter().map(|a| &a.key).collect::<Vec<_>>()
+                    advancements_to_add
+                        .iter()
+                        .map(|a| &a.key)
+                        .collect::<Vec<_>>()
                 );
                 break;
             }
         }
+    }
+
+    #[cfg(test)]
+    pub fn register_without_load(&mut self, advancements: &[AdvancementRef]) {
+        self.register_all(advancements);
     }
 
     #[must_use]
@@ -141,21 +155,34 @@ impl AdvancementRegistry {
     #[must_use]
     #[inline]
     pub fn get_by_key(&self, key: &Identifier) -> Option<&AdvancementNode> {
-        self.by_key.get(key).map(|idx| &self.adv_nodes[*idx])
+        self.by_key
+            .get(key)
+            .and_then(|idx| self.adv_nodes.get(*idx))
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=(usize, &AdvancementNode)> + '_ {
-        self.adv_nodes
-            .iter()
-            .enumerate()
+    #[must_use]
+    #[inline]
+    pub fn get_by_idx(&self, idx: usize) -> Option<&AdvancementNode> {
+        self.adv_nodes.get(idx)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &AdvancementNode)> + '_ {
+        self.adv_nodes.iter().enumerate()
     }
 
     pub fn load(&mut self, advancements: &[AdvancementRef]) {
         self.register_all(advancements);
-        for advancement in self.roots.clone() {
-            let node = self.adv_nodes.get(advancement).expect("unable to get the node");
+        for advancement_idx in self.roots.clone() {
+            let node = self.adv_nodes.get(advancement_idx);
+            let Some(node) = node else {
+                eprintln!("unable to get the root node with index {}", advancement_idx);
+                return;
+            };
             if node.has_display() {
-                positioner::run(self, advancement);
+                let res = positioner::run(self, advancement_idx);
+                if let Err(e) = res {
+                    eprintln!("{}", e.get_message());
+                }
             }
         }
     }

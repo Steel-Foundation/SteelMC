@@ -4,13 +4,13 @@ use crate::loot_table::LootTableRef;
 use crate::recipe::UntypedRecipeRef;
 use std::cmp::PartialEq;
 use std::collections::BTreeMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display, Formatter};
 use steel_utils::Identifier;
 
-pub mod registry;
-pub mod display;
 pub mod criterion;
+pub mod display;
 pub mod positioner;
+pub mod registry;
 
 pub struct Advancement {
     pub key: Identifier,
@@ -30,15 +30,21 @@ impl Advancement {
     }
 }
 
-impl PartialEq for &Advancement {
+impl PartialEq for Advancement {
     fn eq(&self, other: &Self) -> bool {
         self.key == other.key
     }
 }
-impl Eq for &Advancement {}
+impl Eq for Advancement {}
 
 impl Display for Advancement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.key)
+    }
+}
+
+impl Debug for Advancement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.key)
     }
 }

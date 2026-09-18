@@ -85,7 +85,7 @@ impl ToTokens for AdvancementData {
         });
         let rewards = &self.advancement.rewards;
         tokens.extend(quote! {
-             static #const_ident: LazyLock<Advancement> = LazyLock::new(|| Advancement {
+             pub static #const_ident: LazyLock<Advancement> = LazyLock::new(|| Advancement {
                 key: Identifier::vanilla_static(#name),
                 parent: #parent,
                 criteria: #criteria,
