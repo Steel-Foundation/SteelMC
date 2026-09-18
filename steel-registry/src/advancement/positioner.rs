@@ -344,11 +344,15 @@ mod tests {
     use steel_utils::Identifier;
 
     fn get_location(registry: &AdvancementRegistry, key: &Identifier) -> (f32, f32) {
-        let loc = registry
-            .get_by_key(key)
-            .map(|val| *val.value.display.as_ref().unwrap().location.read());
-        assert!(loc.is_some());
-        loc.unwrap()
+        let loc = registry.get_by_key(key).map(|val| {
+            *val.value
+                .display
+                .as_ref()
+                .expect("does not have display")
+                .location
+                .read()
+        });
+        loc.expect(&format!("unbale to get the location of {key}"))
     }
 
     #[test]
@@ -371,7 +375,7 @@ mod tests {
             &STORY_SMELT_IRON,
         ];
         registry.register_without_load(list);
-        let idx = *registry.by_key.get(&list[0].key).unwrap();
+        let idx = registry.by_key[&list[0].key];
         let res = run(&mut registry, idx);
         assert!(res.is_ok());
         for (i, adv) in list.iter().enumerate() {
@@ -397,7 +401,7 @@ mod tests {
             &END_DRAGON_BREATH,
         ];
         registry.register_without_load(list);
-        let idx = *registry.by_key.get(&list[0].key).unwrap();
+        let idx = registry.by_key[&list[0].key];
         let res = run(&mut registry, idx);
         assert!(res.is_ok());
         let mut locs = [(0f32, 0f32); 6];
