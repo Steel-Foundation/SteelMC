@@ -1,4 +1,6 @@
-use crate::generator_functions::{generate_identifier, generate_item_stack_template, generate_option, generate_text_component};
+use crate::generator_functions::{
+    generate_identifier, generate_item_stack_template, generate_option, generate_text_component,
+};
 use crate::shared_structs::{ItemStackTemplateJson, TextComponentJson};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};

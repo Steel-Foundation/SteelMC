@@ -1,6 +1,5 @@
 use steel_utils::Identifier;
 
-
 pub struct ImpossibleInstance;
 impl CriterionTriggerInstance for ImpossibleInstance {}
 
@@ -30,7 +29,10 @@ where
 }
 
 #[expect(dead_code)]
-pub struct Criterion<T: CriterionTriggerInstance + 'static, G: CriterionTrigger<T> + ?Sized + 'static> {
+pub struct Criterion<
+    T: CriterionTriggerInstance + 'static,
+    G: CriterionTrigger<T> + ?Sized + 'static,
+> {
     trigger: &'static G,
     instance: Box<T>,
 }
@@ -39,7 +41,10 @@ static IMPOSSIBLE_TRIGGER: ImpossibleTrigger = ImpossibleTrigger;
 
 impl<T: CriterionTriggerInstance, G: CriterionTrigger<T> + ?Sized> Criterion<T, G> {
     pub fn new(trigger: &'static G, instance: T) -> Self {
-        Self { trigger, instance: Box::new(instance) }
+        Self {
+            trigger,
+            instance: Box::new(instance),
+        }
     }
 }
 

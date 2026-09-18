@@ -474,7 +474,7 @@ mod tests {
                     count,
                     DataComponentPatch::new(),
                 )
-                    .is_err()
+                .is_err()
             );
         }
         assert!(
@@ -483,7 +483,7 @@ mod tests {
                 1,
                 DataComponentPatch::new(),
             )
-                .is_err()
+            .is_err()
         );
     }
 
