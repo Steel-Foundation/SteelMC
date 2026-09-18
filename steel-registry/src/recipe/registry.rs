@@ -152,7 +152,7 @@ pub struct TypedRecipeSet<'a, D: RecipeMatches<I> + DowncastType, I: RecipeInput
 }
 
 impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> TypedRecipeSet<'_, D, I> {
-    pub fn iter(&self) -> impl Iterator<Item=TypedRecipeRef<D, I>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = TypedRecipeRef<D, I>> + '_ {
         self.indices.iter().filter_map(|index| {
             self.registry
                 .recipes
@@ -286,7 +286,7 @@ impl RecipeRegistry {
             .copied()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=UntypedRecipeRef> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = UntypedRecipeRef> + '_ {
         self.recipes.iter().copied()
     }
 
@@ -310,7 +310,7 @@ impl RecipeRegistry {
         &'registry self,
         recipe_type: &'static RecipeType<D, I>,
         input: &'registry I,
-    ) -> impl Iterator<Item=TypedRecipeRef<D, I>> + 'registry {
+    ) -> impl Iterator<Item = TypedRecipeRef<D, I>> + 'registry {
         let indices = self
             .by_type
             .get(recipe_type.key())

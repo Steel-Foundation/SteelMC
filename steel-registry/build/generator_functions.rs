@@ -1,4 +1,7 @@
-use crate::shared_structs::{BiomeCondition, BiomeConditionTarget, ItemStackTemplateJson, SpawnConditionEntry, TextComponentJson};
+use crate::shared_structs::{
+    BiomeCondition, BiomeConditionTarget, ItemStackTemplateJson, SpawnConditionEntry,
+    TextComponentJson,
+};
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};

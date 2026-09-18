@@ -83,6 +83,7 @@ pub mod structure;
 pub use structure::processor as structure_processor;
 pub use structure::set as structure_set;
 pub use structure::template_pool;
+pub mod advancement;
 pub mod ticket_type;
 pub mod timeline;
 pub mod trim_material;
@@ -94,7 +95,6 @@ pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
 pub mod zombie_nautilus_variant;
-pub mod advancement;
 
 pub use consume_effect::{ConsumeEffectData, ConsumeEffectType, ConsumeEffectTypeRef};
 pub use dye_color::DyeColor;
