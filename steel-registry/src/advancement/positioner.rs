@@ -6,9 +6,10 @@ pub enum PositionError {
 }
 
 impl PositionError {
+    #[must_use]
     pub fn get_message(&self) -> String {
         match self {
-            PositionError::InvalidRootIndex(index) => format!("Invalid root index at {}", index),
+            PositionError::InvalidRootIndex(index) => format!("Invalid root index at {index}"),
             PositionError::RootMustHaveDisplay(key) => format!("{key} must have display data"),
         }
     }
@@ -57,10 +58,10 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), Posi
     let min = TreeNodePosition::second_walk(&mut nodes, root_idx, 0.0, 0, root_y);
 
     if min < 0.0 {
-        TreeNodePosition::third_walk(&mut nodes, -min);
+        TreeNodePosition::normalize_y(&mut nodes, -min);
     }
 
-    TreeNodePosition::finalize_position(tree, &nodes, root_idx);
+    TreeNodePosition::set_position(tree, &nodes, root_idx);
     Ok(())
 }
 
@@ -89,7 +90,7 @@ impl TreeNodePosition {
     /// * `parent_idx` the index of the parent inside `nodes`
     /// * `adv_node_idx` the index of this node inside the `tree`
     /// * `previous_idx` the index inside the `nodes` of the last process brother node.
-    /// `None` if it's the first child to be process
+    ///   `None` if it's the first child to be process
     fn add_child(
         nodes: &mut Vec<TreeNodePosition>,
         tree: &mut AdvancementRegistry,
@@ -193,7 +194,7 @@ impl TreeNodePosition {
         min
     }
 
-    fn third_walk(nodes: &mut [TreeNodePosition], offset: f32) {
+    fn normalize_y(nodes: &mut [TreeNodePosition], offset: f32) {
         for node in nodes.iter_mut() {
             node.y += offset;
         }
@@ -323,14 +324,14 @@ impl TreeNodePosition {
         }
     }
 
-    fn finalize_position(
+    fn set_position(
         tree: &mut AdvancementRegistry,
         nodes: &[TreeNodePosition],
         idx: NodePositionIdx,
     ) {
         tree.adv_nodes[nodes[idx].node].set_location(nodes[idx].x as f32, nodes[idx].y);
         for &child_idx in &nodes[idx].children {
-            Self::finalize_position(tree, nodes, child_idx);
+            Self::set_position(tree, nodes, child_idx);
         }
     }
 }

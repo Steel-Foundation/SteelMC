@@ -174,7 +174,7 @@ impl AdvancementRegistry {
         for advancement_idx in self.roots.clone() {
             let node = self.adv_nodes.get(advancement_idx);
             let Some(node) = node else {
-                eprintln!("unable to get the root node with index {}", advancement_idx);
+                eprintln!("unable to get the root node with index {advancement_idx}");
                 return;
             };
             if node.has_display() {
