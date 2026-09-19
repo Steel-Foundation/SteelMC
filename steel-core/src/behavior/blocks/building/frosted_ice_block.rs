@@ -156,6 +156,7 @@ impl BlockBehavior for FrostedIceBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         None
@@ -216,7 +217,7 @@ mod tests {
         let state = vanilla_blocks::FROSTED_ICE.default_state();
         assert!(
             behavior()
-                .get_clone_item_stack(&vanilla_blocks::FROSTED_ICE, state, false)
+                .get_clone_item_stack(&vanilla_blocks::FROSTED_ICE, state, None, false)
                 .is_none()
         );
     }

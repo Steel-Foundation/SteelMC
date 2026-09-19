@@ -579,15 +579,17 @@ pub trait BlockBehavior: Send + Sync {
     /// # Arguments
     /// * `block` - The block being picked
     /// * `_state` - The block state (some blocks vary pick item based on state)
+    /// * `_block_entity` - An optional block entity (some blocks vary pick item based on block entity data)
     /// * `_include_data` - Whether to include block entity data (creative + Ctrl)
     #[expect(
         unused_variables,
-        reason = "default implementation only uses `block`; state/include_data are for overrides"
+        reason = "default implementation only uses `block`; state/block_entity/include_data are for overrides"
     )]
     fn get_clone_item_stack(
         &self,
         block: BlockRef,
         state: BlockStateId,
+        block_entity: Option<SharedBlockEntity>,
         include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(REGISTRY.items.by_block(block)))
