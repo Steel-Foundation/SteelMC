@@ -2330,6 +2330,27 @@ fn test_player_with_uuid(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) ->
     test_player_with_uuid_and_packets(server, world, uuid, "TestPlayer", 1).0
 }
 
+fn send_test_chunk_batch(server: &Server, player: &Player, world: &Arc<World>) -> Vec<ChunkPos> {
+    let center = *player.last_chunk_pos.lock();
+    let batch = player
+        .chunk_sender()
+        .lock()
+        .prepare_batch(world, center, &player.chunk_send_epoch)
+        .expect("ready chunks should prepare");
+    let encoded = ChunkSender::encode_batch(
+        &batch,
+        &mut FxHashMap::default(),
+        None,
+        server.chunk_encoding_pool.as_ref(),
+    );
+    player.chunk_sender().lock().commit_batch(
+        &batch,
+        encoded,
+        &player.connection,
+        &player.chunk_send_epoch,
+    )
+}
+
 fn prepare_respawn_test_world(world: &Arc<World>) {
     init_behaviors();
     {
@@ -3196,12 +3217,43 @@ fn death_respawn_replaces_the_live_player_incarnation() {
             .with_causing_entity(old_entity.clone())
             .with_direct_entity(old_entity);
         old_player.record_last_damage_source(&source);
+
+        let requested_chunks_per_tick = 2;
+        assert_ne!(
+            send_test_chunk_batch(&server, &old_player, &world),
+            Vec::<ChunkPos>::new()
+        );
+        assert!(
+            old_player
+                .chunk_sender()
+                .lock()
+                .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
+        );
+
         old_player.set_health(0.0);
         old_player.respawn();
         assert_eq!(server.jobs.len(), 1);
         finish_test_respawn_job(&server, &world).await;
 
         let replacement = current_respawn_replacement(&server, &world, &old_player);
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
+        assert_eq!(
+            send_test_chunk_batch(&server, &replacement, &world).len(),
+            requested_chunks_per_tick
+        );
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
         assert_eq!(replacement.get_health(), replacement.get_max_health());
         assert!(replacement.last_damage_source().is_none());
         assert!(old_player.last_damage_source().is_some());
@@ -3229,7 +3281,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 #[test]
 #[expect(
     clippy::too_many_lines,
-    reason = "exercises the complete End respawn ownership lifecycle"
+    reason = "keeps session pacing and pearl ownership assertions in the same End respawn lifecycle"
 )]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
     let target_world = fresh_test_world_in_domain("survival", "overworld");
@@ -3293,6 +3345,12 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         };
         let leave_game_before_credits = leave_game_count(&old_player);
 
+        let requested_chunks_per_tick = 2;
+        assert_ne!(
+            send_test_chunk_batch(&server, &old_player, &source_world),
+            Vec::<ChunkPos>::new()
+        );
+
         old_player.show_end_credits();
         assert!(!source_world.contains_player(&old_player));
         assert!(server.owns_online_player(&old_player));
@@ -3301,6 +3359,32 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         finish_test_respawn_job(&server, &target_world).await;
 
         let replacement = current_respawn_replacement(&server, &target_world, &old_player);
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
+        assert!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
+        );
+        // Respawn queues the target player's tickets after the job's scheduling pass.
+        target_world.chunk_map.advance_scheduling();
+        assert_eq!(
+            send_test_chunk_batch(&server, &replacement, &target_world).len(),
+            requested_chunks_per_tick
+        );
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
         assert!(replacement.has_seen_credits());
         assert!(replacement.last_damage_source().is_none());
         assert!(old_player.last_damage_source().is_some());
