@@ -3,10 +3,10 @@
 //! Handles sign placement and block entity creation for all sign types.
 
 use std::cmp::Ordering;
-use std::f64::consts::PI;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, convert_to_rotation_segment};
 use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -27,18 +27,6 @@ use crate::block_entity::{BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
-
-/// Converts a rotation in degrees to a 16-segment rotation value (0-15).
-///
-/// This is equivalent to vanilla's `RotationSegment.convertToSegment(float)`.
-/// Each segment is 22.5 degrees, and rotation is measured clockwise from south.
-fn convert_to_rotation_segment(degrees: f32) -> u8 {
-    // Normalize to 0-360
-    let normalized = degrees.rem_euclid(360.0);
-    // Convert to segment (each segment is 22.5 degrees)
-    // Round to nearest segment
-    (((normalized / 22.5) + 0.5) as u8) & 15
-}
 
 /// Gets the nearest looking directions from the player's rotation.
 ///
@@ -62,7 +50,7 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
         .iter()
         .map(|&dir| {
             let dir_angle = dir.to_yaw();
-            let diff = (rotation - dir_angle + 180.0).rem_euclid(360.0) - 180.0;
+            let diff = (rotation - dir_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
             (dir, diff.abs())
         })
         .collect();
@@ -99,11 +87,11 @@ pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player)
     let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
 
     // Calculate angle from sign to player (in degrees, -90 to account for Minecraft's coordinate system)
-    let player_angle = (dz.atan2(dx) * 180.0 / PI) as f32 - 90.0;
+    let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
     // Front text if the angle difference is <= 90 degrees
-    let diff = (sign_y_rot - player_angle + 180.0).rem_euclid(360.0) - 180.0;
-    diff.abs() <= 90.0
+    let diff = (sign_y_rot - player_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
+    diff.abs() <= DEGREE_90
 }
 
 /// Gets the Y rotation of a sign in degrees from its block state.
@@ -324,7 +312,7 @@ impl BlockBehavior for StandingSignBlock {
 
         // Calculate rotation from player's yaw
         // Vanilla: RotationSegment.convertToSegment(context.getRotation() + 180.0F)
-        let rotation = convert_to_rotation_segment(context.rotation() + 180.0);
+        let rotation = convert_to_rotation_segment(context.rotation() + DEGREE_180);
 
         Some(self.block.default_state().set_value(ROTATION_16, rotation))
     }
@@ -542,7 +530,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
         // Calculate rotation
         let rotation = if attached_to_middle {
             // Attached to middle - use player rotation
-            convert_to_rotation_segment(context.rotation() + 180.0)
+            convert_to_rotation_segment(context.rotation() + DEGREE_180)
         } else {
             // Attached to chains - align with direction
             convert_to_rotation_segment(direction.opposite().to_yaw())

@@ -15,8 +15,9 @@ mod ender_chest;
 mod jukebox;
 mod piston_moving;
 mod potent_sulfur;
-mod raw;
+mod shulker_box;
 mod sign;
+mod unimplemented;
 
 pub use abstract_furnace::{
     BlastFurnaceBlockEntity, FurnaceBlockEntity, FurnaceKind, SmokerBlockEntity,
@@ -38,5 +39,6 @@ pub use ender_chest::EnderChestBlockEntity;
 pub use jukebox::JukeboxBlockEntity;
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
-pub use raw::RawBlockEntity;
+pub use shulker_box::{AnimationStatus, SHULKER_BOX_SLOTS, ShulkerBoxBlockEntity};
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
+pub use unimplemented::UnimplementedBlockEntity;

@@ -484,7 +484,7 @@ impl PistonBaseBlock {
             SoundSource::Blocks,
             pos,
             0.5,
-            rand::random::<f32>().mul_add(0.15, 0.6),
+            rand::random_range(0.6..0.75),
             None,
         );
         world.game_event(
@@ -572,7 +572,7 @@ impl BlockBehavior for PistonBaseBlock {
                 SoundSource::Blocks,
                 pos,
                 0.5,
-                rand::random::<f32>().mul_add(0.25, 0.6),
+                rand::random_range(0.6..0.85),
                 None,
             );
             world.game_event(

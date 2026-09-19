@@ -14,6 +14,7 @@ fn generic_living_hurt_applies_health_damage() {
 #[test]
 fn generic_living_hurt_ignores_fire_damage_with_fire_resistance() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::LAVA);
@@ -56,6 +57,7 @@ fn generic_living_hurt_applies_armor_and_absorption() {
 #[test]
 fn generic_living_hurt_applies_resistance() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_mob_effect(vanilla_mob_effects::RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);

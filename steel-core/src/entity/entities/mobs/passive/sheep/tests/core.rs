@@ -210,7 +210,7 @@ fn sheep_breeding_mixes_parent_colors_through_dye_recipes() {
             .expect("shared entity should be a sheep");
         sheep.set_color(parent_color);
 
-        let offspring = Animal::get_breed_offspring(sheep, &world, partner)
+        let offspring = AgeableMob::get_breed_offspring(sheep, &world, partner)
             .expect("sheep breeding should create an offspring");
         let offspring = offspring
             .downcast_ref::<SheepEntity>()
@@ -240,7 +240,7 @@ fn sheep_breeding_falls_back_to_a_parent_color_without_a_mix_recipe() {
     sheep.set_color(DyeColor::Green);
 
     for _ in 0..COLOR_FALLBACK_TRIALS {
-        let offspring = Animal::get_breed_offspring(sheep, &world, partner)
+        let offspring = AgeableMob::get_breed_offspring(sheep, &world, partner)
             .expect("sheep breeding should create an offspring");
         let offspring = offspring
             .downcast_ref::<SheepEntity>()

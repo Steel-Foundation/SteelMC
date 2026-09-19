@@ -92,9 +92,9 @@ impl BlockBehavior for PumpkinBlock {
                 ),
                 drop,
                 DVec3::new(
-                    0.05 * x_offset + rng.random::<f64>() * 0.02,
+                    rng.random_range(0.05 * x_offset..0.05 * x_offset + 0.02),
                     0.05,
-                    0.05 * z_offset + rng.random::<f64>() * 0.02,
+                    rng.random_range(0.05 * z_offset..0.05 * z_offset + 0.02),
                 ),
             );
         }

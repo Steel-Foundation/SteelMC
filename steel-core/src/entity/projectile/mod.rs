@@ -18,6 +18,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::{DEGREE_180, DEGREE_360};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -25,7 +26,7 @@ use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLO
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{UuidExt, WorldAabb};
+use steel_utils::{BlockPos, UuidExt, WorldAabb};
 use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
@@ -35,6 +36,11 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
+
+use super::{
+    BUBBLE_COLUMN_ABOVE_UP_ACCELERATION, BUBBLE_COLUMN_DOWN_ACCELERATION,
+    BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
+};
 
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
@@ -201,6 +207,31 @@ pub trait Projectile: Entity + ProjectileEventSource {
     ) -> (f64, f64) {
         let movement = self.velocity();
         (movement.x, movement.z)
+    }
+
+    /// Applies bubble-column surface acceleration without clamping velocity.
+    fn on_above_bubble_column_projectile(&self, drag_down: bool, pos: BlockPos) {
+        let acceleration = if drag_down {
+            -BUBBLE_COLUMN_DOWN_ACCELERATION
+        } else {
+            BUBBLE_COLUMN_ABOVE_UP_ACCELERATION
+        };
+        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
+    }
+
+    /// Applies inside-bubble-column acceleration without clamping velocity.
+    fn on_inside_bubble_column_projectile(&self, drag_down: bool) {
+        let acceleration = if drag_down {
+            -BUBBLE_COLUMN_DOWN_ACCELERATION
+        } else {
+            BUBBLE_COLUMN_INSIDE_UP_ACCELERATION
+        };
+        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+        self.reset_fall_distance();
     }
 
     /// Sets the owner UUID. Vanilla stores an `EntityReference`; Steel stores the
@@ -846,11 +877,11 @@ const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
 fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
-    while rot - rot_old < -180.0 {
-        rot_old -= 360.0;
+    while rot - rot_old < -DEGREE_180 {
+        rot_old -= DEGREE_360;
     }
-    while rot - rot_old >= 180.0 {
-        rot_old += 360.0;
+    while rot - rot_old >= DEGREE_180 {
+        rot_old += DEGREE_360;
     }
     rot_old + 0.2 * (rot - rot_old)
 }

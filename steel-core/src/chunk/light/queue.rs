@@ -1,4 +1,7 @@
+use std::cell::RefCell;
 use std::iter::FusedIterator;
+use std::mem;
+use std::ops::{Deref, DerefMut};
 
 use steel_utils::{BlockPos, Direction};
 
@@ -472,6 +475,102 @@ impl PackedLightPropagationQueues {
     pub fn clear(&mut self) {
         self.increase.clear();
         self.decrease.clear();
+    }
+
+    /// Creates an empty queue pair without reserving propagation scratch capacity.
+    const fn empty_without_capacity() -> Self {
+        Self {
+            increase: PackedLightPropagationQueue {
+                entries: Vec::new(),
+                read_index: 0,
+            },
+            decrease: PackedLightPropagationQueue {
+                entries: Vec::new(),
+                read_index: 0,
+            },
+        }
+    }
+
+    const fn total_capacity(&self) -> usize {
+        self.increase.entries.capacity() + self.decrease.entries.capacity()
+    }
+}
+
+/// Retained-capacity ceiling for the recycled queue pair, summed over both
+/// queues (~2 MiB of packed 8-byte entries). Larger buffers are dropped
+/// instead of pinned to a worker thread.
+const POOLED_PACKED_QUEUES_MAX_ENTRIES: usize = 256 * 1024;
+
+thread_local! {
+    static POOLED_PACKED_QUEUES: RefCell<Option<PackedLightPropagationQueues>> =
+        const { RefCell::new(None) };
+}
+
+/// A packed propagation queue pair leased from a thread-local pool.
+///
+/// Light chunk work constructs fresh queues per chunk; leasing recycles the
+/// worker's previous buffers instead of reallocating ~64 KiB each time. The
+/// guard returns its buffers to the pool on drop, so early returns and panics
+/// stay safe.
+///
+/// Dropping an oversized lease discards its buffers without evicting a pair
+/// that an overlapping lease has already parked.
+#[must_use]
+pub struct PooledPackedLightQueues {
+    inner: PackedLightPropagationQueues,
+}
+
+impl PooledPackedLightQueues {
+    /// Leases empty queues from the worker's pool, allocating on first use.
+    pub fn take() -> Self {
+        let inner = POOLED_PACKED_QUEUES.with(|pool| match pool.borrow_mut().take() {
+            Some(queues) => queues,
+            None => PackedLightPropagationQueues::new(),
+        });
+
+        Self { inner }
+    }
+}
+
+impl Default for PooledPackedLightQueues {
+    fn default() -> Self {
+        Self::take()
+    }
+}
+
+impl Deref for PooledPackedLightQueues {
+    type Target = PackedLightPropagationQueues;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for PooledPackedLightQueues {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl Drop for PooledPackedLightQueues {
+    fn drop(&mut self) {
+        let mut queues = mem::replace(
+            &mut self.inner,
+            PackedLightPropagationQueues::empty_without_capacity(),
+        );
+
+        queues.clear();
+
+        let recycled =
+            (queues.total_capacity() <= POOLED_PACKED_QUEUES_MAX_ENTRIES).then_some(queues);
+
+        POOLED_PACKED_QUEUES.with(|pool| {
+            if let Some(queues) = recycled {
+                *pool.borrow_mut() = Some(queues);
+            }
+        });
     }
 }
 
@@ -1107,5 +1206,31 @@ mod tests {
             })
         );
         assert!(!queues.has_work());
+    }
+
+    #[test]
+    fn oversized_lease_preserves_parked_pool_entry() {
+        let mut oversized = PooledPackedLightQueues::take();
+        for _ in 0..=POOLED_PACKED_QUEUES_MAX_ENTRIES {
+            oversized.enqueue_increase(packed_entry(15));
+        }
+        assert!(oversized.total_capacity() > POOLED_PACKED_QUEUES_MAX_ENTRIES);
+
+        // Lease a second pair while the oversized one is still open; dropping
+        // it parks buffers that the oversized lease's drop must not evict.
+        let mut parked = PooledPackedLightQueues::take();
+        for _ in 0..=PACKED_LIGHT_QUEUE_MIN_CAPACITY {
+            parked.enqueue_increase(packed_entry(15));
+        }
+        let parked_capacity = parked.total_capacity();
+        assert!(parked_capacity > 2 * PACKED_LIGHT_QUEUE_MIN_CAPACITY);
+        drop(parked);
+
+        drop(oversized);
+
+        assert_eq!(
+            PooledPackedLightQueues::take().total_capacity(),
+            parked_capacity
+        );
     }
 }

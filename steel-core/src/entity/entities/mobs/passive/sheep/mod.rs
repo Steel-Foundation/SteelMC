@@ -7,7 +7,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::biome::BiomeRef;
-use steel_registry::data_components::vanilla_components::DYE;
+use steel_registry::data_components::vanilla_components::{DYE, SHEEP_COLOR};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -266,7 +266,7 @@ impl SheepEntity {
             };
             let jitter = DVec3::new(
                 (rand::random::<f64>() - rand::random::<f64>()) * 0.1,
-                rand::random::<f64>() * 0.05,
+                rand::random_range(0.0..0.05),
                 (rand::random::<f64>() - rand::random::<f64>()) * 0.1,
             );
             item_entity.set_velocity(item_entity.velocity() + jitter);
@@ -367,6 +367,12 @@ impl Entity for SheepEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(color) = item_stack.get(SHEEP_COLOR) {
+            self.set_color(*color);
+        }
     }
 
     fn base_tick(&self) {
@@ -486,6 +492,17 @@ impl AgeableMob for SheepEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
+
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
+        let parent1_color = self.color();
+        let parent2_color = partner
+            .downcast_ref::<SheepEntity>()
+            .map_or(parent1_color, SheepEntity::color);
+        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
+        if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
+            offspring.set_color(mixed_color);
+        }
+    }
 }
 
 impl Animal for SheepEntity {
@@ -495,17 +512,6 @@ impl Animal for SheepEntity {
 
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         SheepEntity::is_food(item_stack)
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
-        let parent1_color = self.color();
-        let parent2_color = partner
-            .downcast_ref::<SheepEntity>()
-            .map_or(parent1_color, SheepEntity::color);
-        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
-        if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
-            offspring.set_color(mixed_color);
-        }
     }
 }
 

@@ -30,7 +30,7 @@ impl ItemBehavior for EnderPearlItem {
         let player = context.player;
         let world = context.world;
 
-        let pitch = 0.4 / (rand::random::<f32>() * 0.4 + 0.8);
+        let pitch = 0.4 / rand::random_range(0.8..1.2);
         world.play_sound_at(
             &sound_events::ENTITY_ENDER_PEARL_THROW,
             SoundSource::Neutral,

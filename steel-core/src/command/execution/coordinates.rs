@@ -1,9 +1,7 @@
 //! Vanilla command coordinate expressions.
 
-use std::f32::consts::PI;
-
 use glam::DVec3;
-use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_90, trig};
 use steel_utils::{BlockPos, translations};
 use text_components::{TextComponent, translation::Translation};
 
@@ -136,10 +134,9 @@ impl LocalCoordinates {
     }
 
     fn position(self, anchor: DVec3, (yaw, pitch): (f32, f32)) -> DVec3 {
-        let radians_per_degree = PI / 180.0;
-        let y_rotation = (yaw + 90.0) * radians_per_degree;
-        let x_rotation = -pitch * radians_per_degree;
-        let x_up_rotation = (-pitch + 90.0) * radians_per_degree;
+        let y_rotation = (yaw + DEGREE_90) * DEG_TO_RAD;
+        let x_rotation = -pitch * DEG_TO_RAD;
+        let x_up_rotation = (-pitch + DEGREE_90) * DEG_TO_RAD;
         let y_cos = f64::from(trig::cos(f64::from(y_rotation)));
         let y_sin = f64::from(trig::sin(f64::from(y_rotation)));
         let x_cos = f64::from(trig::cos(f64::from(x_rotation)));

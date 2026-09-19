@@ -5,7 +5,7 @@ use std::{
 };
 
 use steel_core::{
-    config::WorldsConfig,
+    config::{RuntimeConfig, WorldsConfig},
     permission::{
         PermissionGroupConfig, PermissionGroupStore, PermissionGroups, PermissionGroupsConfig,
         PermissionMetadataRuleConfig, PermissionMetadataValue,
@@ -36,9 +36,6 @@ fn packaged_configs_parse() {
         "package-content/config.schema.json\n",
         "# Documentation: https://steelmc.dev/configuration/server-configuration/\n\n",
     )));
-    assert!(!config.server.allow_flight);
-    assert_eq!(config.server.chat_spam_threshold_seconds, 10);
-    assert_eq!(config.server.command_spam_threshold_seconds, 10);
     validate(&config.server).expect("default config validates");
     let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
     assert!(DEFAULT_WORLDS.starts_with(concat!(
@@ -51,6 +48,80 @@ fn packaged_configs_parse() {
         toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
     PermissionGroups::from_config(groups).expect("default groups validate");
     assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
+}
+
+/// Covers every `RuntimeConfig` field. The destructure is exhaustive on purpose, so adding
+/// a field stops this compiling until someone extends it.
+#[test]
+fn packaged_config_matches_the_runtime_config_defaults() {
+    let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+    let RuntimeConfig {
+        max_players,
+        view_distance,
+        simulation_distance,
+        max_chained_neighbor_updates,
+        online_mode,
+        auth_server,
+        profile_server,
+        services_server,
+        encryption,
+        allow_flight,
+        motd,
+        use_favicon,
+        favicon,
+        enforce_secure_chat,
+        chat_spam_threshold_seconds,
+        command_spam_threshold_seconds,
+        compression,
+        server_links,
+        packet_workers,
+        chunk_generation_threads,
+        chunk_encoding_threads,
+    } = config.server.into_runtime_config();
+    let defaults = RuntimeConfig::default();
+
+    assert_eq!(max_players, defaults.max_players);
+    assert_eq!(view_distance, defaults.view_distance);
+    assert_eq!(simulation_distance, defaults.simulation_distance);
+    assert_eq!(
+        max_chained_neighbor_updates,
+        defaults.max_chained_neighbor_updates
+    );
+    assert_eq!(online_mode, defaults.online_mode);
+    assert_eq!(auth_server, defaults.auth_server);
+    assert_eq!(profile_server, defaults.profile_server);
+    assert_eq!(services_server, defaults.services_server);
+    assert_eq!(encryption, defaults.encryption);
+    assert_eq!(allow_flight, defaults.allow_flight);
+    assert_eq!(motd, defaults.motd);
+    assert_eq!(use_favicon, defaults.use_favicon);
+    assert_eq!(favicon, defaults.favicon);
+    assert_eq!(enforce_secure_chat, defaults.enforce_secure_chat);
+    assert_eq!(
+        chat_spam_threshold_seconds,
+        defaults.chat_spam_threshold_seconds
+    );
+    assert_eq!(
+        command_spam_threshold_seconds,
+        defaults.command_spam_threshold_seconds
+    );
+
+    let packaged_compression = compression.expect("packaged config enables compression");
+    let default_compression = defaults
+        .compression
+        .expect("default config enables compression");
+    assert_eq!(
+        packaged_compression.threshold,
+        default_compression.threshold
+    );
+    assert_eq!(packaged_compression.level, default_compression.level);
+
+    // These four diverge by design, so only the packaged side is pinned: links are the
+    // embedder's to choose, and a thread count of zero means the automatic default `None` does.
+    assert!(server_links.is_some());
+    assert_eq!(packet_workers, Some(0));
+    assert_eq!(chunk_generation_threads, Some(0));
+    assert_eq!(chunk_encoding_threads, Some(0));
 }
 
 #[test]
