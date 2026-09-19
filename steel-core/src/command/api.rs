@@ -28,6 +28,7 @@ use super::{
     },
 };
 use crate::command::brigadier::ArgumentSuggestionContext;
+use crate::command::signing_context::CommandSigningContext;
 use crate::{
     entity::SharedEntity,
     permission::{PermissionExpr, PermissionState},
@@ -457,6 +458,12 @@ impl<'source> CommandSource<'source> {
     pub fn send_failure(self, message: TextComponent) {
         self.inner.send_failure(message);
     }
+
+    /// Return the signing context (salt, timestamp, ...) of this command source (if it exists)
+    #[must_use]
+    pub const fn signing_context(self) -> Option<&'source CommandSigningContext> {
+        self.inner.signing_context()
+    }
 }
 
 /// A command parsing or execution error with vanilla-style feedback.
@@ -659,6 +666,11 @@ pub trait CommandArgumentParser:
 
     /// Returns the vanilla command-tree parser and optional server suggestion provider.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 impl<P> SteelArgumentParser for P
@@ -694,6 +706,10 @@ where
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         CommandArgumentParser::protocol_argument(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        CommandArgumentParser::is_signed(self)
     }
 }
 
