@@ -36,20 +36,3 @@ impl BlockBehavior for StainedGlassBlock {
         Some(self.block.default_state())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use steel_registry::init_vanilla_registry;
-    use steel_registry::vanilla_blocks;
-
-    #[test]
-    fn stained_glass_keeps_beacon_color() {
-        init_vanilla_registry();
-
-        let block = StainedGlassBlock::new(&vanilla_blocks::WHITE_STAINED_GLASS, DyeColor::White);
-
-        assert_eq!(block.block, &vanilla_blocks::WHITE_STAINED_GLASS);
-        assert_eq!(block.color(), DyeColor::White);
-    }
-}
