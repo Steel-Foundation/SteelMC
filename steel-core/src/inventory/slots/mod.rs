@@ -3,6 +3,7 @@
 mod anvil_slots;
 mod armor_slot;
 mod crafting_slots;
+mod enchantment_slots;
 mod furnace_slots;
 mod normal_slot;
 mod restricted_slot;
@@ -13,6 +14,7 @@ pub mod slot;
 pub use anvil_slots::*;
 pub use armor_slot::ArmorSlot;
 pub use crafting_slots::CraftingHandler;
+pub use enchantment_slots::EnchantItemSlot;
 pub use furnace_slots::{FurnaceFuelSlot, FurnaceResultSlot};
 pub use normal_slot::NormalSlot;
 pub use restricted_slot::*;
