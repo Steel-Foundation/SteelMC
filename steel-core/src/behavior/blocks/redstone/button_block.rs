@@ -287,6 +287,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
+    use crate::entity::EntityArc;
     use crate::entity::{InsideBlockEffectCollector, SharedEntity};
     use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
@@ -317,7 +318,7 @@ mod tests {
             &vanilla_entities::ARROW,
         );
         world
-            .try_add_entity(Arc::clone(&arrow))
+            .try_add_entity(EntityArc::clone(&arrow))
             .expect("test arrow should enter loaded chunk");
 
         let mut effects = InsideBlockEffectCollector::new();

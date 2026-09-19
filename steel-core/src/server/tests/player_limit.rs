@@ -5,7 +5,7 @@ use text_components::TextComponent;
 use tokio::{fs, runtime::Builder};
 use uuid::Uuid;
 
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityArc};
 use crate::permission::{
     OP_GROUP, PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataEntry,
     PermissionMetadataRuleConfig, PermissionMetadataSet, PermissionMetadataValue, PermissionSet,
@@ -36,7 +36,7 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         )
         .await?;
         let (slow, _) = test_player_with_packets(&server, Arc::clone(&world), "Slow", 1);
-        let (fast, _) = test_player_with_packets(&server, world, "Fast", 2);
+        let (fast, _) = test_player_with_packets(&server, Arc::clone(&world), "Fast", 2);
 
         let slow_reservation = server.try_reserve_player_join(slow.gameprofile.id);
         let fast_reservation = server.try_reserve_player_join(fast.gameprofile.id);
@@ -44,11 +44,14 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         assert!(fast_reservation.is_some());
         assert!(!server.is_player_limit_reached(fast.gameprofile.id));
 
-        assert_eq!(server.admit_reserved_player(Arc::clone(&fast)), Ok(()));
+        assert_eq!(
+            server.admit_reserved_player(EntityArc::clone(&fast)),
+            Ok(())
+        );
         assert!(server.is_player_limit_reached(slow.gameprofile.id));
         assert!(server.is_player_limit_reached(fast.gameprofile.id));
         assert_eq!(
-            server.admit_reserved_player(Arc::clone(&slow)),
+            server.admit_reserved_player(EntityArc::clone(&slow)),
             Err(PlayerJoinError::ServerFull),
         );
         assert_eq!(server.player_count(), 1);
@@ -108,7 +111,8 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
             .await
             .map_err(|error| error.to_string())?;
         assert!(!server.is_player_limit_reached(uuid));
-        let (player, _) = test_player_with_uuid_and_packets(&server, world, uuid, "Candidate", 1);
+        let (player, _) =
+            test_player_with_uuid_and_packets(&server, Arc::clone(&world), uuid, "Candidate", 1);
         assert!(server.reserve_player_join(&player));
 
         server
@@ -165,7 +169,7 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
             spawn_chunk_request: world.request_player_spawn_chunks(position),
         };
         server.finish_prepared_player_join(PendingPlayerJoin {
-            player: Arc::clone(&player),
+            player: EntityArc::clone(&player),
             state: Ok(state),
         });
 

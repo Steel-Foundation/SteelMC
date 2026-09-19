@@ -1,5 +1,6 @@
 use std::ptr;
 
+use crate::entity::EntityArc;
 use crate::player::connection::NetworkConnection;
 
 use super::{
@@ -242,7 +243,7 @@ impl Server {
         Some(Arc::clone(saved_world))
     }
 
-    pub(super) fn apply_domain_player_state(player: &Arc<Player>, state: &DomainPlayerState) {
+    pub(super) fn apply_domain_player_state(player: &EntityArc<Player>, state: &DomainPlayerState) {
         match &state.data {
             DomainPlayerData::SavedRestored { data } => {
                 data.apply_to_player(player);
@@ -297,13 +298,13 @@ impl Server {
 
     pub(super) fn schedule_domain_restores(
         &self,
-        player: &Arc<Player>,
+        player: &EntityArc<Player>,
         residence_token: DomainResidenceToken,
         restores: PreparedDomainRestores,
     ) {
         if let Some(root_vehicle) = restores.root_vehicle {
             if let Some(job) = RootVehicleRestoreJob::new(
-                Arc::clone(player),
+                EntityArc::clone(player),
                 Arc::clone(&restores.target_world),
                 &root_vehicle,
                 residence_token,
@@ -322,7 +323,7 @@ impl Server {
         for restore in restores.ender_pearls {
             let pearl_uuid = Uuid::from_bytes(restore.payload.entity.uuid);
             if let Some(job) = EnderPearlRestoreJob::new(
-                Arc::clone(player),
+                EntityArc::clone(player),
                 restore.world,
                 restore.payload.entity,
                 residence_token,
@@ -420,12 +421,13 @@ impl Server {
     }
 
     /// Gets all the players on the server
-    pub fn get_players(&self) -> Vec<Arc<Player>> {
+    pub fn get_players(&self) -> Vec<EntityArc<Player>> {
         let mut players = vec![];
-        self.online_players.iter_players(|_, p: &Arc<Player>| {
-            players.push(p.clone());
-            true
-        });
+        self.online_players
+            .iter_players(|_, p: &EntityArc<Player>| {
+                players.push(p.clone());
+                true
+            });
         players
     }
 

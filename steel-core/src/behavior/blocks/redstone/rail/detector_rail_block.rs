@@ -248,6 +248,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
+    use crate::entity::EntityArc;
     use crate::entity::{InsideBlockEffectCollector, RemovalReason, SharedEntity};
     use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
@@ -273,7 +274,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(Arc::clone(&minecart))
+            .try_add_entity(EntityArc::clone(&minecart))
             .expect("test minecart should enter loaded chunk");
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::DETECTOR_RAIL);
@@ -283,13 +284,13 @@ mod tests {
         let powered = world.get_block_state(pos);
         assert!(powered.get_value(POWERED));
         assert_eq!(
-            behavior.get_own_signal(powered, &world, pos, SignalQueryContext::DEFAULT,),
+            behavior.get_own_signal(powered, world.as_ref(), pos, SignalQueryContext::DEFAULT,),
             15
         );
         assert_eq!(
             behavior.get_direct_signal(
                 powered,
-                &world,
+                world.as_ref(),
                 pos,
                 Direction::Up,
                 SignalQueryContext::DEFAULT,
@@ -299,7 +300,7 @@ mod tests {
         assert_eq!(
             behavior.get_direct_signal(
                 powered,
-                &world,
+                world.as_ref(),
                 pos,
                 Direction::North,
                 SignalQueryContext::DEFAULT,

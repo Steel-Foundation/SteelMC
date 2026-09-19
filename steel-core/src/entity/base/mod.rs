@@ -8,6 +8,8 @@ mod movement;
 mod persistence;
 mod relationships;
 
+use crate::entity::EntityArc;
+use crate::entity::damage::DamageHistoryBinding;
 pub use fire_freeze::EntityFireFreezeState;
 pub use movement::{
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
@@ -381,6 +383,7 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    damage_history: DamageHistoryBinding,
     /// Generation counter for this runtime construction of the entity.
     generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
@@ -452,6 +455,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            damage_history: DamageHistoryBinding::default(),
             generation: EntityGeneration::next(),
             id,
             uuid,
@@ -482,6 +486,10 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    pub(crate) const fn damage_history(&self) -> &DamageHistoryBinding {
+        &self.damage_history
     }
 
     /// Gets the generation counter of this runtime construction of the entity.
@@ -842,8 +850,8 @@ impl EntityBase {
             return;
         }
 
-        passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
-        let passenger_ref = Arc::downgrade(passenger);
+        passenger.base().relationships.lock().vehicle = Some(EntityArc::downgrade(vehicle));
+        let passenger_ref = EntityArc::downgrade(passenger);
         let mut vehicle_relationships = vehicle.base().relationships.lock();
         let first_passenger_is_player = vehicle_relationships
             .first_passenger()

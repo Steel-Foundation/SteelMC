@@ -298,6 +298,7 @@ mod tests {
     use super::*;
     use crate::behavior::PlacementOrientation;
     use crate::bootstrap::init_globals;
+    use crate::entity::EntityArc;
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -370,7 +371,7 @@ mod tests {
         }
     }
 
-    fn test_player(world: &Arc<World>) -> Arc<Player> {
+    fn test_player(world: &Arc<World>) -> EntityArc<Player> {
         TestPlayerBuilder::new(Arc::clone(world), "BookshelfTester", TEST_PLAYER_ENTITY_ID)
             .uuid(TEST_PLAYER_UUID)
             .build()
@@ -613,7 +614,7 @@ mod tests {
         assert_eq!(
             behavior.get_analog_output_signal(
                 world.get_block_state(TEST_POS),
-                &world,
+                world.as_ref(),
                 TEST_POS,
                 ARBITRARY_COMPARATOR_QUERY_DIRECTION,
             ),
@@ -663,7 +664,7 @@ mod tests {
             assert_eq!(
                 behavior.get_analog_output_signal(
                     world.get_block_state(TEST_POS),
-                    &world,
+                    world.as_ref(),
                     TEST_POS,
                     ARBITRARY_COMPARATOR_QUERY_DIRECTION,
                 ),

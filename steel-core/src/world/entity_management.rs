@@ -6,6 +6,7 @@ use super::{
     RemovalReason, SectionPos, SharedEntity, SharedGameEventListener, SyncMutex, World, WorldAabb,
     WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
 };
+use crate::entity::EntityArc;
 
 pub(super) struct NavigatingMobTracker {
     ids: SyncMutex<FxHashSet<i32>>,
@@ -216,7 +217,7 @@ impl World {
         if !seen.insert(entity.id()) {
             return;
         }
-        tree.push(Arc::clone(entity));
+        tree.push(EntityArc::clone(entity));
         for passenger in entity.passengers() {
             Self::collect_loaded_entity_tree(&passenger, seen, tree);
         }
@@ -300,7 +301,11 @@ impl World {
     /// This is a convenience method for dropping items in the world.
     ///
     /// Returns `None` if the item stack is empty.
-    pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
+    pub fn spawn_item(
+        self: &Arc<Self>,
+        pos: DVec3,
+        item: ItemStack,
+    ) -> Option<EntityArc<ItemEntity>> {
         self.spawn_item_with_velocity(pos, item, ItemEntity::default_spawn_velocity())
     }
 
@@ -312,7 +317,7 @@ impl World {
         pos: DVec3,
         item: ItemStack,
         velocity: DVec3,
-    ) -> Option<Arc<ItemEntity>> {
+    ) -> Option<EntityArc<ItemEntity>> {
         use crate::entity::next_entity_id;
 
         if item.is_empty() {
@@ -320,7 +325,7 @@ impl World {
         }
 
         let entity_id = next_entity_id();
-        let entity = Arc::new(ItemEntity::with_item_and_velocity(
+        let entity = EntityArc::new(ItemEntity::with_item_and_velocity(
             &vanilla_entities::ITEM,
             entity_id,
             pos,
@@ -344,7 +349,7 @@ impl World {
         self: &Arc<Self>,
         pos: BlockPos,
         item: ItemStack,
-    ) -> Option<Arc<ItemEntity>> {
+    ) -> Option<EntityArc<ItemEntity>> {
         use steel_registry::vanilla_entities;
 
         if item.is_empty() {
@@ -397,7 +402,7 @@ impl World {
         pos: BlockPos,
         face: Direction,
         item: ItemStack,
-    ) -> Option<Arc<ItemEntity>> {
+    ) -> Option<EntityArc<ItemEntity>> {
         use steel_registry::vanilla_entities;
 
         if item.is_empty() {
@@ -570,9 +575,9 @@ impl World {
         position: DVec3,
         max_distance: f64,
         mut predicate: impl FnMut(&Player) -> bool,
-    ) -> Option<Arc<Player>> {
+    ) -> Option<EntityArc<Player>> {
         let max_distance_sqr = max_distance * max_distance;
-        let mut nearest: Option<(Arc<Player>, f64)> = None;
+        let mut nearest: Option<(EntityArc<Player>, f64)> = None;
         self.players.iter_players(|_, player| {
             if predicate(player) {
                 let distance_sqr = player.position().distance_squared(position);

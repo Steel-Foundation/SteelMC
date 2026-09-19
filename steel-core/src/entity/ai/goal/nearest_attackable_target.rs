@@ -152,6 +152,9 @@ impl Goal for NearestAttackableTargetGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityArc;
+    use crate::test_support::TestWorld;
+
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -166,25 +169,30 @@ mod tests {
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (Arc<World>, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
+    ) -> (
+        TestWorld,
+        EntityArc<PigEntity>,
+        EntityArc<PigEntity>,
+        EntityArc<CowEntity>,
+    ) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(name);
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-        let hunter = Arc::new(PigEntity::new(
+        let hunter = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(&world),
         ));
-        let nearer_pig = Arc::new(PigEntity::new(
+        let nearer_pig = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(&world),
         ));
-        let farther_cow = Arc::new(CowEntity::new(
+        let farther_cow = EntityArc::new(CowEntity::new(
             &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),
@@ -192,9 +200,9 @@ mod tests {
         ));
 
         for entity in [
-            Arc::clone(&hunter) as SharedEntity,
-            Arc::clone(&nearer_pig) as SharedEntity,
-            Arc::clone(&farther_cow) as SharedEntity,
+            EntityArc::clone(&hunter) as SharedEntity,
+            EntityArc::clone(&nearer_pig) as SharedEntity,
+            EntityArc::clone(&farther_cow) as SharedEntity,
         ] {
             world
                 .try_add_entity(entity)

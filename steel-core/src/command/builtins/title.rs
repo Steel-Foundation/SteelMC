@@ -1,7 +1,5 @@
 //! Vanilla title display command.
 
-use std::sync::Arc;
-
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -13,6 +11,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::entity::EntityArc;
 use crate::{entity::Entity as _, player::Player};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -112,7 +111,7 @@ fn set_times(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
     Ok(result)
 }
 
-fn target_count(targets: &[Arc<Player>]) -> Result<i32, CommandSyntaxError> {
+fn target_count(targets: &[EntityArc<Player>]) -> Result<i32, CommandSyntaxError> {
     i32::try_from(targets.len()).map_err(|_| {
         CommandSyntaxError::dynamic("Target player count exceeds the command result range")
     })
@@ -120,7 +119,7 @@ fn target_count(targets: &[Arc<Player>]) -> Result<i32, CommandSyntaxError> {
 
 fn send_success(
     context: &SteelCommandContext<CommandSource>,
-    targets: &[Arc<Player>],
+    targets: &[EntityArc<Player>],
     operation: TitleOperation,
 ) {
     let message = operation.success_message(targets);
@@ -143,7 +142,7 @@ enum TitleOperation {
 }
 
 impl TitleOperation {
-    fn success_message(self, targets: &[Arc<Player>]) -> TextComponent {
+    fn success_message(self, targets: &[EntityArc<Player>]) -> TextComponent {
         if let [target] = targets {
             let name = target.display_name();
             return match self {

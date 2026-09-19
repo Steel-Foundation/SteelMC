@@ -597,6 +597,8 @@ impl BlockBehavior for PistonBaseBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -623,7 +625,7 @@ mod tests {
     fn powered_piston_world(
         key: &'static str,
         piston: BlockRef,
-    ) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, BlockPos) {
+    ) -> (TestWorld, Arc<ChunkHolder>, BlockPos, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use std::f64::consts::TAU;
 
 use glam::DVec3;
@@ -55,7 +56,7 @@ impl Goal for RandomLookAroundGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         self.look_time -= 1;
         let position = mob.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
@@ -79,6 +80,7 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::{Entity, EntityBase, LivingEntity, LivingEntityBase, Mob, MobBase};
 
     struct TestPathfinderMob {
@@ -151,11 +153,12 @@ mod tests {
 
     #[test]
     fn random_look_around_sets_look_control_to_eye_height() {
-        let mob = TestPathfinderMob::new();
+        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         let mut goal = RandomLookAroundGoal::new();
 
-        goal.start(&mob);
-        goal.tick(&mob);
+        goal.start(mob.as_ref());
+        goal.tick(mob.as_ref(), &mob_entity);
 
         let look_control = mob.mob_base().controls().lock().look_control;
         assert!(look_control.is_looking_at_target());

@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityArc;
 
 #[test]
 fn jump_from_ground_uses_jump_strength_and_marks_velocity_sync() {
@@ -77,11 +78,12 @@ fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
 #[test]
 fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let shared_entity: SharedEntity = entity.clone();
     entity.set_no_jump_delay(2);
     entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
 
-    assert!(entity.default_ai_step().is_none());
+    assert!(entity.default_ai_step(&shared_entity).is_none());
 
     assert_eq!(entity.no_jump_delay(), 0);
     assert_eq!(
@@ -94,17 +96,19 @@ fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
 fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     init_vanilla_registry();
 
-    let slow_falling = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let slow_falling = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let slow_falling_entity: SharedEntity = slow_falling.clone();
     slow_falling.set_fall_distance(7.0);
     slow_falling.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
-    slow_falling.default_ai_step();
+    slow_falling.default_ai_step(&slow_falling_entity);
 
     assert_f64_close(slow_falling.fall_distance(), 0.0);
 
-    let levitating = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let levitating = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let levitating_entity: SharedEntity = levitating.clone();
     levitating.set_fall_distance(7.0);
     levitating.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
-    levitating.default_ai_step();
+    levitating.default_ai_step(&levitating_entity);
 
     assert_f64_close(levitating.fall_distance(), 0.0);
 }
@@ -112,12 +116,13 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
 #[test]
 fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let shared_entity: SharedEntity = entity.clone();
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_on_ground(true);
     entity.set_jumping(true);
 
-    assert!(entity.default_ai_step().is_none());
+    assert!(entity.default_ai_step(&shared_entity).is_none());
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
     assert_eq!(entity.no_jump_delay(), 10);

@@ -42,7 +42,12 @@ impl MeleeAttackGoal {
         }
     }
 
-    fn check_and_perform_attack(&mut self, mob: &dyn PathfinderMob, target: &SharedEntity) {
+    fn check_and_perform_attack(
+        &mut self,
+        mob: &dyn PathfinderMob,
+        entity: &SharedEntity,
+        target: &SharedEntity,
+    ) {
         let Some(target_living) = target.as_living_entity() else {
             return;
         };
@@ -53,7 +58,7 @@ impl MeleeAttackGoal {
         self.reset_attack_cooldown();
         mob.swing(InteractionHand::MainHand, false);
         if let Some(world) = mob.level() {
-            let _ = mob.do_hurt_target(&world, target);
+            let _ = mob.do_hurt_target(entity, &world, target);
         }
     }
 
@@ -200,7 +205,7 @@ impl Goal for MeleeAttackGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
         let Some(target) = mob.target() else {
             return;
         };
@@ -219,7 +224,7 @@ impl Goal for MeleeAttackGoal {
         }
 
         self.ticks_until_next_attack = (self.ticks_until_next_attack - 1).max(0);
-        self.check_and_perform_attack(mob, &target);
+        self.check_and_perform_attack(mob, entity, &target);
     }
 }
 
@@ -231,12 +236,13 @@ fn is_no_creative_or_spectator(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::ai::goal::selector::Goal;
     use crate::entity::{Mob, entities::PigEntity};
 
@@ -245,7 +251,7 @@ mod tests {
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
-        Arc::new(pig(id, position))
+        EntityArc::new(pig(id, position))
     }
 
     #[test]
@@ -320,11 +326,12 @@ mod tests {
     fn melee_attack_goal_tick_recalculates_path_with_failed_move_penalty() {
         init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
-        let mob = pig(1, DVec3::ZERO);
+        let mob = EntityArc::new(pig(1, DVec3::ZERO));
+        let mob_entity: SharedEntity = mob.clone();
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(goal.pathed_target, target.position());
         assert!(goal.ticks_until_next_path_recalculation > 0);

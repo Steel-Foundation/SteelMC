@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityArc;
 use crate::entity::clamp_loaded_entity_position;
 
 impl ChunkStorage {
@@ -285,7 +286,7 @@ impl ChunkStorage {
             return entities;
         };
 
-        entities.push(Arc::clone(&entity));
+        entities.push(EntityArc::clone(&entity));
         for persistent_passenger in &persistent.passengers {
             Self::load_persistent_passenger_tree(
                 persistent_passenger,
@@ -311,7 +312,7 @@ impl ChunkStorage {
         };
 
         EntityBase::restore_passenger_relationship(vehicle, &passenger);
-        entities.push(Arc::clone(&passenger));
+        entities.push(EntityArc::clone(&passenger));
         for persistent_passenger in &persistent.passengers {
             Self::load_persistent_passenger_tree(
                 persistent_passenger,

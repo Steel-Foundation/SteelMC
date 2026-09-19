@@ -180,6 +180,8 @@ impl BlockBehavior for FrostedIceBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_dimension_types};
@@ -201,7 +203,7 @@ mod tests {
             .set_value(&BlockStateProperties::AGE_3, age)
     }
 
-    fn world_with_block(key: &'static str, pos: BlockPos, state: BlockStateId) -> Arc<World> {
+    fn world_with_block(key: &'static str, pos: BlockPos, state: BlockStateId) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

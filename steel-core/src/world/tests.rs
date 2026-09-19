@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::entity::EntityArc;
 use crate::entity::{EntityBase, LivingEntity as _, entities::PigEntity};
 use crate::player::ResetReason;
 use crate::test_support::{
@@ -39,13 +40,13 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
         .uuid(uuid)
         .build();
 
-    assert!(world.add_player(Arc::clone(&old), ResetReason::InitialJoin));
+    assert!(world.add_player(EntityArc::clone(&old), ResetReason::InitialJoin));
     assert!(!world.player_area_map.is_empty());
     let tracked = TrackerTestEntity::shared(2);
     world.entity_tracker().add(
         &tracked,
         |_| vec![old.id()],
-        |player_id| (player_id == old.id()).then(|| Arc::clone(&old)),
+        |player_id| (player_id == old.id()).then(|| EntityArc::clone(&old)),
     );
     assert_eq!(world.entity_tracker().tracking_player_ids(2), [old.id()]);
     old.set_sleeping_pos(BlockPos::new(0, 64, 0));
@@ -55,7 +56,7 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
     let Some(retained) = world.players.get_by_uuid(&uuid) else {
         panic!("same-world respawn should retain its exact old map occupant");
     };
-    assert!(Arc::ptr_eq(&retained, &old));
+    assert!(EntityArc::ptr_eq(&retained, &old));
     assert!(world.get_entity_by_id(old.id()).is_none());
     assert!(world.player_area_map.is_empty());
     assert_eq!(
@@ -73,11 +74,11 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
             .all(|(stat, count)| *stat != leave_game || *count == 0)
     );
 
-    assert!(world.install_respawned_player(Arc::clone(&replacement), Some(&old)));
+    assert!(world.install_respawned_player(EntityArc::clone(&replacement), Some(&old)));
     let Some(installed) = world.players.get_by_uuid(&uuid) else {
         panic!("fresh player should own the world player map");
     };
-    assert!(Arc::ptr_eq(&installed, &replacement));
+    assert!(EntityArc::ptr_eq(&installed, &replacement));
     assert!(world.get_entity_by_id(replacement.id()).is_some());
     assert!(!world.player_area_map.is_empty());
     assert!(replacement.last_tracking_view.lock().is_some());
@@ -87,7 +88,7 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
     let Some(still_installed) = world.players.get_by_uuid(&uuid) else {
         panic!("stale cleanup must not remove the installed replacement");
     };
-    assert!(Arc::ptr_eq(&still_installed, &replacement));
+    assert!(EntityArc::ptr_eq(&still_installed, &replacement));
 
     assert!(world.remove_respawned_player(&replacement));
     assert!(world.players.get_by_uuid(&uuid).is_none());
@@ -210,7 +211,7 @@ struct TrackerTestEntity {
 
 impl TrackerTestEntity {
     fn shared(id: i32) -> SharedEntity {
-        Arc::new(Self {
+        EntityArc::new(Self {
             base: EntityBase::with_uuid(
                 id,
                 Uuid::from_u128(id as u128),
@@ -579,7 +580,7 @@ fn navigating_mob_tracker_tracks_only_pathfinder_mobs() {
 
     let tracker = NavigatingMobTracker::new();
     let non_pathfinder = TrackerTestEntity::shared(1);
-    let pig: SharedEntity = Arc::new(PigEntity::new(
+    let pig: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,

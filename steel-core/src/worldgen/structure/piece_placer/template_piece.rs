@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::{DVec3, IVec3};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -16,6 +14,7 @@ use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, types::UpdateFlags};
 
 use crate::chunk::heightmap::HeightmapType;
+use crate::entity::EntityArc;
 use crate::entity::{entities::ItemFrameEntity, next_entity_id};
 use crate::fluid::FluidStateExt as _;
 use crate::world::World;
@@ -521,7 +520,7 @@ impl StructurePiecePlacer {
         pos: BlockPos,
         direction: Direction,
     ) {
-        let entity = Arc::new(ItemFrameEntity::new_attached(
+        let entity = EntityArc::new(ItemFrameEntity::new_attached(
             &vanilla_entities::ITEM_FRAME,
             next_entity_id(),
             pos,
@@ -763,6 +762,7 @@ impl StructurePiecePlacer {
 mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
+
     use steel_registry::init_vanilla_registry;
 
     #[test]

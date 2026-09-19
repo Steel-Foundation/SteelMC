@@ -1,12 +1,13 @@
 use super::*;
+use crate::entity::EntityArc;
 
 #[test]
 fn living_ride_tick_resets_fall_distance() {
     init_vanilla_registry();
 
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     entity.set_fall_distance(7.0);
-    let entity_ref: &dyn Entity = &entity;
+    let entity_ref: SharedEntity = entity.clone();
 
     entity_ref.ride_tick();
 
@@ -50,19 +51,19 @@ fn start_riding_entities_links_passenger_and_vehicle() {
 fn transfer_leashables_to_holder_moves_valid_mobs() {
     init_vanilla_registry();
 
-    let old_holder: SharedEntity = Arc::new(PigEntity::new(
+    let old_holder: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
         Weak::new(),
     ));
-    let new_holder: SharedEntity = Arc::new(PigEntity::new(
+    let new_holder: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
         Weak::new(),
     ));
-    let leashable: SharedEntity = Arc::new(PigEntity::new(
+    let leashable: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
         DVec3::new(1.0, 0.0, 0.0),
@@ -74,7 +75,7 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(transfer_leashables_to_holder(
-        vec![Arc::clone(&leashable)],
+        vec![EntityArc::clone(&leashable)],
         &new_holder
     ));
 
@@ -88,19 +89,19 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
 fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
     init_vanilla_registry();
 
-    let old_holder: SharedEntity = Arc::new(PigEntity::new(
+    let old_holder: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
         Weak::new(),
     ));
-    let new_holder: SharedEntity = Arc::new(PigEntity::new(
+    let new_holder: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
         Weak::new(),
     ));
-    let leashable: SharedEntity = Arc::new(PigEntity::new(
+    let leashable: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
         DVec3::new(20.0, 0.0, 0.0),
@@ -112,7 +113,7 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(!transfer_leashables_to_holder(
-        vec![Arc::clone(&leashable)],
+        vec![EntityArc::clone(&leashable)],
         &new_holder
     ));
 
@@ -130,7 +131,7 @@ fn set_leashed_to_notifies_replaced_holder() {
     let old_holder: SharedEntity = old_holder_typed.clone();
     let new_holder_typed = LeashNotificationTestEntity::new(2);
     let new_holder: SharedEntity = new_holder_typed.clone();
-    let leashable: SharedEntity = Arc::new(PigEntity::new(
+    let leashable: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
         DVec3::ZERO,
@@ -153,7 +154,7 @@ fn tick_leash_notifies_live_holder() {
 
     let holder_typed = LeashNotificationTestEntity::new(1);
     let holder: SharedEntity = holder_typed.clone();
-    let leashable: SharedEntity = Arc::new(PigEntity::new(
+    let leashable: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
         DVec3::ZERO,
@@ -177,7 +178,7 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
 
     let holder_typed = LeashNotificationTestEntity::with_position(1, DVec3::new(13.0, 0.0, 0.0));
     let holder: SharedEntity = holder_typed.clone();
-    let leashable: SharedEntity = Arc::new(PigEntity::new(
+    let leashable: SharedEntity = EntityArc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
         DVec3::ZERO,
@@ -279,7 +280,7 @@ fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
 
     let passenger =
         KnownMovementTestEntity::shared(1, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);
-    let vehicle = ControlledVehicleTestEntity::shared(2, Some(Arc::clone(&passenger)));
+    let vehicle = ControlledVehicleTestEntity::shared(2, Some(EntityArc::clone(&passenger)));
     let root_vehicle = ControlledVehicleTestEntity::shared(3, None);
 
     assert!(start_riding_entities(&passenger, &vehicle));

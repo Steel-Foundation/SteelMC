@@ -110,7 +110,7 @@ impl Goal for FollowMobGoal {
         mob.set_pathfinding_malus(PathType::Water, self.old_water_cost);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(following_mob) = &self.following_mob else {
             return;
         };
@@ -159,12 +159,13 @@ impl Goal for FollowMobGoal {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::entities::PigEntity;
 
     #[test]
@@ -210,7 +211,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        goal.following_mob = Some(Arc::new(PigEntity::new(
+        goal.following_mob = Some(EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(4.0, 0.0, 0.0),
@@ -224,16 +225,22 @@ mod tests {
     fn follow_mob_goal_looks_at_following_mob() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let following_mob: SharedEntity = Arc::new(PigEntity::new(
+        let mob = EntityArc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let mob_entity: SharedEntity = mob.clone();
+        let following_mob: SharedEntity = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
         ));
-        goal.following_mob = Some(Arc::clone(&following_mob));
+        goal.following_mob = Some(EntityArc::clone(&following_mob));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         let wanted_position = mob
             .mob_base()

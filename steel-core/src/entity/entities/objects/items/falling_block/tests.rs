@@ -1,3 +1,5 @@
+use crate::entity::EntityArc;
+use crate::test_support::TestWorld;
 use steel_registry::init_vanilla_registry;
 use steel_utils::ChunkPos;
 use uuid::Uuid;
@@ -7,7 +9,7 @@ use crate::behavior::init_behaviors;
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
-fn falling_test_world(key: &'static str) -> Arc<World> {
+fn falling_test_world(key: &'static str) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);
@@ -19,13 +21,13 @@ fn set_test_block(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
     assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
 }
 
-fn tick_until_settled(entities: &[&Arc<FallingBlockEntity>]) {
+fn tick_until_settled(entities: &[&EntityArc<FallingBlockEntity>]) {
     for _ in 0..240 {
         for entity in entities {
             if entity.is_alive() {
                 entity.set_old_position_to_current();
                 entity.advance_tick_count();
-                entity.tick();
+                EntityArc::clone(entity).tick();
             }
         }
         if entities.iter().all(|entity| entity.is_removed()) {
@@ -39,7 +41,7 @@ fn start_falling(
     world: &Arc<World>,
     pos: BlockPos,
     state: BlockStateId,
-) -> Arc<FallingBlockEntity> {
+) -> EntityArc<FallingBlockEntity> {
     set_test_block(world, pos, state);
     FallingBlockEntity::fall(world, pos, state)
 }

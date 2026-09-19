@@ -5,7 +5,7 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
-use std::{array, mem, sync::Arc};
+use std::{array, mem};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
@@ -27,8 +27,8 @@ use steel_utils::{BlockPos, Identifier};
 use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::entity::EntityArc;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
-use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
@@ -42,8 +42,6 @@ const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
-/// Time before the last damage source expires, in game ticks.
-const DAMAGE_SOURCE_TIMEOUT: i64 = 40;
 
 /// Runtime mob-effect state.
 ///
@@ -610,13 +608,12 @@ struct LivingEntityState {
     invulnerable_time: i32,
     last_hurt: f32,
     last_hurt_by_player: Option<Uuid>,
+    last_hurt_by_player_entity: Option<WeakEntity>,
     last_hurt_by_player_memory_time: i32,
     last_hurt_by_mob: Option<WeakEntity>,
     last_hurt_by_mob_timestamp: i32,
     last_hurt_mob: Option<WeakEntity>,
     last_hurt_mob_timestamp: i32,
-    last_damage_source: Option<DamageSource>,
-    last_damage_stamp: i64,
     absorption_amount: f32,
     skip_drop_experience: bool,
     death_time: i32,
@@ -646,13 +643,12 @@ impl LivingEntityState {
             invulnerable_time: 0,
             last_hurt: 0.0,
             last_hurt_by_player: None,
+            last_hurt_by_player_entity: None,
             last_hurt_by_player_memory_time: 0,
             last_hurt_by_mob: None,
             last_hurt_by_mob_timestamp: 0,
             last_hurt_mob: None,
             last_hurt_mob_timestamp: 0,
-            last_damage_source: None,
-            last_damage_stamp: 0,
             absorption_amount: 0.0,
             skip_drop_experience: false,
             death_time: 0,
@@ -1513,34 +1509,45 @@ impl LivingEntityBase {
         }
     }
 
-    /// Records vanilla `LivingEntity.lastDamageSource` after successful damage.
-    pub fn record_last_damage_source(&self, source: &DamageSource, game_time: i64) {
-        let mut state = self.state.lock();
-        state.last_damage_source = Some(source.clone());
-        state.last_damage_stamp = game_time;
-    }
-
-    /// Drops transient damage history when target-domain player state is restored.
-    pub(crate) fn clear_last_damage_source(&self) {
-        let mut state = self.state.lock();
-        state.last_damage_source = None;
-        state.last_damage_stamp = 0;
-    }
-
-    /// Returns vanilla `LivingEntity.getLastDamageSource()`.
-    pub fn last_damage_source(&self, game_time: i64) -> Option<DamageSource> {
-        let mut state = self.state.lock();
-        if game_time.wrapping_sub(state.last_damage_stamp) > DAMAGE_SOURCE_TIMEOUT {
-            state.last_damage_source = None;
-        }
-        state.last_damage_source.clone()
-    }
-
     /// Sets vanilla `LivingEntity.lastHurtByPlayer` and memory time.
     pub fn set_last_hurt_by_player(&self, player_uuid: Uuid, time_to_remember: i32) {
         let mut state = self.state.lock();
         state.last_hurt_by_player = Some(player_uuid);
+        state.last_hurt_by_player_entity = None;
         state.last_hurt_by_player_memory_time = time_to_remember;
+    }
+
+    /// Remembers the live player independently of which world it occupies.
+    pub(crate) fn set_last_hurt_by_player_entity(
+        &self,
+        player: &SharedEntity,
+        time_to_remember: i32,
+    ) {
+        let uuid = player.uuid();
+        let mut state = self.state.lock();
+        state.last_hurt_by_player = Some(uuid);
+        state.last_hurt_by_player_entity = Some(EntityArc::downgrade(player));
+        state.last_hurt_by_player_memory_time = time_to_remember;
+    }
+
+    /// Resolves cached kill credit before falling back to the saved UUID.
+    #[must_use]
+    pub(crate) fn last_hurt_by_player(&self, world: &World) -> Option<SharedEntity> {
+        let (uuid, cached) = {
+            let state = self.state.lock();
+            (
+                state.last_hurt_by_player?,
+                state.last_hurt_by_player_entity.clone(),
+            )
+        };
+        if let Some(player) = cached.and_then(|player| player.upgrade())
+            && !player.is_removed()
+        {
+            return Some(player);
+        }
+        world
+            .get_entity_by_uuid(&uuid)
+            .filter(|entity| entity.as_player().is_some())
     }
 
     /// Returns vanilla `LivingEntity.lastHurtByPlayerMemoryTime`.
@@ -1602,6 +1609,7 @@ impl LivingEntityBase {
             state.last_hurt_by_player_memory_time -= 1;
         } else {
             state.last_hurt_by_player = None;
+            state.last_hurt_by_player_entity = None;
         }
     }
 
@@ -1657,7 +1665,9 @@ impl LivingEntityBase {
 
 fn weak_living_entity(target: Option<&SharedEntity>) -> Option<WeakEntity> {
     let target = target?;
-    target.is_living_entity().then(|| Arc::downgrade(target))
+    target
+        .is_living_entity()
+        .then(|| EntityArc::downgrade(target))
 }
 
 fn living_entity_from_weak(entity: &mut Option<WeakEntity>) -> Option<SharedEntity> {

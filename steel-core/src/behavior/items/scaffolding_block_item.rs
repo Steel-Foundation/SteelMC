@@ -98,6 +98,8 @@ impl ItemBehavior for ScaffoldingBlockItem {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -121,7 +123,7 @@ mod tests {
     const VANILLA_STABILITY_MAX_DISTANCE: u8 = 7;
     const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
-    fn test_world(key: &'static str) -> Arc<World> {
+    fn test_world(key: &'static str) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

@@ -1,3 +1,5 @@
+use crate::entity::EntityArc;
+use crate::test_support::TestWorld;
 use std::sync::Arc;
 
 use super::{MenuBuilder, kinds::BasicKind};
@@ -14,7 +16,6 @@ use crate::{
     },
     player::Player,
     test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
-    world::World,
 };
 use glam::DVec3;
 use steel_registry::{
@@ -65,8 +66,8 @@ impl Slot for SingleItemSlot {
 }
 
 struct PartialSwapFixture {
-    world: Arc<World>,
-    player: Arc<Player>,
+    world: TestWorld,
+    player: EntityArc<Player>,
     target: Shared<SimpleContainer>,
 }
 

@@ -7,6 +7,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext, Fallable};
+use crate::entity::EntityArc;
 use crate::entity::entities::FallingBlockEntity;
 use crate::world::{ScheduledTickAccess, World};
 
@@ -57,7 +58,7 @@ impl FallingBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-    ) -> Option<Arc<FallingBlockEntity>> {
+    ) -> Option<EntityArc<FallingBlockEntity>> {
         if pos.y() < world.get_min_y() || !Self::is_free(world.get_block_state(pos.below())) {
             return None;
         }

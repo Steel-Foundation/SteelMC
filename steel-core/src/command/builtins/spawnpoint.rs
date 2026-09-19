@@ -1,6 +1,6 @@
 //! Vanilla per-player spawn-point command.
 
-use std::{slice, sync::Arc};
+use std::slice;
 
 use steel_utils::{BlockPos, Identifier, java::float_to_string, translations};
 use text_components::TextComponent;
@@ -13,6 +13,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::entity::EntityArc;
 use crate::{
     entity::Entity as _,
     level_data::RespawnData,
@@ -85,7 +86,7 @@ fn set_target_position_and_rotation(
 
 fn set_spawn(
     context: &SteelCommandContext<CommandSource>,
-    targets: &[Arc<Player>],
+    targets: &[EntityArc<Player>],
     position: BlockPos,
     (yaw, pitch): (f32, f32),
 ) -> Result<i32, CommandSyntaxError> {
@@ -136,6 +137,7 @@ mod tests {
         brigadier::{CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
+
     use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;

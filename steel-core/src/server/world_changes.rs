@@ -6,6 +6,7 @@ use super::{
     change_entity_world, clear_pending_world_change, is_allowed_to_enter_portal,
     is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
 };
+use crate::entity::EntityArc;
 use crate::entity::LivingEntity as _;
 
 impl Server {
@@ -230,7 +231,7 @@ impl Server {
             return;
         }
         match EndPortalTeleportJob::returning_player(
-            Arc::clone(&entity),
+            EntityArc::clone(&entity),
             source_world,
             target_world,
             respawn_data,
@@ -302,7 +303,7 @@ impl Server {
         }
         let source_is_end = source_world.is_end_dimension_type();
         let Some(job) = EndGatewayTeleportJob::new(
-            Arc::clone(&entity),
+            EntityArc::clone(&entity),
             source_world,
             portal_pos,
             source_is_end,
@@ -397,7 +398,7 @@ impl Server {
     /// selections restore that domain while honoring the explicit target.
     pub fn queue_player_world_selection(
         &self,
-        player: Arc<Player>,
+        player: EntityArc<Player>,
         target_world: Arc<World>,
     ) -> Result<(), String> {
         let target_world = self
@@ -441,7 +442,7 @@ impl Server {
     /// Queues a player domain switch for processing at the server tick safe point.
     pub fn queue_domain_switch(
         &self,
-        player: Arc<Player>,
+        player: EntityArc<Player>,
         target_domain: String,
     ) -> Result<(), String> {
         if !self.worlds.has_domain(&target_domain) {
@@ -474,12 +475,15 @@ impl Server {
         let switches = mem::take(&mut *self.pending_domain_switches.lock());
 
         for request in switches {
-            let player = Arc::clone(&request.player);
+            let player = EntityArc::clone(&request.player);
             let player_name = player.gameprofile.name.clone();
             let pending_token = request.pending_token;
             if let Err(error) = self.start_domain_switch(request) {
                 player.finish_domain_switch(pending_token);
-                clear_pending_world_change(&(Arc::clone(&player) as SharedEntity), pending_token);
+                clear_pending_world_change(
+                    &(EntityArc::clone(&player) as SharedEntity),
+                    pending_token,
+                );
                 log::warn!("Did not start domain switch for {player_name}: {error}");
             }
         }
@@ -578,7 +582,7 @@ impl Server {
             return;
         };
         let job = match WorldSpawnTeleportJob::new(
-            Arc::clone(&entity),
+            EntityArc::clone(&entity),
             source_world,
             target_world,
             pending_token,

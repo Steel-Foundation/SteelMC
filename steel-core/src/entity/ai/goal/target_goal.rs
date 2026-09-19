@@ -147,17 +147,18 @@ pub(super) fn follow_distance(mob: &dyn PathfinderMob) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::EntityArc;
     use crate::entity::ai::targeting::TargetingConditions;
     use crate::entity::{Mob, entities::PigEntity};
 
-    fn pig(id: i32, position: DVec3) -> Arc<PigEntity> {
-        Arc::new(PigEntity::new(
+    fn pig(id: i32, position: DVec3) -> EntityArc<PigEntity> {
+        EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             id,
             position,

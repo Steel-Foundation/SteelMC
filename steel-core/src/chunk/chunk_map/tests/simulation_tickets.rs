@@ -1,5 +1,6 @@
 use super::*;
 use crate::chunk::chunk_ticket_storage::PORTAL_TICKET_RADIUS;
+use crate::entity::damage::DamageHistory;
 use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::{WorldConfig, WorldStorageConfig};
 use std::{
@@ -77,6 +78,7 @@ fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
             .build()
             .expect("test generation pool should initialize"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world = runtime
         .block_on(World::new_with_config(
             Arc::clone(&runtime),
@@ -84,6 +86,7 @@ fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
             &OVERWORLD,
             TEST_WORLD_SEED,
             WorldConfig {
+                damage_history: Arc::clone(&damage_history),
                 game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: Some(directory.path_string()),

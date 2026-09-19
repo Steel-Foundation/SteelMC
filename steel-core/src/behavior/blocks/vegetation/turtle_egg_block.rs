@@ -328,6 +328,8 @@ impl BlockBehavior for TurtleEggBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_world_clocks};
     use steel_utils::ChunkPos;
 
@@ -339,7 +341,7 @@ mod tests {
     /// random ticks are deterministic in tests.
     const ALWAYS_HATCH_DAY_TIME: i64 = 21_500;
 
-    fn prepare(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn prepare(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

@@ -1,5 +1,6 @@
 //! Item behavior trait and registry.
 
+use crate::entity::SharedEntity;
 use std::sync::Arc;
 
 use std::borrow::Cow;
@@ -21,7 +22,7 @@ use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -77,7 +78,7 @@ pub trait ItemBehavior: Send + Sync {
                 context.player.start_using_item(context.hand);
             } else {
                 let stack = context.inv.with_item(|item| item.clone());
-                let result = finish_consuming_stack(&stack, context.world, context.player);
+                let result = finish_consuming_stack(&stack, context.world, context.player.as_ref());
                 context.inv.with_item(|item| *item = result);
             }
             return InteractionResult::Consume;
@@ -139,14 +140,14 @@ pub trait ItemBehavior: Send + Sync {
     fn on_use_tick(
         &self,
         _world: &Arc<World>,
-        user: &dyn LivingEntity,
+        user: LivingEntityRef<'_>,
         stack: &mut ItemStack,
         ticks_remaining: i32,
     ) {
         if let Some(consumable) = stack.get(CONSUMABLE)
             && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
         {
-            emit_consume_particles_and_sounds(consumable, user);
+            emit_consume_particles_and_sounds(consumable, user.living());
         }
     }
 
@@ -173,9 +174,9 @@ pub trait ItemBehavior: Send + Sync {
         &self,
         stack: &mut ItemStack,
         world: &Arc<World>,
-        user: &dyn LivingEntity,
+        user: LivingEntityRef<'_>,
     ) -> ItemStack {
-        finish_consuming_stack(stack, world, user)
+        finish_consuming_stack(stack, world, user.living())
     }
 
     /// Called by vanilla `ItemStack.interactLivingEntity`.
@@ -190,7 +191,7 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Returns vanilla `Item.getItemDamageSource`.
-    fn get_item_damage_source(&self, _attacker: &dyn LivingEntity) -> Option<DamageSource> {
+    fn get_item_damage_source(&self, _attacker: &SharedEntity) -> Option<DamageSource> {
         None
     }
 
@@ -418,6 +419,8 @@ impl Default for ItemBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::data_components::{Consumable, vanilla_components};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::stat::vanilla_stat_types;
@@ -440,7 +443,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_honey_bottle_stack");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
 
         // Fill the inventory so the glass bottle remainder cannot be stored
@@ -483,7 +486,7 @@ mod tests {
         init_behaviors();
         let world = fresh_test_world("instant_consumable_no_deadlock");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
 
         let mut stack = ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 2);
@@ -549,7 +552,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_food_applies_nutrition");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
         {
             let mut food = player.food_data.lock();
@@ -573,7 +576,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_awards_item_used_stat");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
 
         let stack = ItemStack::new(&vanilla_items::APPLE);

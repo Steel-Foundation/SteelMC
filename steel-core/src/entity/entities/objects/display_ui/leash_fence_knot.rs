@@ -3,6 +3,7 @@
 use std::sync::{Arc, Weak};
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, RemovalReason, SharedEntity,
@@ -142,13 +143,13 @@ impl LeashFenceKnotEntity {
             return Some(knot);
         }
 
-        let knot: SharedEntity = Arc::new(Self::new_attached(
+        let knot: SharedEntity = EntityArc::new(Self::new_attached(
             &vanilla_entities::LEASH_KNOT,
             next_entity_id(),
             pos,
             Arc::downgrade(world),
         ));
-        if let Err(error) = world.try_add_entity(Arc::clone(&knot)) {
+        if let Err(error) = world.try_add_entity(EntityArc::clone(&knot)) {
             log::warn!("Failed to spawn leash knot entity: {error}");
             return None;
         }
@@ -226,7 +227,7 @@ impl Entity for LeashFenceKnotEntity {
         }
     }
 
-    fn tick(&self) {
+    fn tick(self: EntityArc<Self>) {
         if self.level().is_none() {
             return;
         }
@@ -305,9 +306,7 @@ impl Entity for LeashFenceKnotEntity {
             return false;
         }
 
-        let causing_entity = source
-            .causing_entity_id
-            .and_then(|id| world.get_entity_by_id(id));
+        let causing_entity = source.causing_entity();
 
         if !world.get_game_rule(&MOB_GRIEFING)
             && let Some(causing_entity) = causing_entity
@@ -329,6 +328,7 @@ impl Entity for LeashFenceKnotEntity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use simdnbt::owned::NbtCompound;
 
     #[test]

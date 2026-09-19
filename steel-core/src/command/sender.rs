@@ -1,9 +1,11 @@
 //! Module defining the sender of a command.
-use std::{fmt, sync::Arc};
+use std::fmt;
 use text_components::TextComponent;
 use uuid::Uuid;
 
+use crate::entity::EntityArc;
 use crate::{
+    entity::{Entity, EntityGeneration},
     player::{DomainResidenceToken, Player},
     server::Server,
 };
@@ -12,7 +14,7 @@ use crate::{
 #[derive(Clone)]
 pub enum CommandSender {
     /// The command was sent by a player via the chat.
-    Player(Arc<Player>),
+    Player(EntityArc<Player>),
     /// The command was sent via the server's console.
     Console,
     /// The command was sent via Rcon.
@@ -32,7 +34,7 @@ pub(crate) enum CommandSenderKey {
 pub(crate) enum CommandSuggestionKey {
     Player {
         uuid: Uuid,
-        session_address: usize,
+        generation: EntityGeneration,
         residence: Option<DomainResidenceToken>,
     },
     Console,
@@ -41,7 +43,7 @@ pub(crate) enum CommandSuggestionKey {
 
 /// Exact runtime owner of queued command work.
 ///
-/// UUIDs remain the ordering key, while the player `Arc` and residence token
+/// UUIDs remain the ordering key, while the player handle and residence token
 /// prevent an old session or an earlier domain stay from resuming work.
 #[derive(Clone)]
 pub(crate) struct CommandExecutionOwner {
@@ -83,9 +85,7 @@ impl CommandExecutionOwner {
         match &self.sender {
             CommandSender::Player(player) => CommandSuggestionKey::Player {
                 uuid: player.gameprofile.id,
-                // The owner retains this Arc while queued, so its allocation
-                // address cannot be reused by a replacement session.
-                session_address: Arc::as_ptr(player) as usize,
+                generation: player.generation(),
                 residence: self.player_residence,
             },
             CommandSender::Console => CommandSuggestionKey::Console,
@@ -120,7 +120,7 @@ impl CommandSender {
 
     /// Returns the player if the sender is a player.
     #[must_use]
-    pub const fn get_player(&self) -> Option<&Arc<Player>> {
+    pub const fn get_player(&self) -> Option<&EntityArc<Player>> {
         match self {
             Self::Player(player) => Some(player),
             _ => None,

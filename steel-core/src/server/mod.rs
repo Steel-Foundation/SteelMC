@@ -33,6 +33,8 @@ use crate::command::{
     command_tree_packet, create_registered_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
+use crate::entity::EntityArc;
+use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
@@ -185,7 +187,7 @@ struct PreparedSpawn {
     rotation: (f32, f32),
 }
 
-fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
+fn apply_default_spawn(player: &EntityArc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
     player.base().set_position_local(spawn.position);
     player.set_rotation(spawn.rotation);
     player.restore_game_modes(world.default_gamemode, None);
@@ -326,7 +328,7 @@ enum DomainPlayerData {
 }
 
 struct DomainSwitchRequest {
-    player: Arc<Player>,
+    player: EntityArc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
     pending_token: PendingWorldChangeToken,
@@ -374,6 +376,7 @@ use jobs::teleport::{
 
 /// The main server struct.
 pub struct Server {
+    pub(crate) damage_history: Arc<DamageHistory>,
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
     /// Runtime permission groups and their persistence boundary.
@@ -621,6 +624,7 @@ impl Server {
             &resolved_worlds.worlds,
         );
 
+        let damage_history = Arc::new(DamageHistory::default());
         let mut construct_world = async |world_entry: &ResolvedWorldConfig,
                                          game_time_source: GameTimeSource|
                -> Result<Arc<World>, String> {
@@ -653,6 +657,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
+                    damage_history: Arc::clone(&damage_history),
                     game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
@@ -728,6 +733,7 @@ impl Server {
         }
 
         Ok(Server {
+            damage_history,
             config,
             permission_groups,
             cancel_token,
@@ -802,7 +808,7 @@ impl Server {
 
     pub(crate) fn submit_command_suggestions(
         &self,
-        player: Arc<Player>,
+        player: EntityArc<Player>,
         transaction_id: i32,
         input: String,
     ) -> Result<(), CommandQueueFull> {
@@ -816,7 +822,7 @@ impl Server {
     /// Schedules a decoded play packet for the inter-tick packet phase.
     pub(crate) fn schedule_play_packet(
         &self,
-        player: Arc<Player>,
+        player: EntityArc<Player>,
         packet: ScheduledPlayPacket,
         payload_bytes: usize,
     ) {
@@ -827,7 +833,7 @@ impl Server {
     /// Pauses later packets while `player` is replaced by a new incarnation.
     pub(crate) fn begin_player_packet_transition(
         &self,
-        player: &Arc<Player>,
+        player: &EntityArc<Player>,
     ) -> Option<PlayerPacketTransition> {
         if player.connection.closed() || !player.session.is_current_player(player) {
             return None;

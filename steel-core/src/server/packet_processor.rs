@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::entity::EntityArc;
 use crate::{
     entity::Entity,
     player::{
@@ -69,7 +70,7 @@ impl PacketProcessor {
 
     pub(super) fn schedule(
         &self,
-        player: Arc<Player>,
+        player: EntityArc<Player>,
         packet: ScheduledPlayPacket,
         payload_bytes: usize,
     ) {
@@ -1057,6 +1058,7 @@ mod tests {
 
     use tokio::time::timeout;
 
+    use crate::entity::EntityArc;
     use crate::{
         entity::{Entity as _, LivingEntity as _},
         player::{ClientInformation, Player, connection::ScheduledPlayPacket},
@@ -1075,8 +1077,8 @@ mod tests {
         }
     }
 
-    fn replacement_for(player: &Arc<Player>) -> Arc<Player> {
-        Arc::new(Player::new(
+    fn replacement_for(player: &EntityArc<Player>) -> EntityArc<Player> {
+        EntityArc::new(Player::new(
             player.gameprofile.clone(),
             Arc::clone(&player.connection),
             Arc::clone(&player.session),
@@ -1114,7 +1116,7 @@ mod tests {
     #[test]
     fn scheduled_respawn_is_retained_if_domain_switch_queues_before_worker_gate() {
         let world = fresh_test_world("scheduled_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "RespawnTester", 1).build();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
@@ -1134,13 +1136,13 @@ mod tests {
     #[test]
     fn queued_packets_resolve_the_player_bound_when_they_start() {
         let world = fresh_test_world("packet_session_replacement_resolution");
-        let original = TestPlayerBuilder::new(world, "Original", 1).build();
+        let original = TestPlayerBuilder::new(Arc::clone(&world), "Original", 1).build();
         let replacement = replacement_for(&original);
         let session = Arc::clone(&original.session);
         let processor = PacketProcessor::new();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
 
-        processor.schedule(Arc::clone(&original), packet, 1);
+        processor.schedule(EntityArc::clone(&original), packet, 1);
         let Some(transition) = processor.pause_player_session(&session) else {
             panic!("session packet lane should pause");
         };
@@ -1162,7 +1164,7 @@ mod tests {
             let Some(current) = session.current_player() else {
                 panic!("replacement should be bound before packet work resumes");
             };
-            assert!(Arc::ptr_eq(&current, &replacement));
+            assert!(EntityArc::ptr_eq(&current, &replacement));
         }
     }
 
@@ -1338,15 +1340,15 @@ mod tests {
     fn pausing_active_player_session_defers_its_tail_until_exact_resume() {
         let world = fresh_test_world("packet_active_session_pause");
         let player = TestPlayerBuilder::new(Arc::clone(&world), "Paused", 1).build();
-        let unrelated_player = TestPlayerBuilder::new(world, "Unrelated", 2).build();
+        let unrelated_player = TestPlayerBuilder::new(Arc::clone(&world), "Unrelated", 2).build();
         let processor = PacketProcessor::new();
         processor.schedule(
-            Arc::clone(&player),
+            EntityArc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             1,
         );
         processor.schedule(
-            Arc::clone(&player),
+            EntityArc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             2,
         );
@@ -1369,12 +1371,12 @@ mod tests {
             panic!("active session lane should pause");
         };
         processor.schedule(
-            Arc::clone(&player),
+            EntityArc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             3,
         );
         processor.schedule(
-            Arc::clone(&unrelated_player),
+            EntityArc::clone(&unrelated_player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             4,
         );

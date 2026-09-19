@@ -3,6 +3,7 @@ use steel_utils::Identifier;
 
 use super::*;
 use crate::config::{DomainConfig, WorldEntryConfig};
+use crate::entity::EntityArc;
 use crate::level_data::LevelData;
 use crate::server::world_tick_workers::WorldTickWorkers;
 use crate::test_support::test_domain;
@@ -54,10 +55,9 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         .expect("server");
         let workers = WorldTickWorkers::spawn(server.worlds.values()).expect("workers");
         let player = test_player(&server, Arc::clone(&primary));
-        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-        player
-            .living_base()
-            .record_last_damage_source(&source, primary.game_time());
+        let source = DamageSource::environment(&vanilla_damage_types::GENERIC)
+            .with_causing_entity(player.clone());
+        player.record_last_damage_source(&source);
         let mut server_iteration = 0;
         let transfer_age = 39;
         for _ in 0..transfer_age {
@@ -149,7 +149,7 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
             .expect("server");
         let (player, packets) =
             test_player_with_packets(&server, Arc::clone(derived), "ClockTest", next_entity_id());
-        assert!(derived.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        assert!(derived.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
         packets.lock().clear();
         let periodic_sync_tick = 20;
         for _ in 0..periodic_sync_tick {

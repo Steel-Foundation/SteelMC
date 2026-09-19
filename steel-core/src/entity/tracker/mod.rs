@@ -4,8 +4,6 @@
 //! entity tracking range as client chunks, multiplies it by 16, caps it by the
 //! player's view distance, and then checks horizontal squared distance.
 
-use std::sync::Arc;
-
 use glam::DVec3;
 use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{
@@ -19,6 +17,7 @@ use steel_utils::ChunkPos;
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::EntityArc;
 use crate::entity::leash::Leashable;
 use crate::entity::{
     Entity, EntityMovementSyncPacket, MobEffectSyncPacket, ServerEntityMovementSyncState,
@@ -133,7 +132,7 @@ impl EntityTracker {
         &self,
         entity: &SharedEntity,
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
-        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+        get_player: impl Fn(i32) -> Option<EntityArc<Player>>,
     ) {
         assert!(
             !entity.is_removed(),
@@ -163,7 +162,7 @@ impl EntityTracker {
         let player_ids_to_notify: Vec<i32> = players_to_notify.iter().copied().collect();
 
         let tracked_entity = TrackedEntity {
-            entity: Arc::downgrade(entity),
+            entity: EntityArc::downgrade(entity),
             server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
                 pos,
                 entity.velocity(),
@@ -194,7 +193,7 @@ impl EntityTracker {
     }
 
     /// Stops tracking an entity and sends despawn to all tracking players.
-    pub fn remove(&self, entity_id: i32, get_player: impl Fn(i32) -> Option<Arc<Player>>) {
+    pub fn remove(&self, entity_id: i32, get_player: impl Fn(i32) -> Option<EntityArc<Player>>) {
         if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
             let entity = tracked.entity.upgrade();
             // Send despawn to all tracking players
@@ -307,7 +306,7 @@ impl EntityTracker {
     >(
         &self,
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
-        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+        get_player: impl Fn(i32) -> Option<EntityArc<Player>>,
         mut senders: EntityChangeSenders<
             Movement,
             SelfMovement,
@@ -551,7 +550,7 @@ impl EntityTracker {
         old_chunk: ChunkPos,
         new_chunk: ChunkPos,
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
-        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+        get_player: impl Fn(i32) -> Option<EntityArc<Player>>,
     ) {
         let mut players_to_remove = Vec::new();
         let mut players_to_add = Vec::new();
@@ -608,7 +607,7 @@ impl EntityTracker {
         &self,
         entity_id: i32,
         get_players_in_chunk: &impl Fn(ChunkPos) -> Vec<i32>,
-        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+        get_player: &impl Fn(i32) -> Option<EntityArc<Player>>,
     ) {
         let mut players_to_remove = Vec::new();
         let mut players_to_add = Vec::new();
@@ -685,7 +684,7 @@ impl EntityTracker {
         entity_chunk: ChunkPos,
         tracking_range: EntityTrackingRange,
         get_players_in_chunk: &impl Fn(ChunkPos) -> Vec<i32>,
-        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+        get_player: &impl Fn(i32) -> Option<EntityArc<Player>>,
     ) -> FxHashSet<i32> {
         let entity_pos = entity.position();
         let tracking_range = effective_tracking_range(entity, tracking_range);
@@ -935,7 +934,7 @@ impl EntitySpawnPairing {
 fn direct_player_passenger_delta(
     old_passenger_ids: &[i32],
     new_passenger_ids: &[i32],
-    get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+    get_player: &impl Fn(i32) -> Option<EntityArc<Player>>,
 ) -> Vec<i32> {
     let old_passenger_ids = old_passenger_ids.iter().copied().collect::<FxHashSet<_>>();
     let new_passenger_ids = new_passenger_ids.iter().copied().collect::<FxHashSet<_>>();

@@ -11,6 +11,7 @@ use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use crate::entity::EntityArc;
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 
@@ -88,7 +89,7 @@ impl Entity for EndCrystalEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: EntityArc<Self>) {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
 

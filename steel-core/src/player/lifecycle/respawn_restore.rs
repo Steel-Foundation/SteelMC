@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::entity::EntityArc;
 use crate::{entity::LivingEntity as _, world::World};
 
 use super::super::{Abilities, Player, experience::Experience};
@@ -12,12 +13,12 @@ impl Player {
     /// is therefore shared by both incarnations. For a death replacement,
     /// `transfer_inventory` must be `keepInventory || old spectator`.
     pub(crate) fn new_respawn_replacement(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         target_world: Arc<World>,
         restore_all: bool,
         transfer_inventory: bool,
         spawn_block_valid: bool,
-    ) -> Arc<Self> {
+    ) -> EntityArc<Self> {
         let mut replacement = Self::new(
             self.gameprofile.clone(),
             Arc::clone(&self.connection),
@@ -30,7 +31,7 @@ impl Player {
         );
         // Vanilla ServerPlayer.restoreFrom retains the same ender chest container.
         replacement.ender_chest_inventory = Arc::clone(&self.ender_chest_inventory);
-        let replacement = Arc::new(replacement);
+        let replacement = EntityArc::new(replacement);
 
         replacement.restore_respawn_state_from(
             self,
@@ -138,6 +139,7 @@ mod tests {
     };
     use steel_utils::{BlockPos, Identifier, types::GameType};
 
+    use crate::entity::EntityArc;
     use crate::{
         behavior::init_behaviors,
         entity::{
@@ -189,7 +191,7 @@ mod tests {
             view_distance: 3,
             ..ClientInformation::default()
         };
-        let old_player = TestPlayerBuilder::new(source_world, "Respawning", ENTITY_ID)
+        let old_player = TestPlayerBuilder::new(Arc::clone(&source_world), "Respawning", ENTITY_ID)
             .client_information(client_information)
             .build();
         old_player.teleport_state.lock().teleport_id = 41;
@@ -200,7 +202,7 @@ mod tests {
         assert_eq!(replacement.id(), old_player.id());
         assert_eq!(replacement.uuid(), old_player.uuid());
         assert_ne!(replacement.generation(), old_player.generation());
-        assert!(!Arc::ptr_eq(&replacement, &old_player));
+        assert!(!EntityArc::ptr_eq(&replacement, &old_player));
         assert!(Arc::ptr_eq(&replacement.connection, &old_player.connection));
         assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
         assert!(Arc::ptr_eq(&replacement.config, &old_player.config));
@@ -229,7 +231,8 @@ mod tests {
         init_behaviors();
         let source_world = fresh_test_world("respawn_restore_all_source");
         let target_world = fresh_test_world("respawn_restore_all_target");
-        let old_player = TestPlayerBuilder::new(source_world, "Credits", ENTITY_ID).build();
+        let old_player =
+            TestPlayerBuilder::new(Arc::clone(&source_world), "Credits", ENTITY_ID).build();
         let permanent_modifier_id = Identifier::vanilla_static("respawn_restore_test");
 
         old_player.restore_game_modes(GameType::Spectator, Some(GameType::Creative));
@@ -287,7 +290,8 @@ mod tests {
             .set_position_local(DVec3::new(10.0, 80.0, 10.0));
         old_player.mark_joined_world();
 
-        let replacement = old_player.new_respawn_replacement(target_world, true, false, true);
+        let replacement =
+            old_player.new_respawn_replacement(Arc::clone(&target_world), true, false, true);
 
         assert_eq!(replacement.game_mode(), GameType::Spectator);
         assert_eq!(replacement.previous_game_mode(), Some(GameType::Creative));
@@ -348,7 +352,8 @@ mod tests {
         init_behaviors();
         let source_world = fresh_test_world("respawn_restore_death_source");
         let target_world = fresh_test_world("respawn_restore_death_target");
-        let old_player = TestPlayerBuilder::new(source_world, "Death", ENTITY_ID).build();
+        let old_player =
+            TestPlayerBuilder::new(Arc::clone(&source_world), "Death", ENTITY_ID).build();
         let permanent_modifier_id = Identifier::vanilla_static("death_restore_test");
 
         {
@@ -391,7 +396,8 @@ mod tests {
 
         let fresh =
             old_player.new_respawn_replacement(Arc::clone(&target_world), false, false, false);
-        let transferred = old_player.new_respawn_replacement(target_world, false, true, true);
+        let transferred =
+            old_player.new_respawn_replacement(Arc::clone(&target_world), false, true, true);
 
         assert_eq!(fresh.get_health().to_bits(), 30.0_f32.to_bits());
         assert!(

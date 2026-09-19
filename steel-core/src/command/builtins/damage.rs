@@ -60,19 +60,18 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
 
     // If we can get "location" from the context, it's from "at"
     if let Ok(coordinates) = context.coordinates("location") {
-        damage_source.source_position = Some(coordinates.position(context.source()));
+        damage_source = damage_source.with_source_position(coordinates.position(context.source()));
     }
 
     // Else, it's from the "by", or maybe it's nothing
     if let Ok(entity) = context.entity("entity") {
-        let entity_id = entity.id();
-
-        damage_source.direct_entity_id = Some(entity_id);
-        damage_source.causing_entity_id = Some(entity_id);
+        damage_source = damage_source
+            .with_direct_entity(entity.clone())
+            .with_causing_entity(entity);
 
         // Maybe even the causing entity is known
         if let Ok(cause) = context.entity("cause") {
-            damage_source.causing_entity_id = Some(cause.id());
+            damage_source = damage_source.with_causing_entity(cause);
         }
     }
 

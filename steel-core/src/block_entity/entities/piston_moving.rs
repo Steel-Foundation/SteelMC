@@ -1,5 +1,7 @@
 //! Vanilla moving-piston block entity.
 
+use crate::entity::EntityArc;
+use crate::entity::SharedEntity;
 use std::cell::Cell;
 use std::sync::{Arc, Weak};
 
@@ -381,14 +383,14 @@ impl PistonMovingState {
 
     fn move_entity_by_piston(
         piston_direction: Direction,
-        entity: &dyn Entity,
+        entity: &SharedEntity,
         delta: f64,
         movement: Direction,
     ) {
         let _no_clip = NoClipGuard::set(piston_direction);
         let (x, y, z) = movement.offset();
         let previous_position = entity.position();
-        entity.move_entity(
+        EntityArc::clone(entity).move_entity(
             MoverType::Piston,
             DVec3::new(
                 delta * f64::from(x),
@@ -402,7 +404,7 @@ impl PistonMovingState {
 
     fn fix_entity_within_piston_base(
         pos: BlockPos,
-        entity: &dyn Entity,
+        entity: &SharedEntity,
         direction: Direction,
         delta_progress: f64,
     ) {
@@ -479,9 +481,9 @@ impl PistonMovingState {
                 continue;
             }
             let delta = delta.min(delta_progress) + PUSH_OFFSET;
-            Self::move_entity_by_piston(movement, entity.as_ref(), delta, movement);
+            Self::move_entity_by_piston(movement, &entity, delta, movement);
             if !self.extending && self.source_piston {
-                Self::fix_entity_within_piston_base(pos, entity.as_ref(), movement, delta_progress);
+                Self::fix_entity_within_piston_base(pos, &entity, movement, delta_progress);
             }
         }
     }
@@ -514,7 +516,7 @@ impl PistonMovingState {
         });
         let delta_progress = f64::from(new_progress - self.progress);
         for entity in entities {
-            Self::move_entity_by_piston(movement, entity.as_ref(), delta_progress, movement);
+            Self::move_entity_by_piston(movement, &entity, delta_progress, movement);
         }
     }
 
@@ -665,6 +667,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
+    use crate::entity::EntityArc;
     use crate::entity::SharedEntity;
     use crate::player::Player;
     use crate::test_support::{
@@ -676,7 +679,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
     use steel_utils::{ChunkPos, types::GameType};
 
-    fn test_player(world: Arc<World>) -> Arc<Player> {
+    fn test_player(world: Arc<World>) -> EntityArc<Player> {
         TestPlayerBuilder::new(world, "PistonTestPlayer", 1).build()
     }
 
@@ -799,7 +802,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(Arc::clone(&entity))
+            .try_add_entity(EntityArc::clone(&entity))
             .expect("test entity should enter the loaded chunk");
 
         piston.tick(&world);

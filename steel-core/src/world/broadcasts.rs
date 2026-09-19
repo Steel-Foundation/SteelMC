@@ -1,7 +1,8 @@
 use super::{
-    Arc, CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
-    Entity, EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
+    CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket, Entity,
+    EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
 };
+use crate::entity::EntityArc;
 
 impl World {
     /// Broadcasts a signed chat message to all players in the world.
@@ -11,7 +12,7 @@ impl World {
     pub fn broadcast_chat(
         &self,
         mut packet: CPlayerChat,
-        _sender: Arc<Player>,
+        _sender: EntityArc<Player>,
         sender_last_seen: LastSeen,
         message_signature: Option<&[u8; 256]>,
     ) {

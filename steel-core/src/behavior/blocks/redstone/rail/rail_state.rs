@@ -343,6 +343,8 @@ impl<'a> RailState<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestWorld;
+
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
@@ -357,7 +359,7 @@ mod tests {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE
     }
 
-    fn topology_world(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn topology_world(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

@@ -18,6 +18,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
+use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
@@ -308,7 +309,7 @@ impl ItemEntity {
     /// `false` if pickup failed or was only partial.
     ///
     /// Mirrors vanilla's `ItemEntity.playerTouch(Player)`.
-    pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
+    pub fn try_pickup(&self, player: &EntityArc<Player>) -> bool {
         // Check pickup delay
         if self.has_pickup_delay() {
             return false;
@@ -543,7 +544,7 @@ impl Entity for ItemEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: EntityArc<Self>) {
         // Check if item is empty
         if self.get_item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
@@ -584,7 +585,9 @@ impl Entity for ItemEntity {
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
-            if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
+            if let Some(result) =
+                EntityArc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity())
+            {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {
                     return;
@@ -698,7 +701,7 @@ impl Entity for ItemEntity {
             || self.entity_type().fire_immune
     }
 
-    fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
+    fn player_touch(self: EntityArc<Self>, player: &EntityArc<Player>) {
         self.try_pickup(player);
     }
 

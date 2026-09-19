@@ -1,3 +1,5 @@
+use crate::entity::EntityArc;
+use crate::test_support::TestWorld;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
@@ -113,7 +115,7 @@ impl GameEventListener for RecordingGameEventListener {
     }
 }
 
-fn jukebox_world(key: &'static str) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
+fn jukebox_world(key: &'static str) -> (TestWorld, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
     init_globals();
     let world = fresh_test_world(key);
     let pos = BlockPos::new(8, 64, 8);
@@ -140,7 +142,7 @@ fn jukebox_entity(world: &World, pos: BlockPos) -> SharedBlockEntity {
     block_entity
 }
 
-fn test_player(world: &Arc<World>, id: i32) -> Arc<Player> {
+fn test_player(world: &Arc<World>, id: i32) -> EntityArc<Player> {
     TestPlayerBuilder::new(Arc::clone(world), format!("JukeboxTester{id}"), id).build()
 }
 
@@ -218,7 +220,7 @@ fn dropped_items(world: &World, pos: BlockPos) -> Vec<SharedEntity> {
 fn recording_player(
     world: &Arc<World>,
     pos: BlockPos,
-) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+) -> (EntityArc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
@@ -228,7 +230,7 @@ fn recording_player(
         .build();
     let moved = player.try_set_position(block_bottom_center(pos.above()));
     assert!(moved.is_ok(), "test player should move beside jukebox");
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
     packets.lock().clear();
     (player, packets)
 }

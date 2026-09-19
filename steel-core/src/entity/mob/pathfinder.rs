@@ -154,7 +154,7 @@ pub trait PathfinderMob: Mob {
         tick_path_navigation_target(self, &world, game_time, self.can_update_path());
     }
 
-    fn tick_pathfinder_goal_selectors(&self)
+    fn tick_pathfinder_goal_selectors(&self, entity: &SharedEntity)
     where
         Self: Sized,
     {
@@ -162,11 +162,11 @@ pub trait PathfinderMob: Mob {
         let mut target_selector = self.mob_base().target_selector().lock();
         let mut goal_selector = self.mob_base().goal_selector().lock();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(self, false);
-            goal_selector.tick_running_goals(self, false);
+            target_selector.tick_running_goals(self, entity, false);
+            goal_selector.tick_running_goals(self, entity, false);
         } else {
-            target_selector.tick(self);
-            goal_selector.tick(self);
+            target_selector.tick(self, entity);
+            goal_selector.tick(self, entity);
         }
     }
 

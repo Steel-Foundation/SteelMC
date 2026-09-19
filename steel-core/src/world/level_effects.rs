@@ -8,6 +8,7 @@ use super::{
     UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
     vanilla_blocks, vanilla_game_events,
 };
+use crate::entity::EntityArc;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::vanilla_particle_types::{BUBBLE, SPLASH};
@@ -531,8 +532,8 @@ impl World {
         volume: f32,
         pitch: f32,
         min_volume: f32,
-        targets: &[Arc<Player>],
-    ) -> Vec<Arc<Player>> {
+        targets: &[EntityArc<Player>],
+    ) -> Vec<EntityArc<Player>> {
         let max_distance = sound.range(volume);
         let max_distance_squared = f64::from(max_distance * max_distance);
         let seed = rand::random::<i64>();
@@ -559,7 +560,7 @@ impl World {
                 pitch,
                 seed,
             ));
-            played_for.push(Arc::clone(player));
+            played_for.push(EntityArc::clone(player));
         }
 
         played_for

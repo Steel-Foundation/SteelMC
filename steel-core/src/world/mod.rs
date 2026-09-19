@@ -1,5 +1,6 @@
 //! This module contains the `World` struct, which represents a world.
 
+use crate::entity::damage::DamageHistory;
 use std::{
     io, mem,
     path::Path,
@@ -204,6 +205,8 @@ pub enum ConditionalBlockSetResult {
 /// Configuration for creating a new world.
 #[derive(Clone)]
 pub struct WorldConfig {
+    /// Server-owned history; the caller retains it while the world runs.
+    pub damage_history: Arc<DamageHistory>,
     /// Domain game-time authority, bound during construction.
     pub game_time_source: GameTimeSource,
     /// Storage configuration for chunk persistence.
@@ -234,6 +237,7 @@ pub struct WorldConfig {
 
 /// A struct that represents a world.
 pub struct World {
+    pub(crate) damage_history: Weak<DamageHistory>,
     /// The chunk map of the world.
     pub chunk_map: Arc<ChunkMap>,
     /// All players in the world with dual indexing by UUID and entity ID.
@@ -422,6 +426,7 @@ impl World {
             chunk_map.start_generation_refill_loop();
 
             Self {
+                damage_history: Arc::downgrade(&config.damage_history),
                 chunk_map,
                 players: PlayerMap::new(),
                 player_area_map: PlayerAreaMap::new(),

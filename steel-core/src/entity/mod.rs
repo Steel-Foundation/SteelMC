@@ -3,7 +3,7 @@
 use std::{
     any::try_as_dyn,
     borrow::Cow,
-    sync::{Arc, LazyLock, Weak},
+    sync::{Arc, LazyLock},
 };
 
 use glam::DVec3;
@@ -782,6 +782,7 @@ pub mod mob_effect;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
+mod reference;
 mod registry;
 mod spawn;
 mod storage;
@@ -871,11 +872,13 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-/// Type alias for a shared entity reference.
-pub type SharedEntity = Arc<dyn Entity>;
+pub use reference::{EntityArc, EntityWeak, LivingEntityRef};
+
+/// Shared ownership of an entity through its gameplay interface.
+pub type SharedEntity = EntityArc<dyn Entity>;
 
 /// Type alias for a weak entity reference.
-pub type WeakEntity = Weak<dyn Entity>;
+pub type WeakEntity = EntityWeak<dyn Entity>;
 
 /// The point on an entity used by commands that resolve positions or facing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1093,7 +1096,7 @@ fn indirect_passengers(entity: &dyn Entity) -> Vec<SharedEntity> {
             if !visited.insert(passenger.id()) {
                 continue;
             }
-            output.push(Arc::clone(&passenger));
+            output.push(EntityArc::clone(&passenger));
             collect(passenger.passengers(), visited, output);
         }
     }
@@ -1179,7 +1182,7 @@ fn teleport_entity_cross_world(
 
     if let Err(error) = teleport_transition
         .target_world
-        .try_add_entity(Arc::clone(&new_entity))
+        .try_add_entity(EntityArc::clone(&new_entity))
     {
         tracing::warn!(
             entity_id = entity.id(),
@@ -1393,11 +1396,8 @@ pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
     entity: &E,
     world: &World,
 ) -> Option<SharedEntity> {
-    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
-        world
-            .players
-            .get_by_uuid(&uuid)
-            .and_then(|player| world.get_entity_by_id(player.id()))
+    if entity.last_hurt_by_player_uuid().is_some() {
+        entity.living_base().last_hurt_by_player(world)
     } else {
         entity.last_hurt_by_mob()
     }

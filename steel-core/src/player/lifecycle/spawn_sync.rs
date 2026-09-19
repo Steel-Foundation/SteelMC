@@ -4,6 +4,7 @@ use super::{
     MobEffectSyncChange, MobEffectSyncPacket, Player, RegistryEntry, RelativeMovement, ResetReason,
     World,
 };
+use crate::entity::EntityArc;
 
 impl Player {
     /// Resets the player's transient state and prepares them for a new world.
@@ -11,13 +12,13 @@ impl Player {
     /// This is the shared "clean slate" path used by initial join and world
     /// changes that preserve the player incarnation. If the player is currently
     /// in a different world, they are removed from the old world first.
-    pub(crate) fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
+    pub(crate) fn reset(self: &EntityArc<Self>, new_world: Arc<World>, reason: ResetReason) {
         self.reset_inner_after(new_world, reason, false, || {});
     }
 
     /// Resets a player already detached from its source domain and restores target-domain state.
     pub(crate) fn reset_after_detached_domain_restore<F>(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         new_world: Arc<World>,
         restore_state: F,
     ) where
@@ -26,12 +27,12 @@ impl Player {
         self.reset_inner_after(new_world, ResetReason::WorldChange, true, || {
             restore_state();
             // Damage timestamps belong to the source domain's clock.
-            self.living_base.clear_last_damage_source();
+            self.base.damage_history().clear();
         });
     }
 
     fn reset_inner_after<F>(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         new_world: Arc<World>,
         reason: ResetReason,
         source_world_detached: bool,
@@ -122,7 +123,7 @@ impl Player {
     /// Panics if the `advance_time` gamerule is not a bool.
     #[must_use]
     pub(crate) fn spawn(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         position: DVec3,
         rotation: (f32, f32),
         reason: ResetReason,
@@ -132,7 +133,7 @@ impl Player {
 
     #[must_use]
     pub(crate) fn spawn_with_velocity(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         position: DVec3,
         rotation: (f32, f32),
         velocity: DVec3,
@@ -156,7 +157,7 @@ impl Player {
         reason = "packet-relative teleports must keep resolved and protocol values separate"
     )]
     pub(crate) fn spawn_with_velocity_packet(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         position: DVec3,
         rotation: (f32, f32),
         velocity: DVec3,
@@ -212,7 +213,7 @@ impl Player {
     /// Sends the spawn synchronization for a fresh respawn replacement without
     /// inserting it into world indexes. The replacement transaction owns that step.
     pub(crate) fn synchronize_respawn_replacement(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         position: DVec3,
         rotation: (f32, f32),
     ) {
@@ -233,7 +234,7 @@ impl Player {
         reason = "packet-relative teleports must keep resolved and protocol values separate"
     )]
     fn synchronize_spawn_with_velocity_packet(
-        self: &Arc<Self>,
+        self: &EntityArc<Self>,
         position: DVec3,
         velocity: DVec3,
         rotation: (f32, f32),

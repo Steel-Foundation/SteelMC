@@ -147,6 +147,7 @@ mod tests {
     use steel_registry::vanilla_entities;
     use steel_utils::locks::SyncMutex;
 
+    use crate::entity::EntityArc;
     use crate::entity::{Entity, EntityBase};
 
     use super::{InsideBlockEffectCollector, InsideBlockEffectType};
@@ -158,11 +159,11 @@ mod tests {
     }
 
     impl EffectTestEntity {
-        fn new() -> Arc<Self> {
+        fn new() -> EntityArc<Self> {
             let calls = Arc::new(SyncMutex::new(Vec::new()));
             let alive = Arc::new(SyncMutex::new(true));
 
-            Arc::new(Self {
+            EntityArc::new(Self {
                 base: EntityBase::new(
                     1,
                     DVec3::ZERO,

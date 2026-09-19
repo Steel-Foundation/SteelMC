@@ -1,13 +1,15 @@
 use super::*;
+use crate::entity::{EntityArc, get_kill_credit};
+use crate::test_support::TestPlayerBuilder;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
     init_vanilla_registry();
 
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0);
-    let entity_ref: &dyn Entity = &entity;
+    let entity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
+    let entity_ref: SharedEntity = entity.clone();
 
-    entity_ref.tick();
+    EntityArc::clone(&entity_ref).tick();
 
     assert_eq!(entity.living_base().death_time(), 1);
 }
@@ -32,6 +34,41 @@ fn living_tick_state_decrements_last_hurt_by_player_memory() {
 
     assert!(entity.living_base().last_hurt_by_player_uuid().is_none());
     assert_eq!(entity.last_hurt_by_player_memory_time(), 0);
+}
+
+#[test]
+fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
+    let world = fresh_test_world("kill_credit_victim");
+    let player_world = fresh_test_world("kill_credit_player");
+    let player: SharedEntity =
+        TestPlayerBuilder::new(Arc::clone(&player_world), "Attacker", 2).build();
+    let victim = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(&world),
+    );
+    let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, player.clone());
+
+    victim.resolve_player_responsible_for_damage(&source);
+    drop(source);
+
+    assert!(world.get_entity_by_uuid(&player.uuid()).is_none());
+    assert!(EntityArc::ptr_eq(
+        &get_kill_credit(&victim, &world).expect("cached player credit"),
+        &player,
+    ));
+    victim.set_last_hurt_by_player(Uuid::from_u128(42), 100);
+    assert!(get_kill_credit(&victim, &world).is_none());
+
+    victim.resolve_player_responsible_for_damage(&DamageSource::direct(
+        &vanilla_damage_types::PLAYER_ATTACK,
+        player.clone(),
+    ));
+    for _ in 0..=100 {
+        victim.living_base().tick_last_hurt_by_player_memory();
+    }
+    assert!(get_kill_credit(&victim, &world).is_none());
 }
 
 #[test]
@@ -82,7 +119,7 @@ fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    let attacker: SharedEntity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let attacker: SharedEntity = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     entity.advance_tick_count();
 
     entity.set_last_hurt_by_mob(Some(&attacker));
@@ -106,7 +143,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let target = EntityArc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let target_entity: SharedEntity = target.clone();
 
     entity.set_last_hurt_mob(Some(&target_entity));

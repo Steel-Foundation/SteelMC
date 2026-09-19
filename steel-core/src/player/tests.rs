@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
+use crate::entity::EntityArc;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
     damage::DamageSource, entities::ItemEntity, next_entity_id,
@@ -37,7 +38,7 @@ use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
     vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
-    vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
+    vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, SyncMutex};
@@ -71,7 +72,7 @@ const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
     let world = fresh_test_world("initial_player_cosmetic_metadata");
-    let player = TestPlayerBuilder::new(world, "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
         .uuid(Uuid::from_u128(1))
         .client_information(ClientInformation {
             model_customization: MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET,
@@ -117,7 +118,7 @@ fn client_information_initializes_player_cosmetic_metadata() {
 #[test]
 fn play_client_information_dirties_changed_cosmetic_metadata_once() {
     let world = fresh_test_world("updated_player_cosmetic_metadata");
-    let player = test_player(world);
+    let player = test_player(Arc::clone(&world));
     let _ = player.pack_dirty_entity_data();
 
     let packet = SClientInformation {
@@ -233,7 +234,7 @@ fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
     entity_ids
 }
 
-fn test_player(world: Arc<World>) -> Arc<Player> {
+fn test_player(world: Arc<World>) -> EntityArc<Player> {
     let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
@@ -443,10 +444,11 @@ fn ai_step_copies_player_yaw_to_head_yaw() {
     init_vanilla_registry();
     init_behaviors();
     let player = test_player(Arc::clone(test_world()));
+    let player_entity: SharedEntity = player.clone();
     player.set_rotation((90.0, 15.0));
     player.set_y_head_rot(-45.0);
 
-    let _ = player.ai_step();
+    let _ = player.ai_step(&player_entity);
 
     assert_eq!(player.y_head_rot().to_bits(), 90.0_f32.to_bits());
 }
@@ -608,7 +610,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
         .connection(connection)
         .build();
-    let item: SharedEntity = Arc::new(ItemEntity::new(
+    let item: SharedEntity = EntityArc::new(ItemEntity::new(
         &vanilla_entities::ITEM,
         2,
         DVec3::ZERO,
@@ -618,7 +620,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     world.entity_tracker().add(
         &item,
         |_| vec![player.id()],
-        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
+        |player_id| (player_id == player.id()).then(|| EntityArc::clone(&player)),
     );
     assert_eq!(
         world.entity_tracker().tracking_player_ids(item.id()),
@@ -723,7 +725,7 @@ fn end_credits_removes_all_menus_before_detaching() {
     init_vanilla_registry();
     let world = fresh_test_world("end_credits_menu_removal");
     let player = test_player(Arc::clone(&world));
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
 
     player
@@ -767,7 +769,7 @@ fn admitted_world_change_prevents_end_credits_detach() {
     init_vanilla_registry();
     let world = fresh_test_world("end_credits_pending_world_change");
     let player = test_player(Arc::clone(&world));
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     let Some(pending_token) = player.begin_pending_world_change() else {
         panic!("test player should accept a pending world change");
@@ -790,9 +792,9 @@ fn duplicate_exact_player_admission_cleans_existing_membership() {
     init_vanilla_registry();
     let world = fresh_test_world("duplicate_player_admission");
     let player = test_player(Arc::clone(&world));
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
 
-    assert!(!world.add_player(Arc::clone(&player), ResetReason::WorldChange));
+    assert!(!world.add_player(EntityArc::clone(&player), ResetReason::WorldChange));
 
     assert!(!world.contains_player(&player));
     assert!(world.get_entity_by_id(player.id()).is_none());
@@ -852,17 +854,24 @@ fn hurt_uses_explicit_world_difficulty() {
 }
 
 #[test]
-fn conditional_damage_does_not_scale_for_player_or_unresolved_causes() {
+fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
     let world = hard_damage_test_world();
-    let causing_player = test_player(Arc::clone(world));
-    let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
-
-    assert!(!source.scales_with_difficulty(Some(causing_player.as_ref())));
-
-    let target = test_player(Arc::clone(world));
-    let unresolved_source = source.with_causing_entity(2);
-    assert!(target.hurt(world, &unresolved_source, 4.0));
-    assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
+    let causing_player: SharedEntity = test_player(Arc::clone(world));
+    let object: SharedEntity = EntityArc::new(ItemEntity::new(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::ZERO,
+        Arc::downgrade(world),
+    ));
+    for cause in [None, Some(causing_player), Some(object)] {
+        let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+        if let Some(cause) = cause {
+            source = source.with_causing_entity(cause);
+        }
+        let target = test_player(Arc::clone(world));
+        assert!(target.hurt(world, &source, 4.0));
+        assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
+    }
 }
 
 #[test]
@@ -917,6 +926,78 @@ fn player_damage_hurts_armor_equipment() {
     assert_eq!(
         inventory.get_ref(EquipmentSlot::Chest).get_damage_value(),
         2,
+    );
+}
+
+#[test]
+fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("player_attack_thorns");
+    let attacker = test_player(Arc::clone(&world));
+    let victim = TestPlayerBuilder::new(Arc::clone(&world), "Victim", 2).build();
+    victim.set_client_loaded(true);
+    {
+        let mut inventory = attacker.inventory.lock();
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+        let mut helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
+        helmet.set_enchantments(&[(vanilla_enchantments::THORNS.key.clone(), 7)], false);
+        helmet.set_damage_value(helmet.get_max_damage() - 1);
+        inventory.set(EquipmentSlot::Head, helmet);
+    }
+    let mut chestplate = ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE);
+    // Vanilla's 15% chance per level makes level 7 activate on every attack.
+    chestplate.set_enchantments(&[(vanilla_enchantments::THORNS.key.clone(), 7)], false);
+    // Leave one durability for the incoming hit and two for the Thorns effect.
+    chestplate.set_damage_value(chestplate.get_max_damage() - 3);
+    victim
+        .inventory
+        .lock()
+        .set(EquipmentSlot::Chest, chestplate);
+    LivingEntity::detect_equipment_updates(attacker.as_ref());
+    LivingEntity::detect_equipment_updates(victim.as_ref());
+    let attacker_health = attacker.get_health();
+    let victim_health = victim.get_health();
+    let target: SharedEntity = victim.clone();
+
+    assert!(attacker.attack(&target));
+
+    assert!(victim.get_health() < victim_health);
+    assert!(attacker.get_health() < attacker_health);
+    let retaliation = attacker.last_damage_source().expect("Thorns retaliation");
+    assert_eq!(retaliation.damage_type, &vanilla_damage_types::THORNS);
+    assert!(EntityArc::ptr_eq(
+        retaliation.causing_entity().expect("Thorns owner"),
+        &target,
+    ));
+    assert!(
+        attacker
+            .inventory
+            .lock()
+            .get_ref(EquipmentSlot::Head)
+            .is_empty()
+    );
+    assert_eq!(
+        victim
+            .last_damage_source()
+            .expect("original attack")
+            .damage_type,
+        &vanilla_damage_types::PLAYER_ATTACK,
+        "Thorns damage does not initiate another post-attack enchantment pass",
+    );
+    assert!(
+        victim
+            .inventory
+            .lock()
+            .get_ref(EquipmentSlot::Chest)
+            .is_empty()
+    );
+    assert_eq!(
+        victim
+            .stats
+            .lock()
+            .get(&vanilla_stat_types::ITEM_BROKEN.get(&vanilla_items::DIAMOND_CHESTPLATE)),
+        1,
     );
 }
 
@@ -1472,6 +1553,7 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
     let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
+    let player_entity: SharedEntity = player.clone();
 
     {
         let mut inventory = player.inventory.lock();
@@ -1483,7 +1565,7 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
 
     player.start_using_item(InteractionHand::MainHand);
     for _ in 0..40 {
-        player.tick_active_item_use();
+        player.tick_active_item_use(&player_entity);
     }
 
     let hand_item = player
@@ -1559,19 +1641,19 @@ fn throttle_player_dropping_items_from_creative_menu() {
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    player.tick();
+    EntityArc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
     for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
-        player.tick();
+        EntityArc::clone(&player).tick();
     }
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    player.tick();
+    EntityArc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }

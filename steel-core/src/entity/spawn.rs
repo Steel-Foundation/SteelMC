@@ -10,6 +10,7 @@ use steel_utils::nbt::merge_nbt_compounds;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty};
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
+use crate::entity::EntityArc;
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
 use crate::world::World;
 
@@ -237,7 +238,8 @@ pub(crate) fn spawn_entity(
         apply_item_stack_components(&entity, item_stack, request.user_is_operator)?;
     }
 
-    add_spawned_entity(world, Arc::clone(&entity)).map_err(|_| EntitySpawnError::AddEntity)?;
+    add_spawned_entity(world, EntityArc::clone(&entity))
+        .map_err(|_| EntitySpawnError::AddEntity)?;
 
     if request.play_ambient_sound
         && let Some(mob) = entity.as_mob()
@@ -339,7 +341,7 @@ impl AgeableMobGroupData {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use simdnbt::owned::NbtCompound;
@@ -358,6 +360,7 @@ mod tests {
     };
     use text_components::TextComponent;
 
+    use crate::entity::EntityArc;
     use crate::entity::entities::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
     use crate::entity::{AgeableMob, Entity, SharedEntity};
 
@@ -395,7 +398,7 @@ mod tests {
     fn item_entity_data_overrides_entity_state_without_replacing_defaults() {
         init_vanilla_registry();
 
-        let pig = Arc::new(PigEntity::new(
+        let pig = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::ZERO,
@@ -427,7 +430,7 @@ mod tests {
     fn item_pig_variant_overrides_spawn_variant() {
         init_vanilla_registry();
 
-        let pig = Arc::new(PigEntity::new(
+        let pig = EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::ZERO,
@@ -452,7 +455,7 @@ mod tests {
     fn item_cow_components_override_spawn_state() {
         init_vanilla_registry();
 
-        let cow = Arc::new(CowEntity::new(
+        let cow = EntityArc::new(CowEntity::new(
             &vanilla_entities::COW,
             1,
             DVec3::ZERO,
@@ -484,7 +487,7 @@ mod tests {
     fn item_chicken_components_override_spawn_state() {
         init_vanilla_registry();
 
-        let chicken = Arc::new(ChickenEntity::new(
+        let chicken = EntityArc::new(ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
@@ -516,7 +519,7 @@ mod tests {
     fn item_sheep_color_overrides_spawn_state() {
         init_vanilla_registry();
 
-        let sheep = Arc::new(SheepEntity::new(
+        let sheep = EntityArc::new(SheepEntity::new(
             &vanilla_entities::SHEEP,
             1,
             DVec3::ZERO,
