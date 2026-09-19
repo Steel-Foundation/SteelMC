@@ -1002,7 +1002,6 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::data_components::vanilla_components::{ENCHANTMENTS, ItemEnchantments};
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::items::ItemRef;
     use steel_registry::{
@@ -1016,7 +1015,7 @@ mod tests {
     use crate::entity::{
         EntityBase, LivingEntity, LivingEntityBase, entities::FireworkRocketEntity,
     };
-    use crate::test_support::test_world;
+    use crate::test_support::{enchanted_item, test_world};
 
     struct TestLivingEntity {
         base: EntityBase,
@@ -1080,15 +1079,6 @@ mod tests {
         fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
             self.broken_slots.lock().push(slot);
         }
-    }
-
-    fn enchanted_item(item: ItemRef, enchantment: Identifier, level: u32) -> ItemStack {
-        let mut enchantments = ItemEnchantments::empty();
-        enchantments.set(enchantment, level);
-
-        let mut stack = ItemStack::new(item);
-        stack.set(ENCHANTMENTS, enchantments);
-        stack
     }
 
     fn assert_f32_eq(actual: f32, expected: f32) {

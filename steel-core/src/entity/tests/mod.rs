@@ -1166,6 +1166,7 @@ fn closest_direction_with_blocked_neighbors(
 }
 
 mod damage;
+mod death_loot;
 mod equipment_and_freezing;
 mod fall_and_fluids;
 mod living_state;
