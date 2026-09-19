@@ -71,6 +71,12 @@ impl CaveVinesBlock {
         state.set_value(BERRIES, rng.random::<f32>() < 0.11)
     }
 
+    /// Whether `state` is a cave vine with glow berries on it, false for any other block.
+    #[must_use]
+    pub fn has_glow_berries(state: BlockStateId) -> bool {
+        state.try_get_value(BERRIES).unwrap_or(false)
+    }
+
     /// Shared behavior use block between cave vine block and plant
     pub fn use_block(
         source_entity: &dyn Entity,
@@ -78,7 +84,7 @@ impl CaveVinesBlock {
         world: &Arc<World>,
         pos: BlockPos,
     ) -> InteractionResult {
-        if !state.get_value(BERRIES) {
+        if !Self::has_glow_berries(state) {
             return InteractionResult::Pass;
         }
         let mut rng = rand::rng();
