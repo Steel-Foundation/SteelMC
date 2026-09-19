@@ -1,8 +1,9 @@
-//! Egg item behavior (`EggItem`).
+//! Bottle o' Enchanting item behavior (`ExperienceBottleItem`).
 //!
-//! Throwing an egg spawns a [`ThrownEggEntity`] from the player's eye, shot
-//! along their look direction, and consumes one egg unless the player
-//! has infinite materials. Mirrors vanilla `EggItem.use`.
+//! Throwing a bottle spawns a [`ThrownExperienceBottleEntity`] from the
+//! player's eye, shot 20 degrees above their look direction, and consumes one
+//! bottle unless the player has infinite materials. Mirrors vanilla
+//! `ExperienceBottleItem.use`. Dispenser support waits for a dispenser.
 
 use std::sync::Arc;
 
@@ -13,25 +14,27 @@ use steel_registry::{sound_events, vanilla_entities};
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::item::ItemBehavior;
-use crate::entity::entities::ThrownEggEntity;
+use crate::entity::entities::ThrownExperienceBottleEntity;
 use crate::entity::{Entity, next_entity_id, spawn_throwable_item_projectile};
 
-/// Vanilla `EggItem.PROJECTILE_SHOOT_POWER`.
-const SHOOT_POWER: f32 = 1.5;
-/// Vanilla `EggItem.use` throw sound volume.
-const THROW_SOUND_VOLUME: f32 = 0.5;
-/// Vanilla `EggItem.use` throw pitch jitter scale: `0.4 / (random * 0.4 + 0.8)`.
-const THROW_PITCH_JITTER_SCALE: f32 = 0.4;
-/// Vanilla `EggItem.use` throw pitch jitter base.
-const THROW_PITCH_JITTER_BASE: f32 = 0.8;
-/// Vanilla `EggItem.use` throw uncertainty (`spawnProjectileFromRotation`).
+/// Vanilla `ExperienceBottleItem.use` pitch offset in degrees (`spawnProjectileFromRotation` z argument).
+const PITCH_OFFSET: f32 = -20.0;
+/// Vanilla `ExperienceBottleItem.use` shoot power.
+const SHOOT_POWER: f32 = 0.7;
+/// Vanilla `ExperienceBottleItem.use` throw uncertainty.
 const THROW_UNCERTAINTY: f32 = 1.0;
+/// Vanilla `ExperienceBottleItem.use` throw sound volume.
+const THROW_SOUND_VOLUME: f32 = 0.5;
+/// Vanilla throw pitch jitter scale: `0.4 / (random * 0.4 + 0.8)`.
+const THROW_PITCH_JITTER_SCALE: f32 = 0.4;
+/// Vanilla throw pitch jitter base.
+const THROW_PITCH_JITTER_BASE: f32 = 0.8;
 
-/// Behavior for the egg item.
-#[item_behavior(class = "EggItem")]
-pub struct EggItem;
+/// Behavior for the Bottle o' Enchanting item.
+#[item_behavior(class = "ExperienceBottleItem")]
+pub struct ExperienceBottleItem;
 
-impl ItemBehavior for EggItem {
+impl ItemBehavior for ExperienceBottleItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         let player = context.player;
         let world = context.world;
@@ -41,8 +44,8 @@ impl ItemBehavior for EggItem {
                 THROW_PITCH_JITTER_BASE..THROW_PITCH_JITTER_BASE + THROW_PITCH_JITTER_SCALE,
             );
         world.play_sound_at(
-            &sound_events::ENTITY_EGG_THROW,
-            SoundSource::Players,
+            &sound_events::ENTITY_EXPERIENCE_BOTTLE_THROW,
+            SoundSource::Neutral,
             player.position(),
             THROW_SOUND_VOLUME,
             pitch,
@@ -50,16 +53,16 @@ impl ItemBehavior for EggItem {
         );
 
         let mut thrown_item = context.inv.with_item(|item| item.clone());
-        let Some(_egg) = spawn_throwable_item_projectile(
+        let Some(_bottle) = spawn_throwable_item_projectile(
             world,
             player,
             &mut thrown_item,
-            0.0,
+            PITCH_OFFSET,
             SHOOT_POWER,
             THROW_UNCERTAINTY,
             |spawn_pos| {
-                ThrownEggEntity::new(
-                    &vanilla_entities::EGG,
+                ThrownExperienceBottleEntity::new(
+                    &vanilla_entities::EXPERIENCE_BOTTLE,
                     next_entity_id(),
                     spawn_pos,
                     Arc::downgrade(world),
