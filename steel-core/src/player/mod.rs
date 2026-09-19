@@ -109,7 +109,7 @@ use crate::entity::{
     apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
-use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::Menu;
 use crate::inventory::menu::kinds::inventory_menu;
@@ -2009,11 +2009,12 @@ impl LivingEntity for Player {
             self.inventory.lock().set_changed();
         }
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
-        // TODO: Emit EQUIP game event once game-event dispatch is implemented.
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         InteractionResult::Success
+    }
+
+    fn does_emit_equip_event(&self, slot: EquipmentSlot) -> bool {
+        slot.slot_type() == EquipmentSlotType::HumanoidArmor
     }
 
     fn has_infinite_materials(&self) -> bool {

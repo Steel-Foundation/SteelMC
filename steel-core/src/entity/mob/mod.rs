@@ -716,7 +716,7 @@ pub trait Mob: LivingEntity + Leashable {
 
         let to_equip = slot.limit(&mut item_stack);
         let equipped = to_equip.copy_with_count(to_equip.count());
-        self.living_base().equipment().lock().set(slot, to_equip);
+        self.set_item_slot(slot, to_equip);
         self.set_guaranteed_drop(slot);
         self.set_persistence_required();
         equipped
@@ -964,7 +964,7 @@ pub trait Mob: LivingEntity + Leashable {
             }
 
             let mut item_stack = {
-                let mut equipment = self.living_base().equipment().lock();
+                let equipment = self.living_base().equipment().lock();
                 let item_stack = equipment.get_ref(slot);
                 if item_stack.is_empty()
                     || item_stack
@@ -973,7 +973,7 @@ pub trait Mob: LivingEntity + Leashable {
                     continue;
                 }
 
-                equipment.take(slot)
+                item_stack.clone()
             };
             if !preserve && item_stack.is_damageable_item() {
                 let max_damage = item_stack.get_max_damage();
@@ -983,6 +983,7 @@ pub trait Mob: LivingEntity + Leashable {
             }
 
             self.spawn_at_location(item_stack, 0.0);
+            self.set_item_slot(slot, ItemStack::empty());
         }
     }
 
