@@ -11,6 +11,7 @@
 
 use std::marker::PhantomData;
 use std::simd::f64x4;
+use std::simd::f64x8;
 
 use steel_math::lerp;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -163,9 +164,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
         let mut values = [0.0f64; MAX_INTERP];
 
-        // Scratch buffer for the 4-Y SIMD batch. Lane-major SoA: lane `i`'s
-        // `interp_count` channels live at `values_4x[i * interp_count..]`.
+        // Scratch buffers for the SIMD batches. Lane-major SoA: lane `i`'s
+        // `interp_count` channels live at `values_Nx[i * interp_count..]`.
         let mut values_4x = [0.0f64; 4 * MAX_INTERP];
+        let mut values_8x = [0.0f64; 8 * MAX_INTERP];
 
         for cz in 0..=cell_count_xz {
             let cell_z = first_cell_z + cz as i32;
@@ -180,6 +182,49 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             // 4-Y SIMD-batched corner fill. Tail is handled by the scalar
             // loop below for any remaining `corners_y % 4` corners.
             let mut cy = 0;
+            if N::simd_lanes() == 8 {
+                while cy + 8 <= corners_y {
+                    let ys_v = f64x8::from_array([
+                        f64::from(block_ys[cy]),
+                        f64::from(block_ys[cy + 1]),
+                        f64::from(block_ys[cy + 2]),
+                        f64::from(block_ys[cy + 3]),
+                        f64::from(block_ys[cy + 4]),
+                        f64::from(block_ys[cy + 5]),
+                        f64::from(block_ys[cy + 6]),
+                        f64::from(block_ys[cy + 7]),
+                    ]);
+                    let blended_v = f64x8::from_array([
+                        blended_column[cy],
+                        blended_column[cy + 1],
+                        blended_column[cy + 2],
+                        blended_column[cy + 3],
+                        blended_column[cy + 4],
+                        blended_column[cy + 5],
+                        blended_column[cy + 6],
+                        blended_column[cy + 7],
+                    ]);
+
+                    noises.fill_cell_corner_densities_8x(
+                        cache,
+                        block_x,
+                        ys_v,
+                        block_z,
+                        blended_v,
+                        &mut values_8x[..8 * interp_count],
+                    );
+
+                    for lane in 0..8 {
+                        let lane_cy = cy + lane;
+                        let src = &values_8x[lane * interp_count..(lane + 1) * interp_count];
+                        let corner_idx = cz * corners_y + lane_cy;
+                        let base = corner_idx * MAX_INTERP;
+                        slice[base..base + interp_count].copy_from_slice(src);
+                    }
+
+                    cy += 8;
+                }
+            }
             while cy + 4 <= corners_y {
                 let ys_v = f64x4::from_array([
                     f64::from(block_ys[cy]),
