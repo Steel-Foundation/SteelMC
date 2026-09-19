@@ -8,6 +8,7 @@ use smallvec::SmallVec;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::DyeColor;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
     BooleanOp, ShapeChannel, SupportType, VoxelShape, is_block_local_face_sturdy,
@@ -613,6 +614,11 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns whether this behavior implements vanilla `LiquidBlock`.
     fn is_liquid_block(&self) -> bool {
         false
+    }
+
+    /// Returns the beacon beam color for this block, if it is a vanilla `BeaconBeamBlock`.
+    fn get_beacon_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        None
     }
 
     /// Mirrors vanilla `DoorBlock.isWoodenDoor`.

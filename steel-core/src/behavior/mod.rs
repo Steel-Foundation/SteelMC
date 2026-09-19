@@ -88,6 +88,7 @@ pub use items::{
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;
 use std::sync::OnceLock;
+use steel_registry::DyeColor;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::consume_effect::vanilla_consume_effect_types;
@@ -152,6 +153,9 @@ pub trait BlockStateBehaviorExt {
     /// Returns whether this block state extends `LiquidBlock`.
     fn is_liquid_block(&self) -> bool;
 
+    /// Returns the beacon beam color for this block state when it implements vanilla `BeaconBeamBlock`.
+    fn beacon_beam_color(&self) -> Option<DyeColor>;
+
     /// Returns whether this block state can be occupied by a forced respawn position
     fn is_possible_to_respawn_in_this(&self) -> bool;
 }
@@ -189,6 +193,11 @@ impl BlockStateBehaviorExt for BlockStateId {
     fn is_liquid_block(&self) -> bool {
         let block = self.get_block();
         BLOCK_BEHAVIORS.get_behavior(block).is_liquid_block()
+    }
+
+    fn beacon_beam_color(&self) -> Option<DyeColor> {
+        let block = self.get_block();
+        BLOCK_BEHAVIORS.get_behavior(block).get_beacon_color(*self)
     }
 
     fn is_possible_to_respawn_in_this(&self) -> bool {
