@@ -4,7 +4,7 @@ use steel_registry::RegistryEntry as _;
 use steel_registry::vanilla_biomes;
 
 #[test]
-#[should_panic(expected = "persisted chunk status must match its Full runtime state")]
+#[should_panic(expected = "a chunk persisted as Full must have its Full runtime state initialized")]
 fn chunk_save_rejects_full_status_for_proto_data() {
     init_vanilla_registry();
 
@@ -16,6 +16,25 @@ fn chunk_save_rejects_full_status_for_proto_data() {
         Weak::new(),
     );
     let _ = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Full, &[], true);
+}
+
+#[test]
+fn chunk_save_abandons_a_proto_status_snapshot_of_a_promoted_chunk() {
+    init_vanilla_registry();
+
+    let chunk = Chunk::new(
+        single_empty_section(),
+        ChunkPos::new(0, 0),
+        0,
+        16,
+        Weak::new(),
+    );
+    let _ = chunk.promote_to_full();
+
+    assert!(
+        ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Biomes, &[], true).is_none(),
+        "a proto-status snapshot of a promoted chunk must be abandoned"
+    );
 }
 
 #[test]

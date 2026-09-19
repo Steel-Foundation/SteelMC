@@ -167,9 +167,12 @@ impl ChunkGenerationTask {
         let chunk_map_clone = chunk_map.clone();
         let mut cache = StaticCache2D::create(pos.0.x, pos.0.y, worst_case_radius, move |x, y| {
             chunk_map_clone
-                    .chunks
-                    .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
-                    .expect("The chunkholder should be created by distance manager before the generation task is scheduled. This occurring means there is a bug in the distance manager or you called this yourself.")
+                .chunks
+                .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
+                .expect(
+                    "update_chunk_level installs a holder for every position granted a \
+                     loading level before its neighbors can be scheduled",
+                )
         });
         cache.pin_holders_for_generation();
         let center_holder = Arc::clone(cache.get(pos.0.x, pos.0.y));
