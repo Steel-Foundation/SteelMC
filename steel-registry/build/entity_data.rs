@@ -167,8 +167,8 @@ fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str)> {
         "armadillo_state" => ("ArmadilloState", "ArmadilloState"),
         "copper_golem_state" => ("i32", "CopperGolemState"),
         "weathering_copper_state" => ("i32", "WeatheringCopperState"),
-        "vector3" => ("Vector3f", "Vector3"),
-        "quaternion" => ("Quaternionf", "Quaternion"),
+        "vector3" => ("Vec3", "Vector3"),
+        "quaternion" => ("Quat", "Quaternion"),
         "resolvable_profile" => ("ResolvableProfile", "ResolvableProfile"),
         "humanoid_arm" => ("HumanoidArm", "HumanoidArm"),
         _ => return None,
@@ -515,7 +515,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             let x_lit = Literal::f32_suffixed(x);
             let y_lit = Literal::f32_suffixed(y);
             let z_lit = Literal::f32_suffixed(z);
-            quote! { Vector3f::new(#x_lit, #y_lit, #z_lit) }
+            quote! { Vec3::new(#x_lit, #y_lit, #z_lit) }
         }
         "quaternion" => {
             let obj = required_object(default, serializer);
@@ -527,7 +527,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             let y_lit = Literal::f32_suffixed(y);
             let z_lit = Literal::f32_suffixed(z);
             let w_lit = Literal::f32_suffixed(w);
-            quote! { Quaternionf::new(#x_lit, #y_lit, #z_lit, #w_lit) }
+            quote! { Quat::from_xyzw(#x_lit, #y_lit, #z_lit, #w_lit) }
         }
         "villager_data" => {
             let obj = required_object(default, serializer);
@@ -1016,14 +1016,15 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::entity_data::{
             ArmadilloState, BlockPos, DataValue, Direction, EntityData, EntityPose,
-            ColorParticleOption, GlobalPos, HumanoidArm, ParticleData, ParticleList, Quaternionf,
-            ResolvableProfile, Rotations, SnifferState, SyncedValue, Vector3f,
+            ColorParticleOption, GlobalPos, HumanoidArm, ParticleData, ParticleList,
+            ResolvableProfile, Rotations, SnifferState, SyncedValue,
             VillagerData,
         };
         use crate::item_stack::ItemStack;
         use steel_utils::{ArgbColor, BlockStateId, random::Random};
         use text_components::TextComponent;
         use uuid::Uuid;
+        use glam::{Vec3, Quat};
         use crate::{RegistryEntry, RegistryExt, RegistryReference};
 
         /// Common access to the vanilla synchronized entity data root layer.
