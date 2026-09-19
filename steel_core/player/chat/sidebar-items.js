@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MESSAGE_EXPIRES_AFTER_SERVER"],"enum":["ChatSessionUpdateOutcome"],"fn":["validate_chat_session_update"],"mod":["message_chain","message_validator","profile_key","signature_cache"],"struct":["ChatState","LastSeen","LastSeenMessagesValidator","MessageCache"]};

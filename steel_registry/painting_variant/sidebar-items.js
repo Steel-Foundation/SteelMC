@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["PaintingVariant","PaintingVariantRegistry","PaintingVariantValue"],"type":["PaintingVariantRef"]};

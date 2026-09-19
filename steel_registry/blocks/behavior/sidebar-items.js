@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["OffsetType","PushReaction"],"fn":["horizontal_offset_component"],"struct":["BlockConfig"]};

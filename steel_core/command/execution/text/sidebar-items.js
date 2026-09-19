@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["join_components","parse_block_coordinates","parse_resource_identifier","validate_component_syntax","validate_resolvable_syntax"],"struct":["CommandTextResolver"],"trait":["CommandTextResolutionSource"]};

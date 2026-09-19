@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INDEX_SCALE","TABLE_LEN","TABLE_MASK"],"fn":["cos","sin"],"static":["SIN_TABLE"]};

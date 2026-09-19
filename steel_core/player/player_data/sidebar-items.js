@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PLAYER_DATA_VERSION"],"struct":["PersistentAbilities","PersistentEnderPearl","PersistentPlayerData","PersistentRootVehicle","PersistentSlot","PersistentStat"]};

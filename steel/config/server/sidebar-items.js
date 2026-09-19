@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_COMPRESSION_LEVEL","MIN_COMPRESSION_LEVEL","MIN_COMPRESSION_THRESHOLD"],"fn":["default_max_chained_neighbor_updates","default_spam_threshold_seconds","validate"],"struct":["ServerConfig","ThreadConfig"]};

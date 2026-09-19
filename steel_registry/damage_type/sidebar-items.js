@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DamageEffects","DamageScaling","DeathMessageType"],"struct":["DamageType","DamageTypeRegistry"],"type":["DamageTypeRef"]};

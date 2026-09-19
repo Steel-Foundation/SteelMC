@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["end_crystal"],"struct":["EndCrystalEntity"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CAULDRON_FILLED_ENTITY_INSIDE_BOXES","CAULDRON_FILLED_ENTITY_INSIDE_SHAPE"],"struct":["LavaCauldronBlock"]};

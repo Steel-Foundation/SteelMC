@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UPDATE_ORDER"],"enum":["NeighborUpdate"],"struct":["AddResult","CollectingNeighborUpdater","CollectingState","ResetGuard","ShapeUpdate"]};

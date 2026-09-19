@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_INTERP","MAX_SLICE_LEN"],"struct":["NoiseChunk"]};

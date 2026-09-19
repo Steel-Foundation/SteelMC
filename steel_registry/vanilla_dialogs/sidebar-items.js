@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_dialogs"],"static":["CUSTOM_OPTIONS","QUICK_ACTIONS","SERVER_LINKS"]};

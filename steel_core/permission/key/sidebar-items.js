@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionKeyError"],"fn":["validate_permission_segment"],"struct":["PermissionKey","PermissionSegment"]};

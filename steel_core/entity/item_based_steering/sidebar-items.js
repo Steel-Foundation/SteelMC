@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BOOST_FACTOR_SCALE","BOOST_TIME_BOUND","MIN_BOOST_TIME"],"struct":["ItemBasedSteering"],"trait":["ItemSteerable"]};

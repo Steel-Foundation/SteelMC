@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INPUT_FACTOR","VALUE_FACTOR_NUMERATOR"],"fn":["expected_deviation"],"struct":["NormalNoise"]};

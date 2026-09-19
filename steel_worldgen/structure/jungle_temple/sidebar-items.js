@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["JUNGLE_TEMPLE_DEPTH","JUNGLE_TEMPLE_HEIGHT","JUNGLE_TEMPLE_WIDTH"],"fn":["jungle_temple_piece"],"struct":["JungleTemplePieceData","JungleTempleStructure"]};

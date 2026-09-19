@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["OccupationStatus"],"fn":["distance_sq","max_tickets_for","resolve_pos"],"struct":["PointOfInterestStorage"],"type":["PoiColumn"]};
