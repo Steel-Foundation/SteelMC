@@ -2,9 +2,19 @@ use crate::advancement::{Advancement, positioner};
 use rustc_hash::FxHashMap;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
+use std::io::Write;
+use std::mem::take;
 use steel_utils::Identifier;
+use steel_utils::serial::WriteTo;
 
 pub type AdvancementRef = &'static Advancement;
+
+impl WriteTo for AdvancementRef {
+    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        (*self).write(writer)?;
+        Ok(())
+    }
+}
 
 #[derive(Debug)]
 pub struct AdvancementNode {
@@ -61,31 +71,22 @@ impl Hash for AdvancementNode {
 }
 
 /// equivalent of the `AdvancementTree` of the minecraft source code
+#[derive(Default)]
 pub struct AdvancementRegistry {
     pub adv_nodes: Vec<AdvancementNode>,
+    pub unloaded_advancement: Vec<AdvancementRef>,
     pub by_key: FxHashMap<Identifier, usize>,
     pub roots: Vec<usize>,
     pub tasks: Vec<usize>,
 }
 
-impl Default for AdvancementRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AdvancementRegistry {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            adv_nodes: Vec::new(),
-            by_key: FxHashMap::default(),
-            roots: Vec::new(),
-            tasks: Vec::new(),
-        }
+        Self::default()
     }
 
-    fn register(&mut self, advancement: AdvancementRef, parent_idx: Option<usize>) {
+    fn register_with_parent(&mut self, advancement: AdvancementRef, parent_idx: Option<usize>) {
         let id = advancement.key.clone();
         let node_idx = self.adv_nodes.len();
         self.adv_nodes
@@ -112,11 +113,11 @@ impl AdvancementRegistry {
             },
             None => None,
         };
-        self.register(advancement, parent_idx);
+        self.register_with_parent(advancement, parent_idx);
         None
     }
 
-    pub(crate) fn register_all(&mut self, advancements: &[AdvancementRef]) {
+    pub(crate) fn register_all(&mut self, advancements: Vec<AdvancementRef>) {
         let mut advancements_to_add: Vec<AdvancementRef> = advancements.to_vec();
 
         while !advancements_to_add.is_empty() {
@@ -140,9 +141,13 @@ impl AdvancementRegistry {
         }
     }
 
+    pub fn register(&mut self, advancement: AdvancementRef) {
+        self.unloaded_advancement.push(advancement);
+    }
+
     #[cfg(test)]
     pub fn register_without_load(&mut self, advancements: &[AdvancementRef]) {
-        self.register_all(advancements);
+        self.register_all(advancements.to_vec());
     }
 
     #[must_use]
@@ -169,7 +174,8 @@ impl AdvancementRegistry {
         self.adv_nodes.iter().enumerate()
     }
 
-    pub fn load(&mut self, advancements: &[AdvancementRef]) {
+    pub fn update_tree(&mut self) {
+        let advancements = take(&mut self.unloaded_advancement);
         self.register_all(advancements);
         for advancement_idx in self.roots.clone() {
             let node = self.adv_nodes.get(advancement_idx);
