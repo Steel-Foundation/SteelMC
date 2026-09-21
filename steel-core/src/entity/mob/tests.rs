@@ -92,6 +92,7 @@ struct DespawnTestMob {
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
     preferred_weapon_type: SyncMutex<Option<Identifier>>,
+    can_be_leashed: SyncMutex<bool>,
 }
 
 impl DespawnTestMob {
@@ -134,6 +135,7 @@ impl DespawnTestMob {
             living_base: LivingEntityBase::new(entity_type),
             mob_base: MobBase::new(),
             flags: SyncMutex::new(0),
+            can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(10.0),
             nearest_player_distance_sqr,
             remove_when_far_away,
@@ -259,6 +261,10 @@ impl Mob for DespawnTestMob {
 
     fn get_preferred_weapon_type(&self) -> Option<Identifier> {
         self.preferred_weapon_type.lock().clone()
+    }
+
+    fn mob_can_be_leashed(&self) -> bool {
+        *self.can_be_leashed.lock()
     }
 }
 
@@ -712,6 +718,17 @@ fn mob_tick_leash_applies_default_elastic_pull() {
     assert!(mob.needs_velocity_sync());
     assert!(mob.rotation().0 < 0.0);
     assert!(mob.is_leashed());
+}
+
+#[test]
+fn mob_that_cannot_be_leashed_refuses_a_lead() {
+    let mob = DespawnTestMob::new(None, false);
+    let holder = DespawnTestMob::with_position(2, DVec3::new(2.0, 0.0, 0.0), None, false);
+    assert!(mob.can_have_a_leash_attached_to(&holder));
+
+    *mob.can_be_leashed.lock() = false;
+
+    assert!(!mob.can_have_a_leash_attached_to(&holder));
 }
 
 #[test]
