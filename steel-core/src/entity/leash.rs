@@ -73,7 +73,6 @@ pub trait Leashable: Entity {
     ///
     /// See also: [`Leashable::may_be_leashed`]
     fn can_be_leashed(&self) -> bool {
-        // TODO: Return false for enemy mobs once hostile mob foundations exist.
         true
     }
 
