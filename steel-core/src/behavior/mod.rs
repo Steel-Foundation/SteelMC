@@ -154,9 +154,6 @@ pub trait BlockStateBehaviorExt {
     /// Returns whether this block state extends `LiquidBlock`.
     fn is_liquid_block(&self) -> bool;
 
-    /// Returns the beacon beam color for this block state when it implements vanilla `BeaconBeamBlock`.
-    fn beacon_beam_color(&self) -> Option<DyeColor>;
-
     /// Returns whether this block state can be occupied by a forced respawn position
     fn is_possible_to_respawn_in_this(&self) -> bool;
 }
@@ -194,14 +191,6 @@ impl BlockStateBehaviorExt for BlockStateId {
     fn is_liquid_block(&self) -> bool {
         let block = self.get_block();
         BLOCK_BEHAVIORS.get_behavior(block).is_liquid_block()
-    }
-
-    fn beacon_beam_color(&self) -> Option<DyeColor> {
-        let block = self.get_block();
-        BLOCK_BEHAVIORS
-            .get_behavior(block)
-            .as_beacon_beam_block()
-            .map(BeaconBeamBlock::get_color)
     }
 
     fn is_possible_to_respawn_in_this(&self) -> bool {
