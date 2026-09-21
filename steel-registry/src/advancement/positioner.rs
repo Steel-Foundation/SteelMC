@@ -272,6 +272,7 @@ impl TreeNodePosition {
             shift_inner_left += nodes[inner_left].r#mod;
             shift_inner_right += nodes[inner_right].r#mod;
             shift_outer_left += nodes[outer_left].r#mod;
+            shift_outer_right += nodes[outer_right].r#mod;
         }
 
         if let Some(next_inner_left) = Self::next_or_thread(nodes, inner_left)
@@ -357,7 +358,7 @@ mod tests {
 
     #[test]
     fn single_root_no_children() {
-        let mut registry = AdvancementRegistry::new();
+        let mut registry = AdvancementRegistry::default();
         registry.register_without_load(&[&STORY_ROOT]);
         let res = run(&mut registry, 0);
         assert!(res.is_ok());
@@ -367,7 +368,7 @@ mod tests {
 
     #[test]
     fn root_with_linear_children() {
-        let mut registry = AdvancementRegistry::new();
+        let mut registry = AdvancementRegistry::default();
         let list: &[AdvancementRef] = &[
             &STORY_ROOT,
             &STORY_MINE_STONE,
@@ -391,7 +392,7 @@ mod tests {
 
     #[test]
     fn root_with_branching_children() {
-        let mut registry = AdvancementRegistry::new();
+        let mut registry = AdvancementRegistry::default();
         let list: &[AdvancementRef] = &[
             &END_ROOT,
             &END_KILL_DRAGON,

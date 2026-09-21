@@ -154,6 +154,7 @@ const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
+use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
@@ -281,6 +282,9 @@ pub struct Player {
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+
+    /// Advancement
+    advancements: SyncMutex<PlayerAdvancement>
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -620,6 +624,7 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            advancements: SyncMutex::new(PlayerAdvancement::default())
         }
     }
 
@@ -2151,5 +2156,6 @@ impl TextResolutor for Player {
     }
 }
 
+pub mod advancement;
 #[cfg(test)]
 mod tests;

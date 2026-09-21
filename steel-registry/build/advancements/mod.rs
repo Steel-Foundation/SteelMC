@@ -81,7 +81,7 @@ impl ToTokens for AdvancementData {
         let display = generate_option(&self.advancement.display, parse_display);
         let send_telemetry_event = self.advancement.send_telemetry_event;
         let requirements = generate_vec(&self.advancement.requirements, |v| {
-            generate_vec(v, |v2| quote! {#v2})
+            generate_vec(v, |v2| quote! {Cow::Borrowed(#v2)})
         });
         let rewards = &self.advancement.rewards;
         tokens.extend(quote! {
@@ -91,7 +91,7 @@ impl ToTokens for AdvancementData {
                 criteria: #criteria,
                 display: #display,
                 send_telemetry_event: #send_telemetry_event,
-                requirements: #requirements,
+                requirements: AdvancementRequirement { requirements: #requirements },
                 rewards: #rewards,
             });
         });
@@ -109,7 +109,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::advancement::display::{AdvancementType,DisplayInfo};
-        use crate::advancement::{Advancement,AdvancementRewards};
+        use crate::advancement::{Advancement,AdvancementRewards,AdvancementRequirement};
         use crate::advancement::criterion::{Criterion,AnyCriterion,ImpossibleInstance,ImpossibleTrigger};
         use crate::advancement::registry::AdvancementRegistry;
         use crate::vanilla_items;
@@ -131,12 +131,12 @@ pub(crate) fn build() -> TokenStream {
         advancement_data.to_tokens(&mut stream);
         let const_ident = &advancement_data.const_ident;
         register_stream.extend(quote! {
-            &#const_ident,
+            registry.register(&#const_ident);
         });
     }
     stream.extend(quote! {
         pub fn register_advancements(registry: &mut AdvancementRegistry) {
-            registry.load(&[#register_stream])
+            #register_stream
         }
     });
     stream
