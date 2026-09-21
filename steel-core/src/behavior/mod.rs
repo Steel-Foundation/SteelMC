@@ -88,7 +88,6 @@ pub use items::{
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;
 use std::sync::OnceLock;
-use steel_registry::DyeColor;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::consume_effect::vanilla_consume_effect_types;
@@ -96,7 +95,6 @@ use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
 
-use crate::behavior::blocks::BeaconBeamBlock;
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::consume_effect::{
     ApplyEffectsBehavior, ClearAllEffectsBehavior, ConsumeEffectBehavior, PlaySoundBehavior,
