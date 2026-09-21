@@ -26,7 +26,7 @@ pub use building::{
     WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
     WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
-pub use colored::{StainedGlassBlock, StainedGlassPaneBlock};
+pub use colored::{BeaconBeamBlock, StainedGlassBlock, StainedGlassPaneBlock};
 pub use container::{
     AnvilBlock, BarrelBlock, BeehiveBlock, BlastFurnaceBlock, ChiseledBookShelfBlock,
     CraftingTableBlock, EnderChestBlock, FurnaceBlock, ShulkerBoxBlock, SmokerBlock,

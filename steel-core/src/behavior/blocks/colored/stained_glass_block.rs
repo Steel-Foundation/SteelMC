@@ -33,8 +33,8 @@ impl BeaconBeamBlock for StainedGlassBlock {
 }
 
 impl BlockBehavior for StainedGlassBlock {
-    fn get_beacon_color(&self, _state: BlockStateId) -> Option<DyeColor> {
-        Some(self.get_color())
+    fn as_beacon_beam_block(&self) -> Option<&dyn BeaconBeamBlock> {
+        Some(self)
     }
 
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

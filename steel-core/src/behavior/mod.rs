@@ -96,6 +96,7 @@ use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
 
+use crate::behavior::blocks::BeaconBeamBlock;
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::consume_effect::{
     ApplyEffectsBehavior, ClearAllEffectsBehavior, ConsumeEffectBehavior, PlaySoundBehavior,
@@ -197,7 +198,10 @@ impl BlockStateBehaviorExt for BlockStateId {
 
     fn beacon_beam_color(&self) -> Option<DyeColor> {
         let block = self.get_block();
-        BLOCK_BEHAVIORS.get_behavior(block).get_beacon_color(*self)
+        BLOCK_BEHAVIORS
+            .get_behavior(block)
+            .as_beacon_beam_block()
+            .map(BeaconBeamBlock::get_color)
     }
 
     fn is_possible_to_respawn_in_this(&self) -> bool {

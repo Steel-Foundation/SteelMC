@@ -5,7 +5,6 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
-use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -30,6 +29,7 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::blocks::BeaconBeamBlock;
 use crate::behavior::blocks::vegetation::GrowingPlantHeadBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
@@ -614,11 +614,6 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns whether this behavior implements vanilla `LiquidBlock`.
     fn is_liquid_block(&self) -> bool {
         false
-    }
-
-    /// Returns the beacon beam color for this block, if it is a vanilla `BeaconBeamBlock`.
-    fn get_beacon_color(&self, _state: BlockStateId) -> Option<DyeColor> {
-        None
     }
 
     /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
@@ -1229,6 +1224,11 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
+        None
+    }
+
+    /// Returns the shared vanilla `BeaconBeamBlock` capability implemented by this block.
+    fn as_beacon_beam_block(&self) -> Option<&dyn BeaconBeamBlock> {
         None
     }
 

@@ -46,8 +46,8 @@ impl BeaconBeamBlock for StainedGlassPaneBlock {
 }
 
 impl BlockBehavior for StainedGlassPaneBlock {
-    fn get_beacon_color(&self, _state: BlockStateId) -> Option<DyeColor> {
-        Some(self.get_color())
+    fn as_beacon_beam_block(&self) -> Option<&dyn BeaconBeamBlock> {
+        Some(self)
     }
 
     fn update_shape(
