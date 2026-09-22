@@ -2,8 +2,9 @@ use crate::entity::EntityArc;
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::projectile::triangle_random;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
-    RemovalReason, SharedEntity, ThrowableProjectile, entity_loot_ref, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityOwnedState, EntityReferenceVisitor, EntitySyncedData,
+    LivingEntity, Projectile, ProjectileBase, RemovalReason, SharedEntity, SharedEntityReference,
+    ThrowableProjectile, VisitEntityReferences, entity_loot_ref, next_entity_id,
 };
 use crate::fluid::get_height;
 use crate::physics::MoverType;
@@ -60,7 +61,7 @@ pub struct FishingHookEntity {
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<FishingBobberEntityData>,
     projectile_base: ProjectileBase,
-    hook_state: SyncMutex<FishingHookState>,
+    hook_state: EntityOwnedState<FishingHookState>,
     synchronized_random: SyncMutex<LegacyRandom>,
 }
 
@@ -75,9 +76,15 @@ pub struct FishingHookState {
     open_water: bool,
     /// Equivalent to Java's `currentState`
     bobber_state: BobberState,
-    hooked_entity: Option<SharedEntity>,
+    hooked_entity: Option<SharedEntityReference>,
     luck: i32,
     lure_speed: i32,
+}
+
+impl VisitEntityReferences for FishingHookState {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.hooked_entity);
+    }
 }
 
 impl FishingHookState {
@@ -110,12 +117,14 @@ impl FishingHookEntity {
     /// We keep both this generic constructor and `shoot_from_player` in order to ensure future-proofing in terms of a future plugin API.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+        let base = EntityBase::new(id, position, entity_type.dimensions, world);
+        let hook_state = EntityOwnedState::new(&base, FishingHookState::new(0, 0));
         Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
+            base,
             entity_type,
             entity_data: SyncMutex::new(FishingBobberEntityData::new()),
             projectile_base: ProjectileBase::new(),
-            hook_state: SyncMutex::new(FishingHookState::new(0, 0)),
+            hook_state,
             synchronized_random: SyncMutex::new(LegacyRandom::from_seed(0)),
         }
     }
@@ -183,13 +192,15 @@ impl FishingHookEntity {
     /// Creates a fishing hook entity from saved base data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
+        let base = EntityBase::from_load(load, entity_type.dimensions);
+        let hook_state = EntityOwnedState::new(&base, FishingHookState::new(0, 0));
         Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+            base,
             entity_type,
             entity_data: SyncMutex::new(FishingBobberEntityData::new()),
             projectile_base: ProjectileBase::new(),
             // FIXME: `lure_speed` and `luck` are taken from the existing rod, but auto generation fails when doing this, refer to: https://mcsrc.dev/2/26.2/net/minecraft/world/entity/projectile/FishingHook#L75
-            hook_state: SyncMutex::new(FishingHookState::new(0, 0)),
+            hook_state,
             synchronized_random: SyncMutex::new(LegacyRandom::from_seed(0)),
         }
     }
@@ -244,7 +255,7 @@ impl FishingHookEntity {
 
         {
             let mut hook_state = self.hook_state.lock();
-            hook_state.hooked_entity = hooked;
+            hook_state.hooked_entity = hooked.map(SharedEntityReference::new);
         }
 
         let mut entity_data = self.entity_data.lock();
@@ -518,7 +529,7 @@ impl FishingHookEntity {
             if can_retrieve {
                 let hooked_in = {
                     let hook_state = self.hook_state.lock();
-                    hook_state.hooked_entity.clone()
+                    hook_state.hooked_entity.as_deref().cloned()
                 };
 
                 if let Some(hooked_in) = hooked_in {
@@ -713,7 +724,7 @@ impl FishingHookEntity {
             BobberState::HookedInEntity => {
                 let hooked = {
                     let state = self.hook_state.lock();
-                    state.hooked_entity.clone()
+                    state.hooked_entity.as_deref().cloned()
                 };
 
                 let Some(hooked) = hooked else {
@@ -1126,7 +1137,7 @@ mod tests {
 
         EntityArc::clone(&hook).tick();
 
-        let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
+        let hooked_entity = hook.hook_state.lock().hooked_entity.as_deref().cloned();
         assert!(
             hooked_entity.is_none(),
             "Grounded stationary hook must not hook player standing on it"

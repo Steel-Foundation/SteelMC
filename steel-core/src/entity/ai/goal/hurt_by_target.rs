@@ -4,7 +4,7 @@ use steel_utils::{DowncastTypeKey, WorldAabb};
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntity};
 
 const HURT_BY_UNSEEN_MEMORY_TICKS: i32 = 300;
 const ALERT_RANGE_Y: f64 = 10.0;
@@ -102,6 +102,10 @@ impl Default for HurtByTargetGoal {
 }
 
 impl Goal for HurtByTargetGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        self.target_goal.visit_entity_references(visitor);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::TARGET
     }

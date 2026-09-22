@@ -48,8 +48,8 @@ use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
-    Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
-    SpawnGroupData, WeakEntity,
+    Entity, EntityBase, EntityOwnedState, EntitySpawnReason, LivingEntity, LivingTravelInput,
+    RemovalReason, SharedEntity, SpawnGroupData, WeakEntity,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -149,8 +149,8 @@ impl DropChances {
 
 #[derive(Debug)]
 pub struct MobBase {
-    goal_selector: SyncMutex<GoalSelector>,
-    target_selector: SyncMutex<GoalSelector>,
+    goal_selector: EntityOwnedState<GoalSelector>,
+    target_selector: EntityOwnedState<GoalSelector>,
     target: SyncMutex<Option<WeakEntity>>,
     sensing: SyncMutex<Sensing>,
     controls: SyncMutex<MobControls>,
@@ -183,10 +183,10 @@ impl MobHomeRestriction {
 
 impl MobBase {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(owner: &EntityBase) -> Self {
         Self {
-            goal_selector: SyncMutex::new(GoalSelector::new()),
-            target_selector: SyncMutex::new(GoalSelector::new()),
+            goal_selector: EntityOwnedState::new(owner, GoalSelector::new()),
+            target_selector: EntityOwnedState::new(owner, GoalSelector::new()),
             target: SyncMutex::new(None),
             sensing: SyncMutex::new(Sensing::new()),
             controls: SyncMutex::new(MobControls::new()),
@@ -205,12 +205,12 @@ impl MobBase {
     }
 
     #[must_use]
-    pub const fn goal_selector(&self) -> &SyncMutex<GoalSelector> {
+    pub const fn goal_selector(&self) -> &EntityOwnedState<GoalSelector> {
         &self.goal_selector
     }
 
     #[must_use]
-    pub const fn target_selector(&self) -> &SyncMutex<GoalSelector> {
+    pub const fn target_selector(&self) -> &EntityOwnedState<GoalSelector> {
         &self.target_selector
     }
 
@@ -324,12 +324,6 @@ impl MobBase {
 
     pub fn set_xp_reward(&self, xp_reward: i32) {
         *self.xp_reward.lock() = xp_reward;
-    }
-}
-
-impl Default for MobBase {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -9,7 +9,12 @@ use std::sync::{Arc, Weak};
 use steel_utils::locks::SyncRwLock;
 
 mod living;
+mod owned;
+mod owned_state;
 pub use living::LivingEntityRef;
+pub(crate) use owned::OwnedReferences;
+pub use owned::{EntityReference, EntityReferenceVisitor, VisitEntityReferences};
+pub use owned_state::EntityOwnedState;
 
 static COLLECTION_GATE: SyncRwLock<()> = SyncRwLock::new(());
 
@@ -160,8 +165,8 @@ impl EntityCollection {
         Arc::strong_count(&entity.0)
     }
 
-    /// Call only after proving that history owns every strong reference and no
-    /// independently owned victim can reach this allocation through its history.
+    /// Call only after proving that every strong reference is internal and no
+    /// independent owner can reach this allocation through history or fields.
     #[expect(
         clippy::unused_self,
         reason = "the receiver proves weak promotion is blocked by the collection gate"

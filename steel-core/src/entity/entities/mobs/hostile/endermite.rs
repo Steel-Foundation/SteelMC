@@ -67,7 +67,7 @@ impl EndermiteEntity {
 
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type);
-        let mob_base = MobBase::new();
+        let mob_base = MobBase::new(&base);
         let mut entity_data = EndermiteEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
 

@@ -4,11 +4,13 @@ use super::random_pos::default_random_pos_away;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{
+    EntityReferenceVisitor, LivingEntity, PathfinderMob, SharedEntity, SharedEntityReference,
+};
 use crate::world::World;
 
 pub struct AvoidEntityGoal {
-    to_avoid: Option<SharedEntity>,
+    to_avoid: Option<SharedEntityReference>,
     path: Option<Path>,
     max_dist: f32,
     walk_speed_modifier: f64,
@@ -48,6 +50,10 @@ impl AvoidEntityGoal {
 }
 
 impl Goal for AvoidEntityGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.to_avoid);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::MOVE
     }
@@ -85,7 +91,7 @@ impl Goal for AvoidEntityGoal {
             return false;
         }
 
-        self.to_avoid = Some(to_avoid);
+        self.to_avoid = Some(SharedEntityReference::new(to_avoid));
         self.path = path;
         true
     }
@@ -172,12 +178,12 @@ mod tests {
             Weak::new(),
         ));
         let mob_entity: SharedEntity = mob.clone();
-        goal.to_avoid = Some(EntityArc::new(PigEntity::new(
+        goal.to_avoid = Some(SharedEntityReference::new(EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(2.0, 0.0, 0.0),
             Weak::new(),
-        )));
+        ))));
 
         goal.tick(mob.as_ref(), &mob_entity);
 
@@ -202,12 +208,12 @@ mod tests {
             Weak::new(),
         ));
         let mob_entity: SharedEntity = mob.clone();
-        goal.to_avoid = Some(EntityArc::new(PigEntity::new(
+        goal.to_avoid = Some(SharedEntityReference::new(EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(8.0, 0.0, 0.0),
             Weak::new(),
-        )));
+        ))));
 
         goal.tick(mob.as_ref(), &mob_entity);
 

@@ -4,7 +4,9 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{
+    EntityReferenceVisitor, LivingEntity, PathfinderMob, SharedEntity, SharedEntityReference,
+};
 use crate::world::World;
 
 const DEFAULT_RANDOM_INTERVAL: i32 = 10;
@@ -17,7 +19,7 @@ enum TargetSearch {
 pub(crate) struct NearestAttackableTargetGoal {
     target_goal: TargetGoalBase,
     random_interval: i32,
-    target: Option<SharedEntity>,
+    target: Option<SharedEntityReference>,
     target_conditions: TargetingConditions,
     search: TargetSearch,
 }
@@ -113,15 +115,21 @@ impl NearestAttackableTargetGoal {
                         .is_some_and(|target| target_conditions.test(level, Some(mob), target))
                 })
             }
-        };
+        }
+        .map(SharedEntityReference::new);
     }
 
     pub(crate) fn set_target(&mut self, target: Option<SharedEntity>) {
-        self.target = target;
+        self.target = target.map(SharedEntityReference::new);
     }
 }
 
 impl Goal for NearestAttackableTargetGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.target);
+        self.target_goal.visit_entity_references(visitor);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::TARGET
     }
@@ -140,7 +148,7 @@ impl Goal for NearestAttackableTargetGoal {
     }
 
     fn start(&mut self, mob: &dyn PathfinderMob) {
-        let _ = mob.set_target(self.target.as_ref());
+        let _ = mob.set_target(self.target.as_deref());
         self.target_goal.start();
     }
 

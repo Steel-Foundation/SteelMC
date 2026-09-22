@@ -3,12 +3,14 @@ use glam::DVec3;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::PathType;
-use crate::entity::{Mob, PathfinderMob, SharedEntity};
+use crate::entity::{
+    EntityReferenceVisitor, Mob, PathfinderMob, SharedEntity, SharedEntityReference,
+};
 
 type FollowMobPredicate = Box<dyn Fn(&dyn PathfinderMob, &dyn Mob) -> bool + Send + Sync>;
 
 pub struct FollowMobGoal {
-    following_mob: Option<SharedEntity>,
+    following_mob: Option<SharedEntityReference>,
     follow_predicate: FollowMobPredicate,
     speed_modifier: f64,
     time_to_recalc_path: i32,
@@ -62,6 +64,10 @@ impl FollowMobGoal {
 }
 
 impl Goal for FollowMobGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.following_mob);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::MOVE | GoalControls::LOOK
     }
@@ -85,7 +91,7 @@ impl Goal for FollowMobGoal {
         let Some(following_mob) = candidates.drain(..).next() else {
             return false;
         };
-        self.following_mob = Some(following_mob);
+        self.following_mob = Some(SharedEntityReference::new(following_mob));
         true
     }
 
@@ -211,12 +217,12 @@ mod tests {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        goal.following_mob = Some(EntityArc::new(PigEntity::new(
+        goal.following_mob = Some(SharedEntityReference::new(EntityArc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
-        )));
+        ))));
 
         assert!(!goal.can_continue_to_use(&mob));
     }
@@ -238,7 +244,7 @@ mod tests {
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
         ));
-        goal.following_mob = Some(EntityArc::clone(&following_mob));
+        goal.following_mob = Some(SharedEntityReference::new(EntityArc::clone(&following_mob)));
 
         goal.tick(mob.as_ref(), &mob_entity);
 

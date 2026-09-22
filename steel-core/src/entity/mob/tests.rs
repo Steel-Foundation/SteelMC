@@ -129,11 +129,13 @@ impl DespawnTestMob {
     ) -> Self {
         init_vanilla_registry();
 
+        let base = EntityBase::new(id, position, entity_type.dimensions, Weak::new());
+        let mob_base = MobBase::new(&base);
         Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
+            base,
             entity_type,
             living_base: LivingEntityBase::new(entity_type),
-            mob_base: MobBase::new(),
+            mob_base,
             flags: SyncMutex::new(0),
             can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(10.0),
@@ -298,7 +300,13 @@ impl Entity for MobControlVehicleEntity {
 
 #[test]
 fn mob_base_uses_vanilla_fire_path_malus_defaults() {
-    let base = MobBase::new();
+    let entity_base = EntityBase::new(
+        1,
+        DVec3::ZERO,
+        vanilla_entities::PIG.dimensions,
+        Weak::new(),
+    );
+    let base = MobBase::new(&entity_base);
     let malus = base.pathfinding_malus().lock();
 
     assert_eq!(

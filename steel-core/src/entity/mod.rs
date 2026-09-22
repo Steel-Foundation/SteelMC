@@ -872,10 +872,15 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-pub use reference::{EntityArc, EntityWeak, LivingEntityRef};
+pub use reference::{
+    EntityArc, EntityOwnedState, EntityReference, EntityReferenceVisitor, EntityWeak,
+    LivingEntityRef, VisitEntityReferences,
+};
 
 /// Shared ownership of an entity through its gameplay interface.
 pub type SharedEntity = EntityArc<dyn Entity>;
+/// A strong entity field tracked through its containing state.
+pub type SharedEntityReference = EntityReference<dyn Entity>;
 
 /// Type alias for a weak entity reference.
 pub type WeakEntity = EntityWeak<dyn Entity>;

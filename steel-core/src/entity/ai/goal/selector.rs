@@ -1,8 +1,7 @@
-use crate::entity::SharedEntity;
 use std::fmt;
 use std::ops::BitOr;
 
-use crate::entity::PathfinderMob;
+use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntity, VisitEntityReferences};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalControl {
@@ -76,6 +75,9 @@ impl BitOr for GoalControls {
 }
 
 pub trait Goal: Send {
+    /// Visits strong entity fields, including those in nested goals.
+    fn visit_entity_references(&mut self, _visitor: &mut EntityReferenceVisitor) {}
+
     fn controls(&self) -> GoalControls;
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool;
@@ -170,6 +172,14 @@ impl WrappedGoal {
 pub struct GoalSelector {
     available_goals: Vec<WrappedGoal>,
     disabled_controls: GoalControls,
+}
+
+impl VisitEntityReferences for GoalSelector {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        for goal in &mut self.available_goals {
+            goal.goal.visit_entity_references(visitor);
+        }
+    }
 }
 
 impl GoalSelector {
@@ -365,15 +375,17 @@ mod tests {
     impl TestPathfinderMob {
         fn new() -> Self {
             init_vanilla_registry();
+            let base = EntityBase::new(
+                1,
+                DVec3::ZERO,
+                vanilla_entities::PIG.dimensions,
+                Weak::new(),
+            );
+            let mob_base = MobBase::new(&base);
             Self {
-                base: EntityBase::new(
-                    1,
-                    DVec3::ZERO,
-                    vanilla_entities::PIG.dimensions,
-                    Weak::new(),
-                ),
+                base,
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base: MobBase::new(),
+                mob_base,
                 mob_flags: SyncMutex::new(0),
                 health: SyncMutex::new(10.0),
             }

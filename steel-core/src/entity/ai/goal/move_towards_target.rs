@@ -4,10 +4,10 @@ use glam::DVec3;
 
 use super::random_pos::default_random_pos_towards;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntityReference};
 
 pub struct MoveTowardsTargetGoal {
-    target: Option<SharedEntity>,
+    target: Option<SharedEntityReference>,
     wanted_position: Option<DVec3>,
     speed_modifier: f64,
     within: f32,
@@ -30,6 +30,10 @@ impl MoveTowardsTargetGoal {
 }
 
 impl Goal for MoveTowardsTargetGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.target);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::MOVE
     }
@@ -48,7 +52,7 @@ impl Goal for MoveTowardsTargetGoal {
             return false;
         };
 
-        self.target = Some(target);
+        self.target = Some(SharedEntityReference::new(target));
         self.wanted_position = Some(position);
         true
     }
@@ -81,7 +85,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
+    use crate::entity::{EntityArc, SharedEntity};
     use crate::entity::{Mob, entities::PigEntity};
 
     #[test]

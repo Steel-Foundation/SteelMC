@@ -72,10 +72,11 @@ mod tests {
                 false,
                 false,
             ));
+            let mob_base = MobBase::new(&base);
             Self {
                 base,
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base: MobBase::new(),
+                mob_base,
                 mob_flags: SyncMutex::new(0),
                 health: SyncMutex::new(10.0),
             }

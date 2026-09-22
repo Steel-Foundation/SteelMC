@@ -3,14 +3,16 @@ use glam::DVec3;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Animal, PathfinderMob, SharedEntity};
+use crate::entity::{
+    Animal, EntityReferenceVisitor, PathfinderMob, SharedEntity, SharedEntityReference,
+};
 
 const PARTNER_SEARCH_RANGE: f64 = 8.0;
 const BREED_DISTANCE_SQR: f64 = 9.0;
 const BREED_TIME: i32 = 60;
 
 pub struct BreedGoal {
-    partner: Option<SharedEntity>,
+    partner: Option<SharedEntityReference>,
     love_time: i32,
     speed_modifier: f64,
 }
@@ -51,6 +53,10 @@ impl BreedGoal {
 }
 
 impl Goal for BreedGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.partner);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::MOVE | GoalControls::LOOK
     }
@@ -63,7 +69,7 @@ impl Goal for BreedGoal {
             return false;
         }
 
-        self.partner = Self::get_free_partner(mob, animal);
+        self.partner = Self::get_free_partner(mob, animal).map(SharedEntityReference::new);
         self.partner.is_some()
     }
 

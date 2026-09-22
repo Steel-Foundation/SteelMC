@@ -2,7 +2,7 @@ use glam::DVec3;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntityReference};
 
 const MIN_LEAP_DISTANCE_SQR: f64 = 4.0;
 const MAX_LEAP_DISTANCE_SQR: f64 = 16.0;
@@ -12,7 +12,7 @@ const EXISTING_MOMENTUM_SCALE: f64 = 0.2;
 const LEAP_CHANCE_TICKS: i32 = 5;
 
 pub struct LeapAtTargetGoal {
-    target: Option<SharedEntity>,
+    target: Option<SharedEntityReference>,
     yd: f32,
 }
 
@@ -24,6 +24,10 @@ impl LeapAtTargetGoal {
 }
 
 impl Goal for LeapAtTargetGoal {
+    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.target);
+    }
+
     fn controls(&self) -> GoalControls {
         GoalControls::JUMP | GoalControls::MOVE
     }
@@ -50,7 +54,7 @@ impl Goal for LeapAtTargetGoal {
             return false;
         }
 
-        self.target = Some(target);
+        self.target = Some(SharedEntityReference::new(target));
         true
     }
 
@@ -86,8 +90,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::{Entity, Mob, entities::PigEntity};
+    use crate::entity::{EntityArc, SharedEntity};
 
     fn pig(id: i32, position: DVec3) -> PigEntity {
         PigEntity::new(&vanilla_entities::PIG, id, position, Weak::new())
@@ -162,7 +166,7 @@ mod tests {
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         set_target(&mob, &target);
 
-        goal.target = Some(target);
+        goal.target = Some(SharedEntityReference::new(target));
         goal.start(&mob);
 
         assert_vec3_close(mob.velocity(), DVec3::new(0.6, f64::from(0.42_f32), 0.0));

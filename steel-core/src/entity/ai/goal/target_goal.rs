@@ -1,6 +1,8 @@
 use super::reduced_tick_delay;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, Mob, PathfinderMob, SharedEntity};
+use crate::entity::{
+    EntityReferenceVisitor, LivingEntity, Mob, PathfinderMob, SharedEntity, SharedEntityReference,
+};
 use steel_registry::vanilla_attributes;
 
 const DEFAULT_UNSEEN_MEMORY_TICKS: i32 = 60;
@@ -18,7 +20,7 @@ pub(super) struct TargetGoalBase {
     reach_cache: ReachCache,
     reach_cache_time: i32,
     unseen_ticks: i32,
-    target_mob: Option<SharedEntity>,
+    target_mob: Option<SharedEntityReference>,
     unseen_memory_ticks: i32,
 }
 
@@ -36,16 +38,20 @@ impl TargetGoalBase {
         }
     }
 
+    pub(super) fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
+        visitor.visit(&mut self.target_mob);
+    }
+
     pub(super) const fn set_unseen_memory_ticks(&mut self, unseen_memory_ticks: i32) {
         self.unseen_memory_ticks = unseen_memory_ticks;
     }
 
     pub(super) fn set_target_mob(&mut self, target_mob: Option<SharedEntity>) {
-        self.target_mob = target_mob;
+        self.target_mob = target_mob.map(SharedEntityReference::new);
     }
 
     pub(super) fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(target) = mob.target().or_else(|| self.target_mob.clone()) else {
+        let Some(target) = mob.target().or_else(|| self.target_mob.as_deref().cloned()) else {
             return false;
         };
         let Some(target_living) = target.as_living_entity() else {

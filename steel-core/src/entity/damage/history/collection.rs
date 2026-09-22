@@ -1,101 +1,147 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{DamageHistory, DamageRecord};
-use crate::entity::reference::EntityCollection;
-use crate::entity::{EntityGeneration, SharedEntity};
+use crate::entity::reference::{EntityCollection, OwnedReferences};
+use crate::entity::{Entity, EntityGeneration, EntityWeak, SharedEntity};
 
-struct HistoryEntity<'a> {
-    entity: &'a SharedEntity,
-    history_ref_count: usize,
+enum RetainedReference<'a> {
+    History(&'a SharedEntity),
+    Field(&'a EntityWeak<dyn Entity>),
 }
 
-impl HistoryEntity<'_> {
-    fn has_independent_owner(&self, collection: &EntityCollection) -> bool {
-        collection.strong_count(self.entity) > self.history_ref_count
+struct RetainedEntity<'a> {
+    reference: RetainedReference<'a>,
+    internal_count: usize,
+}
+
+impl RetainedEntity<'_> {
+    fn strong_count(&self, collection: &EntityCollection) -> usize {
+        match self.reference {
+            RetainedReference::History(entity) => collection.strong_count(entity),
+            RetainedReference::Field(entity) => entity.strong_count(),
+        }
     }
 }
 
 impl DamageHistory {
-    /// Releases history unreachable from independently owned entities.
-    ///
-    /// The entity collection gate stops weak promotions while the history lock
-    /// stops source getters from creating independent owners. Existing owners
-    /// may clone or drop their references; drops can only delay collection.
-    /// Retirement prevents promotion after unlocking but before destructors run.
+    /// Releases history unreachable from independent owners through either
+    /// damage sources or entity-owned fields. Weak promotion and changes in
+    /// field ownership are stopped while counts and reachability are inspected.
     pub(crate) fn collect_unreachable(&self) {
-        let unreachable: Vec<_> = EntityCollection::run(|collection| {
+        let (unreachable, retired) = EntityCollection::run(|collection| {
             let mut records = self.records.lock();
-            let entities = Self::retained_entities(&records);
-            let reachable = Self::reachable_entities(&records, &entities, collection);
+            if records.is_empty() {
+                return (Vec::new(), Vec::new());
+            }
+            let owned = collection.owned_references();
+            let entities = Self::retained_entities(&records, &owned);
+            let mut roots = Vec::new();
+            for (&generation, retained) in &entities {
+                let count = retained.strong_count(collection);
+                if count > retained.internal_count
+                    || (count == 0 && owned.contains_key(&generation))
+                {
+                    // Keep outgoing references rooted while their owner's destructor runs.
+                    roots.push(generation);
+                }
+            }
+            roots.extend(
+                owned
+                    .keys()
+                    .filter(|owner| !entities.contains_key(owner))
+                    .copied(),
+            );
+            roots.extend(records.iter().filter_map(|(&victim, record)| {
+                (record.victim_lifetime.strong_count() != 0 && !entities.contains_key(&victim))
+                    .then_some(victim)
+            }));
+            let reachable = Self::follow_references(&records, &owned, roots);
+            let history_sources = records
+                .values()
+                .flat_map(|record| {
+                    record
+                        .source
+                        .retained_entities()
+                        .map(|(generation, _)| generation)
+                })
+                .collect();
+            let history_retained = Self::follow_references(&records, &owned, history_sources);
+            let mut retired = Vec::new();
             for (generation, retained) in &entities {
-                if !reachable.contains(generation) && !retained.has_independent_owner(collection) {
-                    collection.retire(retained.entity);
+                if reachable.contains(generation) || !history_retained.contains(generation) {
+                    continue;
+                }
+                match retained.reference {
+                    RetainedReference::History(entity) => collection.retire(entity),
+                    RetainedReference::Field(entity) => {
+                        if let Some(entity) = collection.retire_weak(entity) {
+                            retired.push(entity);
+                        }
+                    }
                 }
             }
             drop(entities);
-            records
+            let unreachable = records
                 .extract_if(|victim, record| {
                     record.victim_lifetime.strong_count() == 0 || !reachable.contains(victim)
                 })
                 .map(|(_, record)| record)
-                .collect()
+                .collect::<Vec<_>>();
+            (unreachable, retired)
         });
-        // Destructors may access history or promote other entity references.
-        drop(unreachable);
+        // Destructors may access history, change fields or promote references.
+        drop((unreachable, retired));
     }
 
-    fn retained_entities(
-        records: &FxHashMap<EntityGeneration, DamageRecord>,
-    ) -> FxHashMap<EntityGeneration, HistoryEntity<'_>> {
-        let mut entities: FxHashMap<EntityGeneration, HistoryEntity<'_>> = FxHashMap::default();
+    fn retained_entities<'a>(
+        records: &'a FxHashMap<EntityGeneration, DamageRecord>,
+        owned: &'a OwnedReferences,
+    ) -> FxHashMap<EntityGeneration, RetainedEntity<'a>> {
+        let mut entities = FxHashMap::default();
         for record in records.values() {
             for (generation, entity) in record.source.retained_entities() {
-                let retained = entities.entry(generation).or_insert(HistoryEntity {
-                    entity,
-                    history_ref_count: 0,
+                let retained = entities.entry(generation).or_insert(RetainedEntity {
+                    reference: RetainedReference::History(entity),
+                    internal_count: 0,
                 });
-                retained.history_ref_count += 1;
+                retained.internal_count += 1;
+            }
+        }
+        for targets in owned.values() {
+            for (&generation, target) in targets {
+                let retained = entities.entry(generation).or_insert(RetainedEntity {
+                    reference: RetainedReference::Field(&target.entity),
+                    internal_count: 0,
+                });
+                retained.internal_count += target.count;
             }
         }
         entities
     }
 
-    fn reachable_entities(
+    fn follow_references(
         records: &FxHashMap<EntityGeneration, DamageRecord>,
-        entities: &FxHashMap<EntityGeneration, HistoryEntity<'_>>,
-        collection: &EntityCollection,
+        owned: &OwnedReferences,
+        mut pending: Vec<EntityGeneration>,
     ) -> FxHashSet<EntityGeneration> {
-        let mut pending = Vec::new();
-        for (&victim, record) in records {
-            if record.victim_lifetime.strong_count() == 0 {
-                continue;
-            }
-            // Borrow the stored handles: collector-owned clones would look like roots.
-            if entities
-                .get(&victim)
-                .is_none_or(|retained| retained.has_independent_owner(collection))
-            {
-                pending.push(victim);
-            }
-        }
-
         let mut reachable = FxHashSet::default();
         while let Some(entity) = pending.pop() {
             if !reachable.insert(entity) {
                 continue;
             }
-            let Some(record) = records.get(&entity) else {
-                continue;
-            };
-            if record.victim_lifetime.strong_count() == 0 {
-                continue;
+            if let Some(targets) = owned.get(&entity) {
+                pending.extend(targets.keys().copied());
             }
-            pending.extend(
-                record
-                    .source
-                    .retained_entities()
-                    .map(|(generation, _)| generation),
-            );
+            if let Some(record) = records.get(&entity)
+                && record.victim_lifetime.strong_count() != 0
+            {
+                pending.extend(
+                    record
+                        .source
+                        .retained_entities()
+                        .map(|(generation, _)| generation),
+                );
+            }
         }
         reachable
     }
