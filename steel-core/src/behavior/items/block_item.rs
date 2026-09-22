@@ -6,7 +6,7 @@ use steel_registry::{
     sound_event::SoundEventRef,
     vanilla_blocks, vanilla_game_events,
 };
-use steel_utils::{BlockStateId, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
 use crate::entity::Entity;
@@ -129,10 +129,7 @@ impl BlockItem {
 
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
-            if let Some(block_entity) = context.world.get_block_entity(place_pos) {
-                context.with_item(|item| block_entity.apply_components_from_item(item));
-                block_entity.set_changed();
-            }
+            Self::update_block_entity_components(&context, place_pos);
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
@@ -163,6 +160,18 @@ impl BlockItem {
     /// Places this block using an already constructed placement context.
     pub fn place(&self, context: BlockPlaceContext<'_>) -> InteractionResult {
         self.place_with(context, Self::place_block)
+    }
+
+    /// Vanilla `BlockItem.updateBlockEntityComponents`: hands the placed stack's
+    /// components to the new block entity.
+    fn update_block_entity_components(context: &BlockPlaceContext<'_>, pos: BlockPos) {
+        let Some(block_entity) = context.world.get_block_entity(pos) else {
+            return;
+        };
+        context
+            .source()
+            .with_item(|stack| block_entity.apply_components_from_item_stack(stack));
+        block_entity.set_changed();
     }
 
     pub(super) fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
