@@ -4,9 +4,10 @@ use crate::loot_table::LootTableRef;
 use crate::recipe::UntypedRecipeRef;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::cmp::PartialEq;
+use std::cmp::{Ordering, PartialEq};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 use std::io::Write;
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -28,39 +29,17 @@ pub struct Advancement {
     pub rewards: AdvancementRewards,
 }
 
-impl WriteTo for Advancement {
-    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.key.write(writer)?;
-        self.parent.write(writer)?;
-        self.display.write(writer)?;
-        self.requirements.write(writer)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct AdvancementRequirement {
-    pub requirements: Vec<Vec<Cow<'static, str>>>,
-}
-
-impl WriteTo for AdvancementRequirement {
-    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        VarInt(self.requirements.len() as i32).write(writer)?;
-        for requirement in &self.requirements {
-            VarInt(requirement.len() as i32).write(writer)?;
-            for req in requirement {
-                req.to_string().write_prefixed::<VarInt>(writer)?;
-            }
-        }
-        Ok(())
-    }
-}
-
 impl Advancement {
     #[inline]
     #[must_use]
     pub const fn is_root(&self) -> bool {
         self.parent.is_none()
+    }
+}
+
+impl Hash for Advancement {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
     }
 }
 
@@ -83,6 +62,77 @@ impl Debug for Advancement {
     }
 }
 
+impl PartialOrd for Advancement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Advancement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.key.cmp(&other.key)
+    }
+}
+
+impl WriteTo for Advancement {
+    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.key.write(writer)?;
+        self.parent.write(writer)?;
+        self.display.write(writer)?;
+        self.requirements.write(writer)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct AdvancementRequirement {
+    pub requirements: Vec<Vec<Cow<'static, str>>>,
+}
+
+impl AdvancementRequirement {
+    #[must_use]
+    pub fn names(&self) -> Vec<Cow<'static, str>> {
+        self.requirements.iter().flatten().cloned().collect()
+    }
+
+    /// test if the requirements is complete
+    pub fn test(&self, predicate: impl Fn(&str) -> bool) -> bool {
+        if self.requirements.is_empty() {
+            false
+        } else {
+            for requirement in &self.requirements {
+                if !Self::any_match(requirement, &predicate) {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+
+    /// check if any test pass
+    fn any_match(requirements: &Vec<Cow<'static, str>>, predicate: impl Fn(&str) -> bool) -> bool {
+        for requirement in requirements {
+            if predicate(requirement) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl WriteTo for AdvancementRequirement {
+    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        VarInt(self.requirements.len() as i32).write(writer)?;
+        for requirement in &self.requirements {
+            VarInt(requirement.len() as i32).write(writer)?;
+            for req in requirement {
+                req.to_string().write_prefixed::<VarInt>(writer)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AdvancementRewards {
     pub experience: i32,
@@ -101,7 +151,6 @@ impl WriteTo for AdvancementProgressData {
     fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.id.write(writer)?;
         self.progress.write(writer)?;
-        Cow::Borrowed("hello");
         Ok(())
     }
 }
