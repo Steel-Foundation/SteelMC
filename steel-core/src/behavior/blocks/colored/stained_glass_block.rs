@@ -1,12 +1,19 @@
+//! Stained glass block behavior implementation.
+//!
+//! Stained glass is a plain transparent block whose only behavior is tinting a beacon beam
+//! that passes through it.
+
 use steel_macros::block_behavior;
 use steel_registry::DyeColor;
 use steel_registry::blocks::BlockRef;
 use steel_utils::BlockStateId;
 
-use super::BeaconBeamBlock;
-use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::behavior::block::BlockBehavior;
+use crate::behavior::context::BlockPlaceContext;
 
-/// All colored stained glass blocks.
+/// All solid colored glass blocks.
+///
+/// Vanilla parity: `StainedGlassBlock`.
 #[block_behavior]
 pub struct StainedGlassBlock {
     block: BlockRef,
@@ -26,18 +33,12 @@ impl StainedGlassBlock {
     }
 }
 
-impl BeaconBeamBlock for StainedGlassBlock {
-    fn get_color(&self) -> DyeColor {
-        self.color
-    }
-}
-
 impl BlockBehavior for StainedGlassBlock {
-    fn as_beacon_beam_block(&self) -> Option<&dyn BeaconBeamBlock> {
-        Some(self)
-    }
-
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        Some(self.color)
     }
 }

@@ -9,7 +9,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::BeaconBeamBlock;
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::building::{get_connection_state, update_shape};
 use crate::behavior::context::BlockPlaceContext;
@@ -39,17 +38,7 @@ impl StainedGlassPaneBlock {
     }
 }
 
-impl BeaconBeamBlock for StainedGlassPaneBlock {
-    fn get_color(&self) -> DyeColor {
-        self.color
-    }
-}
-
 impl BlockBehavior for StainedGlassPaneBlock {
-    fn as_beacon_beam_block(&self) -> Option<&dyn BeaconBeamBlock> {
-        Some(self)
-    }
-
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -77,5 +66,9 @@ impl BlockBehavior for StainedGlassPaneBlock {
         _computation_type: PathComputationType,
     ) -> bool {
         false
+    }
+
+    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        Some(self.color)
     }
 }
