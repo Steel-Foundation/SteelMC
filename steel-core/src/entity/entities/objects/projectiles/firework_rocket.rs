@@ -251,7 +251,6 @@ impl FireworkRocketEntity {
         }
         let damage_amount = 5.0 + explosion_count as f32 * 2.0;
         let attached = self.attached_entity(world);
-        let attached_id = attached.as_ref().map(|entity| entity.id());
 
         if let Some(attached) = &attached {
             attached.hurt(world, &self.fireworks_damage_source(), damage_amount);
@@ -260,7 +259,10 @@ impl FireworkRocketEntity {
         let rocket_position = self.position();
         let search_box = self.bounding_box().inflate(EXPLOSION_RADIUS);
         for target in world.get_entities_in_aabb_matching(&search_box, Entity::is_living_entity) {
-            if attached_id == Some(target.id()) {
+            if attached
+                .as_ref()
+                .is_some_and(|attached| EntityArc::ptr_eq(attached, &target))
+            {
                 continue;
             }
             let distance_squared = rocket_position.distance_squared(target.position());
@@ -488,7 +490,7 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
-    use steel_registry::data_components::components::Fireworks;
+    use steel_registry::data_components::components::{FireworkExplosion, Fireworks};
     use steel_registry::data_components::vanilla_components::FIREWORKS;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
@@ -636,6 +638,53 @@ mod tests {
             rocket
                 .attached_entity(&world)
                 .is_none_or(|entity| entity.generation() == original_generation)
+        );
+    }
+
+    #[test]
+    fn explosion_damages_replacement_with_attached_entity_id() {
+        let world = fresh_test_world("firework_explosion_identity");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let position = DVec3::new(8.0, 64.0, 8.0);
+        let original: SharedEntity = EntityArc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            position,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(original.clone())
+            .expect("register original attachment");
+        let mut item = ItemStack::new(&vanilla_items::FIREWORK_ROCKET);
+        item.set(
+            FIREWORKS,
+            Fireworks::new(1, vec![FireworkExplosion::default()]).expect("fireworks"),
+        );
+        let rocket = EntityArc::new(FireworkRocketEntity::attached_to_living(
+            &vanilla_entities::FIREWORK_ROCKET,
+            2,
+            Arc::downgrade(&world),
+            item,
+            LivingEntityRef::new(&original).expect("living attachment"),
+        ));
+
+        original.set_removed(RemovalReason::Discarded);
+        let replacement = EntityArc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            original.id(),
+            position + DVec3::X,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(replacement.clone())
+            .expect("register replacement");
+
+        let replacement_health = replacement.get_health();
+        rocket.deal_explosion_damage(&world);
+
+        assert!(
+            replacement.get_health() < replacement_health,
+            "a different allocation with the attachment ID must receive explosion damage"
         );
     }
 
