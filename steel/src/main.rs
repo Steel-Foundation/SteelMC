@@ -5,7 +5,7 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
-use std::{panic, thread};
+use std::{env, panic, thread};
 
 use crossterm::style::Attribute::{Bold, Dim, Reset};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
@@ -13,6 +13,7 @@ use futures::FutureExt;
 use steel::config::{self, LogConfig};
 use steel::logger::CommandLogger;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
+use steel_core::GIT_HASH_SHORT;
 use steel_utils::text::DisplayResolutor;
 #[cfg(all(windows, debug_assertions))]
 use steel_utils::threading::DEBUG_STACK_SIZE;
@@ -203,6 +204,19 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
     let panic_token = cancel_token.clone();
     panic::set_hook(Box::new(move |panic_info| {
         let message = panic_info.payload_as_str().unwrap_or("Unknown");
+        error!(
+            "{}Steel {} ({GIT_HASH_SHORT}) {} on {}/{}{}",
+            SetForegroundColor(Color::Red),
+            env!("CARGO_PKG_VERSION"),
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            env::consts::OS,
+            env::consts::ARCH,
+            ResetColor
+        );
         let current_thread = thread::current();
         let thread_name = current_thread.name().unwrap_or("unnamed");
         let thread_id = current_thread.id();
