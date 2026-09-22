@@ -21,11 +21,13 @@ pub struct DisplayInfo {
 }
 
 impl DisplayInfo {
+    #[must_use]
     pub fn position(&self) -> (f32, f32) {
         *self.location.read().deref()
     }
 
-    pub fn has_background(&self) -> bool {
+    #[must_use]
+    pub const fn has_background(&self) -> bool {
         self.background.is_some()
     }
 }
@@ -36,9 +38,9 @@ impl WriteTo for DisplayInfo {
         self.description.write(writer)?;
         self.icon.write(writer)?;
         self.frame_type.write(writer)?;
-        let flags = (self.has_background() as i32)
-            | ((self.show_toast as i32) << 1)
-            | ((self.hidden as i32) << 2);
+        let flags = i32::from(self.has_background())
+            | i32::from(self.show_toast) << 1
+            | i32::from(self.hidden) << 2;
         flags.write(writer)?;
         self.background.write(writer)?;
         self.location.read().write(writer)?;
