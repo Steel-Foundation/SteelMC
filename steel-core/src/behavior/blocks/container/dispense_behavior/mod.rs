@@ -3,8 +3,9 @@ use steel_registry::data_components::vanilla_components::EQUIPPABLE;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entities;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
@@ -14,6 +15,7 @@ pub mod armor;
 pub mod arrow;
 pub mod bucket;
 pub mod consumables;
+pub mod container;
 pub mod default;
 pub mod potion;
 pub mod projectile;
@@ -26,6 +28,7 @@ pub use bucket::BucketDispenseBehavior;
 pub use consumables::{
     BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
 };
+pub use container::ShulkerBoxDispenseBehavior;
 pub use default::DefaultDispenseBehavior;
 pub use potion::GlassBottleDispenseBehavior;
 pub use projectile::ProjectileDispenseBehavior;
@@ -190,9 +193,13 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     );
     // TODO: shears, brush — see tools.rs
 
-    // container (blocked — see container.rs plan in PR)
-    // TODO: shulker box + dyed shulker box — needs generic block-item
-    // placement dispatch, which dispensers don't have yet.
+    // container
+    for item in REGISTRY.items.iter_tag(&ItemTag::SHULKER_BOXES) {
+        let Some(block) = REGISTRY.blocks.by_key(&item.key) else {
+            continue;
+        };
+        registry.set_behavior(item, Box::new(ShulkerBoxDispenseBehavior::new(block)));
+    }
     // TODO: chest — needs ChestBlock, which doesn't exist.
 
     // minecarts (blocked — see minecarts.rs plan in PR)
