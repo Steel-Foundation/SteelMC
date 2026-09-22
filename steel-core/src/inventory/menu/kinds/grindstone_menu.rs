@@ -71,8 +71,6 @@ pub fn grindstone(
         FakeResultRemainderPolicy::Discard,
     );
     builder.route(input, player.all(), FillDirection::Forward);
-    builder.route(player.hotbar(), input, FillDirection::Forward);
-    builder.route(player.main(), input, FillDirection::Forward);
     builder.drain(input);
 
     builder.build(GrindstoneKind {
@@ -80,10 +78,12 @@ pub fn grindstone(
         result_container,
         block_pos: pos,
         world: Arc::clone(world),
+        input,
+        player,
     })
 }
 
-/// Per-menu grindstone state: inputs, result, level cost, and rename text.
+/// Per-menu grindstone state: the two inputs and the virtual result.
 pub struct GrindstoneKind {
     /// Input container (two slots).
     input_container: Shared<SimpleContainer>,
@@ -91,6 +91,8 @@ pub struct GrindstoneKind {
     result_container: Shared<ResultContainer>,
     block_pos: BlockPos,
     world: Arc<World>,
+    input: Section,
+    player: PlayerInventorySections,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete menu kind
@@ -271,8 +273,59 @@ impl MenuKind for GrindstoneKind {
 
     /// Clears the virtual result on close. Inputs are drained by [`Menu::removed`].
     fn removed(&mut self, _behavior: &mut MenuBehavior, _player: &Player) {
-        self.input_container.lock().set_item(0, ItemStack::empty());
-        self.input_container.lock().set_item(1, ItemStack::empty());
         self.result_container.lock().set_item(0, ItemStack::empty());
+    }
+
+    fn quick_move(
+        &mut self,
+        behavior: &mut MenuBehavior,
+        guard: &mut ContainerLockGuard,
+        slot_index: usize,
+        player: &Player,
+    ) -> Option<ItemStack> {
+        if !self.player.all().contains(slot_index) {
+            return None;
+        }
+
+        let clicked = behavior.slots()[slot_index].get_item(guard).clone();
+        if clicked.is_empty() {
+            return Some(ItemStack::empty());
+        }
+
+        let Some(inputs) = guard.get(ContainerId::from_arc(&self.input_container)) else {
+            log::warn!("input container not locked while quick-moving in the grindstone menu");
+            return Some(ItemStack::empty());
+        };
+        let both_inputs_filled = !inputs.get_item(0).is_empty() && !inputs.get_item(1).is_empty();
+
+        let mut remaining = clicked.clone();
+        let destination = if !both_inputs_filled {
+            self.input
+        } else if self.player.main().contains(slot_index) {
+            self.player.hotbar()
+        } else {
+            self.player.main()
+        };
+
+        let moved = behavior.move_item_stack_to(
+            guard,
+            slot_index,
+            &mut remaining,
+            destination.start(),
+            destination.end(),
+            FillDirection::Forward,
+        );
+        if !moved {
+            return Some(ItemStack::empty());
+        }
+
+        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
+        if remaining.count() == clicked.count() {
+            return Some(ItemStack::empty());
+        }
+        if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &remaining, player) {
+            player.add_item_or_drop_with_guard(guard, remainder);
+        }
+        Some(clicked)
     }
 }

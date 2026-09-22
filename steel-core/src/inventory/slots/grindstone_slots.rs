@@ -1,4 +1,4 @@
-//! Grindstone Menu
+//! Grindstone result slot.
 use std::sync::Arc;
 
 use steel_registry::vanilla_enchantment_tags::EnchantmentTag;
@@ -15,7 +15,7 @@ use crate::{
     world::World,
 };
 
-/// Result slot handler for an grindstone.
+/// Result slot handler for a grindstone.
 #[derive(Clone)]
 pub struct GrindstoneResultHandler {
     input_container: Shared<SimpleContainer>,
