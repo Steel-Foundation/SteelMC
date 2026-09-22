@@ -1,5 +1,6 @@
 mod anvil_block;
 mod barrel_block;
+mod beacon_block;
 mod beehive_block;
 mod chiseled_bookshelf_block;
 mod crafting_table_block;
@@ -7,14 +8,17 @@ mod dispense_behavior;
 mod dispenser_block;
 mod ender_chest_block;
 mod furnace_block;
+mod grindstone_block;
 mod shulker_box_block;
 
 pub use anvil_block::AnvilBlock;
 pub use barrel_block::BarrelBlock;
+pub use beacon_block::BeaconBlock;
 pub use beehive_block::BeehiveBlock;
 pub use chiseled_bookshelf_block::ChiseledBookShelfBlock;
 pub use crafting_table_block::CraftingTableBlock;
 pub use dispenser_block::{DispenserBlock, DropperBlock};
 pub use ender_chest_block::EnderChestBlock;
 pub use furnace_block::{BlastFurnaceBlock, FurnaceBlock, SmokerBlock};
+pub use grindstone_block::GrindstoneBlock;
 pub use shulker_box_block::ShulkerBoxBlock;
