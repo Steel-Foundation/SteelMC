@@ -2,7 +2,7 @@ use std::path::Path;
 use steel_utils::Identifier;
 
 use super::*;
-use crate::config::{DomainConfig, WorldEntryConfig};
+use crate::config::{DomainConfig, StorageSelection, WorldEntryConfig};
 use crate::level_data::LevelData;
 use crate::server::world_tick_workers::WorldTickWorkers;
 use crate::test_support::test_domain;
