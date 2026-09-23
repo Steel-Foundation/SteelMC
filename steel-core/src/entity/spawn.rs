@@ -9,14 +9,11 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::nbt::merge_nbt_compounds;
-use steel_utils::{
-    BlockPos, Downcast, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty,
-};
+use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty};
 use text_components::TextComponent;
 use uuid::Uuid;
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
-use crate::entity::entities::RawEntity;
 use crate::entity::entity::{read_nbt_dvec3, read_nbt_rotation, sanitize_nbt_motion};
 use crate::entity::{
     EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest, start_riding_entities,
@@ -225,10 +222,7 @@ fn load_entity_recursive_inner(
         world: Arc::downgrade(world),
     };
 
-    let entity = ENTITIES.create_and_load_or_raw_view(request, nbt);
-    if entity.downcast_ref::<RawEntity>().is_some() {
-        return None;
-    }
+    let entity = ENTITIES.create_and_load_for_spawn_view(request, nbt)?;
     post_load(&entity);
 
     let Some(passengers) = nbt.list("Passengers") else {
@@ -487,7 +481,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use simdnbt::owned::NbtCompound;
+    use simdnbt::owned::{NbtCompound, NbtList};
     use steel_registry::data_components::CustomData;
     use steel_registry::data_components::components::EntityData;
     use steel_registry::data_components::vanilla_components::{
@@ -504,9 +498,78 @@ mod tests {
     use text_components::TextComponent;
 
     use crate::entity::entities::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
-    use crate::entity::{AgeableMob, Entity, SharedEntity};
+    use crate::entity::{
+        AgeableMob, Entity, EntitySpawnReason, SharedEntity, init_entities,
+        load_entity_recursive_owned,
+    };
+    use crate::test_support::fresh_test_world;
 
     use super::{AgeableMobGroupData, apply_item_stack_components};
+
+    fn entity_nbt(id: &str) -> NbtCompound {
+        let mut entity = NbtCompound::new();
+        entity.insert("id", id);
+        entity
+    }
+
+    #[test]
+    fn recursive_spawner_load_rejects_unknown_and_unimplemented_entities() {
+        init_vanilla_registry();
+        init_entities();
+        let world = fresh_test_world("spawner_recursive_load_rejects_unsupported");
+
+        let unknown = entity_nbt("minecraft:not_an_entity");
+        assert!(
+            load_entity_recursive_owned(&world, &unknown, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
+
+        let malformed = entity_nbt("not an entity identifier");
+        assert!(
+            load_entity_recursive_owned(&world, &malformed, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
+
+        let unimplemented = entity_nbt("minecraft:blaze");
+        assert!(load_entity_recursive_owned(
+            &world,
+            &unimplemented,
+            EntitySpawnReason::Spawner,
+            |_| {},
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn recursive_spawner_load_rejects_an_unsupported_passenger_tree() {
+        init_vanilla_registry();
+        init_entities();
+        let world = fresh_test_world("spawner_recursive_load_rejects_passenger");
+
+        let mut root = entity_nbt("minecraft:pig");
+        root.insert(
+            "Passengers",
+            NbtList::Compound(vec![entity_nbt("minecraft:blaze")]),
+        );
+
+        assert!(
+            load_entity_recursive_owned(&world, &root, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn recursive_spawner_load_accepts_a_registered_entity() {
+        init_vanilla_registry();
+        init_entities();
+        let world = fresh_test_world("spawner_recursive_load_accepts_supported");
+        let pig = entity_nbt("minecraft:pig");
+
+        assert!(
+            load_entity_recursive_owned(&world, &pig, EntitySpawnReason::Spawner, |_| {},)
+                .is_some()
+        );
+    }
 
     #[test]
     fn ageable_group_data_increments_before_later_baby_rolls_can_apply() {
