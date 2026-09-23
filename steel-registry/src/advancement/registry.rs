@@ -24,6 +24,8 @@ pub struct AdvancementNode {
     pub value: AdvancementRef,
 }
 
+pub type AdvancementNodeRef = &'static AdvancementNode;
+
 impl AdvancementNode {
     pub fn add_child(&mut self, child: usize) {
         self.children.push(child);
@@ -52,7 +54,7 @@ impl AdvancementNode {
     }
 
     #[must_use]
-    pub fn root(&self) -> &AdvancementNode {
+    pub fn root(&self) -> AdvancementNodeRef {
         let mut advancement_node = self;
         while let Some(parent) = &advancement_node.parent {
             advancement_node = &REGISTRY.advancements.adv_nodes[*parent];

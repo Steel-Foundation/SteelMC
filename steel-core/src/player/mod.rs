@@ -283,8 +283,8 @@ pub struct Player {
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
 
-    /// Advancement
-    advancements: SyncMutex<PlayerAdvancement>
+    /// Manage the advancements of the player
+    advancements: SyncMutex<PlayerAdvancement>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -624,7 +624,7 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
-            advancements: SyncMutex::new(PlayerAdvancement::default())
+            advancements: SyncMutex::new(PlayerAdvancement::default()),
         }
     }
 
