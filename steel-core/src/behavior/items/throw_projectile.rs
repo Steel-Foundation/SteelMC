@@ -29,8 +29,7 @@ pub(super) struct ThrowParams {
     pub sound: SoundEventRef,
     /// Category that sound is played under.
     pub sound_source: SoundSource,
-    /// Volume that sound is played at. Every vanilla thrown item uses `0.5`, but
-    /// each spells it out at its own call site rather than sharing a constant.
+    /// Volume that sound is played at.
     pub sound_volume: f32,
     /// `spawnProjectileFromRotation`'s `yOffset`, in degrees.
     pub y_offset: f32,

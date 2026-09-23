@@ -12,7 +12,9 @@ use steel_registry::{
     entity_data::Direction,
     fluid::FluidState,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
+    sound_events,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_fluids, vanilla_game_events,
 };
 use steel_utils::{
     BlockPos,
@@ -24,8 +26,8 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         block::{schedule_placed_liquid_tick, schedule_water_tick_if_waterlogged},
     },
-    entity::projectile::Projectile,
-    player,
+    entity::{Entity, projectile::Projectile},
+    player::{self, Player},
     world::{
         ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World,
         game_event::GameEventContext,
@@ -58,6 +60,38 @@ impl CandleBlock {
             && state.try_get_value(WATERLOGGED) != Some(true)
             && !state.get_value(LIT_PROPERTY))
         .then(|| state.set_value(LIT_PROPERTY, true))
+    }
+
+    /// Vanilla `AbstractCandleBlock.isLit`: whether `state` is a lit candle or
+    /// candle cake.
+    #[must_use]
+    pub fn is_lit(state: steel_utils::BlockStateId) -> bool {
+        let block = state.get_block();
+        (block.has_tag(&BlockTag::CANDLES) || block.has_tag(&BlockTag::CANDLE_CAKES))
+            && state.try_get_value(LIT_PROPERTY) == Some(true)
+    }
+
+    /// Vanilla `AbstractCandleBlock.extinguish`: unlights a candle or candle
+    /// cake, plays the extinguish sound and emits a `BLOCK_CHANGE` game event.
+    pub fn extinguish(
+        player: Option<&Player>,
+        state: steel_utils::BlockStateId,
+        level: &dyn LevelAccessor,
+        pos: BlockPos,
+    ) {
+        level.set_block_state(
+            pos,
+            state.set_value(LIT_PROPERTY, false),
+            UpdateFlags::UPDATE_ALL_IMMEDIATE,
+        );
+        level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
+        // Vanilla's `level.gameEvent(player, BLOCK_CHANGE, pos)` builds a
+        // `GameEvent.Context.of(entity)`, which leaves the affected state unset.
+        level.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(player.map(|player| player as &dyn Entity), None),
+        );
     }
 }
 
@@ -124,18 +158,14 @@ impl BlockBehavior for CandleBlock {
         state: steel_utils::BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: &player::Player,
+        player: &player::Player,
         _hand: types::InteractionHand,
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let item_is_empty = inv.with_item(|item_stack| item_stack.is_empty());
-        if item_is_empty {
-            if !state.get_value(LIT_PROPERTY) {
-                return InteractionResult::Pass;
-            }
-            let new_state = state.set_value(LIT_PROPERTY, false);
-            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+        if item_is_empty && player.abilities.lock().may_build && state.get_value(LIT_PROPERTY) {
+            Self::extinguish(Some(player), state, world, pos);
             return InteractionResult::Success;
         }
 
@@ -169,14 +199,7 @@ impl BlockBehavior for CandleBlock {
 
         let waterlogged = state.set_value(WATERLOGGED, true);
         if state.get_value(LIT_PROPERTY) {
-            let extinguished = waterlogged.set_value(LIT_PROPERTY, false);
-            level.set_block_state(pos, extinguished, UpdateFlags::UPDATE_ALL_IMMEDIATE);
-            level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
-            level.game_event(
-                &vanilla_game_events::BLOCK_CHANGE,
-                pos,
-                &GameEventContext::new(None, Some(extinguished)),
-            );
+            Self::extinguish(None, waterlogged, level, pos);
         } else {
             level.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL);
         }
@@ -290,5 +313,55 @@ mod tests {
                 .expect("candle should be waterlogged")
                 .get_value(WATERLOGGED)
         );
+    }
+
+    #[test]
+    fn is_lit_accepts_only_lit_candles_and_candle_cakes() {
+        init_vanilla_registry();
+
+        let candle = vanilla_blocks::CANDLE.default_state();
+        let candle_cake = vanilla_blocks::CANDLE_CAKE.default_state();
+
+        assert!(CandleBlock::is_lit(candle.set_value(LIT_PROPERTY, true)));
+        assert!(!CandleBlock::is_lit(candle.set_value(LIT_PROPERTY, false)));
+        assert!(CandleBlock::is_lit(
+            candle_cake.set_value(LIT_PROPERTY, true)
+        ));
+        assert!(!CandleBlock::is_lit(
+            candle_cake.set_value(LIT_PROPERTY, false)
+        ));
+        assert!(!CandleBlock::is_lit(
+            vanilla_blocks::CAMPFIRE
+                .default_state()
+                .set_value(LIT_PROPERTY, true)
+        ));
+    }
+
+    #[test]
+    fn extinguish_matches_vanilla_side_effects() {
+        init_vanilla_registry();
+
+        let lit = vanilla_blocks::CANDLE_CAKE
+            .default_state()
+            .set_value(LIT_PROPERTY, true);
+        let level = TestLevel::default();
+
+        CandleBlock::extinguish(None, lit, &level, BlockPos::ZERO);
+
+        let placed = level.placed_blocks.borrow();
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].state, lit.set_value(LIT_PROPERTY, false));
+        assert_eq!(placed[0].flags, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+
+        // Vanilla plays it with a null `except`, so the acting player hears it too.
+        let sounds = level.block_sounds.borrow();
+        assert_eq!(sounds.len(), 1);
+        assert_eq!(sounds[0].sound, &sound_events::BLOCK_CANDLE_EXTINGUISH);
+        assert_eq!(sounds[0].exclude, None);
+
+        let events = level.game_events.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, &vanilla_game_events::BLOCK_CHANGE);
+        assert_eq!(events[0].affected_state, None);
     }
 }
