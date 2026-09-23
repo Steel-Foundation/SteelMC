@@ -18,9 +18,10 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
     SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
+    SSetCreativeModeSlot, SoundSource,
 };
 use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_custom_stats;
 use steel_utils::{
@@ -1053,6 +1054,28 @@ impl Player {
         } else {
             MenuItemDisposition::ReturnToInventory
         }
+    }
+
+    /// Tries to add an item to the player's inventory, playing the vanilla item-pickup
+    /// sound when the entire stack fits.
+    ///
+    /// Returns true if the whole stack was added; otherwise the stack keeps the remainder.
+    /// Mirrors the shared vanilla `Inventory.add` + `SoundEvents.ITEM_PICKUP` flow used by
+    /// `/give` and advancement rewards: the sound only plays once the stack is fully consumed.
+    pub fn add_item_with_sound(&self, stack: &mut ItemStack) -> bool {
+        let added = self.inventory.lock().add(stack);
+        if added {
+            let pitch = ((rand::random::<f32>() - rand::random::<f32>()) * 0.7 + 1.0) * 2.0;
+            self.get_world().play_sound_at(
+                &sound_events::ENTITY_ITEM_PICKUP,
+                SoundSource::Players,
+                self.position(),
+                0.2,
+                pitch,
+                None,
+            );
+        }
+        added
     }
 
     /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.

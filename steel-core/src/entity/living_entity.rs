@@ -3093,7 +3093,7 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     loot_table.get_random_items(&mut context)
 }
 
-fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
+pub fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
     let sheep = entity.sheep_loot_state();
     EntityRef {
         entity_type: Some(&entity.entity_type().key),

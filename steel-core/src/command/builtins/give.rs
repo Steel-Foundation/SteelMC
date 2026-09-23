@@ -1,10 +1,8 @@
 //! Vanilla item-giving command.
 
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
     data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME},
     item_stack::ItemStack,
-    sound_events,
 };
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -103,31 +101,16 @@ fn give_to_player(player: &Player, prototype: &ItemStack, count: i32) {
         let size = max_stack_size.min(remaining);
         remaining -= size;
         let mut stack = prototype.copy_with_count(size);
-        let added = player.inventory.lock().add(&mut stack);
-
-        if added && stack.is_empty() {
+        if player.add_item_with_sound(&mut stack) {
             if let Some(item) = player.drop_item(prototype.copy_with_count(1), false, false) {
                 item.make_fake_item();
             }
-            play_pickup_sound(player);
             player.broadcast_inventory_changes();
         } else if let Some(item) = player.drop_item(stack, false, false) {
             item.set_no_pickup_delay();
             item.set_owner(Some(player.gameprofile.id));
         }
     }
-}
-
-fn play_pickup_sound(player: &Player) {
-    let pitch = ((rand::random::<f32>() - rand::random::<f32>()) * 0.7 + 1.0) * 2.0;
-    player.get_world().play_sound_at(
-        &sound_events::ENTITY_ITEM_PICKUP,
-        SoundSource::Players,
-        player.position(),
-        0.2,
-        pitch,
-        None,
-    );
 }
 
 fn item_display_name(stack: &ItemStack) -> TextComponent {

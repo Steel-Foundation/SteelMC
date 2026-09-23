@@ -775,7 +775,7 @@ mod item_based_steering;
 mod item_frame;
 mod leash;
 mod living_base;
-mod living_entity;
+pub mod living_entity;
 mod manager;
 mod mob;
 pub mod mob_effect;

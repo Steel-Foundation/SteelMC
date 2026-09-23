@@ -1,14 +1,19 @@
 pub mod progress;
 pub mod visibility_evaluator;
 
+use std::sync::Arc;
 use crate::player::Player;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::c_update_advancement::CUpdateAdvancements;
-use steel_registry::advancement::registry::AdvancementNode;
-use steel_registry::advancement::{Advancement, AdvancementProgressData, Criteria};
+use steel_registry::REGISTRY;
+use steel_registry::advancement::registry::{AdvancementNode, AdvancementNodeRef, AdvancementRef};
+use steel_registry::advancement::{Advancement, AdvancementProgressData, AdvancementRewards, Criteria};
+use steel_registry::loot_table::LootContext;
 use steel_utils::Identifier;
+use crate::entity::{Entity, LivingEntity};
+use crate::entity::living_entity::living_entity_loot_ref;
 
 /// Manages a player's collection of advancements.
 ///
@@ -17,17 +22,105 @@ use steel_utils::Identifier;
 pub struct PlayerAdvancement {
     pub progress: AdvancementProgressMap,
     pub is_first_packet: bool,
-    pub roots_to_update: FxHashSet<&'static AdvancementNode>,
-    pub visible: FxHashSet<&'static Advancement>,
-    pub progress_changed: FxHashSet<&'static Advancement>,
-    pub last_selected_tab: Option<&'static Advancement>,
+    pub roots_to_update: FxHashSet<AdvancementNodeRef>,
+    pub visible: FxHashSet<AdvancementRef>,
+    pub progress_changed: FxHashSet<AdvancementRef>,
+    pub last_selected_tab: Option<AdvancementRef>,
+}
+
+/// Grants an advancement's rewards to a player.
+///
+/// Mirrors vanilla `AdvancementRewards.grant`: loot is rolled through the
+/// `ADVANCEMENT_REWARD` loot params (this entity + origin), stacks that fully fit in
+/// the inventory trigger the pickup sound, and leftovers are dropped as items with no
+/// pickup delay that only the beneficiary can collect. Recipes and functions are not
+/// handled here.
+pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
+    player.give_experience_points(reward.experience);
+
+    let position = player.position();
+    let mut rng = rand::rng();
+    let mut ctx = LootContext::new(&mut rng)
+        .with_this_entity(living_entity_loot_ref(player))
+        .with_origin(position.x, position.y, position.z);
+
+    let mut changes = false;
+    for loot_table in &reward.loots {
+        for mut item in loot_table.get_random_items(&mut ctx) {
+            if player.add_item_with_sound(&mut item) {
+                changes = true;
+                continue;
+            }
+            if let Some(drop) = player.drop_item(item, false, false) {
+                drop.set_no_pickup_delay();
+                drop.set_owner(Some(player.gameprofile.id));
+            }
+        }
+    }
+
+    if changes {
+        player.broadcast_inventory_changes();
+    }
 }
 
 impl PlayerAdvancement {
+    pub(crate) fn award(
+        &mut self,
+        advancement: AdvancementRef,
+        criterion: &str,
+    ) {
+        let mut result = false;
+        let progress = self.progress.get_mut_or_start_progress(advancement);
+        let was_done = progress.is_done();
+        if progress.grantProgress(criterion) {
+            //self.unregisterListeners(advancement);
+            self.progress_changed.add(advancement);
+            result = true;
+            if !was_done && progress.isDone() {
+                advancement.rewards.grant(self.player);
+                advancement.value().display().ifPresent(display -> {
+                    if display.shouldAnnounceChat() && this.player.level().getGameRules().get(GameRules.SHOW_ADVANCEMENT_MESSAGES) {
+                        this.playerList.broadcastSystemMessage(display.getType().createAnnouncement(holder, this.player), false);
+                    }
+                });
+            }
+        }
+
+        if !was_done && progress.isDone() {
+            this.markForVisibilityUpdate(holder);
+        }
+
+        result;
+    }
+
+    pub fn revoke(&mut self, advancement: AdvancementRef, criterion: &str) {
+        let mut result = false;
+        let progress = self.progress.get_mut_or_start_progress(advancement);
+        let was_done = progress.is_done();
+        if progress.revoke_progress(criterion) {
+            //self.registerListeners(advancement);
+            self.progress_changed.add(advancement);
+            result = true;
+        }
+
+        if was_done && !progress.is_done() {
+            self.mark_for_visibility_update(advancement);
+        }
+
+        result
+    }
+
+    fn mark_for_visibility_update(&mut self, advancement: AdvancementRef) {
+        let node = REGISTRY.advancements.get_by_key(&advancement.key);
+        if let Some(node) = node {
+            self.roots_to_update.insert(node.root());
+        }
+    }
+
     fn update_tree_visibility(
         &mut self,
         root: &AdvancementNode,
-        added: &mut Vec<&'static Advancement>,
+        added: &mut Vec<AdvancementRef>,
         removed: &mut Vec<Identifier>,
     ) {
         visibility_evaluator::evaluate_visibility(
