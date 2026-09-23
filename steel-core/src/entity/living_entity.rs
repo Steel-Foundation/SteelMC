@@ -10,7 +10,7 @@ const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
 /// so the arithmetic matches.
 const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
 /// Horizontal air drag out of fluid.
-const BASE_HORIZONTAL_AIR_DRAG: f32 = 0.91;
+pub(super) const BASE_HORIZONTAL_AIR_DRAG: f32 = 0.91;
 /// Vertical air drag out of fluid (flying animals use the horizontal one).
 const BASE_VERTICAL_AIR_DRAG: f32 = 0.98;
 /// Identity modifier, used when an entity type does not declare the attribute.
