@@ -93,21 +93,19 @@ pub trait ItemBehavior: Send + Sync {
         }
 
         let slot = equippable.slot;
-        let (previous, result) = context.inv.with_inventory(|inventory| {
+        let (previous, equipped, result) = context.inv.with_inventory(|inventory| {
             let previous = EntityEquipment::get_ref(inventory, slot).clone();
             let result = inventory.try_swap_with_equipment_slot(
                 context.hand,
                 slot,
                 context.player.has_infinite_materials(),
             );
-            (previous, result)
+            let equipped = EntityEquipment::get_ref(inventory, slot).clone();
+            (previous, equipped, result)
         });
 
         match result {
             EquipmentSwapResult::Success(overflow) => {
-                let equipped = context
-                    .inv
-                    .with_inventory(|inventory| EntityEquipment::get_ref(inventory, slot).clone());
                 context.player.on_equip_item(slot, &previous, &equipped);
                 if !overflow.is_empty() {
                     let _ = context.player.drop_item(overflow, false, false);

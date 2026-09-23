@@ -1,5 +1,3 @@
-use std::mem;
-
 use steel_math::DEGREE_90;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
@@ -1656,10 +1654,7 @@ pub trait LivingEntity: Entity {
     /// Puts `stack` in `slot` and runs [`on_equip_item`](Self::on_equip_item).
     fn set_item_slot(&self, slot: EquipmentSlot, stack: ItemStack) {
         let new_stack = stack.clone();
-        let mut old_stack = stack;
-        self.with_equipment_slot_mut(slot, &mut |current| {
-            mem::swap(current, &mut old_stack);
-        });
+        let old_stack = self.living_base().equipment().lock().set(slot, stack);
         self.on_equip_item(slot, &old_stack, &new_stack);
     }
 
