@@ -63,6 +63,7 @@ mod c_take_item_entity;
 mod c_teleport_entity;
 mod c_ticking_state;
 mod c_ticking_step;
+pub mod c_update_advancement;
 mod c_update_attributes;
 mod c_update_mob_effect;
 mod chat;
