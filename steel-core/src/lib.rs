@@ -3,7 +3,6 @@
 //! The core library for the Steel Minecraft server. Handles everything related to the PLAY state.
 
 #![feature(try_as_dyn)]
-#![feature(arbitrary_self_types, coerce_unsized, dispatch_from_dyn, unsize)]
 
 use crate::chunk::chunk_map::ChunkMap;
 

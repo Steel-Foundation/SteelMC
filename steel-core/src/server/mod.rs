@@ -33,7 +33,6 @@ use crate::command::{
     command_tree_packet, create_registered_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
@@ -187,7 +186,7 @@ struct PreparedSpawn {
     rotation: (f32, f32),
 }
 
-fn apply_default_spawn(player: &EntityArc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
+fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
     player.base().set_position_local(spawn.position);
     player.set_rotation(spawn.rotation);
     player.restore_game_modes(world.default_gamemode, None);
@@ -328,7 +327,7 @@ enum DomainPlayerData {
 }
 
 struct DomainSwitchRequest {
-    player: EntityArc<Player>,
+    player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
     pending_token: PendingWorldChangeToken,
@@ -808,7 +807,7 @@ impl Server {
 
     pub(crate) fn submit_command_suggestions(
         &self,
-        player: EntityArc<Player>,
+        player: Arc<Player>,
         transaction_id: i32,
         input: String,
     ) -> Result<(), CommandQueueFull> {
@@ -822,7 +821,7 @@ impl Server {
     /// Schedules a decoded play packet for the inter-tick packet phase.
     pub(crate) fn schedule_play_packet(
         &self,
-        player: EntityArc<Player>,
+        player: Arc<Player>,
         packet: ScheduledPlayPacket,
         payload_bytes: usize,
     ) {
@@ -833,7 +832,7 @@ impl Server {
     /// Pauses later packets while `player` is replaced by a new incarnation.
     pub(crate) fn begin_player_packet_transition(
         &self,
-        player: &EntityArc<Player>,
+        player: &Arc<Player>,
     ) -> Option<PlayerPacketTransition> {
         if player.connection.closed() || !player.session.is_current_player(player) {
             return None;

@@ -1,18 +1,28 @@
 use super::*;
-use crate::entity::EntityArc;
+use std::sync::Arc;
+
 use crate::server::world_tick_workers::WorldTickWorkers;
 
 #[test]
 fn disconnect_releases_self_damage_history_while_frozen() {
-    assert_disconnect_releases_damage_history("self_damage_disconnect", false);
+    assert_disconnect_releases_damage_history("self_damage_disconnect", false, false);
 }
 
 #[test]
 fn disconnect_releases_mutual_damage_history_while_frozen() {
-    assert_disconnect_releases_damage_history("mutual_damage_disconnect", true);
+    assert_disconnect_releases_damage_history("mutual_damage_disconnect", true, false);
 }
 
-fn assert_disconnect_releases_damage_history(world_name: &'static str, mutual_damage: bool) {
+#[test]
+fn disconnect_outside_world_membership_releases_history_while_frozen() {
+    assert_disconnect_releases_damage_history("detached_damage_disconnect", true, true);
+}
+
+fn assert_disconnect_releases_damage_history(
+    world_name: &'static str,
+    mutual_damage: bool,
+    detached: bool,
+) {
     let world = fresh_test_world(world_name);
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -28,8 +38,8 @@ fn assert_disconnect_releases_damage_history(world_name: &'static str, mutual_da
         let second =
             test_player_with_packets(&server, Arc::clone(&world), "Second", next_entity_id()).0;
         for player in [&first, &second] {
-            assert!(server.online_players.insert(EntityArc::clone(player)));
-            assert!(world.add_player(EntityArc::clone(player), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(Arc::clone(player)));
+            assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
             let _ = player.mark_joined_world();
         }
 
@@ -44,10 +54,23 @@ fn assert_disconnect_releases_damage_history(world_name: &'static str, mutual_da
                     .with_causing_entity(first.clone()),
             );
         }
-        let first_weak = EntityArc::downgrade(&first);
-        let second_weak = EntityArc::downgrade(&second);
+        let first_weak = Arc::downgrade(&first);
+        let second_weak = Arc::downgrade(&second);
         let damage_time = world.game_time();
         server.tick_rate_manager.write().set_frozen(true);
+
+        if detached {
+            world.remove_player_for_world_change(&first);
+            world.remove_player_for_world_change(&second);
+            server.damage_history.expire();
+            assert!(
+                first
+                    .last_damage_source()
+                    .expect("online history")
+                    .causing_entity()
+                    .is_some()
+            );
+        }
 
         for player in [first, second] {
             player.connection.close();

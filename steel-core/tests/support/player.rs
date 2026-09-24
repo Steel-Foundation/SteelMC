@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use super::TestConnection;
 use crate::config::RuntimeConfig;
-use crate::entity::EntityArc;
 use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession};
 use crate::server::Server;
 use crate::world::World;
@@ -89,7 +88,7 @@ impl TestPlayerBuilder {
         self
     }
 
-    pub(crate) fn build(self) -> EntityArc<Player> {
+    pub(crate) fn build(self) -> Arc<Player> {
         let (server, config) = match self.context {
             TestPlayerContext::Detached(config) => (Weak::new(), config),
             TestPlayerContext::Server { server, config } => (server, config),
@@ -98,7 +97,7 @@ impl TestPlayerBuilder {
             config.chat_spam_threshold_seconds,
             config.command_spam_threshold_seconds,
         ));
-        let player = EntityArc::new(Player::new(
+        let player = Arc::new(Player::new(
             self.profile,
             self.connection,
             Arc::clone(&session),

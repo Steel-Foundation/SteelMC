@@ -26,7 +26,6 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
@@ -129,7 +128,7 @@ impl FallingBlockEntity {
 
     /// Replaces a world block with its legacy fluid and spawns its falling entity.
     #[must_use]
-    pub fn fall(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> EntityArc<Self> {
+    pub fn fall(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> Arc<Self> {
         let carried_state = if state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
             .is_some()
@@ -138,7 +137,7 @@ impl FallingBlockEntity {
         } else {
             state
         };
-        let entity = EntityArc::new(Self::with_block_state(
+        let entity = Arc::new(Self::with_block_state(
             &vanilla_entities::FALLING_BLOCK,
             next_entity_id(),
             DVec3::new(
@@ -155,8 +154,7 @@ impl FallingBlockEntity {
             fluid_state_to_block(state.get_fluid_state()),
             UpdateFlags::UPDATE_ALL,
         );
-        if let Err(error) = world.try_add_entity(EntityArc::clone(&entity) as EntityArc<dyn Entity>)
-        {
+        if let Err(error) = world.try_add_entity(Arc::clone(&entity) as Arc<dyn Entity>) {
             log::error!("failed to add falling block entity: {error}");
         }
         entity
@@ -392,7 +390,7 @@ impl Entity for FallingBlockEntity {
         self.entity_type
     }
 
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         let block_state = self.block_state();
         if block_state.is_air() {
             self.set_removed(RemovalReason::Discarded);
@@ -405,7 +403,7 @@ impl Entity for FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = EntityArc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
+        let _ = Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
         if let Some(world) = self.level()
@@ -452,7 +450,7 @@ impl Entity for FallingBlockEntity {
     }
 
     fn cause_fall_damage(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         fall_distance: f64,
         _damage_modifier: f32,
         _source: &DamageSource,

@@ -8,7 +8,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::entity::EntityArc;
 use crate::{
     entity::Entity,
     player::{
@@ -70,7 +69,7 @@ impl PacketProcessor {
 
     pub(super) fn schedule(
         &self,
-        player: EntityArc<Player>,
+        player: Arc<Player>,
         packet: ScheduledPlayPacket,
         payload_bytes: usize,
     ) {
@@ -1058,7 +1057,6 @@ mod tests {
 
     use tokio::time::timeout;
 
-    use crate::entity::EntityArc;
     use crate::{
         entity::{Entity as _, LivingEntity as _},
         player::{ClientInformation, Player, connection::ScheduledPlayPacket},
@@ -1077,8 +1075,8 @@ mod tests {
         }
     }
 
-    fn replacement_for(player: &EntityArc<Player>) -> EntityArc<Player> {
-        EntityArc::new(Player::new(
+    fn replacement_for(player: &Arc<Player>) -> Arc<Player> {
+        Arc::new(Player::new(
             player.gameprofile.clone(),
             Arc::clone(&player.connection),
             Arc::clone(&player.session),
@@ -1142,7 +1140,7 @@ mod tests {
         let processor = PacketProcessor::new();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
 
-        processor.schedule(EntityArc::clone(&original), packet, 1);
+        processor.schedule(Arc::clone(&original), packet, 1);
         let Some(transition) = processor.pause_player_session(&session) else {
             panic!("session packet lane should pause");
         };
@@ -1164,7 +1162,7 @@ mod tests {
             let Some(current) = session.current_player() else {
                 panic!("replacement should be bound before packet work resumes");
             };
-            assert!(EntityArc::ptr_eq(&current, &replacement));
+            assert!(Arc::ptr_eq(&current, &replacement));
         }
     }
 
@@ -1343,12 +1341,12 @@ mod tests {
         let unrelated_player = TestPlayerBuilder::new(Arc::clone(&world), "Unrelated", 2).build();
         let processor = PacketProcessor::new();
         processor.schedule(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             1,
         );
         processor.schedule(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             2,
         );
@@ -1371,12 +1369,12 @@ mod tests {
             panic!("active session lane should pause");
         };
         processor.schedule(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             3,
         );
         processor.schedule(
-            EntityArc::clone(&unrelated_player),
+            Arc::clone(&unrelated_player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             4,
         );

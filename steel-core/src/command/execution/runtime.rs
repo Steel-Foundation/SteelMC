@@ -12,7 +12,6 @@ use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
     ContextChain,
 };
-use crate::entity::EntityArc;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
@@ -450,11 +449,11 @@ impl SteelCommandContext<CommandSource> {
     pub(crate) fn optional_players(
         &self,
         name: &str,
-    ) -> Result<Vec<EntityArc<Player>>, CommandSyntaxError> {
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
         self.entity_selector(name)?.find_players(self.source())
     }
 
-    pub(crate) fn players(&self, name: &str) -> Result<Vec<EntityArc<Player>>, CommandSyntaxError> {
+    pub(crate) fn players(&self, name: &str) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
         let players = self.optional_players(name)?;
         if players.is_empty() {
             Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -465,7 +464,7 @@ impl SteelCommandContext<CommandSource> {
         }
     }
 
-    pub(crate) fn player(&self, name: &str) -> Result<EntityArc<Player>, CommandSyntaxError> {
+    pub(crate) fn player(&self, name: &str) -> Result<Arc<Player>, CommandSyntaxError> {
         let mut players = self.players(name)?;
         if players.len() != 1 {
             return Err(CommandSyntaxError::dynamic(TextComponent::from(

@@ -7,7 +7,6 @@ use std::{
     thread,
 };
 
-use crate::entity::EntityArc;
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity, next_entity_id},
     inventory::{
@@ -786,7 +785,7 @@ fn equippable_stack_moves_one_item_and_returns_old_equipment_to_inventory() {
     );
 }
 
-fn test_player(world: Arc<World>) -> EntityArc<Player> {
+fn test_player(world: Arc<World>) -> Arc<Player> {
     let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
@@ -1190,7 +1189,7 @@ fn disconnected_menu_removal_drops_transient_items() {
     let observer = TestPlayerBuilder::new(Arc::clone(&world), "Observer", next_entity_id())
         .connection(observer_connection)
         .build();
-    assert!(world.add_player(EntityArc::clone(&observer), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
     observer
@@ -1850,7 +1849,7 @@ fn terminal_removal_stays_active_while_pending_menu_cleanup_runs() {
     let removal_release = Arc::new(Barrier::new(2));
     let returned_to_inventory = Arc::new(AtomicBool::new(true));
 
-    let opener_player = EntityArc::clone(&player);
+    let opener_player = Arc::clone(&player);
     let opener_factory_entered = Arc::clone(&factory_entered);
     let opener_factory_release = Arc::clone(&factory_release);
     let opener_removal_entered = Arc::clone(&removal_entered);

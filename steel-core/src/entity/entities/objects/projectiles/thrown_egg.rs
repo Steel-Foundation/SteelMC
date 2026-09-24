@@ -23,7 +23,6 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::{
@@ -118,7 +117,7 @@ impl ThrownEggEntity {
     /// not fit, aborting the remaining hatch loop like vanilla.
     fn spawn_hatchling(&self, world: &Arc<World>) -> bool {
         let position = self.position();
-        let chicken = EntityArc::new(ChickenEntity::new(
+        let chicken = Arc::new(ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             next_entity_id(),
             position,
@@ -156,7 +155,7 @@ impl Entity for ThrownEggEntity {
         self.entity_type
     }
 
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         self.throwable_projectile_tick();
     }
 
@@ -208,7 +207,7 @@ impl Projectile for ThrownEggEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(self: EntityArc<Self>, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `ThrownEgg.onHitEntity`: super.onHitEntity() (no-op), then
         // deal 0 damage with a `thrown` source so the hit registers the impact.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
@@ -221,9 +220,9 @@ impl Projectile for ThrownEggEntity {
         }
     }
 
-    fn on_hit(self: EntityArc<Self>, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEgg.onHit`: super.onHit() then the server-side hatch.
-        EntityArc::clone(&self).projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         let Some(world) = self.level() else {
             return;
@@ -285,7 +284,6 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos, Downcast};
 
     use crate::behavior::init_behaviors;
-    use crate::entity::EntityArc;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{AgeableMob, Entity, ThrowableItemProjectile, WorldAabb};
@@ -371,7 +369,7 @@ mod tests {
         let world = fresh_test_world("thrown_egg_hatchling");
         let pos = DVec3::new(0.5, 80.0, 0.5);
         insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(pos));
-        let egg = EntityArc::new(ThrownEggEntity::new(
+        let egg = Arc::new(ThrownEggEntity::new(
             &vanilla_entities::EGG,
             1,
             pos,
@@ -409,7 +407,7 @@ mod tests {
 
         // The egg lands at the center of the stone block, where the chick box
         // cannot fit; the fudge finds no free position and the hatch aborts.
-        let egg = EntityArc::new(ThrownEggEntity::new(
+        let egg = Arc::new(ThrownEggEntity::new(
             &vanilla_entities::EGG,
             1,
             DVec3::new(0.5, 80.5, 0.5),
@@ -446,7 +444,7 @@ mod tests {
 
         // The egg rests on the block surface, so the chick fits right there.
         let pos = DVec3::new(0.5, 81.0, 0.5);
-        let egg = EntityArc::new(ThrownEggEntity::new(
+        let egg = Arc::new(ThrownEggEntity::new(
             &vanilla_entities::EGG,
             1,
             pos,

@@ -1,5 +1,4 @@
 use super::{block_breaking::BlockBreakAction, *};
-use crate::entity::EntityArc;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -29,7 +28,7 @@ impl Player {
     /// Handles the use of an item on a block.
     ///
     /// Implements the logic from Java's `ServerGamePacketListenerImpl.handleUseItemOn()`.
-    pub fn handle_use_item_on(self: &EntityArc<Self>, packet: SUseItemOn) {
+    pub fn handle_use_item_on(self: &Arc<Self>, packet: SUseItemOn) {
         if !self.has_client_loaded() {
             return;
         }
@@ -94,7 +93,7 @@ impl Player {
     }
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
-    pub fn handle_player_action(self: &EntityArc<Self>, packet: SPlayerAction) {
+    pub fn handle_player_action(self: &Arc<Self>, packet: SPlayerAction) {
         if !self.has_client_loaded() {
             return;
         }

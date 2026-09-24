@@ -11,6 +11,7 @@ mod signature_cache;
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
 
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
@@ -26,7 +27,6 @@ use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
-use crate::entity::EntityArc;
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
@@ -239,7 +239,7 @@ impl Player {
     }
 
     /// Handles a chat message from the player.
-    pub fn handle_chat(&self, packet: SChat, player: EntityArc<Player>) {
+    pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
         player.reset_last_action_time();
         let chat_message = packet.message.clone();
 
@@ -333,7 +333,7 @@ impl Player {
             for world in self.server().worlds.values() {
                 world.broadcast_chat(
                     chat_packet.clone(),
-                    EntityArc::clone(&player),
+                    Arc::clone(&player),
                     last_seen.clone(),
                     Some(&sig_array),
                 );

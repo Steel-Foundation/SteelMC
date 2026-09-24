@@ -1,6 +1,7 @@
 use super::look_at_player::LookAtPlayerGoal;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntity};
+use crate::entity::PathfinderMob;
+use crate::entity::SharedEntity;
 
 pub struct InteractGoal {
     look_at: LookAtPlayerGoal,
@@ -21,10 +22,6 @@ impl InteractGoal {
 }
 
 impl Goal for InteractGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        self.look_at.visit_entity_references(visitor);
-    }
-
     fn controls(&self) -> GoalControls {
         self.look_at.controls()
     }

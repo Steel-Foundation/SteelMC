@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 use std::sync::Arc;
 
 /// Trials for the random breeding-color fallback assertion.
@@ -113,9 +112,9 @@ fn sheep_shear_drops_wool_and_damages_shears() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
-    let shared: SharedEntity = EntityArc::new(sheep);
+    let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(EntityArc::clone(&shared))
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
@@ -154,9 +153,9 @@ fn sheep_shear_interaction_is_consumed_when_not_ready() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
-    let shared: SharedEntity = EntityArc::new(sheep);
+    let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(EntityArc::clone(&shared))
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
@@ -200,13 +199,13 @@ fn sheep_breeding_mixes_parent_colors_through_dye_recipes() {
     ] {
         let partner = SheepEntity::new(&vanilla_entities::SHEEP, 2, DVec3::ZERO, Weak::new());
         partner.set_color(partner_color);
-        let partner_shared: SharedEntity = EntityArc::new(partner);
+        let partner_shared: SharedEntity = Arc::new(partner);
         let partner = partner_shared
             .as_animal()
             .expect("sheep should be an animal");
 
         let sheep = SheepEntity::new(&vanilla_entities::SHEEP, 1, DVec3::ZERO, Weak::new());
-        let sheep_shared: SharedEntity = EntityArc::new(sheep);
+        let sheep_shared: SharedEntity = Arc::new(sheep);
         let sheep = sheep_shared
             .downcast_ref::<SheepEntity>()
             .expect("shared entity should be a sheep");
@@ -229,13 +228,13 @@ fn sheep_breeding_falls_back_to_a_parent_color_without_a_mix_recipe() {
     let world = fresh_test_world("sheep_breeding_fallback");
     let partner = SheepEntity::new(&vanilla_entities::SHEEP, 2, DVec3::ZERO, Weak::new());
     partner.set_color(DyeColor::Black);
-    let partner_shared: SharedEntity = EntityArc::new(partner);
+    let partner_shared: SharedEntity = Arc::new(partner);
     let partner = partner_shared
         .as_animal()
         .expect("sheep should be an animal");
 
     let sheep = SheepEntity::new(&vanilla_entities::SHEEP, 1, DVec3::ZERO, Weak::new());
-    let sheep_shared: SharedEntity = EntityArc::new(sheep);
+    let sheep_shared: SharedEntity = Arc::new(sheep);
     let sheep = sheep_shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
@@ -269,9 +268,9 @@ fn sheep_shearing_drop_spawns_one_item_entity_per_count_unit() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
-    let shared: SharedEntity = EntityArc::new(sheep);
+    let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(EntityArc::clone(&shared))
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
@@ -306,9 +305,9 @@ fn dye_item_dyes_an_unsheared_sheep_and_consumes_the_dye() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
-    let shared: SharedEntity = EntityArc::new(sheep);
+    let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(EntityArc::clone(&shared))
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
@@ -345,9 +344,9 @@ fn dye_item_passes_for_sheared_or_matching_color_sheep() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
-    let shared: SharedEntity = EntityArc::new(sheep);
+    let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(EntityArc::clone(&shared))
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
@@ -461,9 +460,9 @@ fn sheep_shear_loot_resolves_the_matching_color_table() {
         Arc::downgrade(&world),
     );
     sheep.set_color(DyeColor::Red);
-    let shared: SharedEntity = EntityArc::new(sheep);
+    let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(EntityArc::clone(&shared))
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()

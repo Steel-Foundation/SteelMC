@@ -4,9 +4,7 @@ use super::reduced_tick_delay;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{
-    EntityReferenceVisitor, LivingEntity, PathfinderMob, SharedEntity, SharedEntityReference,
-};
+use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_PROBABILITY: f32 = 0.02;
@@ -19,7 +17,7 @@ enum LookAtTargetType {
 }
 
 pub struct LookAtPlayerGoal {
-    look_at: Option<SharedEntityReference>,
+    look_at: Option<SharedEntity>,
     look_distance: f64,
     look_time: i32,
     probability: f32,
@@ -110,10 +108,6 @@ impl LookAtPlayerGoal {
 }
 
 impl Goal for LookAtPlayerGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.look_at);
-    }
-
     fn controls(&self) -> GoalControls {
         self.controls
     }
@@ -147,8 +141,7 @@ impl Goal for LookAtPlayerGoal {
                     })
                 })
             }
-        }
-        .map(SharedEntityReference::new);
+        };
 
         self.look_at.is_some()
     }

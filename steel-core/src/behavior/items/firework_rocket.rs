@@ -15,9 +15,9 @@ use steel_utils::Direction;
 use crate::behavior::context::{InteractionResult, UseItemContext, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use crate::enchantment_helper;
+use crate::entity::LivingEntityRef;
 use crate::entity::entities::FireworkRocketEntity;
 use crate::entity::{Entity, Projectile, SharedEntity, next_entity_id};
-use crate::entity::{EntityArc, LivingEntityRef};
 use crate::world::World;
 
 const ROCKET_PLACEMENT_OFFSET: f64 = 0.15;
@@ -28,8 +28,8 @@ pub struct FireworkRocketItem;
 
 impl FireworkRocketItem {
     fn add_rocket(world: &Arc<World>, rocket: FireworkRocketEntity) -> SharedEntity {
-        let entity: SharedEntity = EntityArc::new(rocket);
-        if let Err(error) = world.try_add_entity(EntityArc::clone(&entity)) {
+        let entity: SharedEntity = Arc::new(rocket);
+        if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
             log::debug!("failed to spawn firework rocket: {error}");
         }
         entity

@@ -10,7 +10,7 @@ use super::{
     SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
     command_suggestions_packet, sleep, spawn_blocking,
 };
-use crate::entity::EntityArc;
+
 use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
@@ -440,12 +440,12 @@ impl Server {
 
     fn send_command_suggestions(
         self: &Arc<Self>,
-        player: &EntityArc<Player>,
+        player: &Arc<Player>,
         transaction_id: i32,
         input: &str,
     ) {
         let suggestions =
-            self.build_command_suggestions(CommandSender::Player(EntityArc::clone(player)), input);
+            self.build_command_suggestions(CommandSender::Player(Arc::clone(player)), input);
         match suggestions {
             Ok(suggestions) => {
                 player.send_packet(command_suggestions_packet(transaction_id, &suggestions));
@@ -531,7 +531,7 @@ impl Server {
     /// Three-phase chunk send for a single player: prepare (lock briefly),
     /// encode (no lock), commit (lock briefly + generation check).
     fn send_chunks_for_player(
-        player: &EntityArc<Player>,
+        player: &Arc<Player>,
         world: &Arc<World>,
         encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
         encoding_pool: &ThreadPool,
@@ -587,10 +587,8 @@ impl Server {
     ) -> Result<(), WorldTickWorkerError> {
         if runs_normally {
             self.worlds.advance_domain_game_times();
-            self.damage_history.expire();
         }
-        // Ownership cleanup also runs when simulation time is frozen.
-        self.damage_history.collect_unreachable();
+        self.damage_history.expire();
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
@@ -655,7 +653,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::Server;
-    use crate::entity::EntityArc;
+
     use crate::{
         player::ResetReason,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
@@ -669,7 +667,7 @@ mod tests {
         let center = ChunkPos::new(0, 0);
         insert_ready_full_chunk(&world, center);
         let player = TestPlayerBuilder::new(Arc::clone(&world), "ChunkTester", 1).build();
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 
         let encoding_pool = rayon::ThreadPoolBuilder::new().num_threads(1).build();
@@ -685,7 +683,7 @@ mod tests {
         assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
-        assert!(world.players.insert(EntityArc::clone(&player)));
+        assert!(world.players.insert(Arc::clone(&player)));
         world.remove_player_for_world_change(&player);
     }
 }

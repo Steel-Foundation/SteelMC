@@ -1,6 +1,6 @@
 //! Vanilla player inventory clearing command.
 
-use std::slice;
+use std::{slice, sync::Arc};
 
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{Identifier, translations};
@@ -14,7 +14,6 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::EntityArc;
 use crate::{entity::Entity as _, player::Player};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -78,7 +77,7 @@ fn clear_matching_with_count(
 
 fn clear_players(
     context: &SteelCommandContext<CommandSource>,
-    targets: &[EntityArc<Player>],
+    targets: &[Arc<Player>],
     predicate: &dyn Fn(&ItemStack) -> bool,
     max_count: i32,
 ) -> Result<i32, CommandSyntaxError> {

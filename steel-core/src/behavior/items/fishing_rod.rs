@@ -1,5 +1,4 @@
 use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext};
-use crate::entity::EntityArc;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::entity::{Entity, RemovalReason, SharedEntity, next_entity_id};
 use glam::DVec3;
@@ -72,7 +71,7 @@ impl ItemBehavior for FishingRodItem {
                 0.0,
             );
 
-            let hook = EntityArc::new(FishingHookEntity::new(
+            let hook = Arc::new(FishingHookEntity::new(
                 &vanilla_entities::FISHING_BOBBER,
                 next_entity_id(),
                 spawn_pos,
@@ -88,7 +87,7 @@ impl ItemBehavior for FishingRodItem {
 
             let entity: SharedEntity = hook;
 
-            if let Err(error) = world.try_add_entity(EntityArc::clone(&entity)) {
+            if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
                 entity.set_removed(RemovalReason::Discarded);
                 log::error!("Failed to spawn fishing hook: {error}");
                 return InteractionResult::Fail;
@@ -110,7 +109,6 @@ mod tests {
 
     use super::*;
     use crate::behavior::UseItemContext;
-    use crate::entity::EntityArc;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
     #[test]
@@ -122,9 +120,9 @@ mod tests {
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
 
-        let player_owner = EntityArc::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
-        let hook = EntityArc::new(FishingHookEntity::new(
+        let hook = Arc::new(FishingHookEntity::new(
             &vanilla_entities::FISHING_BOBBER,
             2,
             DVec3::ZERO,
@@ -160,7 +158,7 @@ mod tests {
         player
             .try_set_position(DVec3::new(8.0, 64.0, 8.0))
             .expect("should position player in center of chunk");
-        world.players.insert(EntityArc::clone(&player));
+        world.players.insert(Arc::clone(&player));
         player
             .inventory
             .lock()

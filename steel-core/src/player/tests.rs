@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
-use crate::entity::EntityArc;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
     damage::DamageSource, entities::ItemEntity, next_entity_id,
@@ -234,7 +233,7 @@ fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
     entity_ids
 }
 
-fn test_player(world: Arc<World>) -> EntityArc<Player> {
+fn test_player(world: Arc<World>) -> Arc<Player> {
     let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
@@ -610,7 +609,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
         .connection(connection)
         .build();
-    let item: SharedEntity = EntityArc::new(ItemEntity::new(
+    let item: SharedEntity = Arc::new(ItemEntity::new(
         &vanilla_entities::ITEM,
         2,
         DVec3::ZERO,
@@ -620,7 +619,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     world.entity_tracker().add(
         &item,
         |_| vec![player.id()],
-        |player_id| (player_id == player.id()).then(|| EntityArc::clone(&player)),
+        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
     );
     assert_eq!(
         world.entity_tracker().tracking_player_ids(item.id()),
@@ -725,7 +724,7 @@ fn end_credits_removes_all_menus_before_detaching() {
     init_vanilla_registry();
     let world = fresh_test_world("end_credits_menu_removal");
     let player = test_player(Arc::clone(&world));
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
 
     player
@@ -769,7 +768,7 @@ fn admitted_world_change_prevents_end_credits_detach() {
     init_vanilla_registry();
     let world = fresh_test_world("end_credits_pending_world_change");
     let player = test_player(Arc::clone(&world));
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     let Some(pending_token) = player.begin_pending_world_change() else {
         panic!("test player should accept a pending world change");
@@ -792,9 +791,9 @@ fn duplicate_exact_player_admission_cleans_existing_membership() {
     init_vanilla_registry();
     let world = fresh_test_world("duplicate_player_admission");
     let player = test_player(Arc::clone(&world));
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
 
-    assert!(!world.add_player(EntityArc::clone(&player), ResetReason::WorldChange));
+    assert!(!world.add_player(Arc::clone(&player), ResetReason::WorldChange));
 
     assert!(!world.contains_player(&player));
     assert!(world.get_entity_by_id(player.id()).is_none());
@@ -857,7 +856,7 @@ fn hurt_uses_explicit_world_difficulty() {
 fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
     let world = hard_damage_test_world();
     let causing_player: SharedEntity = test_player(Arc::clone(world));
-    let object: SharedEntity = EntityArc::new(ItemEntity::new(
+    let object: SharedEntity = Arc::new(ItemEntity::new(
         &vanilla_entities::ITEM,
         2,
         DVec3::ZERO,
@@ -966,7 +965,7 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
     assert!(attacker.get_health() < attacker_health);
     let retaliation = attacker.last_damage_source().expect("Thorns retaliation");
     assert_eq!(retaliation.damage_type, &vanilla_damage_types::THORNS);
-    assert!(EntityArc::ptr_eq(
+    assert!(Arc::ptr_eq(
         retaliation.causing_entity().expect("Thorns owner"),
         &target,
     ));
@@ -1641,19 +1640,19 @@ fn throttle_player_dropping_items_from_creative_menu() {
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    EntityArc::clone(&player).tick();
+    Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
     for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
-        EntityArc::clone(&player).tick();
+        Arc::clone(&player).tick();
     }
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    EntityArc::clone(&player).tick();
+    Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }

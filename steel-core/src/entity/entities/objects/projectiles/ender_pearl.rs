@@ -28,7 +28,6 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::{
@@ -218,7 +217,7 @@ impl EnderPearlEntity {
             as_passenger: false,
             post_transition: TeleportPostTransition::do_nothing(),
         };
-        let Some(new_owner) = change_entity_world(EntityArc::clone(owner), &transition) else {
+        let Some(new_owner) = change_entity_world(Arc::clone(owner), &transition) else {
             log::debug!("failed to teleport ender pearl owner {}", self.id());
             return;
         };
@@ -252,7 +251,7 @@ impl Entity for EnderPearlEntity {
         self.entity_type
     }
 
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         // Vanilla `ThrownEnderpearl.tick`: vanish if the owner died (gamerule),
         // otherwise run the throwable projectile movement/collision loop and keep
         // the pearl's chunk loaded via the ENDER_PEARL ticket.
@@ -267,7 +266,7 @@ impl Entity for EnderPearlEntity {
             return;
         }
 
-        EntityArc::clone(&self).throwable_projectile_tick();
+        Arc::clone(&self).throwable_projectile_tick();
 
         if self.is_alive() {
             self.update_ender_pearl_ticket(&world);
@@ -330,7 +329,7 @@ impl Projectile for EnderPearlEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(self: EntityArc<Self>, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `ThrownEnderpearl.onHitEntity`: deal 0 damage with a `thrown`
         // source so the hit entity registers the impact without being hurt.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
@@ -343,9 +342,9 @@ impl Projectile for EnderPearlEntity {
         }
     }
 
-    fn on_hit(self: EntityArc<Self>, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        EntityArc::clone(&self).projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {
@@ -400,7 +399,6 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
     use steel_utils::{BlockPos, ChunkPos};
 
-    use crate::entity::EntityArc;
     use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile};
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
@@ -480,7 +478,7 @@ mod tests {
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
         let owner: SharedEntity = player.clone();
-        let pearl = EntityArc::new(EnderPearlEntity::new(
+        let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(0.5, 64.0, 0.5),

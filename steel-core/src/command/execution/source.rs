@@ -11,7 +11,6 @@ use steel_registry::{
 use steel_utils::translations;
 use text_components::{Modifier, TextComponent, format::Color};
 
-use crate::entity::EntityArc;
 use crate::{
     command::{
         brigadier::CommandSyntaxError,
@@ -244,7 +243,7 @@ impl CommandAuthorizationContext {
 #[derive(Clone)]
 pub(crate) struct CommandSource {
     sender: CommandSender,
-    player: Option<EntityArc<Player>>,
+    player: Option<Arc<Player>>,
     entity: Option<SharedEntity>,
     world: Arc<World>,
     server: Arc<Server>,
@@ -260,14 +259,14 @@ pub(crate) struct CommandSource {
 
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
-        let player = sender.get_player().cloned();
+        let player = sender.get_player().map(Arc::clone);
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
             |player| player.get_world(),
         );
         let entity = player
             .as_ref()
-            .map(|player| EntityArc::clone(player) as SharedEntity);
+            .map(|player| Arc::clone(player) as SharedEntity);
         let position = entity.as_ref().map_or_else(
             || {
                 let level_data = world.level_data.read();
@@ -321,7 +320,7 @@ impl CommandSource {
         &self.sender
     }
 
-    pub(crate) const fn player(&self) -> Option<&EntityArc<Player>> {
+    pub(crate) const fn player(&self) -> Option<&Arc<Player>> {
         self.player.as_ref()
     }
 

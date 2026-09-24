@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 use crate::entity::{ENTITY_LOAD_MAX_HORIZONTAL_POSITION, ENTITY_LOAD_MAX_VERTICAL_POSITION};
 use steel_registry::RegistryEntry as _;
 
@@ -193,7 +192,7 @@ fn proto_entities_roundtrip_and_promote_to_full_chunk() {
     let pos = ChunkPos::new(0, 0);
     let entity_pos = DVec3::new(5.5, 6.0, 7.5);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-    let crystal = EntityArc::new(EndCrystalEntity::new(
+    let crystal = Arc::new(EndCrystalEntity::new(
         &vanilla_entities::END_CRYSTAL,
         next_entity_id(),
         entity_pos,
@@ -327,7 +326,7 @@ fn prepared_save_reports_handled_runtime_entity_ids() {
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
     let chunk = proto;
-    let entity: SharedEntity = EntityArc::new(EndCrystalEntity::new(
+    let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
         &vanilla_entities::END_CRYSTAL,
         next_entity_id(),
         DVec3::new(5.5, 6.0, 7.5),
@@ -354,7 +353,7 @@ fn full_chunk_load_defers_entities_to_world_registration() {
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
     let chunk = proto;
-    let entity: SharedEntity = EntityArc::new(EndCrystalEntity::new(
+    let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
         &vanilla_entities::END_CRYSTAL,
         next_entity_id(),
         DVec3::new(5.5, 6.0, 7.5),
@@ -391,13 +390,13 @@ fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
     let chunk = proto;
-    let vehicle: SharedEntity = EntityArc::new(EndCrystalEntity::new(
+    let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
         &vanilla_entities::END_CRYSTAL,
         next_entity_id(),
         DVec3::new(5.5, 6.0, 7.5),
         Weak::new(),
     ));
-    let passenger: SharedEntity = EntityArc::new(EndCrystalEntity::new(
+    let passenger: SharedEntity = Arc::new(EndCrystalEntity::new(
         &vanilla_entities::END_CRYSTAL,
         next_entity_id(),
         DVec3::new(5.5, 8.0, 7.5),
@@ -406,7 +405,7 @@ fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     let vehicle_uuid = vehicle.uuid();
     let passenger_uuid = passenger.uuid();
-    let entities = [EntityArc::clone(&vehicle), EntityArc::clone(&passenger)];
+    let entities = [Arc::clone(&vehicle), Arc::clone(&passenger)];
 
     let Some(prepared) =
         ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Features, &entities, true)
@@ -457,7 +456,7 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
     let chunk = proto;
-    let vehicle: SharedEntity = EntityArc::new(EndCrystalEntity::new(
+    let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
         &vanilla_entities::END_CRYSTAL,
         next_entity_id(),
         DVec3::new(5.5, 6.0, 7.5),

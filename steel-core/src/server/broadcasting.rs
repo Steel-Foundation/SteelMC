@@ -4,7 +4,6 @@ use super::{
     TabListTickStats, TextComponent, Uuid, client_permission_event, command_tree_packet,
     translations,
 };
-use crate::entity::EntityArc;
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
@@ -12,7 +11,7 @@ impl Server {
         log::info!("{}", message.to_plain(&DisplayResolutor));
         self.online_players.iter_players(|uuid, player| {
             if Some(*uuid) != excluded_player {
-                player.send_packet(CSystemChat::new(message, false, player.as_ref()));
+                player.send_packet(CSystemChat::new(message, false, player));
             }
             true
         });
@@ -144,7 +143,7 @@ impl Server {
     }
 
     /// Resends client state that is not fully covered by `CRespawn`.
-    pub fn resend_player_context(self: &Arc<Self>, player: &EntityArc<Player>) {
+    pub fn resend_player_context(self: &Arc<Self>, player: &Arc<Player>) {
         player.send_difficulty();
         player.send_inventory_to_remote();
 
@@ -154,7 +153,7 @@ impl Server {
     }
 
     /// Resends the command tree and vanilla client permission-level projection.
-    pub fn resend_player_permission_context(self: &Arc<Self>, player: &EntityArc<Player>) {
+    pub fn resend_player_permission_context(self: &Arc<Self>, player: &Arc<Player>) {
         let world = player.get_world();
         player.send_packet(CEntityEvent {
             entity_id: player.id(),
@@ -176,7 +175,7 @@ impl Server {
             );
             return;
         };
-        if !EntityArc::ptr_eq(&shared_player, player) {
+        if !Arc::ptr_eq(&shared_player, player) {
             tracing::error!(
                 player = %player.gameprofile.name,
                 "cannot project commands for a stale player handle"

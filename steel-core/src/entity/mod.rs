@@ -1,5 +1,6 @@
 //! This module contains entity-related traits and types.
 
+use std::sync::Weak;
 use std::{
     any::try_as_dyn,
     borrow::Cow,
@@ -776,13 +777,13 @@ mod item_frame;
 mod leash;
 mod living_base;
 mod living_entity;
+mod living_reference;
 mod manager;
 mod mob;
 pub mod mob_effect;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
-mod reference;
 mod registry;
 mod spawn;
 mod storage;
@@ -872,18 +873,13 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-pub use reference::{
-    EntityArc, EntityOwnedState, EntityReference, EntityReferenceVisitor, EntityWeak,
-    LivingEntityRef, VisitEntityReferences,
-};
+pub use living_reference::LivingEntityRef;
 
 /// Shared ownership of an entity through its gameplay interface.
-pub type SharedEntity = EntityArc<dyn Entity>;
-/// A strong entity field tracked through its containing state.
-pub type SharedEntityReference = EntityReference<dyn Entity>;
+pub type SharedEntity = Arc<dyn Entity>;
 
 /// Type alias for a weak entity reference.
-pub type WeakEntity = EntityWeak<dyn Entity>;
+pub type WeakEntity = Weak<dyn Entity>;
 
 /// The point on an entity used by commands that resolve positions or facing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1101,7 +1097,7 @@ fn indirect_passengers(entity: &dyn Entity) -> Vec<SharedEntity> {
             if !visited.insert(passenger.id()) {
                 continue;
             }
-            output.push(EntityArc::clone(&passenger));
+            output.push(Arc::clone(&passenger));
             collect(passenger.passengers(), visited, output);
         }
     }
@@ -1187,7 +1183,7 @@ fn teleport_entity_cross_world(
 
     if let Err(error) = teleport_transition
         .target_world
-        .try_add_entity(EntityArc::clone(&new_entity))
+        .try_add_entity(Arc::clone(&new_entity))
     {
         tracing::warn!(
             entity_id = entity.id(),

@@ -16,7 +16,6 @@ use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, RemovalReason,
@@ -121,7 +120,7 @@ impl ExperienceOrbEntity {
                 continue;
             }
 
-            let entity: SharedEntity = EntityArc::new(Self::with_value(
+            let entity: SharedEntity = Arc::new(Self::with_value(
                 &vanilla_entities::EXPERIENCE_ORB,
                 next_entity_id(),
                 position,
@@ -358,7 +357,7 @@ impl ExperienceOrbEntity {
     }
 
     /// Attempts to have a player pick up this experience orb.
-    pub fn try_pickup(&self, player: &EntityArc<Player>) -> bool {
+    pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
         if player.take_xp_delay() != 0 {
             return false;
         }
@@ -402,7 +401,7 @@ impl Entity for ExperienceOrbEntity {
         self.entity_type
     }
 
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         self.set_old_position_to_current();
 
@@ -442,7 +441,7 @@ impl Entity for ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if EntityArc::clone(&self)
+        if Arc::clone(&self)
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {
@@ -484,7 +483,7 @@ impl Entity for ExperienceOrbEntity {
         Some(&self.entity_data)
     }
 
-    fn player_touch(self: EntityArc<Self>, player: &EntityArc<Player>) {
+    fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
         self.try_pickup(player);
     }
 

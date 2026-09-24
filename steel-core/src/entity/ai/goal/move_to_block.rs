@@ -251,13 +251,14 @@ const fn next_mirrored_offset(value: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::entities::PigEntity;
 
     #[test]
@@ -318,7 +319,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
-        let mob = EntityArc::new(PigEntity::new(
+        let mob = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(0.5, 0.5, 0.5),

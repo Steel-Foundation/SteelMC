@@ -16,7 +16,6 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::EntityArc;
 use crate::{
     entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
     portal::{TeleportPostTransition, TeleportTransition},
@@ -278,7 +277,7 @@ fn perform_teleport(
             camera_id: player.id(),
         });
     }
-    if change_entity_world(EntityArc::clone(target), &transition).is_none() {
+    if change_entity_world(Arc::clone(target), &transition).is_none() {
         return;
     }
 
@@ -476,7 +475,6 @@ mod tests {
         brigadier::{CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-
     use glam::DVec3;
     use steel_protocol::packets::game::RelativeMovement;
     use steel_registry::init_vanilla_registry;

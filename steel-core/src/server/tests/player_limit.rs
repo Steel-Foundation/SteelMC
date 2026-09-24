@@ -5,7 +5,7 @@ use text_components::TextComponent;
 use tokio::{fs, runtime::Builder};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityArc};
+use crate::entity::Entity;
 use crate::permission::{
     OP_GROUP, PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataEntry,
     PermissionMetadataRuleConfig, PermissionMetadataSet, PermissionMetadataValue, PermissionSet,
@@ -44,14 +44,11 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         assert!(fast_reservation.is_some());
         assert!(!server.is_player_limit_reached(fast.gameprofile.id));
 
-        assert_eq!(
-            server.admit_reserved_player(EntityArc::clone(&fast)),
-            Ok(())
-        );
+        assert_eq!(server.admit_reserved_player(Arc::clone(&fast)), Ok(()));
         assert!(server.is_player_limit_reached(slow.gameprofile.id));
         assert!(server.is_player_limit_reached(fast.gameprofile.id));
         assert_eq!(
-            server.admit_reserved_player(EntityArc::clone(&slow)),
+            server.admit_reserved_player(Arc::clone(&slow)),
             Err(PlayerJoinError::ServerFull),
         );
         assert_eq!(server.player_count(), 1);
@@ -169,7 +166,7 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
             spawn_chunk_request: world.request_player_spawn_chunks(position),
         };
         server.finish_prepared_player_join(PendingPlayerJoin {
-            player: EntityArc::clone(&player),
+            player: Arc::clone(&player),
             state: Ok(state),
         });
 

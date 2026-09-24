@@ -10,24 +10,29 @@ use crate::level_data::GameTime;
 use super::DamageSource;
 
 mod binding;
-mod collection;
+mod source;
 
 pub(crate) use binding::DamageHistoryBinding;
 use binding::DamageHistoryVictim;
+pub use source::RecentDamageSource;
+use source::WeakDamageSource;
 
 /// Maximum retained age from vanilla `LivingEntity.getLastDamageSource`.
 const MAX_DAMAGE_SOURCE_AGE_TICKS: i64 = 40;
 
 struct DamageRecord {
     victim_lifetime: Weak<DamageHistoryVictim>,
-    source: DamageSource,
+    owner: Weak<()>,
+    source: WeakDamageSource,
+    retained: Option<DamageSource>,
     timestamp: i64,
     clock: Arc<GameTime>,
 }
 
 impl DamageRecord {
     fn is_expired(&self) -> bool {
-        self.clock.ticks().wrapping_sub(self.timestamp) > MAX_DAMAGE_SOURCE_AGE_TICKS
+        self.victim_lifetime.strong_count() == 0
+            || self.clock.ticks().wrapping_sub(self.timestamp) > MAX_DAMAGE_SOURCE_AGE_TICKS
     }
 }
 
@@ -35,6 +40,8 @@ impl DamageRecord {
 ///
 /// Entities and worlds link back weakly. Records retain the victim's clock,
 /// which has no world back-reference, to avoid cycles through the victim or world.
+/// Only gameplay-owned victims retain strong sources. Removal downgrades their
+/// own record; an ownership sweep also covers disconnects and manager teardown.
 #[derive(Default)]
 pub struct DamageHistory {
     records: SyncMutex<FxHashMap<EntityGeneration, DamageRecord>>,
@@ -47,26 +54,22 @@ impl DamageHistory {
         source: &DamageSource,
         clock: &Arc<GameTime>,
     ) {
-        let generation = victim.generation();
-        let record = DamageRecord {
-            victim_lifetime: victim.damage_history().bind(self, generation),
-            source: source.clone(),
-            timestamp: clock.ticks(),
-            clock: Arc::clone(clock),
-        };
-        let replaced = self.records.lock().insert(generation, record);
-        // Entity destructors must run outside the history lock.
-        drop(replaced);
+        victim
+            .damage_history()
+            .record(self, victim.generation(), source, clock);
     }
 
-    pub(crate) fn last_damage_source(&self, victim: EntityGeneration) -> Option<DamageSource> {
+    pub(crate) fn last_damage_source(
+        &self,
+        victim: EntityGeneration,
+    ) -> Option<RecentDamageSource> {
         let (source, expired) = {
             let mut records = self.records.lock();
             if records.get(&victim).is_some_and(DamageRecord::is_expired) {
                 (None, records.remove(&victim))
             } else {
                 (
-                    records.get(&victim).map(|record| record.source.clone()),
+                    records.get(&victim).map(|record| record.source.resolve()),
                     None,
                 )
             }
@@ -80,15 +83,23 @@ impl DamageHistory {
         drop(removed);
     }
 
-    /// Releases expired sources even when nobody calls the entity's getter.
+    /// Releases expired records and strong sources with no gameplay owner.
+    /// Runs while frozen too; expiry still uses the unchanged gameplay clock.
     pub(crate) fn expire(&self) {
-        let expired: Vec<_> = self
-            .records
-            .lock()
-            .extract_if(|_, record| record.is_expired())
-            .map(|(_, record)| record)
-            .collect();
-        drop(expired);
+        let (expired, released) = {
+            let mut records = self.records.lock();
+            let expired: Vec<_> = records
+                .extract_if(|_, record| record.is_expired())
+                .map(|(_, record)| record)
+                .collect();
+            let released: Vec<_> = records
+                .values_mut()
+                .filter(|record| record.owner.strong_count() == 0)
+                .filter_map(|record| record.retained.take())
+                .collect();
+            (expired, released)
+        };
+        drop((expired, released));
     }
 
     /// Releases history ownership after gameplay work has stopped.

@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 use crate::entity::leash::{LeashAttachment, Leashable};
 
 #[test]
@@ -13,7 +12,7 @@ fn pig_saves_vanilla_mob_age_and_variant_data() {
     pig.set_home_to(BlockPos::new(11, 64, -3), 7);
     pig.set_death_loot_table(Some(Identifier::vanilla_static("entities/pig")));
     pig.set_death_loot_table_seed(1234);
-    let leash_holder: SharedEntity = EntityArc::new(PigEntity::new(
+    let leash_holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
@@ -163,7 +162,7 @@ fn pig_saves_live_fence_knot_leash_as_vanilla_block_pos_int_array() {
     init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-    let knot: SharedEntity = EntityArc::new(LeashFenceKnotEntity::new_attached(
+    let knot: SharedEntity = Arc::new(LeashFenceKnotEntity::new_attached(
         &vanilla_entities::LEASH_KNOT,
         2,
         BlockPos::new(4, 65, -9),
@@ -208,7 +207,7 @@ fn pig_drop_leash_clears_live_leash_state() {
     init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-    let holder: SharedEntity = EntityArc::new(PigEntity::new(
+    let holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
@@ -227,7 +226,7 @@ fn pig_remove_leash_clears_live_leash_state() {
     init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-    let holder: SharedEntity = EntityArc::new(PigEntity::new(
+    let holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
@@ -246,7 +245,7 @@ fn pig_drop_all_leash_connections_clears_own_live_leash() {
     init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-    let holder: SharedEntity = EntityArc::new(PigEntity::new(
+    let holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,

@@ -56,13 +56,14 @@ impl Goal for OpenDoorGoal {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::entities::PigEntity;
 
     fn pig() -> PigEntity {
@@ -90,7 +91,7 @@ mod tests {
     fn open_door_goal_uses_vanilla_forget_time() {
         init_vanilla_registry();
         let mut goal = OpenDoorGoal::new(true);
-        let mob = EntityArc::new(pig());
+        let mob = Arc::new(pig());
         let mob_entity: SharedEntity = mob.clone();
 
         goal.start(mob.as_ref());

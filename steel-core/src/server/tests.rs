@@ -49,7 +49,7 @@ use crate::command::execution::{
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
-use crate::entity::EntityArc;
+
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
@@ -579,8 +579,8 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         };
 
         let player = test_player(&server, Arc::clone(&source_world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         let source_residence = player.domain_residence_token();
 
@@ -596,12 +596,12 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
             panic!("target-domain data should save: {error}");
         }
 
-        let queued = server.queue_domain_switch(EntityArc::clone(&player), "target".to_owned());
+        let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
         assert!(player.is_world_change_pending());
         assert!(
             server
-                .queue_domain_switch(EntityArc::clone(&player), "target".to_owned())
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
                 .is_err(),
             "the first admitted relocation must retain exclusive ownership"
         );
@@ -658,7 +658,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
             target_world
                 .players
                 .get_by_uuid(&player.gameprofile.id)
-                .is_some_and(|current| EntityArc::ptr_eq(&current, &player))
+                .is_some_and(|current| Arc::ptr_eq(&current, &player))
         );
         assert_eq!(player.position(), target_position);
 
@@ -689,7 +689,7 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
+        assert!(server.online_players.insert(Arc::clone(&player)));
 
         let residence_token = player.domain_residence_token();
         let root = PersistentRootVehicle {
@@ -707,7 +707,7 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             Arc::clone(&world),
             &root,
             residence_token,
@@ -716,7 +716,7 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
             panic!("valid root vehicle data should create a restore job");
         };
         let job = EnderPearlRestoreJob::new(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             Arc::clone(&world),
             pearl.entity,
             residence_token,
@@ -774,8 +774,8 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         };
         let old_player =
             test_player_with_packets(&server, Arc::clone(&world), "TestPlayer", next_entity_id()).0;
-        assert!(server.online_players.insert(EntityArc::clone(&old_player)));
-        assert!(world.add_player(EntityArc::clone(&old_player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
         let residence_token = old_player.domain_residence_token();
@@ -803,7 +803,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
-            EntityArc::clone(&old_player),
+            Arc::clone(&old_player),
             Arc::clone(&world),
             &root,
             residence_token,
@@ -812,7 +812,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
             panic!("valid root vehicle data should create a restore job");
         };
         let pearl_job = EnderPearlRestoreJob::new(
-            EntityArc::clone(&old_player),
+            Arc::clone(&old_player),
             Arc::clone(&world),
             pearl.entity,
             residence_token,
@@ -825,8 +825,8 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
 
         let replacement = old_player.new_respawn_replacement(Arc::clone(&world), true, false, true);
         assert!(world.detach_player_for_respawn(&old_player, true));
-        assert!(world.install_respawned_player(EntityArc::clone(&replacement), Some(&old_player),));
-        assert!(server.replace_online_player(&old_player, EntityArc::clone(&replacement)));
+        assert!(world.install_respawned_player(Arc::clone(&replacement), Some(&old_player),));
+        assert!(server.replace_online_player(&old_player, Arc::clone(&replacement)));
         let _ = replacement.mark_joined_world();
         assert!(old_player.session.replace_player(&old_player, &replacement));
 
@@ -887,8 +887,8 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
         let old_player = test_player_with_uuid(&server, Arc::clone(&world), uuid);
         let foreign_player = test_player_with_uuid(&server, Arc::clone(&world), uuid);
         assert!(!Arc::ptr_eq(&old_player.session, &foreign_player.session));
-        assert!(server.online_players.insert(EntityArc::clone(&old_player)));
-        assert!(world.add_player(EntityArc::clone(&old_player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
         let residence_token = old_player.domain_residence_token();
@@ -907,7 +907,7 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
-            EntityArc::clone(&old_player),
+            Arc::clone(&old_player),
             Arc::clone(&world),
             &root,
             residence_token,
@@ -916,7 +916,7 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
             panic!("valid root vehicle data should create a restore job");
         };
         let pearl_job = EnderPearlRestoreJob::new(
-            EntityArc::clone(&old_player),
+            Arc::clone(&old_player),
             Arc::clone(&world),
             pearl.entity,
             residence_token,
@@ -930,7 +930,7 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
         assert!(
             server
                 .online_players
-                .replace_player(&old_player, EntityArc::clone(&foreign_player))
+                .replace_player(&old_player, Arc::clone(&foreign_player))
         );
 
         server.tick_jobs(1, true);
@@ -982,8 +982,8 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         let source_token = player.domain_residence_token();
@@ -1002,7 +1002,7 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             Arc::clone(&world),
             &root,
             source_token,
@@ -1011,7 +1011,7 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
             panic!("valid root vehicle data should create a restore job");
         };
         let pearl_job = EnderPearlRestoreJob::new(
-            EntityArc::clone(&player),
+            Arc::clone(&player),
             Arc::clone(&world),
             pearl.entity,
             source_token,
@@ -1074,8 +1074,8 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
         };
         let (player, sent_packets) =
             test_player_with_packets(&server, Arc::clone(&world), "ChunkTester", 1);
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         let old_epoch = *player.chunk_send_epoch.lock();
@@ -1160,13 +1160,13 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         player
             .base()
             .set_position_local(DVec3::new(12.5, 70.0, -3.5));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         assert!(
             server
-                .queue_domain_switch(EntityArc::clone(&player), "target".to_owned())
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
                 .is_ok()
         );
         server.process_domain_switches();
@@ -1177,7 +1177,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         );
 
         player.connection.close();
-        server.queue_player_disconnect(EntityArc::clone(&player));
+        server.queue_player_disconnect(Arc::clone(&player));
         let mut disconnect_saves = JoinSet::new();
         server.start_player_disconnect_saves(&mut disconnect_saves);
         assert!(
@@ -1270,8 +1270,8 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
         };
 
         let player = test_player(&server, Arc::clone(&source_world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         let target_root_uuid = [8; 16];
@@ -1316,12 +1316,12 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
 
         assert!(
             server
-                .queue_domain_switch(EntityArc::clone(&player), "target".to_owned())
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
                 .is_ok()
         );
         server.process_domain_switches();
         assert!(
-            target_world.players.insert(EntityArc::clone(&player)),
+            target_world.players.insert(Arc::clone(&player)),
             "an injected duplicate target membership should force admission failure"
         );
 
@@ -1415,13 +1415,13 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
         };
 
         let player = test_player(&server, Arc::clone(&source_world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         assert!(
             server
-                .queue_domain_switch(EntityArc::clone(&player), "target".to_owned())
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
                 .is_ok()
         );
         player.set_health(0.0);
@@ -1470,8 +1470,8 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         let entity: SharedEntity = player.clone();
         let Some(pending_token) = entity.begin_pending_world_change() else {
@@ -1602,8 +1602,8 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         };
 
         let player = test_player(&server, Arc::clone(&source_world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
@@ -1617,7 +1617,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
             .await;
         assert!(matches!(target_before_switch, Ok(None)));
 
-        let queued = server.queue_domain_switch(EntityArc::clone(&player), "target".to_owned());
+        let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
         assert!(
             player.last_damage_source().is_some(),
@@ -1688,7 +1688,7 @@ fn command_world_scope_survives_entity_transforms() {
         };
         let player = test_player(&server, Arc::clone(&alpha));
         let player_source = CommandSource::new(
-            CommandSender::Player(EntityArc::clone(&player)),
+            CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
         );
 
@@ -1702,7 +1702,7 @@ fn command_world_scope_survives_entity_transforms() {
         );
 
         player.set_world(Arc::clone(&beta));
-        let transformed = player_source.with_entity(EntityArc::clone(&player) as SharedEntity);
+        let transformed = player_source.with_entity(Arc::clone(&player) as SharedEntity);
         assert!(
             transformed.with_world(Arc::clone(&beta)).is_err(),
             "changing the execution entity must not change the initiating domain"
@@ -1761,24 +1761,23 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
             31,
         );
         let (receiver, _) = test_player_with_packets(&server, Arc::clone(&world), "Receiver", 32);
-        assert!(server.online_players.insert(EntityArc::clone(&initiator)));
-        assert!(server.online_players.insert(EntityArc::clone(&receiver)));
+        assert!(server.online_players.insert(Arc::clone(&initiator)));
+        assert!(server.online_players.insert(Arc::clone(&receiver)));
 
         let initiating_source = CommandSource::new(
-            CommandSender::Player(EntityArc::clone(&initiator)),
+            CommandSender::Player(Arc::clone(&initiator)),
             Arc::clone(&server),
         );
         server
             .player_permission_states
             .write()
             .set(initiator_uuid, PermissionSubjectState::default());
-        let transformed =
-            initiating_source.with_entity(EntityArc::clone(&receiver) as SharedEntity);
+        let transformed = initiating_source.with_entity(Arc::clone(&receiver) as SharedEntity);
 
         let Some(effective_player) = transformed.player() else {
             panic!("a player entity transform should retain an effective player");
         };
-        assert!(EntityArc::ptr_eq(effective_player, &receiver));
+        assert!(Arc::ptr_eq(effective_player, &receiver));
         assert!(CommandPermissionSource::has_permission(
             &transformed,
             &access
@@ -1789,7 +1788,7 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
         ));
 
         let receiver_source = CommandSource::new(
-            CommandSender::Player(EntityArc::clone(&receiver)),
+            CommandSender::Player(Arc::clone(&receiver)),
             Arc::clone(&server),
         );
         assert!(!CommandPermissionSource::has_permission(
@@ -1854,16 +1853,14 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&world));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
-        let pre_admission_owner = CommandExecutionOwner::capture(
-            CommandSender::Player(EntityArc::clone(&player)),
-            &server,
-        );
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let pre_admission_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
         assert!(
             !pre_admission_owner.is_current(&server),
             "world membership alone must not admit command work"
         );
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
+        assert!(server.online_players.insert(Arc::clone(&player)));
         let _ = player.mark_joined_world();
         assert!(
             !pre_admission_owner.is_current(&server),
@@ -1871,8 +1868,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         );
         let (remote, _) =
             test_player_with_packets(&server, Arc::clone(&remote_world), "Remote", 42);
-        assert!(server.online_players.insert(EntityArc::clone(&remote)));
-        assert!(remote_world.add_player(EntityArc::clone(&remote), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&remote)));
+        assert!(remote_world.add_player(Arc::clone(&remote), ResetReason::InitialJoin));
         let _ = remote.mark_joined_world();
 
         let selector = parse_entity_selector_text("@a");
@@ -1884,11 +1881,9 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             panic!("spatial all-player selector should parse");
         };
         let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
-        let transformed = source.with_entity(EntityArc::clone(&player) as SharedEntity);
-        let owner = CommandExecutionOwner::capture(
-            CommandSender::Player(EntityArc::clone(&player)),
-            &server,
-        );
+        let transformed = source.with_entity(Arc::clone(&player) as SharedEntity);
+        let owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
 
         assert!(owner.is_current(&server));
         assert!(transformed.execution_is_current());
@@ -1917,14 +1912,14 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         assert!(
             server
                 .submit_command(
-                    CommandSender::Player(EntityArc::clone(&player)),
+                    CommandSender::Player(Arc::clone(&player)),
                     "list".to_owned()
                 )
                 .is_ok()
         );
         assert!(
             server
-                .submit_command_suggestions(EntityArc::clone(&player), 1, "/".to_owned())
+                .submit_command_suggestions(Arc::clone(&player), 1, "/".to_owned())
                 .is_ok()
         );
 
@@ -1966,10 +1961,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         let Some((_data, _residence)) = world.detach_player_for_domain_switch(&player) else {
             panic!("test player should detach from its source world");
         };
-        let detached_owner = CommandExecutionOwner::capture(
-            CommandSender::Player(EntityArc::clone(&player)),
-            &server,
-        );
+        let detached_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
         assert!(player.mark_domain_switch_target_handshake(pending_token));
         assert!(server.command_world_for_player(&player).is_none());
         assert_eq!(
@@ -1989,12 +1982,12 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         assert!(
             server
                 .submit_command(
-                    CommandSender::Player(EntityArc::clone(&player)),
+                    CommandSender::Player(Arc::clone(&player)),
                     "list".to_owned()
                 )
                 .is_ok()
         );
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::WorldChange));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::WorldChange));
         assert!(player.mark_domain_switch_live(pending_token));
 
         assert!(server.command_world_for_player(&player).is_some());
@@ -2022,14 +2015,12 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             selector.find_players(&source).map(|players| players.len()),
             Ok(1)
         );
-        let target_owner = CommandExecutionOwner::capture(
-            CommandSender::Player(EntityArc::clone(&player)),
-            &server,
-        );
+        let target_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
         assert!(target_owner.is_current(&server));
         assert!(
             server
-                .submit_command_suggestions(EntityArc::clone(&player), 2, "/old".to_owned())
+                .submit_command_suggestions(Arc::clone(&player), 2, "/old".to_owned())
                 .is_ok()
         );
 
@@ -2038,22 +2029,22 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         world.remove_player_for_world_change(&player);
         assert!(server.online_players.remove_player_sync(&player).is_some());
         let replacement = test_player_with_uuid(&server, Arc::clone(&world), player.gameprofile.id);
-        assert!(server.online_players.insert(EntityArc::clone(&replacement)));
-        assert!(world.add_player(EntityArc::clone(&replacement), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&replacement)));
+        assert!(world.add_player(Arc::clone(&replacement), ResetReason::InitialJoin));
         assert!(
             !target_owner.is_current(&server),
             "a replacement login must not inherit queued work from the old Arc"
         );
         assert!(
             CommandExecutionOwner::capture(
-                CommandSender::Player(EntityArc::clone(&replacement)),
+                CommandSender::Player(Arc::clone(&replacement)),
                 &server
             )
             .is_current(&server)
         );
         assert!(
             server
-                .submit_command_suggestions(EntityArc::clone(&replacement), 3, "/new".to_owned())
+                .submit_command_suggestions(Arc::clone(&replacement), 3, "/new".to_owned())
                 .is_ok()
         );
         let mut suggestion_owners_are_current = Vec::new();
@@ -2130,30 +2121,27 @@ fn player_world_selection_uses_one_token_owned_route() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&source_world));
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         assert!(
             server
-                .queue_player_world_selection(
-                    EntityArc::clone(&player),
-                    Arc::clone(&stale_sibling_world)
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&stale_sibling_world))
                 .is_err()
         );
         assert!(!player.is_world_change_pending());
 
         assert!(
             server
-                .queue_player_world_selection(EntityArc::clone(&player), Arc::clone(&sibling_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&sibling_world))
                 .is_ok(),
             "world selection is authorization-neutral after command admission"
         );
         assert!(player.is_world_change_pending());
         assert!(
             server
-                .queue_player_world_selection(EntityArc::clone(&player), Arc::clone(&target_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
                 .is_err(),
             "the relocation lease must reject a repeated selection"
         );
@@ -2176,7 +2164,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(EntityArc::clone(&player), Arc::clone(&source_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&source_world))
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2192,7 +2180,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(EntityArc::clone(&player), Arc::clone(&target_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
                 .is_ok()
         );
         let request = server.pending_domain_switches.lock().pop();
@@ -2253,13 +2241,13 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         };
         let player = test_player(&server, Arc::clone(&source_world));
         let player_generation = player.generation();
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(source_world.players.insert(EntityArc::clone(&player)));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.players.insert(Arc::clone(&player)));
         let _ = player.mark_joined_world();
 
         assert!(
             server
-                .queue_player_world_selection(EntityArc::clone(&player), Arc::clone(&target_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2319,11 +2307,11 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
     });
 }
 
-fn test_player(server: &Arc<Server>, world: Arc<World>) -> EntityArc<Player> {
+fn test_player(server: &Arc<Server>, world: Arc<World>) -> Arc<Player> {
     test_player_with_packets(server, world, "TestPlayer", 1).0
 }
 
-fn test_player_with_uuid(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> EntityArc<Player> {
+fn test_player_with_uuid(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
     test_player_with_uuid_and_packets(server, world, uuid, "TestPlayer", 1).0
 }
 
@@ -2387,8 +2375,8 @@ async fn finish_test_respawn_job(server: &Arc<Server>, world: &Arc<World>) {
 fn current_respawn_replacement(
     server: &Arc<Server>,
     world: &Arc<World>,
-    old_player: &EntityArc<Player>,
-) -> EntityArc<Player> {
+    old_player: &Arc<Player>,
+) -> Arc<Player> {
     let Some(replacement) = server
         .online_players
         .get_by_uuid(&old_player.gameprofile.id)
@@ -2396,7 +2384,7 @@ fn current_respawn_replacement(
         panic!("respawn replacement should own the online-player index");
     };
 
-    assert!(!EntityArc::ptr_eq(&replacement, old_player));
+    assert!(!Arc::ptr_eq(&replacement, old_player));
     assert_eq!(replacement.gameprofile.id, old_player.gameprofile.id);
     assert_eq!(replacement.id(), old_player.id());
     assert_ne!(replacement.generation(), old_player.generation());
@@ -2411,7 +2399,7 @@ fn current_respawn_replacement(
         world
             .players
             .get_by_uuid(&replacement.gameprofile.id)
-            .is_some_and(|current| EntityArc::ptr_eq(&current, &replacement))
+            .is_some_and(|current| Arc::ptr_eq(&current, &replacement))
     );
     assert!(
         world
@@ -2458,7 +2446,7 @@ fn test_player_with_connection(
     name: &str,
     entity_id: i32,
     connection: Arc<PlayerConnection>,
-) -> EntityArc<Player> {
+) -> Arc<Player> {
     TestPlayerBuilder::new(world, name, entity_id)
         .connection(connection)
         .server(server)
@@ -2491,7 +2479,7 @@ fn test_player_with_packets(
     world: Arc<World>,
     name: &str,
     entity_id: i32,
-) -> (EntityArc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let TestConnectionHandles {
         connection,
         sent_packets,
@@ -2507,7 +2495,7 @@ fn test_player_with_uuid_and_packets(
     uuid: Uuid,
     name: &str,
     entity_id: i32,
-) -> (EntityArc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let TestConnectionHandles {
         connection,
         sent_packets,
@@ -2679,8 +2667,8 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         };
         let (existing, existing_packets) =
             test_player_with_packets(&server, Arc::clone(&world), "ExistingPlayer", 1);
-        assert!(server.online_players.insert(EntityArc::clone(&existing)));
-        assert!(world.add_player(EntityArc::clone(&existing), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&existing)));
+        assert!(world.add_player(Arc::clone(&existing), ResetReason::InitialJoin));
         let _ = existing.mark_joined_world();
 
         let spawn_position = existing.position();
@@ -2704,7 +2692,7 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         };
 
         server.finish_prepared_player_join(PendingPlayerJoin {
-            player: EntityArc::clone(&joining),
+            player: Arc::clone(&joining),
             state: Ok(state),
         });
 
@@ -2788,8 +2776,8 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
             "Observer",
             2,
         );
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(server.online_players.insert(EntityArc::clone(&observer)));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(server.online_players.insert(Arc::clone(&observer)));
 
         let client_information = |model_customization| SClientInformation {
             language: "en_us".to_owned(),
@@ -2907,7 +2895,7 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
         };
 
         server.finish_prepared_player_join(PendingPlayerJoin {
-            player: EntityArc::clone(&joining),
+            player: Arc::clone(&joining),
             state: Ok(state),
         });
 
@@ -2956,11 +2944,11 @@ fn player_disconnect_detaches_before_async_persistence() {
         };
         let player = test_player(&server, Arc::clone(&world));
 
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
-        let pending = server.process_player_disconnect(EntityArc::clone(&player));
+        let pending = server.process_player_disconnect(Arc::clone(&player));
 
         assert!(pending.is_some());
         assert!(
@@ -3006,22 +2994,22 @@ fn online_respawn_replacement_rejects_admission_and_stale_owners() {
         let stale = old.new_respawn_replacement(Arc::clone(&world), false, false, true);
         let foreign_session = test_player_with_uuid(&server, Arc::clone(&world), uuid);
 
-        assert!(server.online_players.insert(EntityArc::clone(&old)));
+        assert!(server.online_players.insert(Arc::clone(&old)));
         assert!(!server.replace_online_player(&old, foreign_session));
         assert!(server.reserve_player_relocation(&old));
-        assert!(!server.replace_online_player(&old, EntityArc::clone(&replacement)));
+        assert!(!server.replace_online_player(&old, Arc::clone(&replacement)));
         server.release_player_admission(uuid, PlayerAdmissionState::Relocating);
 
-        assert!(server.replace_online_player(&old, EntityArc::clone(&replacement)));
+        assert!(server.replace_online_player(&old, Arc::clone(&replacement)));
         assert!(!server.replace_online_player(&old, stale));
-        assert!(server.rollback_respawn_online_player(&replacement, EntityArc::clone(&old)));
+        assert!(server.rollback_respawn_online_player(&replacement, Arc::clone(&old)));
         assert!(server.owns_online_player(&old));
-        assert!(server.replace_online_player(&old, EntityArc::clone(&replacement)));
+        assert!(server.replace_online_player(&old, Arc::clone(&replacement)));
         assert!(server.remove_online_player_sync(&old).is_none());
         let Some(current) = server.online_players.get_by_uuid(&uuid) else {
             panic!("stale operations must leave the replacement online");
         };
-        assert!(EntityArc::ptr_eq(&current, &replacement));
+        assert!(Arc::ptr_eq(&current, &replacement));
         assert!(server.owns_online_player(&replacement));
 
         assert!(server.remove_online_player_sync(&replacement).is_some());
@@ -3084,14 +3072,14 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
             }))),
         );
         for player in [&survivor, &first, &second] {
-            assert!(server.online_players.insert(EntityArc::clone(player)));
-            assert!(world.add_player(EntityArc::clone(player), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(Arc::clone(player)));
+            assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
             let _ = player.mark_joined_world();
         }
         survivor_packets.lock().clear();
 
-        server.queue_player_disconnect(EntityArc::clone(&first));
-        server.queue_player_disconnect(EntityArc::clone(&second));
+        server.queue_player_disconnect(Arc::clone(&first));
+        server.queue_player_disconnect(Arc::clone(&second));
         let pending = server.process_player_disconnects();
 
         assert_eq!(pending.len(), 2);
@@ -3152,8 +3140,8 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
         };
         let player = test_player(&server, Arc::clone(&world));
 
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         player.show_end_credits();
@@ -3163,9 +3151,9 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
             server
                 .get_players()
                 .iter()
-                .any(|online| EntityArc::ptr_eq(online, &player))
+                .any(|online| Arc::ptr_eq(online, &player))
         );
-        let pending = server.process_player_disconnect(EntityArc::clone(&player));
+        let pending = server.process_player_disconnect(Arc::clone(&player));
         assert!(pending.is_some());
         assert!(
             server
@@ -3205,8 +3193,8 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         };
         let old_player = test_player(&server, Arc::clone(&world));
 
-        assert!(server.online_players.insert(EntityArc::clone(&old_player)));
-        assert!(world.add_player(EntityArc::clone(&old_player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
         let old_entity: SharedEntity = old_player.clone();
@@ -3311,11 +3299,11 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         };
         let old_player = test_player(&server, Arc::clone(&source_world));
 
-        assert!(server.online_players.insert(EntityArc::clone(&old_player)));
-        assert!(source_world.add_player(EntityArc::clone(&old_player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&old_player)));
+        assert!(source_world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
-        let pearl = EntityArc::new(EnderPearlEntity::new(
+        let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(8.5, 100.0, 8.5),
@@ -3328,7 +3316,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             .with_direct_entity(pearl.clone());
         old_player.record_last_damage_source(&source);
         let shared_pearl: SharedEntity = pearl.clone();
-        if let Err(error) = source_world.try_add_entity(EntityArc::clone(&shared_pearl)) {
+        if let Err(error) = source_world.try_add_entity(Arc::clone(&shared_pearl)) {
             panic!("test pearl should be added: {error}");
         }
         old_player.register_ender_pearl(&shared_pearl);
@@ -3385,7 +3373,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         assert!(replacement.has_seen_credits());
         assert!(replacement.last_damage_source().is_none());
         assert!(old_player.last_damage_source().is_some());
-        assert!(EntityArc::ptr_eq(
+        assert!(Arc::ptr_eq(
             source.causing_entity().expect("original owner"),
             &old_owner
         ));
@@ -3403,7 +3391,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         );
 
         assert!(replacement.ender_pearls().is_empty());
-        EntityArc::clone(&pearl).tick();
+        Arc::clone(&pearl).tick();
         assert!(
             pearl
                 .projectile_owner()
@@ -3652,7 +3640,7 @@ fn command_source_and_operator_checks_use_published_subject_state() {
 
         assert!(!player.is_operator());
         let revoked_source = CommandSource::new(
-            CommandSender::Player(EntityArc::clone(&player)),
+            CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
         );
         assert!(!CommandPermissionSource::has_permission(
@@ -3674,7 +3662,7 @@ fn command_source_and_operator_checks_use_published_subject_state() {
 
         assert!(player.is_operator());
         let granted_source = CommandSource::new(
-            CommandSender::Player(EntityArc::clone(&player)),
+            CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
         );
         assert!(CommandPermissionSource::has_permission(
@@ -3715,11 +3703,7 @@ fn renamed_join_message_only_reaches_existing_players() {
         let (joining_player, joining_packets) =
             test_player_with_packets(&server, Arc::clone(&world), "NewName", 2);
         assert!(server.online_players.insert(existing_player));
-        assert!(
-            server
-                .online_players
-                .insert(EntityArc::clone(&joining_player))
-        );
+        assert!(server.online_players.insert(Arc::clone(&joining_player)));
 
         server.broadcast_player_join_message(&joining_player, Some("OldName"));
 
@@ -3874,10 +3858,10 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
             101,
         );
 
-        assert!(world.add_player(EntityArc::clone(&target), ResetReason::InitialJoin));
-        assert!(world.add_player(EntityArc::clone(&attacker), ResetReason::InitialJoin));
-        assert!(server.online_players.insert(EntityArc::clone(&target)));
-        assert!(server.online_players.insert(EntityArc::clone(&attacker)));
+        assert!(world.add_player(Arc::clone(&target), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&target)));
+        assert!(server.online_players.insert(Arc::clone(&attacker)));
         let _ = target.mark_joined_world();
         let _ = attacker.mark_joined_world();
         target.set_client_loaded(true);
@@ -3927,10 +3911,10 @@ fn title_command_delivers_vanilla_packets_to_recorded_connections() {
         let (alice, alice_packets) =
             test_player_with_packets(&server, Arc::clone(&world), "Alice", 1);
         let (bob, bob_packets) = test_player_with_packets(&server, Arc::clone(&world), "Bob", 2);
-        assert!(world.add_player(EntityArc::clone(&alice), ResetReason::InitialJoin));
-        assert!(world.add_player(EntityArc::clone(&bob), ResetReason::InitialJoin));
-        assert!(server.online_players.insert(EntityArc::clone(&alice)));
-        assert!(server.online_players.insert(EntityArc::clone(&bob)));
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&bob), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        assert!(server.online_players.insert(Arc::clone(&bob)));
         let _ = alice.mark_joined_world();
         let _ = bob.mark_joined_world();
         alice.set_client_loaded(true);
@@ -3957,7 +3941,7 @@ fn title_command_delivers_vanilla_packets_to_recorded_connections() {
         assert_eq!(
             execute(
                 "title @a title {text:\"Hello \",extra:[{selector:\"@s\"}]}",
-                Some(EntityArc::clone(&alice) as SharedEntity),
+                Some(Arc::clone(&alice) as SharedEntity),
             ),
             (true, 2)
         );
@@ -4255,8 +4239,8 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
         } = test_connection();
         let player =
             test_player_with_connection(&server, Arc::clone(&world), "TestPlayer", 1, connection);
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
 
         server.save_and_shutdown().await;
 

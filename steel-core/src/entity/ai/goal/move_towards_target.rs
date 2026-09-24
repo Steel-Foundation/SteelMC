@@ -4,10 +4,10 @@ use glam::DVec3;
 
 use super::random_pos::default_random_pos_towards;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntityReference};
+use crate::entity::{PathfinderMob, SharedEntity};
 
 pub struct MoveTowardsTargetGoal {
-    target: Option<SharedEntityReference>,
+    target: Option<SharedEntity>,
     wanted_position: Option<DVec3>,
     speed_modifier: f64,
     within: f32,
@@ -30,10 +30,6 @@ impl MoveTowardsTargetGoal {
 }
 
 impl Goal for MoveTowardsTargetGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.target);
-    }
-
     fn controls(&self) -> GoalControls {
         GoalControls::MOVE
     }
@@ -52,7 +48,7 @@ impl Goal for MoveTowardsTargetGoal {
             return false;
         };
 
-        self.target = Some(SharedEntityReference::new(target));
+        self.target = Some(target);
         self.wanted_position = Some(position);
         true
     }
@@ -80,12 +76,11 @@ impl Goal for MoveTowardsTargetGoal {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{EntityArc, SharedEntity};
     use crate::entity::{Mob, entities::PigEntity};
 
     #[test]
@@ -109,7 +104,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveTowardsTargetGoal::new(1.0, 8.0);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let target: SharedEntity = EntityArc::new(PigEntity::new(
+        let target: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 0.0, 0.0),

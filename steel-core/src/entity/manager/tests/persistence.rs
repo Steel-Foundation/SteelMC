@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 
 #[test]
 fn final_chunk_unload_marks_stale_arc_removed_and_allows_same_identity_to_reload() {
@@ -34,7 +33,7 @@ fn final_chunk_unload_marks_stale_arc_removed_and_allows_same_identity_to_reload
     let Some(live_entity) = manager.get_by_id(reloaded.id()) else {
         panic!("reloaded entity should be live");
     };
-    assert!(EntityArc::ptr_eq(&reloaded, &live_entity));
+    assert!(Arc::ptr_eq(&reloaded, &live_entity));
     assert!(!reloaded.is_removed());
 }
 
@@ -59,13 +58,13 @@ fn saveable_entities_include_manager_owned_live_unloading_and_pending_entities()
 
     let live_saveable = manager.get_saveable_entities_for_chunk(chunk);
     assert_eq!(live_saveable.len(), 1);
-    assert!(EntityArc::ptr_eq(&live, &live_saveable[0]));
+    assert!(Arc::ptr_eq(&live, &live_saveable[0]));
 
     let unload = manager.begin_chunk_unload(chunk);
     assert_eq!(unload.retained.len(), 1);
     let unloading_saveable = manager.get_saveable_entities_for_chunk(chunk);
     assert_eq!(unloading_saveable.len(), 1);
-    assert!(EntityArc::ptr_eq(&live, &unloading_saveable[0]));
+    assert!(Arc::ptr_eq(&live, &unloading_saveable[0]));
 
     manager.finalize_chunk_unload(chunk);
     load_chunk(&manager, chunk);
@@ -81,7 +80,7 @@ fn saveable_entities_include_manager_owned_live_unloading_and_pending_entities()
 
     let pending_saveable = manager.get_saveable_entities_for_chunk(chunk);
     assert_eq!(pending_saveable.len(), 1);
-    assert!(EntityArc::ptr_eq(&pending, &pending_saveable[0]));
+    assert!(Arc::ptr_eq(&pending, &pending_saveable[0]));
 }
 
 #[test]
@@ -118,7 +117,7 @@ fn save_pending_acknowledgement_clears_only_persisted_entities() {
 
     let saveable = manager.get_saveable_entities_for_chunk(chunk);
     assert_eq!(saveable.len(), 1);
-    assert!(EntityArc::ptr_eq(&later, &saveable[0]));
+    assert!(Arc::ptr_eq(&later, &saveable[0]));
 
     manager.on_chunk_saved(chunk, &[later.id()]);
 
@@ -274,7 +273,7 @@ fn chunk_recovery_keeps_saveable_removed_retained_entities_pending() {
     assert!(manager.has_save_pending_for_chunk(chunk));
     let saveable = manager.get_saveable_entities_for_chunk(chunk);
     assert_eq!(saveable.len(), 1);
-    assert!(EntityArc::ptr_eq(&pending, &saveable[0]));
+    assert!(Arc::ptr_eq(&pending, &saveable[0]));
 }
 
 #[test]

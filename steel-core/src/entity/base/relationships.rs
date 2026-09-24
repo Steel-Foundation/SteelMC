@@ -1,4 +1,5 @@
-use crate::entity::EntityWeak;
+use std::sync::Weak;
+
 use crate::entity::{RemovalReason, SharedEntity, WeakEntity};
 
 /// Non-physical lifecycle state shared by every entity.
@@ -53,7 +54,7 @@ pub(super) struct EntityRelationshipState {
 
 impl EntityRelationshipState {
     pub(super) fn vehicle(&mut self) -> Option<SharedEntity> {
-        let vehicle = self.vehicle.as_ref().and_then(EntityWeak::upgrade);
+        let vehicle = self.vehicle.as_ref().and_then(Weak::upgrade);
         if vehicle.is_none() {
             self.vehicle = None;
         }
@@ -76,7 +77,7 @@ impl EntityRelationshipState {
     pub(super) fn first_passenger(&mut self) -> Option<SharedEntity> {
         self.passengers
             .retain(|passenger| passenger.strong_count() > 0);
-        self.passengers.first().and_then(EntityWeak::upgrade)
+        self.passengers.first().and_then(Weak::upgrade)
     }
 
     pub(super) fn has_passenger_id(&mut self, passenger_id: i32) -> bool {

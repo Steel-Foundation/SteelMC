@@ -1,6 +1,6 @@
 //! Steel player-flight command.
 
-use std::slice;
+use std::{slice, sync::Arc};
 
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -13,7 +13,6 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::EntityArc;
 use crate::player::{Abilities, DEFAULT_FLYING_SPEED, Player};
 
 const MAX_FLY_SPEED_MULTIPLIER: f32 = 30.0;
@@ -109,7 +108,7 @@ fn set_sender_flying_speed(
 
 fn source_player(
     context: &SteelCommandContext<CommandSource>,
-) -> Result<&EntityArc<Player>, CommandSyntaxError> {
+) -> Result<&Arc<Player>, CommandSyntaxError> {
     context.source().player().ok_or_else(|| {
         CommandSyntaxError::dynamic(TextComponent::from(
             &translations::PERMISSIONS_REQUIRES_PLAYER,
@@ -121,7 +120,7 @@ fn required_speed(context: &SteelCommandContext<CommandSource>) -> Result<f32, C
     context.float("speed")
 }
 
-fn toggle_flight(targets: &[EntityArc<Player>]) {
+fn toggle_flight(targets: &[Arc<Player>]) {
     for target in targets {
         {
             let mut abilities = target.abilities.lock();
@@ -132,7 +131,7 @@ fn toggle_flight(targets: &[EntityArc<Player>]) {
     }
 }
 
-fn set_flight(targets: &[EntityArc<Player>], allowed: bool) {
+fn set_flight(targets: &[Arc<Player>], allowed: bool) {
     for target in targets {
         {
             let mut abilities = target.abilities.lock();
@@ -149,7 +148,7 @@ const fn set_flight_allowed(abilities: &mut Abilities, allowed: bool) {
     }
 }
 
-fn set_flying_speed(source: &CommandSource, targets: &[EntityArc<Player>], multiplier: f32) {
+fn set_flying_speed(source: &CommandSource, targets: &[Arc<Player>], multiplier: f32) {
     let speed = speed_from_multiplier(multiplier);
     for target in targets {
         target.set_flying_speed(speed);
@@ -164,7 +163,7 @@ fn set_flying_speed(source: &CommandSource, targets: &[EntityArc<Player>], multi
     }
 }
 
-fn query_flying_speed(source: &CommandSource, targets: &[EntityArc<Player>]) {
+fn query_flying_speed(source: &CommandSource, targets: &[Arc<Player>]) {
     for target in targets {
         let speed = target.get_flying_speed();
         let multiplier = speed / DEFAULT_FLYING_SPEED;
@@ -186,7 +185,6 @@ fn speed_from_multiplier(multiplier: f32) -> f32 {
 mod tests {
     use super::super::create_dispatcher;
     use super::{MAX_FLY_SPEED_MULTIPLIER, set_flight_allowed, speed_from_multiplier};
-
     use crate::{
         command::{
             brigadier::{ArgumentType, CommandDispatcher, NodeId},

@@ -2,7 +2,7 @@ use glam::DVec3;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntityReference};
+use crate::entity::{PathfinderMob, SharedEntity};
 
 const MIN_LEAP_DISTANCE_SQR: f64 = 4.0;
 const MAX_LEAP_DISTANCE_SQR: f64 = 16.0;
@@ -12,7 +12,7 @@ const EXISTING_MOMENTUM_SCALE: f64 = 0.2;
 const LEAP_CHANCE_TICKS: i32 = 5;
 
 pub struct LeapAtTargetGoal {
-    target: Option<SharedEntityReference>,
+    target: Option<SharedEntity>,
     yd: f32,
 }
 
@@ -24,10 +24,6 @@ impl LeapAtTargetGoal {
 }
 
 impl Goal for LeapAtTargetGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.target);
-    }
-
     fn controls(&self) -> GoalControls {
         GoalControls::JUMP | GoalControls::MOVE
     }
@@ -54,7 +50,7 @@ impl Goal for LeapAtTargetGoal {
             return false;
         }
 
-        self.target = Some(SharedEntityReference::new(target));
+        self.target = Some(target);
         true
     }
 
@@ -84,21 +80,20 @@ impl Goal for LeapAtTargetGoal {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::{Entity, Mob, entities::PigEntity};
-    use crate::entity::{EntityArc, SharedEntity};
 
     fn pig(id: i32, position: DVec3) -> PigEntity {
         PigEntity::new(&vanilla_entities::PIG, id, position, Weak::new())
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
-        EntityArc::new(pig(id, position))
+        Arc::new(pig(id, position))
     }
 
     fn set_target(mob: &PigEntity, target: &SharedEntity) {
@@ -166,7 +161,7 @@ mod tests {
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         set_target(&mob, &target);
 
-        goal.target = Some(SharedEntityReference::new(target));
+        goal.target = Some(target);
         goal.start(&mob);
 
         assert_vec3_close(mob.velocity(), DVec3::new(0.6, f64::from(0.42_f32), 0.0));

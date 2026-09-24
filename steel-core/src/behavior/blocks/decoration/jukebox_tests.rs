@@ -1,4 +1,3 @@
-use crate::entity::EntityArc;
 use crate::test_support::TestWorld;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
@@ -142,7 +141,7 @@ fn jukebox_entity(world: &World, pos: BlockPos) -> SharedBlockEntity {
     block_entity
 }
 
-fn test_player(world: &Arc<World>, id: i32) -> EntityArc<Player> {
+fn test_player(world: &Arc<World>, id: i32) -> Arc<Player> {
     TestPlayerBuilder::new(Arc::clone(world), format!("JukeboxTester{id}"), id).build()
 }
 
@@ -220,7 +219,7 @@ fn dropped_items(world: &World, pos: BlockPos) -> Vec<SharedEntity> {
 fn recording_player(
     world: &Arc<World>,
     pos: BlockPos,
-) -> (EntityArc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
@@ -230,7 +229,7 @@ fn recording_player(
         .build();
     let moved = player.try_set_position(block_bottom_center(pos.above()));
     assert!(moved.is_ok(), "test player should move beside jukebox");
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     packets.lock().clear();
     (player, packets)
 }

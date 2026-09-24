@@ -404,17 +404,15 @@ mod tests {
     impl TestAgeableMob {
         fn new() -> Self {
             init_vanilla_registry();
-            let base = EntityBase::new(
-                1,
-                DVec3::ZERO,
-                vanilla_entities::PIG.dimensions,
-                Weak::new(),
-            );
-            let mob_base = MobBase::new(&base);
             Self {
-                base,
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    vanilla_entities::PIG.dimensions,
+                    Weak::new(),
+                ),
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base,
+                mob_base: MobBase::new(),
                 ageable_base: AgeableMobBase::new(),
                 mob_flags: SyncMutex::new(0),
                 health: SyncMutex::new(10.0),

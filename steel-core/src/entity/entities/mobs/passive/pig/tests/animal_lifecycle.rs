@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 use std::sync::Arc;
 
 #[test]
@@ -23,14 +22,14 @@ fn pig_uses_vanilla_animal_fire_path_malus() {
 fn pig_uses_mob_passenger_as_controller_when_not_player_controlled() {
     init_vanilla_registry();
 
-    let vehicle_pig = EntityArc::new(PigEntity::new(
+    let vehicle_pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
         Weak::new(),
     ));
     let vehicle: SharedEntity = vehicle_pig.clone();
-    let passenger_pig = EntityArc::new(PigEntity::new(
+    let passenger_pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
@@ -149,7 +148,7 @@ fn pig_damage_resets_vanilla_animal_love_time() {
 fn pig_death_tick_removes_after_vanilla_death_duration() {
     init_vanilla_registry();
 
-    let pig = EntityArc::new(PigEntity::new(
+    let pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,

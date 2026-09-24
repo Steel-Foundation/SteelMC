@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 
 #[test]
 fn spawn_pairing_includes_syncable_attributes() {
@@ -44,7 +43,7 @@ fn spawn_pairing_includes_non_empty_equipment() {
 fn spawn_pairing_uses_entity_spawn_packet_position() {
     init_vanilla_registry();
 
-    let entity: SharedEntity = EntityArc::new(LeashFenceKnotEntity::new_attached(
+    let entity: SharedEntity = Arc::new(LeashFenceKnotEntity::new_attached(
         &vanilla_entities::LEASH_KNOT,
         1,
         BlockPos::new(4, 65, -9),

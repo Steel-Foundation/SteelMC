@@ -1,5 +1,5 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntity, SharedEntityReference};
+use crate::entity::{PathfinderMob, SharedEntity};
 
 use super::reduced_tick_delay;
 
@@ -9,7 +9,7 @@ const DONT_FOLLOW_IF_CLOSER_THAN_SQR: f64 = 9.0;
 const STOP_FOLLOW_IF_FARTHER_THAN_SQR: f64 = 256.0;
 
 pub struct FollowParentGoal {
-    parent: Option<SharedEntityReference>,
+    parent: Option<SharedEntity>,
     speed_modifier: f64,
     time_to_recalc_path: i32,
 }
@@ -26,10 +26,6 @@ impl FollowParentGoal {
 }
 
 impl Goal for FollowParentGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.parent);
-    }
-
     fn controls(&self) -> GoalControls {
         GoalControls::EMPTY
     }
@@ -64,7 +60,7 @@ impl Goal for FollowParentGoal {
             return false;
         }
 
-        self.parent = Some(SharedEntityReference::new(parent));
+        self.parent = Some(parent);
         true
     }
 

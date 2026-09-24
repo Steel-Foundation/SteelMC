@@ -16,7 +16,6 @@ use tokio::{fs, runtime::Builder, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::entity::EntityArc;
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
     player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession},
@@ -31,7 +30,7 @@ fn java_test_player(
     world: Arc<World>,
     uuid: Uuid,
 ) -> (
-    EntityArc<Player>,
+    Arc<Player>,
     mpsc::UnboundedReceiver<OutboundPacket>,
     JavaNetworkWriter,
 ) {
@@ -47,7 +46,7 @@ fn java_test_player(
         1,
         Arc::clone(&session),
     )));
-    let player = EntityArc::new(Player::new(
+    let player = Arc::new(Player::new(
         GameProfile {
             id: uuid,
             name: "TestPlayer".to_owned(),
@@ -88,8 +87,8 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         let (player, receiver, network_writer) =
             java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
 
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), super::ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
 
@@ -191,7 +190,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
             },
         )));
         let session = Arc::new(PlayerSession::new(10, 10));
-        let player = EntityArc::new(Player::new(
+        let player = Arc::new(Player::new(
             GameProfile {
                 id: uuid,
                 name: "TestPlayer".to_owned(),
@@ -208,8 +207,8 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         ));
         assert!(session.bind_initial_player(&player));
 
-        assert!(server.online_players.insert(EntityArc::clone(&player)));
-        assert!(world.add_player(EntityArc::clone(&player), super::ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
         assert!(

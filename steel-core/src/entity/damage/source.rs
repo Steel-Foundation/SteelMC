@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
@@ -6,24 +7,8 @@ use steel_registry::{
     vanilla_damage_type_tags,
 };
 
-use crate::entity::{EntityArc, EntityGeneration, SharedEntity};
+use crate::entity::SharedEntity;
 use crate::player::Player;
-
-/// Keeps identity beside its reference so history never calls entity code under its lock.
-#[derive(Clone)]
-struct SourceEntity {
-    entity: SharedEntity,
-    generation: EntityGeneration,
-}
-
-impl SourceEntity {
-    fn new(entity: SharedEntity) -> Self {
-        Self {
-            generation: entity.generation(),
-            entity,
-        }
-    }
-}
 
 /// Describes damage while retaining the exact direct and causing entity allocations.
 ///
@@ -33,8 +18,8 @@ impl SourceEntity {
 pub struct DamageSource {
     /// The damage type registry entry.
     pub damage_type: &'static DamageType,
-    causing_entity: Option<SourceEntity>,
-    direct_entity: Option<SourceEntity>,
+    causing_entity: Option<SharedEntity>,
+    direct_entity: Option<SharedEntity>,
     source_position: Option<DVec3>,
 }
 
@@ -53,7 +38,6 @@ impl DamageSource {
     /// Damage delivered directly by its causing entity.
     #[must_use]
     pub fn direct(damage_type: &'static DamageType, entity: SharedEntity) -> Self {
-        let entity = SourceEntity::new(entity);
         Self {
             damage_type,
             causing_entity: Some(entity.clone()),
@@ -65,42 +49,27 @@ impl DamageSource {
     /// Adds the entity ultimately responsible for the damage.
     #[must_use]
     pub fn with_causing_entity(mut self, entity: SharedEntity) -> Self {
-        self.causing_entity = Some(SourceEntity::new(entity));
+        self.causing_entity = Some(entity);
         self
     }
 
     /// Adds the direct entity that delivered the damage.
     #[must_use]
     pub fn with_direct_entity(mut self, entity: SharedEntity) -> Self {
-        self.direct_entity = Some(SourceEntity::new(entity));
+        self.direct_entity = Some(entity);
         self
     }
 
     /// The original cause (e.g. a projectile's shooter), retained after removal.
     #[must_use]
     pub const fn causing_entity(&self) -> Option<&SharedEntity> {
-        match &self.causing_entity {
-            Some(source) => Some(&source.entity),
-            None => None,
-        }
+        self.causing_entity.as_ref()
     }
 
     /// The original direct entity (e.g. the projectile), retained after removal.
     #[must_use]
     pub const fn direct_entity(&self) -> Option<&SharedEntity> {
-        match &self.direct_entity {
-            Some(source) => Some(&source.entity),
-            None => None,
-        }
-    }
-
-    pub(super) fn retained_entities(
-        &self,
-    ) -> impl Iterator<Item = (EntityGeneration, &SharedEntity)> {
-        [self.causing_entity.as_ref(), self.direct_entity.as_ref()]
-            .into_iter()
-            .flatten()
-            .map(|source| (source.generation, &source.entity))
+        self.direct_entity.as_ref()
     }
 
     /// Vanilla `getSourcePosition`, distinct from the raw position sent in packets.
@@ -148,7 +117,7 @@ impl DamageSource {
     pub fn is_direct(&self) -> bool {
         match (self.causing_entity(), self.direct_entity()) {
             (None, None) => true,
-            (Some(cause), Some(direct)) => EntityArc::ptr_eq(cause, direct),
+            (Some(cause), Some(direct)) => Arc::ptr_eq(cause, direct),
             _ => false,
         }
     }
@@ -184,11 +153,17 @@ impl fmt::Debug for DamageSource {
             .field("damage_type", &self.damage_type)
             .field(
                 "causing_entity",
-                &self.causing_entity.as_ref().map(|source| source.generation),
+                &self
+                    .causing_entity
+                    .as_ref()
+                    .map(|entity| entity.generation()),
             )
             .field(
                 "direct_entity",
-                &self.direct_entity.as_ref().map(|source| source.generation),
+                &self
+                    .direct_entity
+                    .as_ref()
+                    .map(|entity| entity.generation()),
             )
             .field("source_position", &self.source_position)
             .finish()

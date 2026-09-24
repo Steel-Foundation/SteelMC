@@ -16,7 +16,6 @@ use super::super::{
 };
 use crate::command::sender::CommandSender;
 use crate::entity::Entity;
-use crate::entity::EntityArc;
 use crate::permission::{
     PermissionContext, PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment,
 };
@@ -96,7 +95,7 @@ fn require_game_mode_permission(
 
 fn set_game_mode(
     source: &CommandSource,
-    targets: &[EntityArc<Player>],
+    targets: &[Arc<Player>],
     game_mode: GameType,
 ) -> Result<i32, CommandSyntaxError> {
     let mut changed = 0usize;
@@ -140,7 +139,7 @@ fn set_game_mode(
 }
 
 pub(crate) fn handle_client_request(
-    player: &EntityArc<Player>,
+    player: &Arc<Player>,
     server: &Arc<Server>,
     game_mode: GameType,
 ) {
@@ -155,7 +154,7 @@ pub(crate) fn handle_client_request(
     }
 
     let source = CommandSource::new(
-        CommandSender::Player(EntityArc::clone(player)),
+        CommandSender::Player(Arc::clone(player)),
         Arc::clone(server),
     );
     if let Err(error) = set_game_mode(&source, slice::from_ref(player), game_mode) {

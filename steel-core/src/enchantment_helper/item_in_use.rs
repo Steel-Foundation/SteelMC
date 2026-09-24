@@ -3,7 +3,8 @@ use steel_registry::item_stack::ItemStack;
 use crate::entity::LivingEntity;
 use crate::inventory::equipment::EquipmentSlot;
 
-/// Leaves equipment unlocked during effects, which may inspect it during retaliation.
+/// Access to the enchanted stack without holding equipment locks across entity effects.
+/// Retaliatory damage can inspect the owner's weapon while applying a victim's enchantments.
 pub(super) enum EnchantedItemInUse<'a> {
     Stack(&'a mut ItemStack),
     Equipped {

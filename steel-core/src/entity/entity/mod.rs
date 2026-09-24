@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::entity::EntityArc;
 use crate::entity::leash::Leashable;
 use steel_math::DEGREE_90;
 
@@ -73,11 +72,11 @@ pub trait EntityEventSource {
     fn as_entity_event_source(&self) -> &dyn Entity;
 
     /// Retains this exact entity allocation as a shared entity handle.
-    fn into_shared_entity(self: EntityArc<Self>) -> SharedEntity;
+    fn into_shared_entity(self: Arc<Self>) -> SharedEntity;
 }
 
 impl<T: Entity> EntityEventSource for T {
-    fn into_shared_entity(self: EntityArc<Self>) -> SharedEntity {
+    fn into_shared_entity(self: Arc<Self>) -> SharedEntity {
         self
     }
 
@@ -917,7 +916,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// The default dispatches vanilla living behavior without requiring every
     /// living implementation to repeat an `Entity::tick` forwarding method.
     /// Non-living entities with custom tick behavior override this directly.
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         let entity = self.into_shared_entity();
         if let Some(living) = entity.as_living_entity() {
             living.tick_living_entity(&entity);
@@ -927,17 +926,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Called every game tick while this entity is riding another entity.
     ///
     /// Mirrors vanilla `Entity.rideTick`.
-    fn ride_tick(self: EntityArc<Self>) {
-        EntityArc::clone(&self).default_ride_tick();
+    fn ride_tick(self: Arc<Self>) {
+        Arc::clone(&self).default_ride_tick();
         if let Some(living) = self.as_living_entity() {
             living.reset_fall_distance();
         }
     }
 
     /// The default implementation of `Entity.rideTick` when not overridden.
-    fn default_ride_tick(self: EntityArc<Self>) {
+    fn default_ride_tick(self: Arc<Self>) {
         self.set_velocity(DVec3::ZERO);
-        EntityArc::clone(&self).tick();
+        Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
         }
@@ -1250,7 +1249,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn notify_leashee_removed(&self, _leashable: &dyn Entity) {}
 
     /// Called when a player touches this entity during nearby pickup processing.
-    fn player_touch(self: EntityArc<Self>, _player: &EntityArc<Player>) {}
+    fn player_touch(self: Arc<Self>, _player: &Arc<Player>) {}
 
     /// Finds leashable mobs in vanilla's nearby leash scan whose holder is this entity.
     fn leashables_leashed_to(&self) -> Vec<SharedEntity> {
@@ -2293,12 +2292,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Living entities use the shared `LivingEntity` damage path; base entities
     /// only propagate to passengers and return `false`.
-    #[expect(
-        clippy::must_use_candidate,
-        reason = "fall damage is applied for its side effects even when its outcome is ignored"
-    )]
     fn cause_fall_damage(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
@@ -2469,7 +2464,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
     /// handling after rollback/collision validation has accepted the target.
     fn default_apply_accepted_client_movement(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -2484,11 +2479,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             accepted.horizontal_collision,
             accepted.movement,
         );
-        if EntityArc::clone(&self).do_check_fall_damage(
-            accepted.movement,
-            accepted.on_ground,
-            world,
-        ) {
+        if Arc::clone(&self).do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
             return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
@@ -2500,7 +2491,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies final state accepted from a client-authored movement packet.
     fn apply_accepted_client_movement(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -2509,7 +2500,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies final state accepted from a controlled-vehicle movement packet.
     fn apply_accepted_client_vehicle_movement(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         world: &Arc<World>,
         mut accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -3323,11 +3314,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
     )]
-    fn move_entity(
-        self: EntityArc<Self>,
-        mover_type: MoverType,
-        delta: DVec3,
-    ) -> Option<MoveResult> {
+    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -3394,7 +3381,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.refresh_fluid_contact();
 
         if self.is_server_driven_movement()
-            && EntityArc::clone(&self).apply_fall_damage_after_move(&result, &world)
+            && Arc::clone(&self).apply_fall_damage_after_move(&result, &world)
         {
             return Some(result);
         }
@@ -3450,7 +3437,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
     fn apply_fall_damage_after_move(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         result: &MoveResult,
         world: &Arc<World>,
     ) -> bool {
@@ -3482,7 +3469,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Callers update on-ground/supporting-block state before this method.
     fn do_check_fall_damage(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         movement: DVec3,
         on_ground: bool,
         world: &Arc<World>,
@@ -3491,13 +3478,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        EntityArc::clone(&self).check_fall_damage(
-            movement.y,
-            on_ground,
-            effect_state,
-            effect_pos,
-            world,
-        );
+        Arc::clone(&self).check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
     }
 
@@ -3509,7 +3490,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Mirrors vanilla `Entity.checkFallDamage`.
     fn check_fall_damage(
-        self: EntityArc<Self>,
+        self: Arc<Self>,
         vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
@@ -3530,7 +3511,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let fall_context =
                 EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                let damage_applied = EntityArc::clone(&self).cause_fall_damage(
+                let damage_applied = Arc::clone(&self).cause_fall_damage(
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,
@@ -3633,7 +3614,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         &self,
         item: ItemStack,
         y_offset: f64,
-    ) -> Option<EntityArc<entities::ItemEntity>> {
+    ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         let pos = self.position();
         world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
@@ -3644,7 +3625,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         &self,
         item: ItemStack,
         offset: DVec3,
-    ) -> Option<EntityArc<entities::ItemEntity>> {
+    ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         world.spawn_item(self.position() + offset, item)
     }

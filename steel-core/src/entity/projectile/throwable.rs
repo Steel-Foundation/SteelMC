@@ -1,9 +1,9 @@
 //! Vanilla `ThrowableProjectile` — the gravity/drag movement loop.
+use std::sync::Arc;
 use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
 use steel_utils::{BlockPos, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::entity::EntityArc;
 use crate::entity::projectile::Projectile;
 use crate::entity::{InsideBlockEffectCollector, RemovalReason};
 
@@ -41,7 +41,7 @@ pub trait ThrowableProjectile: Projectile {
     /// Reached from a subclass's `tick` as `super.tick()`. Applies gravity and
     /// drag, raycasts the move vector, moves to the hit (or full move), updates
     /// rotation, runs the `Projectile`/`Entity` base tick, then resolves the hit.
-    fn throwable_projectile_tick(self: EntityArc<Self>) {
+    fn throwable_projectile_tick(self: Arc<Self>) {
         // Vanilla `Entity.setOldPosAndRot()` is run by the level before ticking;
         // capture it here so `old_position()`/`old_rotation()` hold the pre-move
         // state used by `onHit` (teleport target) and `updateRotation` (lerp base).
@@ -133,7 +133,6 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos};
 
     use crate::behavior::init_behaviors;
-    use crate::entity::EntityArc;
     use crate::entity::entities::SnowballEntity;
     use crate::entity::{Entity, SharedEntity};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
@@ -156,19 +155,19 @@ mod tests {
 
         assert!(world.set_block(bubble_pos, bubble_column, UpdateFlags::UPDATE_NONE));
 
-        let snowball = EntityArc::new(SnowballEntity::new(
+        let snowball = Arc::new(SnowballEntity::new(
             &vanilla_entities::SNOWBALL,
             1,
             initial_position,
             Arc::downgrade(&world),
         ));
         world
-            .try_add_entity(EntityArc::clone(&snowball) as SharedEntity)
+            .try_add_entity(Arc::clone(&snowball) as SharedEntity)
             .expect("snowball should attach to the loaded chunk");
 
         assert!(snowball.is_first_tick());
 
-        EntityArc::clone(&snowball).tick();
+        Arc::clone(&snowball).tick();
 
         assert!(!snowball.is_first_tick());
         assert!(
@@ -181,7 +180,7 @@ mod tests {
             .expect("snowball should return to its initial position");
         snowball.set_velocity(DVec3::ZERO);
 
-        EntityArc::clone(&snowball).tick();
+        Arc::clone(&snowball).tick();
 
         assert!(
             snowball.position().y < initial_position.y,

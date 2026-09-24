@@ -8,7 +8,6 @@ mod movement;
 mod persistence;
 mod relationships;
 
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageHistoryBinding;
 pub use fire_freeze::EntityFireFreezeState;
 pub use movement::{
@@ -850,8 +849,8 @@ impl EntityBase {
             return;
         }
 
-        passenger.base().relationships.lock().vehicle = Some(EntityArc::downgrade(vehicle));
-        let passenger_ref = EntityArc::downgrade(passenger);
+        passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
+        let passenger_ref = Arc::downgrade(passenger);
         let mut vehicle_relationships = vehicle.base().relationships.lock();
         let first_passenger_is_player = vehicle_relationships
             .first_passenger()
@@ -977,16 +976,20 @@ impl EntityBase {
     ///
     /// Notifies the level callback on first removal.
     pub fn set_removed(&self, reason: RemovalReason) {
-        let callback = {
+        let (callback, released) = {
             let mut lifecycle = self.lifecycle.lock();
             if lifecycle.removal_reason.is_some() {
-                None
+                (None, None)
             } else {
                 lifecycle.removal_reason = Some(reason);
                 lifecycle.pending_world_change = None;
-                Some(self.level_callback.lock().clone())
+                (
+                    Some(self.level_callback.lock().clone()),
+                    self.damage_history.set_removed(true),
+                )
             }
         };
+        drop(released);
 
         if let Some(callback) = callback {
             self.detach_from_relationships(reason);
@@ -1063,11 +1066,13 @@ impl EntityBase {
     /// Clears the removed flag and returns whether the entity had been removed.
     ///
     /// Vanilla uses this when an entity instance itself survives a world change.
+    /// Previously downgraded history stays weak; a new hit can retain a new source.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
         lifecycle.pending_world_change = None;
+        let _ = self.damage_history.set_removed(false);
         was_removed
     }
 

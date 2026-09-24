@@ -1,6 +1,5 @@
 use super::tests::{settings, temp_level_data_dir};
 use super::*;
-use crate::entity::EntityArc;
 use std::sync::Weak;
 use steel_registry::{init_vanilla_registry, vanilla_dimension_types};
 
@@ -156,11 +155,15 @@ fn damage_history_expires_at_forty_one_ticks_across_signed_clock_wrap() {
         let history = Arc::new(DamageHistory::default());
         let entity = TestEntity::shared(1, glam::DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
         let generation = entity.generation();
-        let weak = EntityArc::downgrade(&entity);
-        let source = DamageSource::environment(&vanilla_damage_types::GENERIC)
-            .with_direct_entity(EntityArc::clone(&entity));
-        history.record(entity.base(), &source, &clock);
-        drop((source, entity));
+        let weak = Arc::downgrade(&entity);
+        let _owner = entity.base().damage_history().retain_owner();
+        history.record(
+            entity.base(),
+            &DamageSource::environment(&vanilla_damage_types::GENERIC)
+                .with_direct_entity(entity.clone()),
+            &clock,
+        );
+        drop(entity);
         for _ in 0..40 {
             clock.advance();
         }

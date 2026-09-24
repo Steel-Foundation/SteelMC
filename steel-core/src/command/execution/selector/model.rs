@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 use crate::server::Server;
 
 #[derive(Clone, Copy)]
@@ -83,14 +82,14 @@ impl EntitySelector {
     pub(crate) fn find_players(
         &self,
         source: &CommandSource,
-    ) -> Result<Vec<EntityArc<Player>>, CommandSyntaxError> {
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
         self.find_players_with(source, PlayerSelection::Gameplay)
     }
 
     pub(crate) fn find_online_profile_players(
         &self,
         source: &CommandSource,
-    ) -> Result<Vec<EntityArc<Player>>, CommandSyntaxError> {
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
         // Profile administration is server-global. Explicit spatial selector
         // options still limit candidates to the source world.
         self.find_players_with(source, PlayerSelection::OnlineProfile)
@@ -100,7 +99,7 @@ impl EntitySelector {
         &self,
         source: &CommandSource,
         selection: PlayerSelection,
-    ) -> Result<Vec<EntityArc<Player>>, CommandSyntaxError> {
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
         self.check_selector_permission(source)?;
         let server = source.server();
         let position = selector_position(self, source);
@@ -133,7 +132,7 @@ impl EntitySelector {
                 if selected_player_world(server, player, selection).is_some()
                     && self.matches_entity(player.as_ref(), position, aabb, source)?
                 {
-                    vec![EntityArc::clone(player)]
+                    vec![Arc::clone(player)]
                 } else {
                     Vec::new()
                 }
@@ -188,7 +187,7 @@ impl EntitySelector {
                     return Ok(Vec::new());
                 };
                 if self.matches_entity(entity.as_ref(), position, aabb, source)? {
-                    vec![EntityArc::clone(entity)]
+                    vec![Arc::clone(entity)]
                 } else {
                     Vec::new()
                 }
@@ -238,7 +237,7 @@ impl EntitySelector {
         &self,
         source: &CommandSource,
         selection: PlayerSelection,
-    ) -> Vec<EntityArc<Player>> {
+    ) -> Vec<Arc<Player>> {
         let mut players = source.server().get_players();
         if self.world_limited {
             players.retain(|player| {
@@ -352,7 +351,7 @@ impl EntitySelector {
         matches!(self.order, SelectorOrder::Arbitrary) && count >= self.max_results
     }
 
-    fn sort_and_limit_players(&self, position: DVec3, players: &mut Vec<EntityArc<Player>>) {
+    fn sort_and_limit_players(&self, position: DVec3, players: &mut Vec<Arc<Player>>) {
         match self.order {
             SelectorOrder::Nearest => players.sort_by(|left, right| {
                 left.position()

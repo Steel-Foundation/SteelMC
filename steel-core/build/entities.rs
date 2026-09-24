@@ -67,7 +67,7 @@ pub fn build(entities: &[EntityClass]) -> String {
                 &vanilla_entities::#entity_type_ident,
                 |entity_type, id, pos, world| {
                     let entity: SharedEntity =
-                        EntityArc::new(#struct_ident::new(entity_type, id, pos, world #(, #args)*));
+                        Arc::new(#struct_ident::new(entity_type, id, pos, world #(, #args)*));
                     entity
                 },
             );
@@ -75,7 +75,7 @@ pub fn build(entities: &[EntityClass]) -> String {
                 &vanilla_entities::#entity_type_ident,
                 |entity_type, load| {
                     let entity: SharedEntity =
-                        EntityArc::new(#struct_ident::from_saved(entity_type, load #(, #args)*));
+                        Arc::new(#struct_ident::from_saved(entity_type, load #(, #args)*));
                     entity
                 },
             );
@@ -116,8 +116,9 @@ pub fn build(entities: &[EntityClass]) -> String {
     let output = quote! {
         //! Generated entity factory registrations.
 
+        use std::sync::Arc;
         use steel_registry::{vanilla_entities #(#registry_import_tokens)*};
-        use crate::entity::{EntityArc, EntityRegistry, SharedEntity};
+        use crate::entity::{EntityRegistry, SharedEntity};
         #[expect(
             clippy::wildcard_imports,
             reason = "the registry intentionally imports every entity implementation"

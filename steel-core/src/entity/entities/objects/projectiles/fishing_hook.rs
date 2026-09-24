@@ -1,10 +1,8 @@
-use crate::entity::EntityArc;
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::projectile::triangle_random;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityOwnedState, EntityReferenceVisitor, EntitySyncedData,
-    LivingEntity, Projectile, ProjectileBase, RemovalReason, SharedEntity, SharedEntityReference,
-    ThrowableProjectile, VisitEntityReferences, entity_loot_ref, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
+    RemovalReason, SharedEntity, ThrowableProjectile, entity_loot_ref, next_entity_id,
 };
 use crate::fluid::get_height;
 use crate::physics::MoverType;
@@ -61,7 +59,7 @@ pub struct FishingHookEntity {
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<FishingBobberEntityData>,
     projectile_base: ProjectileBase,
-    hook_state: EntityOwnedState<FishingHookState>,
+    hook_state: SyncMutex<FishingHookState>,
     synchronized_random: SyncMutex<LegacyRandom>,
 }
 
@@ -76,15 +74,9 @@ pub struct FishingHookState {
     open_water: bool,
     /// Equivalent to Java's `currentState`
     bobber_state: BobberState,
-    hooked_entity: Option<SharedEntityReference>,
+    hooked_entity: Option<SharedEntity>,
     luck: i32,
     lure_speed: i32,
-}
-
-impl VisitEntityReferences for FishingHookState {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.hooked_entity);
-    }
 }
 
 impl FishingHookState {
@@ -117,25 +109,18 @@ impl FishingHookEntity {
     /// We keep both this generic constructor and `shoot_from_player` in order to ensure future-proofing in terms of a future plugin API.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        let base = EntityBase::new(id, position, entity_type.dimensions, world);
-        let hook_state = EntityOwnedState::new(&base, FishingHookState::new(0, 0));
         Self {
-            base,
+            base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(FishingBobberEntityData::new()),
             projectile_base: ProjectileBase::new(),
-            hook_state,
+            hook_state: SyncMutex::new(FishingHookState::new(0, 0)),
             synchronized_random: SyncMutex::new(LegacyRandom::from_seed(0)),
         }
     }
 
     /// Mimics Java's `FishingHook(Player, Level, int, int)` constructor. (But we don't need `level` here)
-    pub fn shoot_from_player(
-        self: &EntityArc<Self>,
-        player: &EntityArc<Player>,
-        luck: i32,
-        lure_speed: i32,
-    ) {
+    pub fn shoot_from_player(self: &Arc<Self>, player: &Arc<Player>, luck: i32, lure_speed: i32) {
         const MAGIC_OFFSET: f64 = 0.010_336_5;
 
         {
@@ -192,21 +177,19 @@ impl FishingHookEntity {
     /// Creates a fishing hook entity from saved base data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        let base = EntityBase::from_load(load, entity_type.dimensions);
-        let hook_state = EntityOwnedState::new(&base, FishingHookState::new(0, 0));
         Self {
-            base,
+            base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(FishingBobberEntityData::new()),
             projectile_base: ProjectileBase::new(),
             // FIXME: `lure_speed` and `luck` are taken from the existing rod, but auto generation fails when doing this, refer to: https://mcsrc.dev/2/26.2/net/minecraft/world/entity/projectile/FishingHook#L75
-            hook_state,
+            hook_state: SyncMutex::new(FishingHookState::new(0, 0)),
             synchronized_random: SyncMutex::new(LegacyRandom::from_seed(0)),
         }
     }
 
     /// Sets the projectile owner and mirrors vanilla's `Player.fishing` update.
-    pub(crate) fn set_owner(self: &EntityArc<Self>, owner: &SharedEntity) {
+    pub(crate) fn set_owner(self: &Arc<Self>, owner: &SharedEntity) {
         self.set_owner_entity(Some(owner));
         if let Some(player) = owner.as_player() {
             player.set_fishing_hook(self);
@@ -240,9 +223,9 @@ impl FishingHookEntity {
     }
 
     /// Determines if the fishing hook should hit a target or be deflected.
-    fn check_collision(self: &EntityArc<Self>) {
+    fn check_collision(self: &Arc<Self>) {
         if let Some(hit_result) = self.get_hit_result_on_move_vector() {
-            EntityArc::clone(self).hit_target_or_deflect_self(&hit_result);
+            Arc::clone(self).hit_target_or_deflect_self(&hit_result);
         }
     }
 
@@ -255,7 +238,7 @@ impl FishingHookEntity {
 
         {
             let mut hook_state = self.hook_state.lock();
-            hook_state.hooked_entity = hooked.map(SharedEntityReference::new);
+            hook_state.hooked_entity = hooked;
         }
 
         let mut entity_data = self.entity_data.lock();
@@ -529,7 +512,7 @@ impl FishingHookEntity {
             if can_retrieve {
                 let hooked_in = {
                     let hook_state = self.hook_state.lock();
-                    hook_state.hooked_entity.as_deref().cloned()
+                    hook_state.hooked_entity.clone()
                 };
 
                 if let Some(hooked_in) = hooked_in {
@@ -584,9 +567,9 @@ impl FishingHookEntity {
 
                         orb.set_value(rand::random_range(1..=6));
 
-                        let entity: SharedEntity = EntityArc::new(orb);
+                        let entity: SharedEntity = Arc::new(orb);
 
-                        if let Err(error) = world.try_add_entity(EntityArc::clone(&entity)) {
+                        if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
                             log::error!("Failed to spawn experience orb: {error}");
                         }
 
@@ -605,7 +588,7 @@ impl FishingHookEntity {
     }
 
     /// Modifies the hooked entities velocity in order to simulate a pulling motion.
-    fn pull_entity(&self, entity: &EntityArc<dyn Entity>) {
+    fn pull_entity(&self, entity: &Arc<dyn Entity>) {
         if let Some(owner) = self.get_owner() {
             let base = owner.base();
             let delta = DVec3::new(
@@ -630,7 +613,7 @@ impl FishingHookEntity {
     }
 
     /// Clears owner info if `hook` is `None` and stores it, if it is `Some`
-    fn update_owner_info(&self, hook: Option<&EntityArc<FishingHookEntity>>) {
+    fn update_owner_info(&self, hook: Option<&Arc<FishingHookEntity>>) {
         if let Some(owner) = self.get_owner()
             && let Some(player) = owner.as_player()
         {
@@ -647,7 +630,7 @@ impl FishingHookEntity {
         &self,
         items: Vec<ItemStack>,
         world: Arc<World>,
-        owner: EntityArc<dyn Entity>,
+        owner: Arc<dyn Entity>,
     ) {
         for item_stack in items {
             const SPEED: f64 = 0.1;
@@ -686,7 +669,7 @@ impl FishingHookEntity {
 
     /// Bobber specific ticking logic. We return a `bool` here, so we can return early inside `tick`.
     fn tick_bobber(
-        self: &EntityArc<Self>,
+        self: &Arc<Self>,
         bobber_state: BobberState,
         world: &World,
         is_in_water: bool,
@@ -724,7 +707,7 @@ impl FishingHookEntity {
             BobberState::HookedInEntity => {
                 let hooked = {
                     let state = self.hook_state.lock();
-                    state.hooked_entity.as_deref().cloned()
+                    state.hooked_entity.clone()
                 };
 
                 let Some(hooked) = hooked else {
@@ -859,7 +842,7 @@ impl Entity for FishingHookEntity {
     }
 
     /// Responsible for all state-changes.
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         {
             let mut synchronized_random = self.synchronized_random.lock();
             let least_significant_bits = self.uuid().as_u64_pair().1;
@@ -910,8 +893,7 @@ impl Entity for FishingHookEntity {
                             .set_velocity(self.base.velocity().add(DVec3::new(0.0, -0.03, 0.0)));
                     }
 
-                    EntityArc::clone(&self)
-                        .move_entity(MoverType::SelfMovement, self.base.velocity());
+                    Arc::clone(&self).move_entity(MoverType::SelfMovement, self.base.velocity());
                     self.apply_effects_from_blocks();
                     self.update_rotation();
 
@@ -958,8 +940,8 @@ impl Projectile for FishingHookEntity {
     }
 
     /// Stores the hit entity inside `hooked_in`.
-    fn on_hit_entity(self: EntityArc<Self>, entity: &SharedEntity, _location: DVec3) {
-        self.set_hooked_entity(Some(EntityArc::clone(entity)));
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
+        self.set_hooked_entity(Some(Arc::clone(entity)));
     }
 }
 
@@ -990,11 +972,10 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::EntityArc;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
-    fn test_hook(world: &Arc<World>, id: i32) -> EntityArc<FishingHookEntity> {
-        EntityArc::new(FishingHookEntity::new(
+    fn test_hook(world: &Arc<World>, id: i32) -> Arc<FishingHookEntity> {
+        Arc::new(FishingHookEntity::new(
             &vanilla_entities::FISHING_BOBBER,
             id,
             DVec3::ZERO,
@@ -1017,7 +998,7 @@ mod tests {
     fn removal_only_clears_the_matching_active_hook() {
         let world = fresh_test_world("fishing_hook_owner_lifecycle");
         let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(2), 40).build();
-        let player_owner = EntityArc::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let first = test_hook(&world, 41);
         let second = test_hook(&world, 42);
@@ -1026,7 +1007,7 @@ mod tests {
         assert!(
             player
                 .fishing_hook()
-                .is_some_and(|active| EntityArc::ptr_eq(&active, &first))
+                .is_some_and(|active| Arc::ptr_eq(&active, &first))
         );
 
         second.set_owner(&owner);
@@ -1034,7 +1015,7 @@ mod tests {
         assert!(
             player
                 .fishing_hook()
-                .is_some_and(|active| EntityArc::ptr_eq(&active, &second))
+                .is_some_and(|active| Arc::ptr_eq(&active, &second))
         );
 
         second.set_removed(RemovalReason::Discarded);
@@ -1049,7 +1030,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = EntityArc::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = test_hook(&world, 51);
         hook.set_owner(&owner);
@@ -1124,7 +1105,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = EntityArc::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = test_hook(&world, 201);
         hook.set_owner(&owner);
@@ -1135,9 +1116,9 @@ mod tests {
         hook.try_set_position(player.position())
             .expect("should position hook");
 
-        EntityArc::clone(&hook).tick();
+        Arc::clone(&hook).tick();
 
-        let hooked_entity = hook.hook_state.lock().hooked_entity.as_deref().cloned();
+        let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
         assert!(
             hooked_entity.is_none(),
             "Grounded stationary hook must not hook player standing on it"
@@ -1170,7 +1151,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = EntityArc::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
 
         let hook = test_hook(&world, 301);
@@ -1180,7 +1161,7 @@ mod tests {
         hook.set_velocity(DVec3::ZERO);
         hook.hook_state.lock().bobber_state = BobberState::Bobbing;
 
-        EntityArc::clone(&hook).tick();
+        Arc::clone(&hook).tick();
 
         assert!(
             hook.velocity().y > 0.0,

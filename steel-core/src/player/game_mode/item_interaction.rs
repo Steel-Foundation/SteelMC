@@ -3,7 +3,6 @@ use super::{
     InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
     wrap_degrees,
 };
-use crate::entity::EntityArc;
 
 /// Handles using an item on a block.
 ///
@@ -17,7 +16,7 @@ use crate::entity::EntityArc;
 /// 5. If item not empty: Call item behavior's `use_on` for placement
 /// 6. Handle creative mode infinite materials
 pub fn use_item_on(
-    player: &EntityArc<Player>,
+    player: &Arc<Player>,
     world: &Arc<World>,
     hand: InteractionHand,
     hit_result: &BlockHitResult,
@@ -121,7 +120,7 @@ pub fn use_item_on(
 ///
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
 pub fn use_item(
-    player: &EntityArc<Player>,
+    player: &Arc<Player>,
     world: &Arc<World>,
     hand: InteractionHand,
 ) -> InteractionResult {
@@ -162,7 +161,7 @@ pub fn use_item(
 
 impl Player {
     /// Handles the use of an item.
-    pub fn handle_use_item(self: &EntityArc<Self>, packet: SUseItem) {
+    pub fn handle_use_item(self: &Arc<Self>, packet: SUseItem) {
         if !self.has_client_loaded() {
             return;
         }

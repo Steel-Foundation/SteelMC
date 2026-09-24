@@ -236,13 +236,12 @@ fn is_no_creative_or_spectator(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::ai::goal::selector::Goal;
     use crate::entity::{Mob, entities::PigEntity};
 
@@ -251,7 +250,7 @@ mod tests {
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
-        EntityArc::new(pig(id, position))
+        Arc::new(pig(id, position))
     }
 
     #[test]
@@ -326,7 +325,7 @@ mod tests {
     fn melee_attack_goal_tick_recalculates_path_with_failed_move_penalty() {
         init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
-        let mob = EntityArc::new(pig(1, DVec3::ZERO));
+        let mob = Arc::new(pig(1, DVec3::ZERO));
         let mob_entity: SharedEntity = mob.clone();
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));

@@ -22,7 +22,6 @@ use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 
-use crate::entity::EntityArc;
 use crate::entity::entities::ItemEntity;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
@@ -225,7 +224,7 @@ impl Entity for EyeOfEnderEntity {
         false
     }
 
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         let next_pos = self.position() + self.velocity();
 
         let target_pos = self.state.lock().target_pos;
@@ -263,7 +262,7 @@ impl Entity for EyeOfEnderEntity {
                 self.get_item(),
                 Arc::downgrade(&world),
             );
-            let entity: SharedEntity = EntityArc::new(item);
+            let entity: SharedEntity = Arc::new(item);
             if let Err(error) = world.try_add_entity(entity) {
                 log::warn!("failed to drop eye of ender item: {error}");
             }

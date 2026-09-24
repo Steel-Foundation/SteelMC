@@ -10,7 +10,6 @@ use crate::chunk::heightmap::ChunkHeightmaps;
 use crate::chunk::light::ChunkLightData;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk_saver::RamOnlyStorage;
-use crate::entity::EntityArc;
 use crate::player::connection::NetworkConnection;
 use crate::player::{PlayerConnection, ResetReason};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -66,7 +65,7 @@ impl NetworkConnection for RecordingConnection {
     }
 }
 
-fn recording_player(world: &Arc<World>) -> (EntityArc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),

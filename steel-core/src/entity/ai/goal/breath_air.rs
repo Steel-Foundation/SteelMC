@@ -1,6 +1,6 @@
-use crate::entity::EntityArc;
 use crate::entity::SharedEntity;
 use glam::DVec3;
+use std::sync::Arc;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_blocks;
@@ -61,7 +61,7 @@ impl Goal for BreathAirGoal {
                 f64::from(input.forward()),
             ),
         );
-        EntityArc::clone(entity).move_entity(MoverType::SelfMovement, mob.velocity());
+        Arc::clone(entity).move_entity(MoverType::SelfMovement, mob.velocity());
     }
 }
 
@@ -140,7 +140,6 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::entities::PigEntity;
     use crate::entity::{Entity, LivingEntity, LivingTravelInput};
 
@@ -170,7 +169,7 @@ mod tests {
     fn breath_air_goal_tick_applies_travel_input_to_velocity() {
         init_vanilla_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = EntityArc::new(PigEntity::new(
+        let mob = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::ZERO,

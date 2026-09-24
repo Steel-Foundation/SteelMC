@@ -248,7 +248,6 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::entity::EntityArc;
     use crate::entity::{InsideBlockEffectCollector, RemovalReason, SharedEntity};
     use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
@@ -274,7 +273,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(EntityArc::clone(&minecart))
+            .try_add_entity(Arc::clone(&minecart))
             .expect("test minecart should enter loaded chunk");
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::DETECTOR_RAIL);

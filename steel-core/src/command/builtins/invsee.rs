@@ -1,4 +1,8 @@
-use std::{array, ops::Range, sync::Arc};
+use std::{
+    array,
+    ops::Range,
+    sync::{Arc, Weak},
+};
 
 use steel_registry::vanilla_menu_types;
 use steel_utils::Identifier;
@@ -13,7 +17,6 @@ use super::super::{
     registration::{CommandRegistration, CommandRegistrationError},
 };
 use crate::entity::Entity;
-use crate::entity::{EntityArc, EntityWeak};
 use crate::inventory::menu::Menu;
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
@@ -62,8 +65,8 @@ fn command(
             // when `/execute as` changes which player receives the menu. Capture
             // the resulting mode once when the menu opens.
             let modify = ctx.source().has_permission(&modify_permission);
-            let opener = EntityArc::clone(source);
-            let menu_source = EntityArc::clone(source);
+            let opener = Arc::clone(source);
+            let menu_source = Arc::clone(source);
             opener.open_menu(target.display_name(), move |context| {
                 invsee(context.container_id, &menu_source, &target, modify)
             });
@@ -88,12 +91,7 @@ fn ensure_same_domain(source: &Player, target: &Player) -> Result<(), CommandSyn
     ))
 }
 
-fn invsee(
-    container_id: u8,
-    source: &EntityArc<Player>,
-    target: &EntityArc<Player>,
-    modify: bool,
-) -> Menu {
+fn invsee(container_id: u8, source: &Arc<Player>, target: &Arc<Player>, modify: bool) -> Menu {
     let mut b = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X5, container_id);
 
     let kind = if modify {
@@ -150,7 +148,7 @@ fn invsee(
     }
 
     b.build(InvseeMenuKind {
-        target: EntityArc::downgrade(target),
+        target: Arc::downgrade(target),
         target_inventory_id: ContainerId::from_arc(&target.inventory),
         domain: target.get_world().domain().into(),
         modify,
@@ -162,7 +160,7 @@ fn invsee(
 }
 
 struct InvseeMenuKind {
-    target: EntityWeak<Player>,
+    target: Weak<Player>,
     target_inventory_id: ContainerId,
     domain: Box<str>,
     modify: bool,

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::entity::EntityArc;
 use crate::{entity::LivingEntity as _, world::World};
 
 use super::super::{Abilities, Player, experience::Experience};
@@ -13,12 +12,12 @@ impl Player {
     /// is therefore shared by both incarnations. For a death replacement,
     /// `transfer_inventory` must be `keepInventory || old spectator`.
     pub(crate) fn new_respawn_replacement(
-        self: &EntityArc<Self>,
+        self: &Arc<Self>,
         target_world: Arc<World>,
         restore_all: bool,
         transfer_inventory: bool,
         spawn_block_valid: bool,
-    ) -> EntityArc<Self> {
+    ) -> Arc<Self> {
         let mut replacement = Self::new(
             self.gameprofile.clone(),
             Arc::clone(&self.connection),
@@ -31,7 +30,7 @@ impl Player {
         );
         // Vanilla ServerPlayer.restoreFrom retains the same ender chest container.
         replacement.ender_chest_inventory = Arc::clone(&self.ender_chest_inventory);
-        let replacement = EntityArc::new(replacement);
+        let replacement = Arc::new(replacement);
 
         replacement.restore_respawn_state_from(
             self,
@@ -139,7 +138,6 @@ mod tests {
     };
     use steel_utils::{BlockPos, Identifier, types::GameType};
 
-    use crate::entity::EntityArc;
     use crate::{
         behavior::init_behaviors,
         entity::{
@@ -202,7 +200,7 @@ mod tests {
         assert_eq!(replacement.id(), old_player.id());
         assert_eq!(replacement.uuid(), old_player.uuid());
         assert_ne!(replacement.generation(), old_player.generation());
-        assert!(!EntityArc::ptr_eq(&replacement, &old_player));
+        assert!(!Arc::ptr_eq(&replacement, &old_player));
         assert!(Arc::ptr_eq(&replacement.connection, &old_player.connection));
         assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
         assert!(Arc::ptr_eq(&replacement.config, &old_player.config));

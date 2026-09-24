@@ -1,6 +1,5 @@
 use super::*;
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
-use crate::entity::EntityArc;
 use crate::test_support::tick_test_world;
 use uuid::Uuid;
 
@@ -95,7 +94,7 @@ fn player_simulation_removal_applies_at_the_next_world_tick() {
         .acquire_chunk_request_leases(&[center], ChunkTicketLevel::FULL_CHUNK);
 
     let player = TestPlayerBuilder::new(Arc::clone(&world), "SimulationPlayer", 1).build();
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     world.tick_game(1, false);
     assert_eq!(world.chunk_map.tickable_full_chunk_positions(), [center]);
 
@@ -160,7 +159,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(!world.chunk_map.light_update_touches_chunk(center));
 
     let (player, packets) = recording_player(&world);
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     // Keep player-ticket generation from competing with the light-work fixture.
     world.chunk_map.stop_generation_refill_loop();
     let _ = player.mark_joined_world();
@@ -227,7 +226,7 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
     world.chunk_map.broadcast_changed_chunks();
 
     let (player, packets) = recording_player(&world);
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
     player
@@ -268,7 +267,7 @@ fn removing_player_invalidates_old_world_chunks_without_resetting_connection_pac
     let sent = ChunkPos::new(0, 0);
     insert_ready_full_chunk(&world, sent);
     let (player, _) = recording_player(&world);
-    assert!(world.add_player(EntityArc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
 
     let pending = ChunkPos::new(20, -30);
     let batch = player

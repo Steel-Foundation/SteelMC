@@ -1,5 +1,4 @@
 use super::*;
-use crate::entity::EntityArc;
 
 #[test]
 fn add_live_entity_rejects_manager_owned_unloaded_chunk() {
@@ -32,7 +31,7 @@ fn add_live_entity_accepts_external_unloaded_chunk() {
     let Some(live_entity) = manager.get_by_id(entity.id()) else {
         panic!("entity in unloaded chunk should be live");
     };
-    assert!(EntityArc::ptr_eq(&entity, &live_entity));
+    assert!(Arc::ptr_eq(&entity, &live_entity));
 }
 
 #[test]
@@ -60,7 +59,7 @@ fn add_live_entity_rejects_duplicate_uuid_without_registering_second_entity() {
     let Some(live_first) = manager.get_by_id(1) else {
         panic!("first entity should stay registered");
     };
-    assert!(EntityArc::ptr_eq(&first, &live_first));
+    assert!(Arc::ptr_eq(&first, &live_first));
     assert!(manager.get_by_id(2).is_none());
     assert_eq!(manager.count(), 1);
 }
@@ -72,8 +71,7 @@ fn add_live_entity_tree_rejects_duplicate_uuid_without_partial_registration() {
 
     let existing_uuid = Uuid::from_u128(5);
     let existing = ManagerTestEntity::shared(1, existing_uuid, DVec3::new(1.0, 64.0, 1.0));
-    let result =
-        manager.add_live_entity(EntityArc::clone(&existing), EntityOwnership::ManagerOwned);
+    let result = manager.add_live_entity(Arc::clone(&existing), EntityOwnership::ManagerOwned);
     assert!(
         result.is_ok(),
         "existing entity should register before duplicate UUID test: {result:?}"
@@ -85,7 +83,7 @@ fn add_live_entity_tree_rejects_duplicate_uuid_without_partial_registration() {
 
     assert!(matches!(
         manager.add_live_entity_tree(
-            &[EntityArc::clone(&vehicle), EntityArc::clone(&passenger)],
+            &[Arc::clone(&vehicle), Arc::clone(&passenger)],
             EntityOwnership::ManagerOwned,
         ),
         Err(AddEntityError::DuplicateUuid {

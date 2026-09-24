@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
@@ -11,7 +13,6 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, ty
 
 use super::StructurePiecePlacer;
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::EntityArc;
 use crate::entity::{entities::ChestMinecartEntity, next_entity_id};
 use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::region::WorldGenRegion;
@@ -601,7 +602,7 @@ impl MineshaftPlacer<'_, '_> {
         let rail = Self::rail().set_value(&BlockStateProperties::RAIL_SHAPE, shape);
         self.place_block(rail, x, y, z);
         let loot_seed = random.next_i64();
-        let chest = EntityArc::new(ChestMinecartEntity::new(
+        let chest = Arc::new(ChestMinecartEntity::new(
             &vanilla_entities::CHEST_MINECART,
             next_entity_id(),
             DVec3::new(

@@ -102,7 +102,6 @@ mod tests {
     use crate::behavior::item::ItemBehavior;
     use crate::behavior::{InteractionResult, UseItemContext, init_behaviors};
     use crate::entity::Entity;
-    use crate::entity::EntityArc;
     use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
@@ -114,7 +113,7 @@ mod tests {
         feet: DVec3,
         target: BlockPos,
         state: BlockStateId,
-    ) -> EntityArc<Player> {
+    ) -> Arc<Player> {
         insert_ready_full_chunk(world, ChunkPos::from_block_pos(target));
         if world.get_block_state(target) != state {
             assert!(world.set_block(target, state, UpdateFlags::UPDATE_NONE));
@@ -128,7 +127,7 @@ mod tests {
         player
     }
 
-    fn use_bottle(player: &EntityArc<Player>, world: &Arc<World>, count: i32) -> InteractionResult {
+    fn use_bottle(player: &Arc<Player>, world: &Arc<World>, count: i32) -> InteractionResult {
         player.inventory.lock().set_item_in_hand(
             InteractionHand::MainHand,
             ItemStack::with_count(&vanilla_items::GLASS_BOTTLE, count),

@@ -1,6 +1,5 @@
 use crate::behavior::InteractionResult;
 use crate::entity::BorrowedNbtCompoundView;
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::player::Player;
@@ -9,6 +8,7 @@ use glam::DVec3;
 use parking_lot::MutexGuard;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
+use std::sync::Arc;
 use std::sync::Weak;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
@@ -182,7 +182,7 @@ impl Entity for InteractionEntity {
         )
     }
 
-    fn tick(self: EntityArc<Self>) {}
+    fn tick(self: Arc<Self>) {}
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
@@ -369,7 +369,6 @@ impl InteractionEntityDataView<'_> {
 #[cfg(test)]
 mod tests {
     use crate::entity::Entity;
-
     use crate::entity::entities::InteractionEntity;
     use crate::entity::entities::objects::technical::interaction::{
         DEFAULT_HEIGHT, DEFAULT_WIDTH, PlayerAction, TAG_HEIGHT, TAG_WIDTH,

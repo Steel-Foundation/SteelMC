@@ -9,7 +9,6 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::entity::EntityArc;
 use crate::{inventory::prelude::*, server::Server, world::World};
 
 use super::super::{
@@ -34,8 +33,8 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 ));
             };
             let server = Arc::clone(ctx.source().server());
-            let player = EntityArc::clone(player);
-            let menu_player = EntityArc::clone(&player);
+            let player = Arc::clone(player);
+            let menu_player = Arc::clone(&player);
 
             player.open_menu("Domains", move |context| {
                 domain_menu(context.container_id, menu_player, context.world, &server)
@@ -57,7 +56,7 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(EntityArc::clone(player), Arc::clone(&world))
+        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world))
         .map_err(CommandSyntaxError::dynamic)?;
 
     source.send_success(
@@ -69,7 +68,7 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
 
 fn domain_menu(
     container_id: u8,
-    player: EntityArc<Player>,
+    player: Arc<Player>,
     current_world: &Arc<World>,
     server: &Arc<Server>,
 ) -> Menu {
@@ -164,7 +163,7 @@ fn icon(world: &Arc<World>, current_world: &Arc<World>) -> ItemStack {
 struct DomainMenuKind {
     map: Vec<(Section, Vec<Arc<World>>)>,
     server: Arc<Server>,
-    player: EntityArc<Player>,
+    player: Arc<Player>,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete menu kind
@@ -208,7 +207,7 @@ impl MenuKind for DomainMenuKind {
 
         if let Err(error) = self
             .server
-            .queue_player_world_selection(EntityArc::clone(&self.player), Arc::clone(world))
+            .queue_player_world_selection(Arc::clone(&self.player), Arc::clone(world))
         {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }
@@ -224,7 +223,6 @@ mod tests {
         brigadier::{CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-
     use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;

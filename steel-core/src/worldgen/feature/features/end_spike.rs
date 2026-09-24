@@ -1,4 +1,5 @@
 use std::f64::consts::PI;
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_math::DEGREE_360;
@@ -6,7 +7,6 @@ use steel_registry::vanilla_entities;
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
-use crate::entity::EntityArc;
 use crate::entity::{Entity, entities::EndCrystalEntity, next_entity_id};
 
 const END_SPIKE_COUNT: usize = 10;
@@ -177,7 +177,7 @@ impl FeatureDecorationRunner {
             f64::from(spike.height + 1),
             f64::from(spike.center_z) + 0.5,
         );
-        let crystal = EntityArc::new(EndCrystalEntity::new(
+        let crystal = Arc::new(EndCrystalEntity::new(
             &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             position,

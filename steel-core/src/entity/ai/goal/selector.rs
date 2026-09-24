@@ -1,7 +1,8 @@
+use crate::entity::SharedEntity;
 use std::fmt;
 use std::ops::BitOr;
 
-use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntity, VisitEntityReferences};
+use crate::entity::PathfinderMob;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalControl {
@@ -75,9 +76,6 @@ impl BitOr for GoalControls {
 }
 
 pub trait Goal: Send {
-    /// Visits strong entity fields, including those in nested goals.
-    fn visit_entity_references(&mut self, _visitor: &mut EntityReferenceVisitor) {}
-
     fn controls(&self) -> GoalControls;
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool;
@@ -172,14 +170,6 @@ impl WrappedGoal {
 pub struct GoalSelector {
     available_goals: Vec<WrappedGoal>,
     disabled_controls: GoalControls,
-}
-
-impl VisitEntityReferences for GoalSelector {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        for goal in &mut self.available_goals {
-            goal.goal.visit_entity_references(visitor);
-        }
-    }
 }
 
 impl GoalSelector {
@@ -350,6 +340,8 @@ impl fmt::Debug for GoalSelector {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -359,7 +351,6 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::{
         Entity, EntityBase, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob,
     };
@@ -375,17 +366,15 @@ mod tests {
     impl TestPathfinderMob {
         fn new() -> Self {
             init_vanilla_registry();
-            let base = EntityBase::new(
-                1,
-                DVec3::ZERO,
-                vanilla_entities::PIG.dimensions,
-                Weak::new(),
-            );
-            let mob_base = MobBase::new(&base);
             Self {
-                base,
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    vanilla_entities::PIG.dimensions,
+                    Weak::new(),
+                ),
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base,
+                mob_base: MobBase::new(),
                 mob_flags: SyncMutex::new(0),
                 health: SyncMutex::new(10.0),
             }
@@ -533,7 +522,7 @@ mod tests {
 
     #[test]
     fn lower_priority_goal_replaces_running_goal_for_same_control() {
-        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(5, StaticGoal::new(GoalControls::MOVE));
@@ -548,7 +537,7 @@ mod tests {
 
     #[test]
     fn non_interruptable_goal_blocks_replacement() {
-        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(5, StaticGoal::new(GoalControls::MOVE).non_interruptable());
@@ -563,7 +552,7 @@ mod tests {
 
     #[test]
     fn disabled_control_stops_running_goal() {
-        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(5, StaticGoal::new(GoalControls::MOVE));
@@ -578,7 +567,7 @@ mod tests {
     #[test]
     fn tick_running_goals_respects_requires_update_every_tick() {
         RUNNING_TICK_COUNT.store(0, Ordering::Relaxed);
-        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(
@@ -596,7 +585,7 @@ mod tests {
 
     #[test]
     fn cleanup_stops_goal_that_can_no_longer_continue() {
-        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(
@@ -614,7 +603,7 @@ mod tests {
 
     #[test]
     fn running_panic_goal_is_visible_to_pathfinder_mob() {
-        let mob = EntityArc::new(TestPathfinderMob::new());
+        let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = mob.clone();
         mob.mob_base()
             .goal_selector()

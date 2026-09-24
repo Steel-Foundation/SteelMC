@@ -1,4 +1,7 @@
-use std::{mem, sync::Weak};
+use std::{
+    mem,
+    sync::{Arc, Weak},
+};
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
 use steel_registry::item_stack::ItemStack;
@@ -8,7 +11,6 @@ use steel_registry::{
 use steel_utils::BlockPos;
 
 use super::*;
-use crate::entity::{EntityArc, EntityWeak};
 use crate::entity::{
     EntityBase, LivingEntity, LivingEntityBase,
     entities::{LeashFenceKnotEntity, PigEntity},
@@ -28,7 +30,7 @@ struct PairingTestEntity {
 }
 
 impl PairingTestEntity {
-    fn new(id: i32, attributes: Vec<AttributeSnapshot>) -> EntityArc<Self> {
+    fn new(id: i32, attributes: Vec<AttributeSnapshot>) -> Arc<Self> {
         Self::new_with_type(id, &vanilla_entities::ITEM, attributes)
     }
 
@@ -36,8 +38,8 @@ impl PairingTestEntity {
         id: i32,
         entity_type: EntityTypeRef,
         attributes: Vec<AttributeSnapshot>,
-    ) -> EntityArc<Self> {
-        EntityArc::new(Self {
+    ) -> Arc<Self> {
+        Arc::new(Self {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
             living_base: LivingEntityBase::new(&vanilla_entities::PIG),
@@ -55,7 +57,7 @@ impl PairingTestEntity {
     }
 
     fn add_passenger(&self, passenger: &SharedEntity) {
-        self.passengers.lock().push(EntityArc::downgrade(passenger));
+        self.passengers.lock().push(Arc::downgrade(passenger));
     }
 
     fn clear_passengers(&self) {
@@ -63,7 +65,7 @@ impl PairingTestEntity {
     }
 
     fn set_vehicle(&self, vehicle: &SharedEntity) {
-        *self.vehicle.lock() = Some(EntityArc::downgrade(vehicle));
+        *self.vehicle.lock() = Some(Arc::downgrade(vehicle));
     }
 
     fn set_dirty_attributes(&self, attributes: Vec<AttributeSnapshot>) {
@@ -91,7 +93,7 @@ impl Entity for PairingTestEntity {
     }
 
     fn vehicle(&self) -> Option<SharedEntity> {
-        self.vehicle.lock().as_ref().and_then(EntityWeak::upgrade)
+        self.vehicle.lock().as_ref().and_then(Weak::upgrade)
     }
 
     fn passengers(&self) -> Vec<SharedEntity> {
@@ -140,7 +142,7 @@ fn track_entity_for_player(tracker: &EntityTracker, entity: &SharedEntity, playe
     let mut seen_by = FxHashSet::default();
     seen_by.insert(player_id);
     let tracked_entity = TrackedEntity {
-        entity: EntityArc::downgrade(entity),
+        entity: Arc::downgrade(entity),
         server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
             pos,
             entity.velocity(),

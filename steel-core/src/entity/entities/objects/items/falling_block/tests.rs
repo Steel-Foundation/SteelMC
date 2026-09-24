@@ -1,4 +1,3 @@
-use crate::entity::EntityArc;
 use crate::test_support::TestWorld;
 use steel_registry::init_vanilla_registry;
 use steel_utils::ChunkPos;
@@ -21,13 +20,13 @@ fn set_test_block(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
     assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
 }
 
-fn tick_until_settled(entities: &[&EntityArc<FallingBlockEntity>]) {
+fn tick_until_settled(entities: &[&Arc<FallingBlockEntity>]) {
     for _ in 0..240 {
         for entity in entities {
             if entity.is_alive() {
                 entity.set_old_position_to_current();
                 entity.advance_tick_count();
-                EntityArc::clone(entity).tick();
+                Arc::clone(entity).tick();
             }
         }
         if entities.iter().all(|entity| entity.is_removed()) {
@@ -41,7 +40,7 @@ fn start_falling(
     world: &Arc<World>,
     pos: BlockPos,
     state: BlockStateId,
-) -> EntityArc<FallingBlockEntity> {
+) -> Arc<FallingBlockEntity> {
     set_test_block(world, pos, state);
     FallingBlockEntity::fall(world, pos, state)
 }

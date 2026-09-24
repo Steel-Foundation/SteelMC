@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_protocol::packets::game::{CStopSound, SoundSource};
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -11,7 +13,6 @@ use super::super::{
     registration::CommandRegistration,
 };
 
-use crate::entity::EntityArc;
 use crate::player::Player;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -113,13 +114,13 @@ fn stop_sound(
     target_count(&targets)
 }
 
-fn execute(source: Option<SoundSource>, sound: Option<&Identifier>, targets: &[EntityArc<Player>]) {
+fn execute(source: Option<SoundSource>, sound: Option<&Identifier>, targets: &[Arc<Player>]) {
     for target in targets {
         target.send_packet(CStopSound::new(source, sound.cloned()));
     }
 }
 
-fn target_count(targets: &[EntityArc<Player>]) -> Result<i32, CommandSyntaxError> {
+fn target_count(targets: &[Arc<Player>]) -> Result<i32, CommandSyntaxError> {
     i32::try_from(targets.len()).map_err(|_| {
         CommandSyntaxError::dynamic("Target player count exceeds the command result range")
     })

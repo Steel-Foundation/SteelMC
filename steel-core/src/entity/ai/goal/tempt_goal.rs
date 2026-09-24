@@ -1,3 +1,6 @@
+use crate::entity::SharedEntity;
+use std::sync::Arc;
+
 use glam::DVec3;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
@@ -5,9 +8,7 @@ use steel_registry::vanilla_attributes;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{
-    Entity, EntityReference, EntityReferenceVisitor, LivingEntity, PathfinderMob, SharedEntity,
-};
+use crate::entity::{Entity, LivingEntity, PathfinderMob};
 use crate::player::Player;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
@@ -15,7 +16,7 @@ const DEFAULT_STOP_DISTANCE: f64 = 2.5;
 type TemptItemPredicate = Box<dyn Fn(&ItemStack) -> bool + Send + Sync>;
 
 pub struct TemptGoal {
-    player: Option<EntityReference<Player>>,
+    player: Option<Arc<Player>>,
     player_position: DVec3,
     player_yaw: f32,
     player_pitch: f32,
@@ -103,10 +104,6 @@ impl TemptGoal {
 }
 
 impl Goal for TemptGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.player);
-    }
-
     fn controls(&self) -> GoalControls {
         GoalControls::MOVE | GoalControls::LOOK
     }
@@ -125,12 +122,10 @@ impl Goal for TemptGoal {
             .lock()
             .required_value(vanilla_attributes::TEMPT_RANGE);
         let targeting_conditions = Self::targeting_conditions(range);
-        self.player = world
-            .nearest_player(mob.position(), range, |player| {
-                targeting_conditions.test(world.as_ref(), Some(mob), player)
-                    && self.should_follow(player)
-            })
-            .map(EntityReference::new);
+        self.player = world.nearest_player(mob.position(), range, |player| {
+            targeting_conditions.test(world.as_ref(), Some(mob), player)
+                && self.should_follow(player)
+        });
         self.player.is_some()
     }
 

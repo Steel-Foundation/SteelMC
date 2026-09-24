@@ -37,7 +37,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
-use crate::entity::EntityArc;
+
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerSession};
 use crate::server::Server;
@@ -248,7 +248,7 @@ impl ScheduledPlayPacket {
         clippy::too_many_lines,
         reason = "flat dispatch over every scheduled packet kind"
     )]
-    pub(crate) fn handle(self, player: EntityArc<Player>, server: &Arc<Server>) {
+    pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;
         }
@@ -263,7 +263,7 @@ impl ScheduledPlayPacket {
                 player.handle_custom_payload(packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
-                player.handle_chat(*packet, EntityArc::clone(&player));
+                player.handle_chat(*packet, Arc::clone(&player));
             }
             ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
             ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
@@ -627,7 +627,7 @@ impl JavaConnection {
     fn process_packet(
         &self,
         packet: RawPacket,
-        player: EntityArc<Player>,
+        player: Arc<Player>,
         server: &Server,
     ) -> Result<(), PacketError> {
         if !player.has_joined_world() && !Self::can_process_before_join(packet.id) {

@@ -130,7 +130,6 @@ impl Goal for EatBlockGoal {
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::EntityArc;
     use crate::test_support::TestWorld;
 
     use std::sync::{Arc, Weak};
@@ -173,9 +172,9 @@ mod tests {
             Arc::downgrade(&world),
         );
         sheep.set_sheared(true);
-        let shared: SharedEntity = EntityArc::new(sheep);
+        let shared: SharedEntity = Arc::new(sheep);
         world
-            .try_add_entity(EntityArc::clone(&shared))
+            .try_add_entity(Arc::clone(&shared))
             .expect("sheep should attach to the loaded test chunk");
         world.set_block_state(
             shared.block_position().below(),

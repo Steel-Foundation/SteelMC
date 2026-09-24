@@ -1,6 +1,5 @@
-use std::{f32::consts::TAU, mem};
+use std::{f32::consts::TAU, mem, sync::Arc};
 
-use crate::entity::EntityArc;
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
@@ -406,7 +405,7 @@ impl Player {
     }
 
     /// Handles an anvil rename packet.
-    pub fn handle_rename_item(self: &EntityArc<Self>, packet: SRenameItem) {
+    pub fn handle_rename_item(self: &Arc<Self>, packet: SRenameItem) {
         match self.take_open_menu_for_callback(None) {
             Ok(mut menu) => {
                 if menu.still_valid(self) {
@@ -1007,7 +1006,7 @@ impl Player {
         item: ItemStack,
         throw_randomly: bool,
         thrown_from_hand: bool,
-    ) -> Option<EntityArc<ItemEntity>> {
+    ) -> Option<Arc<ItemEntity>> {
         if item.is_empty() {
             return None;
         }

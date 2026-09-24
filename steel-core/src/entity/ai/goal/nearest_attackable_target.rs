@@ -4,9 +4,7 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{
-    EntityReferenceVisitor, LivingEntity, PathfinderMob, SharedEntity, SharedEntityReference,
-};
+use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_RANDOM_INTERVAL: i32 = 10;
@@ -19,7 +17,7 @@ enum TargetSearch {
 pub(crate) struct NearestAttackableTargetGoal {
     target_goal: TargetGoalBase,
     random_interval: i32,
-    target: Option<SharedEntityReference>,
+    target: Option<SharedEntity>,
     target_conditions: TargetingConditions,
     search: TargetSearch,
 }
@@ -115,21 +113,15 @@ impl NearestAttackableTargetGoal {
                         .is_some_and(|target| target_conditions.test(level, Some(mob), target))
                 })
             }
-        }
-        .map(SharedEntityReference::new);
+        };
     }
 
     pub(crate) fn set_target(&mut self, target: Option<SharedEntity>) {
-        self.target = target.map(SharedEntityReference::new);
+        self.target = target;
     }
 }
 
 impl Goal for NearestAttackableTargetGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        visitor.visit(&mut self.target);
-        self.target_goal.visit_entity_references(visitor);
-    }
-
     fn controls(&self) -> GoalControls {
         GoalControls::TARGET
     }
@@ -148,7 +140,7 @@ impl Goal for NearestAttackableTargetGoal {
     }
 
     fn start(&mut self, mob: &dyn PathfinderMob) {
-        let _ = mob.set_target(self.target.as_deref());
+        let _ = mob.set_target(self.target.as_ref());
         self.target_goal.start();
     }
 
@@ -160,7 +152,6 @@ impl Goal for NearestAttackableTargetGoal {
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::EntityArc;
     use crate::test_support::TestWorld;
 
     use std::sync::Arc;
@@ -177,30 +168,25 @@ mod tests {
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (
-        TestWorld,
-        EntityArc<PigEntity>,
-        EntityArc<PigEntity>,
-        EntityArc<CowEntity>,
-    ) {
+    ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(name);
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-        let hunter = EntityArc::new(PigEntity::new(
+        let hunter = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(&world),
         ));
-        let nearer_pig = EntityArc::new(PigEntity::new(
+        let nearer_pig = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(&world),
         ));
-        let farther_cow = EntityArc::new(CowEntity::new(
+        let farther_cow = Arc::new(CowEntity::new(
             &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),
@@ -208,9 +194,9 @@ mod tests {
         ));
 
         for entity in [
-            EntityArc::clone(&hunter) as SharedEntity,
-            EntityArc::clone(&nearer_pig) as SharedEntity,
-            EntityArc::clone(&farther_cow) as SharedEntity,
+            Arc::clone(&hunter) as SharedEntity,
+            Arc::clone(&nearer_pig) as SharedEntity,
+            Arc::clone(&farther_cow) as SharedEntity,
         ] {
             world
                 .try_add_entity(entity)

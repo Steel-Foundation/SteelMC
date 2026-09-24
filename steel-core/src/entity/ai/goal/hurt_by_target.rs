@@ -4,7 +4,7 @@ use steel_utils::{DowncastTypeKey, WorldAabb};
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{EntityReferenceVisitor, PathfinderMob, SharedEntity};
+use crate::entity::{PathfinderMob, SharedEntity};
 
 const HURT_BY_UNSEEN_MEMORY_TICKS: i32 = 300;
 const ALERT_RANGE_Y: f64 = 10.0;
@@ -102,10 +102,6 @@ impl Default for HurtByTargetGoal {
 }
 
 impl Goal for HurtByTargetGoal {
-    fn visit_entity_references(&mut self, visitor: &mut EntityReferenceVisitor) {
-        self.target_goal.visit_entity_references(visitor);
-    }
-
     fn controls(&self) -> GoalControls {
         GoalControls::TARGET
     }
@@ -174,7 +170,6 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::EntityArc;
     use crate::entity::entities::{CowEntity, PigEntity};
     use crate::entity::{Entity, LivingEntity, Mob};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
@@ -187,19 +182,19 @@ mod tests {
         let world = fresh_test_world("hurt_by_target_goal");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-        let hunter = EntityArc::new(PigEntity::new(
+        let hunter = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(&world),
         ));
-        let ally = EntityArc::new(PigEntity::new(
+        let ally = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(&world),
         ));
-        let attacker = EntityArc::new(CowEntity::new(
+        let attacker = Arc::new(CowEntity::new(
             &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),

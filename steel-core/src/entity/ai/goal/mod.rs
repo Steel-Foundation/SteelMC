@@ -20,8 +20,6 @@ mod move_towards_restriction;
 mod move_towards_target;
 mod nearest_attackable_target;
 mod open_door;
-#[cfg(test)]
-mod ownership_tests;
 mod panic_goal;
 mod random_look_around;
 mod random_pos;

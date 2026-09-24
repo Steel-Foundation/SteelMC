@@ -156,7 +156,6 @@ mod tests {
     use steel_registry::vanilla_entities;
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::test_support::TestEntity;
 
     fn test_item(id: i32) -> SharedEntity {
@@ -203,21 +202,21 @@ mod tests {
         let storage = EntityStorage::new();
         let staged = test_item(1);
         assert!(matches!(
-            storage.add(EntityArc::clone(&staged)),
+            storage.add(Arc::clone(&staged)),
             EntityStorageAddResult::Staged
         ));
 
         let drained = storage.close_and_drain();
         assert_eq!(drained.len(), 1);
-        assert!(EntityArc::ptr_eq(&drained[0], &staged));
+        assert!(Arc::ptr_eq(&drained[0], &staged));
         assert!(storage.get_all().is_empty());
         assert!(storage.get_saveable_entities().is_empty());
 
         let late = test_item(2);
-        let EntityStorageAddResult::Closed(returned) = storage.add(EntityArc::clone(&late)) else {
+        let EntityStorageAddResult::Closed(returned) = storage.add(Arc::clone(&late)) else {
             panic!("closed storage must return ownership of a late entity");
         };
-        assert!(EntityArc::ptr_eq(&returned, &late));
+        assert!(Arc::ptr_eq(&returned, &late));
         assert!(storage.close_and_drain().is_empty());
     }
 
@@ -229,7 +228,7 @@ mod tests {
             let entity = test_item(id);
             let add_storage = Arc::clone(&storage);
             let add_barrier = Arc::clone(&barrier);
-            let add_entity = EntityArc::clone(&entity);
+            let add_entity = Arc::clone(&entity);
             let add_thread = thread::spawn(move || {
                 add_barrier.wait();
                 add_storage.add(add_entity)
@@ -244,11 +243,11 @@ mod tests {
             match add_result {
                 EntityStorageAddResult::Staged => {
                     assert_eq!(drained.len(), 1);
-                    assert!(EntityArc::ptr_eq(&drained[0], &entity));
+                    assert!(Arc::ptr_eq(&drained[0], &entity));
                 }
                 EntityStorageAddResult::Closed(returned) => {
                     assert!(drained.is_empty());
-                    assert!(EntityArc::ptr_eq(&returned, &entity));
+                    assert!(Arc::ptr_eq(&returned, &entity));
                 }
             }
             assert!(storage.get_all().is_empty());

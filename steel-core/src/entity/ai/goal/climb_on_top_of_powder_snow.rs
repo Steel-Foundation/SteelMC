@@ -65,13 +65,14 @@ impl Goal for ClimbOnTopOfPowderSnowGoal {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::EntityArc;
     use crate::entity::entities::PigEntity;
     use crate::entity::{Entity as _, InsideBlockEffectType, Mob as _};
 
@@ -120,7 +121,7 @@ mod tests {
     fn climb_on_top_of_powder_snow_goal_ticks_jump_control() {
         init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
-        let mob = EntityArc::new(pig());
+        let mob = Arc::new(pig());
         let mob_entity: SharedEntity = mob.clone();
 
         goal.tick(mob.as_ref(), &mob_entity);

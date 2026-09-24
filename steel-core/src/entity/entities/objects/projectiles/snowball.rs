@@ -5,6 +5,7 @@
 //! On entity impact it deals 0 thrown damage (3 to blazes) so the hit
 //! registers, then broadcasts the item-break entity event and discards itself.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -21,7 +22,6 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::EntityArc;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, Projectile, ProjectileBase,
@@ -92,7 +92,7 @@ impl Entity for SnowballEntity {
         self.entity_type
     }
 
-    fn tick(self: EntityArc<Self>) {
+    fn tick(self: Arc<Self>) {
         self.throwable_projectile_tick();
     }
 
@@ -144,7 +144,7 @@ impl Projectile for SnowballEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(self: EntityArc<Self>, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `Snowball.onHitEntity`: super.onHitEntity() (no-op), then
         // `entity.hurt(thrown(this, owner), blaze ? 3 : 0)`.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
@@ -157,9 +157,9 @@ impl Projectile for SnowballEntity {
         }
     }
 
-    fn on_hit(self: EntityArc<Self>, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `Snowball.onHit`: super.onHit() then the server-side break.
-        EntityArc::clone(&self).projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: entity event 3 renders the snowball break
         // particles on clients via `Snowball.handleEntityEvent`; the server
@@ -203,7 +203,6 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_damage_types, vanilla_entities};
     use steel_utils::{BlockPos, Direction};
 
-    use crate::entity::EntityArc;
     use crate::entity::damage::DamageSource;
     use crate::entity::{Entity, Projectile, ProjectileHit};
     use crate::test_support::test_world;
@@ -251,7 +250,7 @@ mod tests {
     fn on_hit_discards_the_snowball() {
         init_vanilla_registry();
 
-        let snowball = EntityArc::new(SnowballEntity::new(
+        let snowball = Arc::new(SnowballEntity::new(
             &vanilla_entities::SNOWBALL,
             1,
             DVec3::ZERO,
@@ -269,7 +268,7 @@ mod tests {
             },
         };
 
-        EntityArc::clone(&snowball).on_hit(&hit);
+        Arc::clone(&snowball).on_hit(&hit);
         assert!(snowball.is_removed());
     }
 }
