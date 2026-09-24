@@ -1,6 +1,7 @@
 //! Per-menu behavior hooks.
 
 use steel_registry::item_stack::ItemStack;
+use steel_registry::mob_effect::MobEffectRef;
 use steel_utils::ErasedType;
 
 use crate::inventory::menu::behavior::MenuBehavior;
@@ -89,6 +90,18 @@ pub trait MenuKind: ErasedType + Send + Sync {
 
     /// Returns true if an item may be taken from `slot_index` during pickup-all.
     fn can_take_item_for_pick_all(&self, _carried: &ItemStack, _slot_index: usize) -> bool {
+        true
+    }
+
+    /// Handles a beacon effect update from the client's set-beacon packet.
+    /// Returns `false` when the selection or payment is invalid.
+    fn on_update_effects(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        _primary: Option<MobEffectRef>,
+        _secondary: Option<MobEffectRef>,
+    ) -> bool {
         true
     }
 
