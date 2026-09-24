@@ -8,6 +8,7 @@ mod pregen;
 pub mod registry_cache;
 mod run_loop;
 mod service_keys;
+mod tick_overload;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 mod world_tick_workers;
