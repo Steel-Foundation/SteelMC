@@ -5,20 +5,20 @@ use super::*;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
 /// Ground friction of an ordinary block; anything at or below it needs no speed boost.
-const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
+pub(super) const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
 /// The scale that cancels default ground friction, kept as the inlined literal
 /// so the arithmetic matches.
 const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
 /// Horizontal air drag out of fluid.
 pub(super) const BASE_HORIZONTAL_AIR_DRAG: f32 = 0.91;
 /// Vertical air drag out of fluid (flying animals use the horizontal one).
-const BASE_VERTICAL_AIR_DRAG: f32 = 0.98;
+pub(super) const BASE_VERTICAL_AIR_DRAG: f32 = 0.98;
 /// Identity modifier, used when an entity type does not declare the attribute.
 const NO_FRICTION_MODIFIER: f64 = 1.0;
 
 /// Applies a friction modifier: 1 leaves the value alone, larger is slipperier,
 /// 0 removes the slipperiness.
-fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
+pub(super) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
@@ -3173,174 +3173,4 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
         context = context.with_game_time(level.game_time());
     }
     loot_table.get_random_items(&mut context)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use glam::DVec3;
-    use steel_registry::blocks::BlockRef;
-    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
-    use steel_utils::types::UpdateFlags;
-    use steel_utils::{BlockPos, ChunkPos};
-
-    use super::*;
-    use crate::behavior::init_behaviors;
-    use crate::entity::{ENTITIES, init_entities, next_entity_id};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-
-    const WARMUP_TICKS: usize = 40;
-    const MEASURED_TICKS: usize = 20;
-    const SPEED_TOLERANCE: f64 = 1e-4;
-    const PIG_MOVEMENT_SPEED: f32 = 0.25;
-    const ICE_SLIDE_RATIO: f64 = 5.0;
-
-    struct WalkMeasurement {
-        per_tick: f64,
-        coasted: f64,
-    }
-
-    fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
-        init_vanilla_registry();
-        init_behaviors();
-        init_entities();
-
-        let world = fresh_test_world(key);
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let floor_state = floor.default_state();
-        for z in 0..16 {
-            for x in 6..11 {
-                assert!(world.set_block(
-                    BlockPos::new(x, 63, z),
-                    floor_state,
-                    UpdateFlags::UPDATE_NONE
-                ));
-            }
-        }
-
-        let pig = ENTITIES
-            .create(
-                &vanilla_entities::PIG,
-                next_entity_id(),
-                DVec3::new(8.5, 64.0, 2.5),
-                Arc::downgrade(&world),
-            )
-            .expect("pig factory should produce an entity");
-        pig.set_old_position_to_current();
-        assert!(world.try_add_entity(Arc::clone(&pig)).is_ok());
-        let mob = pig.as_mob().expect("a pig is a mob");
-
-        let walk_one_tick = || {
-            mob.set_mob_speed(
-                mob.attributes()
-                    .lock()
-                    .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32,
-            );
-            let input = mob.travel_input();
-            mob.travel(DVec3::new(
-                f64::from(input.sideways()),
-                f64::from(input.vertical()),
-                f64::from(input.forward()),
-            ));
-        };
-
-        for _ in 0..WARMUP_TICKS {
-            walk_one_tick();
-        }
-        let start = pig.position();
-        for _ in 0..MEASURED_TICKS {
-            walk_one_tick();
-        }
-        let end = pig.position();
-        let per_tick = (end - start).with_y(0.0).length() / MEASURED_TICKS as f64;
-
-        let coast_start = pig.position();
-        for _ in 0..MEASURED_TICKS {
-            mob.set_mob_speed(0.0);
-            mob.travel(DVec3::ZERO);
-        }
-        let coasted = (pig.position() - coast_start).with_y(0.0).length();
-
-        WalkMeasurement { per_tick, coasted }
-    }
-
-    #[test]
-    fn a_modifier_of_one_leaves_friction_alone() {
-        let unchanged = compute_modified_friction(DEFAULT_BLOCK_FRICTION, 1.0);
-        assert!((unchanged - DEFAULT_BLOCK_FRICTION).abs() < f32::EPSILON);
-        let unchanged = compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 1.0);
-        assert!((unchanged - BASE_VERTICAL_AIR_DRAG).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn a_modifier_of_zero_removes_all_slipperiness() {
-        assert!(
-            (compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 0.0) - 1.0).abs() < f32::EPSILON
-        );
-    }
-
-    #[test]
-    fn a_large_modifier_is_clamped_to_a_usable_friction() {
-        let friction = compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 2048.0);
-        assert!(
-            (0.0..=1.0).contains(&friction),
-            "friction stays in range, got {friction}"
-        );
-    }
-
-    #[test]
-    fn a_pig_walks_at_the_vanilla_speed_on_ordinary_ground() {
-        let walk = walking_speed_on("pig_walk_grass", &vanilla_blocks::GRASS_BLOCK);
-
-        let expected = f64::from(PIG_MOVEMENT_SPEED * PIG_MOVEMENT_SPEED)
-            / (1.0 - f64::from(DEFAULT_BLOCK_FRICTION * BASE_HORIZONTAL_AIR_DRAG));
-        assert!(
-            (walk.per_tick - expected).abs() < SPEED_TOLERANCE,
-            "expected about {expected} blocks per tick, got {}",
-            walk.per_tick
-        );
-    }
-
-    #[test]
-    fn a_pig_slides_much_further_on_ice_than_on_grass() {
-        let on_grass = walking_speed_on("pig_walk_grass_compare", &vanilla_blocks::GRASS_BLOCK);
-        let on_ice = walking_speed_on("pig_walk_ice", &vanilla_blocks::ICE);
-
-        assert!(
-            on_ice.coasted > on_grass.coasted * ICE_SLIDE_RATIO,
-            "ice should keep the pig sliding, got {} against {}",
-            on_ice.coasted,
-            on_grass.coasted
-        );
-    }
-
-    #[test]
-    fn ground_below_default_friction_gets_no_speed_boost() {
-        init_vanilla_registry();
-        init_behaviors();
-        init_entities();
-
-        let world = fresh_test_world("pig_grippy_ground");
-        let pig = ENTITIES
-            .create(
-                &vanilla_entities::PIG,
-                next_entity_id(),
-                DVec3::new(8.5, 64.0, 2.5),
-                Arc::downgrade(&world),
-            )
-            .expect("pig factory should produce an entity");
-        let mob = pig.as_mob().expect("a pig is a mob");
-        mob.set_on_ground(true);
-        mob.set_speed(PIG_MOVEMENT_SPEED);
-
-        let grippy = compute_modified_friction(DEFAULT_BLOCK_FRICTION, 2.0);
-        assert!(
-            (mob.get_friction_influenced_speed(grippy) - PIG_MOVEMENT_SPEED).abs() < f32::EPSILON
-        );
-        assert!(
-            mob.get_friction_influenced_speed(vanilla_blocks::ICE.config.friction)
-                < PIG_MOVEMENT_SPEED
-        );
-    }
 }
