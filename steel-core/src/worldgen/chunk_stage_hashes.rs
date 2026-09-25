@@ -26,7 +26,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
-use crate::level_data::WorldGenerationSettings;
+use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::{World, WorldConfig, WorldStorageConfig};
 use crate::worldgen::generator::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
@@ -254,6 +254,7 @@ fn create_test_world(
             dim_type,
             seed as i64,
             WorldConfig {
+                game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,
                 generator,

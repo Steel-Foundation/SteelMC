@@ -1,15 +1,19 @@
+use super::tick_overload::TickOverloadGuard;
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos,
     ChunkSender, CommandExecutionContext, CommandExecutionOwner, CommandRequest,
     CommandResultCallback, CommandSender, CommandSource, Duration, EncodedChunk,
-    ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, Instant, JoinSet, NetworkConnection,
-    PendingCommandExecutionQueue, Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD,
-    Server, StringReader, SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats,
-    ThreadPool, World, command_suggestions_packet, sleep, spawn_blocking,
+    ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, GlobalPlayerData, Instant, JoinSet,
+    MenuRemovalStatus, NetworkConnection, PendingCommandExecutionQueue, PersistentPlayerData,
+    Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD, Server, StringReader,
+    SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
+    command_suggestions_packet, sleep, spawn_blocking,
 };
+use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
+use steel_utils::translations;
 
 impl Server {
     pub(super) fn advance_server_tick(&self) -> (u64, bool) {
@@ -75,6 +79,94 @@ impl Server {
         }
     }
 
+    /// Saves everything and tears the worlds down, in the order shutdown requires.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a player's menus cannot be removed, which means packets are still being
+    /// processed. Callers must stop packet processing before calling this; the standalone
+    /// server does so by closing its task tracker and awaiting the drain.
+    pub async fn save_and_shutdown(&self) {
+        if let Err(error) = self.flush_known_players().await {
+            log::error!("Failed to flush known player cache during shutdown: {error}");
+        }
+
+        let players = self.get_players();
+        for player in &players {
+            // Claim the removal first so a later tick cannot run the ordinary disconnect
+            // path for the same player and award the leave-game stat twice.
+            let _ = self.reserve_player_disconnect(player);
+            player.disconnect(translations::MULTIPLAYER_DISCONNECT_SERVER_SHUTDOWN.msg());
+            assert_eq!(
+                player.remove_all_menus(),
+                MenuRemovalStatus::Complete,
+                "shutdown menu removal must run after packet processing stops"
+            );
+        }
+
+        for world in self.worlds.values() {
+            world.chunk_map.stop_generation_refill_loop();
+            world.chunk_map.task_tracker.close();
+            world.chunk_map.task_tracker.wait().await;
+        }
+
+        let mut players_to_save = Vec::new();
+        for player in players {
+            let domain = player.get_world().domain().to_owned();
+            player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
+            let data = PersistentPlayerData::from_player(&player);
+            player.store_ender_pearls_with_player();
+            players_to_save.push((player, domain, data));
+        }
+
+        log::info!("Saving world data...");
+        let command_data = self.save_command_data().await;
+        match command_data.scoreboards {
+            Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
+            Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
+        }
+        match command_data.storage {
+            Ok(saved) => log::info!("Saved {saved} domain command storages"),
+            Err(error) => log::error!("Failed to save domain command storage: {error}"),
+        }
+        let mut total_saved = 0;
+        for world in self.worlds.values() {
+            world.cleanup(&mut total_saved).await;
+        }
+        log::info!("Saved {total_saved} chunks");
+
+        log::info!("Saving player data...");
+        let mut saved = 0;
+        for (player, domain, data) in players_to_save {
+            let uuid = player.gameprofile.id;
+            match self
+                .player_data_storage
+                .save_domain_data(&domain, uuid, &data)
+                .await
+            {
+                Ok(()) => {
+                    saved += 1;
+                }
+                Err(e) => {
+                    log::error!("Failed to save player {uuid} domain data during shutdown: {e}");
+                }
+            }
+            if let Err(e) = self
+                .player_data_storage
+                .save_global(
+                    uuid,
+                    &GlobalPlayerData {
+                        last_active_domain: domain,
+                    },
+                )
+                .await
+            {
+                log::error!("Failed to save player {uuid} global data during shutdown: {e}");
+            }
+        }
+        log::info!("Saved {saved} players");
+    }
+
     /// The main game tick loop (20 TPS, governed by tick rate manager).
     #[expect(
         clippy::too_many_lines,
@@ -90,6 +182,7 @@ impl Server {
             }
         };
         let mut next_tick_time = Instant::now();
+        let mut overload_guard = TickOverloadGuard::new();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
@@ -117,6 +210,7 @@ impl Server {
 
             if should_sprint_this_tick {
                 next_tick_time = Instant::now();
+                overload_guard.restart_report_gap(next_tick_time);
             } else {
                 let now = Instant::now();
                 if now < next_tick_time {
@@ -124,6 +218,12 @@ impl Server {
                         () = cancel_token.cancelled() => break,
                         () = sleep(next_tick_time - now) => {}
                     }
+                } else {
+                    overload_guard.skip_backlog_if_overloaded(
+                        now,
+                        &mut next_tick_time,
+                        nanoseconds_per_tick,
+                    );
                 }
                 next_tick_time += Duration::from_nanos(nanoseconds_per_tick);
             }
@@ -486,12 +586,15 @@ impl Server {
     }
 
     #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
-    async fn tick_worlds_game(
+    pub(super) async fn tick_worlds_game(
         &self,
         workers: &WorldTickWorkers,
         tick_count: u64,
         runs_normally: bool,
     ) -> Result<(), WorldTickWorkerError> {
+        if runs_normally {
+            self.worlds.advance_domain_game_times();
+        }
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
@@ -582,7 +685,7 @@ mod tests {
         let sender = player.chunk_sender().lock();
         assert!(sender.pending_chunks.contains(&center));
         assert!(!sender.is_chunk_sent(center));
-        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
         assert!(world.players.insert(Arc::clone(&player)));

@@ -5,7 +5,7 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
-use std::{panic, thread};
+use std::{env, panic, thread};
 
 use crossterm::style::Attribute::{Bold, Dim, Reset};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
@@ -13,11 +13,7 @@ use futures::FutureExt;
 use steel::config::{self, LogConfig};
 use steel::logger::CommandLogger;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
-use steel_core::player::player_data::PersistentPlayerData;
-use steel_core::player::player_data_storage::GlobalPlayerData;
-use steel_core::player::player_inventory::MenuRemovalStatus;
-use steel_core::server::Server;
-use steel_registry::vanilla_custom_stats;
+use steel_core::GIT_HASH_SHORT;
 use steel_utils::text::DisplayResolutor;
 #[cfg(all(windows, debug_assertions))]
 use steel_utils::threading::DEBUG_STACK_SIZE;
@@ -208,6 +204,19 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
     let panic_token = cancel_token.clone();
     panic::set_hook(Box::new(move |panic_info| {
         let message = panic_info.payload_as_str().unwrap_or("Unknown");
+        error!(
+            "{}Steel {} ({GIT_HASH_SHORT}) {} on {}/{}{}",
+            SetForegroundColor(Color::Red),
+            env!("CARGO_PKG_VERSION"),
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            env::consts::OS,
+            env::consts::ARCH,
+            ResetColor
+        );
         let current_thread = thread::current();
         let thread_name = current_thread.name().unwrap_or("unnamed");
         let thread_id = current_thread.id();
@@ -325,7 +334,7 @@ async fn run_server(
     let server = steel.server.clone();
 
     if !server.prepare_spawn_area().await {
-        shutdown_worlds(&server).await;
+        server.save_and_shutdown().await;
         return Ok(());
     }
 
@@ -340,88 +349,8 @@ async fn run_server(
     task_tracker.close();
     task_tracker.wait().await;
 
-    shutdown_worlds(&server).await;
+    server.save_and_shutdown().await;
 
     log::info!("Server stopped");
     Ok(())
-}
-
-async fn shutdown_worlds(server: &Arc<Server>) {
-    if let Err(error) = server.flush_known_players().await {
-        log::error!("Failed to flush known player cache during shutdown: {error}");
-    }
-
-    let players = server.get_players();
-    for player in &players {
-        player.close_connection();
-        assert_eq!(
-            player.remove_all_menus(),
-            MenuRemovalStatus::Complete,
-            "shutdown menu removal must run after packet processing stops"
-        );
-    }
-
-    for world in server.worlds.values() {
-        world.chunk_map.stop_generation_refill_loop();
-        world.chunk_map.task_tracker.close();
-        world.chunk_map.task_tracker.wait().await;
-    }
-
-    let mut players_to_save = Vec::new();
-    for player in players {
-        let domain = player.get_world().domain().to_owned();
-        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
-        let data = PersistentPlayerData::from_player(&player);
-        player.store_ender_pearls_with_player();
-        players_to_save.push((player, domain, data));
-    }
-
-    // Save all dirty chunks before shutdown
-    log::info!("Saving world data...");
-    let command_data = server.save_command_data().await;
-    match command_data.scoreboards {
-        Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
-        Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
-    }
-    match command_data.storage {
-        Ok(saved) => log::info!("Saved {saved} domain command storages"),
-        Err(error) => log::error!("Failed to save domain command storage: {error}"),
-    }
-    let mut total_saved = 0;
-    for world in server.worlds.values() {
-        world.cleanup(&mut total_saved).await;
-    }
-    log::info!("Saved {total_saved} chunks");
-
-    // Save all player data before shutdown
-    log::info!("Saving player data...");
-    let mut saved = 0;
-    for (player, domain, data) in players_to_save {
-        let uuid = player.gameprofile.id;
-        match server
-            .player_data_storage
-            .save_domain_data(&domain, uuid, &data)
-            .await
-        {
-            Ok(()) => {
-                saved += 1;
-            }
-            Err(e) => {
-                log::error!("Failed to save player {uuid} domain data during shutdown: {e}");
-            }
-        }
-        if let Err(e) = server
-            .player_data_storage
-            .save_global(
-                uuid,
-                &GlobalPlayerData {
-                    last_active_domain: domain,
-                },
-            )
-            .await
-        {
-            log::error!("Failed to save player {uuid} global data during shutdown: {e}");
-        }
-    }
-    log::info!("Saved {saved} players");
 }
