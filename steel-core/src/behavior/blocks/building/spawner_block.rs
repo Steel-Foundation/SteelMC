@@ -5,6 +5,7 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -68,5 +69,21 @@ impl BlockBehavior for SpawnerBlock {
         world
             .get_block_entity(pos)
             .is_some_and(|block_entity| block_entity.trigger_event(event, data))
+    }
+
+    fn spawn_after_break(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _tool: &ItemStack,
+        drop_experience: bool,
+    ) {
+        if drop_experience {
+            world.pop_experience(
+                pos,
+                15 + rand::random_range(0..15) + rand::random_range(0..15),
+            );
+        }
     }
 }

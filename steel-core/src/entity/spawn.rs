@@ -5,6 +5,7 @@ use simdnbt::borrow::{BaseNbtCompound, NbtCompound as BorrowedNbtCompoundView, r
 use simdnbt::owned::NbtCompound;
 use steel_math::{DEGREE_360, wrap_degrees};
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
+use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt};
@@ -15,9 +16,7 @@ use uuid::Uuid;
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
 use crate::entity::entity::{read_nbt_dvec3, read_nbt_rotation, sanitize_nbt_motion};
-use crate::entity::{
-    EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest, start_riding_entities,
-};
+use crate::entity::{EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
 use crate::world::World;
 
@@ -147,6 +146,12 @@ pub(crate) fn add_spawned_entity(
     world.try_add_entity(entity)
 }
 
+/// Keeps freshly loaded passengers alive until the world takes ownership.
+pub(crate) struct LoadedEntity {
+    pub(crate) root: SharedEntity,
+    passengers: Vec<Self>,
+}
+
 /// Loads a complete entity tree from vanilla entity NBT without publishing it
 /// to the world. The caller owns the atomic insertion boundary.
 pub(crate) fn load_entity_recursive(
@@ -154,7 +159,7 @@ pub(crate) fn load_entity_recursive(
     nbt: &BaseNbtCompound<'_>,
     reason: EntitySpawnReason,
     post_load: impl Fn(&SharedEntity),
-) -> Option<SharedEntity> {
+) -> Option<LoadedEntity> {
     let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
     load_entity_recursive_inner(world, &nbt, reason, &post_load)
 }
@@ -165,7 +170,7 @@ pub(crate) fn load_entity_recursive_owned(
     nbt: &NbtCompound,
     reason: EntitySpawnReason,
     post_load: impl Fn(&SharedEntity),
-) -> Option<SharedEntity> {
+) -> Option<LoadedEntity> {
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);
     let borrowed = read_compound(&mut Cursor::new(bytes.as_slice())).ok()?;
@@ -181,7 +186,7 @@ fn load_entity_recursive_inner(
     nbt: &BorrowedNbtCompoundView<'_, '_>,
     reason: EntitySpawnReason,
     post_load: &impl Fn(&SharedEntity),
-) -> Option<SharedEntity> {
+) -> Option<LoadedEntity> {
     let entity_type = entity_type_from_nbt(nbt)?;
     let position = read_nbt_dvec3(nbt, "Pos").unwrap_or(DVec3::ZERO);
     if !position.is_finite() {
@@ -224,19 +229,31 @@ fn load_entity_recursive_inner(
 
     let entity = ENTITIES.create_and_load_for_spawn_view(request, nbt)?;
     post_load(&entity);
+    let mut loaded = LoadedEntity {
+        root: entity,
+        passengers: Vec::new(),
+    };
 
     let Some(passengers) = nbt.list("Passengers") else {
-        return Some(entity);
+        return Some(loaded);
     };
-    let passengers = passengers.compounds()?;
+    let Some(passengers) = passengers.compounds() else {
+        return Some(loaded);
+    };
     for passenger_nbt in passengers {
-        let passenger = load_entity_recursive_inner(world, &passenger_nbt, reason, post_load)?;
-        if !start_riding_entities(&passenger, &entity) {
-            return None;
+        let Some(passenger) = load_entity_recursive_inner(world, &passenger_nbt, reason, post_load)
+        else {
+            continue;
+        };
+        if loaded.root.could_accept_passenger() && loaded.root.entity_type().can_serialize {
+            // Freshly created trees cannot cycle. NBT loading forces boarding in vanilla.
+            passenger.root.set_pose(EntityPose::Standing);
+            super::EntityBase::restore_passenger_relationship(&loaded.root, &passenger.root);
+            loaded.passengers.push(passenger);
         }
     }
 
-    Some(entity)
+    Some(loaded)
 }
 
 fn entity_type_from_nbt(nbt: &BorrowedNbtCompoundView<'_, '_>) -> Option<EntityTypeRef> {
@@ -502,7 +519,7 @@ mod tests {
         AgeableMob, Entity, EntitySpawnReason, SharedEntity, init_entities,
         load_entity_recursive_owned,
     };
-    use crate::test_support::fresh_test_world;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     use super::{AgeableMobGroupData, apply_item_stack_components};
 
@@ -541,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn recursive_spawner_load_rejects_an_unsupported_passenger_tree() {
+    fn recursive_spawner_load_skips_failed_passengers_and_keeps_valid_siblings() {
         init_vanilla_registry();
         init_entities();
         let world = fresh_test_world("spawner_recursive_load_rejects_passenger");
@@ -549,13 +566,32 @@ mod tests {
         let mut root = entity_nbt("minecraft:pig");
         root.insert(
             "Passengers",
-            NbtList::Compound(vec![entity_nbt("minecraft:blaze")]),
+            NbtList::Compound(vec![
+                entity_nbt("minecraft:not_an_entity"),
+                entity_nbt("minecraft:blaze"),
+                entity_nbt("minecraft:chicken"),
+                entity_nbt("minecraft:pig"),
+            ]),
         );
 
-        assert!(
-            load_entity_recursive_owned(&world, &root, EntitySpawnReason::Spawner, |_| {},)
-                .is_none()
+        let loaded = load_entity_recursive_owned(&world, &root, EntitySpawnReason::Spawner, |_| {})
+            .expect("failed passengers must not discard the root");
+        let root = Arc::clone(&loaded.root);
+        assert_eq!(root.entity_type(), &vanilla_entities::PIG);
+        let passengers = root.passengers();
+        assert_eq!(passengers.len(), 2);
+        assert_eq!(passengers[0].entity_type(), &vanilla_entities::CHICKEN);
+        assert_eq!(
+            passengers[0].vehicle().map(|vehicle| vehicle.id()),
+            Some(root.id())
         );
+        drop(passengers);
+        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+        world
+            .try_add_fresh_entity_with_passengers(Arc::clone(&root))
+            .expect("loaded passengers should be inserted with the root");
+        drop(loaded);
+        assert_eq!(root.passengers().len(), 2);
     }
 
     #[test]

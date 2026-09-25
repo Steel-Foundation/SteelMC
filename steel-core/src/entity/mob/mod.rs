@@ -51,7 +51,7 @@ use crate::entity::{
     SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::physics::{MoveResult, WorldCollisionProvider, has_collision};
+use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
@@ -344,13 +344,16 @@ pub trait Mob: LivingEntity + Leashable {
         true
     }
 
-    /// Returns whether the entity's box is free of liquids and collisions.
+    /// Returns whether the entity's box is free of liquids and spawn-blocking entities.
     fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
         !aabb_contains_any_liquid(world, self.bounding_box())
-            && !has_collision(
-                &WorldCollisionProvider::for_entity(world, self.as_entity_event_source()),
-                self.bounding_box(),
-            )
+            && !world.has_entity_in_aabb_matching(&self.bounding_box(), |entity| {
+                entity.id() != self.id()
+                    && !entity.is_removed()
+                    && !entity.is_spectator()
+                    && entity.blocks_building()
+                    && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
+            })
     }
 
     /// Returns vanilla `Mob.isSaddled`.
