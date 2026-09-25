@@ -36,16 +36,12 @@ pub(crate) fn apply_potion_contents(
             continue;
         }
 
-        let scaled_duration = scale_effect_duration(&effect, duration_scale);
-        user.add_mob_effect(to_runtime_instance(&effect, scaled_duration));
+        let scaled_effect = effect.with_scaled_duration(duration_scale);
+        user.add_mob_effect(to_runtime_instance(
+            &scaled_effect,
+            scaled_effect.duration(),
+        ));
     }
-}
-
-/// Mirrors vanilla `MobEffectInstance.withScaledDuration`: scales the duration
-/// by `scale`, never rounding a finite result below 1 tick. The sentinel
-/// handling comes from `map_duration`.
-fn scale_effect_duration(effect: &RegistryMobEffectInstance, scale: f32) -> i32 {
-    effect.map_duration(|duration| ((duration as f32 * scale).floor() as i32).max(1))
 }
 
 /// Builds the runtime active-effect state for one registry mob-effect
@@ -83,16 +79,11 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use super::{
-        apply_potion_contents, scale_effect_duration, to_runtime_instance,
-        to_runtime_instance_icon_from_visibility,
+        apply_potion_contents, to_runtime_instance, to_runtime_instance_icon_from_visibility,
     };
+    use crate::behavior::init_behaviors;
     use crate::entity::LivingEntity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
-
-    /// Builds a scalable effect instance with the given duration.
-    fn effect_lasting(duration: i32) -> RegistryMobEffectInstance {
-        RegistryMobEffectInstance::simple(vanilla_mob_effects::LUCK, duration, 0)
-    }
 
     #[test]
     fn splash_rebuild_takes_its_icon_flag_from_visibility() {
@@ -129,32 +120,6 @@ mod tests {
         assert_eq!(splashed.is_ambient(), drunk.is_ambient());
     }
 
-    /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration
-    /// sentinel (`-1`) and a zero duration are returned unscaled.
-    #[test]
-    fn scale_effect_duration_leaves_infinite_and_zero_durations_untouched() {
-        init_vanilla_registry();
-        assert_eq!(scale_effect_duration(&effect_lasting(-1), 0.5), -1);
-        assert_eq!(scale_effect_duration(&effect_lasting(0), 0.5), 0);
-        // Even an extreme scale must not touch these sentinels.
-        assert_eq!(scale_effect_duration(&effect_lasting(-1), 100.0), -1);
-        assert_eq!(scale_effect_duration(&effect_lasting(0), 0.0), 0);
-    }
-
-    /// Mirrors vanilla `withScaledDuration`: `Math.max(Mth.floor(duration *
-    /// scale), 1)` — a finite duration is floor-scaled and never rounds
-    /// below 1 tick, even when the scale would floor it to 0.
-    #[test]
-    fn scale_effect_duration_floors_and_clamps_finite_durations() {
-        init_vanilla_registry();
-        assert_eq!(scale_effect_duration(&effect_lasting(100), 0.5), 50);
-        // floor(9 * 0.34) == floor(3.06) == 3, not a naive round to 3.
-        assert_eq!(scale_effect_duration(&effect_lasting(9), 0.34), 3);
-        // A scale that would floor to 0 is clamped up to the 1-tick floor.
-        assert_eq!(scale_effect_duration(&effect_lasting(1), 0.1), 1);
-        assert_eq!(scale_effect_duration(&effect_lasting(100), 1.0), 100);
-    }
-
     /// Vanilla's `int` shift is masked to the low 5 bits (Java `<<` never
     /// throws), so an Instant Health/Instant Damage amplifier of 32 or more
     /// must not panic and must reproduce that masked value rather than the
@@ -162,6 +127,7 @@ mod tests {
     #[test]
     fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
         init_vanilla_registry();
+        init_behaviors();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
