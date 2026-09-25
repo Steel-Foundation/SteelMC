@@ -2,8 +2,8 @@
 //! (`EggItem`, `SnowballItem`, `EnderpearlItem`, `ThrowablePotionItem`, and
 //! `ExperienceBottleItem` once it exists).
 //!
-//! Vanilla has no common superclass for these — each `use` is copy-pasted — but
-//! they are the same five steps with different constants, so Steel factors them
+//! Vanilla has no common superclass for these, each `use` is copy-pasted, but
+//! they are the same steps with different constants, so Steel factors them
 //! into [`throw_item_projectile`].
 
 use glam::DVec3;

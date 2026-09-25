@@ -1,5 +1,4 @@
-//! Vanilla `AbstractThrownPotion`: shared splash/lingering potion projectile
-//! logic. Concrete potions ([`SplashPotionEntity`](crate::entity::entities::SplashPotionEntity))
+//! Shared splash/lingering potion projectile logic. Concrete potions ([`SplashPotionEntity`](crate::entity::entities::SplashPotionEntity))
 //! implement [`AbstractThrownPotion::on_hit_as_potion`] for their distinct
 //! area-of-effect behavior; everything else (gravity, the water-splash branch,
 //! block-hit fire dowsing, the hurt-knockback direction, and the break
@@ -24,9 +23,9 @@ use crate::entity::{LivingEntity, ProjectileHit, RemovalReason, SharedEntity};
 use crate::world::ClipHitResult;
 use crate::world::World;
 
-/// Vanilla `AbstractThrownPotion.SPLASH_RANGE_SQ`.
+/// Squared distance within which a splash reaches an entity.
 pub const SPLASH_RANGE_SQ: f64 = 16.0;
-/// Vanilla `AbstractThrownPotion.getDefaultGravity()`.
+/// Gravity of a thrown potion.
 const DEFAULT_GRAVITY: f64 = 0.05;
 
 /// Vanilla-shaped behavior shared by `ThrownSplashPotion` and `ThrownLingeringPotion`.
@@ -37,8 +36,7 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         DEFAULT_GRAVITY
     }
 
-    /// Vanilla `AbstractThrownPotion.onHitAsPotion`: the effect-specific
-    /// area-of-effect (splash) or cloud-spawning (lingering) behavior.
+    /// The effect-specific area-of-effect (splash) or cloud-spawning (lingering) behavior.
     fn on_hit_as_potion(&self, world: &Arc<World>, potion_item: &ItemStack, hit: &ProjectileHit);
 
     /// Vanilla `AbstractThrownPotion.calculateHorizontalHurtKnockbackDirection`:
@@ -82,7 +80,8 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         self.set_removed(RemovalReason::Discarded);
     }
 
-    /// Vanilla `AbstractThrownPotion.onHitAsWater`.
+    /// Splashes water: hurts water-sensitive entities in range and
+    /// extinguishes burning ones.
     fn on_hit_as_water(&self, world: &Arc<World>) {
         let aabb = self.bounding_box().inflate_xyz(4.0, 2.0, 4.0);
         let potion_pos = self.position();
@@ -139,7 +138,7 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         }
     }
 
-    /// Vanilla `AbstractThrownPotion.dowseFire`.
+    /// Puts out fire, lit campfires and lit candles at `pos`.
     fn dowse_fire(&self, world: &Arc<World>, pos: BlockPos) {
         let state = world.get_block_state(pos);
         if state.get_block().has_tag(&BlockTag::FIRE) {

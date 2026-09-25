@@ -16,7 +16,7 @@ use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::EnderPearlEntity;
 use crate::entity::next_entity_id;
 
-/// Vanilla `EnderpearlItem.use`'s sound, `PROJECTILE_SHOOT_POWER` and throw spread.
+/// Sound, shoot power and spread used when throwing an ender pearl.
 const THROW: ThrowParams = ThrowParams {
     sound: &sound_events::ENTITY_ENDER_PEARL_THROW,
     sound_source: SoundSource::Neutral,

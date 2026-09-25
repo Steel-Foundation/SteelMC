@@ -85,14 +85,13 @@ impl MobEffectInstance {
         self.amplifier
     }
 
-    /// Returns vanilla `MobEffectInstance.isInfiniteDuration()`.
+    /// Whether this effect never expires.
     #[must_use]
     pub const fn is_infinite_duration(&self) -> bool {
         self.duration == INFINITE_EFFECT_DURATION
     }
 
-    /// Returns vanilla `MobEffectInstance.mapDuration(mapper)`: applies `mapper`
-    /// to this effect's duration, leaving the infinite and zero sentinels alone.
+    /// Applies `mapper` to this effect's duration, leaving the infinite and zero sentinels alone.
     #[must_use]
     pub fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
         if self.is_infinite_duration() || self.duration == 0 {
@@ -414,8 +413,7 @@ mod tests {
     use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
-    /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration
-    /// sentinel (`-1`) and a zero duration bypass the mapper entirely.
+    /// The infinite-duration sentinel (`-1`) and a zero duration bypass the mapper entirely.
     #[test]
     fn map_duration_leaves_infinite_and_zero_sentinels_untouched() {
         init_vanilla_registry();

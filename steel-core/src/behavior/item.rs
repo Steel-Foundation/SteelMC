@@ -49,8 +49,8 @@ pub trait ItemBehavior: Send + Sync {
             .map_or_else(|| Cow::Owned(TextComponent::new()), Cow::Borrowed)
     }
 
-    /// Returns vanilla `Item.getDefaultInstance`: the canonical single-item
-    /// stack for this item, including component defaults
+    /// Returns the canonical single-item stack for this item, including
+    /// component defaults.
     fn get_default_instance(&self, item: ItemRef) -> ItemStack {
         ItemStack::new(item)
     }
@@ -399,8 +399,8 @@ impl ItemBehaviorRegistry {
         self.behaviors[id].as_ref()
     }
 
-    /// Returns vanilla `Item.getDefaultInstance` for an item, dispatching to
-    /// its behavior's override.
+    /// Returns the default stack for `item`, dispatching to its behavior's
+    /// [`ItemBehavior::get_default_instance`].
     #[must_use]
     pub fn default_instance(&self, item: ItemRef) -> ItemStack {
         self.get_behavior(item).get_default_instance(item)
@@ -470,8 +470,6 @@ mod tests {
         assert!(contents.is(&vanilla_potions::POISON));
     }
 
-    /// Every other item keeps vanilla `Item.getDefaultInstance`'s plain
-    /// `new ItemStack(this)`.
     #[test]
     fn items_without_an_override_default_to_a_plain_stack() {
         init_vanilla_registry();

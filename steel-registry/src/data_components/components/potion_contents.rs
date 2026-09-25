@@ -16,7 +16,7 @@ use crate::items::ItemRef;
 use crate::mob_effect_instance::MobEffectInstance;
 use crate::potion::{Potion, PotionRef};
 
-/// Vanilla `PotionContents.BASE_POTION_COLOR`.
+/// Color used when there is neither a custom color nor a visible effect.
 const BASE_POTION_COLOR: i32 = -13_083_194;
 /// Fully opaque alpha channel, matching vanilla `ARGB.color(r, g, b)`'s implicit
 /// `ARGB.color(255, r, g, b)`.
@@ -110,7 +110,7 @@ impl PotionContents {
         effects
     }
 
-    /// Returns vanilla `PotionContents.hasEffects()`.
+    /// Whether the base potion or the custom effects contain any effect.
     #[must_use]
     pub fn has_effects(&self) -> bool {
         !self.custom_effects.is_empty()
@@ -119,13 +119,14 @@ impl PotionContents {
                 .is_some_and(|potion| !potion.value().effects.is_empty())
     }
 
-    /// Returns vanilla `PotionContents.getColor()` (`getColorOr(BASE_POTION_COLOR)`).
+    /// Returns the display color, falling back to `BASE_POTION_COLOR`.
     #[must_use]
     pub fn get_color(&self) -> i32 {
         self.get_color_or(BASE_POTION_COLOR)
     }
 
-    /// Returns vanilla `PotionContents.getColorOr(defaultColor)`.
+    /// Returns the custom color, else the color blended from the effects,
+    /// else `default_color`.
     #[must_use]
     pub fn get_color_or(&self, default_color: i32) -> i32 {
         self.custom_color

@@ -85,8 +85,6 @@ impl CandleBlock {
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
-        // Vanilla's `level.gameEvent(player, BLOCK_CHANGE, pos)` builds a
-        // `GameEvent.Context.of(entity)`, which leaves the affected state unset.
         level.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
@@ -353,7 +351,6 @@ mod tests {
         assert_eq!(placed[0].state, lit.set_value(LIT_PROPERTY, false));
         assert_eq!(placed[0].flags, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-        // Vanilla plays it with a null `except`, so the acting player hears it too.
         let sounds = level.block_sounds.borrow();
         assert_eq!(sounds.len(), 1);
         assert_eq!(sounds[0].sound, &sound_events::BLOCK_CANDLE_EXTINGUISH);

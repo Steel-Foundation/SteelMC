@@ -16,7 +16,7 @@ use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::ThrownEggEntity;
 use crate::entity::next_entity_id;
 
-/// Vanilla `EggItem.use`'s sound, `PROJECTILE_SHOOT_POWER` and throw spread.
+/// Sound, shoot power and spread used when throwing an egg.
 const THROW: ThrowParams = ThrowParams {
     sound: &sound_events::ENTITY_EGG_THROW,
     sound_source: SoundSource::Players,

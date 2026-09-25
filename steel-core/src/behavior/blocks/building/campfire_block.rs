@@ -100,15 +100,14 @@ impl CampfireBlock {
         .then(|| state.set_value(LIT, true))
     }
 
-    /// Vanilla `CampfireBlock.isLitCampfire`: whether `state` is a lit campfire
-    /// or soul campfire.
+    /// Whether `state` is a lit campfire or soul campfire.
     #[must_use]
     pub fn is_lit_campfire(state: BlockStateId) -> bool {
         state.get_block().has_tag(&BlockTag::CAMPFIRES) && state.try_get_value(LIT) == Some(true)
     }
 
-    /// Vanilla `CampfireBlock.dowse`: the shared part of putting out a campfire
-    /// (shovels, water potions, water flowing in).
+    /// The shared part of putting out a campfire (shovels, water potions,
+    /// water flowing in).
     pub fn dowse(source: Option<&dyn Entity>, level: &dyn LevelAccessor, pos: BlockPos) {
         level.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
@@ -440,7 +439,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![&vanilla_game_events::BLOCK_CHANGE]
         );
-        // Vanilla's `dowse(null, ...)` leaves the affected state unset.
         assert_eq!(level.game_events.borrow()[0].affected_state, None);
     }
 

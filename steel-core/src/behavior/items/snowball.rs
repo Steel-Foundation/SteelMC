@@ -16,7 +16,7 @@ use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::SnowballEntity;
 use crate::entity::next_entity_id;
 
-/// Vanilla `SnowballItem.use`'s sound, `PROJECTILE_SHOOT_POWER` and throw spread.
+/// Sound, shoot power and spread used when throwing a snowball.
 const THROW: ThrowParams = ThrowParams {
     sound: &sound_events::ENTITY_SNOWBALL_THROW,
     sound_source: SoundSource::Neutral,

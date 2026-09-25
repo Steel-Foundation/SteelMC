@@ -62,8 +62,8 @@ pub(super) fn potion_default_instance(item: ItemRef) -> ItemStack {
     PotionContents::create_item_stack(item, &vanilla_potions::WATER)
 }
 
-/// Vanilla `PotionItem.useOn`: converts the block hit into mud when the
-/// held stack is a water bottle over a `CONVERTABLE_TO_MUD` block.
+/// Converts the block hit into mud when the held stack is a water bottle
+/// over a `CONVERTABLE_TO_MUD` block.
 pub(super) fn potion_use_on(context: &mut UseOnContext) -> InteractionResult {
     if context.hit_result.direction == Direction::Down {
         return InteractionResult::Pass;
