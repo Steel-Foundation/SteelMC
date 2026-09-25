@@ -70,6 +70,10 @@ enum LootTableValueJson {
 /// `SequenceFunction.INLINE_CODEC`) a bare array of function objects applied in order.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "build-time representation mirrors extracted Vanilla JSON"
+)]
 enum ModifierJson {
     Single(LootFunctionJson),
     Sequence(Vec<LootFunctionJson>),

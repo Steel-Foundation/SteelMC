@@ -15,12 +15,8 @@ pub enum ChunkStatus {
     StructureReferences,
     /// The chunk is being processed for biomes.
     Biomes,
-    /// The chunk is being processed for noise.
-    Noise,
-    /// The chunk is being processed for surfaces.
-    Surface,
-    /// The chunk is being processed for carvers.
-    Carvers,
+    /// The chunk terrain is being generated.
+    Terrain,
     /// The chunk is being processed for features.
     Features,
     /// The chunk is being initialized for light.
@@ -48,14 +44,12 @@ impl ChunkStatus {
             1 => Some(Self::StructureStarts),
             2 => Some(Self::StructureReferences),
             3 => Some(Self::Biomes),
-            4 => Some(Self::Noise),
-            5 => Some(Self::Surface),
-            6 => Some(Self::Carvers),
-            7 => Some(Self::Features),
-            8 => Some(Self::InitializeLight),
-            9 => Some(Self::Light),
-            10 => Some(Self::Spawn),
-            11 => Some(Self::Full),
+            4 => Some(Self::Terrain),
+            5 => Some(Self::Features),
+            6 => Some(Self::InitializeLight),
+            7 => Some(Self::Light),
+            8 => Some(Self::Spawn),
+            9 => Some(Self::Full),
             _ => None,
         }
     }
@@ -67,10 +61,8 @@ impl ChunkStatus {
             Self::Empty => Some(Self::StructureStarts),
             Self::StructureStarts => Some(Self::StructureReferences),
             Self::StructureReferences => Some(Self::Biomes),
-            Self::Biomes => Some(Self::Noise),
-            Self::Noise => Some(Self::Surface),
-            Self::Surface => Some(Self::Carvers),
-            Self::Carvers => Some(Self::Features),
+            Self::Biomes => Some(Self::Terrain),
+            Self::Terrain => Some(Self::Features),
             Self::Features => Some(Self::InitializeLight),
             Self::InitializeLight => Some(Self::Light),
             Self::Light => Some(Self::Spawn),
@@ -87,10 +79,8 @@ impl ChunkStatus {
             Self::StructureStarts => Some(Self::Empty),
             Self::StructureReferences => Some(Self::StructureStarts),
             Self::Biomes => Some(Self::StructureReferences),
-            Self::Noise => Some(Self::Biomes),
-            Self::Surface => Some(Self::Noise),
-            Self::Carvers => Some(Self::Surface),
-            Self::Features => Some(Self::Carvers),
+            Self::Terrain => Some(Self::Biomes),
+            Self::Features => Some(Self::Terrain),
             Self::InitializeLight => Some(Self::Features),
             Self::Light => Some(Self::InitializeLight),
             Self::Spawn => Some(Self::Light),
@@ -100,18 +90,15 @@ impl ChunkStatus {
 
     /// Returns the heightmap types that should be updated at this status.
     ///
-    /// Before CARVERS status, worldgen heightmaps are used.
-    /// At CARVERS and after, final heightmaps are used.
+    /// Before Terrain, worldgen heightmaps are used.
+    /// At Terrain and after, final heightmaps are used.
     #[must_use]
     pub const fn heightmaps_after(self) -> &'static [HeightmapType] {
         match self {
-            Self::Empty
-            | Self::StructureStarts
-            | Self::StructureReferences
-            | Self::Biomes
-            | Self::Noise
-            | Self::Surface => HeightmapType::worldgen_types(),
-            Self::Carvers
+            Self::Empty | Self::StructureStarts | Self::StructureReferences | Self::Biomes => {
+                HeightmapType::worldgen_types()
+            }
+            Self::Terrain
             | Self::Features
             | Self::InitializeLight
             | Self::Light

@@ -17,6 +17,62 @@ use super::graph::{
 };
 
 impl TranspileContext {
+    /// Conservatively retain cache preparation unless all remaining inputs
+    /// are constants, Y, or already-interpolated values.
+    pub(super) fn combine_needs_column_cache(
+        &self,
+        df: &DensityFunction,
+        input: &TranspilerInput,
+    ) -> bool {
+        match df {
+            DensityFunction::Constant(_) | DensityFunction::YClampedGradient(_) => false,
+            DensityFunction::Marker(marker) if marker.kind == MarkerType::Interpolated => false,
+            DensityFunction::Marker(marker) => {
+                self.combine_needs_column_cache(&marker.wrapped, input)
+            }
+            DensityFunction::Reference(reference) => {
+                if self.flat_cached.contains(&reference.id)
+                    && !self.interpolated_refs.contains(&reference.id)
+                {
+                    return true;
+                }
+                input
+                    .registry
+                    .get(&reference.id)
+                    .is_none_or(|target| self.combine_needs_column_cache(target, input))
+            }
+            DensityFunction::TwoArgumentSimple(binary) => {
+                self.combine_needs_column_cache(&binary.argument1, input)
+                    || self.combine_needs_column_cache(&binary.argument2, input)
+            }
+            DensityFunction::Lerp(lerp) => {
+                self.combine_needs_column_cache(&lerp.alpha, input)
+                    || self.combine_needs_column_cache(&lerp.first, input)
+                    || self.combine_needs_column_cache(&lerp.second, input)
+            }
+            DensityFunction::Mapped(mapped) => {
+                self.combine_needs_column_cache(&mapped.input, input)
+            }
+            DensityFunction::Clamp(clamp) => self.combine_needs_column_cache(&clamp.input, input),
+            DensityFunction::RangeChoice(choice) => {
+                self.combine_needs_column_cache(&choice.input, input)
+                    || self.combine_needs_column_cache(&choice.when_in_range, input)
+                    || self.combine_needs_column_cache(&choice.when_out_of_range, input)
+            }
+            DensityFunction::IntervalSelect(interval) => {
+                self.combine_needs_column_cache(&interval.input, input)
+                    || interval
+                        .functions
+                        .iter()
+                        .any(|function| self.combine_needs_column_cache(function, input))
+            }
+            DensityFunction::BlendDensity(blend) => {
+                self.combine_needs_column_cache(&blend.input, input)
+            }
+            _ => true,
+        }
+    }
+
     pub(super) fn analyze(&mut self, input: &TranspilerInput) {
         for df in input.router_entries.values() {
             self.walk_df(df, input);
@@ -121,7 +177,8 @@ impl TranspileContext {
             DensityFunction::Constant(_)
             | DensityFunction::BlendAlpha(_)
             | DensityFunction::BlendOffset(_)
-            | DensityFunction::YClampedGradient(_) => {}
+            | DensityFunction::YClampedGradient(_)
+            | DensityFunction::DistanceToPoint(_) => {}
 
             DensityFunction::EndIslands => {
                 self.uses_end_islands = true;
@@ -194,7 +251,6 @@ impl TranspileContext {
                 self.walk_df(&fts.upper_bound, input);
             }
             DensityFunction::Slice(s) => self.walk_df(&s.input, input),
-            DensityFunction::DistanceToPoint(_) => {}
             DensityFunction::Reference(r) => {
                 if !self.used_names.contains(&r.id) {
                     self.used_names.insert(r.id.clone());

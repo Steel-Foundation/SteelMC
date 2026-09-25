@@ -90,7 +90,7 @@ impl RarityValueMapper {
     ///
     /// From vanilla `NoiseRouterData.QuantizedSpaghettiRarity`.
     #[must_use]
-    pub fn get_values(self, rarity: f64) -> f64 {
+    pub fn get_values(self, rarity: f32) -> f32 {
         match self {
             Self::Tunnels => {
                 if rarity < -0.5 {

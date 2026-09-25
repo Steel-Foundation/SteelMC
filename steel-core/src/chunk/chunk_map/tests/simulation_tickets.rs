@@ -14,6 +14,7 @@ use steel_utils::{
     saved_data::{SavedDataManager, names as saved_data_names},
     types::{Difficulty, GameType},
 };
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use toml::map::Map;
 use uuid::Uuid;
 
@@ -93,7 +94,7 @@ fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
                 max_chained_neighbor_updates: 1_000_000,
                 compression: None,
                 is_flat: false,
-                sea_level: 63,
+                sea_level: OverworldNoiseSettings::SEA_LEVEL,
                 default_gamemode: GameType::Survival,
                 difficulty: Difficulty::Normal,
             },

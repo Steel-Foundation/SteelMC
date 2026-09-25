@@ -19,7 +19,7 @@ use crate::random::{Random, RandomSource};
 pub struct PerlinSimplexNoise {
     noise_levels: Vec<Option<SimplexNoise>>,
     highest_freq_input_factor: f64,
-    highest_freq_value_factor: f64,
+    highest_freq_value_factor: f32,
 }
 
 impl PerlinSimplexNoise {
@@ -54,8 +54,11 @@ impl PerlinSimplexNoise {
         // Compute seed for positive octaves before moving zero_octave
         let hf_seed = if high_freq_octaves > 0 {
             Some(
-                (zero_octave.get_value_3d(zero_octave.xo, zero_octave.yo, zero_octave.zo)
-                    * 9.223_372_036_854_776e18) as i64,
+                (f64::from(zero_octave.get_value_3d(
+                    zero_octave.xo,
+                    zero_octave.yo,
+                    zero_octave.zo,
+                )) * 9.223_372_036_854_776e18) as i64,
             )
         } else {
             None
@@ -95,7 +98,7 @@ impl PerlinSimplexNoise {
         Self {
             noise_levels,
             highest_freq_input_factor: 2.0f64.powi(last_octave),
-            highest_freq_value_factor: 1.0 / (2.0f64.powi(total as i32) - 1.0),
+            highest_freq_value_factor: (1.0 / (2.0f64.powi(total as i32) - 1.0)) as f32,
         }
     }
 
@@ -103,14 +106,14 @@ impl PerlinSimplexNoise {
     ///
     /// Matches vanilla's `getValue(x, z, false)` path (no offset applied).
     #[must_use]
-    pub fn get_value(&self, x: f64, z: f64) -> f64 {
-        let mut sum = 0.0;
+    pub fn get_value(&self, x: f64, z: f64) -> f32 {
+        let mut sum = 0.0_f32;
         let mut factor = self.highest_freq_input_factor;
         let mut amplitude = self.highest_freq_value_factor;
 
         for noise in &self.noise_levels {
             if let Some(n) = noise {
-                sum += n.get_value_2d(x * factor, z * factor) * amplitude;
+                sum += amplitude * n.get_value_2d(x * factor, z * factor);
             }
             factor /= 2.0;
             amplitude *= 2.0;

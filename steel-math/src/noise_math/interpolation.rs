@@ -12,10 +12,18 @@ use std::{
 /// Note: Vanilla's parameter order is `(factor, min, max)`, ours is `(min, max, factor)`.
 #[inline]
 #[must_use]
-pub fn clamped_lerp(min: f64, max: f64, factor: f64) -> f64 {
-    if factor < 0.0 {
+pub fn clamped_lerp<T>(min: T, max: T, factor: T) -> T
+where
+    T: ops::Add<Output = T>
+        + Copy
+        + From<f32>
+        + ops::Mul<Output = T>
+        + PartialOrd
+        + ops::Sub<Output = T>,
+{
+    if factor < T::from(0.0) {
         min
-    } else if factor > 1.0 {
+    } else if factor > T::from(1.0) {
         max
     } else {
         lerp(factor, min, max)
@@ -87,7 +95,10 @@ pub fn inverse_lerp(value: f64, a: f64, b: f64) -> f64 {
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
+pub fn lerp<F>(alpha: F, a: F, b: F) -> F
+where
+    F: Copy + ops::Mul<Output = F> + ops::Add<Output = F> + ops::Sub<Output = F>,
+{
     a + alpha * (b - a)
 }
 
@@ -113,7 +124,10 @@ where
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
+pub fn lerp2<F>(a1: F, a2: F, x00: F, x10: F, x01: F, x11: F) -> F
+where
+    F: Copy + ops::Mul<Output = F> + ops::Add<Output = F> + ops::Sub<Output = F>,
+{
     lerp(a2, lerp(a1, x00, x10), lerp(a1, x01, x11))
 }
 
@@ -150,19 +164,22 @@ where
     clippy::too_many_arguments,
     reason = "matches vanilla's Mth.lerp3 signature with 8 grid corner values"
 )]
-pub fn lerp3(
-    a1: f64,
-    a2: f64,
-    a3: f64,
-    x000: f64,
-    x100: f64,
-    x010: f64,
-    x110: f64,
-    x001: f64,
-    x101: f64,
-    x011: f64,
-    x111: f64,
-) -> f64 {
+pub fn lerp3<F>(
+    a1: F,
+    a2: F,
+    a3: F,
+    x000: F,
+    x100: F,
+    x010: F,
+    x110: F,
+    x001: F,
+    x101: F,
+    x011: F,
+    x111: F,
+) -> F
+where
+    F: Copy + ops::Mul<Output = F> + ops::Add<Output = F> + ops::Sub<Output = F>,
+{
     lerp(
         a3,
         lerp2(a1, a2, x000, x100, x010, x110),
@@ -227,7 +244,16 @@ pub fn map(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -
 /// Used for Y-clamped gradients in density functions.
 #[inline]
 #[must_use]
-pub fn map_clamped(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
+pub fn map_clamped<T>(value: T, from_min: T, from_max: T, to_min: T, to_max: T) -> T
+where
+    T: ops::Add<Output = T>
+        + Copy
+        + ops::Div<Output = T>
+        + From<f32>
+        + ops::Mul<Output = T>
+        + PartialOrd
+        + ops::Sub<Output = T>,
+{
     let t = (value - from_min) / (from_max - from_min);
     clamped_lerp(to_min, to_max, t)
 }
@@ -240,8 +266,11 @@ pub fn map_clamped(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn smoothstep(x: f64) -> f64 {
-    x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
+pub fn smoothstep<F>(x: F) -> F
+where
+    F: Copy + From<f32> + ops::Mul<Output = F> + ops::Add<Output = F> + ops::Sub<Output = F>,
+{
+    x * x * x * (x * (x * F::from(6.0) - F::from(15.0)) + F::from(10.0))
 }
 
 /// Smoothstep derivative for noise with derivatives.
@@ -251,8 +280,11 @@ pub fn smoothstep(x: f64) -> f64 {
 /// Java reference: `Mth.smoothstepDerivative(double)`
 #[inline]
 #[must_use]
-pub fn smoothstep_derivative(x: f64) -> f64 {
-    30.0 * x * x * (x - 1.0) * (x - 1.0)
+pub fn smoothstep_derivative<F>(x: F) -> F
+where
+    F: Copy + From<f32> + ops::Mul<Output = F> + ops::Add<Output = F> + ops::Sub<Output = F>,
+{
+    F::from(30.0) * x * x * (x - F::from(1.0)) * (x - F::from(1.0))
 }
 
 /// Smoothstep for N lanes: 6x^5 - 15x^4 + 10x^3. Per-lane identical to [`smoothstep`].

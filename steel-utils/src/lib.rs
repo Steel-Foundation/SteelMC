@@ -66,6 +66,9 @@ pub mod version;
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 
+/// Number of Y values processed by the density SIMD batch.
+pub const SIMD_BATCH: usize = 8;
+
 pub use color::{ArgbColor, RgbColor};
 pub use direction::Direction;
 pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};

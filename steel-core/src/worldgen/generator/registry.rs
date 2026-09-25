@@ -17,6 +17,9 @@ use crate::worldgen::{
     ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
 };
 use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::density_functions::{
+    end::EndNoiseSettings, nether::NetherNoiseSettings, overworld::OverworldNoiseSettings,
+};
 use steel_worldgen::structure::placement::load_vanilla_structure_sets;
 
 /// Fully constructed generator metadata for a world.
@@ -406,11 +409,11 @@ fn create_flat(
         generator: ChunkGeneratorType::Flat(FlatChunkGenerator::new_layers_with_structures(
             layers,
             seed,
-            sea_level_for_dimension_type(dimension_type),
+            FlatChunkGenerator::SEA_LEVEL,
             structure_generator,
         )),
         is_flat: true,
-        sea_level: sea_level_for_dimension_type(dimension_type),
+        sea_level: FlatChunkGenerator::SEA_LEVEL,
     })
 }
 
@@ -512,11 +515,11 @@ fn fixed_generator_dimension_type(generator: &Identifier) -> DimensionTypeRef {
 
 fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
     if dimension_type == &THE_NETHER {
-        32
+        NetherNoiseSettings::SEA_LEVEL
     } else if dimension_type == &THE_END {
-        0
+        EndNoiseSettings::SEA_LEVEL
     } else {
-        63
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 
