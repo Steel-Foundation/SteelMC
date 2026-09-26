@@ -50,6 +50,17 @@ impl JavaTcpClient {
         profile: GameProfile,
         reader_encryption: Option<[u8; 16]>,
     ) -> ConnectionAction {
+        if let Some(ban) = self.server.ban_list.find(profile.id) {
+            self.kick(ban.disconnect_message()).await;
+            return ConnectionAction::none();
+        }
+        if self.server.whitelist.is_enabled() && !self.server.whitelist.is_whitelisted(profile.id) {
+            self.kick(TextComponent::from(
+                &translations::MULTIPLAYER_DISCONNECT_NOT_WHITELISTED,
+            ))
+            .await;
+            return ConnectionAction::none();
+        }
         // Reject full-server logins before evicting an existing session.
         if self.server.is_player_limit_reached(profile.id) {
             self.kick(TextComponent::translated(
