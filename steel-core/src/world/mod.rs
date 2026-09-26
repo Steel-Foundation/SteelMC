@@ -100,7 +100,7 @@ use crate::{
     level_data::{
         GameTime, GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings,
     },
-    player::{LastSeen, Player, connection::NetworkConnection},
+    player::{Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
 
