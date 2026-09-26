@@ -4,12 +4,16 @@ use std::borrow::Cow;
 
 use steel_registry::{
     REGISTRY, TaggedRegistryExt as _,
+    data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME},
     enchantment::{Enchantment, EnchantmentRef},
     equipment::EquipmentSlot,
+    item_stack::ItemStack,
     vanilla_enchantment_tags::EnchantmentTag,
 };
 use steel_utils::{Identifier, translations};
-use text_components::{Modifier, TextComponent, format::Color, translation::TranslatedMessage};
+use text_components::{
+    Modifier as _, TextComponent, format::Color, translation::TranslatedMessage,
+};
 
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
@@ -81,7 +85,7 @@ fn enchant(
                 return Err(itemless_error(target));
             }
             EnchantTargetResult::Incompatible(item_name) if targets.len() == 1 => {
-                return Err(incompatible_error(item_name));
+                return Err(incompatible_error(*item_name));
             }
             EnchantTargetResult::Itemless | EnchantTargetResult::Incompatible(_) => {}
         }
@@ -96,10 +100,7 @@ fn enchant(
     let enchantment_name = enchantment_display_name(enchantment, level);
     let message = if let [target] = targets.as_slice() {
         translations::COMMANDS_ENCHANT_SUCCESS_SINGLE
-            .message([
-                enchantment_name,
-                TextComponent::plain(target.plain_text_name()),
-            ])
+            .message([enchantment_name, target.display_name()])
             .component()
     } else {
         translations::COMMANDS_ENCHANT_SUCCESS_MULTIPLE
@@ -120,7 +121,7 @@ fn enchant(
 enum EnchantTargetResult {
     Enchanted,
     Itemless,
-    Incompatible(Box<str>),
+    Incompatible(Box<TextComponent>),
 }
 
 fn enchant_main_hand(
@@ -136,8 +137,7 @@ fn enchant_main_hand(
         if !enchantment.can_enchant(item.item())
             || !Enchantment::is_compatible_with_existing(enchantment, item)
         {
-            result =
-                EnchantTargetResult::Incompatible(item.item().key.to_string().into_boxed_str());
+            result = EnchantTargetResult::Incompatible(Box::new(item_display_name(item)));
             return;
         }
         result = EnchantTargetResult::Enchanted;
@@ -151,23 +151,31 @@ fn enchant_main_hand(
     result
 }
 
+fn item_display_name(stack: &ItemStack) -> TextComponent {
+    stack
+        .get(CUSTOM_NAME)
+        .or_else(|| stack.get(ITEM_NAME))
+        .cloned()
+        .unwrap_or_else(|| TextComponent::plain(stack.item().key.to_string()))
+}
+
 fn not_living_error(target: &SharedEntity) -> CommandSyntaxError {
     let message = translations::COMMANDS_ENCHANT_FAILED_ENTITY
-        .message([TextComponent::plain(target.plain_text_name())])
+        .message([target.display_name()])
         .component();
     CommandSyntaxError::dynamic(message)
 }
 
 fn itemless_error(target: &SharedEntity) -> CommandSyntaxError {
     let message = translations::COMMANDS_ENCHANT_FAILED_ITEMLESS
-        .message([TextComponent::plain(target.plain_text_name())])
+        .message([target.display_name()])
         .component();
     CommandSyntaxError::dynamic(message)
 }
 
-fn incompatible_error(item_name: Box<str>) -> CommandSyntaxError {
+fn incompatible_error(item_name: TextComponent) -> CommandSyntaxError {
     let message = translations::COMMANDS_ENCHANT_FAILED_INCOMPATIBLE
-        .message([TextComponent::plain(String::from(item_name))])
+        .message([item_name])
         .component();
     CommandSyntaxError::dynamic(message)
 }
@@ -210,13 +218,18 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::{
-        entity_type::EntityTypeRef, equipment::EquipmentSlot, init_vanilla_registry,
-        item_stack::ItemStack, vanilla_enchantments, vanilla_entities, vanilla_items,
+        data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME},
+        entity_type::EntityTypeRef,
+        equipment::EquipmentSlot,
+        init_vanilla_registry,
+        item_stack::ItemStack,
+        vanilla_enchantments, vanilla_entities, vanilla_items,
     };
-    use steel_utils::locks::SyncMutex;
+    use steel_utils::{locks::SyncMutex, translations};
+    use text_components::TextComponent;
 
     use super::super::create_dispatcher;
-    use super::{EnchantTargetResult, enchant_main_hand};
+    use super::{EnchantTargetResult, enchant_main_hand, incompatible_error, item_display_name};
     use crate::{
         command::{
             brigadier::{ArgumentType, CommandDispatcher, NodeId},
@@ -291,6 +304,50 @@ mod tests {
             EnchantTargetResult::Incompatible(_)
         ));
         assert_eq!(target.main_hand_enchantment_level(), 1);
+    }
+
+    #[test]
+    fn item_display_name_prefers_custom_name_then_item_name() {
+        init_vanilla_registry();
+        let sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+        let default_name = item_display_name(&sword);
+        assert_eq!(
+            default_name,
+            *sword.get(ITEM_NAME).expect("item_name should be set")
+        );
+
+        let mut custom_sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+        let custom_name = TextComponent::plain("Excalibur");
+        custom_sword.set(CUSTOM_NAME, custom_name.clone());
+        assert_eq!(item_display_name(&custom_sword), custom_name);
+    }
+
+    #[test]
+    fn incompatible_enchant_uses_item_display_name() {
+        init_vanilla_registry();
+        let target = TestLivingEntity::new(&vanilla_entities::ZOMBIE);
+        let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+        let custom_name = TextComponent::plain("Excalibur");
+        sword.set(CUSTOM_NAME, custom_name.clone());
+        target.equip(sword);
+
+        assert_eq!(
+            enchant_main_hand(&target, &vanilla_enchantments::SHARPNESS, 1),
+            EnchantTargetResult::Enchanted
+        );
+        let result = enchant_main_hand(&target, &vanilla_enchantments::SHARPNESS, 2);
+        assert_eq!(
+            result,
+            EnchantTargetResult::Incompatible(Box::new(custom_name.clone()))
+        );
+
+        let err = incompatible_error(custom_name);
+        assert_eq!(
+            err.message_component(),
+            translations::COMMANDS_ENCHANT_FAILED_INCOMPATIBLE
+                .message([TextComponent::plain("Excalibur")])
+                .component()
+        );
     }
 
     struct TestLivingEntity {

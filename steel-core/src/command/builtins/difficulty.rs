@@ -83,7 +83,7 @@ fn set_difficulty(
         .message([TextComponent::from(difficulty_display_name(difficulty))])
         .component();
     context.source().send_success(&message, true);
-    Ok(0)
+    Ok(i32::from(u8::from(difficulty)))
 }
 
 const fn difficulty_display_name(difficulty: Difficulty) -> &'static Translation<0> {
@@ -97,8 +97,16 @@ const fn difficulty_display_name(difficulty: Difficulty) -> &'static Translation
 
 #[cfg(test)]
 mod tests {
-    use super::difficulty_permission;
+    use super::{Difficulty, difficulty_permission};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
+
+    #[test]
+    fn difficulty_maps_to_vanilla_numeric_ids() {
+        assert_eq!(i32::from(u8::from(Difficulty::Peaceful)), 0);
+        assert_eq!(i32::from(u8::from(Difficulty::Easy)), 1);
+        assert_eq!(i32::from(u8::from(Difficulty::Normal)), 2);
+        assert_eq!(i32::from(u8::from(Difficulty::Hard)), 3);
+    }
 
     #[test]
     fn client_difficulty_permission_uses_the_command_root() {

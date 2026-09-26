@@ -126,7 +126,7 @@ fn set_game_mode(
         }
         let message = translations::COMMANDS_GAMEMODE_SUCCESS_OTHER
             .message([
-                TextComponent::plain(target.plain_text_name()),
+                target.display_name(),
                 TextComponent::from(game_mode_translation(game_mode)),
             ])
             .component();
@@ -228,11 +228,17 @@ const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::init_vanilla_registry;
+    use text_components::content::Content;
 
     use super::super::create_dispatcher;
     use super::*;
-    use crate::permission::{PermissionEntry, PermissionSet};
+    use crate::{
+        permission::{PermissionEntry, PermissionSet},
+        test_support::{TestPlayerBuilder, test_world},
+    };
 
     fn permission_key(value: &str) -> PermissionKey {
         PermissionKey::parse(value).expect("test permission key should parse")
@@ -348,5 +354,35 @@ mod tests {
                     && node.is_executable()
                     && node.argument_type() == Some(&SteelArgumentType::players())
         ));
+    }
+
+    #[test]
+    fn gamemode_success_other_formats_player_display_name() {
+        init_vanilla_registry();
+        let world = test_world();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "GameModeTarget", 1).build();
+        let display = player.display_name();
+
+        assert_eq!(player.plain_text_name(), "GameModeTarget");
+        assert!(display.interactions.click.is_some());
+        assert!(display.interactions.hover.is_some());
+        assert_eq!(
+            display.interactions.insertion.as_deref(),
+            Some("GameModeTarget")
+        );
+
+        let message = translations::COMMANDS_GAMEMODE_SUCCESS_OTHER
+            .message([
+                player.display_name(),
+                TextComponent::from(game_mode_translation(GameType::Survival)),
+            ])
+            .component();
+        let Content::Translate(translated) = &message.content else {
+            panic!("expected translate content");
+        };
+        assert_eq!(
+            translated.args.as_ref().and_then(|args| args.first()),
+            Some(&display)
+        );
     }
 }

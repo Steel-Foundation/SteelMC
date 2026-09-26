@@ -89,7 +89,7 @@ fn clear_players(
     if count == 0 {
         let message = if let [target] = targets {
             translations::CLEAR_FAILED_SINGLE
-                .message([TextComponent::plain(target.plain_text_name())])
+                .message([target.display_name()])
                 .component()
         } else {
             translations::CLEAR_FAILED_MULTIPLE
@@ -103,10 +103,7 @@ fn clear_players(
     let message = if max_count == 0 {
         if let [target] = targets {
             translations::COMMANDS_CLEAR_TEST_SINGLE
-                .message([
-                    count_component,
-                    TextComponent::plain(target.plain_text_name()),
-                ])
+                .message([count_component, target.display_name()])
                 .component()
         } else {
             translations::COMMANDS_CLEAR_TEST_MULTIPLE
@@ -118,10 +115,7 @@ fn clear_players(
         }
     } else if let [target] = targets {
         translations::COMMANDS_CLEAR_SUCCESS_SINGLE
-            .message([
-                count_component,
-                TextComponent::plain(target.plain_text_name()),
-            ])
+            .message([count_component, target.display_name()])
             .component()
     } else {
         translations::COMMANDS_CLEAR_SUCCESS_MULTIPLE
@@ -143,9 +137,14 @@ const fn matches_any_item(_stack: &ItemStack) -> bool {
 mod tests {
     use steel_registry::init_vanilla_registry;
 
+    use text_components::content::Content;
+
     use super::super::create_dispatcher;
     use super::*;
-    use crate::command::brigadier::{CommandDispatcher, NodeId};
+    use crate::{
+        command::brigadier::{CommandDispatcher, NodeId},
+        test_support::{TestPlayerBuilder, test_world},
+    };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -209,5 +208,61 @@ mod tests {
             dispatcher.node(max_count),
             Some(node) if node.is_executable()
         ));
+    }
+
+    #[test]
+    fn clear_player_display_name_preserves_interactivity() {
+        init_vanilla_registry();
+        let world = test_world();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "ClearTarget", 1).build();
+        let display = player.display_name();
+
+        assert_eq!(player.plain_text_name(), "ClearTarget");
+        assert!(display.interactions.click.is_some());
+        assert!(display.interactions.hover.is_some());
+        assert_eq!(
+            display.interactions.insertion.as_deref(),
+            Some("ClearTarget")
+        );
+
+        let failed_msg = translations::CLEAR_FAILED_SINGLE
+            .message([player.display_name()])
+            .component();
+        let Content::Translate(failed_translated) = &failed_msg.content else {
+            panic!("expected translate content");
+        };
+        assert_eq!(
+            failed_translated
+                .args
+                .as_ref()
+                .and_then(|args| args.first()),
+            Some(&display)
+        );
+
+        let count_comp = TextComponent::plain("5");
+        let success_msg = translations::COMMANDS_CLEAR_SUCCESS_SINGLE
+            .message([count_comp.clone(), player.display_name()])
+            .component();
+        let Content::Translate(success_translated) = &success_msg.content else {
+            panic!("expected translate content");
+        };
+        assert_eq!(
+            success_translated
+                .args
+                .as_ref()
+                .and_then(|args| args.get(1)),
+            Some(&display)
+        );
+
+        let test_msg = translations::COMMANDS_CLEAR_TEST_SINGLE
+            .message([count_comp, player.display_name()])
+            .component();
+        let Content::Translate(test_translated) = &test_msg.content else {
+            panic!("expected translate content");
+        };
+        assert_eq!(
+            test_translated.args.as_ref().and_then(|args| args.get(1)),
+            Some(&display)
+        );
     }
 }
