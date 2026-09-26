@@ -77,8 +77,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "steel:file persists player data under save_path; steel:ram keeps it in memory and discards it on shutdown.",
-          "enum": ["steel:file", "steel:ram"]
+          "description": "steel:disk persists player data under save_path; steel:ram keeps it in memory and discards it on shutdown.",
+          "enum": ["steel:disk", "steel:ram"]
         }
       },
       "required": ["type"],
