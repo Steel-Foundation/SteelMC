@@ -2122,6 +2122,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.sync_base_fire_freeze_entity_data();
     }
 
+    /// Plays the extinguish sound when currently on fire, then clears fire.
+    fn extinguish_fire(&self) {
+        if self.is_on_fire() {
+            self.play_entity_on_fire_extinguished_sound();
+        }
+        self.clear_fire();
+    }
+
     /// Ignites this entity for a vanilla tick duration.
     fn ignite_for_ticks(&self, number_of_ticks: i32) {
         self.base()

@@ -11,6 +11,7 @@
 
 mod throwable;
 mod throwable_item;
+mod thrown_potion;
 
 use std::mem;
 use std::sync::{Arc, Weak};
@@ -44,6 +45,7 @@ use super::{
 
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
+pub use thrown_potion::{AbstractThrownPotion, SPLASH_RANGE_SQ};
 
 /// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
@@ -703,6 +705,7 @@ pub fn spawn_throwable_item_projectile<E>(
     world: &Arc<World>,
     player: &Player,
     item_stack: &mut ItemStack,
+    pitch_offset: f32,
     power: f32,
     uncertainty: f32,
     create: impl FnOnce(DVec3) -> E,
@@ -727,7 +730,7 @@ where
     entity.set_item_clamped(item_stack.clone());
 
     let (yaw, player_pitch) = player.rotation();
-    entity.shoot_from_rotation(player, player_pitch, yaw, 0.0, power, uncertainty);
+    entity.shoot_from_rotation(player, player_pitch, yaw, pitch_offset, power, uncertainty);
 
     let entity: SharedEntity = Arc::new(entity);
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {

@@ -1304,11 +1304,26 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+        self.add_mob_effect_with_source(effect, None)
+    }
+
+    /// Adds or updates active vanilla mob-effect state, attributing it to
+    /// `source`.
+    fn add_mob_effect_with_source(
+        &self,
+        effect: MobEffectInstance,
+        source: Option<&dyn Entity>,
+    ) -> bool {
         if !self.can_be_affected(&effect) {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
+        if changed {
+            // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` once
+            // the advancement-criteria foundation exists.
+            let _ = source;
+        }
         // Mirrors vanilla `newEffect.onEffectStarted(this)`: called
         // unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self

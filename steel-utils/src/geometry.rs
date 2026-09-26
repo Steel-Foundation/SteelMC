@@ -280,6 +280,26 @@ impl<I> Aabb<DVec3, I> {
         dx * dx + dy * dy + dz * dz
     }
 
+    /// Returns the squared distance from `other` to this box.
+    ///
+    /// Mirrors vanilla `AABB.distanceToSqr(AABB)`.
+    #[must_use]
+    pub fn distance_to_sqr_aabb(self, other: Self) -> f64 {
+        let dx = f64::max(
+            f64::max(self.min.x - other.max.x, other.min.x - self.max.x),
+            0.0,
+        );
+        let dy = f64::max(
+            f64::max(self.min.y - other.max.y, other.min.y - self.max.y),
+            0.0,
+        );
+        let dz = f64::max(
+            f64::max(self.min.z - other.max.z, other.min.z - self.max.z),
+            0.0,
+        );
+        dx * dx + dy * dy + dz * dz
+    }
+
     /// Returns the closest point inside this box to `point`.
     ///
     /// Mirrors the per-box clamp used by vanilla `VoxelShape.closestPointTo`.
@@ -717,6 +737,27 @@ mod tests {
         assert_eq!(aabb.distance_to_sqr(DVec3::new(2.0, 3.0, 4.0)), 0.0);
         assert_eq!(aabb.distance_to_sqr(DVec3::new(0.0, 1.0, 1.0)), 6.0);
         assert_eq!(aabb.distance_to_sqr(DVec3::new(5.0, 7.0, 9.0)), 3.0);
+    }
+
+    #[test]
+    fn distance_to_sqr_aabb_uses_nearest_gap_between_boxes() {
+        let aabb = WorldAabb::new(1.0, 2.0, 3.0, 4.0, 6.0, 8.0);
+
+        // Overlapping boxes have zero distance.
+        assert_eq!(
+            aabb.distance_to_sqr_aabb(WorldAabb::new(2.0, 3.0, 4.0, 5.0, 7.0, 9.0)),
+            0.0
+        );
+        // A box entirely below on every axis: gaps of 1, 1, 2 -> 1+1+4 = 6.
+        assert_eq!(
+            aabb.distance_to_sqr_aabb(WorldAabb::new(-1.0, 0.0, 0.0, 0.0, 1.0, 1.0)),
+            6.0
+        );
+        // A box entirely above on every axis: gaps of 1, 1, 1 -> 3.
+        assert_eq!(
+            aabb.distance_to_sqr_aabb(WorldAabb::new(5.0, 7.0, 9.0, 6.0, 8.0, 10.0)),
+            3.0
+        );
     }
 
     #[test]
