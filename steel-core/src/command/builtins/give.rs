@@ -56,17 +56,7 @@ fn give(
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
     let prototype = context.item_stack("item")?;
-    let max_allowed_count = prototype.max_stack_size() * MAX_ALLOWED_ITEM_STACKS;
-    if count > max_allowed_count {
-        let message = translations::COMMANDS_GIVE_FAILED_TOOMANYITEMS
-            .message([
-                TextComponent::from(max_allowed_count.to_string()),
-                item_display_name(prototype),
-            ])
-            .component();
-        context.source().send_failure(message);
-        return Ok(0);
-    }
+    validate_give_count(prototype, count)?;
 
     for target in &targets {
         give_to_player(target, prototype, count);
@@ -77,7 +67,7 @@ fn give(
             .message([
                 TextComponent::from(count.to_string()),
                 item_display_name(prototype),
-                TextComponent::plain(target.plain_text_name()),
+                target.display_name(),
             ])
             .component()
     } else {
@@ -96,6 +86,20 @@ fn give(
     })
 }
 
+fn validate_give_count(prototype: &ItemStack, count: i32) -> Result<i32, CommandSyntaxError> {
+    let max_allowed_count = prototype.max_stack_size() * MAX_ALLOWED_ITEM_STACKS;
+    if count > max_allowed_count {
+        let message = translations::COMMANDS_GIVE_FAILED_TOOMANYITEMS
+            .message([
+                TextComponent::from(max_allowed_count.to_string()),
+                item_display_name(prototype),
+            ])
+            .component();
+        return Err(CommandSyntaxError::dynamic(message));
+    }
+    Ok(max_allowed_count)
+}
+
 fn give_to_player(player: &Player, prototype: &ItemStack, count: i32) {
     let max_stack_size = prototype.max_stack_size();
     let mut remaining = count;
@@ -111,9 +115,15 @@ fn give_to_player(player: &Player, prototype: &ItemStack, count: i32) {
             }
             play_pickup_sound(player);
             player.broadcast_inventory_changes();
-        } else if let Some(item) = player.drop_item(stack, false, false) {
-            item.set_no_pickup_delay();
-            item.set_owner(Some(player.gameprofile.id));
+        } else {
+            let partial_added = stack.count() < size;
+            if let Some(item) = player.drop_item(stack, false, false) {
+                item.set_no_pickup_delay();
+                item.set_owner(Some(player.gameprofile.id));
+            }
+            if partial_added {
+                player.broadcast_inventory_changes();
+            }
         }
     }
 }
@@ -140,11 +150,16 @@ fn item_display_name(stack: &ItemStack) -> TextComponent {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::init_vanilla_registry;
+    use std::sync::Arc;
+
+    use steel_registry::{init_vanilla_registry, vanilla_items};
 
     use super::super::create_dispatcher;
     use super::*;
-    use crate::command::brigadier::{CommandDispatcher, NodeId};
+    use crate::{
+        command::brigadier::{CommandDispatcher, NodeId},
+        test_support::{TestPlayerBuilder, test_world},
+    };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -201,5 +216,82 @@ mod tests {
             Some(&SteelArgumentType::from(ArgumentType::integer(1, i32::MAX)))
         );
         assert!(count_node.is_executable());
+    }
+
+    #[test]
+    fn validate_give_count_rejects_exceeding_max_allowed_stacks() {
+        init_vanilla_registry();
+
+        let diamond = ItemStack::new(&vanilla_items::DIAMOND);
+        assert_eq!(diamond.max_stack_size(), 64);
+        assert!(validate_give_count(&diamond, 6400).is_ok());
+        let err = validate_give_count(&diamond, 6401)
+            .expect_err("count 6401 should exceed 100 stacks of 64");
+        let debug = format!("{:?}", err.message_component());
+        assert!(debug.contains("6400"));
+        assert!(debug.contains("commands.give.failed.toomanyitems"));
+
+        let sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+        assert_eq!(sword.max_stack_size(), 1);
+        assert!(validate_give_count(&sword, 100).is_ok());
+        let err =
+            validate_give_count(&sword, 101).expect_err("count 101 should exceed 100 stacks of 1");
+        assert!(format!("{:?}", err.message_component()).contains("100"));
+
+        let pearl = ItemStack::new(&vanilla_items::ENDER_PEARL);
+        assert_eq!(pearl.max_stack_size(), 16);
+        assert!(validate_give_count(&pearl, 1600).is_ok());
+        let err = validate_give_count(&pearl, 1601)
+            .expect_err("count 1601 should exceed 100 stacks of 16");
+        assert!(format!("{:?}", err.message_component()).contains("1600"));
+    }
+
+    #[test]
+    fn player_display_name_contains_interactivity() {
+        init_vanilla_registry();
+        let world = test_world();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "PlayerOne", 3).build();
+        let display = player.display_name();
+        assert_eq!(player.plain_text_name(), "PlayerOne");
+        assert!(display.interactions.click.is_some());
+        assert!(display.interactions.hover.is_some());
+        assert_eq!(display.interactions.insertion.as_deref(), Some("PlayerOne"));
+    }
+
+    #[test]
+    fn give_to_player_adds_items_to_inventory() {
+        init_vanilla_registry();
+        let world = test_world();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestReceiver", 1).build();
+        let stack = ItemStack::new(&vanilla_items::DIAMOND);
+        give_to_player(&player, &stack, 5);
+
+        let inv = player.inventory.lock();
+        let item = inv.get_item(0);
+        assert_eq!(item.item(), &*vanilla_items::DIAMOND);
+        assert_eq!(item.count(), 5);
+    }
+
+    #[test]
+    fn give_to_player_with_full_inventory_drops_remaining() {
+        init_vanilla_registry();
+        let world = test_world();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestReceiver", 2).build();
+
+        {
+            let mut inv = player.inventory.lock();
+            for slot in 0..inv.get_container_size() {
+                inv.set_item(
+                    slot,
+                    ItemStack::new(&vanilla_items::DIRT).copy_with_count(64),
+                );
+            }
+        }
+
+        let stack = ItemStack::new(&vanilla_items::DIAMOND);
+        give_to_player(&player, &stack, 5);
+
+        let inv = player.inventory.lock();
+        assert_eq!(inv.get_item(0).item(), &*vanilla_items::DIRT);
     }
 }
