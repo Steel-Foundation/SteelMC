@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::{CAN_BREAK, CAN_PLACE_ON};
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
@@ -18,7 +16,6 @@ use steel_registry::{
 };
 use steel_utils::{
     BlockPos, BlockStateId,
-    nbt::compare_nbt_compounds,
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
@@ -30,26 +27,9 @@ use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContext};
 
+use super::adventure_mode;
+
 impl Player {
-    /// Mirrors vanilla `Player.mayUseItemAt` for adventure-mode item use.
-    pub(crate) fn may_use_item_at(
-        &self,
-        pos: BlockPos,
-        direction: Direction,
-        item_stack: &ItemStack,
-    ) -> bool {
-        if self.abilities.lock().may_build {
-            return true;
-        }
-
-        let Some(can_place_on) = item_stack.get(CAN_PLACE_ON) else {
-            return false;
-        };
-        let target = pos.relative(direction.opposite());
-        let world = self.get_world();
-        Self::matches_adventure_mode_predicate(can_place_on, &world, target)
-    }
-
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
     pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
         let game_mode = self.game_mode();
@@ -63,44 +43,15 @@ impl Player {
             return false;
         }
 
-        // TODO: Retain Vanilla's mutable per-component AdventureModePredicate
-        // cache once Steel's item components support that identity. Until then,
-        // snapshotting safely releases the inventory lock but reevaluates each use.
-        let can_break = {
+        let item = {
             let inventory = self.inventory.lock();
             let item = inventory.get_selected_item();
             if item.is_empty() {
                 return true;
             }
-            item.get(CAN_BREAK).cloned()
+            item.clone()
         };
-        let Some(can_break) = can_break else {
-            return true;
-        };
-        !Self::matches_adventure_mode_predicate(&can_break, world, pos)
-    }
-
-    fn matches_adventure_mode_predicate(
-        predicate: &AdventureModePredicate,
-        world: &World,
-        pos: BlockPos,
-    ) -> bool {
-        let state = world.get_block_state(pos);
-        // Vanilla's BlockInWorld overload intentionally does not test the
-        // predicate's block-entity component matchers.
-        predicate.predicates().iter().any(|predicate| {
-            if !predicate.matches_state(state) {
-                return false;
-            }
-            let Some(expected_nbt) = predicate.nbt() else {
-                return true;
-            };
-            let Some(block_entity) = world.get_block_entity(pos) else {
-                return false;
-            };
-            let actual_nbt = block_entity.save_with_full_metadata();
-            compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
-        })
+        !adventure_mode::can_break(&item, world, pos)
     }
 }
 
@@ -366,16 +317,16 @@ impl BlockBreakingManager {
             return false;
         }
 
-        // Check if player's tool can destroy this block
-        // TODO: Implement canDestroyBlock check for adventure mode
-
         // Get block info
         let Some(_block) = REGISTRY.blocks.by_state_id(state) else {
             return false;
         };
 
         // TODO: Check for GameMasterBlock (command blocks, etc.)
-        // TODO: Check blockActionRestricted
+
+        if player.block_action_restricted(world, pos) {
+            return false;
+        }
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
