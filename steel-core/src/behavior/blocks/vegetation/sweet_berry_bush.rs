@@ -19,7 +19,9 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
-use crate::behavior::block::drop_from_block_interact_loot_table;
+use crate::{
+    behavior::block::drop_from_block_interact_loot_table, block_entity::SharedBlockEntity,
+};
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
@@ -176,6 +178,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::SWEET_BERRIES))

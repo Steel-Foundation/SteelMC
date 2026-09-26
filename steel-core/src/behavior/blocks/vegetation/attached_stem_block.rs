@@ -18,6 +18,7 @@ use crate::{
             vegetation_block::{survival_update_shape, vegetation_can_survive},
         },
     },
+    block_entity::SharedBlockEntity,
     world::{LevelReader, ScheduledTickAccess},
 };
 
@@ -88,6 +89,7 @@ impl BlockBehavior for AttachedStemBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(self.seed))
@@ -229,7 +231,7 @@ mod tests {
             assert_eq!(reverted.get_value(AGE), MAX_AGE);
 
             let clone = behavior
-                .get_clone_item_stack(attached_block, attached, false)
+                .get_clone_item_stack(attached_block, attached, None, false)
                 .expect("attached stem has a clone item");
             assert_eq!(clone.item(), seed);
         }

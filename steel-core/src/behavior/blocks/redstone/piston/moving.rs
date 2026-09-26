@@ -18,6 +18,7 @@ use crate::behavior::{
     BlockEntityCreation, BlockHitResult, BlockLootContext, BlockPlaceContext, InteractionResult,
     InventoryAccess,
 };
+use crate::block_entity::SharedBlockEntity;
 use crate::block_entity::{BlockEntityTicker, entities::PistonMovingBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
@@ -134,6 +135,7 @@ impl BlockBehavior for MovingPistonBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::empty())
