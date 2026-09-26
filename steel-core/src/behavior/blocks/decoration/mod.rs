@@ -4,6 +4,7 @@ mod candle_block;
 mod candle_cake_block;
 mod chain_block;
 mod end_rod_block;
+mod flower_pot_block;
 mod jukebox_block;
 #[cfg(test)]
 mod jukebox_tests;
@@ -18,6 +19,7 @@ pub use candle_block::CandleBlock;
 pub use candle_cake_block::CandleCakeBlock;
 pub use chain_block::{ChainBlock, WeatheringCopperChainBlock};
 pub use end_rod_block::EndRodBlock;
+pub use flower_pot_block::FlowerPotBlock;
 pub use jukebox_block::JukeboxBlock;
 pub use lantern_block::LanternBlock;
 pub use sign_block::{
