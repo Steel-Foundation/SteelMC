@@ -10,6 +10,7 @@ use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
 use steel_math::DEGREE_90;
+use steel_math::vector::{x_rot, y_rot};
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::vanilla_game_rules::{
@@ -393,8 +394,8 @@ fn resolve_velocity(
     let current_velocity = if relatives.rotates_delta() {
         let diff_yaw = current_rotation.0 - resolved_rotation.0;
         let diff_pitch = current_rotation.1 - resolved_rotation.1;
-        rotate_y(
-            rotate_x(current_velocity, diff_pitch.to_radians()),
+        y_rot(
+            x_rot(current_velocity, diff_pitch.to_radians()),
             diff_yaw.to_radians(),
         )
     } else {
@@ -418,18 +419,6 @@ fn resolve_velocity(
             velocity.z
         },
     )
-}
-
-fn rotate_x(vec: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(radians.cos());
-    let sin = f64::from(radians.sin());
-    DVec3::new(vec.x, vec.y * cos + vec.z * sin, vec.z * cos - vec.y * sin)
-}
-
-fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(radians.cos());
-    let sin = f64::from(radians.sin());
-    DVec3::new(vec.x * cos + vec.z * sin, vec.y, vec.z * cos - vec.x * sin)
 }
 
 /// A queued request to move an entity between loaded worlds.

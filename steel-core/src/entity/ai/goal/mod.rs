@@ -27,6 +27,8 @@ mod random_stroll;
 mod random_swimming;
 mod restrict_sun;
 mod selector;
+mod squid_flee_goal;
+mod squid_random_movement_goal;
 mod target_goal;
 mod tempt_goal;
 mod try_find_water;
@@ -44,6 +46,8 @@ pub(crate) use nearest_attackable_target::NearestAttackableTargetGoal;
 pub(crate) use panic_goal::PanicGoal;
 pub(crate) use random_look_around::RandomLookAroundGoal;
 pub(crate) use selector::{GoalControl, GoalSelector};
+pub(crate) use squid_flee_goal::SquidFleeGoal;
+pub(crate) use squid_random_movement_goal::SquidRandomMovementGoal;
 pub(crate) use tempt_goal::TemptGoal;
 pub(crate) use water_avoiding_random_stroll::WaterAvoidingRandomStrollGoal;
 
