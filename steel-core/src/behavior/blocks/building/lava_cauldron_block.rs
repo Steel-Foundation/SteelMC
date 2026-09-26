@@ -63,7 +63,7 @@ impl BlockBehavior for LavaCauldronBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use crate::{
         behavior::{BLOCK_BEHAVIORS, init_behaviors},
-        test_support::TestLevel,
+        test_support::fresh_test_world,
     };
 
     fn assert_f64_close(actual: f64, expected: f64) {
@@ -132,6 +132,7 @@ mod tests {
     fn registered_lava_cauldron_outputs_three() {
         init_vanilla_registry();
         init_behaviors();
+        let world = fresh_test_world("lava_cauldron_analog_output");
         let state = vanilla_blocks::LAVA_CAULDRON.default_state();
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::LAVA_CAULDRON);
 
@@ -139,7 +140,7 @@ mod tests {
         assert_eq!(
             behavior.get_analog_output_signal(
                 state,
-                &TestLevel::default(),
+                world.as_ref(),
                 BlockPos::ZERO,
                 Direction::North,
             ),
