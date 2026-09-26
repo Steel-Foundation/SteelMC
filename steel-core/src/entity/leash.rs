@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::entity::entities::LeashFenceKnotEntity;
+use crate::entity::living_entity::BASE_HORIZONTAL_AIR_DRAG;
 use crate::entity::{Entity, Mob, SharedEntity, WeakEntity};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -24,7 +25,6 @@ pub const LEASH_STIFFNESS: f64 = 0.11;
 pub const ENTITY_LEASH_ATTACHMENT_POINT: DVec3 = DVec3::new(0.0, 0.5, 0.5);
 pub const LEASHER_ATTACHMENT_POINT: DVec3 = DVec3::new(0.0, 0.5, 0.0);
 pub const DELAYED_LEASH_DROP_TICKS: i32 = 100;
-pub const BASE_HORIZONTAL_FRICTION: f64 = 0.91;
 
 /// Vanilla behavior shared by entities that extend `Leashable`.
 ///
@@ -177,14 +177,13 @@ pub trait Leashable: Entity {
     fn leash_angular_friction(&self) -> f64 {
         if self.on_ground() {
             let Some(world) = self.level() else {
-                return BASE_HORIZONTAL_FRICTION;
+                return f64::from(BASE_HORIZONTAL_AIR_DRAG);
             };
             let Some(pos) = self.block_pos_below_that_affects_movement() else {
-                return BASE_HORIZONTAL_FRICTION;
+                return f64::from(BASE_HORIZONTAL_AIR_DRAG);
             };
             return f64::from(
-                world.get_block_state(pos).get_block().config.friction
-                    * BASE_HORIZONTAL_FRICTION as f32,
+                world.get_block_state(pos).get_block().config.friction * BASE_HORIZONTAL_AIR_DRAG,
             );
         }
 
@@ -192,7 +191,7 @@ pub trait Leashable: Entity {
             return 0.8;
         }
 
-        BASE_HORIZONTAL_FRICTION
+        f64::from(BASE_HORIZONTAL_AIR_DRAG)
     }
 
     /// Returns whether this entity can have a leash attached to another. Mirrors Vanilla's `Leashable.canHaveALeashAttachedTo`.
