@@ -92,6 +92,11 @@ Contributions are welcome. Most changes begin by reading the vanilla source,
 understanding the behavior it implements, and deciding how to express that behavior
 cleanly in Rust.
 
+As a new contributor, please limit yourself to 3 open PRs at a time,
+so we can give feedback on your existing ones before you open more.
+Also, start with a small, simple contribution first,
+around 1k lines changed or less, so it's quicker to review.
+
 Before you start:
 
 1. Check existing issues and pull requests, then discuss substantial changes with
