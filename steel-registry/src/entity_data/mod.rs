@@ -33,8 +33,8 @@ pub use serializer::{
 };
 pub use vanilla_serializers::register_vanilla_entity_data_serializers;
 
+use glam::{Quat, Vec3};
 use std::{io, str::FromStr};
-
 use steel_utils::{
     BlockStateId, Identifier,
     codec::VarInt,
@@ -94,7 +94,13 @@ impl<T: Clone + PartialEq> SyncedValue<T> {
     /// Set the value. Only marks as dirty if the value actually changed.
     #[inline]
     pub fn set(&mut self, value: T) {
-        if self.value != value {
+        self.set_and_force_dirty(value, false);
+    }
+
+    /// Set the value, and force-marks this data to be dirty if `force_dirty` is `true`.
+    #[inline]
+    pub fn set_and_force_dirty(&mut self, value: T, force_dirty: bool) {
+        if force_dirty || self.value != value {
             self.value = value;
             self.dirty = true;
         }
@@ -267,50 +273,6 @@ impl GlobalPos {
     }
 }
 
-/// A 3D vector (for display entities).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vector3f {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-impl Vector3f {
-    pub const ZERO: Self = Self {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-    };
-
-    #[must_use]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
-    }
-}
-
-/// A quaternion rotation (for display entities).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Quaternionf {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
-
-impl Quaternionf {
-    pub const IDENTITY: Self = Self {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        w: 1.0,
-    };
-
-    #[must_use]
-    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self { x, y, z, w }
-    }
-}
-
 /// A list of particle effects.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ParticleList {
@@ -376,8 +338,8 @@ pub enum EntityData {
     OptionalLivingEntityRef(Option<Uuid>),
     BlockState(BlockStateId),
     OptionalBlockState(Option<BlockStateId>),
-    Vector3(Vector3f),
-    Quaternion(Quaternionf),
+    Vector3(Vec3),
+    Quaternion(Quat),
 
     // Entity states
     Pose(EntityPose),
