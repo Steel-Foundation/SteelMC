@@ -386,7 +386,7 @@ pub struct EntityBase {
     /// Unique network ID for this entity (session-local).
     id: i32,
     /// Persistent UUID for this entity.
-    uuid: Uuid,
+    uuid: SyncMutex<Uuid>,
     /// The world this entity is in.
     world: SyncMutex<Weak<World>>,
     /// Current vanilla movement state.
@@ -410,6 +410,11 @@ impl EntityBase {
     #[must_use]
     pub fn new(id: i32, position: DVec3, dimensions: EntityDimensions, world: Weak<World>) -> Self {
         Self::new_with_state(id, EntityBaseState::new(position, dimensions), world)
+    }
+
+    /// Sets the `Uuid` of the entity
+    pub fn set_uuid(&self, uuid: Uuid) {
+        *self.uuid.lock() = uuid;
     }
 
     /// Creates a new `EntityBase` with a randomly generated UUID and explicit state.
@@ -454,7 +459,7 @@ impl EntityBase {
         Self {
             generation: EntityGeneration::next(),
             id,
-            uuid,
+            uuid: SyncMutex::new(uuid),
             world: SyncMutex::new(world),
             state: SyncMutex::new(state),
             save_data: SyncMutex::new(EntityBaseSaveData::new()),
@@ -498,8 +503,8 @@ impl EntityBase {
 
     /// Gets the entity's UUID.
     #[inline]
-    pub const fn uuid(&self) -> Uuid {
-        self.uuid
+    pub fn uuid(&self) -> Uuid {
+        *self.uuid.lock()
     }
 
     /// Gets the entity's current position.
@@ -1076,6 +1081,7 @@ impl EntityBase {
         let callback = self.level_callback.lock().clone();
         callback.validate_move(old_pos, pos)?;
         self.set_position_local_unchecked(pos);
+        // TODO Update waypoints?
         if let Err(error) = callback.on_move_committed(old_pos, pos) {
             self.set_position_local_unchecked(old_pos);
             return Err(error);
@@ -1343,6 +1349,11 @@ impl EntityBase {
     /// Removes a vanilla scoreboard tag.
     pub fn remove_tag(&self, tag: &str) -> bool {
         self.save_data.lock().tags.remove(tag)
+    }
+
+    /// Clears all vanilla scoreboard tags.
+    pub fn clear_tags(&self) {
+        self.save_data.lock().tags.clear();
     }
 
     /// Replaces vanilla custom data.
