@@ -91,17 +91,14 @@ pub struct EntityRegistry {
 }
 
 impl EntityRegistry {
-    /// Completes the registered-entity portion of vanilla `Entity.load` after
-    /// the load factory has reconstructed the entity's base state.
-    fn finish_registered_load(entity: &SharedEntity, nbt: &BorrowedNbtCompound<'_>) {
+    fn finish_registered_load_view(entity: &SharedEntity, nbt: &BorrowedNbtCompoundView<'_, '_>) {
         let yaw = entity.rotation().0;
         if let Some(living) = entity.as_living_entity() {
             living.set_y_head_rot(yaw);
             living.set_y_body_rot(yaw);
         }
 
-        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-        entity.load_additional(nbt);
+        entity.load_additional(*nbt);
         entity.set_old_position_to_current();
         entity.base().set_old_rotation_to_current();
         entity.sync_base_entity_data();
@@ -193,7 +190,22 @@ impl EntityRegistry {
 
         let (_, load) = request.into_base_load();
         let entity = load_factory(entity_type, load);
-        Self::finish_registered_load(&entity, nbt);
+        Self::finish_registered_load_view(&entity, &nbt.into());
+        Some(entity)
+    }
+
+    /// Creates an entity for the normal spawner path from an already borrowed NBT view.
+    pub(crate) fn create_and_load_for_spawn_view(
+        &self,
+        request: EntityLoadRequest,
+        nbt: &BorrowedNbtCompoundView<'_, '_>,
+    ) -> Option<SharedEntity> {
+        let id = request.entity_type.id();
+        let entry = self.entries.get(id)?;
+        let load_factory = entry.load_factory?;
+        let (entity_type, load) = request.into_base_load();
+        let entity = load_factory(entity_type, load);
+        Self::finish_registered_load_view(&entity, nbt);
         Some(entity)
     }
 
@@ -256,11 +268,14 @@ pub fn init_entities() {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+    use std::sync::Arc;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
+
+    use crate::entity::entities::PigEntity;
 
     use super::*;
     use crate::test_support::TestEntity;
@@ -353,5 +368,56 @@ mod tests {
         };
 
         assert_eq!(entity.entity_type(), &vanilla_entities::OAK_BOAT);
+    }
+
+    #[test]
+    fn strict_load_needs_only_an_nbt_factory() {
+        init_vanilla_registry();
+        let mut registry = EntityRegistry::new();
+        registry.register_load(&vanilla_entities::PIG, |entity_type, load| {
+            let entity: SharedEntity = Arc::new(PigEntity::from_saved(entity_type, load));
+            entity
+        });
+        assert!(!registry.has_factory(&vanilla_entities::PIG));
+
+        let mut bytes = Vec::new();
+        NbtCompound::new().write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
+            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+        let borrowed_view: BorrowedNbtCompoundView<'_, '_> = (&borrowed).into();
+        let entity = registry.create_and_load_for_spawn_view(
+            EntityLoadRequest {
+                entity_type: &vanilla_entities::PIG,
+                position: DVec3::ZERO,
+                uuid: Uuid::from_u128(1),
+                velocity: DVec3::ZERO,
+                rotation: (0.0, 0.0),
+                fall_distance: 0.0,
+                fire_freeze: EntityFireFreezeState::new(),
+                on_ground: false,
+                save_data: EntityBaseSaveData::new(),
+                world: Weak::new(),
+            },
+            &borrowed_view,
+        );
+
+        assert!(entity.is_some());
+    }
+
+    #[test]
+    fn unimplemented_spawner_entities_have_no_factory() {
+        init_vanilla_registry();
+        init_entities();
+
+        for entity_type in [
+            &vanilla_entities::BLAZE,
+            &vanilla_entities::CAVE_SPIDER,
+            &vanilla_entities::SKELETON,
+            &vanilla_entities::SILVERFISH,
+            &vanilla_entities::SPIDER,
+            &vanilla_entities::ZOMBIE,
+        ] {
+            assert!(!ENTITIES.has_factory(entity_type));
+        }
     }
 }

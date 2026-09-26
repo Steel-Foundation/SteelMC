@@ -284,7 +284,7 @@ pub(crate) fn equipment_items_to_packet_items(
         .collect()
 }
 
-fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
+pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
     (aabb.min_x().floor() as i32..aabb.max_x().ceil() as i32).any(|x| {
         (aabb.min_y().floor() as i32..aabb.max_y().ceil() as i32).any(|y| {
             (aabb.min_z().floor() as i32..aabb.max_z().ceil() as i32)
@@ -784,6 +784,7 @@ mod potion_contents;
 pub mod projectile;
 mod registry;
 mod spawn;
+mod spawn_placements;
 mod storage;
 mod synced_data;
 mod ticking;
@@ -846,8 +847,9 @@ pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
     SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, spawn_entity,
+    create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
+pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{
