@@ -1,5 +1,9 @@
 use super::*;
 use crate::behavior::blocks::PowderSnowBlock;
+use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext};
+use crate::entity::next_entity_id;
+use crate::inventory::equipment::EntityEquipment;
+use crate::test_support::TestPlayerBuilder;
 
 #[test]
 fn can_glide_using_matches_vanilla_component_gate() {
@@ -346,4 +350,152 @@ fn update_fall_flying_stops_when_glider_gate_fails() {
     entity.update_fall_flying();
 
     assert!(!entity.is_fall_flying());
+}
+
+fn equip_game_events(
+    name: &'static str,
+    entity: LivingFluidTestEntity,
+    changes: &[(EquipmentSlot, ItemStack)],
+) -> Vec<GameEventRef> {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world(name);
+    let position = DVec3::new(0.5, 64.0, 0.5);
+    let section = SectionPos::from_block_pos(BlockPos::from(position));
+    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+    let listener = Arc::new(RecordingGameEventListener::new(position));
+    let _registration = RegisteredGameEventListener::new(&world, section, listener.clone());
+
+    entity.base().set_world(Arc::downgrade(&world));
+    entity.base().set_position_local(position);
+    for (slot, stack) in changes {
+        entity.set_item_slot(*slot, stack.clone());
+    }
+
+    let events = listener.events.lock();
+    events.iter().map(|(event, _)| *event).collect()
+}
+
+#[test]
+fn set_item_slot_emits_equip_for_equippables_and_unequip_otherwise() {
+    let events = equip_game_events(
+        "set_item_slot_equip_events",
+        equipped_entity(),
+        &[
+            (
+                EquipmentSlot::Head,
+                ItemStack::new(&vanilla_items::IRON_HELMET),
+            ),
+            (
+                EquipmentSlot::MainHand,
+                ItemStack::new(&vanilla_items::SWEET_BERRIES),
+            ),
+            (EquipmentSlot::MainHand, ItemStack::empty()),
+        ],
+    );
+
+    assert_eq!(
+        events,
+        vec![
+            &vanilla_game_events::EQUIP,
+            &vanilla_game_events::UNEQUIP,
+            &vanilla_game_events::UNEQUIP,
+        ]
+    );
+}
+
+#[test]
+fn set_item_slot_stays_quiet_for_the_same_item_and_on_the_first_tick() {
+    let helmet = ItemStack::new(&vanilla_items::IRON_HELMET);
+    let same_item = equip_game_events(
+        "set_item_slot_same_item",
+        equipped_entity(),
+        &[
+            (EquipmentSlot::Head, helmet.clone()),
+            (EquipmentSlot::Head, helmet.clone()),
+        ],
+    );
+    assert_eq!(same_item, vec![&vanilla_game_events::EQUIP]);
+
+    let on_first_tick = equipped_entity();
+    on_first_tick.base().set_first_tick(true);
+    let first_tick = equip_game_events(
+        "set_item_slot_first_tick",
+        on_first_tick,
+        &[(EquipmentSlot::Head, helmet)],
+    );
+    assert_eq!(first_tick, Vec::<GameEventRef>::new());
+}
+
+fn equipped_entity() -> LivingFluidTestEntity {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    entity.base().set_first_tick(false);
+    entity
+}
+
+#[test]
+fn set_item_slot_treats_an_equippable_in_the_wrong_slot_as_an_equip() {
+    let helmet = ItemStack::new(&vanilla_items::IRON_HELMET);
+    let events = equip_game_events(
+        "set_item_slot_wrong_slot",
+        equipped_entity(),
+        &[(EquipmentSlot::MainHand, helmet.clone())],
+    );
+
+    assert_eq!(events, vec![&vanilla_game_events::EQUIP]);
+    assert!(
+        LivingEntity::equip_sound(&equipped_entity(), EquipmentSlot::MainHand, &helmet).is_none(),
+        "a helmet held in the hand is not worn, so it makes no equip sound"
+    );
+}
+
+#[test]
+fn set_item_slot_stays_quiet_for_a_spectator() {
+    let events = equip_game_events(
+        "set_item_slot_spectator",
+        equipped_entity().with_spectator(),
+        &[(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::IRON_HELMET),
+        )],
+    );
+
+    assert_eq!(events, Vec::<GameEventRef>::new());
+}
+
+#[test]
+fn equipping_armor_from_the_hand_runs_the_equip_hook() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("use_item_equips_armor");
+    let position = DVec3::new(0.5, 64.0, 0.5);
+    let section = SectionPos::from_block_pos(BlockPos::from(position));
+    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+    let listener = Arc::new(RecordingGameEventListener::new(position));
+    let _registration = RegisteredGameEventListener::new(&world, section, listener.clone());
+
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "Equipper", next_entity_id()).build();
+    assert!(player.try_set_position(position).is_ok());
+    player.base().set_first_tick(false);
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::MainHand,
+        ItemStack::new(&vanilla_items::IRON_HELMET),
+    );
+
+    let behavior = ITEM_BEHAVIORS.get_behavior(&vanilla_items::IRON_HELMET);
+    let mut context = UseItemContext::new(
+        &player,
+        InteractionHand::MainHand,
+        &world,
+        player.inventory.clone(),
+    );
+
+    assert_eq!(behavior.use_item(&mut context), InteractionResult::Success);
+    assert!(
+        EntityEquipment::get_ref(&*player.inventory.lock(), EquipmentSlot::Head)
+            .is(&vanilla_items::IRON_HELMET)
+    );
+    let events: Vec<GameEventRef> = listener.events.lock().iter().map(|(e, _)| *e).collect();
+    assert_eq!(events, vec![&vanilla_game_events::EQUIP]);
 }

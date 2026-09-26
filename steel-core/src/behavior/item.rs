@@ -22,6 +22,7 @@ use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity};
+use crate::inventory::equipment::EntityEquipment;
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -92,16 +93,20 @@ pub trait ItemBehavior: Send + Sync {
         }
 
         let slot = equippable.slot;
-        let result = context.inv.with_inventory(|inventory| {
-            inventory.try_swap_with_equipment_slot(
+        let (previous, equipped, result) = context.inv.with_inventory(|inventory| {
+            let previous = EntityEquipment::get_ref(inventory, slot).clone();
+            let result = inventory.try_swap_with_equipment_slot(
                 context.hand,
                 slot,
                 context.player.has_infinite_materials(),
-            )
+            );
+            let equipped = EntityEquipment::get_ref(inventory, slot).clone();
+            (previous, equipped, result)
         });
 
         match result {
             EquipmentSwapResult::Success(overflow) => {
+                context.player.on_equip_item(slot, &previous, &equipped);
                 if !overflow.is_empty() {
                     let _ = context.player.drop_item(overflow, false, false);
                 }

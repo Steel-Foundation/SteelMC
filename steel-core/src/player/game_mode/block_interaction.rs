@@ -1,4 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
+use crate::inventory::equipment::EquipmentSlot;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -146,7 +147,24 @@ impl Player {
                     return;
                 }
 
-                let changed = self.inventory.lock().swap_hands();
+                let (previous_main_hand, previous_offhand, changed) = {
+                    let mut inventory = self.inventory.lock();
+                    let previous_main_hand = inventory.get_selected_item().clone();
+                    let previous_offhand = inventory.get_offhand_item().clone();
+                    (previous_main_hand, previous_offhand, inventory.swap_hands())
+                };
+                if changed {
+                    self.on_equip_item(
+                        EquipmentSlot::OffHand,
+                        &previous_offhand,
+                        &previous_main_hand,
+                    );
+                    self.on_equip_item(
+                        EquipmentSlot::MainHand,
+                        &previous_main_hand,
+                        &previous_offhand,
+                    );
+                }
                 self.stop_using_item();
                 if changed {
                     self.broadcast_inventory_changes();

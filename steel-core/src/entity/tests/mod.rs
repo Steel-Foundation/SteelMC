@@ -655,6 +655,7 @@ struct LivingFluidTestEntity {
     in_wall_for_base_tick: bool,
     flying_player: bool,
     rejects_wither: bool,
+    spectator: bool,
 }
 
 impl LivingFluidTestEntity {
@@ -686,6 +687,7 @@ impl LivingFluidTestEntity {
             in_wall_for_base_tick: false,
             flying_player: false,
             rejects_wither: false,
+            spectator: false,
         }
     }
 
@@ -698,6 +700,11 @@ impl LivingFluidTestEntity {
         let entity = Self::new(water_height, lava_height, affected_by_fluids);
         entity.base.set_world(Arc::downgrade(world));
         entity
+    }
+
+    const fn with_spectator(mut self) -> Self {
+        self.spectator = true;
+        self
     }
 
     const fn with_standing_on_fluid(mut self) -> Self {
@@ -777,6 +784,10 @@ impl Entity for LivingFluidTestEntity {
 
     fn is_vehicle(&self) -> bool {
         self.vehicle
+    }
+
+    fn is_spectator(&self) -> bool {
+        self.spectator
     }
 
     fn get_default_gravity(&self) -> f64 {
