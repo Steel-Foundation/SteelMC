@@ -42,13 +42,11 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         .build()
         .expect("runtime");
     runtime.block_on(async {
-        let root = test_storage_root("game-time-domain-ticks");
         let server = test_server_with_worlds(
             "clock_a".to_owned(),
             &domains,
             &loaded,
             PermissionSubjectIndex::new(),
-            &root,
         )
         .await
         .expect("server");
@@ -127,7 +125,6 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         );
         drop(workers);
         server.cancel_token.cancel();
-        fs::remove_dir_all(root).await.expect("cleanup");
     });
 }
 
@@ -143,8 +140,7 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
         .build()
         .expect("runtime");
     runtime.block_on(async {
-        let root = test_storage_root("game-time-packets");
-        let server = test_server(Arc::clone(primary), PermissionSubjectIndex::new(), &root)
+        let server = test_server(Arc::clone(primary), PermissionSubjectIndex::new())
             .await
             .expect("server");
         let (player, packets) =
@@ -194,7 +190,6 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
             Some(0)
         );
         server.cancel_token.cancel();
-        fs::remove_dir_all(root).await.expect("cleanup");
     });
 }
 
