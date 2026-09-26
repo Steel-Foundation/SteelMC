@@ -44,17 +44,17 @@ impl Goal for SquidRandomMovementGoal {
             return;
         }
 
-        if squid.random_next_i32_bounded(reduced_tick_delay(50)) != 0
+        if rand::random_range(0..reduced_tick_delay(50)) != 0
             && squid.is_in_water()
             && squid.has_movement_vector()
         {
             return;
         }
 
-        let angle = squid.random_next_f32() * TAU;
+        let angle = rand::random::<f32>() * TAU;
         let movement = DVec3::new(
             f64::from(trig::cos(f64::from(angle)) * 0.2_f32),
-            f64::from(-0.1_f32 + squid.random_next_f32() * 0.2_f32),
+            f64::from(-0.1_f32 + rand::random::<f32>() * 0.2_f32),
             f64::from(trig::sin(f64::from(angle)) * 0.2_f32),
         );
 

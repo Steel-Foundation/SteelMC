@@ -15,11 +15,7 @@ use steel_registry::{
     vanilla_mob_effects::LEVITATION,
     vanilla_particle_types,
 };
-use steel_utils::{
-    DowncastType, DowncastTypeKey, entity_events,
-    locks::SyncMutex,
-    random::{Random, legacy_random::LegacyRandom},
-};
+use steel_utils::{DowncastType, DowncastTypeKey, entity_events, locks::SyncMutex};
 
 use crate::entity::{
     EntityMovementEmission, EntitySpawnReason, SpawnGroupData, ai::goal::SquidFleeGoal,
@@ -76,9 +72,6 @@ pub struct SquidState {
     // Required for inking on fleeing.
     x_body_rot_old: f32,
     movement_vector: DVec3,
-    /// Vanilla's `Entity.random`. Owned by the squid so the movement goal and
-    /// the ink burst draw from one stream, matching vanilla's ordering.
-    random: LegacyRandom,
     tentacle_speed: f32,
     tentacle_movement: f32,
 }
@@ -108,16 +101,6 @@ impl SquidEntity {
     /// Sets the squid's movement vector
     pub fn set_movement_vector(&self, new_vec: DVec3) {
         self.state.lock().movement_vector = new_vec;
-    }
-
-    /// Returns the next random f32
-    pub fn random_next_f32(&self) -> f32 {
-        self.state.lock().random.next_f32()
-    }
-
-    /// Returns the next random i32 within the upper bound
-    pub fn random_next_i32_bounded(&self, bound: i32) -> i32 {
-        self.state.lock().random.next_i32_bounded(bound)
     }
 
     /// Returns the squid's movement vector
@@ -178,11 +161,11 @@ impl SquidEntity {
 
         for _ in 0..INK_PARTICLE_COUNT {
             let direction = self.rotate_vector(DVec3::new(
-                f64::from(self.random_next_f32()) * 0.6 - 0.3,
+                f64::from(rand::random::<f32>()) * 0.6 - 0.3,
                 -1.0,
-                f64::from(self.random_next_f32()) * 0.6 - 0.3,
+                f64::from(rand::random::<f32>()) * 0.6 - 0.3,
             ));
-            let offset = direction * f64::from(position_scale + self.random_next_f32() * 2.0_f32);
+            let offset = direction * f64::from(position_scale + rand::random::<f32>() * 2.0_f32);
             world.send_particles(particle.clone(), particle_position, 0, offset, 0.1);
         }
     }
@@ -198,8 +181,8 @@ impl SquidEntity {
             if animation_sync {
                 state.tentacle_movement -= TAU;
 
-                if state.random.next_i32_bounded(10) == 0 {
-                    state.tentacle_speed = 1.0 / (state.random.next_f32() + 1.0) * 0.2;
+                if rand::random_range(0..10) == 0 {
+                    state.tentacle_speed = 1.0 / (rand::random::<f32>() + 1.0) * 0.2;
                 }
             }
 
@@ -293,9 +276,6 @@ impl SquidEntity {
         let mut entity_data = SquidEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
 
-        let mut random = LegacyRandom::from_seed(rand::random());
-        let tentacle_random = random.next_f32();
-
         {
             let mut goal_selector = mob_base.goal_selector().lock();
             // Neither goal claims a control, so both run every tick and the
@@ -317,8 +297,7 @@ impl SquidEntity {
                 x_body_rot: 0.0,
                 x_body_rot_old: 0.0,
                 movement_vector: DVec3::ZERO,
-                random,
-                tentacle_speed: 1.0 / (tentacle_random + 1.0) * 0.2,
+                tentacle_speed: 1.0 / (rand::random::<f32>() + 1.0) * 0.2,
                 tentacle_movement: 0.0,
             }),
         }
