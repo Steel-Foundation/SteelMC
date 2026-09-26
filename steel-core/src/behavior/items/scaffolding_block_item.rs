@@ -112,7 +112,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BlockHitResult, PlacementOrientation, PlacementSource, init_behaviors};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use crate::world::{LevelReader, World};
 
     const BOTTOM: &BoolProperty = &BlockStateProperties::BOTTOM;
@@ -121,7 +121,7 @@ mod tests {
     const VANILLA_STABILITY_MAX_DISTANCE: u8 = 7;
     const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
-    fn test_world(key: &'static str) -> Arc<World> {
+    fn test_world(key: &'static str) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

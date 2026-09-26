@@ -70,9 +70,16 @@ pub enum AcceptedClientMovementOutcome {
 pub trait EntityEventSource {
     /// Returns this entity as a game-event source.
     fn as_entity_event_source(&self) -> &dyn Entity;
+
+    /// Retains this exact entity allocation as a shared entity handle.
+    fn into_shared_entity(self: Arc<Self>) -> SharedEntity;
 }
 
 impl<T: Entity> EntityEventSource for T {
+    fn into_shared_entity(self: Arc<Self>) -> SharedEntity {
+        self
+    }
+
     fn as_entity_event_source(&self) -> &dyn Entity {
         self
     }
@@ -909,26 +916,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// The default dispatches vanilla living behavior without requiring every
     /// living implementation to repeat an `Entity::tick` forwarding method.
     /// Non-living entities with custom tick behavior override this directly.
-    fn tick(&self) {
-        if let Some(living) = self.as_living_entity() {
-            living.tick_living_entity();
+    fn tick(self: Arc<Self>) {
+        let entity = self.into_shared_entity();
+        if let Some(living) = entity.as_living_entity() {
+            living.tick_living_entity(&entity);
         }
     }
 
     /// Called every game tick while this entity is riding another entity.
     ///
     /// Mirrors vanilla `Entity.rideTick`.
-    fn ride_tick(&self) {
-        self.default_ride_tick();
+    fn ride_tick(self: Arc<Self>) {
+        Arc::clone(&self).default_ride_tick();
         if let Some(living) = self.as_living_entity() {
             living.reset_fall_distance();
         }
     }
 
     /// The default implementation of `Entity.rideTick` when not overridden.
-    fn default_ride_tick(&self) {
+    fn default_ride_tick(self: Arc<Self>) {
         self.set_velocity(DVec3::ZERO);
-        self.tick();
+        Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
         }
@@ -2285,7 +2293,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Living entities use the shared `LivingEntity` damage path; base entities
     /// only propagate to passengers and return `false`.
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
@@ -2456,7 +2464,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
     /// handling after rollback/collision validation has accepted the target.
     fn default_apply_accepted_client_movement(
-        &self,
+        self: Arc<Self>,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -2471,7 +2479,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             accepted.horizontal_collision,
             accepted.movement,
         );
-        if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
+        if Arc::clone(&self).do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
             return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
@@ -2483,7 +2491,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies final state accepted from a client-authored movement packet.
     fn apply_accepted_client_movement(
-        &self,
+        self: Arc<Self>,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -2492,7 +2500,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies final state accepted from a controlled-vehicle movement packet.
     fn apply_accepted_client_vehicle_movement(
-        &self,
+        self: Arc<Self>,
         world: &Arc<World>,
         mut accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -3302,7 +3310,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-    fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeps vanilla movement phases in order"
+    )]
+    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -3368,7 +3380,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .set_movement_flags(movement_flags, ground_contact);
         self.refresh_fluid_contact();
 
-        if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
+        if self.is_server_driven_movement()
+            && Arc::clone(&self).apply_fall_damage_after_move(&result, &world)
+        {
             return Some(result);
         }
 
@@ -3422,7 +3436,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
-    fn apply_fall_damage_after_move(&self, result: &MoveResult, world: &Arc<World>) -> bool {
+    fn apply_fall_damage_after_move(
+        self: Arc<Self>,
+        result: &MoveResult,
+        world: &Arc<World>,
+    ) -> bool {
         self.do_check_fall_damage(result.actual_movement, result.on_ground, world)
     }
 
@@ -3450,12 +3468,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.doCheckFallDamage`.
     ///
     /// Callers update on-ground/supporting-block state before this method.
-    fn do_check_fall_damage(&self, movement: DVec3, on_ground: bool, world: &Arc<World>) -> bool {
+    fn do_check_fall_damage(
+        self: Arc<Self>,
+        movement: DVec3,
+        on_ground: bool,
+        world: &Arc<World>,
+    ) -> bool {
         let Some(effect_pos) = self.on_pos_legacy() else {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
+        Arc::clone(&self).check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
     }
 
@@ -3467,7 +3490,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Mirrors vanilla `Entity.checkFallDamage`.
     fn check_fall_damage(
-        &self,
+        self: Arc<Self>,
         vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
@@ -3488,7 +3511,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let fall_context =
                 EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                let damage_applied = self.cause_fall_damage(
+                let damage_applied = Arc::clone(&self).cause_fall_damage(
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,
@@ -3734,28 +3757,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.is_removed()
             || self.is_invulnerable()
                 && !source.bypasses_invulnerability()
-                && !self.source_is_creative_player(source)
+                && !source.is_creative_player()
             || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
             || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
                 && self.is_fall_damage_immune()
-    }
-
-    /// Returns vanilla `DamageSource.isCreativePlayer`: whether the damage's
-    /// causing entity is a player with infinite materials.
-    fn source_is_creative_player(&self, source: &DamageSource) -> bool {
-        let Some(causing_entity_id) = source.causing_entity_id else {
-            return false;
-        };
-        let Some(world) = self.level() else {
-            return false;
-        };
-        world
-            .get_entity_by_id(causing_entity_id)
-            .is_some_and(|entity| {
-                entity
-                    .as_player()
-                    .is_some_and(Player::has_infinite_materials)
-            })
     }
 
     /// Applies damage to this entity.

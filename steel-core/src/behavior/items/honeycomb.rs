@@ -39,7 +39,7 @@ impl ItemBehavior for HoneycombItem {
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                &GameEventContext::new(Some(context.player), Some(waxed_state)),
+                &GameEventContext::new(Some(context.player.as_ref()), Some(waxed_state)),
             );
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_WAX_ON,

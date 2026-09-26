@@ -3,7 +3,7 @@ use steel_registry::{TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::entity::PathfinderMob;
+use crate::entity::{PathfinderMob, SharedEntity};
 
 pub struct ClimbOnTopOfPowderSnowGoal;
 
@@ -57,13 +57,15 @@ impl Goal for ClimbOnTopOfPowderSnowGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         mob.mob_base().controls().lock().jump_control.jump();
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -118,9 +120,10 @@ mod tests {
     fn climb_on_top_of_powder_snow_goal_ticks_jump_control() {
         init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
-        let mob = pig();
+        let mob = Arc::new(pig());
+        let mob_entity: SharedEntity = mob.clone();
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         assert!(mob.mob_base().controls().lock().jump_control.tick());
     }

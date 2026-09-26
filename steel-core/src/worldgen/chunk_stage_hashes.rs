@@ -26,6 +26,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
+use crate::entity::damage::DamageHistory;
 use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::{World, WorldConfig, WorldStorageConfig};
 use crate::worldgen::generator::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
@@ -230,6 +231,7 @@ fn create_test_world(
     seed: u64,
     generator: Arc<ChunkGeneratorType>,
     generation_pool: Arc<rayon::ThreadPool>,
+    damage_history: &Arc<DamageHistory>,
 ) -> Arc<World> {
     let runtime = Arc::new(Runtime::new().expect("failed to create chunk-stage hash test runtime"));
     let dim_short = dim_key.strip_prefix("minecraft:").unwrap_or(dim_key);
@@ -254,6 +256,7 @@ fn create_test_world(
             dim_type,
             seed as i64,
             WorldConfig {
+                damage_history: Arc::clone(damage_history),
                 game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,
@@ -1201,8 +1204,17 @@ fn chunk_stage_hashes_inner() {
             }
             _ => unreachable!(),
         });
-        let feature_world = includes_features
-            .then(|| create_test_world(dim_key, dim_type, seed, generator.clone(), thread_pool));
+        let damage_history = Arc::new(DamageHistory::default());
+        let feature_world = includes_features.then(|| {
+            create_test_world(
+                dim_key,
+                dim_type,
+                seed,
+                generator.clone(),
+                thread_pool,
+                &damage_history,
+            )
+        });
         let feature_context = feature_world
             .as_ref()
             .map(|world| world.chunk_map.world_gen_context.clone());

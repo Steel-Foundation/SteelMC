@@ -223,9 +223,9 @@ impl FishingHookEntity {
     }
 
     /// Determines if the fishing hook should hit a target or be deflected.
-    fn check_collision(&self) {
+    fn check_collision(self: &Arc<Self>) {
         if let Some(hit_result) = self.get_hit_result_on_move_vector() {
-            self.hit_target_or_deflect_self(&hit_result);
+            Arc::clone(self).hit_target_or_deflect_self(&hit_result);
         }
     }
 
@@ -669,7 +669,7 @@ impl FishingHookEntity {
 
     /// Bobber specific ticking logic. We return a `bool` here, so we can return early inside `tick`.
     fn tick_bobber(
-        &self,
+        self: &Arc<Self>,
         bobber_state: BobberState,
         world: &World,
         is_in_water: bool,
@@ -842,7 +842,7 @@ impl Entity for FishingHookEntity {
     }
 
     /// Responsible for all state-changes.
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         {
             let mut synchronized_random = self.synchronized_random.lock();
             let least_significant_bits = self.uuid().as_u64_pair().1;
@@ -893,7 +893,7 @@ impl Entity for FishingHookEntity {
                             .set_velocity(self.base.velocity().add(DVec3::new(0.0, -0.03, 0.0)));
                     }
 
-                    self.move_entity(MoverType::SelfMovement, self.base.velocity());
+                    Arc::clone(&self).move_entity(MoverType::SelfMovement, self.base.velocity());
                     self.apply_effects_from_blocks();
                     self.update_rotation();
 
@@ -940,7 +940,7 @@ impl Projectile for FishingHookEntity {
     }
 
     /// Stores the hit entity inside `hooked_in`.
-    fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         self.set_hooked_entity(Some(Arc::clone(entity)));
     }
 }
@@ -1116,7 +1116,7 @@ mod tests {
         hook.try_set_position(player.position())
             .expect("should position hook");
 
-        hook.tick();
+        Arc::clone(&hook).tick();
 
         let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
         assert!(
@@ -1161,7 +1161,7 @@ mod tests {
         hook.set_velocity(DVec3::ZERO);
         hook.hook_state.lock().bobber_state = BobberState::Bobbing;
 
-        hook.tick();
+        Arc::clone(&hook).tick();
 
         assert!(
             hook.velocity().y > 0.0,

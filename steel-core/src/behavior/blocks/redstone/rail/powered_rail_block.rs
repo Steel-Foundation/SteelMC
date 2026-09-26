@@ -260,13 +260,13 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn raw_flags() -> UpdateFlags {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE
     }
 
-    fn powered_chain_world(key: &'static str, last_x: i32) -> (Arc<World>, BlockPos) {
+    fn powered_chain_world(key: &'static str, last_x: i32) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

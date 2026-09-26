@@ -13,8 +13,7 @@ use crate::{
         slots::{NormalSlot, Slot, SlotStorage},
     },
     player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
-    world::World,
+    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
 };
 use glam::DVec3;
 use steel_registry::{
@@ -65,7 +64,7 @@ impl Slot for SingleItemSlot {
 }
 
 struct PartialSwapFixture {
-    world: Arc<World>,
+    world: TestWorld,
     player: Arc<Player>,
     target: Shared<SimpleContainer>,
 }

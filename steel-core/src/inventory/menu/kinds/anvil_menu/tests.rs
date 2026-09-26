@@ -10,7 +10,7 @@ use crate::{
         menu::Menu,
     },
     player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
     world::World,
 };
 use glam::DVec3;
@@ -34,7 +34,7 @@ fn test_player(world: Arc<World>) -> Arc<Player> {
     TestPlayerBuilder::new(world, "AnvilTester", 1).build()
 }
 
-fn test_anvil(key: &'static str) -> (Arc<World>, Arc<Player>, BlockPos, Menu) {
+fn test_anvil(key: &'static str) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);

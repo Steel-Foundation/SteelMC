@@ -7,7 +7,7 @@ use steel_registry::vanilla_attributes;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Entity, LivingEntity, PathfinderMob};
+use crate::entity::{Entity, LivingEntity, PathfinderMob, SharedEntity};
 use crate::player::Player;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
@@ -150,7 +150,7 @@ impl Goal for TemptGoal {
         self.is_running = false;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(player) = &self.player else {
             return;
         };

@@ -1114,7 +1114,7 @@ mod tests {
     #[test]
     fn scheduled_respawn_is_retained_if_domain_switch_queues_before_worker_gate() {
         let world = fresh_test_world("scheduled_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "RespawnTester", 1).build();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
@@ -1134,7 +1134,7 @@ mod tests {
     #[test]
     fn queued_packets_resolve_the_player_bound_when_they_start() {
         let world = fresh_test_world("packet_session_replacement_resolution");
-        let original = TestPlayerBuilder::new(world, "Original", 1).build();
+        let original = TestPlayerBuilder::new(Arc::clone(&world), "Original", 1).build();
         let replacement = replacement_for(&original);
         let session = Arc::clone(&original.session);
         let processor = PacketProcessor::new();
@@ -1338,7 +1338,7 @@ mod tests {
     fn pausing_active_player_session_defers_its_tail_until_exact_resume() {
         let world = fresh_test_world("packet_active_session_pause");
         let player = TestPlayerBuilder::new(Arc::clone(&world), "Paused", 1).build();
-        let unrelated_player = TestPlayerBuilder::new(world, "Unrelated", 2).build();
+        let unrelated_player = TestPlayerBuilder::new(Arc::clone(&world), "Unrelated", 2).build();
         let processor = PacketProcessor::new();
         processor.schedule(
             Arc::clone(&player),

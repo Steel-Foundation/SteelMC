@@ -1,5 +1,6 @@
 use super::tests::{settings, temp_level_data_dir};
 use super::*;
+use std::sync::Weak;
 use steel_registry::{init_vanilla_registry, vanilla_dimension_types};
 
 fn generation() -> WorldGenerationSettings {
@@ -140,4 +141,43 @@ async fn game_time_wraps_and_persists_the_signed_value() {
     );
 
     fs::remove_dir_all(dir).await.expect("cleanup");
+}
+
+#[test]
+fn damage_history_expires_at_forty_one_ticks_across_signed_clock_wrap() {
+    use crate::entity::damage::{DamageHistory, DamageSource};
+    use crate::test_support::TestEntity;
+    use steel_registry::{vanilla_damage_types, vanilla_entities};
+
+    init_vanilla_registry();
+    for sweep in [false, true] {
+        let clock = Arc::new(GameTime::new(i64::MAX));
+        let history = Arc::new(DamageHistory::default());
+        let entity = TestEntity::shared(1, glam::DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+        let generation = entity.generation();
+        let weak = Arc::downgrade(&entity);
+        let _owner = entity.base().damage_history().retain_owner();
+        history.record(
+            entity.base(),
+            &DamageSource::environment(&vanilla_damage_types::GENERIC)
+                .with_direct_entity(entity.clone()),
+            &clock,
+        );
+        drop(entity);
+        for _ in 0..40 {
+            clock.advance();
+        }
+        history.expire();
+        assert!(history.last_damage_source(generation).is_some());
+        clock.advance();
+        if sweep {
+            history.expire();
+            assert!(
+                weak.upgrade().is_none(),
+                "cleanup must release without a getter"
+            );
+        }
+        assert!(history.last_damage_source(generation).is_none());
+        assert!(weak.upgrade().is_none());
+    }
 }

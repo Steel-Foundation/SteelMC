@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(
             behavior.get_analog_output_signal(
                 world.get_block_state(TEST_POS),
-                &world,
+                world.as_ref(),
                 TEST_POS,
                 ARBITRARY_COMPARATOR_QUERY_DIRECTION,
             ),
@@ -663,7 +663,7 @@ mod tests {
             assert_eq!(
                 behavior.get_analog_output_signal(
                     world.get_block_state(TEST_POS),
-                    &world,
+                    world.as_ref(),
                     TEST_POS,
                     ARBITRARY_COMPARATOR_QUERY_DIRECTION,
                 ),

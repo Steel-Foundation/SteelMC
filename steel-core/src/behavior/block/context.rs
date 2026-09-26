@@ -5,6 +5,7 @@ use super::{
     ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_damage_types,
     vanilla_entities,
 };
+
 use crate::entity::entities::FallingBlockEntity;
 
 pub struct PickupResult {
@@ -79,10 +80,8 @@ pub trait Fallable: Send + Sync {
     }
 
     /// Returns the damage source used when this falling block hurts entities.
-    fn get_fall_damage_source(&self, entity: &FallingBlockEntity) -> DamageSource {
-        DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
-            .with_direct_entity(entity.id())
-            .with_causing_entity(entity.id())
+    fn get_fall_damage_source(&self, entity: &Arc<FallingBlockEntity>) -> DamageSource {
+        DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, entity.clone())
     }
 
     /// Returns whether this behavior is in vanilla's `ConcretePowderBlock` hierarchy.

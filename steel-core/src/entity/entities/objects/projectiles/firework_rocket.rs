@@ -25,9 +25,10 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityEventSource, EntitySyncedData,
-    InsideBlockEffectCollector, LivingEntity, Projectile, ProjectileBase, ProjectileHit,
-    RemovalReason, SharedEntity,
+    InsideBlockEffectCollector, LivingEntity, LivingEntityRef, Projectile, ProjectileBase,
+    ProjectileHit, RemovalReason, SharedEntity,
 };
+
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
@@ -109,18 +110,19 @@ impl FireworkRocketEntity {
         rocket
     }
 
-    /// Creates a rocket attached to a living entity that will be resolved from
-    /// its synced runtime ID after the rocket enters the world.
+    /// Creates a rocket attached to the supplied living entity.
     #[must_use]
     pub fn attached_to_living(
         entity_type: EntityTypeRef,
         id: i32,
         world: Weak<World>,
         source_item: ItemStack,
-        attached_to: &dyn LivingEntity,
+        attached_to: LivingEntityRef<'_>,
     ) -> Self {
+        let attached_to = attached_to.entity();
         let rocket = Self::launched(entity_type, id, attached_to.position(), world, source_item);
-        rocket.set_owner_uuid(Some(attached_to.uuid()));
+        rocket.set_owner_entity(Some(attached_to));
+        rocket.state.lock().attached_to_entity = Some(Arc::downgrade(attached_to));
         if let Ok(attached_id) = u32::try_from(attached_to.id()) {
             rocket
                 .entity_data
@@ -161,16 +163,10 @@ impl FireworkRocketEntity {
     }
 
     fn attached_entity(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        if let Some(attached) = self
-            .state
-            .lock()
-            .attached_to_entity
-            .as_ref()
-            .and_then(Weak::upgrade)
-            && !attached.is_removed()
-            && attached.as_living_entity().is_some()
-        {
-            return Some(attached);
+        let attached = self.state.lock().attached_to_entity.clone();
+        if let Some(attached) = attached {
+            // A resolved attachment must never rebind through a reused runtime ID.
+            return attached.upgrade();
         }
 
         let attached_id = *self.entity_data.lock().attached_to_target.get();
@@ -203,7 +199,7 @@ impl FireworkRocketEntity {
         self.get_hit_result_on_move_vector()
     }
 
-    fn tick_free_flying(&self) -> Option<ProjectileHit> {
+    fn tick_free_flying(self: &Arc<Self>) -> Option<ProjectileHit> {
         if !self.is_shot_at_angle() {
             let horizontal_acceleration = if self.horizontal_collision() {
                 1.0
@@ -220,7 +216,7 @@ impl FireworkRocketEntity {
 
         let movement = self.velocity();
         let hit = self.get_hit_result_on_move_vector();
-        self.move_entity(MoverType::SelfMovement, movement);
+        Arc::clone(self).move_entity(MoverType::SelfMovement, movement);
         self.apply_effects_from_blocks();
         self.set_velocity(movement);
         hit
@@ -239,23 +235,22 @@ impl FireworkRocketEntity {
         self.explosion_count() != 0
     }
 
-    fn fireworks_damage_source(&self) -> DamageSource {
+    fn fireworks_damage_source(self: &Arc<Self>) -> DamageSource {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
-            .with_direct_entity(self.id());
+            .with_direct_entity(self.clone());
         if let Some(owner) = self.get_owner() {
-            source = source.with_causing_entity(owner.id());
+            source = source.with_causing_entity(owner);
         }
         source
     }
 
-    fn deal_explosion_damage(&self, world: &Arc<World>) {
+    fn deal_explosion_damage(self: &Arc<Self>, world: &Arc<World>) {
         let explosion_count = self.explosion_count();
         if explosion_count == 0 {
             return;
         }
         let damage_amount = 5.0 + explosion_count as f32 * 2.0;
         let attached = self.attached_entity(world);
-        let attached_id = attached.as_ref().map(|entity| entity.id());
 
         if let Some(attached) = &attached {
             attached.hurt(world, &self.fireworks_damage_source(), damage_amount);
@@ -264,7 +259,10 @@ impl FireworkRocketEntity {
         let rocket_position = self.position();
         let search_box = self.bounding_box().inflate(EXPLOSION_RADIUS);
         for target in world.get_entities_in_aabb_matching(&search_box, Entity::is_living_entity) {
-            if attached_id == Some(target.id()) {
+            if attached
+                .as_ref()
+                .is_some_and(|attached| Arc::ptr_eq(attached, &target))
+            {
                 continue;
             }
             let distance_squared = rocket_position.distance_squared(target.position());
@@ -303,7 +301,7 @@ impl FireworkRocketEntity {
         }
     }
 
-    fn explode(&self, world: &Arc<World>) {
+    fn explode(self: &Arc<Self>, world: &Arc<World>) {
         self.broadcast_entity_event(EntityStatus::FireworksExplode);
         let owner = self.get_owner();
         self.game_event_with_source_entity(&vanilla_game_events::EXPLODE, owner.as_deref());
@@ -341,7 +339,7 @@ impl Entity for FireworkRocketEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.projectile_base_tick();
         let Some(world) = self.level() else {
             return;
@@ -356,7 +354,7 @@ impl Entity for FireworkRocketEntity {
             && self.is_alive()
             && let Some(hit) = &hit
         {
-            self.hit_target_or_deflect_self(hit);
+            Arc::clone(&self).hit_target_or_deflect_self(hit);
             self.mark_velocity_sync();
         }
 
@@ -446,13 +444,13 @@ impl Projectile for FireworkRocketEntity {
         (delta.x, delta.z)
     }
 
-    fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, _entity: &SharedEntity, _location: DVec3) {
         if let Some(world) = self.level() {
             self.explode(&world);
         }
     }
 
-    fn on_hit_block(&self, hit: &ClipHitResult) {
+    fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             self.run_hit_block_entity_inside(&world, hit);
             if self.has_explosion() {
@@ -492,14 +490,15 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
-    use steel_registry::data_components::components::Fireworks;
+    use steel_registry::data_components::components::{FireworkExplosion, Fireworks};
     use steel_registry::data_components::vanilla_components::FIREWORKS;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_utils::ChunkPos;
 
     use crate::{
         entity::{Entity, Projectile, entities::PigEntity},
-        test_support::test_world,
+        test_support::{fresh_test_world, insert_ready_full_chunk, test_world},
     };
 
     use super::*;
@@ -572,7 +571,7 @@ mod tests {
             DVec3::new(1.0, 2.0, 3.0),
             Weak::new(),
         ));
-        let Some(living_target) = target.as_living_entity() else {
+        let Some(living_target) = LivingEntityRef::new(&target) else {
             panic!("pig test entity should be living");
         };
         let rocket = FireworkRocketEntity::attached_to_living(
@@ -593,6 +592,99 @@ mod tests {
                 .is(&vanilla_items::FIREWORK_ROCKET)
         );
         assert_eq!(rocket.owner_uuid(), Some(target.uuid()));
+    }
+
+    #[test]
+    fn attached_rocket_keeps_its_target_when_world_ids_are_reused() {
+        let world = fresh_test_world("rocket_attachment_identity");
+        let owner_world = fresh_test_world("rocket_owner_world");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let target: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            19,
+            DVec3::ZERO,
+            Arc::downgrade(&owner_world),
+        ));
+        let rocket = FireworkRocketEntity::attached_to_living(
+            &vanilla_entities::FIREWORK_ROCKET,
+            20,
+            Arc::downgrade(&world),
+            ItemStack::new(&vanilla_items::FIREWORK_ROCKET),
+            LivingEntityRef::new(&target).expect("living target"),
+        );
+        assert!(Arc::ptr_eq(
+            &rocket.get_owner().expect("owner in other world"),
+            &target
+        ));
+
+        target.set_removed(RemovalReason::Discarded);
+        let original_generation = target.generation();
+        let replacement: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            target.id(),
+            DVec3::ZERO,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(replacement)
+            .expect("replacement registration");
+        assert!(Arc::ptr_eq(
+            &rocket.attached_entity(&world).expect("original attachment"),
+            &target
+        ));
+        drop(target);
+        assert!(
+            rocket
+                .attached_entity(&world)
+                .is_none_or(|entity| entity.generation() == original_generation)
+        );
+    }
+
+    #[test]
+    fn explosion_damages_replacement_with_attached_entity_id() {
+        let world = fresh_test_world("firework_explosion_identity");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let position = DVec3::new(8.0, 64.0, 8.0);
+        let original: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            position,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(original.clone())
+            .expect("register original attachment");
+        let mut item = ItemStack::new(&vanilla_items::FIREWORK_ROCKET);
+        item.set(
+            FIREWORKS,
+            Fireworks::new(1, vec![FireworkExplosion::default()]).expect("fireworks"),
+        );
+        let rocket = Arc::new(FireworkRocketEntity::attached_to_living(
+            &vanilla_entities::FIREWORK_ROCKET,
+            2,
+            Arc::downgrade(&world),
+            item,
+            LivingEntityRef::new(&original).expect("living attachment"),
+        ));
+
+        original.set_removed(RemovalReason::Discarded);
+        let replacement = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            original.id(),
+            position + DVec3::X,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(replacement.clone())
+            .expect("register replacement");
+
+        let replacement_health = replacement.get_health();
+        rocket.deal_explosion_damage(&world);
+
+        assert!(
+            replacement.get_health() < replacement_health,
+            "a different allocation with the attachment ID must receive explosion damage"
+        );
     }
 
     #[test]
@@ -664,17 +756,17 @@ mod tests {
     #[test]
     fn firework_damage_source_has_no_raw_position() {
         init_vanilla_registry();
-        let rocket = FireworkRocketEntity::new(
+        let rocket = Arc::new(FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             23,
             DVec3::new(1.0, 2.0, 3.0),
             Weak::new(),
-        );
+        ));
 
         let source = rocket.fireworks_damage_source();
 
-        assert_eq!(source.direct_entity_id, Some(23));
-        assert!(source.source_position.is_none());
+        assert_eq!(source.direct_entity().map(|entity| entity.id()), Some(23));
+        assert!(source.source_position_raw().is_none());
     }
 
     #[test]

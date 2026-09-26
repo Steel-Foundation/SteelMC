@@ -176,7 +176,7 @@ mod tests {
         let session = Arc::clone(&original.session);
         let replacement = replacement_for(&original, Arc::clone(&session));
         let stale_replacement = replacement_for(&original, Arc::clone(&session));
-        let foreign = TestPlayerBuilder::new(world, "Foreign", 2).build();
+        let foreign = TestPlayerBuilder::new(Arc::clone(&world), "Foreign", 2).build();
         original.chat().lock().messages_sent = 7;
 
         assert!(!session.replace_player(&original, &foreign));
@@ -195,12 +195,9 @@ mod tests {
     #[test]
     fn closed_session_cannot_be_bound_again() {
         let session = Arc::new(PlayerSession::new(10, 10));
-        let foreign = TestPlayerBuilder::new(
-            fresh_test_world("player_session_foreign_initial_bind"),
-            "Foreign",
-            3,
-        )
-        .build();
+
+        let world = fresh_test_world("player_session_foreign_initial_bind");
+        let foreign = TestPlayerBuilder::new(Arc::clone(&world), "Foreign", 3).build();
         assert!(!session.bind_initial_player(&foreign));
 
         let player = replacement_for(&foreign, Arc::clone(&session));

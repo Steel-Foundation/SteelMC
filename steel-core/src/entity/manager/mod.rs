@@ -354,6 +354,7 @@ pub struct ChunkEntityUnloadStart {
 #[derive(Clone)]
 struct EntityEntry {
     entity: SharedEntity,
+    _damage_history_owner: Arc<()>,
     uuid: Uuid,
     section: SectionPos,
     chunk: ChunkPos,
@@ -369,6 +370,7 @@ impl EntityEntry {
         let chunk = ChunkPos::new(section.x(), section.z());
         let bounding_box = entity.bounding_box();
         Self {
+            _damage_history_owner: entity.base().damage_history().retain_owner(),
             uuid: entity.uuid(),
             entity,
             section,
@@ -1630,7 +1632,7 @@ impl WorldEntityManager {
     ) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        entity.tick();
+        Arc::clone(entity).tick();
         self.mark_dirty_after_tick(entity, dirty_chunks);
         self.tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, dirty_chunks);
     }

@@ -188,7 +188,8 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::{
-        TestLevel, fresh_test_world, fresh_test_world_with_dimension_type, insert_ready_full_chunk,
+        TestLevel, TestWorld, fresh_test_world, fresh_test_world_with_dimension_type,
+        insert_ready_full_chunk,
     };
 
     fn behavior() -> FrostedIceBlock {
@@ -201,7 +202,7 @@ mod tests {
             .set_value(&BlockStateProperties::AGE_3, age)
     }
 
-    fn world_with_block(key: &'static str, pos: BlockPos, state: BlockStateId) -> Arc<World> {
+    fn world_with_block(key: &'static str, pos: BlockPos, state: BlockStateId) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

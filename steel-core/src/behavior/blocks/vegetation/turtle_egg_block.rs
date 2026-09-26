@@ -333,13 +333,13 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     /// A day-time tick inside the pre-dawn window where eggs always advance, so
     /// random ticks are deterministic in tests.
     const ALWAYS_HATCH_DAY_TIME: i64 = 21_500;
 
-    fn prepare(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn prepare(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

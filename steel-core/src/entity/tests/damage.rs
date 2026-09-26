@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn generic_living_hurt_applies_health_damage() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert!(entity.hurt(test_world(), &source, 4.0));
@@ -15,7 +15,7 @@ fn generic_living_hurt_applies_health_damage() {
 fn generic_living_hurt_ignores_fire_damage_with_fire_resistance() {
     init_vanilla_registry();
     init_behaviors();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::LAVA);
 
@@ -39,7 +39,7 @@ fn generic_living_hurt_processes_default_death_once() {
 #[test]
 fn generic_living_hurt_applies_armor_and_absorption() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     {
         let mut attributes = entity.attributes().lock();
         attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
@@ -58,7 +58,7 @@ fn generic_living_hurt_applies_armor_and_absorption() {
 fn generic_living_hurt_applies_resistance() {
     init_vanilla_registry();
     init_behaviors();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_mob_effect(vanilla_mob_effects::RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
 
@@ -68,7 +68,7 @@ fn generic_living_hurt_applies_resistance() {
 }
 
 #[test]
-fn damage_reductions_use_victim_attached_world() {
+fn damage_reductions_use_the_retained_attacker_after_removal() {
     init_vanilla_registry();
     let attached_world = cross_world_damage_test_world();
     let explicit_world = test_world();
@@ -91,7 +91,7 @@ fn damage_reductions_use_victim_attached_world() {
     let attacker: SharedEntity = attacker;
     let registration = attached_world
         .entity_manager()
-        .add_live_entity(attacker, EntityOwnership::External);
+        .add_live_entity(Arc::clone(&attacker), EntityOwnership::External);
     assert!(registration.is_ok());
 
     let victim = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, attached_world);
@@ -99,17 +99,16 @@ fn damage_reductions_use_victim_attached_world() {
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::ARMOR, 20.0);
-    let source = DamageSource::environment(&vanilla_damage_types::MOB_ATTACK)
-        .with_causing_entity(attacker_id)
-        .with_direct_entity(attacker_id);
+    let source = DamageSource::direct(&vanilla_damage_types::MOB_ATTACK, attacker.clone());
 
-    let damage_applied = victim.hurt(explicit_world, &source, 10.0);
-    let health = victim.get_health();
     let removed = attached_world
         .entity_manager()
         .remove_live_entity(attacker_id, RemovalReason::Discarded);
-
     assert!(removed.is_some());
+    attacker.set_removed(RemovalReason::Discarded);
+    let damage_applied = victim.hurt(explicit_world, &source, 10.0);
+    let health = victim.get_health();
+
     assert!(damage_applied);
     assert_f32_close(health, 10.0);
 }
@@ -132,7 +131,7 @@ fn generic_living_hurt_applies_damage_protection_enchantments() {
 #[test]
 fn generic_living_default_does_not_damage_armor_equipment() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.equip(
         EquipmentSlot::Chest,
         ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE),
@@ -149,7 +148,7 @@ fn generic_living_default_does_not_damage_armor_equipment() {
 #[test]
 fn generic_living_hurt_applies_source_position_knockback() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_on_ground(true);
     let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
         .with_source_position(DVec3::new(1.0, 0.0, 0.0));
@@ -247,7 +246,7 @@ fn living_equipment_attribute_modifiers_refresh_for_slot() {
 #[test]
 fn generic_living_hurt_respects_no_knockback_damage_tag() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_on_ground(true);
     entity.set_velocity(DVec3::new(0.2, 0.3, -0.1));
     let initial_velocity = entity.velocity();
@@ -263,7 +262,7 @@ fn generic_living_hurt_respects_no_knockback_damage_tag() {
 #[test]
 fn generic_living_hurt_scales_knockback_by_resistance() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_on_ground(true);
     entity
         .attributes()

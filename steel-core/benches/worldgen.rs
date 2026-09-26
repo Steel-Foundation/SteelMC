@@ -22,6 +22,7 @@ use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::chunk::status::ChunkStatus;
+use steel_core::entity::damage::DamageHistory;
 use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::generator::generation_benchmark_support;
@@ -530,6 +531,7 @@ struct FeatureFixture {
     cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
     target: Arc<ChunkHolder>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
@@ -567,7 +569,9 @@ fn build_feature_fixture_at(
             .build()
             .expect("feature benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -609,6 +613,7 @@ fn build_feature_fixture_at(
         cache,
         target,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -618,6 +623,7 @@ struct ConcurrentFeatureFixture {
     targets: Vec<Arc<ChunkHolder>>,
     generation_pool: Arc<rayon::ThreadPool>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -639,6 +645,7 @@ struct ConcurrentFullPipelineFixture {
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 struct ConcurrentLightFixture {
@@ -650,6 +657,7 @@ struct ConcurrentLightFixture {
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -838,7 +846,9 @@ fn build_concurrent_feature_fixture(
             .build()
             .expect("feature benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -893,6 +903,7 @@ fn build_concurrent_feature_fixture(
         targets,
         generation_pool,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -929,7 +940,9 @@ fn build_concurrent_full_pipeline_fixture(
             .build()
             .expect("full-pipeline benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -988,6 +1001,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_pool,
         targets,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -1024,7 +1038,9 @@ fn build_concurrent_light_fixture(
             .build()
             .expect("light benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -1090,6 +1106,7 @@ fn build_concurrent_light_fixture(
         generation_pool,
         targets,
         _world: world,
+        _damage_history: damage_history,
     };
     run_concurrent_light_setup(&fixture);
     fixture

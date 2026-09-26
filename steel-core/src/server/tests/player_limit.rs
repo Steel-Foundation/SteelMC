@@ -36,7 +36,7 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         )
         .await?;
         let (slow, _) = test_player_with_packets(&server, Arc::clone(&world), "Slow", 1);
-        let (fast, _) = test_player_with_packets(&server, world, "Fast", 2);
+        let (fast, _) = test_player_with_packets(&server, Arc::clone(&world), "Fast", 2);
 
         let slow_reservation = server.try_reserve_player_join(slow.gameprofile.id);
         let fast_reservation = server.try_reserve_player_join(fast.gameprofile.id);
@@ -108,7 +108,8 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
             .await
             .map_err(|error| error.to_string())?;
         assert!(!server.is_player_limit_reached(uuid));
-        let (player, _) = test_player_with_uuid_and_packets(&server, world, uuid, "Candidate", 1);
+        let (player, _) =
+            test_player_with_uuid_and_packets(&server, Arc::clone(&world), uuid, "Candidate", 1);
         assert!(server.reserve_player_join(&player));
 
         server

@@ -71,7 +71,7 @@ impl ItemBehavior for ShovelItem {
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 context.hit_result.block_pos,
-                &GameEventContext::new(Some(context.player), Some(updated_state)),
+                &GameEventContext::new(Some(context.player.as_ref()), Some(updated_state)),
             );
             return InteractionResult::Success;
         }
@@ -97,7 +97,7 @@ impl ItemBehavior for ShovelItem {
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 context.hit_result.block_pos,
-                &GameEventContext::new(Some(context.player), Some(updated_state)),
+                &GameEventContext::new(Some(context.player.as_ref()), Some(updated_state)),
             );
             return InteractionResult::Success;
         }

@@ -11,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{AgeableMob, Mob, PathfinderMob};
+use crate::entity::{AgeableMob, Mob, PathfinderMob, SharedEntity};
 use crate::world::LevelAccessor;
 
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
@@ -89,7 +89,7 @@ impl Goal for EatBlockGoal {
         self.eat_animation_tick = 0;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         self.eat_animation_tick = (self.eat_animation_tick - 1).max(0);
         if self.eat_animation_tick != reduced_tick_delay(EAT_BLOCK_TICK) {
             return;
@@ -139,8 +139,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::SharedEntity;
     use crate::entity::entities::{PigEntity, SheepEntity};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-    use crate::world::World;
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use steel_utils::Downcast as _;
 
     #[test]
@@ -155,7 +154,7 @@ mod tests {
         assert_eq!(goal.get_eat_animation_tick(), 20);
     }
 
-    fn sheep_on_grass_world(name: &'static str) -> (Arc<World>, SharedEntity) {
+    fn sheep_on_grass_world(name: &'static str) -> (TestWorld, SharedEntity) {
         use steel_registry::vanilla_blocks;
         use steel_registry::vanilla_entities;
         use steel_utils::ChunkPos;
@@ -195,7 +194,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(mob);
         for _ in 0..18 {
-            goal.tick(mob);
+            goal.tick(mob, &shared);
         }
 
         let sheep = shared
@@ -225,7 +224,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(mob);
         for _ in 0..18 {
-            goal.tick(mob);
+            goal.tick(mob, &shared);
         }
 
         let sheep = shared

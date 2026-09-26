@@ -20,7 +20,7 @@ use steel_utils::{
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext};
 use crate::block_entity::block_state_nbt;
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
-use crate::entity::Entity;
+use crate::entity::{Entity, SharedEntity};
 use crate::physics::MoverType;
 use crate::world::{LevelReader, World};
 
@@ -381,14 +381,14 @@ impl PistonMovingState {
 
     fn move_entity_by_piston(
         piston_direction: Direction,
-        entity: &dyn Entity,
+        entity: &SharedEntity,
         delta: f64,
         movement: Direction,
     ) {
         let _no_clip = NoClipGuard::set(piston_direction);
         let (x, y, z) = movement.offset();
         let previous_position = entity.position();
-        entity.move_entity(
+        Arc::clone(entity).move_entity(
             MoverType::Piston,
             DVec3::new(
                 delta * f64::from(x),
@@ -402,7 +402,7 @@ impl PistonMovingState {
 
     fn fix_entity_within_piston_base(
         pos: BlockPos,
-        entity: &dyn Entity,
+        entity: &SharedEntity,
         direction: Direction,
         delta_progress: f64,
     ) {
@@ -479,9 +479,9 @@ impl PistonMovingState {
                 continue;
             }
             let delta = delta.min(delta_progress) + PUSH_OFFSET;
-            Self::move_entity_by_piston(movement, entity.as_ref(), delta, movement);
+            Self::move_entity_by_piston(movement, &entity, delta, movement);
             if !self.extending && self.source_piston {
-                Self::fix_entity_within_piston_base(pos, entity.as_ref(), movement, delta_progress);
+                Self::fix_entity_within_piston_base(pos, &entity, movement, delta_progress);
             }
         }
     }
@@ -514,7 +514,7 @@ impl PistonMovingState {
         });
         let delta_progress = f64::from(new_progress - self.progress);
         for entity in entities {
-            Self::move_entity_by_piston(movement, entity.as_ref(), delta_progress, movement);
+            Self::move_entity_by_piston(movement, &entity, delta_progress, movement);
         }
     }
 

@@ -162,11 +162,11 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::entities::{CowEntity, PigEntity};
     use crate::entity::{Entity, Mob};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (Arc<World>, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
+    ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(name);

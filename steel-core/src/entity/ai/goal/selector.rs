@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops::BitOr;
 
-use crate::entity::PathfinderMob;
+use crate::entity::{PathfinderMob, SharedEntity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalControl {
@@ -99,7 +99,7 @@ pub trait Goal: Send {
         false
     }
 
-    fn tick(&mut self, _mob: &dyn PathfinderMob) {}
+    fn tick(&mut self, _mob: &dyn PathfinderMob, _entity: &SharedEntity) {}
 }
 
 struct WrappedGoal {
@@ -153,8 +153,8 @@ impl WrappedGoal {
         self.goal.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.goal.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.goal.tick(mob, entity);
     }
 
     fn requires_update_every_tick(&self) -> bool {
@@ -188,7 +188,7 @@ impl GoalSelector {
             .push(WrappedGoal::new(priority, Box::new(goal)));
     }
 
-    pub fn tick(&mut self, mob: &dyn PathfinderMob) {
+    pub fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
         for index in 0..self.available_goals.len() {
             let should_stop = {
                 let disabled_controls = self.disabled_controls;
@@ -219,19 +219,20 @@ impl GoalSelector {
             self.available_goals[index].start(mob);
         }
 
-        self.tick_running_goals(mob, true);
+        self.tick_running_goals(mob, entity, true);
     }
 
     pub fn tick_running_goals(
         &mut self,
         mob: &dyn PathfinderMob,
+        entity: &SharedEntity,
         force_tick_all_running_goals: bool,
     ) {
         for goal in &mut self.available_goals {
             if goal.is_running()
                 && (force_tick_all_running_goals || goal.requires_update_every_tick())
             {
-                goal.tick(mob);
+                goal.tick(mob, entity);
             }
         }
     }
@@ -338,6 +339,8 @@ impl fmt::Debug for GoalSelector {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -507,7 +510,7 @@ mod tests {
             self.requires_update_every_tick
         }
 
-        fn tick(&mut self, _mob: &dyn PathfinderMob) {
+        fn tick(&mut self, _mob: &dyn PathfinderMob, _entity: &SharedEntity) {
             if let Some(tick_count) = self.tick_count {
                 tick_count.fetch_add(1, Ordering::Relaxed);
             }
@@ -518,13 +521,14 @@ mod tests {
 
     #[test]
     fn lower_priority_goal_replaces_running_goal_for_same_control() {
-        let mob = TestPathfinderMob::new();
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(5, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(selector.running_goal_count(), 1);
         assert!(selector.is_priority_running(3));
@@ -532,13 +536,14 @@ mod tests {
 
     #[test]
     fn non_interruptable_goal_blocks_replacement() {
-        let mob = TestPathfinderMob::new();
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(5, StaticGoal::new(GoalControls::MOVE).non_interruptable());
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(selector.running_goal_count(), 1);
         assert!(selector.is_priority_running(5));
@@ -546,13 +551,14 @@ mod tests {
 
     #[test]
     fn disabled_control_stops_running_goal() {
-        let mob = TestPathfinderMob::new();
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(5, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         selector.disable_control(GoalControl::Move);
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(selector.running_goal_count(), 0);
     }
@@ -560,7 +566,8 @@ mod tests {
     #[test]
     fn tick_running_goals_respects_requires_update_every_tick() {
         RUNNING_TICK_COUNT.store(0, Ordering::Relaxed);
-        let mob = TestPathfinderMob::new();
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(
             5,
@@ -568,16 +575,17 @@ mod tests {
                 .with_update_every_tick()
                 .with_tick_counter(&RUNNING_TICK_COUNT),
         );
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
 
-        selector.tick_running_goals(&mob, false);
+        selector.tick_running_goals(mob.as_ref(), &mob_entity, false);
 
         assert_eq!(RUNNING_TICK_COUNT.load(Ordering::Relaxed), 2);
     }
 
     #[test]
     fn cleanup_stops_goal_that_can_no_longer_continue() {
-        let mob = TestPathfinderMob::new();
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         let mut selector = GoalSelector::new();
         selector.add_goal(
             5,
@@ -586,15 +594,16 @@ mod tests {
                 .with_can_use_once(),
         );
 
-        selector.tick(&mob);
-        selector.tick(&mob);
+        selector.tick(mob.as_ref(), &mob_entity);
+        selector.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(selector.running_goal_count(), 0);
     }
 
     #[test]
     fn running_panic_goal_is_visible_to_pathfinder_mob() {
-        let mob = TestPathfinderMob::new();
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = mob.clone();
         mob.mob_base()
             .goal_selector()
             .lock()
@@ -602,7 +611,10 @@ mod tests {
 
         assert!(!mob.is_panicking());
 
-        mob.mob_base().goal_selector().lock().tick(&mob);
+        mob.mob_base()
+            .goal_selector()
+            .lock()
+            .tick(mob.as_ref(), &mob_entity);
 
         assert!(
             mob.mob_base()

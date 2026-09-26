@@ -5,6 +5,7 @@
 //! On entity impact it deals 0 thrown damage (3 to blazes) so the hit
 //! registers, then broadcasts the item-break entity event and discards itself.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -91,7 +92,7 @@ impl Entity for SnowballEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.throwable_projectile_tick();
     }
 
@@ -143,22 +144,22 @@ impl Projectile for SnowballEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `Snowball.onHitEntity`: super.onHitEntity() (no-op), then
         // `entity.hurt(thrown(this, owner), blaze ? 3 : 0)`.
-        let mut damage =
-            DamageSource::environment(&vanilla_damage_types::THROWN).with_direct_entity(self.id());
+        let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
+            .with_direct_entity(self.clone());
         if let Some(owner) = self.get_owner() {
-            damage = damage.with_causing_entity(owner.id());
+            damage = damage.with_causing_entity(owner);
         }
         if let Some(world) = entity.level() {
             entity.hurt(&world, &damage, Self::impact_damage(entity.entity_type()));
         }
     }
 
-    fn on_hit(&self, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `Snowball.onHit`: super.onHit() then the server-side break.
-        self.projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: entity event 3 renders the snowball break
         // particles on clients via `Snowball.handleEntityEvent`; the server
@@ -249,12 +250,12 @@ mod tests {
     fn on_hit_discards_the_snowball() {
         init_vanilla_registry();
 
-        let snowball = SnowballEntity::new(
+        let snowball = Arc::new(SnowballEntity::new(
             &vanilla_entities::SNOWBALL,
             1,
             DVec3::ZERO,
             Weak::<World>::new(),
-        );
+        ));
         let hit = ProjectileHit::Block {
             location: DVec3::ZERO,
             hit: ClipHitResult {
@@ -267,7 +268,7 @@ mod tests {
             },
         };
 
-        snowball.on_hit(&hit);
+        Arc::clone(&snowball).on_hit(&hit);
         assert!(snowball.is_removed());
     }
 }

@@ -38,7 +38,9 @@ use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity as _, SharedEntity, next_entity_id};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection, ResetReason};
-use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{
+    TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+};
 use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 use crate::world::{SignalGetter as _, World};
 
@@ -113,7 +115,7 @@ impl GameEventListener for RecordingGameEventListener {
     }
 }
 
-fn jukebox_world(key: &'static str) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
+fn jukebox_world(key: &'static str) -> (TestWorld, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
     init_globals();
     let world = fresh_test_world(key);
     let pos = BlockPos::new(8, 64, 8);

@@ -1,5 +1,6 @@
 use super::*;
 use crate::behavior::blocks::PowderSnowBlock;
+use std::sync::Arc;
 
 #[test]
 fn can_glide_using_matches_vanilla_component_gate() {
@@ -193,14 +194,20 @@ fn living_freezing_damages_fully_frozen_entities_on_frequency() {
 fn default_ai_step_ticks_freezing_after_travel() {
     init_vanilla_registry();
     init_behaviors();
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(
+        0.0,
+        0.0,
+        true,
+        test_world(),
+    ));
+    let shared_entity: SharedEntity = entity.clone();
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
     for _ in 0..40 {
         entity.advance_tick_count();
     }
 
-    entity.default_ai_step();
+    entity.default_ai_step(&shared_entity);
 
     assert_eq!(
         entity.damage_type_keys(),
@@ -221,8 +228,8 @@ fn entity_cramming_damage_threshold_matches_vanilla_push_entities() {
 #[test]
 fn freezing_damage_hurts_extra_tagged_entity_types() {
     init_vanilla_registry();
-    let entity =
-        LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::BLAZE);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
+        .with_entity_type(&vanilla_entities::BLAZE);
 
     assert!(entity.hurt(
         test_world(),

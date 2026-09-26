@@ -349,7 +349,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
 
@@ -357,7 +357,7 @@ mod tests {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE
     }
 
-    fn topology_world(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn topology_world(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);

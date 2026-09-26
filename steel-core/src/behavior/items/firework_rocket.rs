@@ -15,6 +15,7 @@ use steel_utils::Direction;
 use crate::behavior::context::{InteractionResult, UseItemContext, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use crate::enchantment_helper;
+use crate::entity::LivingEntityRef;
 use crate::entity::entities::FireworkRocketEntity;
 use crate::entity::{Entity, Projectile, SharedEntity, next_entity_id};
 use crate::world::World;
@@ -61,14 +62,15 @@ impl ItemBehavior for FireworkRocketItem {
             Arc::downgrade(context.world),
             source_item,
         );
-        rocket.set_owner_uuid(Some(context.player.uuid()));
+        let owner: SharedEntity = context.player.clone();
+        rocket.set_owner_entity(Some(&owner));
         let rocket = Self::add_rocket(context.world, rocket);
         context.inv.with_item(|item| {
             enchantment_helper::on_projectile_spawned(
                 context.world,
                 item,
                 rocket.as_ref(),
-                Some(context.player),
+                Some(&owner),
             );
             item.shrink_one();
         });
@@ -93,12 +95,16 @@ impl ItemBehavior for FireworkRocketItem {
         }
 
         let source_item = context.inv.with_item(|item| item.clone());
+        let owner: SharedEntity = context.player.clone();
+        let Some(attached_to) = LivingEntityRef::new(&owner) else {
+            panic!("firework user must be a living player");
+        };
         let rocket = FireworkRocketEntity::attached_to_living(
             &vanilla_entities::FIREWORK_ROCKET,
             next_entity_id(),
             Arc::downgrade(context.world),
             source_item,
-            context.player,
+            attached_to,
         );
         let rocket = Self::add_rocket(context.world, rocket);
         let has_infinite_materials = context.player.has_infinite_materials();
@@ -108,7 +114,7 @@ impl ItemBehavior for FireworkRocketItem {
                 context.world,
                 itemstack,
                 rocket.as_ref(),
-                Some(context.player),
+                Some(&owner),
             );
             itemstack.consume_one(has_infinite_materials);
             context

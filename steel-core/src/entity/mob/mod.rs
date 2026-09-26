@@ -353,7 +353,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
     fn ate(&self) {}
 
-    fn tick_goal_selectors(&self) {}
+    fn tick_goal_selectors(&self, _entity: &SharedEntity) {}
 
     fn xp_reward(&self) -> i32 {
         self.mob_base().xp_reward()
@@ -1239,7 +1239,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Handles vanilla `Mob.doHurtTarget`.
     #[must_use]
-    fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
+    fn do_hurt_target(&self, entity: &SharedEntity, world: &World, target: &SharedEntity) -> bool {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
             return false;
         };
@@ -1254,7 +1254,7 @@ pub trait Mob: LivingEntity + Leashable {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = self.mob_attack_damage_source(&weapon_item, attacker);
+        let damage_source = self.mob_attack_damage_source(&weapon_item, entity);
         let enchantment_context = EnchantmentDamageContext::new(
             target.entity_type(),
             Some(self.entity_type()),
@@ -1287,12 +1287,7 @@ pub trait Mob: LivingEntity + Leashable {
                     );
                 }
             });
-            let post_attack_context = EnchantmentPostAttackContext::new(
-                target.as_ref(),
-                Some(self.as_entity_event_source()),
-                Some(self.as_entity_event_source()),
-                &damage_source,
-            );
+            let post_attack_context = EnchantmentPostAttackContext::new(target, &damage_source);
             enchantment_helper::do_post_attack_effects_from_item(
                 world,
                 &weapon_item,
@@ -1312,7 +1307,7 @@ pub trait Mob: LivingEntity + Leashable {
     fn mob_attack_damage_source(
         &self,
         weapon_item: &ItemStack,
-        attacker: &dyn LivingEntity,
+        attacker: &SharedEntity,
     ) -> DamageSource {
         let damage_source = if let Some(damage_type) = weapon_item.get_damage_type() {
             DamageSource::environment(damage_type)
@@ -1324,9 +1319,8 @@ pub trait Mob: LivingEntity + Leashable {
         };
 
         damage_source
-            .with_causing_entity(self.id())
-            .with_direct_entity(self.id())
-            .with_source_position(self.position())
+            .with_causing_entity(attacker.clone())
+            .with_direct_entity(attacker.clone())
     }
 
     /// Returns vanilla `LivingEntity.getKnockback` for mob attacks.
@@ -1466,13 +1460,13 @@ pub trait Mob: LivingEntity + Leashable {
         ));
     }
 
-    fn mob_server_ai_step(&self) {
+    fn mob_server_ai_step(&self, entity: &SharedEntity) {
         self.increment_no_action_time();
         self.mob_base().sensing().lock().tick();
         if self.tick_count() % 5 == 0 {
             self.update_control_flags();
         }
-        self.tick_goal_selectors();
+        self.tick_goal_selectors(entity);
         self.tick_path_navigation();
         self.custom_server_ai_step();
         self.tick_move_control();
@@ -1487,8 +1481,8 @@ pub trait Mob: LivingEntity + Leashable {
     /// because vanilla runs it from `aiStep`, not `serverAiStep`: a mob with
     /// `NoAI` set still collects loot, so the looting must not sit behind the
     /// `isEffectiveAi` gate that guards the goal/navigation ticks.
-    fn mob_ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+    fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = self.default_ai_step(entity);
         self.tick_looting();
         result
     }

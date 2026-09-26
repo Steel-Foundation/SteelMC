@@ -5,9 +5,9 @@ use uuid::Uuid;
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
-fn falling_test_world(key: &'static str) -> Arc<World> {
+fn falling_test_world(key: &'static str) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);
@@ -25,7 +25,7 @@ fn tick_until_settled(entities: &[&Arc<FallingBlockEntity>]) {
             if entity.is_alive() {
                 entity.set_old_position_to_current();
                 entity.advance_tick_count();
-                entity.tick();
+                Arc::clone(entity).tick();
             }
         }
         if entities.iter().all(|entity| entity.is_removed()) {

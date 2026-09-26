@@ -163,9 +163,9 @@ mod tests {
     use crate::block_entity::init_block_entities;
     use crate::entity::SharedEntity;
     use crate::entity::entities::ItemEntity;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
-    fn brushable_test_world(key: &'static str) -> Arc<World> {
+    fn brushable_test_world(key: &'static str) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
@@ -213,7 +213,7 @@ mod tests {
             }
             entity.set_old_position_to_current();
             entity.advance_tick_count();
-            entity.tick();
+            Arc::clone(entity).tick();
         }
         panic!("falling brushable block did not settle within the test limit");
     }

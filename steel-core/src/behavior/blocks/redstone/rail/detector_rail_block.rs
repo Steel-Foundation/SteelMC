@@ -283,13 +283,13 @@ mod tests {
         let powered = world.get_block_state(pos);
         assert!(powered.get_value(POWERED));
         assert_eq!(
-            behavior.get_own_signal(powered, &world, pos, SignalQueryContext::DEFAULT,),
+            behavior.get_own_signal(powered, world.as_ref(), pos, SignalQueryContext::DEFAULT,),
             15
         );
         assert_eq!(
             behavior.get_direct_signal(
                 powered,
-                &world,
+                world.as_ref(),
                 pos,
                 Direction::Up,
                 SignalQueryContext::DEFAULT,
@@ -299,7 +299,7 @@ mod tests {
         assert_eq!(
             behavior.get_direct_signal(
                 powered,
-                &world,
+                world.as_ref(),
                 pos,
                 Direction::North,
                 SignalQueryContext::DEFAULT,

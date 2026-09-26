@@ -257,7 +257,9 @@ mod tests {
             execution::{SteelArgumentType, SteelCommandRuntime},
         },
         entity::entities::ItemEntity,
-        test_support::{fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk},
+        test_support::{
+            TestWorld, fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk,
+        },
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -283,7 +285,7 @@ mod tests {
         assert!(node.is_executable());
     }
 
-    fn setup_world(key: &'static str, chunk: ChunkPos) -> Arc<World> {
+    fn setup_world(key: &'static str, chunk: ChunkPos) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();

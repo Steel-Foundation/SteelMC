@@ -172,7 +172,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
+            &GameEventContext::new(Some(context.player.as_ref()), Some(placed_state)),
         );
 
         place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));

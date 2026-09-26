@@ -31,7 +31,7 @@ impl ShearsItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
-            &GameEventContext::new(Some(context.player), Some(new_state)),
+            &GameEventContext::new(Some(context.player.as_ref()), Some(new_state)),
         );
     }
 }
@@ -95,7 +95,9 @@ mod tests {
     use crate::entity::Entity;
     use crate::player::connection::NetworkConnection;
     use crate::player::{Player, PlayerConnection, ResetReason};
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{
+        TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+    };
     use crate::world::World;
     use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 
@@ -160,7 +162,7 @@ mod tests {
     }
 
     struct ShearsFixture {
-        world: Arc<World>,
+        world: TestWorld,
         _holder: Arc<ChunkHolder>,
         player: Arc<Player>,
         _observer: Arc<Player>,

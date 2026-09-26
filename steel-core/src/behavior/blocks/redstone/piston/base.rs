@@ -609,7 +609,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BlockHitResult, BlockLootContext, PlacementOrientation, init_behaviors};
     use crate::chunk::chunk_holder::ChunkHolder;
-    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestLevel, TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
     const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FACE;
@@ -623,7 +623,7 @@ mod tests {
     fn powered_piston_world(
         key: &'static str,
         piston: BlockRef,
-    ) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, BlockPos) {
+    ) -> (TestWorld, Arc<ChunkHolder>, BlockPos, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);
