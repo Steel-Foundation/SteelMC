@@ -54,7 +54,7 @@ fn kill_entities(
 
     let message = if let [target] = targets {
         translations::COMMANDS_KILL_SUCCESS_SINGLE
-            .message([TextComponent::plain(target.plain_text_name())])
+            .message([target.display_name()])
             .component()
     } else {
         translations::COMMANDS_KILL_SUCCESS_MULTIPLE
@@ -67,10 +67,18 @@ fn kill_entities(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::init_vanilla_registry;
+    use text_components::content::Content;
 
     use super::super::create_dispatcher;
-    use crate::command::execution::SteelArgumentType;
+    use super::*;
+    use crate::{
+        command::execution::SteelArgumentType,
+        entity::Entity as _,
+        test_support::{TestPlayerBuilder, test_world},
+    };
 
     #[test]
     fn kill_graph_supports_self_and_multiple_entity_targets() {
@@ -104,5 +112,32 @@ mod tests {
                 if node.is_executable()
                     && node.argument_type() == Some(&SteelArgumentType::entities())
         ));
+    }
+
+    #[test]
+    fn kill_success_single_formats_player_display_name() {
+        init_vanilla_registry();
+        let world = test_world();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "KillTarget", 1).build();
+        let display = player.display_name();
+
+        assert_eq!(player.plain_text_name(), "KillTarget");
+        assert!(display.interactions.click.is_some());
+        assert!(display.interactions.hover.is_some());
+        assert_eq!(
+            display.interactions.insertion.as_deref(),
+            Some("KillTarget")
+        );
+
+        let message = translations::COMMANDS_KILL_SUCCESS_SINGLE
+            .message([player.display_name()])
+            .component();
+        let Content::Translate(translated) = &message.content else {
+            panic!("expected translate content");
+        };
+        assert_eq!(
+            translated.args.as_ref().and_then(|args| args.first()),
+            Some(&display)
+        );
     }
 }
