@@ -201,7 +201,7 @@ impl WorldSpawnTeleportJob {
         let search = PlayerSpawnSearch::new(
             &target_world,
             spawn_suggestion,
-            target_world.default_gamemode,
+            target_world.default_gamemode(),
         )?;
         Ok(Self {
             entity,
@@ -516,7 +516,7 @@ impl EndPortalTeleportJob {
         let search = PlayerSpawnSearch::new(
             &target_world,
             respawn_data.pos(),
-            target_world.default_gamemode,
+            target_world.default_gamemode(),
         )?;
         Ok(Self {
             entity,

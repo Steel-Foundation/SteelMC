@@ -188,7 +188,7 @@ impl Server {
             )
         };
         let position = world
-            .find_adjusted_shared_spawn_pos(spawn_pos, world.default_gamemode)
+            .find_adjusted_shared_spawn_pos(spawn_pos, world.default_gamemode())
             .await?;
         Ok(PreparedSpawn {
             position,
@@ -201,7 +201,7 @@ impl Server {
         respawn_data: &RespawnData,
     ) -> Result<PreparedSpawn, String> {
         let position = world
-            .find_adjusted_shared_spawn_pos(respawn_data.pos(), world.default_gamemode)
+            .find_adjusted_shared_spawn_pos(respawn_data.pos(), world.default_gamemode())
             .await?;
         Ok(PreparedSpawn {
             position,
