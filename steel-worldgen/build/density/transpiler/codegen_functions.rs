@@ -16,7 +16,7 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::graph::{collect_interpolated_inners, is_flat_cached, unwrap_markers};
 use super::naming::{
-    named_fn_ident, named_fn_ident_4x, router_cache_field_ident, router_compute_fn_ident,
+    named_fn_ident, named_fn_ident_lanes, router_cache_field_ident, router_compute_fn_ident,
     sanitize_name,
 };
 
@@ -62,18 +62,21 @@ impl TranspileContext {
                 continue;
             };
             let inner = unwrap_markers(df).clone();
-            let fn_name_4x = named_fn_ident_4x(&name);
+            let fn_name_lanes = named_fn_ident_lanes(&name, self.simd_lanes);
 
             let body = self.gen_expr_simd(&inner, input, false);
 
             let params = self.fn_params_4x();
 
-            let doc = Literal::string(&format!("`{name}` (SIMD form, batches 4 Y values)"));
+            let doc = Literal::string(&format!(
+                "`{name}` (SIMD form, batches {} Y values)",
+                self.simd_lanes
+            ));
             fns_4x.push(quote! {
                 #[doc = #doc]
                 #[allow(dead_code)]
                 #[inline]
-                fn #fn_name_4x(#params) -> f64x4 {
+                fn #fn_name_lanes(#params) -> __LaneV {
                     #body
                 }
             });
@@ -206,6 +209,8 @@ impl TranspileContext {
 
         let total_count = all_inners.len();
         let total_count_lit = Literal::usize_unsuffixed(total_count);
+        let lanes_lit = Literal::usize_unsuffixed(self.simd_lanes);
+        let fill_lanes_ident = format_ident!("fill_cell_corner_densities_{}x", self.simd_lanes);
 
         // Phase 2: Generate fill_cell_corner_densities with ALL channels
         self.fill_mode = true;
@@ -229,13 +234,18 @@ impl TranspileContext {
             let idx = Literal::usize_unsuffixed(i);
             let inner = unwrap_markers(inner_df);
             let expr_simd = self.gen_expr_simd(inner, input, false);
+            // Lane indices are compile-time constants inside the generated
+            // module (SIMD_LANES), so `__r[l]` compiles to a plain extract.
+            let lane_writes: Vec<TokenStream> = (0..self.simd_lanes)
+                .map(|l| {
+                    let l_lit = Literal::usize_unsuffixed(l);
+                    quote! { out[#idx + #l_lit * INTERPOLATED_COUNT] = __r[#l_lit]; }
+                })
+                .collect();
             inner_stmts_4x.push(quote! {
                 {
                     let __r = #expr_simd;
-                    out[#idx] = __r[0];
-                    out[#idx + INTERPOLATED_COUNT] = __r[1];
-                    out[#idx + 2 * INTERPOLATED_COUNT] = __r[2];
-                    out[#idx + 3 * INTERPOLATED_COUNT] = __r[3];
+                    #(#lane_writes)*
                 }
             });
         }
@@ -291,6 +301,7 @@ impl TranspileContext {
             /// Total number of independently interpolated channels across all
             /// router entries (final_density + vein_toggle + vein_ridged).
             pub const INTERPOLATED_COUNT: usize = #total_count_lit;
+            pub const SIMD_LANES: usize = #lanes_lit;
 
             /// Whether vein functions have interpolation channels.
             pub const VEIN_INTERP_ENABLED: bool = #has_vein_interp_tok;
@@ -314,23 +325,23 @@ impl TranspileContext {
                 #(#inner_stmts)*
             }
 
-            /// SIMD form of [`fill_cell_corner_densities`] that batches 4
-            /// cell-corner Y values at fixed `(x, z)`.
+            /// SIMD form of [`fill_cell_corner_densities`] that batches
+            /// SIMD_LANES cell-corner Y values at fixed `(x, z)`.
             ///
             /// `out` layout: lane-major SoA. Lane `i`'s `INTERPOLATED_COUNT`
-            /// channels live at `out[i * INTERPOLATED_COUNT..(i + 1) * INTERPOLATED_COUNT]`.
-            /// `out` must have length `4 * INTERPOLATED_COUNT`.
+            /// channels live at
+            /// `out[i * INTERPOLATED_COUNT..(i + 1) * INTERPOLATED_COUNT]`.
             ///
-            /// Per-lane semantics are bit-identical to four scalar
+            /// Per-lane semantics are bit-identical to scalar
             /// [`fill_cell_corner_densities`] calls at the same Y values.
             #[expect(unused_variables, reason = "generated function has a fixed signature; not all dimensions use every parameter")]
-            pub fn fill_cell_corner_densities_4x(
+            pub fn #fill_lanes_ident(
                 noises: &#noises,
                 cache: &#cache,
                 x: i32,
-                ys: f64x4,
+                ys: __LaneV,
                 z: i32,
-                blended_noise_value_v: f64x4,
+                blended_noise_value_v: __LaneV,
                 out: &mut [f64],
             ) {
                 let x = cache.x as f64;
