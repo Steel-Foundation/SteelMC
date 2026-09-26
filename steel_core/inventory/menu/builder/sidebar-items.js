@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FakeResultRemainderPolicy","FillDirection","SectionKind"],"fn":["deny_all_rules","deny_place_rules"],"struct":["ContainerSlots","DataSlot","MenuBuilder","MenuInstanceId","PlayerInventorySections","Route","Section"],"trait":["IntoSections","SectionSource"],"type":["SlotFactory"]};

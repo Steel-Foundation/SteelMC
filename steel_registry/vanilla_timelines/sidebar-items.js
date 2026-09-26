@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_timelines"],"static":["DAY","EARLY_GAME","MOON","VILLAGER_SCHEDULE"]};

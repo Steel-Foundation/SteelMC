@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","difficulty_display_name","difficulty_literal","difficulty_permission","player_can_change_difficulty","query_difficulty","registration","set_difficulty"]};

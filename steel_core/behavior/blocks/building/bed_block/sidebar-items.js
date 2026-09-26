@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BED_BOUNCE_SCALE","BED_PART","FACING","OCCUPIED"],"struct":["BedBlock"]};

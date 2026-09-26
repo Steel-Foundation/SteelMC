@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LEVEL_CAULDRON"],"struct":["CauldronBlock","LayeredCauldronBlock"]};

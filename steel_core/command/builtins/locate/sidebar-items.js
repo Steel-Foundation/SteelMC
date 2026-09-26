@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_STRUCTURE_SEARCH_RADIUS"],"enum":["LocatePhase","PendingRequest"],"fn":["command","horizontal_distance","invalid_structure","locate_coordinates_component","locate_success_component","registration","start_structure_search","structure_not_found"],"struct":["LocateStructureSearch","LocatedStructure"]};

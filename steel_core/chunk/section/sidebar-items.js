@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLOCKS_PER_SECTION"],"struct":["BlockStateSectionCounts","ChunkSection","RandomTickSectionBits","SectionHolder","SectionWriteGuard","Sections"]};

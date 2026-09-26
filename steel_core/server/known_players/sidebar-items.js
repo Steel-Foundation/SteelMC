@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["KnownPlayerSaveStep","UncachedPlayerTarget"],"fn":["classify_uncached_player_target","direct_uuid_profile"],"struct":["KnownPlayerCacheState"]};

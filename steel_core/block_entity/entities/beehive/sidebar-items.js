@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BEEHIVE_MAX_OCCUPANTS","BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS"],"fn":["default_bee_entity_data"],"struct":["BeeOccupant","BeehiveBlockEntity","BeehiveState"]};

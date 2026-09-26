@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FUDGING"],"fn":["compare_unreached_paths","path_node_from"],"struct":["NodePoint","NodeSearchData","PathFinder","PathRequest","PathTarget"]};

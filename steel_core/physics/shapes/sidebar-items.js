@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COLLISION_EPSILON"],"fn":["collide","collide_single","cross_axes","face_shape_occludes","join_is_not_empty","merged_face_occludes","merged_offset_face_occludes","overlaps_for_collision","project_offset_shape_onto_grid","project_shape_onto_grid","translate_shape"]};

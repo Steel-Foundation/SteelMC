@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_chicken_variants"],"static":["COLD","TEMPERATE","WARM"]};

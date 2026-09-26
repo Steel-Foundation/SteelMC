@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BedRuleValue","MonsterSpawnLightLevel"],"struct":["BackgroundMusic","BedRule","DimensionType","DimensionTypeRegistry","MoodSound","MusicEntry"],"type":["DimensionTypeRef"]};

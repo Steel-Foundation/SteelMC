@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["bosses","hostile","jockeys","neutral","passive"]};

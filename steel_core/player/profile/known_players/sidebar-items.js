@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GAME_PROFILE_CACHE_LIMIT"],"enum":["KnownPlayerNameLookup"],"struct":["KnownPlayer","KnownPlayers"]};

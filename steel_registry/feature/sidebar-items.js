@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["data"],"struct":["ConfiguredFeature","ConfiguredFeatureRegistry","PlacedFeature","PlacedFeatureRegistry"],"type":["ConfiguredFeatureEntryRef","PlacedFeatureEntryRef"]};

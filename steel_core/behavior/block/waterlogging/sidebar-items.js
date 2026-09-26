@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["can_pick_up_drained_waterlogged_state","drained_waterlogged_state","pickup_waterlogged_block","place_simple_waterlogged_liquid","schedule_placed_liquid_tick","schedule_water_tick_if_waterlogged","simple_waterlogged_is_liquid_container"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAXIMUM_DEPTH","SUBDIVIDE_THRESHOLD"],"fn":["round_away_from_zero"],"struct":["BoxOctree","DeflatedQuarters","StoredBox"]};

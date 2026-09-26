@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TOUCH_HEIGHT","TOUCH_INSET"],"struct":["BasePressurePlateBlock"]};

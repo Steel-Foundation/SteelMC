@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DOMAIN_SPAWN_SEARCH_READY_CANDIDATE_BUDGET"],"enum":["DomainSwitchJobPhase"],"struct":["DomainSwitchJob"]};

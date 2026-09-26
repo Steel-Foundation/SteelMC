@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AuthError","ConnectionUpdate","GameProfileAction","TextureError"],"fn":["is_valid_player_name","mojang_authenticate","offline_uuid","signed_bytes_be_to_hex"],"mod":["authentication","connection","handlers","pre_play_state","tcp_client"],"struct":["ClientInformation","GameProfile","JavaConnection","JavaTcpClient","ServerConnectionSession"]};

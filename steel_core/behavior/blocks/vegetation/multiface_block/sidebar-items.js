@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WATERLOGGED"],"enum":["MultifaceSpreadType"],"fn":["multiface_spread_pos"],"struct":["MultifaceBlock","MultifaceSpreadPos","MultifaceSpreader"]};
