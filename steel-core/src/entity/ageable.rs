@@ -242,19 +242,17 @@ pub trait AgeableMob: Mob {
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let mut group_data = match group_data {
-            Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
-            None => AgeableMobGroupData::with_should_spawn_baby(true),
-        };
-        if group_data.finalize_ageable_spawn(rand::random::<f32>) {
+        let mut group_data = group_data.unwrap_or(SpawnGroupData::AgeableMob(
+            AgeableMobGroupData::with_should_spawn_baby(true),
+        ));
+        if group_data
+            .ageable_group_data_mut()
+            .finalize_ageable_spawn(rand::random::<f32>)
+        {
             self.set_age(self.get_baby_start_age());
         }
 
-        self.finalize_spawn_mob_base(
-            world,
-            spawn_reason,
-            Some(SpawnGroupData::AgeableMob(group_data)),
-        )
+        self.finalize_spawn_mob_base(world, spawn_reason, Some(group_data))
     }
 
     /// Handles vanilla `AgeableMob.mobInteract`.
