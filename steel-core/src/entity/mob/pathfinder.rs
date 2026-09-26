@@ -12,7 +12,7 @@ use crate::entity::ai::navigation::{
 };
 use crate::entity::ai::path::Path;
 use crate::entity::ai::walk::{MobPathSettings, WalkNodeEvaluator};
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
@@ -24,10 +24,11 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
 ) {
     let (target, speed_modifier) = {
         let mut navigation = mob.mob_base().navigation().lock();
-        let mob_position =
+        let ground_mob_position =
             ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float());
         let context = NavigationTickContext {
-            mob_position,
+            ground_mob_position,
+            mob_position: mob.position(),
             mob_bounding_box_width: mob.bounding_box().width(),
             mob_speed: mob.get_speed(),
             game_time,
@@ -105,13 +106,6 @@ pub trait PathfinderMob: Mob {
     fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
         self.as_animal()
             .map_or(0.0, |animal| animal.animal_walk_target_value(pos))
-    }
-
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     fn can_update_path(&self) -> bool {
