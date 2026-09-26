@@ -152,8 +152,6 @@ impl Goal for NearestAttackableTargetGoal {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -164,7 +162,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::entities::{CowEntity, PigEntity};
     use crate::entity::{Entity, Mob};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
         name: &'static str,

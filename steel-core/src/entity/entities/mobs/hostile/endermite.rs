@@ -1,4 +1,3 @@
-use crate::entity::SharedEntity;
 use std::iter::empty;
 use std::sync::Weak;
 
@@ -21,7 +20,7 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity,
 };
 use crate::physics::MoveResult;
 use crate::world::World;

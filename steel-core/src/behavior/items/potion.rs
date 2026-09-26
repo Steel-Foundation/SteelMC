@@ -1,10 +1,9 @@
-use crate::entity::LivingEntityRef;
 use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::behavior::item::finish_consuming_stack;
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
-use crate::entity::apply_potion_contents;
+use crate::entity::{LivingEntityRef, apply_potion_contents};
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use glam::DVec3;

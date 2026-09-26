@@ -1,4 +1,3 @@
-use crate::test_support::TestWorld;
 use std::sync::Arc;
 
 use super::{AnvilKind, anvil};
@@ -11,7 +10,7 @@ use crate::{
         menu::Menu,
     },
     player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
     world::World,
 };
 use glam::DVec3;

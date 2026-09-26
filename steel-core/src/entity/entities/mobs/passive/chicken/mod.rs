@@ -1,7 +1,6 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
-use crate::entity::SharedEntity;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
@@ -39,7 +38,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData, entity_loot_ref, position_rider_default,
+    PathfinderMob, SharedEntity, SpawnGroupData, entity_loot_ref, position_rider_default,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;

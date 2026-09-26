@@ -1,6 +1,5 @@
 //! Vanilla Cow entity with variant + sound-variant parity.
 
-use crate::entity::SharedEntity;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
@@ -37,7 +36,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;

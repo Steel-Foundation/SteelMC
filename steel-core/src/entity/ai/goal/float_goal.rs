@@ -1,6 +1,5 @@
-use crate::entity::SharedEntity;
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{MobBase, PathfinderMob};
+use crate::entity::{MobBase, PathfinderMob, SharedEntity};
 
 const FLOAT_JUMP_CHANCE: f32 = 0.8;
 

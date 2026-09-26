@@ -69,8 +69,6 @@ impl ItemBehavior for ShearsItem {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use std::io::Cursor;
     use std::sync::Arc;
 
@@ -97,7 +95,9 @@ mod tests {
     use crate::entity::Entity;
     use crate::player::connection::NetworkConnection;
     use crate::player::{Player, PlayerConnection, ResetReason};
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{
+        TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+    };
     use crate::world::World;
     use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 

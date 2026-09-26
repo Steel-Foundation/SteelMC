@@ -1,5 +1,4 @@
 //! Vanilla Sheep entity with wool color, shearing, and breeding parity.
-use crate::entity::SharedEntity;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -37,7 +36,7 @@ use crate::entity::living_entity::shearing_loot_items_with_rng;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::inventory::recipe_manager;
 use crate::physics::MoveResult;

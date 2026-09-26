@@ -1,6 +1,5 @@
 //! This module contains the `World` struct, which represents a world.
 
-use crate::entity::damage::DamageHistory;
 use std::{
     io, mem,
     path::Path,
@@ -18,6 +17,7 @@ use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::chunk::status::ChunkStatus;
+use crate::entity::damage::DamageHistory;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{

@@ -1,12 +1,11 @@
-use crate::entity::SharedEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::entity::PathfinderMob;
 use crate::entity::ai::path::Path;
+use crate::entity::{PathfinderMob, SharedEntity};
 
 const DOOR_REACH_DISTANCE_SQR: f64 = 2.25;
 const PATH_NODE_SCAN_AHEAD: usize = 2;

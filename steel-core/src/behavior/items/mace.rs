@@ -1,4 +1,3 @@
-use crate::entity::SharedEntity;
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::CSetEntityMotion;
@@ -9,7 +8,7 @@ use steel_registry::{level_events, sound_events, vanilla_damage_types};
 use crate::behavior::ItemBehavior;
 use crate::enchantment_helper::{self, EnchantmentDamageContext};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 
 /// Vanilla mace item combat behavior.

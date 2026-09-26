@@ -1,4 +1,3 @@
-use crate::test_support::TestWorld;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
@@ -39,7 +38,9 @@ use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity as _, SharedEntity, next_entity_id};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection, ResetReason};
-use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{
+    TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+};
 use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 use crate::world::{SignalGetter as _, World};
 

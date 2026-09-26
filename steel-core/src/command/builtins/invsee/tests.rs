@@ -301,7 +301,7 @@ fn modify_view_synchronizes_target_armor_without_inventory_locks() {
             .get_item(39)
             .is(&vanilla_items::IRON_HELMET)
     );
-    Arc::clone(&target.player).tick();
+    target.player.tick();
     assert_eq!(
         player_inventory_updates(&target.packets),
         vec![(39, ItemStack::new(&vanilla_items::IRON_HELMET))]
@@ -332,7 +332,7 @@ fn self_invsee_synchronizes_own_armor_slot() {
         &recording.player,
     );
 
-    Arc::clone(&recording.player).tick();
+    recording.player.tick();
     assert_eq!(
         player_inventory_updates(&recording.packets),
         vec![(39, ItemStack::new(&vanilla_items::IRON_HELMET))]
@@ -364,7 +364,7 @@ fn modify_view_synchronizes_empty_offhand_after_removal() {
     );
 
     assert!(target.player.inventory.lock().get_item(40).is_empty());
-    Arc::clone(&target.player).tick();
+    target.player.tick();
     assert_eq!(
         player_inventory_updates(&target.packets),
         vec![(40, ItemStack::empty())]
@@ -385,7 +385,7 @@ fn modify_view_synchronizes_target_hotbar_slot() {
         },
         &source,
     );
-    Arc::clone(&target.player).tick();
+    target.player.tick();
 
     assert_eq!(
         player_inventory_updates(&target.packets),
@@ -416,7 +416,7 @@ fn modify_view_coalesces_to_latest_target_inventory_value() {
         &source,
     );
 
-    Arc::clone(&target.player).tick();
+    target.player.tick();
 
     assert_eq!(
         player_inventory_updates(&target.packets),
@@ -445,7 +445,7 @@ fn modify_view_drag_queues_each_changed_target_slot() {
     ] {
         menu.clicked(Click::QuickCraft(action), &source);
     }
-    Arc::clone(&target.player).tick();
+    target.player.tick();
 
     assert_eq!(
         player_inventory_updates(&target.packets),
@@ -493,7 +493,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
 
     recording.packets.lock().clear();
     recording.player.do_close_container();
-    Arc::clone(&recording.player).tick();
+    recording.player.tick();
 
     let updates = player_inventory_updates(&recording.packets);
     assert_eq!(updates.len(), PlayerInventory::INVENTORY_SIZE);
@@ -530,7 +530,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
     assert_eq!(player_inventory_updates(&recording.packets).len(), 0);
 
     recording.player.do_close_container();
-    Arc::clone(&recording.player).tick();
+    recording.player.tick();
 
     let updates = player_inventory_updates(&recording.packets);
     assert_eq!(updates.len(), PlayerInventory::INVENTORY_SIZE);
@@ -557,7 +557,7 @@ fn normal_menu_does_not_defer_main_inventory_sync() {
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0]);
 
-    Arc::clone(&recording.player).tick();
+    recording.player.tick();
 
     assert_eq!(
         player_inventory_updates(&recording.packets),

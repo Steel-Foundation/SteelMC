@@ -1,6 +1,5 @@
 //! Item behavior trait and registry.
 
-use crate::entity::SharedEntity;
 use std::sync::Arc;
 
 use std::borrow::Cow;
@@ -22,7 +21,7 @@ use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, LivingEntityRef};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef, SharedEntity};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 

@@ -98,8 +98,6 @@ impl ItemBehavior for ScaffoldingBlockItem {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -114,7 +112,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BlockHitResult, PlacementOrientation, PlacementSource, init_behaviors};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use crate::world::{LevelReader, World};
 
     const BOTTOM: &BoolProperty = &BlockStateProperties::BOTTOM;

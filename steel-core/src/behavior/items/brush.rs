@@ -1,6 +1,5 @@
 //! Brush item behavior for continuous archaeology brushing.
 
-use crate::entity::LivingEntityRef;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -14,7 +13,7 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, ItemUseAnimation};
 use crate::block_entity::entities::BrushableBlockEntity;
 use crate::entity::projectile::{ViewVectorHitResult, get_hit_result_on_view_vector};
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::World;

@@ -1,4 +1,3 @@
-use crate::test_support::TestWorld;
 use steel_registry::init_vanilla_registry;
 use steel_utils::ChunkPos;
 use uuid::Uuid;
@@ -6,7 +5,7 @@ use uuid::Uuid;
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
 fn falling_test_world(key: &'static str) -> TestWorld {
     init_vanilla_registry();

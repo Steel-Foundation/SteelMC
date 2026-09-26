@@ -1,6 +1,5 @@
 //! Spyglass item behavior.
 
-use crate::entity::LivingEntityRef;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -9,7 +8,7 @@ use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 
 use crate::behavior::{InteractionResult, ItemBehavior, ItemUseAnimation, UseItemContext};
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef};
 use crate::world::World;
 
 const USE_DURATION: i32 = 1200;

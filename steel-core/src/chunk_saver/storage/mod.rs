@@ -8,8 +8,6 @@ use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk::{Chunk, status::ChunkStatus};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices_from_iter, unpack_indices};
-use std::sync::Arc;
-
 use crate::entity::{
     ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
     MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
@@ -25,7 +23,10 @@ use std::cmp::Ordering as CmpOrdering;
 use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{io, sync::Weak};
+use std::{
+    io,
+    sync::{Arc, Weak},
+};
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };

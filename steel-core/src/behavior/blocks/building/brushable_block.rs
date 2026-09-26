@@ -153,8 +153,6 @@ impl Fallable for BrushableBlock {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use steel_registry::blocks::BlockRef;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::types::UpdateFlags;
@@ -165,7 +163,7 @@ mod tests {
     use crate::block_entity::init_block_entities;
     use crate::entity::SharedEntity;
     use crate::entity::entities::ItemEntity;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn brushable_test_world(key: &'static str) -> TestWorld {
         init_vanilla_registry();

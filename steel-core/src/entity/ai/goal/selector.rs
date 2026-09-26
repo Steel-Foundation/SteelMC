@@ -1,8 +1,7 @@
-use crate::entity::SharedEntity;
 use std::fmt;
 use std::ops::BitOr;
 
-use crate::entity::PathfinderMob;
+use crate::entity::{PathfinderMob, SharedEntity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalControl {

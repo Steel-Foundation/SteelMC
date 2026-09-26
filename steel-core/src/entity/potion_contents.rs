@@ -2,12 +2,11 @@
 //! `LivingEntity`/`World`, which can't live alongside the data in
 //! `steel_registry::data_components::PotionContents`.
 
-use crate::entity::LivingEntityRef;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::data_components::PotionContents;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
-use crate::entity::MobEffectInstance as RuntimeMobEffectInstance;
+use crate::entity::{LivingEntityRef, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
 /// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
@@ -68,7 +67,6 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::{LivingEntityRef, SharedEntity};
     use std::sync::Arc;
 
     use steel_registry::data_components::PotionContents;
@@ -78,7 +76,7 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use super::{apply_potion_contents, scale_effect_duration};
-    use crate::entity::LivingEntity;
+    use crate::entity::{LivingEntity, LivingEntityRef, SharedEntity};
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration

@@ -1,6 +1,5 @@
 //! Vanilla moving-piston block entity.
 
-use crate::entity::SharedEntity;
 use std::cell::Cell;
 use std::sync::{Arc, Weak};
 
@@ -21,7 +20,7 @@ use steel_utils::{
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext};
 use crate::block_entity::block_state_nbt;
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
-use crate::entity::Entity;
+use crate::entity::{Entity, SharedEntity};
 use crate::physics::MoverType;
 use crate::world::{LevelReader, World};
 

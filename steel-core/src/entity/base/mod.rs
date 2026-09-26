@@ -8,7 +8,6 @@ mod movement;
 mod persistence;
 mod relationships;
 
-use crate::entity::damage::DamageHistoryBinding;
 pub use fire_freeze::EntityFireFreezeState;
 pub use movement::{
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
@@ -34,6 +33,7 @@ use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
 
+use crate::entity::damage::DamageHistoryBinding;
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
     EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,

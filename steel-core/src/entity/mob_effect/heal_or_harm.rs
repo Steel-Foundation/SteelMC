@@ -1,11 +1,10 @@
 //! `HealOrHarmMobEffect` behavior (Instant Health / Instant Damage).
 
-use crate::entity::SharedEntity;
 use steel_registry::vanilla_damage_types;
 
 use super::{InstantaneousMobEffect, MobEffectBehavior};
-use crate::entity::LivingEntity;
 use crate::entity::damage::DamageSource;
+use crate::entity::{LivingEntity, SharedEntity};
 use crate::world::World;
 
 /// Mirrors vanilla `HealOrHarmMobEffect`

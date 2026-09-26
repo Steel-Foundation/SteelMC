@@ -1,10 +1,9 @@
-use crate::entity::SharedEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type_tags};
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::entity::PathfinderMob;
+use crate::entity::{PathfinderMob, SharedEntity};
 
 pub struct ClimbOnTopOfPowderSnowGoal;
 

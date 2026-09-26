@@ -244,8 +244,6 @@ fn area_too_large(limit: i32, area: i64) -> CommandSyntaxError {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use steel_registry::{init_vanilla_registry, vanilla_game_rules};
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb, types::UpdateFlags};
 
@@ -259,7 +257,9 @@ mod tests {
             execution::{SteelArgumentType, SteelCommandRuntime},
         },
         entity::entities::ItemEntity,
-        test_support::{fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk},
+        test_support::{
+            TestWorld, fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk,
+        },
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;

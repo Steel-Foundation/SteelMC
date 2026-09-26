@@ -1,11 +1,10 @@
-use crate::entity::SharedEntity;
 use std::f64::consts::TAU;
 
 use glam::DVec3;
 
-use crate::entity::PathfinderMob;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
+use crate::entity::{PathfinderMob, SharedEntity};
 
 const RANDOM_LOOK_AROUND_CHANCE: f32 = 0.02;
 

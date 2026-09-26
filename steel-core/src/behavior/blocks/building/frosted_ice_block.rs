@@ -180,8 +180,6 @@ impl BlockBehavior for FrostedIceBlock {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_dimension_types};
@@ -190,7 +188,8 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::{
-        TestLevel, fresh_test_world, fresh_test_world_with_dimension_type, insert_ready_full_chunk,
+        TestLevel, TestWorld, fresh_test_world, fresh_test_world_with_dimension_type,
+        insert_ready_full_chunk,
     };
 
     fn behavior() -> FrostedIceBlock {

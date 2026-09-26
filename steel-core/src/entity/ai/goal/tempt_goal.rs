@@ -1,4 +1,3 @@
-use crate::entity::SharedEntity;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -8,7 +7,7 @@ use steel_registry::vanilla_attributes;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Entity, LivingEntity, PathfinderMob};
+use crate::entity::{Entity, LivingEntity, PathfinderMob, SharedEntity};
 use crate::player::Player;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;

@@ -1,7 +1,6 @@
 //! Vanilla `EatBlockGoal`: a mob stops moving and chews for a fixed duration before
 //! eating an edible block and running `Mob.ate`.
 
-use crate::entity::SharedEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::level_events;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -12,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{AgeableMob, Mob, PathfinderMob};
+use crate::entity::{AgeableMob, Mob, PathfinderMob, SharedEntity};
 use crate::world::LevelAccessor;
 
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
@@ -130,8 +129,6 @@ impl Goal for EatBlockGoal {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -142,7 +139,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::SharedEntity;
     use crate::entity::entities::{PigEntity, SheepEntity};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use steel_utils::Downcast as _;
 
     #[test]

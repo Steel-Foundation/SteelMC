@@ -597,8 +597,6 @@ impl BlockBehavior for PistonBaseBlock {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -611,7 +609,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BlockHitResult, BlockLootContext, PlacementOrientation, init_behaviors};
     use crate::chunk::chunk_holder::ChunkHolder;
-    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestLevel, TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
     const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FACE;

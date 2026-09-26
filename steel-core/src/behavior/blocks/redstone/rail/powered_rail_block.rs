@@ -254,15 +254,13 @@ impl BlockBehavior for PoweredRailBlock {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn raw_flags() -> UpdateFlags {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE

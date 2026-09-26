@@ -328,14 +328,12 @@ impl BlockBehavior for TurtleEggBlock {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TestWorld;
-
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_world_clocks};
     use steel_utils::ChunkPos;
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     /// A day-time tick inside the pre-dawn window where eggs always advance, so
     /// random ticks are deterministic in tests.

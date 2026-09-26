@@ -1,6 +1,6 @@
-use crate::entity::SharedEntity;
-use glam::DVec3;
 use std::sync::Arc;
+
+use glam::DVec3;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_blocks;
@@ -8,8 +8,8 @@ use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BlockStateBehaviorExt as _;
-use crate::entity::PathfinderMob;
 use crate::entity::ai::path::PathComputationType;
+use crate::entity::{PathfinderMob, SharedEntity};
 use crate::physics::MoverType;
 use crate::world::LevelReader;
 
