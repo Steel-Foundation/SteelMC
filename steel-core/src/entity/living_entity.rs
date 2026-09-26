@@ -335,6 +335,11 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.getVoicePitch`.
     fn voice_pitch(&self) -> f32 {
+        self.default_voice_pitch()
+    }
+
+    /// Returns the base voice pitch before entity-specific adjustments.
+    fn default_voice_pitch(&self) -> f32 {
         if self.is_baby() {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
