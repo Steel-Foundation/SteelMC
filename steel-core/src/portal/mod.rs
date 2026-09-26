@@ -38,7 +38,8 @@ pub enum PortalKind {
 }
 
 impl PortalKind {
-    /// Returns vanilla `Portal.getPortalTransitionTime`.
+    /// Returns the number of ticks an entity must stand in this portal before
+    /// it triggers, accounting for whether the entity is invulnerable.
     #[must_use]
     pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
         let player_invulnerable = entity

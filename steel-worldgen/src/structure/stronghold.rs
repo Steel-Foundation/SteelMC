@@ -76,7 +76,7 @@ enum PT {
     Filler,
 }
 
-/// Vanilla `StrongholdPiece.SmallDoorType`.
+/// The style of door generated at a stronghold piece's entrance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StrongholdSmallDoorType {
     /// Three-block cave-air opening.
@@ -105,82 +105,82 @@ impl StrongholdSmallDoorType {
 pub enum StrongholdPieceData {
     /// Straight corridor with optional side exits.
     Straight {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
-        /// Vanilla `leftChild`.
+        /// Whether a corridor branches left from this piece.
         left_child: bool,
-        /// Vanilla `rightChild`.
+        /// Whether a corridor branches right from this piece.
         right_child: bool,
     },
     /// Prison hall.
     PrisonHall {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
     },
     /// Left turn.
     LeftTurn {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
     },
     /// Right turn.
     RightTurn {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
     },
     /// Room crossing with one of five vanilla decorations.
     RoomCrossing {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
-        /// Vanilla `type`.
+        /// Index selecting this room's decoration variant.
         crossing_type: i32,
     },
     /// Straight stair corridor.
     StraightStairsDown {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
     },
     /// Descending stairs, including the source/start piece.
     StairsDown {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
-        /// Vanilla `isSource`.
+        /// Whether this is the stronghold's starting piece.
         is_source: bool,
     },
     /// Five-way crossing with low/high side exits.
     FiveCrossing {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
-        /// Vanilla `leftLow`.
+        /// Whether the crossing has a low-level opening on the left.
         left_low: bool,
-        /// Vanilla `leftHigh`.
+        /// Whether the crossing has a high-level opening on the left.
         left_high: bool,
-        /// Vanilla `rightLow`.
+        /// Whether the crossing has a low-level opening on the right.
         right_low: bool,
-        /// Vanilla `rightHigh`.
+        /// Whether the crossing has a high-level opening on the right.
         right_high: bool,
     },
     /// Corridor containing a loot chest.
     ChestCorridor {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
-        /// Vanilla `hasPlacedChest`.
+        /// Whether the loot chest has already been placed.
         has_placed_chest: bool,
     },
     /// Library room.
     Library {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: StrongholdSmallDoorType,
-        /// Vanilla `isTall`.
+        /// Whether the library uses the two-story variant.
         is_tall: bool,
     },
     /// End portal room.
     PortalRoom {
-        /// Vanilla `hasPlacedSpawner`.
+        /// Whether the room's silverfish spawner has already been placed.
         has_placed_spawner: bool,
     },
     /// Collision filler corridor.
     FillerCorridor {
-        /// Vanilla `steps`.
+        /// Length of the filler corridor along its connecting axis.
         steps: i32,
     },
 }

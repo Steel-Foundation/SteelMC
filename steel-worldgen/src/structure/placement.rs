@@ -25,7 +25,6 @@ impl SpreadType {
     pub fn evaluate(self, rng: &mut LegacyRandom, limit: i32) -> i32 {
         match self {
             Self::Linear => rng.next_i32_bounded(limit),
-            // Vanilla: `(nextInt(limit) + nextInt(limit)) / 2`.
             #[expect(
                 clippy::manual_midpoint,
                 reason = "midpoint would change overflow vs vanilla"

@@ -16,13 +16,10 @@ use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::ThrownEggEntity;
 use crate::entity::{Entity, next_entity_id, spawn_throwable_item_projectile};
 
-/// Vanilla `EggItem.PROJECTILE_SHOOT_POWER`.
 const SHOOT_POWER: f32 = 1.5;
-/// Vanilla `EggItem.use` throw sound volume.
 const THROW_SOUND_VOLUME: f32 = 0.5;
 /// Vanilla `EggItem.use` throw pitch jitter scale: `0.4 / (random * 0.4 + 0.8)`.
 const THROW_PITCH_JITTER_SCALE: f32 = 0.4;
-/// Vanilla `EggItem.use` throw pitch jitter base.
 const THROW_PITCH_JITTER_BASE: f32 = 0.8;
 /// Vanilla `EggItem.use` throw uncertainty (`spawnProjectileFromRotation`).
 const THROW_UNCERTAINTY: f32 = 1.0;

@@ -23,7 +23,7 @@ use crate::worldgen::feature::no_nested_features;
 
 use super::BlockRef;
 
-/// Vanilla `MangrovePropaguleBlock` behavior.
+/// Mangrove propagule block behavior.
 #[block_behavior]
 pub struct MangrovePropaguleBlock {
     block: BlockRef,

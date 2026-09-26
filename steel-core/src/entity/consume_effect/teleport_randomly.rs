@@ -11,7 +11,7 @@ use crate::entity::LivingEntity;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
-/// Mirrors vanilla `TeleportRandomlyConsumeEffect.apply`.
+/// Teleport randomly consume effect behavior.
 pub struct TeleportRandomlyBehavior;
 
 impl ConsumeEffectBehavior for TeleportRandomlyBehavior {

@@ -49,11 +49,12 @@ const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
 const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
 const MOVEMENT_TRACE_LIMIT: usize = 100;
 const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
-/// Default vanilla `Entity.getTicksRequiredToFreeze` value.
+/// Default ticks of powder-snow exposure required before an entity starts
+/// taking freeze damage.
 pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
-/// Default vanilla `Entity.getMaxAirSupply` value.
+/// Default maximum air supply in ticks before an entity starts drowning.
 pub const DEFAULT_MAX_AIR_SUPPLY: i32 = 300;
-/// Vanilla scoreboard tag limit for a single entity.
+/// Maximum number of scoreboard tags a single entity may carry.
 pub const MAX_ENTITY_TAGS: usize = 1024;
 const FIRE_IGNITE_TICKS: i32 = 8 * 20;
 const LAVA_IGNITE_TICKS: i32 = 15 * 20;
@@ -520,7 +521,7 @@ impl EntityBase {
         self.state.lock().last_known_speed
     }
 
-    /// Returns vanilla `Entity.tickCount`.
+    /// Returns the number of ticks this entity has existed for.
     #[inline]
     pub fn tick_count(&self) -> i32 {
         self.state.lock().tick_count
@@ -695,7 +696,7 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
-    /// Returns the synchronized vanilla `Air` value.
+    /// Returns this entity's current air supply in ticks.
     #[inline]
     pub fn air_supply(&self) -> i32 {
         self.save_data.lock().air_supply
@@ -719,13 +720,13 @@ impl EntityBase {
         *self.portal_process.lock()
     }
 
-    /// Returns the shared vanilla `NoGravity` flag.
+    /// Returns whether this entity ignores gravity.
     #[inline]
     pub fn no_gravity(&self) -> bool {
         self.save_data.lock().no_gravity
     }
 
-    /// Returns the shared vanilla `Invulnerable` flag.
+    /// Returns whether this entity is invulnerable to non-bypassing damage.
     #[inline]
     pub fn invulnerable(&self) -> bool {
         self.save_data.lock().invulnerable
@@ -765,7 +766,8 @@ impl EntityBase {
         self.save_data.lock().custom_data.clone()
     }
 
-    /// Returns true when vanilla `ServerEntity` should consider a velocity sync.
+    /// Returns whether this entity's velocity has changed enough to need
+    /// syncing to clients.
     #[inline]
     pub fn needs_velocity_sync(&self) -> bool {
         self.state.lock().needs_velocity_sync
@@ -1123,7 +1125,7 @@ impl EntityBase {
         self.state.lock().old_position = old_position;
     }
 
-    /// Sets vanilla `yRotO`/`xRotO` to the current rotation.
+    /// Copies the current rotation into the old-rotation snapshot used for interpolation.
     pub fn set_old_rotation_to_current(&self) {
         let mut state = self.state.lock();
         state.old_rotation = state.rotation;
@@ -1135,7 +1137,7 @@ impl EntityBase {
         state.old_rotation.0 = state.rotation.0;
     }
 
-    /// Sets vanilla `yRotO`/`xRotO` explicitly.
+    /// Sets the old-rotation snapshot explicitly, normalizing the angles.
     pub fn set_old_rotation(&self, old_rotation: (f32, f32)) {
         self.state.lock().old_rotation = normalize_rotation(old_rotation);
     }
@@ -1205,7 +1207,7 @@ impl EntityBase {
         }
     }
 
-    /// Advances vanilla `Entity.tickCount` by one tick.
+    /// Advances this entity's tick counter by one.
     #[inline]
     pub fn advance_tick_count(&self) {
         let mut state = self.state.lock();
@@ -1261,7 +1263,7 @@ impl EntityBase {
         self.state.lock().no_physics = no_physics;
     }
 
-    /// Sets the synchronized vanilla `Air` value.
+    /// Sets this entity's air supply in ticks.
     pub fn set_air_supply(&self, air_supply: i32) {
         self.save_data.lock().air_supply = air_supply;
     }
@@ -1305,12 +1307,12 @@ impl EntityBase {
         *self.portal_process.lock() = None;
     }
 
-    /// Sets the shared vanilla `NoGravity` flag.
+    /// Sets whether this entity ignores gravity.
     pub fn set_no_gravity(&self, no_gravity: bool) {
         self.save_data.lock().no_gravity = no_gravity;
     }
 
-    /// Sets the shared vanilla `Invulnerable` flag.
+    /// Sets whether this entity is invulnerable to non-bypassing damage.
     pub fn set_invulnerable(&self, invulnerable: bool) {
         self.save_data.lock().invulnerable = invulnerable;
     }
@@ -1350,7 +1352,7 @@ impl EntityBase {
         self.save_data.lock().custom_data = custom_data;
     }
 
-    /// Marks velocity for vanilla `ServerEntity` synchronization.
+    /// Marks this entity's velocity as needing to be synced to clients.
     pub fn mark_velocity_sync(&self) {
         self.state.lock().needs_velocity_sync = true;
     }
@@ -1385,22 +1387,22 @@ impl EntityBase {
         self.set_fall_distance(0.0);
     }
 
-    /// Returns vanilla `remainingFireTicks`.
+    /// Returns the ticks remaining before this entity stops burning.
     pub fn remaining_fire_ticks(&self) -> i32 {
         self.state.lock().fire_freeze.remaining_fire_ticks()
     }
 
-    /// Sets vanilla `remainingFireTicks`.
+    /// Sets the ticks remaining before this entity stops burning.
     pub fn set_remaining_fire_ticks(&self, remaining_fire_ticks: i32) {
         self.state.lock().fire_freeze.remaining_fire_ticks = remaining_fire_ticks;
     }
 
-    /// Returns synchronized vanilla `TicksFrozen`.
+    /// Returns ticks this entity has spent freezing in powder snow.
     pub fn ticks_frozen(&self) -> i32 {
         self.state.lock().fire_freeze.ticks_frozen()
     }
 
-    /// Sets synchronized vanilla `TicksFrozen`.
+    /// Sets ticks this entity has spent freezing in powder snow.
     pub fn set_ticks_frozen(&self, ticks_frozen: i32) {
         self.state.lock().fire_freeze.ticks_frozen = ticks_frozen;
     }
@@ -1415,12 +1417,12 @@ impl EntityBase {
         self.state.lock().fire_freeze.was_in_powder_snow()
     }
 
-    /// Sets vanilla `hasVisualFire`.
+    /// Sets whether this entity currently renders as visually on fire.
     pub fn set_visual_fire(&self, has_visual_fire: bool) {
         self.state.lock().fire_freeze.has_visual_fire = has_visual_fire;
     }
 
-    /// Returns vanilla `hasVisualFire`.
+    /// Returns whether this entity currently renders as visually on fire.
     pub fn has_visual_fire(&self) -> bool {
         self.state.lock().fire_freeze.has_visual_fire()
     }

@@ -64,8 +64,6 @@ pub trait Container: ErasedType + Send + Sync {
     }
 
     /// Returns true if this container has a non-empty stack with the same item and components.
-    ///
-    /// Mirrors vanilla `Inventory.contains(ItemStack)`.
     fn contains_stack(&self, search_stack: &ItemStack) -> bool {
         (0..self.get_container_size()).any(|slot| {
             let item = self.get_item(slot);

@@ -622,7 +622,6 @@ pub enum NoteBlockInstrument {
 }
 
 impl NoteBlockInstrument {
-    /// Vanilla `NoteBlockInstrument.isTunable`.
     #[must_use]
     pub const fn is_tunable(&self) -> bool {
         !matches!(
@@ -637,13 +636,11 @@ impl NoteBlockInstrument {
         )
     }
 
-    /// Vanilla `NoteBlockInstrument.hasCustomSound`.
     #[must_use]
     pub const fn has_custom_sound(&self) -> bool {
         matches!(self, Self::CustomHead)
     }
 
-    /// Vanilla `NoteBlockInstrument.worksAboveNoteBlock`.
     #[must_use]
     pub const fn works_above_note_block(&self) -> bool {
         !self.is_tunable()

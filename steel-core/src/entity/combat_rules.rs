@@ -8,7 +8,6 @@ const ARMOR_PROTECTION_DIVIDER: f32 = 25.0;
 const BASE_ARMOR_TOUGHNESS: f32 = 2.0;
 const MIN_ARMOR_RATIO: f32 = 0.2;
 
-/// Returns vanilla `CombatRules.getDamageAfterAbsorb`.
 pub(super) fn get_damage_after_absorb(
     victim: &(impl LivingEntity + ?Sized),
     damage: f32,
@@ -44,7 +43,6 @@ pub(super) fn get_damage_after_absorb(
     damage * (1.0 - modified_armor_fraction)
 }
 
-/// Returns vanilla `CombatRules.getDamageAfterMagicAbsorb`.
 pub(super) fn get_damage_after_magic_absorb(damage: f32, total_magic_armor: f32) -> f32 {
     let real_armor = total_magic_armor.clamp(0.0, MAX_ARMOR);
     damage * (1.0 - real_armor / ARMOR_PROTECTION_DIVIDER)

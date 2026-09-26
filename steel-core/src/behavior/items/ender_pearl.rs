@@ -16,7 +16,6 @@ use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::EnderPearlEntity;
 use crate::entity::{Entity, next_entity_id, spawn_throwable_item_projectile};
 
-/// Vanilla `EnderpearlItem.PROJECTILE_SHOOT_POWER`.
 const SHOOT_POWER: f32 = 1.5;
 /// Vanilla `EnderpearlItem.use` throw uncertainty (`spawnProjectileFromRotation`).
 const THROW_UNCERTAINTY: f32 = 1.0;

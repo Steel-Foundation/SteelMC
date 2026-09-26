@@ -126,7 +126,7 @@ impl BlockBehavior for PointedDripstoneBlock {
     }
 }
 
-/// Vanilla `SulfurSpikeBlock` behavior
+/// Sulfur spike block behavior.
 #[block_behavior]
 pub struct SulfurSpikeBlock {
     block: BlockRef,

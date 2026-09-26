@@ -14,7 +14,8 @@ use crate::behavior::blocks::DaylightDetectorBlock;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
 
-/// Vanilla `DaylightDetectorBlockEntity`.
+/// Ticking storage for a daylight detector; recomputes its redstone signal
+/// from sky light every 20 ticks.
 pub struct DaylightDetectorBlockEntity {
     base: BlockEntityBase,
 }

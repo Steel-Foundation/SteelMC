@@ -241,7 +241,6 @@ impl ItemStack {
         self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage()
     }
 
-    /// Returns vanilla `ItemStack.nextDamageWillBreak()`.
     #[must_use]
     pub fn next_damage_will_break(&self) -> bool {
         self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage() - 1
@@ -530,7 +529,6 @@ impl ItemStack {
             .is_none_or(|resistance| !resistance.is_resistant_to(damage_type))
     }
 
-    /// Returns vanilla `ItemStack.isValidRepairItem`.
     #[must_use]
     pub fn is_valid_repair_item(&self, repair_item: &Self) -> bool {
         self.get(REPAIRABLE)
@@ -598,7 +596,6 @@ impl ItemStack {
         self.get(self.enchantment_component())
     }
 
-    /// Vanilla `EnchantmentHelper.getComponentType`.
     #[must_use]
     fn enchantment_component(&self) -> DataComponentType<ItemEnchantments> {
         if self.is(&vanilla_items::ENCHANTED_BOOK) {

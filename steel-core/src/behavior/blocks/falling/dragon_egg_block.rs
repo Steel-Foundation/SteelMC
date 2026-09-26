@@ -22,7 +22,7 @@ const DRAGON_EGG_MAX_X: i32 = 16;
 const DRAGON_EGG_MAX_Y: i32 = 8;
 const DRAGON_EGG_MAX_Z: i32 = 16;
 
-/// Vanilla `Dragon Egg` behavior.
+/// Dragon egg block behavior.
 #[block_behavior]
 pub struct DragonEggBlock {
     falling: FallingBlock,

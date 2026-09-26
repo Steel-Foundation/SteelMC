@@ -118,7 +118,6 @@ use uuid::Uuid;
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
-/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 /// Wall-clock interval between saves of command-owned persistent server data.
 /// Matches vanilla's intended five-minute autosave cadence.

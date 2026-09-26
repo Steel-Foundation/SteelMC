@@ -24,7 +24,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEven
 const WIRE_DISTANCE_MAX: i32 = 42;
 const RECHECK_PERIOD: i32 = 10;
 
-/// Vanilla `TripWireBlock` behavior.
+/// Tripwire block behavior.
 #[block_behavior]
 pub struct TripWireBlock {
     block: BlockRef,

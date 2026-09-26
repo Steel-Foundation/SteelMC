@@ -104,7 +104,6 @@ fn parse_tag_ref(tag_ref: &str) -> Option<Identifier> {
 }
 
 impl Enchantment {
-    /// Vanilla `Enchantment::matchingSlot`.
     #[must_use]
     pub fn matching_slot(&self, slot: EquipmentSlot) -> bool {
         self.slots.iter().any(|group| group.test(slot))

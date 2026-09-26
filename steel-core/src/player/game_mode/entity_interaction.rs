@@ -94,7 +94,8 @@ impl Player {
         (1.0 / attack_speed * 20.0) as f32
     }
 
-    /// Returns vanilla `Player.getAttackStrengthScale`.
+    /// Returns how much of the current weapon's attack cooldown has
+    /// recovered, in [0.0, 1.0], for scaling attack damage.
     #[must_use]
     pub fn attack_strength_scale(&self, partial_tick: f32) -> f32 {
         let attack_strength_delay = self.current_item_attack_strength_delay();

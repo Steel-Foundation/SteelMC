@@ -23,7 +23,7 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
 
-/// Vanilla `DaylightDetectorBlock` behavior.
+/// Daylight detector block behavior.
 #[block_behavior]
 pub struct DaylightDetectorBlock {
     block: BlockRef,

@@ -88,7 +88,7 @@ impl NoteBlock {
         );
     }
 
-    /// Vanilla `NoteBlock.getPitchFromNote`.
+    /// Calculates the pitch for the given note index.
     #[must_use]
     pub fn pitch_from_note(note: u8) -> f32 {
         2.0_f64.powf((f64::from(note) - 12.0) / 12.0) as f32

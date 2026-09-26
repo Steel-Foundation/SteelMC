@@ -715,18 +715,17 @@ impl Player {
         health <= 0.0
     }
 
-    /// Returns vanilla `ServerPlayer.seenCredits`.
+    /// Returns whether this player has already seen the End credits screen.
     #[must_use]
     pub fn has_seen_credits(&self) -> bool {
         *self.seen_credits.lock()
     }
 
-    /// Sets vanilla `ServerPlayer.seenCredits`.
+    /// Sets whether this player has seen the End credits screen.
     pub fn set_seen_credits(&self, seen_credits: bool) {
         *self.seen_credits.lock() = seen_credits;
     }
 
-    /// Returns vanilla `ServerPlayer.wonGame`.
     #[must_use]
     pub(crate) fn has_won_game(&self) -> bool {
         *self.won_game.lock()

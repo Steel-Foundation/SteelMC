@@ -61,13 +61,13 @@ impl AnimalBase {
         malus.set(PathType::Fire, -1.0);
     }
 
-    /// Returns vanilla `Animal.inLove`.
+    /// Ticks remaining in this animal's in-love state.
     #[must_use]
     pub fn in_love_time(&self) -> i32 {
         self.state.lock().in_love
     }
 
-    /// Sets vanilla `Animal.inLove`.
+    /// Sets the ticks remaining in this animal's in-love state.
     pub fn set_in_love_time(&self, in_love: i32) {
         self.state.lock().in_love = in_love;
     }
@@ -80,13 +80,13 @@ impl AnimalBase {
         }
     }
 
-    /// Returns vanilla `Animal.loveCause` as a persisted UUID.
+    /// Returns the UUID of the player who caused this animal to fall in love, if any.
     #[must_use]
     pub fn love_cause_uuid(&self) -> Option<Uuid> {
         self.state.lock().love_cause
     }
 
-    /// Sets vanilla `Animal.loveCause` as a persisted UUID.
+    /// Sets the UUID of the player who caused this animal to fall in love.
     pub fn set_love_cause_uuid(&self, love_cause: Option<Uuid>) {
         self.state.lock().love_cause = love_cause;
     }
@@ -103,32 +103,32 @@ pub trait Animal: AgeableMob {
     /// Returns shared animal runtime state.
     fn animal_base(&self) -> &AnimalBase;
 
-    /// Returns vanilla `Animal.inLove`.
+    /// Ticks remaining in this animal's in-love state.
     fn in_love_time(&self) -> i32 {
         self.animal_base().in_love_time()
     }
 
-    /// Sets vanilla `Animal.inLove`.
+    /// Sets the ticks remaining in this animal's in-love state.
     fn set_in_love_time(&self, in_love: i32) {
         self.animal_base().set_in_love_time(in_love);
     }
 
-    /// Returns vanilla `Animal.loveCause` as a persisted UUID.
+    /// Returns the UUID of the player who caused this animal to fall in love, if any.
     fn love_cause_uuid(&self) -> Option<Uuid> {
         self.animal_base().love_cause_uuid()
     }
 
-    /// Sets vanilla `Animal.loveCause` as a persisted UUID.
+    /// Sets the UUID of the player who caused this animal to fall in love.
     fn set_love_cause_uuid(&self, love_cause: Option<Uuid>) {
         self.animal_base().set_love_cause_uuid(love_cause);
     }
 
-    /// Returns vanilla `Animal.isInLove`.
+    /// Returns whether this animal is currently in love.
     fn is_in_love(&self) -> bool {
         self.in_love_time() > 0
     }
 
-    /// Returns vanilla `Animal.canFallInLove`.
+    /// Returns whether this animal can currently be fed to fall in love.
     fn can_fall_in_love(&self) -> bool {
         self.in_love_time() <= 0
     }
@@ -148,7 +148,8 @@ pub trait Animal: AgeableMob {
         self.set_in_love_time(0);
     }
 
-    /// Returns vanilla `Animal.canMate`.
+    /// Returns whether this animal and `partner` are eligible to breed:
+    /// distinct entities of the same type, both currently in love.
     fn can_mate(&self, partner: &dyn Animal) -> bool {
         self.uuid() != partner.uuid()
             && self.entity_type() == partner.entity_type()
@@ -161,17 +162,18 @@ pub trait Animal: AgeableMob {
         false
     }
 
-    /// Returns vanilla `Animal.getBaseExperienceReward`.
+    /// Returns the base breeding experience reward: 1 to 3, randomly.
     fn base_experience_reward_animal(&self) -> i32 {
         1 + rand::random_range(0..3)
     }
 
-    /// Returns vanilla `Animal.getAmbientSoundInterval`.
+    /// Returns the default ticks between ambient sounds for animals.
     fn ambient_sound_interval_animal(&self) -> i32 {
         120
     }
 
-    /// Returns vanilla `Animal.getWalkTargetValue`.
+    /// Returns how attractive `pos` is as an AI walk target: favors grass
+    /// blocks, otherwise falls back to light-level pathfinding cost.
     fn animal_walk_target_value(&self, pos: BlockPos) -> f32 {
         let Some(world) = self.level() else {
             return 0.0;
@@ -184,7 +186,7 @@ pub trait Animal: AgeableMob {
         }
     }
 
-    /// Returns vanilla `Animal.isBrightEnoughToSpawn`.
+    /// Returns whether light at `pos` is bright enough for an animal to naturally spawn.
     fn is_bright_enough_to_spawn(level: &dyn LevelReader, pos: BlockPos) -> bool
     where
         Self: Sized,
@@ -192,7 +194,9 @@ pub trait Animal: AgeableMob {
         level.raw_brightness(pos, 0) > 8
     }
 
-    /// Returns vanilla `Animal.checkAnimalSpawnRules`.
+    /// Returns whether an animal may naturally spawn at `pos`: the block
+    /// below must allow animal spawning, and light must be sufficient unless
+    /// the spawn reason ignores light requirements.
     fn check_animal_spawn_rules(
         level: &dyn LevelReader,
         spawn_reason: EntitySpawnReason,
@@ -213,7 +217,9 @@ pub trait Animal: AgeableMob {
     /// Plays this animal's vanilla eating sound.
     fn play_eating_sound(&self) {}
 
-    /// Handles vanilla `Animal.mobInteract`.
+    /// Feeds this animal when holding valid food: triggers love mode for
+    /// adults, or speeds up growth for babies; falls back to the
+    /// ageable-mob interaction otherwise.
     fn mob_interact_animal(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
         let item_stack = {
             let inventory = player.inventory.lock();
@@ -321,7 +327,7 @@ pub trait Animal: AgeableMob {
         // VANILLA CLIENT-LOCAL: `Animal.aiStep` creates the periodic heart particles.
     }
 
-    /// Runs vanilla `Animal.customServerAiStep`.
+    /// Clears this animal's in-love state whenever its age isn't exactly zero (adult).
     fn custom_server_ai_step_animal(&self) {
         if self.get_age() != 0 {
             self.reset_love();

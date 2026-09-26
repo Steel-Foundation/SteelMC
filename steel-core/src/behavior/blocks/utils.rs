@@ -17,7 +17,6 @@ pub fn is_excluded_for_connection(block: BlockRef) -> bool {
         || block == &MANGROVE_LEAVES
 }
 
-/// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
 pub(crate) const fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
     match direction {
         Direction::Up => &BlockStateProperties::UP,

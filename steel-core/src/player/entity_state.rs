@@ -68,7 +68,8 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
 }
 
 impl Player {
-    /// Returns vanilla `Avatar.POSES` dimensions for a player pose.
+    /// Returns the player hitbox dimensions for a given pose (sleeping,
+    /// swimming, sneaking, dying, or the default standing size).
     pub(super) const fn dimensions_for_pose(pose: EntityPose) -> EntityDimensions {
         match pose {
             EntityPose::Sleeping => PLAYER_SLEEPING_DIMENSIONS,

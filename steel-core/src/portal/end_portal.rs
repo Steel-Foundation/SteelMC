@@ -13,7 +13,6 @@ use crate::{
     world::World,
 };
 
-/// Vanilla `ServerLevel.END_SPAWN_POINT`.
 pub(crate) const END_SPAWN_POINT: BlockPos = BlockPos::new(100, 50, 0);
 
 const END_PLATFORM_PREWARM_CHUNK_RADIUS: u8 = 1;

@@ -927,7 +927,6 @@ impl BlockRegistry {
         self.static_shape_for_state(state_id, Block::get_collision_shape)
     }
 
-    /// Returns vanilla `BlockState.isSuffocating`.
     #[must_use]
     pub fn is_suffocating(&self, state_id: BlockStateId) -> bool {
         let Some((block, offset)) = self.block_and_state_offset(state_id) else {

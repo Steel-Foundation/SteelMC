@@ -1,8 +1,7 @@
 //! Canyon (ravine) carver.
 //!
-//! Mirrors vanilla's `CanyonWorldCarver`. Carves a single long, narrow tunnel
-//! per chunk with per-height width variation; runs only from an overworld
-//! biome's carver list (`minecraft:canyon`, 1 % probability).
+//! Carves a single long, narrow tunnel per chunk with per-height width
+//! variation; runs only from an overworld biome's carver list (`minecraft:canyon`, 1 % probability).
 
 use std::f32::consts::{PI, TAU};
 
@@ -20,7 +19,6 @@ use crate::worldgen::carver::{
 /// Vanilla `WorldCarver.getRange()` — 4 chunks each direction. Shared with
 /// the cave carver.
 const CARVER_RANGE: i32 = 4;
-/// Vanilla: `(getRange() * 2 - 1) * 16`.
 const MAX_TUNNEL_DISTANCE: i32 = (CARVER_RANGE * 2 - 1) * 16;
 
 /// Position + rotation state that evolves along the canyon's length.
@@ -106,7 +104,6 @@ where
         self.do_carve_canyon(&params, config, state, tunnel);
     }
 
-    /// Vanilla `CanyonWorldCarver.doCarve`.
     fn do_carve_canyon(
         &mut self,
         params: &CarveParams<'_>,

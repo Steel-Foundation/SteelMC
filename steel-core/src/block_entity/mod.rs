@@ -356,8 +356,6 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     }
 
     /// Returns whether this entity's registered type accepts `state`.
-    ///
-    /// Mirrors Vanilla `BlockEntity.isValidBlockState`.
     fn is_valid_block_state(&self, state: BlockStateId) -> bool {
         self.get_type().is_valid(state.get_block())
     }
@@ -395,8 +393,6 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     }
 
     /// Handles a block event delegated by the owning block behavior.
-    ///
-    /// Mirrors Vanilla `BlockEntity.triggerEvent`.
     fn trigger_event(&self, _param_a: i32, _param_b: i32) -> bool {
         false
     }
@@ -511,8 +507,6 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         None
     }
 
-    /// Vanilla `BlockEntity.applyComponentsFromItemStack`.
-    ///
     /// Called in `BlockItem.place` before `placedState.getBlock().setPlacedBy`
     #[expect(
         unused_variables,

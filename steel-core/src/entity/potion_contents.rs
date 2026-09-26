@@ -9,7 +9,6 @@ use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
-/// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
 pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,
@@ -42,8 +41,7 @@ pub(crate) fn apply_potion_contents(
     }
 }
 
-/// Mirrors vanilla `MobEffectInstance.withScaledDuration`: scales `duration`
-/// by `scale`, leaving the infinite-duration sentinel (`-1`) and a zero
+/// Scales `duration` by `scale`, leaving the infinite-duration sentinel (`-1`) and a zero
 /// duration untouched, and never rounding a finite result below 1 tick.
 fn scale_effect_duration(duration: i32, scale: f32) -> i32 {
     if duration == -1 || duration == 0 {

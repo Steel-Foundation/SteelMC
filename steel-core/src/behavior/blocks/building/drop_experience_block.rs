@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::{BlockBehavior, BlockPlaceContext, try_drop_experience};
 use crate::world::World;
 
-/// Vanilla `DropExperienceBlock` behavior.
+/// Experience-dropping block behavior.
 #[block_behavior]
 pub struct DropExperienceBlock {
     block: BlockRef,

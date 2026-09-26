@@ -11,7 +11,6 @@ use crate::random::{Random, RandomSource};
 
 /// Multi-octave simplex noise generator.
 ///
-/// Matches vanilla's `net.minecraft.world.level.levelgen.synth.PerlinSimplexNoise`.
 /// Created from a set of octave levels; each octave uses a separate `SimplexNoise`.
 ///
 /// Array layout matches vanilla: index 0 = highest frequency octave (largest

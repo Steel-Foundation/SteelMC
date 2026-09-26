@@ -47,7 +47,8 @@ impl LegacyRandom {
         self.next_gaussian = f64::NAN;
     }
 
-    /// Matches vanilla's `WorldgenRandom.setLargeFeatureSeed`.
+    /// Re-seeds this generator for a large feature at a chunk position,
+    /// mixing the chunk coordinates into the seed.
     pub fn set_large_feature_seed(&mut self, seed: i64, chunk_x: i32, chunk_z: i32) {
         self.set_seed(seed);
         let x_mul = self.next_i64();
@@ -57,7 +58,8 @@ impl LegacyRandom {
         );
     }
 
-    /// Matches vanilla's `WorldgenRandom.setLargeFeatureWithSalt`.
+    /// Re-seeds this generator for a large feature at a position, mixing the
+    /// coordinates and a per-feature salt into the seed.
     pub fn set_large_feature_with_salt(&mut self, seed: i64, x: i32, z: i32, salt: i32) {
         self.set_seed(
             i64::from(x)

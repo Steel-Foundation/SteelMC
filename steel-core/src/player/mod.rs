@@ -1371,13 +1371,11 @@ impl Player {
         self.tick_state.lock().tick_count()
     }
 
-    /// Returns vanilla `Player.takeXpDelay`.
     #[must_use]
     pub(crate) fn take_xp_delay(&self) -> i32 {
         self.tick_state.lock().take_xp_delay()
     }
 
-    /// Sets vanilla `Player.takeXpDelay`.
     pub(crate) fn set_take_xp_delay(&self, delay: i32) {
         self.tick_state.lock().set_take_xp_delay(delay);
     }

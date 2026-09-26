@@ -42,26 +42,29 @@ pub trait MobEffectBehavior: Send + Sync {
         None
     }
 
-    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`.
+    /// Determines whether to apply the effect tick this tick.
     fn should_apply_effect_tick_this_tick(&self, tick_count: i32, _amplifier: i32) -> bool {
         self.as_instantaneous().is_some() && tick_count >= 1
     }
 
-    /// Mirrors vanilla `MobEffect.applyEffectTick`. Returns whether the
-    /// effect remains active.
+    /// Applies one tick of the effect. Returns whether the effect remains
+    /// active.
     fn apply_effect_tick(&self, _world: &World, _user: &dyn LivingEntity, _amplifier: i32) -> bool {
         true
     }
 
-    /// Mirrors vanilla `MobEffect.onEffectStarted`.
+    /// Called when the effect starts.
     fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
 }
 
 /// The instantaneous-only half of a [`MobEffectBehavior`] that also extends
 /// vanilla `InstantaneousMobEffect`.
 pub trait InstantaneousMobEffect: MobEffectBehavior {
-    /// Mirrors vanilla `InstantaneousMobEffect`'s override of
-    /// `applyInstantaneousEffect`.
+    /// Applies the instantaneous effect immediately, e.g. from drinking a
+    /// potion or being hit by a splash/lingering one. `direct_entity` and
+    /// `causing_entity` attribute any resulting damage, and `scale` applies
+    /// splash/lingering falloff; the default ignores those extras and just
+    /// delegates to [`apply_effect_tick`](MobEffectBehavior::apply_effect_tick).
     fn apply_instantaneous(
         &self,
         world: &World,

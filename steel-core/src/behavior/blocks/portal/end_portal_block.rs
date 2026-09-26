@@ -18,7 +18,7 @@ use crate::portal::PortalKind;
 use crate::world::LevelReader;
 use crate::world::World;
 
-/// Vanilla `EndPortalBlock` replacement behavior.
+/// End portal block behavior.
 #[block_behavior]
 pub struct EndPortalBlock {
     block: BlockRef,
@@ -111,7 +111,7 @@ impl BlockBehavior for EndPortalBlock {
     }
 }
 
-/// Vanilla `EndGatewayBlock` replacement behavior.
+/// End gateway block behavior.
 #[block_behavior]
 pub struct EndGatewayBlock {
     block: BlockRef,

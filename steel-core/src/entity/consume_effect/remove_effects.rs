@@ -8,7 +8,7 @@ use super::ConsumeEffectBehavior;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
-/// Mirrors vanilla `RemoveStatusEffectsConsumeEffect.apply`.
+/// Remove effects consume effect behavior.
 pub struct RemoveEffectsBehavior;
 
 impl ConsumeEffectBehavior for RemoveEffectsBehavior {

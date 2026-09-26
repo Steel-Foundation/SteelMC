@@ -5,8 +5,6 @@ use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::packets::play::C_REMOVE_MOB_EFFECT;
 
 /// Sent when the client should remove an entity mob effect.
-///
-/// Vanilla: `ClientboundRemoveMobEffectPacket`.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_REMOVE_MOB_EFFECT)]
 pub struct CRemoveMobEffect {

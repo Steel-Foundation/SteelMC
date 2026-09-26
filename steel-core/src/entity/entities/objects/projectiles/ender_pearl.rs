@@ -168,7 +168,9 @@ impl EnderPearlEntity {
         !owner_alive && !owner_won_game && vanish_on_death_rule
     }
 
-    /// Vanilla `ThrownEnderpearl.isAllowedToTeleportOwner`.
+    /// Returns whether the owner may be teleported to: if still in the
+    /// pearl's world they must be alive and not sleeping, otherwise a
+    /// cross-dimension teleport requires portal permission.
     fn is_allowed_to_teleport_owner(world: &Arc<World>, player: &Player) -> bool {
         let player_world = player.get_world();
         if Arc::ptr_eq(&player_world, world) {
@@ -179,8 +181,6 @@ impl EnderPearlEntity {
     }
 
     /// Teleports the owning player and applies the pearl's effects.
-    ///
-    /// Mirrors the `ServerPlayer` branch of vanilla `ThrownEnderpearl.onHit`.
     fn teleport_owner(
         &self,
         world: &Arc<World>,

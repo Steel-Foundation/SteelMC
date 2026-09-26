@@ -473,15 +473,15 @@ pub struct PersistentEntity {
     pub rotation: [f32; 2],
     /// Accumulated vanilla fall distance.
     pub fall_distance: f64,
-    /// Vanilla `remainingFireTicks`.
+    /// Remaining fire duration, in ticks.
     pub remaining_fire_ticks: i32,
     /// Synchronized vanilla `TicksFrozen`.
     pub ticks_frozen: i32,
-    /// Vanilla `isInPowderSnow`.
+    /// Whether the entity is currently standing in powder snow.
     pub is_in_powder_snow: bool,
-    /// Vanilla `wasInPowderSnow`.
+    /// Whether the entity was standing in powder snow last tick.
     pub was_in_powder_snow: bool,
-    /// Vanilla `hasVisualFire`.
+    /// Whether the entity renders as on fire regardless of actual fire ticks.
     pub has_visual_fire: bool,
     /// Whether entity is on ground.
     pub on_ground: bool,
@@ -714,7 +714,7 @@ pub enum PersistentTemplatePlacementAdjustment {
     Shipwreck {
         /// Whether this is the beached shipwreck variant.
         is_beached: bool,
-        /// Vanilla `height_adjusted` flag.
+        /// Whether the piece's terrain-based height adjustment has run.
         height_adjusted: bool,
     },
     /// Igloo per-placement height adjustment.
@@ -767,82 +767,82 @@ pub enum PersistentStrongholdSmallDoorType {
 pub enum PersistentStrongholdPieceData {
     /// Straight corridor with optional side exits.
     Straight {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
-        /// Vanilla `leftChild`.
+        /// Whether a corridor branches left from this piece.
         left_child: bool,
-        /// Vanilla `rightChild`.
+        /// Whether a corridor branches right from this piece.
         right_child: bool,
     },
     /// Prison hall.
     PrisonHall {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
     },
     /// Left turn.
     LeftTurn {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
     },
     /// Right turn.
     RightTurn {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
     },
     /// Room crossing with one of five vanilla decorations.
     RoomCrossing {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
-        /// Vanilla `type`.
+        /// Index selecting this room's decoration variant.
         crossing_type: i32,
     },
     /// Straight stair corridor.
     StraightStairsDown {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
     },
     /// Descending stairs, including the source/start piece.
     StairsDown {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
-        /// Vanilla `isSource`.
+        /// Whether this is the stronghold's starting piece.
         is_source: bool,
     },
     /// Five-way crossing with low/high side exits.
     FiveCrossing {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
-        /// Vanilla `leftLow`.
+        /// Whether the crossing has a low-level opening on the left.
         left_low: bool,
-        /// Vanilla `leftHigh`.
+        /// Whether the crossing has a high-level opening on the left.
         left_high: bool,
-        /// Vanilla `rightLow`.
+        /// Whether the crossing has a low-level opening on the right.
         right_low: bool,
-        /// Vanilla `rightHigh`.
+        /// Whether the crossing has a high-level opening on the right.
         right_high: bool,
     },
     /// Corridor containing a loot chest.
     ChestCorridor {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
-        /// Vanilla `hasPlacedChest`.
+        /// Whether the loot chest has already been placed.
         has_placed_chest: bool,
     },
     /// Library room.
     Library {
-        /// Vanilla `entryDoor`.
+        /// Door type generated at this piece's entrance.
         entry_door: PersistentStrongholdSmallDoorType,
-        /// Vanilla `isTall`.
+        /// Whether the library uses the two-story variant.
         is_tall: bool,
     },
     /// End portal room.
     PortalRoom {
-        /// Vanilla `hasPlacedSpawner`.
+        /// Whether the room's silverfish spawner has already been placed.
         has_placed_spawner: bool,
     },
     /// Collision filler corridor.
     FillerCorridor {
-        /// Vanilla `steps`.
+        /// Length of the filler corridor along its connecting axis.
         steps: i32,
     },
 }
@@ -854,7 +854,7 @@ pub enum PersistentNetherFortressPieceData {
     BridgeCrossing,
     /// Dead-end bridge filler piece.
     BridgeEndFiller {
-        /// Vanilla `BridgeEndFiller.selfSeed`.
+        /// Seed for this piece's own RNG, used to vary the filler pattern.
         self_seed: i32,
     },
     /// Straight bridge segment.
@@ -869,21 +869,21 @@ pub enum PersistentNetherFortressPieceData {
     CastleSmallCorridorCrossing,
     /// Small castle corridor left turn.
     CastleSmallCorridorLeftTurn {
-        /// Vanilla `isNeedingChest`.
+        /// Whether this corridor still needs a loot chest placed.
         is_needing_chest: bool,
     },
     /// Small straight castle corridor.
     CastleSmallCorridor,
     /// Small castle corridor right turn.
     CastleSmallCorridorRightTurn {
-        /// Vanilla `isNeedingChest`.
+        /// Whether this corridor still needs a loot chest placed.
         is_needing_chest: bool,
     },
     /// Nether-wart stair room.
     CastleStalkRoom,
     /// Blaze-spawner throne room.
     MonsterThrone {
-        /// Vanilla `hasPlacedSpawner`.
+        /// Whether the throne room's blaze spawner has already been placed.
         has_placed_spawner: bool,
     },
     /// Bridge room crossing.
@@ -1039,7 +1039,7 @@ pub enum PersistentOceanMonumentChildPieceKind {
     SimpleRoom {
         /// Room snapshot.
         room: PersistentOceanMonumentRoomData,
-        /// Vanilla `mainDesign`.
+        /// Index selecting this room's structural design variant.
         main_design: i32,
     },
     /// `OceanMonumentSimpleTopRoom`.
@@ -1049,7 +1049,7 @@ pub enum PersistentOceanMonumentChildPieceKind {
     },
     /// `OceanMonumentWingRoom`.
     WingRoom {
-        /// Vanilla `mainDesign`.
+        /// Index selecting this room's structural design variant.
         main_design: i32,
     },
     /// `OceanMonumentPenthouse`.

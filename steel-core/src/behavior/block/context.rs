@@ -253,7 +253,8 @@ impl BlockCollisionContext {
         Self::with_position(f64::MIN, false)
     }
 
-    /// Collision context for vanilla `CollisionContext.positionContext(y)`.
+    /// Non-placement collision context anchored at a fixed Y position, with
+    /// no descent or fall distance.
     #[must_use]
     pub const fn position_context(y: f64) -> Self {
         Self {
@@ -317,7 +318,7 @@ impl BlockCollisionContext {
         self.placement
     }
 
-    /// Vanilla `EntityCollisionContext.isAbove`.
+    /// Returns whether the entity is above the given shape at the position.
     #[must_use]
     pub fn is_above(self, shape: VoxelShape, pos: BlockPos, default_value: bool) -> bool {
         let Some(entity_bottom) = self.entity_bottom else {

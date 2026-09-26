@@ -27,8 +27,6 @@ impl BaseCoralWallFanBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
-    /// Vanilla `BaseCoralWallFanBlock.canSurvive`.
-    ///
     /// The block behind the wall fan (`pos.relative(facing.opposite())`) must be
     /// face-sturdy on the face pointing toward us (i.e. `facing`).
     pub(super) fn can_survive(world: &dyn LevelReader, pos: BlockPos, facing: Direction) -> bool {

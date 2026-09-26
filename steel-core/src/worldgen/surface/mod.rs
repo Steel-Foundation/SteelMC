@@ -335,7 +335,6 @@ impl SurfaceSystem {
 
     /// Check if an iceberg at this position should melt slightly.
     ///
-    /// Matches vanilla's `Biome.shouldMeltFrozenOceanIcebergSlightly()`.
     /// Temperature is evaluated at sea level.
     fn should_melt_frozen_ocean_iceberg_slightly(
         &self,
@@ -350,8 +349,6 @@ impl SurfaceSystem {
     // ── Clay band generation ────────────────────────────────────────────────
 
     /// Generate the 192-element terracotta band pattern.
-    ///
-    /// Matches vanilla's `SurfaceSystem.generateBands()`.
     fn generate_bands(random: &mut RandomSource) -> [BlockStateId; CLAY_BAND_LENGTH] {
         let terracotta = vanilla_blocks::TERRACOTTA.default_state();
         let orange = vanilla_blocks::ORANGE_TERRACOTTA.default_state();
@@ -398,8 +395,6 @@ impl SurfaceSystem {
     }
 
     /// Place random bands of a single color.
-    ///
-    /// Matches vanilla's `SurfaceSystem.makeBands()`.
     fn make_bands(
         random: &mut RandomSource,
         bands: &mut [BlockStateId; CLAY_BAND_LENGTH],
@@ -423,7 +418,6 @@ impl SurfaceSystem {
 impl SurfaceSystem {
     /// Eroded badlands extension — adds terracotta pillars above the surface.
     ///
-    /// Matches vanilla's `SurfaceSystem.erodedBadlandsExtension()`.
     /// Returns the new `start_height` if blocks were added above the original surface.
     #[expect(
         clippy::too_many_arguments,

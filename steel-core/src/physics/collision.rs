@@ -625,8 +625,6 @@ pub fn has_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool {
 }
 
 /// Returns whether `new_aabb` collides with shapes that `old_aabb` did not.
-///
-/// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
 #[must_use]
 pub fn is_colliding_with_new_shapes(
     world: &impl CollisionWorld,

@@ -42,7 +42,8 @@ pub trait ItemBehavior: Send + Sync {
         std::any::type_name::<Self>()
     }
 
-    /// Returns vanilla `Item.getName(stack)`.
+    /// Returns this item's display name, from the stack's `item_name`
+    /// component if present.
     fn get_name<'a>(&self, stack: &'a ItemStack) -> Cow<'a, TextComponent> {
         stack
             .get(ITEM_NAME)
@@ -111,7 +112,8 @@ pub trait ItemBehavior: Send + Sync {
         }
     }
 
-    /// Returns vanilla `Item.getUseAnimation`.
+    /// Returns which animation plays while this item is actively being used,
+    /// based on its data components.
     fn get_use_animation(&self, stack: &ItemStack) -> ItemUseAnimation {
         if let Some(consumable) = stack.get(CONSUMABLE) {
             consumable.animation()
@@ -124,7 +126,8 @@ pub trait ItemBehavior: Send + Sync {
         }
     }
 
-    /// Returns vanilla `Item.getUseDuration`.
+    /// Returns how many ticks this item can be held in active use before it
+    /// finishes automatically.
     fn get_use_duration(&self, stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
         if let Some(consumable) = stack.get(CONSUMABLE) {
             consumable.consume_ticks()
@@ -178,7 +181,8 @@ pub trait ItemBehavior: Send + Sync {
         finish_consuming_stack(stack, world, user)
     }
 
-    /// Called by vanilla `ItemStack.interactLivingEntity`.
+    /// Called when this item is used to interact with a living entity
+    /// (e.g. right-clicking a mob while holding it).
     fn interact_living_entity(
         &self,
         _stack: &mut ItemStack,
@@ -189,7 +193,8 @@ pub trait ItemBehavior: Send + Sync {
         InteractionResult::Pass
     }
 
-    /// Returns vanilla `Item.getItemDamageSource`.
+    /// Returns a custom damage source this item should inflict when its
+    /// wielder attacks, overriding the caller's default attack damage type.
     fn get_item_damage_source(&self, _attacker: &dyn LivingEntity) -> Option<DamageSource> {
         None
     }
@@ -205,7 +210,8 @@ pub trait ItemBehavior: Send + Sync {
         0.0
     }
 
-    /// Called by vanilla `Item.hurtEnemy`.
+    /// Called immediately when this item's wielder deals a successful melee
+    /// hit, before post-attack enchantment effects and durability loss.
     fn hurt_enemy(
         &self,
         _stack: &mut ItemStack,
@@ -214,7 +220,8 @@ pub trait ItemBehavior: Send + Sync {
     ) {
     }
 
-    /// Called by vanilla `Item.postHurtEnemy`.
+    /// Called after `hurt_enemy` and post-attack enchantment effects, right
+    /// before the item takes durability damage from the hit.
     fn post_hurt_enemy(
         &self,
         _stack: &mut ItemStack,
@@ -250,7 +257,6 @@ fn should_emit_consume_particles_and_sounds(consumable: &Consumable, ticks_remai
     ticks_used > wait_ticks && ticks_remaining % 4 == 0
 }
 
-/// Mirrors vanilla `Consumable.emitParticlesAndSounds`
 fn emit_consume_particles_and_sounds(consumable: &Consumable, user: &dyn LivingEntity) {
     // TODO: spawn item-crumb particles when `has_consume_particles()` is set.
     let (volume, pitch) = if consumable.animation() == ItemUseAnimation::Drink {

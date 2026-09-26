@@ -53,7 +53,7 @@ const INFINITE_LIFETIME: i32 = -32768;
 /// Default health (damage resistance).
 const DEFAULT_HEALTH: i32 = 5;
 
-/// Gravity applied per tick (blocks/tick^2). Vanilla: `ItemEntity.getDefaultGravity()`
+/// Gravity applied per tick (blocks/tick^2).
 const DEFAULT_GRAVITY: f64 = 0.04;
 
 /// Air/vertical drag multiplier per tick.
@@ -155,8 +155,6 @@ impl ItemEntity {
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
-    ///
-    /// Mirrors vanilla's `ItemEntity(Level, double, double, double, ItemStack, double, double, double)`.
     #[must_use]
     pub fn with_item_and_velocity(
         entity_type: EntityTypeRef,
@@ -306,8 +304,6 @@ impl ItemEntity {
     ///
     /// Returns `true` if the item was fully picked up (and the entity should be removed),
     /// `false` if pickup failed or was only partial.
-    ///
-    /// Mirrors vanilla's `ItemEntity.playerTouch(Player)`.
     pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
         // Check pickup delay
         if self.has_pickup_delay() {
@@ -372,7 +368,6 @@ impl ItemEntity {
 
     /// Returns true if this item entity can be merged with others.
     ///
-    /// Mirrors vanilla's `ItemEntity.isMergeable()`.
     /// An item is mergeable if:
     /// - It's not removed
     /// - It doesn't have infinite pickup delay (32767)
@@ -392,7 +387,6 @@ impl ItemEntity {
 
     /// Checks if two item stacks can be merged together.
     ///
-    /// Mirrors vanilla's `ItemEntity.areMergeable()`.
     /// Returns true if the items are the same type with the same components,
     /// and their combined count wouldn't exceed max stack size.
     #[must_use]
@@ -407,7 +401,6 @@ impl ItemEntity {
 
     /// Attempts to merge with another item entity.
     ///
-    /// Mirrors vanilla's `ItemEntity.tryToMerge()`.
     /// The item with fewer items is merged into the one with more.
     fn try_to_merge(&self, other: &Self) {
         let this_stack = self.get_item();
@@ -431,8 +424,6 @@ impl ItemEntity {
     }
 
     /// Merges the `from_item`'s stack into the `to_item`'s stack.
-    ///
-    /// Mirrors vanilla's `ItemEntity.merge(ItemEntity, ItemStack, ItemEntity, ItemStack)`.
     fn merge_stacks(
         to_item: &Self,
         to_stack: &ItemStack,
@@ -476,7 +467,6 @@ impl ItemEntity {
 
     /// Attempts to merge this item with nearby item entities.
     ///
-    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbors()`.
     /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
     pub fn merge_with_neighbors(&self, world: &Arc<World>) {
@@ -638,7 +628,6 @@ impl Entity for ItemEntity {
         }
 
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)
-        // Vanilla: if (getDeltaMovement().subtract(oldMovement).lengthSqr() > 0.01) needsSync = true
         let new_movement = self.velocity();
         let diff = DVec3::new(
             new_movement.x - old_movement.x,

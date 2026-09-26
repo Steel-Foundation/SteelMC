@@ -286,13 +286,13 @@ impl ChickenEntity {
             .is_in_tag(item_stack.item(), &ItemTag::CHICKEN_FOOD)
     }
 
-    /// Returns vanilla `Chicken.isChickenJockey`.
+    /// Returns whether this chicken is currently ridden by a chicken jockey mob.
     #[must_use]
     pub fn is_chicken_jockey(&self) -> bool {
         self.chicken_state.lock().is_chicken_jockey
     }
 
-    /// Sets vanilla `Chicken.isChickenJockey`.
+    /// Sets whether this chicken is a chicken jockey mount.
     pub fn set_chicken_jockey(&self, is_chicken_jockey: bool) {
         self.chicken_state.lock().is_chicken_jockey = is_chicken_jockey;
     }
