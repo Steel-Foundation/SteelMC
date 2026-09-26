@@ -29,6 +29,7 @@ pub struct MoveToBlockGoal {
     vertical_search_start: i32,
     accepted_distance: f64,
     recalculate_path_interval: i32,
+    stay_limit: bool,
 }
 
 impl MoveToBlockGoal {
@@ -67,7 +68,15 @@ impl MoveToBlockGoal {
             vertical_search_start: 0,
             accepted_distance: DEFAULT_ACCEPTED_DISTANCE,
             recalculate_path_interval: DEFAULT_RECALCULATE_PATH_INTERVAL,
+            stay_limit: true,
         }
+    }
+
+    /// Keeps the goal running at its target for as long as the target stays valid.
+    #[must_use]
+    pub(crate) const fn without_stay_limit(mut self) -> Self {
+        self.stay_limit = false;
+        self
     }
 
     #[must_use]
@@ -172,7 +181,7 @@ impl Goal for MoveToBlockGoal {
             return false;
         };
 
-        self.try_ticks >= -self.max_stay_ticks
+        (!self.stay_limit || self.try_ticks >= -self.max_stay_ticks)
             && self.try_ticks <= GIVE_UP_TICKS
             && (self.target_predicate)(world.as_ref(), self.block_pos)
     }
