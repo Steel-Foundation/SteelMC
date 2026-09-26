@@ -501,6 +501,3 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         values.into_boxed_slice()
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -223,9 +223,9 @@ mod lerp_tests {
 
     #[test]
     fn test_lerp() {
-        assert!((lerp(0.0, 10.0, 20.0) - 10.0).abs() < 1e-10);
-        assert!((lerp(1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
-        assert!((lerp(0.5, 10.0, 20.0) - 15.0).abs() < 1e-10);
+        assert!((lerp(0.0_f64, 10.0, 20.0) - 10.0).abs() < 1e-10);
+        assert!((lerp(1.0_f64, 10.0, 20.0) - 20.0).abs() < 1e-10);
+        assert!((lerp(0.5_f64, 10.0, 20.0) - 15.0).abs() < 1e-10);
     }
 }
 /// Map a value from one range to another (unclamped).
@@ -308,9 +308,9 @@ mod smoothstep_tests {
     #[test]
     fn test_smoothstep() {
         // At boundaries
-        assert!((smoothstep(0.0) - 0.0).abs() < 1e-10);
-        assert!((smoothstep(1.0) - 1.0).abs() < 1e-10);
+        assert!((smoothstep(0.0_f64) - 0.0).abs() < 1e-10);
+        assert!((smoothstep(1.0_f64) - 1.0).abs() < 1e-10);
         // At midpoint
-        assert!((smoothstep(0.5) - 0.5).abs() < 1e-10);
+        assert!((smoothstep(0.5_f64) - 0.5).abs() < 1e-10);
     }
 }

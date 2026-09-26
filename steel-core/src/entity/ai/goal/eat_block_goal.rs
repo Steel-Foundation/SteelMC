@@ -26,8 +26,8 @@ const ADULT_EAT_CHECK_TICKS: i32 = 1000;
 
 /// A goal where a mob stands still and chews before eating an edible block.
 ///
-/// Ports vanilla's `EatBlockGoal`. The eat animation only turns grass into dirt
-/// when the `mobGriefing` game rule is enabled, matching vanilla.
+/// The eat animation only turns grass into dirt when the `mobGriefing` game
+/// rule is enabled.
 pub struct EatBlockGoal {
     eat_animation_tick: i32,
 }
