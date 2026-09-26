@@ -18,7 +18,8 @@ use steel_registry::{
 use steel_utils::{DowncastType, DowncastTypeKey, entity_events, locks::SyncMutex};
 
 use crate::entity::{
-    EntityMovementEmission, EntitySpawnReason, SpawnGroupData, ai::goal::SquidFleeGoal,
+    EntityMovementEmission, EntitySpawnReason, SpawnGroupData,
+    ai::{goal::SquidFleeGoal, path::PathType},
     damage::DamageSource,
 };
 use crate::{
@@ -271,6 +272,11 @@ impl SquidEntity {
             .set_base_value(vanilla_attributes::MAX_HEALTH, 10.0);
 
         let mob_base = MobBase::new();
+        mob_base
+            .pathfinding_malus()
+            .lock()
+            .set(PathType::Water, 0.0);
+
         let ageable_base = AgeableMobBase::new();
 
         let mut entity_data = SquidEntityData::new();
