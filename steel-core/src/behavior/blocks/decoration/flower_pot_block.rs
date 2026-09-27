@@ -12,7 +12,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_custom_stats;
-use steel_registry::{REGISTRY, RegistryExt as _, vanilla_blocks, vanilla_game_events};
+use steel_registry::{REGISTRY, vanilla_blocks, vanilla_game_events};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Direction, Identifier};
@@ -25,12 +25,11 @@ use crate::world::{ScheduledTickAccess, World};
 
 /// Maps a potted content block to the flower pot block that holds it.
 ///
-/// Populated by [`FlowerPotBlock::new`], mirroring vanilla
-/// `FlowerPotBlock.POTTED_BY_CONTENT`.
+/// Populated by [`FlowerPotBlock::new`]
 static POTTED_BY_CONTENT: LazyLock<SyncMutex<FxHashMap<Identifier, BlockRef>>> =
     LazyLock::new(|| SyncMutex::new(FxHashMap::default()));
 
-/// Vanilla `FlowerPotBlock`.
+/// Implements the `FlowerPotBlock` behaviour.
 #[block_behavior]
 pub struct FlowerPotBlock {
     block: BlockRef,
@@ -49,13 +48,12 @@ impl FlowerPotBlock {
         Self { block, potted }
     }
 
-    /// Vanilla `FlowerPotBlock.isEmpty`.
+    /// Checks if the pot is empty.
     fn is_empty(&self) -> bool {
         self.potted == &vanilla_blocks::AIR
     }
 
-    /// Returns the potted block holding `content`, mirroring vanilla
-    /// `FlowerPotBlock.POTTED_BY_CONTENT`.
+    /// Returns the potted block holding `content`
     fn potted_block_for(content: BlockRef) -> Option<BlockRef> {
         POTTED_BY_CONTENT.lock().get(&content.key).copied()
     }
@@ -78,8 +76,7 @@ impl BlockBehavior for FlowerPotBlock {
     ) -> InteractionResult {
         // Block items share their block's identifier, so the held item's key
         // resolves the content block without a reverse item lookup.
-        //TODO: item --> block mapper should be fixed
-        let content = inv.with_item(|item| REGISTRY.blocks.by_key(&item.item().key));
+        let content = inv.with_item(|item| item.item().block);
         let Some(new_contents) = content.and_then(Self::potted_block_for) else {
             return InteractionResult::TryEmptyHandInteraction;
         };
