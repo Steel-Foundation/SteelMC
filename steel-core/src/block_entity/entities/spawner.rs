@@ -155,8 +155,8 @@ impl EquipmentTable {
         let loot_table = nbt.string("loot_table")?.to_str().parse().ok()?;
         let mut slot_drop_chances = Vec::new();
         match nbt.get("slot_drop_chances") {
-            Some(tag) if tag.float().is_some() => {
-                let chance = tag.float()?;
+            Some(tag) if tag.codec_f32().is_some() => {
+                let chance = tag.codec_f32()?;
                 for slot in EquipmentSlot::ALL {
                     slot_drop_chances.push((slot, chance));
                 }
@@ -166,7 +166,7 @@ impl EquipmentTable {
                 for (name, value) in chances.iter() {
                     let name = name.to_str();
                     let slot = EquipmentSlot::by_name(name.as_ref())?;
-                    slot_drop_chances.push((slot, value.float()?));
+                    slot_drop_chances.push((slot, value.codec_f32()?));
                 }
             }
             None => {}
