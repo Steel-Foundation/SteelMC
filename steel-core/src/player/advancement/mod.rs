@@ -1,7 +1,8 @@
 pub mod progress;
 pub mod visibility_evaluator;
 
-use std::sync::Arc;
+use crate::entity::living_entity::living_entity_loot_ref;
+use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -9,11 +10,11 @@ use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::c_update_advancement::CUpdateAdvancements;
 use steel_registry::REGISTRY;
 use steel_registry::advancement::registry::{AdvancementNode, AdvancementNodeRef, AdvancementRef};
-use steel_registry::advancement::{Advancement, AdvancementProgressData, AdvancementRewards, Criteria};
+use steel_registry::advancement::{
+    Advancement, AdvancementProgressData, AdvancementRewards, Criteria,
+};
 use steel_registry::loot_table::LootContext;
 use steel_utils::Identifier;
-use crate::entity::{Entity, LivingEntity};
-use crate::entity::living_entity::living_entity_loot_ref;
 
 /// Manages a player's collection of advancements.
 ///
@@ -64,11 +65,14 @@ pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
 }
 
 impl PlayerAdvancement {
+    /// Award a criterion to a player. If this completes the advancement,
+    /// grant the advancement along with its rewards and display the corresponding chat message.
     pub(crate) fn award(
         &mut self,
+        player: &Player,
         advancement: AdvancementRef,
         criterion: &str,
-    ) {
+    ) -> bool {
         let mut result = false;
         let progress = self.progress.get_mut_or_start_progress(advancement);
         let was_done = progress.is_done();
@@ -77,22 +81,26 @@ impl PlayerAdvancement {
             self.progress_changed.add(advancement);
             result = true;
             if !was_done && progress.isDone() {
-                advancement.rewards.grant(self.player);
-                advancement.value().display().ifPresent(display -> {
-                    if display.shouldAnnounceChat() && this.player.level().getGameRules().get(GameRules.SHOW_ADVANCEMENT_MESSAGES) {
-                        this.playerList.broadcastSystemMessage(display.getType().createAnnouncement(holder, this.player), false);
+                grant_reward(player, advancement.rewards);
+                if let Some(display) = advancement.display {
+                    // TODO GameRule check
+                    if display.announce_chat && player.level().is_some() {
+                        player.server().broadcast_system_chat(
+                            display.frame_type.create_announcement(advancement, player),
+                            None,
+                        );
                     }
-                });
+                }
             }
         }
 
-        if !was_done && progress.isDone() {
-            this.markForVisibilityUpdate(holder);
+        if !was_done && progress.is_done() {
+            self.mark_for_visibility_update(advancement);
         }
-
-        result;
+        result
     }
 
+    /// revoke the specified criterion for a player.
     pub fn revoke(&mut self, advancement: AdvancementRef, criterion: &str) {
         let mut result = false;
         let progress = self.progress.get_mut_or_start_progress(advancement);
@@ -110,6 +118,7 @@ impl PlayerAdvancement {
         result
     }
 
+    /// mark the advancement to be sent to the client next tick
     fn mark_for_visibility_update(&mut self, advancement: AdvancementRef) {
         let node = REGISTRY.advancements.get_by_key(&advancement.key);
         if let Some(node) = node {
@@ -117,6 +126,7 @@ impl PlayerAdvancement {
         }
     }
 
+    /// modify the added and the removed from the available tree status
     fn update_tree_visibility(
         &mut self,
         root: &AdvancementNode,
@@ -148,6 +158,7 @@ impl PlayerAdvancement {
         );
     }
 
+    /// send the advancement update packet to a player with the updated tree
     pub fn flush_dirty(&mut self, player: &Player, show_advancement: bool) {
         if self.is_first_packet || !self.roots_to_update.is_empty() {
             let mut progress: FxHashMap<Identifier, &AdvancementProgress> = FxHashMap::default();

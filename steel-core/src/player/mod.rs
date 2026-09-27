@@ -728,11 +728,11 @@ impl Player {
 
             // TODO: Implement remaining player ticking logic here
             // - Managing game mode specific logic
-            // - Updating advancements
             // - Handling falling
 
             self.update_player_attributes();
             self.living_base.refresh_speed_from_attributes();
+            self.advancements.lock().flush_dirty(self, true);
             self.tick_regeneration();
 
             if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
