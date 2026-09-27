@@ -8,18 +8,6 @@
 
 use std::sync::Arc;
 
-use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
-};
-use steel_registry::damage_type::DamageTypeRef;
-use steel_registry::{
-    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
-    timeline::TimelineRef, world_clock::WorldClockRef,
-};
-use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
-use text_components::TextComponent;
-
 use super::{
     BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
@@ -32,7 +20,11 @@ use super::{
     },
     selector::EntitySelector,
 };
-use crate::command::execution::argument::DamageTypeValue;
+use crate::command::brigadier::{
+    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
+    ContextChain,
+};
+use crate::command::execution::argument::{AdvancementValue, DamageTypeValue};
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -41,6 +33,14 @@ use crate::{
     player::Player,
     scoreboard::ScoreHolder,
 };
+use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::{
+    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
+    timeline::TimelineRef, world_clock::WorldClockRef,
+};
+use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
+use text_components::TextComponent;
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
 pub(crate) struct SteelCommandRuntime;
@@ -356,6 +356,11 @@ where
 
     pub(crate) fn timeline(&self, name: &str) -> Result<TimelineRef, CommandSyntaxError> {
         self.typed_argument::<TimelineValue>(name)
+            .map(|value| value.0)
+    }
+
+    pub(crate) fn advancement(&self, name: &str) -> Result<AdvancementRef, CommandSyntaxError> {
+        self.typed_argument::<AdvancementValue>(name)
             .map(|value| value.0)
     }
 

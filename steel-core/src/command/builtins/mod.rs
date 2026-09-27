@@ -1,5 +1,6 @@
 //! Steel-owned built-in command declarations.
 
+pub mod advancement;
 mod clear;
 mod damage;
 mod difficulty;

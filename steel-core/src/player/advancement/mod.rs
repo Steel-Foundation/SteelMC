@@ -101,7 +101,7 @@ impl PlayerAdvancement {
     }
 
     /// revoke the specified criterion for a player.
-    pub fn revoke(&mut self, advancement: AdvancementRef, criterion: &str) {
+    pub fn revoke(&mut self, advancement: AdvancementRef, criterion: &str) -> bool {
         let mut result = false;
         let progress = self.progress.get_mut_or_start_progress(advancement);
         let was_done = progress.is_done();
@@ -120,7 +120,7 @@ impl PlayerAdvancement {
 
     /// mark the advancement to be sent to the client next tick
     fn mark_for_visibility_update(&mut self, advancement: AdvancementRef) {
-        let node = REGISTRY.advancements.get_by_key(&advancement.key);
+        let node = REGISTRY.advancements.by_key(&advancement.key);
         if let Some(node) = node {
             self.roots_to_update.insert(node.root());
         }

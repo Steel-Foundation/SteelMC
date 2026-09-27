@@ -284,7 +284,7 @@ pub struct Player {
     last_action_time: SyncMutex<Instant>,
 
     /// Manage the advancements of the player
-    advancements: SyncMutex<PlayerAdvancement>,
+    pub advancements: SyncMutex<PlayerAdvancement>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.

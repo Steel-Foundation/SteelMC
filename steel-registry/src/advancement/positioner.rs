@@ -345,7 +345,7 @@ mod tests {
     use steel_utils::Identifier;
 
     fn get_location(registry: &AdvancementRegistry, key: &Identifier) -> (f32, f32) {
-        let loc = registry.get_by_key(key).map(|val| {
+        let loc = registry.by_key(key).map(|val| {
             *val.value
                 .display
                 .as_ref()
