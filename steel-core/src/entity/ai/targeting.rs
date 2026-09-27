@@ -110,8 +110,8 @@ impl TargetingConditions {
         }
 
         if self.check_line_of_sight
-            && let Some(pathfinder) = targeter.as_pathfinder_mob()
-            && !pathfinder.has_line_of_sight_cached(target)
+            && let Some(mob) = targeter.as_mob()
+            && !mob.has_line_of_sight_cached(target)
         {
             return false;
         }
@@ -123,5 +123,122 @@ impl TargetingConditions {
 impl Default for TargetingConditions {
     fn default() -> Self {
         Self::for_combat()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Weak};
+
+    use glam::DVec3;
+    use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
+    use steel_utils::locks::SyncMutex;
+    use steel_utils::types::UpdateFlags;
+    use steel_utils::{BlockPos, ChunkPos};
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::world::World;
+
+    struct HoveringTestMob {
+        base: EntityBase,
+        living_base: LivingEntityBase,
+        mob_base: MobBase,
+        mob_flags: SyncMutex<i8>,
+        health: SyncMutex<f32>,
+    }
+
+    impl HoveringTestMob {
+        fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
+            init_vanilla_registry();
+            Self {
+                base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, world),
+                living_base: LivingEntityBase::new(&vanilla_entities::PIG),
+                mob_base: MobBase::new(),
+                mob_flags: SyncMutex::new(0),
+                health: SyncMutex::new(10.0),
+            }
+        }
+    }
+
+    crate::entity::impl_test_downcast_type!(HoveringTestMob);
+
+    impl Entity for HoveringTestMob {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::PIG
+        }
+    }
+
+    impl LivingEntity for HoveringTestMob {
+        fn living_base(&self) -> &LivingEntityBase {
+            &self.living_base
+        }
+
+        fn get_health(&self) -> f32 {
+            *self.health.lock()
+        }
+
+        fn set_health(&self, health: f32) {
+            *self.health.lock() = health;
+        }
+    }
+
+    impl Mob for HoveringTestMob {
+        fn mob_base(&self) -> &MobBase {
+            &self.mob_base
+        }
+
+        fn mob_flags(&self) -> i8 {
+            *self.mob_flags.lock()
+        }
+
+        fn set_mob_flags(&self, flags: i8) {
+            *self.mob_flags.lock() = flags;
+        }
+    }
+
+    #[test]
+    fn sight_check_applies_to_a_mob_that_does_not_pathfind() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("targeting_sight_check_scope");
+        let wall = BlockPos::new(2, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wall));
+        let targeter = HoveringTestMob::new(1, DVec3::new(0.5, 64.0, 0.5), Arc::downgrade(&world));
+        let target = HoveringTestMob::new(2, DVec3::new(4.5, 64.0, 0.5), Arc::downgrade(&world));
+
+        assert!(
+            targeter.as_pathfinder_mob().is_none(),
+            "the targeter must not pathfind or this test proves nothing"
+        );
+
+        assert!(
+            TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
+            "a mob with a clear view should pick its target"
+        );
+
+        assert!(world.set_block(
+            wall,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        targeter.mob_base().sensing().lock().tick();
+        assert!(
+            !TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
+            "a mob that cannot see its target should not pick it, whether or not it pathfinds"
+        );
+        assert!(
+            TargetingConditions::for_non_combat()
+                .ignore_line_of_sight()
+                .test(world.as_ref(), Some(&targeter), &target),
+            "the same target should be picked once sight is not required"
+        );
     }
 }

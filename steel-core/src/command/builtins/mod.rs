@@ -26,6 +26,7 @@ mod setidletimeout;
 mod setworldspawn;
 mod spawnpoint;
 mod stop;
+mod stopsound;
 mod summon;
 mod teleport;
 mod tellraw;
@@ -90,6 +91,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(setidletimeout::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
+    builder.register(stopsound::registration())?;
     builder.register(summon::registration())?;
     builder.register(teleport::registration())?;
     builder.register(tellraw::registration())?;
@@ -169,6 +171,7 @@ mod tests {
                 "setidletimeout",
                 "setworldspawn",
                 "stop",
+                "stopsound",
                 "summon",
                 "teleport",
                 "tp",
