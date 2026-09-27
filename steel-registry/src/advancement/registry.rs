@@ -162,13 +162,13 @@ impl AdvancementRegistry {
 
     #[must_use]
     #[inline]
-    pub fn get_value_by_key(&self, key: &Identifier) -> Option<AdvancementRef> {
+    pub fn value_by_key(&self, key: &Identifier) -> Option<AdvancementRef> {
         self.by_key.get(key).map(|idx| self.adv_nodes[*idx].value)
     }
 
     #[must_use]
     #[inline]
-    pub fn get_by_key(&self, key: &Identifier) -> Option<&AdvancementNode> {
+    pub fn by_key(&self, key: &Identifier) -> Option<&AdvancementNode> {
         self.by_key
             .get(key)
             .and_then(|idx| self.adv_nodes.get(*idx))
