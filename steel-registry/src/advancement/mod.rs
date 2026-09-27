@@ -12,6 +12,9 @@ use std::io::Write;
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::{PrefixedWrite, WriteTo};
+use steel_utils::translations::CHAT_SQUARE_BRACKETS;
+use text_components::interactivity::HoverEvent;
+use text_components::{Modifier, TextComponent};
 
 pub mod criterion;
 pub mod display;
@@ -34,6 +37,31 @@ impl Advancement {
     #[must_use]
     pub const fn is_root(&self) -> bool {
         self.parent.is_none()
+    }
+
+    pub fn name(&self) -> TextComponent {
+        self.decorate_name()
+            .unwrap_or(TextComponent::plain(self.key.to_string()))
+    }
+
+    pub fn decorate_name(&self) -> Option<TextComponent> {
+        match self.display {
+            Some(display) => {
+                let color = display.frame_type.color();
+                let over = display
+                    .title
+                    .clone()
+                    .color(color.clone())
+                    .add_child("\n")
+                    .add_child(display.description.clone());
+                let text = display
+                    .title
+                    .clone()
+                    .hover_event(HoverEvent::show_text(over));
+                Some(TextComponent::translated(CHAT_SQUARE_BRACKETS.message([text])).color(color))
+            }
+            None => None,
+        }
     }
 }
 
