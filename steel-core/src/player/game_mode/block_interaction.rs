@@ -182,7 +182,9 @@ impl Player {
             return;
         }
 
-        let state = self.get_world().get_block_state(packet.pos);
+        let world = self.get_world();
+
+        let state = world.get_block_state(packet.pos);
         if state.is_air() {
             return;
         }
@@ -191,9 +193,13 @@ impl Player {
         let block_behaviors = &*BLOCK_BEHAVIORS;
         let behavior = block_behaviors.get_behavior(block);
 
+        let block_entity = world.get_block_entity(packet.pos);
+
         let include_data = self.has_infinite_materials() && packet.include_data;
 
-        let Some(item_stack) = behavior.get_clone_item_stack(block, state, include_data) else {
+        let Some(item_stack) =
+            behavior.get_clone_item_stack(block, state, block_entity, include_data)
+        else {
             return;
         };
 

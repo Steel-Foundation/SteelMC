@@ -7,6 +7,7 @@ use crate::behavior::blocks::vegetation::growing_plant_head_block::{
     GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
 };
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::SharedBlockEntity;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use rand::Rng;
@@ -81,6 +82,7 @@ impl BlockBehavior for KelpBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::KELP))

@@ -12,6 +12,8 @@ mod sign_block;
 mod torch_block;
 mod weathering_lantern_block;
 
+mod skull;
+
 pub use banner_block::{BannerBlock, WallBannerBlock};
 pub use cake_block::CakeBlock;
 pub use candle_block::CandleBlock;
@@ -26,3 +28,8 @@ pub use sign_block::{
 };
 pub use torch_block::{TorchBlock, WallTorchBlock};
 pub use weathering_lantern_block::WeatheringLanternBlock;
+
+pub use skull::{
+    PiglinWallSkullBlock, PlayerHeadBlock, PlayerWallHeadBlock, SkullBlock, WallSkullBlock,
+    WitherSkullBlock, WitherWallSkullBlock,
+};

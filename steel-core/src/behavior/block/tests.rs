@@ -26,7 +26,7 @@ fn clone_item_stack_uses_registered_block_item_association() {
     ] {
         let clone_item = BLOCK_BEHAVIORS
             .get_behavior(block)
-            .get_clone_item_stack(block, block.default_state(), false)
+            .get_clone_item_stack(block, block.default_state(), None, false)
             .map(|stack| stack.item());
 
         assert_eq!(clone_item, Some(expected_item));
@@ -36,6 +36,7 @@ fn clone_item_stack_uses_registered_block_item_association() {
     let clone_item = BLOCK_BEHAVIORS.get_behavior(block).get_clone_item_stack(
         block,
         block.default_state(),
+        None,
         false,
     );
 

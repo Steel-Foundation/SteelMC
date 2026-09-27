@@ -13,6 +13,7 @@ use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::block_entity::SharedBlockEntity;
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -118,6 +119,7 @@ impl BlockBehavior for PistonHeadBlock {
         &self,
         _block: BlockRef,
         state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(match state.get_value(PISTON_TYPE) {
