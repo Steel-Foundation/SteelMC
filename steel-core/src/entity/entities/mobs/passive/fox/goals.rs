@@ -816,7 +816,8 @@ impl Goal for DefendTrustedTargetGoal {
         let Some(trusted) = fox
             .trusted_ids()
             .into_iter()
-            .find_map(|uuid| world.get_entity_by_uuid(&uuid))
+            .filter_map(|uuid| world.get_entity_by_uuid(&uuid))
+            .find(|entity| entity.as_living_entity().is_some())
         else {
             return false;
         };
