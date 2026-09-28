@@ -74,8 +74,6 @@ impl BlockBehavior for FlowerPotBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        // Block items share their block's identifier, so the held item's key
-        // resolves the content block without a reverse item lookup.
         let content = inv.with_item(|item| item.item().block);
         let Some(new_contents) = content.and_then(Self::potted_block_for) else {
             return InteractionResult::TryEmptyHandInteraction;
