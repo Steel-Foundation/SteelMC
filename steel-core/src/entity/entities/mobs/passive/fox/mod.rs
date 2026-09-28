@@ -2,6 +2,7 @@
 
 mod goals;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -121,7 +122,7 @@ pub struct FoxEntity {
     entity_data: SyncMutex<FoxEntityData>,
     ticks_since_eaten: SyncMutex<i32>,
     crouch_amount: SyncMutex<f32>,
-    target_goals_set: SyncMutex<bool>,
+    target_goals_set: AtomicBool,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `FoxEntity`.
@@ -195,7 +196,7 @@ impl FoxEntity {
             entity_data: SyncMutex::new(entity_data),
             ticks_since_eaten: SyncMutex::new(0),
             crouch_amount: SyncMutex::new(0.0),
-            target_goals_set: SyncMutex::new(false),
+            target_goals_set: AtomicBool::new(false),
         };
         fox.set_can_pick_up_loot(true);
         fox
@@ -372,12 +373,8 @@ impl FoxEntity {
 
     /// Registers the prey targeting once, ranked by what this coat hunts first.
     fn set_target_goals(&self) {
-        {
-            let mut set = self.target_goals_set.lock();
-            if *set {
-                return;
-            }
-            *set = true;
+        if self.target_goals_set.swap(true, Ordering::Relaxed) {
+            return;
         }
         let land_prey_priority = match self.variant() {
             FoxVariant::Red => FOX_FAVORITE_PREY_PRIORITY,
