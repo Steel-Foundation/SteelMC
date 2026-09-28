@@ -60,11 +60,15 @@ const DEFEND_GROWL_CHANCE: f32 = 0.05;
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
 const FOX_BABY_HEIGHT: f32 = 0.7 * BABY_SCALE;
-const FOX_BABY_EYE_HEIGHT: f32 = 0.343_75;
-const FOX_BABY_PASSENGER_Y: f64 = 0.375;
+const FOX_BABY_EYE_HEIGHT: f32 = 0.2975;
+const FOX_BABY_PASSENGER_Y: f64 = 0.6375 * BABY_SCALE as f64;
+const FOX_BABY_PASSENGER_Z: f64 = -0.25 * BABY_SCALE as f64;
 
-const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
-    [EntityAttachmentPoint::new(0.0, FOX_BABY_PASSENGER_Y, 0.0)];
+const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] = [EntityAttachmentPoint::new(
+    0.0,
+    FOX_BABY_PASSENGER_Y,
+    FOX_BABY_PASSENGER_Z,
+)];
 const FOX_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
     FOX_BABY_WIDTH,
     FOX_BABY_HEIGHT,
@@ -296,13 +300,6 @@ impl FoxEntity {
 
     pub(crate) fn reset_crouch_amount(&self) {
         *self.crouch_amount.lock() = 0.0;
-    }
-
-    fn drop_hunt_without_target(&self) {
-        if !Mob::target(self).is_some_and(|target| target.is_alive()) {
-            self.set_crouching(false);
-            self.set_interested(false);
-        }
     }
 
     fn tick_crouch_amount(&self) {
@@ -572,6 +569,16 @@ impl FoxEntity {
         {
             Animal::play_eating_sound(self);
             self.broadcast_entity_event(EntityStatus::FoxEat);
+        }
+    }
+
+    fn drop_hunt_without_target(&self) {
+        if !Entity::is_alive(self) || !self.is_effective_ai() {
+            return;
+        }
+        if !Mob::target(self).is_some_and(|target| target.is_alive()) {
+            self.set_crouching(false);
+            self.set_interested(false);
         }
     }
 
