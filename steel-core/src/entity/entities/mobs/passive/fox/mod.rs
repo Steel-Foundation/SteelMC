@@ -886,8 +886,7 @@ impl Mob for FoxEntity {
         if is_baby {
             self.set_baby(true);
         }
-        // TODO(fox-goals): the target goals are still blocked on the
-        // attack-target foundation (see new_with_base).
+        // TODO(fox-goals): register the prey target goals here (lands in #603).
 
         if rand::random::<f32>() < FOX_SPAWN_HELD_ITEM_CHANCE {
             self.living_base()
