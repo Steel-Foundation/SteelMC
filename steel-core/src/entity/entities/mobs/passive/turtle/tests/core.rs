@@ -621,6 +621,8 @@ fn a_baby_turtle_never_heads_home() {
     assert!(!TurtleGoHomeGoal::new(1.0).can_use(turtle.as_ref()));
 }
 
+// The goal searches one layer below the block the turtle stands on, so the
+// water has to sit two blocks down from its feet.
 const WATER_NEARBY: BlockPos = BlockPos::new(10, 62, 8);
 const SEA_LEVEL_FALLBACK_CLEARANCE: f64 = 20.0;
 

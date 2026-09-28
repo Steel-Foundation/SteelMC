@@ -267,7 +267,7 @@ impl Animal for TurtleEntity {
     }
 }
 
-// TODO(leash): turtles refuse a lead once Mob::can_be_leashed lands.
+// TODO(leash): turtles refuse a lead once Mob::mob_can_be_leashed lands.
 impl Mob for TurtleEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base

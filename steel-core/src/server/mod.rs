@@ -8,6 +8,7 @@ mod pregen;
 pub mod registry_cache;
 mod run_loop;
 mod service_keys;
+mod tick_overload;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 mod world_tick_workers;
@@ -601,9 +602,9 @@ impl Server {
                 .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
         });
 
-        let player_data_storage = PlayerDataStorage::new(
+        let player_data_storage = PlayerDataStorage::from_selection(
             resolved_worlds.save_path.clone(),
-            resolved_worlds.player_storage.clone(),
+            &resolved_worlds.player_storage,
         )
         .await
         .map_err(|e| format!("failed to create player data storage: {e}"))?;
