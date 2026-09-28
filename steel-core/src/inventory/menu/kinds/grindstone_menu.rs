@@ -314,12 +314,13 @@ impl MenuKind for GrindstoneKind {
             destination.start(),
             destination.end(),
             FillDirection::Forward,
+            player,
         );
         if !moved {
             return Some(ItemStack::empty());
         }
 
-        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
+        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked, player);
         if remaining.count() == clicked.count() {
             return Some(ItemStack::empty());
         }

@@ -88,13 +88,14 @@ impl MenuLayout {
                 target.start,
                 target.end,
                 route.direction,
+                player,
             )
         });
         if !moved {
             return ItemStack::empty();
         }
 
-        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
+        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked, player);
 
         // Nothing left the slot.
         if remaining.count == clicked.count {

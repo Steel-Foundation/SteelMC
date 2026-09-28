@@ -146,6 +146,7 @@ impl MenuKind for FurnaceMenuKind {
                 self.player.all().start(),
                 self.player.all().end(),
                 FillDirection::Backward,
+                player,
             )
         } else if self.input.contains(slot_index) || self.fuel.contains(slot_index) {
             behavior.move_item_stack_to(
@@ -155,6 +156,7 @@ impl MenuKind for FurnaceMenuKind {
                 self.player.all().start(),
                 self.player.all().end(),
                 FillDirection::Forward,
+                player,
             )
         } else if self.can_smelt(&clicked) {
             behavior.move_item_stack_to(
@@ -164,6 +166,7 @@ impl MenuKind for FurnaceMenuKind {
                 self.input.start(),
                 self.input.end(),
                 FillDirection::Forward,
+                player,
             )
         } else if VANILLA_FUEL_VALUES.is_fuel(clicked.item()) {
             behavior.move_item_stack_to(
@@ -173,6 +176,7 @@ impl MenuKind for FurnaceMenuKind {
                 self.fuel.start(),
                 self.fuel.end(),
                 FillDirection::Forward,
+                player,
             )
         } else if self.player.main().contains(slot_index) {
             behavior.move_item_stack_to(
@@ -182,6 +186,7 @@ impl MenuKind for FurnaceMenuKind {
                 self.player.hotbar().start(),
                 self.player.hotbar().end(),
                 FillDirection::Forward,
+                player,
             )
         } else if self.player.hotbar().contains(slot_index) {
             behavior.move_item_stack_to(
@@ -191,6 +196,7 @@ impl MenuKind for FurnaceMenuKind {
                 self.player.main().start(),
                 self.player.main().end(),
                 FillDirection::Forward,
+                player,
             )
         } else {
             false
@@ -199,7 +205,7 @@ impl MenuKind for FurnaceMenuKind {
         if !moved {
             return Some(ItemStack::empty());
         }
-        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
+        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked, player);
         if remaining.count() == clicked.count() {
             return Some(ItemStack::empty());
         }

@@ -453,7 +453,7 @@ impl Player {
                 let mut guard = menu.behavior().lock_all_containers();
                 if let Some(slot) = menu.behavior().slots().get(slot_index) {
                     let previous = slot.get_item(&guard).clone();
-                    slot.set_by_player(&mut guard, item_stack.clone(), &previous);
+                    slot.set_by_player(&mut guard, item_stack.clone(), &previous, self);
                 }
             }
             if (1..=4).contains(&slot_index) {

@@ -151,6 +151,7 @@ mod tests {
     use crate::inventory::container::{Container, SimpleContainer};
     use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
     use crate::inventory::slots::Slot as _;
+    use crate::test_support::{TestPlayerBuilder, test_world};
     use steel_registry::data_components::vanilla_components::MAX_STACK_SIZE;
     use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_items};
     use steel_utils::locks::{IntoShared as _, SyncMutex};
@@ -186,6 +187,7 @@ mod tests {
     #[test]
     fn max_stack_size_delegates_to_the_container_and_item() {
         init_vanilla_registry();
+        let player = TestPlayerBuilder::new(Arc::clone(test_world()), "SlotTester", 1).build();
         let capped = Arc::new(SyncMutex::new(SingleItemContainer {
             item: ItemStack::empty(),
             max_stack_size: 1,
@@ -197,6 +199,7 @@ mod tests {
             &mut capped_guard,
             ItemStack::with_count(&vanilla_items::STONE, 64),
             64,
+            &player,
         );
         assert_eq!(capped_slot.get_item(&capped_guard).count(), 1);
         assert_eq!(capped_remainder.count(), 63);
@@ -208,7 +211,7 @@ mod tests {
         let mut stack = ItemStack::new(&vanilla_items::STONE);
         stack.set(MAX_STACK_SIZE, 99);
         stack.set_count(99);
-        let default_remainder = default_slot.safe_insert(&mut default_guard, stack, 99);
+        let default_remainder = default_slot.safe_insert(&mut default_guard, stack, 99, &player);
 
         assert!(default_remainder.is_empty());
         assert_eq!(default_slot.get_item(&default_guard).count(), 99);

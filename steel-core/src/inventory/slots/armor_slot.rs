@@ -1,4 +1,5 @@
 use crate::{
+    entity::LivingEntity as _,
     inventory::{
         lock::{ContainerLockGuard, ContainerRef},
         slots::{NormalSlot, Slot, SlotStorage},
@@ -66,9 +67,9 @@ impl Slot for ArmorSlot {
         guard: &mut ContainerLockGuard,
         stack: ItemStack,
         previous: &ItemStack,
+        player: &Player,
     ) {
-        // TODO: Call player.onEquipItem(equipmentSlot, previous, stack) here
-        let _ = previous;
+        player.on_equip_item(self.slot, previous, &stack);
         self.set_item(guard, stack);
     }
 

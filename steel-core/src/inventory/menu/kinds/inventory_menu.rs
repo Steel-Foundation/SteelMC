@@ -128,6 +128,7 @@ impl InventoryKind {
         guard: &mut ContainerLockGuard,
         slot_index: usize,
         stack: &mut ItemStack,
+        player: &Player,
     ) -> bool {
         if self.main.contains(slot_index) {
             behavior.move_item_stack_to(
@@ -137,6 +138,7 @@ impl InventoryKind {
                 self.hotbar.start(),
                 self.hotbar.end(),
                 FillDirection::Forward,
+                player,
             )
         } else if self.hotbar.contains(slot_index) {
             behavior.move_item_stack_to(
@@ -146,6 +148,7 @@ impl InventoryKind {
                 self.main.start(),
                 self.main.end(),
                 FillDirection::Forward,
+                player,
             )
         } else {
             behavior.move_item_stack_to(
@@ -155,6 +158,7 @@ impl InventoryKind {
                 self.inv.start(),
                 self.inv.end(),
                 FillDirection::Forward,
+                player,
             )
         }
     }
@@ -203,6 +207,7 @@ impl MenuKind for InventoryKind {
                 self.inv.start(),
                 self.inv.end(),
                 FillDirection::Backward,
+                player,
             )
         } else if self.grid.contains(slot_index) || self.armor.contains(slot_index) {
             // Grid or armor to inventory.
@@ -213,6 +218,7 @@ impl MenuKind for InventoryKind {
                 self.inv.start(),
                 self.inv.end(),
                 FillDirection::Forward,
+                player,
             )
         } else {
             // Item is in inventory/hotbar, try to equip it first.
@@ -236,6 +242,7 @@ impl MenuKind for InventoryKind {
                             guard,
                             slot_index,
                             &mut stack_mut,
+                            player,
                         )
                     } else {
                         behavior.move_item_stack_to(
@@ -245,6 +252,7 @@ impl MenuKind for InventoryKind {
                             armor_slot_index,
                             armor_slot_index + 1,
                             FillDirection::Forward,
+                            player,
                         )
                     }
                 } else if eq_slot == EquipmentSlot::OffHand {
@@ -254,6 +262,7 @@ impl MenuKind for InventoryKind {
                             guard,
                             slot_index,
                             &mut stack_mut,
+                            player,
                         )
                     } else {
                         behavior.move_item_stack_to(
@@ -263,6 +272,7 @@ impl MenuKind for InventoryKind {
                             self.offhand.start(),
                             self.offhand.end(),
                             FillDirection::Forward,
+                            player,
                         )
                     }
                 } else {
@@ -271,10 +281,17 @@ impl MenuKind for InventoryKind {
                         guard,
                         slot_index,
                         &mut stack_mut,
+                        player,
                     )
                 }
             } else {
-                self.move_between_inventory_and_hotbar(behavior, guard, slot_index, &mut stack_mut)
+                self.move_between_inventory_and_hotbar(
+                    behavior,
+                    guard,
+                    slot_index,
+                    &mut stack_mut,
+                    player,
+                )
             }
         };
 
@@ -282,7 +299,7 @@ impl MenuKind for InventoryKind {
             return Some(ItemStack::empty());
         }
 
-        behavior.update_quick_move_source(guard, slot_index, &stack_mut, &clicked);
+        behavior.update_quick_move_source(guard, slot_index, &stack_mut, &clicked, player);
 
         if stack_mut.count == clicked.count {
             return Some(ItemStack::empty());
