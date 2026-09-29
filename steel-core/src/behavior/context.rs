@@ -5,13 +5,15 @@ use std::sync::Arc;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270};
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_utils::BlockPos;
 use steel_utils::locks::Shared;
 use steel_utils::types::InteractionHand;
 
-use crate::behavior::BlockStateBehaviorExt;
-use crate::entity::Entity;
+use crate::behavior::{BlockStateBehaviorExt, ITEM_BEHAVIORS};
+use crate::entity::{Entity, LivingEntity};
 use crate::fluid::FluidStateExt;
+use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
@@ -685,6 +687,111 @@ impl<'a> UseItemContext<'a> {
             hand,
             world,
             inv: InventoryAccess::new(inventory, hand),
+        }
+    }
+}
+
+/// Context for an item inventory tick
+pub struct InventoryTickContext<'a> {
+    /// The current world
+    pub world: &'a Arc<World>,
+    /// The entity carrying the item
+    pub owner: &'a dyn Entity,
+    /// `None` if the slot is not selected and or in the main player inventory
+    pub slot: Option<EquipmentSlot>,
+    item: ItemRef,
+    source: InventoryTickSource<'a>,
+}
+
+enum InventoryTickSource<'a> {
+    PlayerInventory {
+        inventory: &'a Shared<PlayerInventory>,
+        index: usize,
+    },
+    Equipment {
+        owner: &'a dyn LivingEntity,
+        slot: EquipmentSlot,
+    },
+}
+
+impl<'a> InventoryTickContext<'a> {
+    pub(crate) fn tick_player_inventory(world: &'a Arc<World>, player: &'a Player) {
+        for index in 0..PlayerInventory::INVENTORY_SIZE {
+            let (item, selected) = {
+                let inventory = player.inventory.lock();
+                let stack = &inventory.get_items()[index];
+                if stack.is_empty() {
+                    continue;
+                }
+                (
+                    stack.item(),
+                    index == usize::from(inventory.get_selected_slot()),
+                )
+            };
+
+            let mut context = Self {
+                world,
+                owner: player,
+                slot: selected.then_some(EquipmentSlot::MainHand),
+                item,
+                source: InventoryTickSource::PlayerInventory {
+                    inventory: &player.inventory,
+                    index,
+                },
+            };
+            ITEM_BEHAVIORS
+                .get_behavior(item)
+                .inventory_tick(&mut context);
+        }
+    }
+
+    pub(crate) fn tick_equipment(
+        world: &'a Arc<World>,
+        owner: &'a dyn LivingEntity,
+        slots: impl IntoIterator<Item = EquipmentSlot>,
+    ) {
+        for slot in slots {
+            let mut item = None;
+            owner.with_equipment_slot(slot, &mut |stack| {
+                if !stack.is_empty() {
+                    item = Some(stack.item());
+                }
+            });
+            let Some(item) = item else {
+                continue;
+            };
+
+            let mut context = Self {
+                world,
+                owner,
+                slot: Some(slot),
+                item,
+                source: InventoryTickSource::Equipment { owner, slot },
+            };
+            ITEM_BEHAVIORS
+                .get_behavior(item)
+                .inventory_tick(&mut context);
+        }
+    }
+
+    /// Runs `f` on the stack that is being ticked, or returns `None` if the slot no longer contains it.
+    pub fn with_item<R>(&self, f: impl FnOnce(&mut ItemStack) -> R) -> Option<R> {
+        match self.source {
+            InventoryTickSource::PlayerInventory { inventory, index } => inventory
+                .lock()
+                .with_item_mut(index, |stack| stack.is(self.item).then(|| f(stack))),
+            InventoryTickSource::Equipment { owner, slot } => {
+                let mut f = Some(f);
+                let mut result = None;
+                owner.with_equipment_slot_mut(slot, &mut |stack| {
+                    if stack.is(self.item)
+                        && let Some(f) = f.take()
+                    {
+                        result = Some(f(stack));
+                    }
+                });
+                result
+            }
         }
     }
 }

@@ -1013,6 +1013,7 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
+    use crate::behavior::init_behaviors;
     use crate::entity::{
         EntityBase, LivingEntity, LivingEntityBase, entities::FireworkRocketEntity,
     };
@@ -1492,6 +1493,7 @@ mod tests {
     #[test]
     fn post_attack_mob_effect_matches_victim_predicate() {
         init_vanilla_registry();
+        init_behaviors();
 
         let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let spider = TestLivingEntity::new(2, &vanilla_entities::SPIDER);
