@@ -330,8 +330,10 @@ mod player_limit;
     reason = "one setup exercises all explicit and implicit saved-location planning branches"
 )]
 fn saved_location_planning_honors_explicit_world_selection() {
-    let saved_world = fresh_test_world_in_domain("target", "saved");
-    let selected_world = fresh_test_derived_world(&saved_world, "selected");
+    let saved_world_fixture = fresh_test_world_in_domain("target", "saved");
+    let saved_world = &saved_world_fixture.world;
+    let selected_world_fixture = fresh_test_derived_world(saved_world, "selected");
+    let selected_world = &selected_world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -342,7 +344,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             default_world: saved_world.key.clone(),
             worlds: vec![saved_world.key.clone(), selected_world.key.clone()],
         };
-        let loaded_worlds = [Arc::clone(&(*saved_world)), Arc::clone(&(*selected_world))];
+        let loaded_worlds = [Arc::clone(saved_world), Arc::clone(selected_world)];
         let server = test_server_with_worlds(
             domain.name.clone(),
             slice::from_ref(&domain),
@@ -354,7 +356,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             panic!("test server should initialize");
         };
 
-        let saved_player = test_player(&server, Arc::clone(&(*saved_world)));
+        let saved_player = test_player(&server, Arc::clone(saved_world));
         let saved_position = DVec3::new(8.25, 70.0, 8.75);
         let saved_velocity = DVec3::new(0.25, -0.5, 0.75);
         saved_player.base().set_position_local(saved_position);
@@ -378,14 +380,14 @@ fn saved_location_planning_honors_explicit_world_selection() {
             .load_unprepared_domain_player_state(
                 &saved_player,
                 "target",
-                Some(Arc::clone(&(*selected_world))),
+                Some(Arc::clone(selected_world)),
             )
             .await;
         let Ok(mismatch_plan) = mismatch_plan else {
             panic!("explicit mismatch plan should load");
         };
         assert!(mismatch_plan.explicit_target);
-        assert!(Arc::ptr_eq(&mismatch_plan.world, &selected_world));
+        assert!(Arc::ptr_eq(&mismatch_plan.world, selected_world));
         let UnpreparedDomainPlayerState {
             world: mismatch_world,
             data: mismatch_data,
@@ -431,14 +433,14 @@ fn saved_location_planning_honors_explicit_world_selection() {
             .load_unprepared_domain_player_state(
                 &saved_player,
                 "target",
-                Some(Arc::clone(&(*saved_world))),
+                Some(Arc::clone(saved_world)),
             )
             .await;
         let Ok(matching_plan) = matching_plan else {
             panic!("matching explicit plan should load");
         };
         assert!(matching_plan.explicit_target);
-        assert!(Arc::ptr_eq(&matching_plan.world, &saved_world));
+        assert!(Arc::ptr_eq(&matching_plan.world, saved_world));
         let UnpreparedDomainPlayerState {
             world: matching_world,
             data: matching_data,
@@ -477,7 +479,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             panic!("ordinary domain-switch plan should load");
         };
         assert!(!implicit_plan.explicit_target);
-        assert!(Arc::ptr_eq(&implicit_plan.world, &saved_world));
+        assert!(Arc::ptr_eq(&implicit_plan.world, saved_world));
         assert!(matches!(
             &implicit_plan.data,
             UnpreparedDomainPlayerData::SavedRestored { .. }
@@ -496,14 +498,14 @@ fn saved_location_planning_honors_explicit_world_selection() {
             .load_unprepared_domain_player_state(
                 &saved_player,
                 "target",
-                Some(Arc::clone(&(*selected_world))),
+                Some(Arc::clone(selected_world)),
             )
             .await;
         let Ok(missing_explicit_plan) = missing_explicit_plan else {
             panic!("unavailable saved world should fall back to explicit target");
         };
         assert!(missing_explicit_plan.explicit_target);
-        assert!(Arc::ptr_eq(&missing_explicit_plan.world, &selected_world));
+        assert!(Arc::ptr_eq(&missing_explicit_plan.world, selected_world));
         assert!(matches!(
             &missing_explicit_plan.data,
             UnpreparedDomainPlayerData::SavedWithoutLocation { .. }
@@ -516,7 +518,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             panic!("unavailable saved world should use domain spawn");
         };
         assert!(!missing_implicit_plan.explicit_target);
-        assert!(Arc::ptr_eq(&missing_implicit_plan.world, &saved_world));
+        assert!(Arc::ptr_eq(&missing_implicit_plan.world, saved_world));
         assert!(matches!(
             &missing_implicit_plan.data,
             UnpreparedDomainPlayerData::SavedWithoutLocation { .. }
@@ -532,8 +534,10 @@ fn saved_location_planning_honors_explicit_world_selection() {
     reason = "one integration test follows the transition across async storage and chunk scheduling"
 )]
 fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
-    let source_world = fresh_test_world_in_domain("source", "spawn");
-    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let source_world_fixture = fresh_test_world_in_domain("source", "spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "spawn");
+    let target_world = &target_world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -551,7 +555,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
                 worlds: vec![target_world.key.clone()],
             },
         ];
-        let worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
@@ -563,9 +567,9 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
             panic!("test server should initialize");
         };
 
-        let player = test_player(&server, Arc::clone(&(*source_world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(source_world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(source_world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         let source_residence = player.domain_residence_token();
 
@@ -654,18 +658,19 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
 
 #[test]
 fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
-    let world = fresh_test_world_in_domain("survival", "spawn");
+    let world_fixture = fresh_test_world_in_domain("survival", "spawn");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
+        let player = test_player(&server, Arc::clone(world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
 
         let residence_token = player.domain_residence_token();
         let root = PersistentRootVehicle {
@@ -678,13 +683,13 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
         };
         assert!(player.install_pending_domain_restores(
             residence_token,
-            &world,
+            world,
             Some(root.clone()),
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
-            Arc::<Player>::clone(&player),
-            Arc::clone(&(*world)),
+            Arc::clone(&player),
+            Arc::clone(world),
             &root,
             residence_token,
         );
@@ -692,8 +697,8 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
             panic!("valid root vehicle data should create a restore job");
         };
         let job = EnderPearlRestoreJob::new(
-            Arc::<Player>::clone(&player),
-            Arc::clone(&(*world)),
+            Arc::clone(&player),
+            Arc::clone(world),
             pearl.entity,
             residence_token,
         );
@@ -724,19 +729,20 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
     init_vanilla_registry();
     init_entities();
     init_behaviors();
-    let world = fresh_test_world_in_domain("survival", "respawn_restore");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world_in_domain("survival", "respawn_restore");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let old_player =
-            test_player_with_packets(&server, Arc::clone(&world), "TestPlayer", next_entity_id()).0;
+            test_player_with_packets(&server, Arc::clone(world), "TestPlayer", next_entity_id()).0;
         assert!(server.online_players.insert(Arc::clone(&old_player)));
         assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
@@ -761,13 +767,13 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         };
         assert!(old_player.install_pending_domain_restores(
             residence_token,
-            &world,
+            world,
             Some(root.clone()),
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
             Arc::clone(&old_player),
-            Arc::clone(&world),
+            Arc::clone(world),
             &root,
             residence_token,
         );
@@ -776,7 +782,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         };
         let pearl_job = EnderPearlRestoreJob::new(
             Arc::clone(&old_player),
-            Arc::clone(&world),
+            Arc::clone(world),
             pearl.entity,
             residence_token,
         );
@@ -786,14 +792,14 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         server.jobs.spawn(root_job);
         server.jobs.spawn(pearl_job);
 
-        let replacement = old_player.new_respawn_replacement(Arc::clone(&world), true, false, true);
+        let replacement = old_player.new_respawn_replacement(Arc::clone(world), true, false, true);
         assert!(world.detach_player_for_respawn(&old_player, true));
         assert!(world.install_respawned_player(Arc::clone(&replacement), Some(&old_player),));
         assert!(server.replace_online_player(&old_player, Arc::clone(&replacement)));
         let _ = replacement.mark_joined_world();
         assert!(old_player.session.replace_player(&old_player, &replacement));
 
-        finish_test_respawn_job(&server, &world).await;
+        finish_test_respawn_job(&server, world).await;
 
         assert!(replacement.is_domain_residence_current(residence_token));
         assert!(
@@ -827,19 +833,20 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
 
 #[test]
 fn domain_restore_jobs_do_not_follow_a_different_player_session() {
-    let world = fresh_test_world_in_domain("survival", "foreign_restore");
+    let world_fixture = fresh_test_world_in_domain("survival", "foreign_restore");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let uuid = Uuid::from_u128(1);
-        let old_player = test_player_with_uuid(&server, Arc::clone(&(*world)), uuid);
-        let foreign_player = test_player_with_uuid(&server, Arc::clone(&(*world)), uuid);
+        let old_player = test_player_with_uuid(&server, Arc::clone(world), uuid);
+        let foreign_player = test_player_with_uuid(&server, Arc::clone(world), uuid);
         assert!(!Arc::ptr_eq(&old_player.session, &foreign_player.session));
         assert!(
             server
@@ -860,13 +867,13 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
         };
         assert!(old_player.install_pending_domain_restores(
             residence_token,
-            &world,
+            world,
             Some(root.clone()),
             vec![pearl.clone()],
         ));
         let root_job = RootVehicleRestoreJob::new(
-            Arc::<Player>::clone(&old_player),
-            Arc::clone(&(*world)),
+            Arc::clone(&old_player),
+            Arc::clone(world),
             &root,
             residence_token,
         );
@@ -874,8 +881,8 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
             panic!("valid root vehicle data should create a restore job");
         };
         let pearl_job = EnderPearlRestoreJob::new(
-            Arc::<Player>::clone(&old_player),
-            Arc::clone(&(*world)),
+            Arc::clone(&old_player),
+            Arc::clone(world),
             pearl.entity,
             residence_token,
         );
@@ -920,19 +927,20 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
 
 #[test]
 fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
-    let world = fresh_test_world_in_domain("source", "spawn");
+    let world_fixture = fresh_test_world_in_domain("source", "spawn");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         let source_token = player.domain_residence_token();
@@ -946,22 +954,18 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
         };
         assert!(player.install_pending_domain_restores(
             source_token,
-            &world,
+            world,
             Some(root.clone()),
             vec![pearl.clone()],
         ));
-        let root_job = RootVehicleRestoreJob::new(
-            Arc::<Player>::clone(&player),
-            Arc::clone(&(*world)),
-            &root,
-            source_token,
-        );
+        let root_job =
+            RootVehicleRestoreJob::new(Arc::clone(&player), Arc::clone(world), &root, source_token);
         let Some(root_job) = root_job else {
             panic!("valid root vehicle data should create a restore job");
         };
         let pearl_job = EnderPearlRestoreJob::new(
-            Arc::<Player>::clone(&player),
-            Arc::clone(&(*world)),
+            Arc::clone(&player),
+            Arc::clone(world),
             pearl.entity,
             source_token,
         );
@@ -1000,28 +1004,29 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
 
 #[test]
 fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
-    let world = fresh_test_world_in_domain("source", "chunk_epoch");
+    let world_fixture = fresh_test_world_in_domain("source", "chunk_epoch");
+    let world = &world_fixture.world;
     let center = ChunkPos::new(0, 0);
-    insert_ready_full_chunk(&world, center);
+    insert_ready_full_chunk(world, center);
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let (player, sent_packets) =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "ChunkTester", 1);
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+            test_player_with_packets(&server, Arc::clone(world), "ChunkTester", 1);
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         let old_epoch = *player.chunk_send_epoch.lock();
         let batch = {
             let mut sender = player.chunk_sender().lock();
-            sender.prepare_batch(&world, center, &player.chunk_send_epoch)
+            sender.prepare_batch(world, center, &player.chunk_send_epoch)
         };
         let Some(batch) = batch else {
             panic!("ready source chunk should produce a batch");
@@ -1059,8 +1064,10 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
 
 #[test]
 fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
-    let source_world = fresh_test_world_in_domain("source", "spawn");
-    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let source_world_fixture = fresh_test_world_in_domain("source", "spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "spawn");
+    let target_world = &target_world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1078,7 +1085,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
                 worlds: vec![target_world.key.clone()],
             },
         ];
-        let worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
@@ -1090,7 +1097,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
             panic!("test server should initialize");
         };
 
-        let player = test_player(&server, Arc::clone(&(*source_world)));
+        let player = test_player(&server, Arc::clone(source_world));
         player.set_health(7.0);
         player
             .base()
@@ -1168,8 +1175,10 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
     reason = "the failure-path test follows async transition and disconnect persistence boundaries"
 )]
 fn failed_target_admission_preserves_only_valid_target_restores() {
-    let source_world = fresh_test_world_in_domain("source", "spawn");
-    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let source_world_fixture = fresh_test_world_in_domain("source", "spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "spawn");
+    let target_world = &target_world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1187,7 +1196,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
                 worlds: vec![target_world.key.clone()],
             },
         ];
-        let worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
@@ -1199,9 +1208,9 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
             panic!("test server should initialize");
         };
 
-        let player = test_player(&server, Arc::clone(&(*source_world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(source_world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(source_world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         let target_root_uuid = [8; 16];
@@ -1236,7 +1245,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
         let source_residence = player.domain_residence_token();
         assert!(player.install_pending_domain_restores(
             source_residence,
-            &source_world,
+            source_world,
             None,
             vec![PersistentEnderPearl {
                 world: source_world.key.to_string(),
@@ -1308,8 +1317,10 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
 
 #[test]
 fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
-    let source_world = fresh_test_world_in_domain("source", "spawn");
-    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let source_world_fixture = fresh_test_world_in_domain("source", "spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "spawn");
+    let target_world = &target_world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1327,7 +1338,7 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
                 worlds: vec![target_world.key.clone()],
             },
         ];
-        let worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
@@ -1339,9 +1350,9 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
             panic!("test server should initialize");
         };
 
-        let player = test_player(&server, Arc::clone(&(*source_world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(source_world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(source_world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         assert!(
@@ -1375,31 +1386,32 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
 
 #[test]
 fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
-    let world = fresh_test_world("portal_revalidation");
+    let world_fixture = fresh_test_world("portal_revalidation");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         let entity: SharedEntity = Arc::<Player>::clone(&player);
         let Some(pending_token) = entity.begin_pending_world_change() else {
             panic!("live player should acquire a portal relocation token");
         };
 
-        assert!(portal_entity_still_valid(&entity, &world, pending_token));
+        assert!(portal_entity_still_valid(&entity, world, pending_token));
         player.set_sleeping_pos(steel_utils::BlockPos::new(0, 64, 0));
-        assert!(!portal_entity_still_valid(&entity, &world, pending_token));
+        assert!(!portal_entity_still_valid(&entity, world, pending_token));
         player.clear_sleeping_pos();
         player.set_health(0.0);
-        assert!(!portal_entity_still_valid(&entity, &world, pending_token));
+        assert!(!portal_entity_still_valid(&entity, world, pending_token));
 
         assert!(entity.finish_pending_world_change(pending_token));
         world.remove_player_for_world_change(&player);
@@ -1481,8 +1493,10 @@ fn assert_default_domain_data(player: &Player) {
 
 #[test]
 fn first_domain_visit_resets_domain_scoped_player_data() {
-    let source_world = fresh_test_world_in_domain("source", "spawn");
-    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let source_world_fixture = fresh_test_world_in_domain("source", "spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "spawn");
+    let target_world = &target_world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1500,7 +1514,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
                 worlds: vec![target_world.key.clone()],
             },
         ];
-        let worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
@@ -1512,9 +1526,9 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
             panic!("test server should initialize");
         };
 
-        let player = test_player(&server, Arc::clone(&(*source_world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(source_world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(source_world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
@@ -1547,7 +1561,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         }
 
         assert!(server.jobs.is_empty(), "domain switch job should finish");
-        assert!(Arc::ptr_eq(&player.get_world(), &target_world));
+        assert!(Arc::ptr_eq(&player.get_world(), target_world));
 
         assert!(
             player.last_damage_source().is_none(),
@@ -1562,8 +1576,10 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
 
 #[test]
 fn command_world_scope_survives_entity_transforms() {
-    let alpha = fresh_test_world_in_domain("alpha", "spawn");
-    let beta = fresh_test_world_in_domain("beta", "spawn");
+    let alpha_fixture = fresh_test_world_in_domain("alpha", "spawn");
+    let alpha = &alpha_fixture.world;
+    let beta_fixture = fresh_test_world_in_domain("beta", "spawn");
+    let beta = &beta_fixture.world;
     let domains = [
         ResolvedDomainConfig {
             name: "alpha".to_owned(),
@@ -1576,7 +1592,7 @@ fn command_world_scope_survives_entity_transforms() {
             worlds: vec![beta.key.clone()],
         },
     ];
-    let loaded_worlds = [Arc::clone(&(*alpha)), Arc::clone(&(*beta))];
+    let loaded_worlds = [Arc::clone(alpha), Arc::clone(beta)];
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1592,32 +1608,32 @@ fn command_world_scope_survives_entity_transforms() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*alpha)));
+        let player = test_player(&server, Arc::clone(alpha));
         let player_source = CommandSource::new(
-            CommandSender::Player(Arc::<Player>::clone(&player)),
+            CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
         );
 
         assert!(
-            player_source.with_world(Arc::clone(&(*alpha))).is_ok(),
+            player_source.with_world(Arc::clone(alpha)).is_ok(),
             "players may project within their initial domain"
         );
         assert!(
-            player_source.with_world(Arc::clone(&(*beta))).is_err(),
+            player_source.with_world(Arc::clone(beta)).is_err(),
             "players may not project outside their initial domain"
         );
 
-        player.set_world(Arc::clone(&(*beta)));
-        let transformed = player_source.with_entity(Arc::<Player>::clone(&player) as SharedEntity);
+        player.set_world(Arc::clone(beta));
+        let transformed = player_source.with_entity(Arc::clone(&player) as SharedEntity);
         assert!(
-            transformed.with_world(Arc::clone(&(*beta))).is_err(),
+            transformed.with_world(Arc::clone(beta)).is_err(),
             "changing the execution entity must not change the initiating domain"
         );
 
         let console_source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
-        assert!(console_source.with_world(Arc::clone(&(*beta))).is_ok());
+        assert!(console_source.with_world(Arc::clone(beta)).is_ok());
         let rcon_source = CommandSource::new(CommandSender::Rcon, Arc::clone(&server));
-        assert!(rcon_source.with_world(Arc::clone(&(*beta))).is_ok());
+        assert!(rcon_source.with_world(Arc::clone(beta)).is_ok());
 
         drop((
             transformed,
@@ -1632,7 +1648,8 @@ fn command_world_scope_survives_entity_transforms() {
 
 #[test]
 fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
-    let world = fresh_test_world("server_test");
+    let world_fixture = fresh_test_world("server_test");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1651,29 +1668,20 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
                 PermissionSet::from_entries([PermissionEntry::allow(modify_key)]),
             ),
         );
-        let server = test_server(Arc::clone(&(*world)), published_states).await;
+        let server = test_server(Arc::clone(world), published_states).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let (initiator, _) = test_player_with_uuid_and_packets(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             initiator_uuid,
             "Initiator",
             31,
         );
-        let (receiver, _) =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "Receiver", 32);
-        assert!(
-            server
-                .online_players
-                .insert(Arc::<Player>::clone(&initiator))
-        );
-        assert!(
-            server
-                .online_players
-                .insert(Arc::<Player>::clone(&receiver))
-        );
+        let (receiver, _) = test_player_with_packets(&server, Arc::clone(world), "Receiver", 32);
+        assert!(server.online_players.insert(Arc::clone(&initiator)));
+        assert!(server.online_players.insert(Arc::clone(&receiver)));
 
         let initiating_source = CommandSource::new(
             CommandSender::Player(Arc::<Player>::clone(&initiator)),
@@ -1729,8 +1737,10 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
     reason = "one lifecycle test compares gameplay and administrative command ownership through every domain phase"
 )]
 fn command_gameplay_availability_tracks_exact_domain_residence() {
-    let world = fresh_test_world_in_domain("alpha", "spawn");
-    let remote_world = fresh_test_world_in_domain("beta", "spawn");
+    let world_fixture = fresh_test_world_in_domain("alpha", "spawn");
+    let world = &world_fixture.world;
+    let remote_world_fixture = fresh_test_world_in_domain("beta", "spawn");
+    let remote_world = &remote_world_fixture.world;
     let domains = [
         ResolvedDomainConfig {
             name: "alpha".to_owned(),
@@ -1743,7 +1753,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             worlds: vec![remote_world.key.clone()],
         },
     ];
-    let loaded_worlds = [Arc::clone(&(*world)), Arc::clone(&(*remote_world))];
+    let loaded_worlds = [Arc::clone(world), Arc::clone(remote_world)];
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1759,12 +1769,10 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*world)));
-        assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
-        let pre_admission_owner = CommandExecutionOwner::capture(
-            CommandSender::Player(Arc::<Player>::clone(&player)),
-            &server,
-        );
+        let player = test_player(&server, Arc::clone(world));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let pre_admission_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
         assert!(
             !pre_admission_owner.is_current(&server),
             "world membership alone must not admit command work"
@@ -1775,10 +1783,9 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             !pre_admission_owner.is_current(&server),
             "an owner rejected at capture must not become valid after admission"
         );
-        let (remote, _) =
-            test_player_with_packets(&server, Arc::clone(&(*remote_world)), "Remote", 42);
-        assert!(server.online_players.insert(Arc::<Player>::clone(&remote)));
-        assert!(remote_world.add_player(Arc::<Player>::clone(&remote), ResetReason::InitialJoin));
+        let (remote, _) = test_player_with_packets(&server, Arc::clone(remote_world), "Remote", 42);
+        assert!(server.online_players.insert(Arc::clone(&remote)));
+        assert!(remote_world.add_player(Arc::clone(&remote), ResetReason::InitialJoin));
         let _ = remote.mark_joined_world();
 
         let selector = parse_entity_selector_text("@a");
@@ -1943,14 +1950,9 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         assert!(player.finish_pending_world_change(pending_token));
         world.remove_player_for_world_change(&player);
         assert!(server.online_players.remove_player_sync(&player).is_some());
-        let replacement =
-            test_player_with_uuid(&server, Arc::clone(&(*world)), player.gameprofile.id);
-        assert!(
-            server
-                .online_players
-                .insert(Arc::<Player>::clone(&replacement))
-        );
-        assert!(world.add_player(Arc::<Player>::clone(&replacement), ResetReason::InitialJoin));
+        let replacement = test_player_with_uuid(&server, Arc::clone(world), player.gameprofile.id);
+        assert!(server.online_players.insert(Arc::clone(&replacement)));
+        assert!(world.add_player(Arc::clone(&replacement), ResetReason::InitialJoin));
         assert!(
             !target_owner.is_current(&server),
             "a replacement login must not inherit queued work from the old Arc"
@@ -2003,10 +2005,14 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
     reason = "one routing test compares stale, repeated, same-domain, and cross-domain selections"
 )]
 fn player_world_selection_uses_one_token_owned_route() {
-    let source_world = fresh_test_world_in_domain("alpha", "source");
-    let sibling_world = fresh_test_derived_world(&source_world, "sibling");
-    let stale_sibling_world = fresh_test_world_in_domain("alpha", "sibling");
-    let target_world = fresh_test_world_in_domain("beta", "target");
+    let source_world_fixture = fresh_test_world_in_domain("alpha", "source");
+    let source_world = &source_world_fixture.world;
+    let sibling_world_fixture = fresh_test_derived_world(source_world, "sibling");
+    let sibling_world = &sibling_world_fixture.world;
+    let stale_sibling_world_fixture = fresh_test_world_in_domain("alpha", "sibling");
+    let stale_sibling_world = &stale_sibling_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("beta", "target");
+    let target_world = &target_world_fixture.world;
     let domains = [
         ResolvedDomainConfig {
             name: "alpha".to_owned(),
@@ -2020,9 +2026,9 @@ fn player_world_selection_uses_one_token_owned_route() {
         },
     ];
     let loaded_worlds = [
-        Arc::clone(&(*source_world)),
-        Arc::clone(&(*sibling_world)),
-        Arc::clone(&(*target_world)),
+        Arc::clone(source_world),
+        Arc::clone(sibling_world),
+        Arc::clone(target_world),
     ];
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
@@ -2039,37 +2045,28 @@ fn player_world_selection_uses_one_token_owned_route() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*source_world)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(source_world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(source_world));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         assert!(
             server
-                .queue_player_world_selection(
-                    Arc::<Player>::clone(&player),
-                    Arc::clone(&(*stale_sibling_world))
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(stale_sibling_world))
                 .is_err()
         );
         assert!(!player.is_world_change_pending());
 
         assert!(
             server
-                .queue_player_world_selection(
-                    Arc::<Player>::clone(&player),
-                    Arc::clone(&(*sibling_world))
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(sibling_world))
                 .is_ok(),
             "world selection is authorization-neutral after command admission"
         );
         assert!(player.is_world_change_pending());
         assert!(
             server
-                .queue_player_world_selection(
-                    Arc::<Player>::clone(&player),
-                    Arc::clone(&(*target_world))
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world))
                 .is_err(),
             "the relocation lease must reject a repeated selection"
         );
@@ -2085,17 +2082,14 @@ fn player_world_selection_uses_one_token_owned_route() {
             else {
                 panic!("same-domain selection should queue a world-spawn transition");
             };
-            assert!(Arc::ptr_eq(&target_world, &sibling_world));
+            assert!(Arc::ptr_eq(&target_world, sibling_world));
             pending_token
         };
         assert!(player.finish_pending_world_change(sibling_token));
 
         assert!(
             server
-                .queue_player_world_selection(
-                    Arc::<Player>::clone(&player),
-                    Arc::clone(&(*source_world))
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(source_world))
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2111,10 +2105,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(
-                    Arc::<Player>::clone(&player),
-                    Arc::clone(&(*target_world))
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world))
                 .is_ok()
         );
         let request = server.pending_domain_switches.lock().pop();
@@ -2126,7 +2117,7 @@ fn player_world_selection_uses_one_token_owned_route() {
             request
                 .target_world
                 .as_ref()
-                .is_some_and(|world| Arc::ptr_eq(world, &target_world))
+                .is_some_and(|world| Arc::ptr_eq(world, target_world))
         );
         assert!(player.finish_domain_switch(request.pending_token));
         assert!(player.finish_pending_world_change(request.pending_token));
@@ -2137,8 +2128,10 @@ fn player_world_selection_uses_one_token_owned_route() {
 
 #[test]
 fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
-    let source_world = fresh_test_world_in_domain("alpha", "safe_source");
-    let target_world = fresh_test_derived_world(&source_world, "safe_target");
+    let source_world_fixture = fresh_test_world_in_domain("alpha", "safe_source");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_derived_world(source_world, "safe_target");
+    let target_world = &target_world_fixture.world;
     init_behaviors();
     {
         let mut level_data = target_world.level_data.write();
@@ -2152,7 +2145,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         default_world: source_world.key.clone(),
         worlds: vec![source_world.key.clone(), target_world.key.clone()],
     };
-    let loaded_worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+    let loaded_worlds = [Arc::clone(source_world), Arc::clone(target_world)];
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -2168,7 +2161,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*source_world)));
+        let player = test_player(&server, Arc::clone(source_world));
         let player_generation = player.generation();
         assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
         assert!(source_world.players.insert(Arc::<Player>::clone(&player)));
@@ -2176,10 +2169,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
 
         assert!(
             server
-                .queue_player_world_selection(
-                    Arc::<Player>::clone(&player),
-                    Arc::clone(&(*target_world))
-                )
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world))
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2190,7 +2180,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
 
         for z in -3..=3 {
             for x in -3..=3 {
-                insert_ready_full_chunk(&target_world, ChunkPos::new(x, z));
+                insert_ready_full_chunk(target_world, ChunkPos::new(x, z));
             }
         }
         assert!(target_world.set_block(
@@ -2576,7 +2566,8 @@ fn decode_hat_update(packet: &EncodedPacket) -> (Uuid, bool) {
 
 #[test]
 fn initial_player_info_precedes_entity_spawn_for_existing_players() {
-    let world = fresh_test_world("join_player_info_before_spawn");
+    let world_fixture = fresh_test_world("join_player_info_before_spawn");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -2584,19 +2575,14 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
 
     runtime.block_on(async {
         let server =
-            test_server_with_max_players(Arc::clone(&(*world)), PermissionSubjectIndex::new(), 2)
-                .await;
+            test_server_with_max_players(Arc::clone(world), PermissionSubjectIndex::new(), 2).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let (existing, existing_packets) =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "ExistingPlayer", 1);
-        assert!(
-            server
-                .online_players
-                .insert(Arc::<Player>::clone(&existing))
-        );
-        assert!(world.add_player(Arc::<Player>::clone(&existing), ResetReason::InitialJoin));
+            test_player_with_packets(&server, Arc::clone(world), "ExistingPlayer", 1);
+        assert!(server.online_players.insert(Arc::clone(&existing)));
+        assert!(world.add_player(Arc::clone(&existing), ResetReason::InitialJoin));
         let _ = existing.mark_joined_world();
 
         let spawn_position = existing.position();
@@ -2607,15 +2593,14 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             .mark_chunk_sent_for_test(spawn_chunk);
         existing_packets.lock().clear();
 
-        let joining =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "JoiningPlayer", 2).0;
+        let joining = test_player_with_packets(&server, Arc::clone(world), "JoiningPlayer", 2).0;
         assert!(server.reserve_player_join(&joining));
         let spawn = PreparedSpawn {
             position: spawn_position,
             rotation: (0.0, 0.0),
         };
         let state = DomainPlayerState {
-            world: Arc::clone(&(*world)),
+            world: Arc::clone(world),
             data: DomainPlayerData::FirstVisit { spawn },
             spawn_chunk_request: world.request_player_spawn_chunks(spawn_position),
         };
@@ -2671,27 +2656,28 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
 
 #[test]
 fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
-    let world = fresh_test_world("client_information_hat_updates");
+    let world_fixture = fresh_test_world("client_information_hat_updates");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let (player, sent_packets) = test_player_with_uuid_and_packets(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             Uuid::from_u128(1),
             "TestPlayer",
             1,
         );
         let (observer, observer_packets) = test_player_with_uuid_and_packets(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             Uuid::from_u128(2),
             "Observer",
             2,
@@ -2775,17 +2761,18 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
 
 #[test]
 fn initial_admission_installs_restores_before_scheduling_jobs() {
-    let world = fresh_test_world_in_domain("survival", "spawn");
+    let world_fixture = fresh_test_world_in_domain("survival", "spawn");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let joining = test_player(&server, Arc::clone(&(*world)));
+        let joining = test_player(&server, Arc::clone(world));
         assert!(server.reserve_player_join(&joining));
 
         let root_uuid = [13; 16];
@@ -2802,7 +2789,7 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
         }];
         let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
         let state = DomainPlayerState {
-            world: Arc::clone(&(*world)),
+            world: Arc::clone(world),
             data: DomainPlayerData::SavedRestored {
                 data: Box::new(data),
             },
@@ -2837,18 +2824,19 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
 
 #[test]
 fn player_disconnect_detaches_before_async_persistence() {
-    let world = fresh_test_world("disconnect_safe_point");
+    let world_fixture = fresh_test_world("disconnect_safe_point");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*world)));
+        let player = test_player(&server, Arc::clone(world));
 
         assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
         assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
@@ -2874,22 +2862,23 @@ fn player_disconnect_detaches_before_async_persistence() {
 
 #[test]
 fn online_respawn_replacement_rejects_admission_and_stale_owners() {
-    let world = fresh_test_world("exact_online_respawn_replacement");
+    let world_fixture = fresh_test_world("exact_online_respawn_replacement");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let uuid = Uuid::from_u128(1);
-        let old = test_player_with_uuid(&server, Arc::clone(&(*world)), uuid);
-        let replacement = old.new_respawn_replacement(Arc::clone(&(*world)), false, false, true);
-        let stale = old.new_respawn_replacement(Arc::clone(&(*world)), false, false, true);
-        let foreign_session = test_player_with_uuid(&server, Arc::clone(&(*world)), uuid);
+        let old = test_player_with_uuid(&server, Arc::clone(world), uuid);
+        let replacement = old.new_respawn_replacement(Arc::clone(world), false, false, true);
+        let stale = old.new_respawn_replacement(Arc::clone(world), false, false, true);
+        let foreign_session = test_player_with_uuid(&server, Arc::clone(world), uuid);
 
         assert!(server.online_players.insert(Arc::<Player>::clone(&old)));
         assert!(!server.replace_online_player(&old, foreign_session));
@@ -2916,14 +2905,15 @@ fn online_respawn_replacement_rejects_admission_and_stale_owners() {
 
 #[test]
 fn simultaneous_disconnects_batch_tab_list_removal() {
-    let world = fresh_test_world("batched_disconnects");
+    let world_fixture = fresh_test_world("batched_disconnects");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -2931,7 +2921,7 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
         let survivor_packets = Arc::new(SyncMutex::new(Vec::new()));
         let survivor = test_player_with_connection(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             "TestPlayer",
             1,
             Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
@@ -2941,7 +2931,7 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
         );
         let first = test_player_with_connection(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             "TestPlayer",
             2,
             Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
@@ -2951,7 +2941,7 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
         );
         let second = test_player_with_connection(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             "TestPlayer",
             3,
             Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
@@ -3006,18 +2996,19 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
 
 #[test]
 fn online_player_snapshot_includes_player_detached_for_end_credits() {
-    let world = fresh_test_world("end_credits_shutdown_snapshot");
+    let world_fixture = fresh_test_world("end_credits_shutdown_snapshot");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&(*world)));
+        let player = test_player(&server, Arc::clone(world));
 
         assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
         assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
@@ -3049,19 +3040,20 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
 
 #[test]
 fn death_respawn_replaces_the_live_player_incarnation() {
-    let world = fresh_test_world("death_respawn_fresh_player");
-    prepare_respawn_test_world(&world);
+    let world_fixture = fresh_test_world("death_respawn_fresh_player");
+    let world = &world_fixture.world;
+    prepare_respawn_test_world(world);
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let old_player = test_player(&server, Arc::clone(&(*world)));
+        let old_player = test_player(&server, Arc::clone(world));
 
         assert!(
             server
@@ -3079,7 +3071,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 
         let requested_chunks_per_tick = 2;
         assert_ne!(
-            send_test_chunk_batch(&server, &old_player, &world),
+            send_test_chunk_batch(&server, &old_player, world),
             Vec::<ChunkPos>::new()
         );
         assert!(
@@ -3092,9 +3084,9 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         old_player.set_health(0.0);
         old_player.respawn();
         assert_eq!(server.jobs.len(), 1);
-        finish_test_respawn_job(&server, &world).await;
+        finish_test_respawn_job(&server, world).await;
 
-        let replacement = current_respawn_replacement(&server, &world, &old_player);
+        let replacement = current_respawn_replacement(&server, world, &old_player);
         assert_eq!(
             replacement
                 .chunk_sender()
@@ -3103,7 +3095,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
             1
         );
         assert_eq!(
-            send_test_chunk_batch(&server, &replacement, &world).len(),
+            send_test_chunk_batch(&server, &replacement, world).len(),
             requested_chunks_per_tick
         );
         assert_eq!(
@@ -3140,10 +3132,12 @@ fn death_respawn_replaces_the_live_player_incarnation() {
     reason = "keeps session pacing and pearl ownership assertions in the same End respawn lifecycle"
 )]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
-    let target_world = fresh_test_world_in_domain("survival", "overworld");
-    let source_world = fresh_test_derived_world(&target_world, "the_end");
-    prepare_respawn_test_world(&source_world);
-    prepare_respawn_test_world(&target_world);
+    let target_world_fixture = fresh_test_world_in_domain("survival", "overworld");
+    let target_world = &target_world_fixture.world;
+    let source_world_fixture = fresh_test_derived_world(target_world, "the_end");
+    let source_world = &source_world_fixture.world;
+    prepare_respawn_test_world(source_world);
+    prepare_respawn_test_world(target_world);
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -3155,7 +3149,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             default_world: target_world.key.clone(),
             worlds: vec![source_world.key.clone(), target_world.key.clone()],
         };
-        let worlds = [Arc::clone(&(*source_world)), Arc::clone(&(*target_world))];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
         let server = test_server_with_worlds(
             domain.name.clone(),
             slice::from_ref(&domain),
@@ -3166,7 +3160,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let old_player = test_player(&server, Arc::clone(&(*source_world)));
+        let old_player = test_player(&server, Arc::clone(source_world));
 
         assert!(
             server
@@ -3182,7 +3176,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(8.5, 100.0, 8.5),
-            Arc::downgrade(&source_world),
+            Arc::downgrade(source_world),
         ));
         let old_owner: SharedEntity = Arc::<Player>::clone(&old_player);
         pearl.set_owner_entity(Some(&old_owner));
@@ -3207,7 +3201,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
 
         let requested_chunks_per_tick = 2;
         assert_ne!(
-            send_test_chunk_batch(&server, &old_player, &source_world),
+            send_test_chunk_batch(&server, &old_player, source_world),
             Vec::<ChunkPos>::new()
         );
 
@@ -3216,9 +3210,9 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         assert!(server.owns_online_player(&old_player));
         old_player.handle_client_command(ClientCommandAction::PerformRespawn);
         assert_eq!(server.jobs.len(), 1);
-        finish_test_respawn_job(&server, &target_world).await;
+        finish_test_respawn_job(&server, target_world).await;
 
-        let replacement = current_respawn_replacement(&server, &target_world, &old_player);
+        let replacement = current_respawn_replacement(&server, target_world, &old_player);
         assert_eq!(
             replacement
                 .chunk_sender()
@@ -3235,7 +3229,7 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         // Respawn queues the target player's tickets after the job's scheduling pass.
         target_world.chunk_map.advance_scheduling();
         assert_eq!(
-            send_test_chunk_batch(&server, &replacement, &target_world).len(),
+            send_test_chunk_batch(&server, &replacement, target_world).len(),
             requested_chunks_per_tick
         );
         assert_eq!(
@@ -3484,7 +3478,8 @@ fn permission_updates_reject_only_new_unknown_group_assignments() {
 
 #[test]
 fn command_source_and_operator_checks_use_published_subject_state() {
-    let world = fresh_test_world("server_test");
+    let world_fixture = fresh_test_world("server_test");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -3493,11 +3488,11 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         let uuid = Uuid::from_u128(1);
         let mut published_states = PermissionSubjectIndex::new();
         published_states.set(uuid, PermissionSubjectState::default());
-        let server = test_server(Arc::clone(&(*world)), published_states).await;
+        let server = test_server(Arc::clone(world), published_states).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player_with_uuid(&server, Arc::clone(&(*world)), uuid);
+        let player = test_player_with_uuid(&server, Arc::clone(world), uuid);
         let permission = permission_key("minecraft.command.stop");
         let stale_player_permissions =
             PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
@@ -3550,20 +3545,21 @@ fn command_source_and_operator_checks_use_published_subject_state() {
 
 #[test]
 fn renamed_join_message_only_reaches_existing_players() {
-    let world = fresh_test_world("server_test");
+    let world_fixture = fresh_test_world("server_test");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let (existing_player, existing_packets) =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "ExistingPlayer", 1);
+            test_player_with_packets(&server, Arc::clone(world), "ExistingPlayer", 1);
         let (joining_player, joining_packets) =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "NewName", 2);
+            test_player_with_packets(&server, Arc::clone(world), "NewName", 2);
         assert!(server.online_players.insert(existing_player));
         assert!(
             server
@@ -3687,29 +3683,25 @@ fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
 
 #[test]
 fn damage_command_records_by_entity_as_the_responsible_player() {
-    let world = fresh_test_world("damage-command-attribution");
+    let world_fixture = fresh_test_world("damage-command-attribution");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
 
         let target_uuid = Uuid::from_u128(1);
         let attacker_uuid = Uuid::from_u128(2);
-        let (target, _) = test_player_with_uuid_and_packets(
-            &server,
-            Arc::clone(&(*world)),
-            target_uuid,
-            "Victim",
-            1,
-        );
+        let (target, _) =
+            test_player_with_uuid_and_packets(&server, Arc::clone(world), target_uuid, "Victim", 1);
         let (attacker, _) = test_player_with_uuid_and_packets(
             &server,
-            Arc::clone(&(*world)),
+            Arc::clone(world),
             attacker_uuid,
             "Attacker",
             101,
@@ -3748,25 +3740,26 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
 
 #[test]
 fn title_command_delivers_vanilla_packets_to_recorded_connections() {
-    let world = fresh_test_world("title-command");
+    let world_fixture = fresh_test_world("title-command");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
 
         let (alice, alice_packets) =
-            test_player_with_packets(&server, Arc::clone(&(*world)), "Alice", 1);
-        let (bob, bob_packets) = test_player_with_packets(&server, Arc::clone(&(*world)), "Bob", 2);
-        assert!(world.add_player(Arc::<Player>::clone(&alice), ResetReason::InitialJoin));
-        assert!(world.add_player(Arc::<Player>::clone(&bob), ResetReason::InitialJoin));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&alice)));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&bob)));
+            test_player_with_packets(&server, Arc::clone(world), "Alice", 1);
+        let (bob, bob_packets) = test_player_with_packets(&server, Arc::clone(world), "Bob", 2);
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&bob), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        assert!(server.online_players.insert(Arc::clone(&bob)));
         let _ = alice.mark_joined_world();
         let _ = bob.mark_joined_world();
         alice.set_client_loaded(true);
@@ -3852,14 +3845,15 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
     init_vanilla_registry();
     init_behaviors();
     init_block_entities();
-    let world = fresh_test_world("setblock-command");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("setblock-command");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -4056,13 +4050,14 @@ fn save_and_shutdown_writes_player_and_world_data() {
 
 #[test]
 fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
-    let world = fresh_test_world_in_domain("survival", "shutdown-disconnect");
+    let world_fixture = fresh_test_world_in_domain("survival", "shutdown-disconnect");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new()).await;
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -4071,15 +4066,10 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
             disconnect_reason,
             ..
         } = test_connection();
-        let player = test_player_with_connection(
-            &server,
-            Arc::clone(&(*world)),
-            "TestPlayer",
-            1,
-            connection,
-        );
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        let player =
+            test_player_with_connection(&server, Arc::clone(world), "TestPlayer", 1, connection);
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
 
         server.save_and_shutdown().await;
 

@@ -113,9 +113,10 @@ mod tests {
     fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("instant_health_high_amplifier");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let world_fixture = fresh_test_world("instant_health_high_amplifier");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         let player_entity: SharedEntity = Arc::<Player>::clone(&player);
         player.set_health(1.0);
 
@@ -132,7 +133,7 @@ mod tests {
 
         apply_potion_contents(
             &contents,
-            &world,
+            world,
             LivingEntityRef::new(&player_entity).expect("player is living"),
             1.0,
         );

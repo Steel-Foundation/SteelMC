@@ -672,11 +672,12 @@ mod tests {
 
     #[test]
     fn chunk_send_commit_rechecks_live_world_membership() {
-        let world = fresh_test_world("chunk_send_membership_revalidation");
+        let world_fixture = fresh_test_world("chunk_send_membership_revalidation");
+        let world = &world_fixture.world;
         let center = ChunkPos::new(0, 0);
-        insert_ready_full_chunk(&world, center);
-        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "ChunkTester", 1).build();
-        assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        insert_ready_full_chunk(world, center);
+        let player = TestPlayerBuilder::new(Arc::clone(world), "ChunkTester", 1).build();
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 
         let encoding_pool = rayon::ThreadPoolBuilder::new().num_threads(1).build();
@@ -684,7 +685,7 @@ mod tests {
             panic!("test chunk encoding pool should initialize");
         };
         let mut encode_cache = FxHashMap::default();
-        Server::send_chunks_for_player(&player, &world, &mut encode_cache, &encoding_pool);
+        Server::send_chunks_for_player(&player, world, &mut encode_cache, &encoding_pool);
 
         let sender = player.chunk_sender().lock();
         assert!(sender.pending_chunks.contains(&center));

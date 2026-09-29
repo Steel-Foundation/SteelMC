@@ -123,9 +123,10 @@ fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
 
 #[test]
 fn unified_source_phase_updates_an_existing_holder_and_commits_its_receipt() {
-    let world = fresh_test_world("unified_ticket_source_phase");
+    let world_fixture = fresh_test_world("unified_ticket_source_phase");
+    let world = &world_fixture.world;
     let pos = ChunkPos::new(7, -5);
-    let holder = insert_active_full_holder(&world, pos, ChunkTicketLevel::FULL_CHUNK, Vec::new());
+    let holder = insert_active_full_holder(world, pos, ChunkTicketLevel::FULL_CHUNK, Vec::new());
     let player_id = Uuid::from_u128(1);
 
     let receipt = world.chunk_map.queue_test_player_ticket_add(pos, player_id);
@@ -145,12 +146,13 @@ fn unified_source_phase_updates_an_existing_holder_and_commits_its_receipt() {
         Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
     );
     assert!(world.chunk_map.chunks.contains_sync(&pos));
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn simulation_changes_do_not_create_holders() {
-    let world = fresh_test_world("simulation_change_without_load");
+    let world_fixture = fresh_test_world("simulation_change_without_load");
+    let world = &world_fixture.world;
     let pos = ChunkPos::new(11, -3);
 
     let _ = world
@@ -162,12 +164,13 @@ fn simulation_changes_do_not_create_holders() {
 
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
-    let world = fresh_test_world("simulation_ticket_removal_keeps_loaded");
+    let world_fixture = fresh_test_world("simulation_ticket_removal_keeps_loaded");
+    let world = &world_fixture.world;
     let pos = ChunkPos::new(-8, 6);
     let load_level = ChunkTicketLevel::FULL_CHUNK;
     let player_id = Uuid::from_u128(2);
@@ -208,5 +211,5 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
     let _ = world
         .chunk_map
         .release_chunk_request_leases(&[pos], load_level);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }

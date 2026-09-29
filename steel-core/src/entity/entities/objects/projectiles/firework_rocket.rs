@@ -596,19 +596,21 @@ mod tests {
 
     #[test]
     fn attached_rocket_keeps_its_target_when_world_ids_are_reused() {
-        let world = fresh_test_world("rocket_attachment_identity");
-        let owner_world = fresh_test_world("rocket_owner_world");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("rocket_attachment_identity");
+        let world = &world_fixture.world;
+        let owner_world_fixture = fresh_test_world("rocket_owner_world");
+        let owner_world = &owner_world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let target: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             19,
             DVec3::ZERO,
-            Arc::downgrade(&owner_world),
+            Arc::downgrade(owner_world),
         ));
         let rocket = FireworkRocketEntity::attached_to_living(
             &vanilla_entities::FIREWORK_ROCKET,
             20,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             ItemStack::new(&vanilla_items::FIREWORK_ROCKET),
             LivingEntityRef::new(&target).expect("living target"),
         );
@@ -623,33 +625,34 @@ mod tests {
             &vanilla_entities::PIG,
             target.id(),
             DVec3::ZERO,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         world
             .try_add_entity(replacement)
             .expect("replacement registration");
         assert!(Arc::ptr_eq(
-            &rocket.attached_entity(&world).expect("original attachment"),
+            &rocket.attached_entity(world).expect("original attachment"),
             &target
         ));
         drop(target);
         assert!(
             rocket
-                .attached_entity(&world)
+                .attached_entity(world)
                 .is_none_or(|entity| entity.generation() == original_generation)
         );
     }
 
     #[test]
     fn explosion_damages_replacement_with_attached_entity_id() {
-        let world = fresh_test_world("firework_explosion_identity");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("firework_explosion_identity");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let position = DVec3::new(8.0, 64.0, 8.0);
         let original: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             position,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         world
             .try_add_entity(Arc::clone(&original))
@@ -662,7 +665,7 @@ mod tests {
         let rocket = Arc::new(FireworkRocketEntity::attached_to_living(
             &vanilla_entities::FIREWORK_ROCKET,
             2,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             item,
             LivingEntityRef::new(&original).expect("living attachment"),
         ));
@@ -672,14 +675,14 @@ mod tests {
             &vanilla_entities::PIG,
             original.id(),
             position + DVec3::X,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         world
             .try_add_entity(Arc::<PigEntity>::clone(&replacement))
             .expect("register replacement");
 
         let replacement_health = replacement.get_health();
-        rocket.deal_explosion_damage(&world);
+        rocket.deal_explosion_damage(world);
 
         assert!(
             replacement.get_health() < replacement_health,

@@ -387,20 +387,21 @@ mod tests {
 
     #[test]
     fn skip_attack_interaction_when_required() {
-        let world = fresh_test_world("skip_interaction_when_required");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "InteractPlayer", 0).build();
+        let world_fixture = fresh_test_world("skip_interaction_when_required");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "InteractPlayer", 0).build();
 
         let response_false_interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             1,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         let response_true_interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             2,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         response_true_interaction.with_entity_data(|data| data.set_response(true));
 
@@ -410,22 +411,23 @@ mod tests {
 
     #[test]
     fn record_player_actions() {
-        let world = fresh_test_world("interaction_records_player_actions");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "InteractPlayer", 0).build();
+        let world_fixture = fresh_test_world("interaction_records_player_actions");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "InteractPlayer", 0).build();
 
         let interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             1,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
 
         assert_eq!(interaction.last_attack(), None);
         assert_eq!(interaction.last_interaction(), None);
 
-        tick_test_world(&world, 0, true);
-        tick_test_world(&world, 1, true);
-        tick_test_world(&world, 2, true);
+        tick_test_world(world, 0, true);
+        tick_test_world(world, 1, true);
+        tick_test_world(world, 2, true);
 
         interaction.skip_attack_interaction(player.as_ref());
         assert_eq!(
@@ -437,8 +439,8 @@ mod tests {
         );
         assert_eq!(interaction.last_interaction(), None);
 
-        tick_test_world(&world, 3, true);
-        tick_test_world(&world, 4, true);
+        tick_test_world(world, 3, true);
+        tick_test_world(world, 4, true);
 
         interaction.interact(player.as_ref(), InteractionHand::MainHand, TEST_POSITION);
         assert_eq!(
@@ -456,7 +458,7 @@ mod tests {
             })
         );
 
-        tick_test_world(&world, 5, true);
+        tick_test_world(world, 5, true);
 
         interaction.skip_attack_interaction(player.as_ref());
         assert_eq!(
@@ -470,13 +472,14 @@ mod tests {
 
     #[test]
     fn update_dimensions_on_edit() {
-        let world = fresh_test_world("interaction_updates_dimensions_on_edit");
+        let world_fixture = fresh_test_world("interaction_updates_dimensions_on_edit");
+        let world = &world_fixture.world;
 
         let interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             0,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
 
         let check_dimensions_and_bounding_box = |expected_width: f32, expected_height: f32| {

@@ -1090,10 +1090,11 @@ mod tests {
 
         use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
-        let world = fresh_test_world("sprint_exhaustion_single_charge");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("sprint_exhaustion_single_charge");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "SprintTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "SprintTester", 1).build();
         player.set_client_loaded(true);
 
         let start = DVec3::new(8.0, 64.0, 8.0);

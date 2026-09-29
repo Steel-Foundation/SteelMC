@@ -144,8 +144,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("throwable_first_tick_bubble_column");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("throwable_first_tick_bubble_column");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let bubble_pos = BlockPos::new(8, 65, 8);
         let initial_position = DVec3::new(8.5, 65.0, 8.5);
@@ -159,7 +160,7 @@ mod tests {
             &vanilla_entities::SNOWBALL,
             1,
             initial_position,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         world
             .try_add_entity(Arc::<SnowballEntity>::clone(&snowball) as SharedEntity)
@@ -193,8 +194,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("throwable_first_tick_bubble_column_velocity");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("throwable_first_tick_bubble_column_velocity");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let bubble_pos = BlockPos::new(8, 65, 8);
         let initial_position = DVec3::new(8.5, 65.0, 8.5);
@@ -224,7 +226,7 @@ mod tests {
                 &vanilla_entities::SNOWBALL,
                 1,
                 initial_position,
-                Arc::downgrade(&world),
+                Arc::downgrade(world),
             );
             snowball.set_velocity(DVec3::new(0.25, initial_y, -0.25));
 

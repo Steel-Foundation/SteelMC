@@ -192,8 +192,9 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = fresh_test_world("first_tick_refresh_dimensions");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("first_tick_refresh_dimensions");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     assert!(world.set_block(
         BlockPos::new(9, 80, 8),
@@ -206,7 +207,7 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
         &vanilla_entities::PIG,
         1,
         initial_position,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     pig.set_no_ai(true);
     pig.set_age(-1);

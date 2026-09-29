@@ -366,18 +366,19 @@ mod tests {
     fn hatchling_spawns_baby_chicken_at_egg_position() {
         init_vanilla_registry();
 
-        let world = fresh_test_world("thrown_egg_hatchling");
+        let world_fixture = fresh_test_world("thrown_egg_hatchling");
+        let world = &world_fixture.world;
         let pos = DVec3::new(0.5, 80.0, 0.5);
-        insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_entity_pos(pos));
         let egg = Arc::new(ThrownEggEntity::new(
             &vanilla_entities::EGG,
             1,
             pos,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         egg.set_item(ItemStack::new(&vanilla_items::EGG));
 
-        assert!(egg.spawn_hatchling(&world));
+        assert!(egg.spawn_hatchling(world));
 
         let chicks = world.get_entities_in_aabb(&WorldAabb::of_size(pos, 1.0, 2.0, 1.0));
         let chick = chicks
@@ -397,8 +398,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("thrown_egg_enclosed");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("thrown_egg_enclosed");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         assert!(world.set_block(
             BlockPos::new(0, 80, 0),
             vanilla_blocks::STONE.default_state(),
@@ -411,11 +413,11 @@ mod tests {
             &vanilla_entities::EGG,
             1,
             DVec3::new(0.5, 80.5, 0.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         egg.set_item(ItemStack::new(&vanilla_items::EGG));
 
-        assert!(!egg.spawn_hatchling(&world));
+        assert!(!egg.spawn_hatchling(world));
         assert!(
             world
                 .get_entities_in_aabb(&WorldAabb::of_size(
@@ -434,8 +436,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("thrown_egg_on_block");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("thrown_egg_on_block");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         assert!(world.set_block(
             BlockPos::new(0, 80, 0),
             vanilla_blocks::STONE.default_state(),
@@ -448,11 +451,11 @@ mod tests {
             &vanilla_entities::EGG,
             1,
             pos,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         egg.set_item(ItemStack::new(&vanilla_items::EGG));
 
-        assert!(egg.spawn_hatchling(&world));
+        assert!(egg.spawn_hatchling(world));
         assert!(
             world
                 .get_entities_in_aabb(&WorldAabb::of_size(pos, 1.0, 2.0, 1.0))

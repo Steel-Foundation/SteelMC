@@ -136,10 +136,11 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("compass_test_world");
+        let world_fixture = fresh_test_world("compass_test_world");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(0, 64, 0);
         let chunk_pos = ChunkPos::from_block_pos(pos);
-        insert_ready_full_chunk(&world, chunk_pos);
+        insert_ready_full_chunk(world, chunk_pos);
 
         assert!(world.set_block(
             pos,
@@ -147,7 +148,7 @@ mod tests {
             UpdateFlags::UPDATE_ALL
         ));
 
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "CompassTester", 1)
+        let player = TestPlayerBuilder::new(Arc::clone(world), "CompassTester", 1)
             .uuid(Uuid::from_u128(1))
             .build();
 
@@ -168,7 +169,7 @@ mod tests {
             &player,
             InteractionHand::MainHand,
             hit_result,
-            &world,
+            world,
             Arc::clone(&player.inventory),
         );
 
@@ -214,8 +215,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("compass_bounds_test_world");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "CompassTester", 1)
+        let world_fixture = fresh_test_world("compass_bounds_test_world");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "CompassTester", 1)
             .uuid(Uuid::from_u128(1))
             .build();
 

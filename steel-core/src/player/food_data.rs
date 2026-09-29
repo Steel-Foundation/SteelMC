@@ -351,8 +351,9 @@ mod tests {
         use crate::entity::Entity;
         use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
-        let world = fresh_test_world("player_tick_food_exhaustion");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let world_fixture = fresh_test_world("player_tick_food_exhaustion");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         {
             let mut food = player.food_data.lock();
             food.saturation_level = 3.0;

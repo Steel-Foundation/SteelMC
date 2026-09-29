@@ -234,9 +234,10 @@ mod tests {
 
     #[test]
     fn use_item_discards_non_finite_rotation_components() {
-        let world = fresh_test_world("use_item_non_finite_rotation");
+        let world_fixture = fresh_test_world("use_item_non_finite_rotation");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -265,16 +266,17 @@ mod tests {
     /// starting active use.
     #[test]
     fn use_item_refuses_normal_food_at_full_hunger() {
-        let world = fresh_test_world("use_item_full_hunger_normal_food");
+        let world_fixture = fresh_test_world("use_item_full_hunger_normal_food");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::APPLE));
 
-        let result = use_item(&player, &world, InteractionHand::MainHand);
+        let result = use_item(&player, world, InteractionHand::MainHand);
 
         assert_eq!(result, InteractionResult::Fail);
         assert_eq!(player.active_item_use_hand(), None);
@@ -284,16 +286,17 @@ mod tests {
     /// full hunger, matching vanilla `FoodProperties.canAlwaysEat`.
     #[test]
     fn use_item_allows_always_edible_food_at_full_hunger() {
-        let world = fresh_test_world("use_item_full_hunger_always_edible_food");
+        let world_fixture = fresh_test_world("use_item_full_hunger_always_edible_food");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::GOLDEN_APPLE));
 
-        let result = use_item(&player, &world, InteractionHand::MainHand);
+        let result = use_item(&player, world, InteractionHand::MainHand);
 
         assert_eq!(result, InteractionResult::Consume);
         assert_eq!(

@@ -169,26 +169,27 @@ mod tests {
     ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(name);
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world(name);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let hunter = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         let nearer_pig = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         let farther_cow = Arc::new(CowEntity::new(
             &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
 
         for entity in [
@@ -201,7 +202,7 @@ mod tests {
                 .expect("test entity should attach to the loaded chunk");
         }
 
-        (world, hunter, nearer_pig, farther_cow)
+        (world_fixture, hunter, nearer_pig, farther_cow)
     }
 
     #[test]

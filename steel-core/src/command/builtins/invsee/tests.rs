@@ -200,8 +200,9 @@ fn invsee_rejects_players_in_different_domains() {
     finish_domain_switch(&target, switch_token);
     assert!(ensure_same_domain(&source, &target).is_ok());
 
-    let target_world = fresh_test_world_in_domain("other", "invsee_target");
-    target.set_world(Arc::clone(&(*target_world)));
+    let target_world_fixture = fresh_test_world_in_domain("other", "invsee_target");
+    let target_world = &target_world_fixture.world;
+    target.set_world(Arc::clone(target_world));
 
     assert!(ensure_same_domain(&source, &target).is_err());
 }
@@ -698,8 +699,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     finish_domain_switch(&source, source_switch_token);
     assert!(readonly_menu.still_valid(&source));
 
-    let target_world = fresh_test_world_in_domain("other", "invsee_viewer");
-    source.set_world(Arc::clone(&(*target_world)));
+    let target_world_fixture = fresh_test_world_in_domain("other", "invsee_viewer");
+    let target_world = &target_world_fixture.world;
+    source.set_world(Arc::clone(target_world));
     assert!(!readonly_menu.still_valid(&source));
     source.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));
@@ -709,8 +711,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     finish_domain_switch(&target, target_switch_token);
     assert!(readonly_menu.still_valid(&source));
 
-    let target_world = fresh_test_world_in_domain("other", "invsee_domain");
-    target.set_world(Arc::clone(&(*target_world)));
+    let target_world_fixture = fresh_test_world_in_domain("other", "invsee_domain");
+    let target_world = &target_world_fixture.world;
+    target.set_world(Arc::clone(target_world));
     assert!(!readonly_menu.still_valid(&source));
     target.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));

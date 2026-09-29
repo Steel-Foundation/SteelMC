@@ -475,15 +475,16 @@ mod tests {
     fn ticket_renewal_registers_with_the_resolved_owner() {
         init_vanilla_registry();
 
-        let world = fresh_test_world("ender_pearl_ticket_owner");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
+        let world_fixture = fresh_test_world("ender_pearl_ticket_owner");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Owner", 1).build();
         let owner: SharedEntity = Arc::<Player>::clone(&player);
         let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(0.5, 64.0, 0.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         pearl.set_owner_entity(Some(&owner));
         let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
@@ -492,7 +493,7 @@ mod tests {
         }
 
         assert!(player.ender_pearls().is_empty());
-        pearl.update_ender_pearl_ticket(&world);
+        pearl.update_ender_pearl_ticket(world);
 
         let registered = player.ender_pearls();
         assert_eq!(registered.len(), 1);

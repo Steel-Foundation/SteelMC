@@ -160,13 +160,14 @@ mod tests {
         use steel_utils::ChunkPos;
 
         init_behaviors();
-        let world = fresh_test_world(name);
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world(name);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let sheep = SheepEntity::new(
             &vanilla_entities::SHEEP,
             1,
             DVec3::new(8.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         sheep.set_sheared(true);
         let shared: SharedEntity = Arc::new(sheep);
@@ -178,7 +179,7 @@ mod tests {
             vanilla_blocks::GRASS_BLOCK.default_state(),
             UpdateFlags::UPDATE_CLIENTS,
         );
-        (world, shared)
+        (world_fixture, shared)
     }
 
     #[test]
@@ -186,7 +187,8 @@ mod tests {
         use steel_registry::vanilla_blocks;
 
         init_vanilla_registry();
-        let (world, shared) = sheep_on_grass_world("eat_grass");
+        let (world_fixture, shared) = sheep_on_grass_world("eat_grass");
+        let world = &world_fixture.world;
         let mob = shared
             .as_pathfinder_mob()
             .expect("sheep should be a pathfinder mob");
@@ -215,7 +217,8 @@ mod tests {
         use steel_registry::vanilla_blocks;
 
         init_vanilla_registry();
-        let (world, shared) = sheep_on_grass_world("eat_grass_no_grief");
+        let (world_fixture, shared) = sheep_on_grass_world("eat_grass_no_grief");
+        let world = &world_fixture.world;
         world.set_game_rule(&MOB_GRIEFING, false);
         let mob = shared
             .as_pathfinder_mob()

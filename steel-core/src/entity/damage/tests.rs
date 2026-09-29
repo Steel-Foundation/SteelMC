@@ -34,19 +34,20 @@ fn history_world(history: &Arc<DamageHistory>, name: &'static str) -> Arc<World>
 #[test]
 fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
     init_vanilla_registry();
-    let world = fresh_test_world("damage_source_identity");
-    insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("damage_source_identity");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, steel_utils::ChunkPos::new(0, 0));
     let attacker: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     let projectile: SharedEntity = Arc::new(SnowballEntity::new(
         &vanilla_entities::SNOWBALL,
         2,
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     for entity in [&attacker, &projectile] {
         world
@@ -62,7 +63,7 @@ fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
         let replacement = TestEntity::shared(
             entity.id(),
             DVec3::ZERO,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             &vanilla_entities::ITEM,
         );
         world
@@ -226,18 +227,19 @@ fn returned_source_survives_history_clear_and_owner_teardown() {
 fn projectile_callback_can_build_a_source_after_its_removal() {
     use crate::entity::projectile::Projectile;
 
-    let world = fresh_test_world("discarded_projectile_source");
+    let world_fixture = fresh_test_world("discarded_projectile_source");
+    let world = &world_fixture.world;
     let target = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     let projectile = Arc::new(SnowballEntity::new(
         &vanilla_entities::SNOWBALL,
         2,
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     projectile.set_removed(RemovalReason::Discarded);
     let target_entity: SharedEntity = Arc::<PigEntity>::clone(&target);

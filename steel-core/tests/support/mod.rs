@@ -236,18 +236,11 @@ fn create_test_world_with_key_and_dimension_type(
 }
 
 /// Owns damage history for test worlds constructed without a server.
+/// Keep the fixture alive while using its world handles.
 #[derive(Clone)]
 pub(crate) struct TestWorld {
-    world: Arc<World>,
+    pub(crate) world: Arc<World>,
     history: Arc<DamageHistory>,
-}
-
-impl Deref for TestWorld {
-    type Target = Arc<World>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.world
-    }
 }
 
 thread_local! {
@@ -571,7 +564,8 @@ impl Deref for TestDomain {
 /// Explicit isolated domain binding, including worlds constructed with the production role.
 pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> TestDomain {
     let primary_name = names.first().expect("test domain needs a primary");
-    let primary = fresh_test_world_in_domain(domain, primary_name);
+    let primary_fixture = fresh_test_world_in_domain(domain, primary_name);
+    let primary = &primary_fixture.world;
     let config = ResolvedDomainConfig {
         name: domain.to_owned(),
         default_world: primary.key.clone(),
@@ -582,21 +576,22 @@ pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> TestD
     };
     let mut worlds = WorldMap::new(domain.to_owned(), &[config], &[]);
     for name in &names[1..] {
-        let world = create_test_world_with_time_source(
+        let world_fixture = create_test_world_with_time_source(
             Identifier::new_static(domain, name),
             Difficulty::Normal,
             &vanilla_dimension_types::OVERWORLD,
             GameTimeSource::Derived(Arc::clone(&primary.game_time)),
         );
-        worlds.insert(world.key.clone(), Arc::clone(&(*world)));
+        let world = &world_fixture.world;
+        worlds.insert(world.key.clone(), Arc::clone(world));
     }
-    worlds.insert(primary.key.clone(), Arc::clone(&(*primary)));
+    worlds.insert(primary.key.clone(), Arc::clone(primary));
     worlds
         .validate_game_times()
         .expect("test domain must be correctly bound");
     TestDomain {
         worlds,
-        _history: Arc::<DamageHistory>::clone(&primary.history),
+        _history: Arc::clone(&primary_fixture.history),
     }
 }
 
