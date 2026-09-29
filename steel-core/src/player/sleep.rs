@@ -2,8 +2,9 @@ use glam::DVec3;
 use steel_protocol::packets::game::{AnimateAction, CAnimate};
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
-    dimension_type::BedRuleValue,
-    vanilla_custom_stats,
+    dimension_type::{BedRule, BedRuleValue},
+    stat::custom::CustomStatRef,
+    vanilla_blocks, vanilla_custom_stats,
 };
 use steel_utils::{BlockPos, Direction};
 use text_components::{TextComponent, translation::TranslatedMessage};
@@ -36,6 +37,14 @@ impl BedSleepingProblem {
 }
 
 impl Player {
+    pub(crate) fn bed_rule_for(world: &World, state: steel_utils::BlockStateId) -> &BedRule {
+        if state.get_block() == &vanilla_blocks::STRAW_BED {
+            &world.dimension_type.straw_bed_rule
+        } else {
+            &world.dimension_type.bed_rule
+        }
+    }
+
     pub(super) fn bed_rule_value_allows_in_world(world: &World, value: BedRuleValue) -> bool {
         match value {
             BedRuleValue::Always => true,
@@ -48,27 +57,14 @@ impl Player {
         Self::bed_rule_value_allows_in_world(&self.get_world(), value)
     }
 
-    fn bed_rule_problem_message(&self) -> Option<TextComponent> {
-        self.get_world()
-            .dimension_type
-            .bed_rule
-            .error_message_key
-            .as_ref()
-            .map(|key| {
-                TranslatedMessage {
-                    key: (*key).into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component()
-            })
+    fn bed_rule_problem_message(rule: &BedRule) -> Option<TextComponent> {
+        rule.error_message.map(|message| message())
     }
 
-    fn bed_sleep_problem(&self) -> BedSleepingProblem {
-        self.bed_rule_problem_message()
-            .map_or(BedSleepingProblem::OtherProblem, |message| {
-                BedSleepingProblem::Message(Box::new(message))
-            })
+    fn bed_sleep_problem(rule: &BedRule) -> BedSleepingProblem {
+        Self::bed_rule_problem_message(rule).map_or(BedSleepingProblem::OtherProblem, |message| {
+            BedSleepingProblem::Message(Box::new(message))
+        })
     }
 
     fn is_reachable_bed_block_from_position(player_pos: DVec3, bed_block_pos: BlockPos) -> bool {
@@ -134,7 +130,12 @@ impl Player {
         self.sync_entity_data();
     }
 
-    pub(crate) fn start_sleep_in_bed(&self, pos: BlockPos) -> Result<(), BedSleepingProblem> {
+    pub(crate) fn start_sleep_in_bed(
+        &self,
+        pos: BlockPos,
+        rule: &BedRule,
+        slept_in_stat: CustomStatRef,
+    ) -> Result<(), BedSleepingProblem> {
         let world = self.get_world();
         let direction = world
             .get_block_state(pos)
@@ -143,12 +144,8 @@ impl Player {
             return Err(BedSleepingProblem::OtherProblem);
         }
 
-        let rule = &world.dimension_type.bed_rule;
         let can_sleep = self.bed_rule_value_allows(rule.can_sleep);
         let can_set_spawn = self.bed_rule_value_allows(rule.can_set_spawn);
-        if !can_set_spawn && !can_sleep {
-            return Err(self.bed_sleep_problem());
-        }
         if !self.bed_in_range(pos, direction) {
             return Err(BedSleepingProblem::Message(Box::new(
                 TranslatedMessage {
@@ -180,7 +177,7 @@ impl Player {
             );
         }
         if !can_sleep {
-            return Err(self.bed_sleep_problem());
+            return Err(Self::bed_sleep_problem(rule));
         }
 
         // TODO: Mirror vanilla Monster::isPreventingPlayerRest once Steel has
@@ -189,8 +186,11 @@ impl Player {
         if self.start_sleeping(pos).is_err() {
             return Err(BedSleepingProblem::OtherProblem);
         }
+
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_REST);
         self.sync_entity_data();
-        self.award_custom_stat(&vanilla_custom_stats::SLEEP_IN_BED);
+        self.award_custom_stat(slept_in_stat);
+
         // TODO: trigger CriteriaTriggers.SLEPT_IN_BED once the foundation for advancements exist.
         if !world.can_sleep_through_nights() {
             self.send_overlay_message(

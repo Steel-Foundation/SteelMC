@@ -2,6 +2,7 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
+use text_components::TextComponent;
 
 use crate::sound_event::SoundEventRef;
 use crate::world_clock::WorldClockRef;
@@ -10,8 +11,10 @@ use crate::world_clock::WorldClockRef;
 pub struct BedRule {
     pub can_set_spawn: BedRuleValue,
     pub can_sleep: BedRuleValue,
-    pub explodes: bool,
+    pub destroy_on_use: bool,
+    pub destroy_on_leave: bool,
     pub error_message_key: Option<&'static str>,
+    pub error_message: Option<fn() -> TextComponent>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,6 +108,7 @@ pub struct DimensionType {
     pub water_evaporates: bool,
     pub nether_portal_spawns_piglin: bool,
     pub bed_rule: BedRule,
+    pub straw_bed_rule: BedRule,
 
     // Attributes: audio
     pub mood_sound: Option<MoodSound>,
@@ -255,8 +259,11 @@ impl ToNbtTag for &DimensionType {
             let mut bed_rule = NbtCompound::new();
             bed_rule.insert("can_set_spawn", self.bed_rule.can_set_spawn);
             bed_rule.insert("can_sleep", self.bed_rule.can_sleep);
-            if self.bed_rule.explodes {
-                bed_rule.insert("explodes", self.bed_rule.explodes);
+            if self.bed_rule.destroy_on_use {
+                bed_rule.insert("destroy_on_use", self.bed_rule.destroy_on_use);
+            }
+            if self.bed_rule.destroy_on_leave {
+                bed_rule.insert("destroy_on_leave", self.bed_rule.destroy_on_leave);
             }
             if let Some(key) = self.bed_rule.error_message_key {
                 let mut msg = NbtCompound::new();
@@ -264,6 +271,26 @@ impl ToNbtTag for &DimensionType {
                 bed_rule.insert("error_message", NbtTag::Compound(msg));
             }
             attributes.insert("minecraft:gameplay/bed_rule", NbtTag::Compound(bed_rule));
+        }
+        {
+            let mut bed_rule = NbtCompound::new();
+            bed_rule.insert("can_set_spawn", self.straw_bed_rule.can_set_spawn);
+            bed_rule.insert("can_sleep", self.straw_bed_rule.can_sleep);
+            if self.straw_bed_rule.destroy_on_use {
+                bed_rule.insert("destroy_on_use", self.straw_bed_rule.destroy_on_use);
+            }
+            if self.straw_bed_rule.destroy_on_leave {
+                bed_rule.insert("destroy_on_leave", self.straw_bed_rule.destroy_on_leave);
+            }
+            if let Some(key) = self.straw_bed_rule.error_message_key {
+                let mut msg = NbtCompound::new();
+                msg.insert("translate", key);
+                bed_rule.insert("error_message", NbtTag::Compound(msg));
+            }
+            attributes.insert(
+                "minecraft:gameplay/straw_bed_rule",
+                NbtTag::Compound(bed_rule),
+            );
         }
 
         // Audio attributes
