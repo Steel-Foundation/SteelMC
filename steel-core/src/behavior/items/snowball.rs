@@ -54,6 +54,7 @@ impl ItemBehavior for SnowballItem {
             world,
             player,
             &mut thrown_item,
+            0.0,
             SHOOT_POWER,
             THROW_UNCERTAINTY,
             |spawn_pos| {
