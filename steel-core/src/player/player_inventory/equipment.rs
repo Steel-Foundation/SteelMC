@@ -339,6 +339,10 @@ impl EntityEquipment for PlayerInventory {
     fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
         let inventory_index = self.equipment_slot_index(slot);
         let old = mem::replace(&mut self.items[inventory_index], stack);
+        if matches!(slot, EquipmentSlot::MainHand | EquipmentSlot::OffHand) {
+            self.hand_write_generation[slot as usize] =
+                self.hand_write_generation[slot as usize].wrapping_add(1);
+        }
         Container::set_changed(self);
         old
     }

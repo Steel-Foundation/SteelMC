@@ -7,7 +7,9 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 
-use crate::behavior::{InteractionResult, ItemBehavior, ItemUseAnimation, UseItemContext};
+use crate::behavior::{
+    FinishUseResult, InteractionResult, ItemBehavior, ItemUseAnimation, UseItemContext,
+};
 use crate::entity::{Entity, LivingEntity};
 use crate::world::World;
 
@@ -47,12 +49,12 @@ impl ItemBehavior for SpyglassItem {
 
     fn finish_using(
         &self,
-        stack: &mut ItemStack,
+        _stack: &mut ItemStack,
         _world: &Arc<World>,
         user: &dyn LivingEntity,
-    ) -> ItemStack {
+    ) -> FinishUseResult {
         Self::stop_using(user);
-        stack.copy_with_count(stack.count())
+        FinishUseResult::InPlace
     }
 
     fn release_using(

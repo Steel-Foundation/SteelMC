@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::behavior::item::finish_consuming_stack;
-use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
+use crate::behavior::{FinishUseResult, InteractionResult, ItemBehavior, UseOnContext};
 use crate::entity::LivingEntity;
 use crate::entity::apply_potion_contents;
 use crate::world::World;
@@ -41,7 +41,7 @@ impl ItemBehavior for PotionItem {
         stack: &mut ItemStack,
         world: &Arc<World>,
         user: &dyn LivingEntity,
-    ) -> ItemStack {
+    ) -> FinishUseResult {
         let contents =
             stack.get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
         let duration_scale = stack.get_or_default(vanilla_components::POTION_DURATION_SCALE, 1.0);

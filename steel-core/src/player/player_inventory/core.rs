@@ -2,7 +2,7 @@ use std::{array, ops::Range};
 
 use simdnbt::owned::{NbtList, NbtTag};
 use steel_registry::{enchantment_effect::EnchantmentEffectComponent, item_stack::ItemStack};
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{DowncastType, DowncastTypeKey, types::InteractionHand};
 
 use crate::inventory::{
     container::Container,
@@ -22,6 +22,8 @@ pub struct PlayerInventory {
     pub(super) selected: u8,
     /// Counter incremented on every change.
     pub(super) times_changed: u32,
+    /// Per-hand generation used to detect hand-slot writes
+    pub(super) hand_write_generation: [u32; 2],
 }
 
 impl Default for PlayerInventory {
@@ -72,6 +74,7 @@ impl PlayerInventory {
             items: array::from_fn(|_| ItemStack::empty()),
             selected: 0,
             times_changed: 0,
+            hand_write_generation: [0; 2],
         }
     }
 
@@ -85,6 +88,7 @@ impl PlayerInventory {
             }),
             selected: self.selected,
             times_changed: 0,
+            hand_write_generation: [0; 2],
         }
     }
 
@@ -191,6 +195,11 @@ impl PlayerInventory {
         let _ = EntityEquipment::set(self, EquipmentSlot::OffHand, item);
     }
 
+    #[must_use]
+    pub(in crate::player) const fn hand_write_generation(&self, hand: InteractionHand) -> u32 {
+        self.hand_write_generation[hand as usize]
+    }
+
     /// Executes a function with a mutable reference to the currently selected item.
     pub fn with_selected_item_mut<R>(&mut self, f: impl FnOnce(&mut ItemStack) -> R) -> R {
         self.with_equipment_item_mut(EquipmentSlot::MainHand, f)
@@ -205,6 +214,10 @@ impl PlayerInventory {
         let previous = self.items[inventory_index].clone();
         let result = f(&mut self.items[inventory_index]);
         if !ItemStack::matches(&self.items[inventory_index], &previous) {
+            if matches!(slot, EquipmentSlot::MainHand | EquipmentSlot::OffHand) {
+                self.hand_write_generation[slot as usize] =
+                    self.hand_write_generation[slot as usize].wrapping_add(1);
+            }
             Container::set_changed(self);
         }
         result
