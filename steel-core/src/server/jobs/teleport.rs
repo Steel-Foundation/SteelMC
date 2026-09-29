@@ -606,7 +606,7 @@ impl ServerJob for EndPortalTeleportJob {
                         };
                         let request = target_world.request_player_spawn_chunks(position);
                         self.phase = EndPortalTeleportPhase::LoadingPlayerRespawn {
-                            target_world: target_world.clone(),
+                            target_world: Arc::clone(target_world),
                             spawn,
                             request,
                         };
@@ -843,7 +843,7 @@ fn restore_root_vehicle_for_player(
         return;
     }
 
-    let player_entity: SharedEntity = player.clone();
+    let player_entity: SharedEntity = Arc::<Player>::clone(player);
     EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
     attach_entity.position_rider(player.as_ref());
     player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
@@ -977,7 +977,7 @@ fn restore_ender_pearl_for_player(
         return false;
     }
 
-    let owner: SharedEntity = player.clone();
+    let owner: SharedEntity = Arc::<Player>::clone(player);
     for entity in &entities {
         entity.restore_owner_reference(&owner);
     }

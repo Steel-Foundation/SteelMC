@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -519,7 +521,7 @@ impl Player {
             return InteractionResult::Pass;
         }
 
-        let inventory_access = InventoryAccess::new(self.inventory.clone(), hand);
+        let inventory_access = InventoryAccess::new(Arc::clone(&self.inventory), hand);
         let original_count = inventory_access.with_item(|item| item.count);
         let result = entity.interact(self, hand, location);
 

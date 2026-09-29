@@ -400,6 +400,7 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos};
 
     use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile};
+    use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
 
@@ -477,7 +478,7 @@ mod tests {
         let world = fresh_test_world("ender_pearl_ticket_owner");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
-        let owner: SharedEntity = player.clone();
+        let owner: SharedEntity = Arc::<Player>::clone(&player);
         let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
@@ -485,7 +486,7 @@ mod tests {
             Arc::downgrade(&world),
         ));
         pearl.set_owner_entity(Some(&owner));
-        let shared_pearl: SharedEntity = pearl.clone();
+        let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
         if let Err(error) = world.try_add_entity(shared_pearl) {
             panic!("test pearl should be added: {error}");
         }
