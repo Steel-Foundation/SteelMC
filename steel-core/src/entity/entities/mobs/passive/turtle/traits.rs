@@ -8,7 +8,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::{sound_events, vanilla_attributes};
+use steel_registry::{sound_events, vanilla_attributes, vanilla_blocks};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -357,6 +357,16 @@ impl Mob for TurtleEntity {
 }
 
 impl PathfinderMob for TurtleEntity {
+    fn is_stable_destination(&self, pos: BlockPos) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+        if self.travel_pos().is_some() {
+            return world.get_block_state(pos).get_block() == &vanilla_blocks::WATER;
+        }
+        !world.get_block_state(pos.below()).is_air()
+    }
+
     fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
         let Some(world) = self.level() else {
             return 0.0;
