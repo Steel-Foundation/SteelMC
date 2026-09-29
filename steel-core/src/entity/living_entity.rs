@@ -1,14 +1,11 @@
-use steel_registry::consume_effect::vanilla_consume_effect_types;
-use steel_registry::consume_effect::{
-    ApplyStatusEffectsConsumeEffect, PlaySoundConsumeEffect, RemoveStatusEffectsConsumeEffect,
-};
-use steel_registry::data_components::vanilla_components::DEATH_PROTECTION;
-use steel_registry::stat::vanilla_stat_types;
 use steel_math::DEGREE_90;
+use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::entity::consume_effect::apply_consume_effect;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -681,9 +678,7 @@ pub trait LivingEntity: Entity {
         }
 
         if self.is_dead_or_dying() {
-            if self.apply_totem_death_protection(source) {
-                // Totem saved the entity — skip death.
-            } else {
+            if !self.check_totem_death_protection(source) {
                 if took_full_damage {
                     self.play_death_sound();
                 }
@@ -945,71 +940,46 @@ pub trait LivingEntity: Entity {
         );
     }
 
-    /// Applies a held death-protection item (e.g. totem of undying) to prevent
-    /// lethal damage. Returns `true` if an item saved the entity.
-    ///
-    /// Mirrors vanilla `LivingEntity.checkTotemDeathProtection`.
-    fn apply_totem_death_protection(&self, source: &DamageSource) -> bool {
+    /// Uses a held death-protection item to survive lethal damage. Returns whether one was used.
+    fn check_totem_death_protection(&self, source: &DamageSource) -> bool {
         if source.bypasses_invulnerability() {
             return false;
         }
 
-        // Scan hands for a death-protection item (main hand first, then off hand),
-        // consuming it in the same pass once found.
-        let (protection, item_type) = 'scan: {
-            let mut equipment = self.living_base().equipment().lock();
-            for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
-                let item = equipment.get_mut(slot);
-                if let Some(protection) = item.get(DEATH_PROTECTION).cloned() {
-                    let item_type = item.item();
-                    item.shrink(1);
-                    break 'scan (protection, item_type);
+        let mut used = None;
+        for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
+            self.with_equipment_slot_mut(slot, &mut |stack| {
+                if let Some(protection) = stack.get(DEATH_PROTECTION).cloned() {
+                    used = Some((protection, stack.clone()));
+                    stack.shrink(1);
                 }
+            });
+            if used.is_some() {
+                break;
             }
+        }
+        let Some((protection, protection_item)) = used else {
             return false;
         };
 
         if let Some(player) = self.as_player() {
-            player.award_stat(&vanilla_stat_types::ITEM_USED, item_type);
-        }
-
-        self.set_health(1.0);
-
-        // Apply the item's death effects (data-driven, not hardcoded).
-        for effect in protection.death_effects() {
-            let effect_type = effect.effect_type();
-            if effect_type == &vanilla_consume_effect_types::CLEAR_ALL_EFFECTS {
-                self.living_base().clear_active_mob_effects();
-            } else if let Some(apply) = effect.downcast_ref::<ApplyStatusEffectsConsumeEffect>() {
-                for registry_effect in apply.effects() {
-                    let effect = MobEffectInstance::with_duration(
-                        registry_effect.effect(),
-                        registry_effect.duration(),
-                        registry_effect.amplifier(),
-                    )
-                    .with_ambient(registry_effect.ambient())
-                    .with_visible(registry_effect.show_particles())
-                    .with_show_icon(registry_effect.show_icon());
-                    self.add_mob_effect(effect);
-                }
-            } else if let Some(remove) = effect.downcast_ref::<RemoveStatusEffectsConsumeEffect>() {
-                for active in self.active_mob_effects() {
-                    if remove.effects().contains(active.effect()) {
-                        self.remove_mob_effect(active.effect());
-                    }
-                }
-            } else if effect_type == &vanilla_consume_effect_types::TELEPORT_RANDOMLY {
-                // TeleportRandomlyConsumeEffect is not used by the totem of undying.
-                // TODO: implement when needed by other items.
-            } else if let Some(play_sound) = effect.downcast_ref::<PlaySoundConsumeEffect>()
-                && let Some(sound_ref) = play_sound.sound().registry_ref()
+            player.award_stat(&vanilla_stat_types::ITEM_USED, protection_item.item());
+            // TODO: trigger the `used_totem` advancement criterion once advancements exist.
+            if protection_item
+                .get(USE_EFFECTS)
+                .is_some_and(|effects| effects.interact_vibrations)
             {
-                self.play_sound(sound_ref, 1.0, 1.0);
+                self.game_event(&vanilla_game_events::ITEM_INTERACT_FINISH);
             }
         }
 
+        self.set_health(1.0);
+        if let (Some(world), Some(entity)) = (self.level(), self.as_living_entity()) {
+            for effect in protection.death_effects() {
+                apply_consume_effect(effect, &world, entity);
+            }
+        }
         self.broadcast_entity_event(EntityStatus::ProtectedFromDeath);
-
         true
     }
 

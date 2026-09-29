@@ -114,9 +114,14 @@ impl ItemStack {
         if self.is_empty() { 0 } else { self.count }
     }
 
+    /// Returns the component patch. Empty stacks have an empty patch.
     #[must_use]
-    pub const fn components_patch(&self) -> &DataComponentPatch {
-        &self.patch
+    pub fn components_patch(&self) -> &DataComponentPatch {
+        if self.is_empty() {
+            DataComponentPatch::empty()
+        } else {
+            &self.patch
+        }
     }
 
     pub const fn set_count(&mut self, count: i32) {
@@ -336,8 +341,13 @@ impl ItemStack {
     }
 
     /// Returns true if this item has the specified component (by key).
+    ///
+    /// Empty stacks have no components.
     #[must_use]
     pub fn has_component(&self, key: &Identifier) -> bool {
+        if self.is_empty() {
+            return false;
+        }
         match self.patch.get_entry(key) {
             Some(ComponentPatchEntry::Set(_)) => true,
             Some(ComponentPatchEntry::Removed) => false,
@@ -432,9 +442,12 @@ impl ItemStack {
         self.get_equippable_slot() == Some(slot)
     }
 
-    /// Gets the raw component data by key.
+    /// Gets the raw component data by key. Empty stacks have no components.
     #[must_use]
     pub fn get_effective_value_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        if self.is_empty() {
+            return None;
+        }
         match self.patch.get_entry(key) {
             Some(ComponentPatchEntry::Set(data)) => Some(data),
             Some(ComponentPatchEntry::Removed) => None,
@@ -487,10 +500,10 @@ impl ItemStack {
         self.patch.clear(component);
     }
 
-    /// Returns a reference to the component patch.
+    /// Returns a reference to the component patch. Empty stacks have an empty patch.
     #[must_use]
-    pub const fn patch(&self) -> &DataComponentPatch {
-        &self.patch
+    pub fn patch(&self) -> &DataComponentPatch {
+        self.components_patch()
     }
 
     /// Gets the Tool component if present.
@@ -1538,7 +1551,8 @@ mod persistence_tests {
 
     use super::ItemStack;
     use crate::data_components::vanilla_components::{
-        CUSTOM_DATA, JUKEBOX_PLAYABLE, LORE, MAX_DAMAGE, MAX_STACK_SIZE, TOOLTIP_DISPLAY,
+        CUSTOM_DATA, DEATH_PROTECTION, JUKEBOX_PLAYABLE, LORE, MAX_DAMAGE, MAX_STACK_SIZE,
+        TOOLTIP_DISPLAY,
     };
     use crate::data_components::{CustomData, JukeboxPlayable};
     use crate::init_vanilla_registry;
@@ -1631,6 +1645,18 @@ mod persistence_tests {
     }
 
     #[test]
+    fn shrunk_to_empty_stack_exposes_no_components() {
+        init_vanilla_registry();
+        let mut totem = ItemStack::new(&vanilla_items::TOTEM_OF_UNDYING);
+        assert!(totem.has(DEATH_PROTECTION));
+
+        totem.shrink(1);
+
+        assert!(!totem.has(DEATH_PROTECTION));
+        assert!(totem.get(DEATH_PROTECTION).is_none());
+    }
+
+    #[test]
     fn component_patches_stay_sanitized_against_the_item_prototype() {
         init_vanilla_registry();
         let mut patch = crate::data_components::DataComponentPatch::new();
@@ -1659,14 +1685,14 @@ mod persistence_tests {
     }
 
     #[test]
-    fn strict_validation_checks_components_even_when_the_stack_is_empty() {
+    fn strict_validation_ignores_components_of_empty_stacks() {
         init_vanilla_registry();
         let mut patch = crate::data_components::DataComponentPatch::new();
         patch.set(MAX_DAMAGE, 1);
         let stack = ItemStack::with_count_and_patch(&vanilla_items::STONE, 0, patch);
 
         assert!(stack.is_empty());
-        assert!(stack.validate_strict().is_err());
+        assert!(stack.validate_strict().is_ok());
     }
 
     #[test]
