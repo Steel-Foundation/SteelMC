@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn skip_attack_interaction_when_required() {
         let world = fresh_test_world("skip_interaction_when_required");
-        let player = TestPlayerBuilder::new(world.clone(), "InteractPlayer", 0).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "InteractPlayer", 0).build();
 
         let response_false_interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn record_player_actions() {
         let world = fresh_test_world("interaction_records_player_actions");
-        let player = TestPlayerBuilder::new(world.clone(), "InteractPlayer", 0).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "InteractPlayer", 0).build();
 
         let interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,

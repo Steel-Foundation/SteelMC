@@ -362,7 +362,7 @@ impl Menu {
     /// Handles swap (number keys for a hotbar slot, or swap-hands for the
     /// offhand).
     fn do_swap(&mut self, slot_index: usize, with: SwapTarget, player: &Player) {
-        let player_inventory = ContainerRef::from(player.inventory.clone());
+        let player_inventory = ContainerRef::from(Arc::clone(&player.inventory));
         let player_inv_id = ContainerId::from_arc(&player.inventory);
         let mut guard = self.behavior().lock_all_containers_with(player_inventory);
 

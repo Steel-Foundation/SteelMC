@@ -10,7 +10,7 @@ fn final_chunk_unload_marks_stale_arc_removed_and_allows_same_identity_to_reload
     let stale = ManagerTestEntity::shared(1, uuid, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(stale.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&stale), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -26,7 +26,7 @@ fn final_chunk_unload_marks_stale_arc_removed_and_allows_same_identity_to_reload
     let reloaded = ManagerTestEntity::shared(1, uuid, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(reloaded.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&reloaded), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -47,7 +47,7 @@ fn saveable_entities_include_manager_owned_live_unloading_and_pending_entities()
     let external = entity(2, 2, DVec3::new(2.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(live.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&live), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
@@ -72,7 +72,7 @@ fn saveable_entities_include_manager_owned_live_unloading_and_pending_entities()
     let pending = entity(3, 3, DVec3::new(3.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(pending.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&pending), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     let removed = manager.remove_live_entity(pending.id(), RemovalReason::UnloadedToChunk);
@@ -93,12 +93,12 @@ fn save_pending_acknowledgement_clears_only_persisted_entities() {
     let later = entity(2, 2, DVec3::new(2.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(saved.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&saved), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(later.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&later), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
@@ -232,7 +232,7 @@ fn chunk_recovery_does_not_restore_removed_retained_entities() {
     let removed = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(removed.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&removed), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -257,7 +257,7 @@ fn chunk_recovery_keeps_saveable_removed_retained_entities_pending() {
     let pending = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(pending.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&pending), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -294,7 +294,7 @@ fn saveable_entities_outside_saved_chunks_reports_only_manager_owned_entities() 
     );
     assert!(
         manager
-            .add_live_entity(unsaved.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&unsaved), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(

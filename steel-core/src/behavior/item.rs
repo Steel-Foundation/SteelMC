@@ -426,6 +426,8 @@ impl Default for ItemBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::data_components::{Consumable, vanilla_components};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::stat::vanilla_stat_types;
@@ -449,7 +451,7 @@ mod tests {
         init_behaviors();
         let world = fresh_test_world("finish_consuming_honey_bottle_stack");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
 
         // Fill the inventory so the glass bottle remainder cannot be stored
@@ -492,7 +494,7 @@ mod tests {
         init_behaviors();
         let world = fresh_test_world("instant_consumable_no_deadlock");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
 
         let mut stack = ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 2);
@@ -520,7 +522,7 @@ mod tests {
             &player,
             InteractionHand::MainHand,
             &world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
 
         let result = behavior.use_item(&mut context);
@@ -558,7 +560,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_food_applies_nutrition");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
         {
             let mut food = player.food_data.lock();
@@ -582,7 +584,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_awards_item_used_stat");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_client_loaded(true);
 
         let stack = ItemStack::new(&vanilla_items::APPLE);

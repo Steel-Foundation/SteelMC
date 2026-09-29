@@ -562,7 +562,7 @@ impl Player {
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let equipment = inventory.clone();
+        let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
@@ -593,7 +593,7 @@ impl Player {
             last_tracking_view: SyncMutex::new(None),
             client_information: SyncMutex::new(client_information),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
-            inventory: inventory.clone(),
+            inventory: Arc::clone(&inventory),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             ender_chest_inventory,
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
@@ -1264,7 +1264,7 @@ impl Player {
     /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
     pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
         debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
-        let replacement_entity: SharedEntity = replacement.clone();
+        let replacement_entity: SharedEntity = Arc::<Player>::clone(replacement);
         for pearl in self.ender_pearls() {
             if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
                 pearl.restore_owner_reference(&replacement_entity);
@@ -1968,8 +1968,8 @@ impl LivingEntity for Player {
             return InteractionResult::Pass;
         }
 
-        let source_ref = ContainerRef::from(player.inventory.clone());
-        let target_ref = ContainerRef::from(self.inventory.clone());
+        let source_ref = ContainerRef::from(Arc::clone(&player.inventory));
+        let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
         let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
