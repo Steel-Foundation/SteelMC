@@ -344,14 +344,16 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
     insert_ready_full_chunk(source_world, listener_chunk);
     insert_ready_full_chunk(target_world, listener_chunk);
     let target_listener = Arc::new(RecordingGameEventListener::new(listener_position));
-    let target_shared_listener: SharedGameEventListener = target_listener.clone();
+    let target_shared_listener: SharedGameEventListener =
+        Arc::<RecordingGameEventListener>::clone(&target_listener);
     let _target_registration = RegisteredGameEventListener::new(
         target_world,
         listener_section,
         Arc::clone(&target_shared_listener),
     );
     let source_listener = Arc::new(RecordingGameEventListener::new(listener_position));
-    let source_shared_listener: SharedGameEventListener = source_listener.clone();
+    let source_shared_listener: SharedGameEventListener =
+        Arc::<RecordingGameEventListener>::clone(&source_listener);
     let _source_registration = RegisteredGameEventListener::new(
         source_world,
         listener_section,

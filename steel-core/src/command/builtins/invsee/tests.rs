@@ -277,10 +277,10 @@ fn modify_view_edits_armor_slots_within_equipment_rules() {
 fn modify_view_synchronizes_target_armor_without_inventory_locks() {
     let source = test_player("Viewer", 10);
     let target = recording_player("Target", 11);
-    target
-        .inventories
-        .lock()
-        .extend([source.inventory.clone(), target.player.inventory.clone()]);
+    target.inventories.lock().extend([
+        Arc::clone(&source.inventory),
+        Arc::clone(&target.player.inventory),
+    ]);
     let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
 
@@ -319,7 +319,7 @@ fn self_invsee_synchronizes_own_armor_slot() {
     recording
         .inventories
         .lock()
-        .push(recording.player.inventory.clone());
+        .push(Arc::clone(&recording.player.inventory));
     let mut menu = invsee(1, &recording.player, &recording.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
 
@@ -461,7 +461,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
     recording
         .inventories
         .lock()
-        .push(recording.player.inventory.clone());
+        .push(Arc::clone(&recording.player.inventory));
     recording
         .player
         .inventory
@@ -546,7 +546,7 @@ fn normal_menu_does_not_defer_main_inventory_sync() {
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
 
     let menu_slots = SimpleContainer::new(9).into_shared();
-    let inventory = recording.player.inventory.clone();
+    let inventory = Arc::clone(&recording.player.inventory);
     recording.player.open_menu("Normal", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         builder.section_with(menu_slots, 9, SectionKind::Display);

@@ -315,7 +315,7 @@ impl AbstractFurnaceBlockEntity {
     ) -> Self {
         let base = Arc::new(BlockEntityBase::new(block_entity_type, level, pos, state));
         let container = FurnaceContainer::new(kind).into_shared();
-        let shared: SharedContainer = container.clone();
+        let shared: SharedContainer = Arc::<SyncMutex<FurnaceContainer>>::clone(&container);
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
             base,

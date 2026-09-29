@@ -788,7 +788,7 @@ mod tests {
             true,
             false,
         ));
-        let block_entity: SharedBlockEntity = piston.clone();
+        let block_entity: SharedBlockEntity = Arc::<PistonMovingBlockEntity>::clone(&piston);
         assert!(world.set_block_entity(block_entity));
 
         let start = DVec3::new(f64::from(pos.x()) + 0.1, f64::from(pos.y()), 8.5);
@@ -852,7 +852,7 @@ mod tests {
             true,
             false,
         ));
-        let stale_entity: SharedBlockEntity = stale_piston.clone();
+        let stale_entity: SharedBlockEntity = Arc::<PistonMovingBlockEntity>::clone(&stale_piston);
         assert!(world.set_block_entity(stale_entity));
         let replacement = Arc::new(PistonMovingBlockEntity::new_moving(
             Arc::downgrade(&world),
@@ -863,7 +863,8 @@ mod tests {
             true,
             false,
         ));
-        let replacement_entity: SharedBlockEntity = replacement.clone();
+        let replacement_entity: SharedBlockEntity =
+            Arc::<PistonMovingBlockEntity>::clone(&replacement);
         assert!(world.set_block_entity(Arc::clone(&replacement_entity)));
 
         assert!(stale_piston.final_tick(&world));

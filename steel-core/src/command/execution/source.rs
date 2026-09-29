@@ -443,6 +443,17 @@ impl CommandSource {
         self.silent
     }
 
+    /// Sends informational command output straight to the sender.
+    ///
+    /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
+    /// game rule and never broadcasts to admins - it's for output the sender
+    /// explicitly asked for (e.g. `/version`), not command-result feedback.
+    pub(crate) fn send_system_message(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
+    }
+
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
         if self.silent {
             return;
