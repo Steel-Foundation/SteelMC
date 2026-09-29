@@ -92,7 +92,7 @@ impl ActiveCache {
         };
         let holder = self.entries[index]
             .as_ref()
-            .and_then(|entry| entry.holder.as_ref().cloned());
+            .and_then(|entry| entry.holder.clone());
         if holder.is_some() {
             self.stats.holder_hits += 1;
         } else {
@@ -256,7 +256,7 @@ where
                     return;
                 };
                 if cache.owner == owner {
-                    cache.insert(pos, holder.as_ref().cloned());
+                    cache.insert(pos, holder.clone());
                 }
             });
             holder
