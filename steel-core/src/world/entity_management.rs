@@ -110,7 +110,7 @@ impl World {
     ) -> Result<(), AddEntityError> {
         let lifecycle = self
             .entity_manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)?;
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)?;
         self.attach_managed_entity_callback(&entity);
         self.apply_entity_lifecycle_changes(lifecycle);
         Ok(())
@@ -328,7 +328,7 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        if let Err(error) = self.try_add_entity(entity.clone()) {
+        if let Err(error) = self.try_add_entity(Arc::<ItemEntity>::clone(&entity)) {
             log::warn!("Failed to spawn item entity: {error}");
             return None;
         }
@@ -581,7 +581,7 @@ impl World {
                         .as_ref()
                         .is_none_or(|(_, current)| distance_sqr < *current)
                 {
-                    nearest = Some((player.clone(), distance_sqr));
+                    nearest = Some((Arc::clone(player), distance_sqr));
                 }
             }
             true
