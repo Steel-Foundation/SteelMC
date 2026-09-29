@@ -88,7 +88,8 @@ impl ChiseledBookShelfBlockEntity {
         let after_changed = Arc::new(move || {
             Self::publish_pending_state(&callback_level, pos, &callback_container);
         });
-        let shared_container: SharedContainer = container.clone();
+        let shared_container: SharedContainer =
+            Arc::<SyncMutex<ChiseledBookShelfContainer>>::clone(&container);
 
         Self {
             container_ref: ContainerRef::owned_by_block_entity_with_callback(

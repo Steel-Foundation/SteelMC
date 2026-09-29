@@ -220,6 +220,7 @@ fn flying_players_ignore_bubble_column_entity_hooks() {
 #[test]
 fn dolphins_grace_water_travel_hook_uses_active_mob_effect_state() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true);
 
     assert!(!entity.has_dolphins_grace());
@@ -254,6 +255,7 @@ fn living_air_supply_drowning_damage_resets_air() {
 #[test]
 fn water_breathing_refills_air_underwater() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
 
     entity.set_air_supply(entity.max_air_supply() - 8);
@@ -266,6 +268,7 @@ fn water_breathing_refills_air_underwater() {
 #[test]
 fn breath_of_the_nautilus_prevents_drowning_without_refilling_air() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
 
     entity.set_air_supply(entity.max_air_supply() - 8);

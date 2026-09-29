@@ -8,6 +8,7 @@ mod pregen;
 pub mod registry_cache;
 mod run_loop;
 mod service_keys;
+mod tick_overload;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 mod world_tick_workers;
@@ -601,9 +602,9 @@ impl Server {
                 .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
         });
 
-        let player_data_storage = PlayerDataStorage::new(
+        let player_data_storage = PlayerDataStorage::from_selection(
             resolved_worlds.save_path.clone(),
-            resolved_worlds.player_storage.clone(),
+            &resolved_worlds.player_storage,
         )
         .await
         .map_err(|e| format!("failed to create player data storage: {e}"))?;
@@ -643,12 +644,12 @@ impl Server {
                     storage_output.level_data_path.as_deref(),
                     &world_entry.generator_config,
                     world_seed,
-                    generation_pool.clone(),
+                    Arc::clone(&generation_pool),
                 )
                 .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config_and_encoding_pool(
-                chunk_runtime.clone(),
+                Arc::clone(&chunk_runtime),
                 world_entry.key.clone(),
                 generator_output.dimension_type,
                 world_seed,
@@ -669,7 +670,7 @@ impl Server {
                     default_gamemode: world_entry.default_gamemode,
                     difficulty: world_entry.difficulty,
                 },
-                generation_pool.clone(),
+                Arc::clone(&generation_pool),
                 Arc::clone(&chunk_encoding_pool),
             )
             .await

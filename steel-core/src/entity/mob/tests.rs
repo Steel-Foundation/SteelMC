@@ -91,6 +91,7 @@ struct DespawnTestMob {
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
     preferred_weapon_type: SyncMutex<Option<Identifier>>,
+    can_be_leashed: SyncMutex<bool>,
 }
 
 impl DespawnTestMob {
@@ -133,6 +134,7 @@ impl DespawnTestMob {
             living_base: LivingEntityBase::new(entity_type),
             mob_base: MobBase::new(),
             flags: SyncMutex::new(0),
+            can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(10.0),
             nearest_player_distance_sqr,
             remove_when_far_away,
@@ -259,6 +261,10 @@ impl Mob for DespawnTestMob {
     fn get_preferred_weapon_type(&self) -> Option<Identifier> {
         self.preferred_weapon_type.lock().clone()
     }
+
+    fn mob_can_be_leashed(&self) -> bool {
+        *self.can_be_leashed.lock()
+    }
 }
 
 impl PathfinderMob for DespawnTestMob {}
@@ -362,7 +368,7 @@ fn mob_control_flags_disable_goals_for_mob_controller() {
 #[test]
 fn mob_control_flags_disable_jump_when_riding_boat() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let boat: SharedEntity = Arc::new(MobControlVehicleEntity::new(2, &vanilla_entities::OAK_BOAT));
     EntityBase::restore_passenger_relationship(&boat, &mob_entity);
 
@@ -492,7 +498,7 @@ fn melee_attack_range_uses_vehicle_expanded_attack_box() {
 
     assert!(!mob.is_within_melee_attack_range(&target));
 
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let vehicle: SharedEntity = Arc::new(MobControlVehicleEntity::new(3, &vanilla_entities::PIG));
     EntityBase::restore_passenger_relationship(&vehicle, &mob_entity);
 
@@ -576,7 +582,7 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         None,
         false,
     ));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.do_hurt_target(test_world(), &target_entity));
 
@@ -606,7 +612,7 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         None,
         false,
     ));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.do_hurt_target(test_world(), &target_entity));
 
@@ -674,7 +680,7 @@ fn mob_tick_leash_applies_default_elastic_pull() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&holder);
     assert!(mob.set_leashed_to(&holder_entity));
 
     mob.tick_leash();
@@ -684,6 +690,17 @@ fn mob_tick_leash_applies_default_elastic_pull() {
     assert!(mob.needs_velocity_sync());
     assert!(mob.rotation().0 < 0.0);
     assert!(mob.is_leashed());
+}
+
+#[test]
+fn mob_that_cannot_be_leashed_refuses_a_lead() {
+    let mob = DespawnTestMob::new(None, false);
+    let holder = DespawnTestMob::with_position(2, DVec3::new(2.0, 0.0, 0.0), None, false);
+    assert!(mob.can_have_a_leash_attached_to(&holder));
+
+    *mob.can_be_leashed.lock() = false;
+
+    assert!(!mob.can_have_a_leash_attached_to(&holder));
 }
 
 #[test]
