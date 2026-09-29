@@ -270,7 +270,10 @@ impl ChunkStorage {
         section: &SectionHolder,
         builder: &mut ChunkBuilder,
     ) -> PersistentSection {
-        let section = section.read();
+        let mut section = section.write();
+        if matches!(&section.states, PalettedContainer::Building(_)) {
+            section.recalculate_counts();
+        }
         let biomes = Self::biomes_to_persistent(&section.biomes, builder);
 
         match &section.states {
@@ -315,9 +318,8 @@ impl ChunkStorage {
                     biomes,
                 }
             }
-            PalettedContainer::Building(_) => panic!(
-                "section_to_persistent called on a section still in worldgen Building mode; \
-                 finalize_building must be called before serialization"
+            PalettedContainer::Building(_) => unreachable!(
+                "recalculate_counts finalizes Building sections under this same write guard"
             ),
         }
     }
