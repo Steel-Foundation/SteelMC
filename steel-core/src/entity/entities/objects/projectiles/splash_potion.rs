@@ -231,7 +231,8 @@ impl AbstractThrownPotion for SplashPotionEntity {
             .bounding_box()
             .translate(hit.location() - self.position());
         let effect_aabb = potion_aabb.inflate_xyz(4.0, 2.0, 4.0);
-        let entities = world.get_entities_in_aabb(&effect_aabb);
+        let entities =
+            world.get_entities_in_aabb_matching(&effect_aabb, |entity| !entity.is_spectator());
         if entities.is_empty() {
             return;
         }
