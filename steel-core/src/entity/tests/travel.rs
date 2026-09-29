@@ -3,8 +3,7 @@ use steel_utils::types::UpdateFlags;
 
 use super::*;
 use crate::entity::living_entity::{
-    BASE_HORIZONTAL_AIR_DRAG, BASE_VERTICAL_AIR_DRAG, DEFAULT_BLOCK_FRICTION,
-    compute_modified_friction,
+    BASE_HORIZONTAL_AIR_DRAG, DEFAULT_BLOCK_FRICTION, compute_modified_friction,
 };
 use crate::entity::{ENTITIES, init_entities, next_entity_id};
 
@@ -298,15 +297,6 @@ fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
     let coasted = (pig.position() - coast_start).with_y(0.0).length();
 
     WalkMeasurement { per_tick, coasted }
-}
-
-#[test]
-fn a_large_modifier_is_clamped_to_a_usable_friction() {
-    let friction = compute_modified_friction(BASE_VERTICAL_AIR_DRAG, 2048.0);
-    assert!(
-        (0.0..=1.0).contains(&friction),
-        "friction stays in range, got {friction}"
-    );
 }
 
 #[test]

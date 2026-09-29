@@ -188,7 +188,7 @@ pub trait Leashable: Entity {
         }
 
         if self.is_in_water() || self.is_in_lava() {
-            return 0.8;
+            return f64::from(0.8_f32);
         }
 
         f64::from(BASE_HORIZONTAL_AIR_DRAG)

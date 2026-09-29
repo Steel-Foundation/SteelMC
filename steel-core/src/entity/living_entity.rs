@@ -2441,9 +2441,13 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the vertical friction used by `travelInAir`.
-    fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
+    fn air_travel_vertical_friction(
+        &self,
+        _horizontal_friction: f32,
+        air_drag_modifier: f32,
+    ) -> f32 {
         // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-        compute_modified_friction(BASE_VERTICAL_AIR_DRAG, self.air_drag_modifier())
+        compute_modified_friction(BASE_VERTICAL_AIR_DRAG, air_drag_modifier)
     }
 
     /// Applies vanilla `LivingEntity.handleOnClimbable()`.
@@ -2516,8 +2520,6 @@ pub trait LivingEntity: Entity {
         } else {
             1.0
         };
-        let horizontal_friction = block_friction
-            * compute_modified_friction(BASE_HORIZONTAL_AIR_DRAG, self.air_drag_modifier());
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -2529,7 +2531,11 @@ pub trait LivingEntity: Entity {
         if self.should_discard_friction() {
             self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
         } else {
-            let vertical_friction = self.air_travel_vertical_friction(horizontal_friction);
+            let air_drag_modifier = self.air_drag_modifier();
+            let horizontal_friction = block_friction
+                * compute_modified_friction(BASE_HORIZONTAL_AIR_DRAG, air_drag_modifier);
+            let vertical_friction =
+                self.air_travel_vertical_friction(horizontal_friction, air_drag_modifier);
             self.set_velocity(DVec3::new(
                 movement.x * f64::from(horizontal_friction),
                 movement_y * f64::from(vertical_friction),
