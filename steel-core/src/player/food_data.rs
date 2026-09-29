@@ -267,7 +267,7 @@ pub enum FoodTickResult {
 }
 
 impl Player {
-    /// Ticks food/hunger regeneration and starvation.
+    /// Ticks peaceful-difficulty health and hunger regeneration.
     pub(super) fn tick_regeneration(&self) {
         let world = self.get_world();
         let difficulty = world.level_data.read().data().difficulty;
@@ -293,7 +293,13 @@ impl Player {
                 }
             }
         }
+    }
 
+    /// Ticks food exhaustion, food-based healing, and starvation.
+    pub(super) fn tick_food_data(&self) {
+        let world = self.get_world();
+        let difficulty = world.level_data.read().data().difficulty;
+        let natural_regen = world.get_game_rule(&NATURAL_HEALTH_REGENERATION);
         let current_health = self.get_health();
         let max_health = self.get_max_health();
 

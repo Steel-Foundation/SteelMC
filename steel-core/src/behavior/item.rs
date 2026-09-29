@@ -18,7 +18,7 @@ use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
 
 use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
-use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
+use crate::behavior::{InteractionResult, InventoryTickContext, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity};
@@ -222,6 +222,9 @@ pub trait ItemBehavior: Send + Sync {
         _attacker: &dyn LivingEntity,
     ) {
     }
+
+    /// Called every tick for each carried item.
+    fn inventory_tick(&self, _context: &mut InventoryTickContext<'_>) {}
 
     /// Returns how much durability this weapon consumes after a successful entity hit.
     fn item_damage_per_attack(&self, stack: &ItemStack) -> Option<i32> {
@@ -438,6 +441,7 @@ mod tests {
     #[test]
     fn honey_bottle_stack_keeps_remaining_bottles_and_hands_off_the_remainder() {
         init_vanilla_registry();
+        init_behaviors();
         let world = fresh_test_world("finish_consuming_honey_bottle_stack");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();

@@ -53,6 +53,7 @@ fn living_tick_state_updates_swing_time() {
 #[test]
 fn current_swing_duration_uses_vanilla_dig_effects() {
     init_vanilla_registry();
+    init_behaviors();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION);
