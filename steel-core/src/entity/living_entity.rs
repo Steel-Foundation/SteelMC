@@ -2,7 +2,7 @@ use steel_math::DEGREE_90;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
-use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::behavior::{InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -1575,6 +1575,14 @@ pub trait LivingEntity: Entity {
         holding
     }
 
+    /// Ticks every equipped item.
+    fn tick_equipment(&self) {
+        let (Some(world), Some(owner)) = (self.level(), self.as_living_entity()) else {
+            return;
+        };
+        InventoryTickContext::tick_equipment(&world, owner, EquipmentSlot::ALL);
+    }
+
     /// Mutates the item in a vanilla living-entity equipment slot.
     fn with_equipment_slot_mut(
         &self,
@@ -2235,6 +2243,7 @@ pub trait LivingEntity: Entity {
             self.set_velocity(self.velocity() * 0.98);
         }
 
+        self.tick_equipment();
         self.apply_living_velocity_thresholds();
         self.apply_input();
         if self.is_immobile() {

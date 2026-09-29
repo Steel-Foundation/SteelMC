@@ -154,7 +154,7 @@ fn inactive_chunk_stages_lifecycle_callbacks_until_activation() {
         events: SyncMutex::new(Vec::new()),
     });
     concrete.set_removed();
-    let entity: SharedBlockEntity = concrete.clone();
+    let entity: SharedBlockEntity = Arc::<ActivationRecordingBlockEntity>::clone(&concrete);
     assert!(full.add_and_register_block_entity(entity));
     assert!(concrete.events.lock().is_empty());
 

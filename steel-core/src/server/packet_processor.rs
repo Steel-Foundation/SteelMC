@@ -1050,7 +1050,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Arc, mpsc},
+        sync::{Arc, Weak, mpsc},
         thread,
         time::Duration,
     };
@@ -1081,7 +1081,7 @@ mod tests {
             Arc::clone(&player.connection),
             Arc::clone(&player.session),
             player.get_world(),
-            player.server.clone(),
+            Weak::clone(&player.server),
             Arc::clone(&player.config),
             player.id(),
             ClientInformation::default(),
