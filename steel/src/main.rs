@@ -5,7 +5,7 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
-use std::{panic, thread};
+use std::{env, panic, thread};
 
 use crossterm::style::Attribute::{Bold, Dim, Reset};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
@@ -13,6 +13,7 @@ use futures::FutureExt;
 use steel::config::{self, LogConfig};
 use steel::logger::CommandLogger;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
+use steel_core::GIT_HASH_SHORT;
 use steel_utils::text::DisplayResolutor;
 #[cfg(all(windows, debug_assertions))]
 use steel_utils::threading::DEBUG_STACK_SIZE;
@@ -88,7 +89,7 @@ async fn init_tracing(
     let layer = LoggerLayer::new(cancel_token, log_config)
         .await
         .map_err(|err| format!("failed to initialize logger: {err}"))?;
-    let logger = layer.0.clone();
+    let logger = Arc::clone(&layer.0);
 
     let tracing = tracing.with(layer);
 
@@ -183,7 +184,7 @@ fn steel_main() {
         .build()
         .unwrap();
 
-    main_runtime.block_on(main_async(chunk_runtime.clone(), steel_config));
+    main_runtime.block_on(main_async(Arc::clone(&chunk_runtime), steel_config));
 
     drop(main_runtime);
     drop(chunk_runtime);
@@ -203,6 +204,19 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
     let panic_token = cancel_token.clone();
     panic::set_hook(Box::new(move |panic_info| {
         let message = panic_info.payload_as_str().unwrap_or("Unknown");
+        error!(
+            "{}Steel {} ({GIT_HASH_SHORT}) {} on {}/{}{}",
+            SetForegroundColor(Color::Red),
+            env!("CARGO_PKG_VERSION"),
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            env::consts::OS,
+            env::consts::ARCH,
+            ResetColor
+        );
         let current_thread = thread::current();
         let thread_name = current_thread.name().unwrap_or("unnamed");
         let thread_id = current_thread.id();
@@ -313,18 +327,22 @@ async fn run_server(
         });
     }
 
-    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone(), steel_config)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut steel = SteelServer::new(
+        Arc::clone(&chunk_runtime),
+        cancel_token.clone(),
+        steel_config,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let server = steel.server.clone();
+    let server = Arc::clone(&steel.server);
 
     if !server.prepare_spawn_area().await {
         server.save_and_shutdown().await;
         return Ok(());
     }
 
-    SERVER.set(steel.server.clone()).ok();
+    SERVER.set(Arc::clone(&steel.server)).ok();
 
     let task_tracker = TaskTracker::new();
 

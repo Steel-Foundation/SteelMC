@@ -12,7 +12,7 @@ use steel_utils::{
     translations,
 };
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, sync::mpsc};
+use tokio::{runtime::Builder, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -23,7 +23,7 @@ use crate::{
     world::World,
 };
 
-use super::{PlayerAdmissionState, Server, fresh_test_world, test_server, test_storage_root};
+use super::{PlayerAdmissionState, Server, fresh_test_world, test_server};
 
 fn java_test_player(
     server: &Arc<Server>,
@@ -74,13 +74,7 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("blocked-disconnect-write");
-        let server = test_server(
-            Arc::clone(&world),
-            super::PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), super::PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -122,9 +116,6 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         drop(player);
         drop(network_writer);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -171,13 +162,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("duplicate-relocation-wait");
-        let server = test_server(
-            Arc::clone(&world),
-            super::PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), super::PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -263,9 +248,6 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         drop(pending);
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -278,13 +260,7 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("duplicate-login-deadline");
-        let server = test_server(
-            Arc::clone(&world),
-            super::PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), super::PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -346,8 +322,5 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
         }
 
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
