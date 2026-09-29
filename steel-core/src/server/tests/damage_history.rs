@@ -30,16 +30,16 @@ fn assert_disconnect_releases_damage_history(
         .expect("test runtime");
     runtime.block_on(async {
         let root = test_storage_root(world_name);
-        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new(), &root)
+        let server = test_server((*world).clone(), PermissionSubjectIndex::new(), &root)
             .await
             .expect("test server");
         let first =
-            test_player_with_packets(&server, Arc::clone(&world), "First", next_entity_id()).0;
+            test_player_with_packets(&server, (*world).clone(), "First", next_entity_id()).0;
         let second =
-            test_player_with_packets(&server, Arc::clone(&world), "Second", next_entity_id()).0;
+            test_player_with_packets(&server, (*world).clone(), "Second", next_entity_id()).0;
         for player in [&first, &second] {
-            assert!(server.online_players.insert(Arc::clone(player)));
-            assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(player.clone()));
+            assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
             let _ = player.mark_joined_world();
         }
 

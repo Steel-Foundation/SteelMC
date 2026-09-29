@@ -592,7 +592,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         true,
                     );
                 }
-                Arc::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
+                self.clone()
+                    .on_hit_entity(&entity_hit.entity, entity_hit.location);
                 if let Some(world) = world {
                     world.game_event_at(
                         &vanilla_game_events::PROJECTILE_LAND,
@@ -602,7 +603,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                 }
             }
             ProjectileHit::Block { hit, .. } => {
-                Arc::clone(&self).on_hit_block(hit);
+                self.clone().on_hit_block(hit);
                 if let Some(world) = world {
                     let state = world.get_block_state(hit.block_pos);
                     world.game_event(
@@ -724,7 +725,7 @@ where
     entity.shoot_from_rotation(player.as_ref(), player_pitch, yaw, 0.0, power, uncertainty);
 
     let entity: SharedEntity = Arc::new(entity);
-    if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
+    if let Err(error) = world.try_add_entity(entity.clone()) {
         log::debug!("failed to spawn throwable item projectile: {error}");
         return None;
     }
@@ -1018,7 +1019,7 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = Arc::clone(world_border_projectile_test_world());
+        let world = world_border_projectile_test_world().clone();
         let firework = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             3,
@@ -1044,7 +1045,7 @@ mod tests {
     fn firework_deflects_without_exploding_on_deflecting_entity() {
         init_vanilla_registry();
 
-        let world = Arc::clone(test_world());
+        let world = test_world().clone();
         let firework = Arc::new(FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             4,
@@ -1059,12 +1060,12 @@ mod tests {
             &vanilla_entities::BREEZE,
         );
 
-        let deflection = Arc::clone(&firework).hit_target_or_deflect_self(&ProjectileHit::Entity(
-            EntityHitResult {
+        let deflection = firework
+            .clone()
+            .hit_target_or_deflect_self(&ProjectileHit::Entity(EntityHitResult {
                 entity: deflector,
                 location: DVec3::X,
-            },
-        ));
+            }));
 
         assert_eq!(deflection, ProjectileDeflection::Reverse);
         assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
@@ -1077,8 +1078,8 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = Arc::clone(test_world());
-        let chunk_map = Arc::clone(&world.chunk_map);
+        let world = test_world().clone();
+        let chunk_map = world.chunk_map.clone();
         let pos = BlockPos::new(1_136, 64, 1_136);
         let block_callback_test =
             chunk_map.with_full_chunks_in_radius(ChunkPos::from_block_pos(pos), 0, || {

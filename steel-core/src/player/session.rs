@@ -159,11 +159,11 @@ mod tests {
     fn replacement_for(player: &Arc<Player>, session: Arc<PlayerSession>) -> Arc<Player> {
         Arc::new(Player::new(
             player.gameprofile.clone(),
-            Arc::clone(&player.connection),
+            player.connection.clone(),
             session,
             player.get_world(),
             player.server.clone(),
-            Arc::clone(&player.config),
+            player.config.clone(),
             player.id(),
             ClientInformation::default(),
         ))
@@ -172,11 +172,11 @@ mod tests {
     #[test]
     fn replacement_requires_session_ownership_and_exact_current_player() {
         let world = fresh_test_world("player_session_exact_replacement");
-        let original = TestPlayerBuilder::new(Arc::clone(&world), "Original", 1).build();
-        let session = Arc::clone(&original.session);
-        let replacement = replacement_for(&original, Arc::clone(&session));
-        let stale_replacement = replacement_for(&original, Arc::clone(&session));
-        let foreign = TestPlayerBuilder::new(Arc::clone(&world), "Foreign", 2).build();
+        let original = TestPlayerBuilder::new((*world).clone(), "Original", 1).build();
+        let session = original.session.clone();
+        let replacement = replacement_for(&original, session.clone());
+        let stale_replacement = replacement_for(&original, session.clone());
+        let foreign = TestPlayerBuilder::new((*world).clone(), "Foreign", 2).build();
         original.chat().lock().messages_sent = 7;
 
         assert!(!session.replace_player(&original, &foreign));
@@ -197,15 +197,15 @@ mod tests {
         let session = Arc::new(PlayerSession::new(10, 10));
 
         let world = fresh_test_world("player_session_foreign_initial_bind");
-        let foreign = TestPlayerBuilder::new(Arc::clone(&world), "Foreign", 3).build();
+        let foreign = TestPlayerBuilder::new((*world).clone(), "Foreign", 3).build();
         assert!(!session.bind_initial_player(&foreign));
 
-        let player = replacement_for(&foreign, Arc::clone(&session));
+        let player = replacement_for(&foreign, session.clone());
         assert!(session.bind_initial_player(&player));
         assert!(session.clear_player(&player));
         assert!(session.current_player().is_none());
 
-        let replacement = replacement_for(&player, Arc::clone(&session));
+        let replacement = replacement_for(&player, session.clone());
         assert!(!session.bind_initial_player(&replacement));
         assert!(!session.replace_player(&player, &replacement));
         assert!(!session.clear_player(&player));

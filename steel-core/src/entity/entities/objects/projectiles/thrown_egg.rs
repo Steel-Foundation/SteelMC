@@ -222,7 +222,7 @@ impl Projectile for ThrownEggEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEgg.onHit`: super.onHit() then the server-side hatch.
-        Arc::clone(&self).projectile_on_hit(hit);
+        self.clone().projectile_on_hit(hit);
 
         let Some(world) = self.level() else {
             return;

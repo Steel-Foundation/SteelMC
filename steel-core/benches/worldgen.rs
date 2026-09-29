@@ -571,7 +571,7 @@ fn build_feature_fixture_at(
     );
     let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
-        damage_history: Arc::clone(&damage_history),
+        damage_history: damage_history.clone(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -848,7 +848,7 @@ fn build_concurrent_feature_fixture(
     );
     let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
-        damage_history: Arc::clone(&damage_history),
+        damage_history: damage_history.clone(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -942,7 +942,7 @@ fn build_concurrent_full_pipeline_fixture(
     );
     let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
-        damage_history: Arc::clone(&damage_history),
+        damage_history: damage_history.clone(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -1040,7 +1040,7 @@ fn build_concurrent_light_fixture(
     );
     let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
-        damage_history: Arc::clone(&damage_history),
+        damage_history: damage_history.clone(),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,

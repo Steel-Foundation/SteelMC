@@ -198,7 +198,7 @@ impl BlockBehavior for PowderSnowBlock {
             entity.make_stuck_in_block(state, IN_BLOCK_SPEED_MULTIPLIER);
         }
 
-        let world = Arc::clone(world);
+        let world = world.clone();
         effect_collector.run_before(
             InsideBlockEffectType::Extinguish,
             Box::new(move |entity| {

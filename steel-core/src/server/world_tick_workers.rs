@@ -46,7 +46,7 @@ impl WorldTickWorker {
         let (response, receiver) = oneshot::channel();
         let Some(requests) = &self.requests else {
             return Err(WorldTickWorkerError::Unavailable {
-                world: Arc::clone(&self.world_key),
+                world: self.world_key.clone(),
             });
         };
         requests
@@ -56,7 +56,7 @@ impl WorldTickWorker {
                 response,
             })
             .map_err(|_| WorldTickWorkerError::Unavailable {
-                world: Arc::clone(&self.world_key),
+                world: self.world_key.clone(),
             })?;
         Ok(receiver)
     }
@@ -93,7 +93,7 @@ impl WorldTickWorkers {
     pub(super) fn spawn<'a>(worlds: impl IntoIterator<Item = &'a Arc<World>>) -> io::Result<Self> {
         let mut workers = Vec::new();
         for (index, world) in worlds.into_iter().enumerate() {
-            workers.push(WorldTickWorker::spawn(index, Arc::clone(world))?);
+            workers.push(WorldTickWorker::spawn(index, world.clone())?);
         }
         Ok(Self { workers })
     }
@@ -114,7 +114,7 @@ impl WorldTickWorkers {
                 response
                     .await
                     .map_err(|_| WorldTickWorkerError::MissingResponse {
-                        world: Arc::clone(&worker.world_key),
+                        world: worker.world_key.clone(),
                     })?,
             );
         }

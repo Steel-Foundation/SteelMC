@@ -85,7 +85,7 @@ fn run_light_stage(
             holder
                 .try_chunk(ChunkStatus::InitializeLight)
                 .is_some()
-                .then(|| Arc::clone(holder))
+                .then(|| holder.clone())
         },
         |cached_chunk, holder, _chunk| {
             let status = holder.published_status();
@@ -142,7 +142,7 @@ fn run_loaded_light_stage(
             holder
                 .try_chunk(ChunkStatus::Light)
                 .is_some()
-                .then(|| Arc::clone(holder))
+                .then(|| holder.clone())
         },
         |_| true,
     ) else {
@@ -245,11 +245,11 @@ mod tests {
         center_holder: &Arc<ChunkHolder>,
         neighbor_status: ChunkStatus,
     ) -> StaticCache2D<Arc<ChunkHolder>> {
-        let center_holder = Arc::clone(center_holder);
+        let center_holder = center_holder.clone();
         StaticCache2D::create(center_pos.0.x, center_pos.0.y, 2, move |x, z| {
             let pos = ChunkPos::new(x, z);
             if pos == center_pos {
-                return Arc::clone(&center_holder);
+                return center_holder.clone();
             }
 
             empty_holder(pos, neighbor_status)
@@ -372,14 +372,14 @@ mod tests {
         east_section.set_block_state(1, 8, 8, vanilla_blocks::OAK_LOG.default_state());
         let east_holder = holder_with_section(east_pos, ChunkStatus::Light, east_section);
 
-        let cache_center = Arc::clone(&center_holder);
-        let cache_east = Arc::clone(&east_holder);
+        let cache_center = center_holder.clone();
+        let cache_east = east_holder.clone();
         let cache = StaticCache2D::create(center_pos.0.x, center_pos.0.y, 2, move |x, z| {
             let pos = ChunkPos::new(x, z);
             if pos == center_pos {
-                Arc::clone(&cache_center)
+                cache_center.clone()
             } else if pos == east_pos {
-                Arc::clone(&cache_east)
+                cache_east.clone()
             } else {
                 empty_holder(pos, ChunkStatus::Light)
             }

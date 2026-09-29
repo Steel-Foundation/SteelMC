@@ -216,7 +216,7 @@ impl FireworkRocketEntity {
 
         let movement = self.velocity();
         let hit = self.get_hit_result_on_move_vector();
-        Arc::clone(self).move_entity(MoverType::SelfMovement, movement);
+        self.clone().move_entity(MoverType::SelfMovement, movement);
         self.apply_effects_from_blocks();
         self.set_velocity(movement);
         hit
@@ -354,7 +354,7 @@ impl Entity for FireworkRocketEntity {
             && self.is_alive()
             && let Some(hit) = &hit
         {
-            Arc::clone(&self).hit_target_or_deflect_self(hit);
+            self.clone().hit_target_or_deflect_self(hit);
             self.mark_velocity_sync();
         }
 

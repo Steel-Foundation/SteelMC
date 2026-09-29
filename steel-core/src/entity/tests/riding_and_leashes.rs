@@ -75,7 +75,7 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(transfer_leashables_to_holder(
-        vec![Arc::clone(&leashable)],
+        vec![leashable.clone()],
         &new_holder
     ));
 
@@ -113,7 +113,7 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(!transfer_leashables_to_holder(
-        vec![Arc::clone(&leashable)],
+        vec![leashable.clone()],
         &new_holder
     ));
 
@@ -280,7 +280,7 @@ fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
 
     let passenger =
         KnownMovementTestEntity::shared(1, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);
-    let vehicle = ControlledVehicleTestEntity::shared(2, Some(Arc::clone(&passenger)));
+    let vehicle = ControlledVehicleTestEntity::shared(2, Some(passenger.clone()));
     let root_vehicle = ControlledVehicleTestEntity::shared(3, None);
 
     assert!(start_riding_entities(&passenger, &vehicle));

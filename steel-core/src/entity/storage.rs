@@ -202,7 +202,7 @@ mod tests {
         let storage = EntityStorage::new();
         let staged = test_item(1);
         assert!(matches!(
-            storage.add(Arc::clone(&staged)),
+            storage.add(staged.clone()),
             EntityStorageAddResult::Staged
         ));
 
@@ -213,7 +213,7 @@ mod tests {
         assert!(storage.get_saveable_entities().is_empty());
 
         let late = test_item(2);
-        let EntityStorageAddResult::Closed(returned) = storage.add(Arc::clone(&late)) else {
+        let EntityStorageAddResult::Closed(returned) = storage.add(late.clone()) else {
             panic!("closed storage must return ownership of a late entity");
         };
         assert!(Arc::ptr_eq(&returned, &late));
@@ -226,9 +226,9 @@ mod tests {
             let storage = Arc::new(EntityStorage::new());
             let barrier = Arc::new(Barrier::new(2));
             let entity = test_item(id);
-            let add_storage = Arc::clone(&storage);
-            let add_barrier = Arc::clone(&barrier);
-            let add_entity = Arc::clone(&entity);
+            let add_storage = storage.clone();
+            let add_barrier = barrier.clone();
+            let add_entity = entity.clone();
             let add_thread = thread::spawn(move || {
                 add_barrier.wait();
                 add_storage.add(add_entity)

@@ -360,7 +360,7 @@ impl SectionKind {
             Self::Restricted(rules) => Box::new(RestrictedSlot::with_rules(
                 container.clone(),
                 index,
-                Arc::clone(rules),
+                rules.clone(),
             )),
             Self::Display => Box::new(RestrictedSlot::with_rules(
                 container.clone(),

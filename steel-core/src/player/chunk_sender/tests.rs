@@ -253,7 +253,7 @@ fn encoding_cache_requires_holder_identity_and_exact_readiness_generation() {
         &replacement[0].packet.encoded_data
     ));
 
-    let holder = Arc::clone(&replacement_batch.chunks[0].holder);
+    let holder = replacement_batch.chunks[0].holder.clone();
     holder.transition_ticking_readiness(TickingReadiness::Unready);
     holder.transition_ticking_readiness(TickingReadiness::BlockTicking);
     let rebound_batch = PreparedBatch {
@@ -349,7 +349,7 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
 
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = PlayerConnection::Other(Box::new(RecordingConnection {
-        packets: Arc::clone(&packets),
+        packets: packets.clone(),
     }));
     let sent = sender.commit_batch(&batch, encoded, &connection, &epoch);
 
@@ -489,7 +489,7 @@ fn filtered_commit_charges_only_sent_chunks_and_keeps_feedback_until_next_prepar
 
         let packets = Arc::new(SyncMutex::new(Vec::new()));
         let connection = PlayerConnection::Other(Box::new(RecordingConnection {
-            packets: Arc::clone(&packets),
+            packets: packets.clone(),
         }));
         let sent = sender.commit_batch(&batch, encoded, &connection, &SyncMutex::new(0));
 
@@ -537,7 +537,7 @@ fn invalidated_epoch_discards_batch_without_consuming_quota_or_accepted_feedback
 
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = PlayerConnection::Other(Box::new(RecordingConnection {
-        packets: Arc::clone(&packets),
+        packets: packets.clone(),
     }));
     assert_eq!(
         sender.commit_batch(

@@ -1024,7 +1024,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Full,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing optional chunks");
@@ -1074,7 +1074,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1102,7 +1102,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1133,7 +1133,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1165,9 +1165,9 @@ mod tests {
             true,
             |pos| {
                 if pos == center {
-                    Some(Arc::clone(&center_holder))
+                    Some(center_holder.clone())
                 } else if pos == outer {
-                    Some(Arc::clone(&outer_holder))
+                    Some(outer_holder.clone())
                 } else {
                     None
                 }
@@ -1207,9 +1207,9 @@ mod tests {
             true,
             |pos| {
                 if pos == center {
-                    Some(Arc::clone(&center_holder))
+                    Some(center_holder.clone())
                 } else if pos == east {
-                    Some(Arc::clone(&east_holder))
+                    Some(east_holder.clone())
                 } else {
                     None
                 }
@@ -1247,7 +1247,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1303,7 +1303,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1345,7 +1345,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1379,7 +1379,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1433,7 +1433,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |pos| (pos == center).then(|| holder.clone()),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");

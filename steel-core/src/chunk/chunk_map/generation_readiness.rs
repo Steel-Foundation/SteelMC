@@ -24,7 +24,7 @@ impl ChunkMap {
             self.generation_pool.clone(),
             self.cancel_token.child_token(),
         ));
-        self.pending_generation_tasks.lock().push(Arc::clone(&task));
+        self.pending_generation_tasks.lock().push(task.clone());
         task
     }
 
@@ -78,7 +78,7 @@ impl ChunkMap {
         for task in tasks {
             let permit = RunningGenerationTaskPermit {
                 chunk_map: task.chunk_map.clone(),
-                task: Arc::clone(&task),
+                task: task.clone(),
             };
             self.task_tracker.spawn_on(
                 async move {
@@ -121,13 +121,13 @@ impl ChunkMap {
                 if let Some(entry) = self.unloading_chunks.remove_sync(&pos) {
                     let holder = entry.1;
                     if !holder.try_revive_from_unloading() {
-                        let _ = self.unloading_chunks.insert_sync(pos, Arc::clone(&holder));
+                        let _ = self.unloading_chunks.insert_sync(pos, holder.clone());
                         self.deferred_revivals
                             .lock()
                             .insert(pos, DeferredChunkRevival { load_level: level });
                         return None;
                     }
-                    let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
+                    let _ = self.chunks.insert_sync(pos, holder.clone());
                     (holder, true)
                 } else {
                     let holder = Arc::new(ChunkHolder::new_with_full_publications(
@@ -224,7 +224,7 @@ impl ChunkMap {
             .iter()
             .filter_map(|change| {
                 self.chunks
-                    .read_sync(&change.pos, |_, holder| Arc::clone(holder))
+                    .read_sync(&change.pos, |_, holder| holder.clone())
                     .map(|holder| (change.pos, holder, change.new_level))
             })
             .collect::<Vec<_>>();
@@ -273,7 +273,7 @@ impl ChunkMap {
         }
         for publication in publications {
             if let Some(holder) = self.validate_full_publication(&publication) {
-                contributor_updates.insert(publication.pos, Some(Arc::clone(&holder)));
+                contributor_updates.insert(publication.pos, Some(holder.clone()));
                 activation_holders.insert(publication.pos, holder);
             }
         }
@@ -320,13 +320,12 @@ impl ChunkMap {
             let Some(full) = holder.try_full_chunk() else {
                 return true;
             };
-            let randomly_ticking_sections =
-                Arc::clone(full.common().sections.random_tick_sections());
+            let randomly_ticking_sections = full.common().sections.random_tick_sections().clone();
 
             let index = block.len();
             block.push(TickableChunk {
                 pos: *pos,
-                holder: Arc::clone(holder),
+                holder: holder.clone(),
                 randomly_ticking_sections,
             });
             if simulation_level.is_entity_ticking() {
@@ -371,9 +370,7 @@ impl ChunkMap {
     // Readiness bookkeeping scans candidates once. Keep these lookups uncached so the
     // four-entry gameplay cache remains focused on repeated callback locality.
     pub(super) fn current_full_contributor(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
-        let holder = self
-            .chunks
-            .read_sync(&pos, |_, holder| Arc::clone(holder))?;
+        let holder = self.chunks.read_sync(&pos, |_, holder| holder.clone())?;
         if !holder.load_level().is_some_and(is_full)
             || !holder.is_full_status_initialized()
             || holder.published_status() != Some(ChunkStatus::Full)
@@ -391,7 +388,7 @@ impl ChunkMap {
         let published_holder = publication.holder.upgrade()?;
         let active_holder = self
             .chunks
-            .read_sync(&publication.pos, |_, holder| Arc::clone(holder))?;
+            .read_sync(&publication.pos, |_, holder| holder.clone())?;
         if !Arc::ptr_eq(&published_holder, &active_holder)
             || !active_holder.load_level().is_some_and(is_full)
             || !active_holder.is_full_status_initialized()
@@ -411,7 +408,7 @@ impl ChunkMap {
         dirty
             .iter()
             .filter_map(|(pos, counts)| {
-                let holder = self.chunks.read_sync(pos, |_, holder| Arc::clone(holder))?;
+                let holder = self.chunks.read_sync(pos, |_, holder| holder.clone())?;
                 let load_level = match new_levels.and_then(|levels| levels.get(pos)) {
                     Some(level) => *level,
                     None => holder.load_level(),
@@ -597,7 +594,7 @@ impl ChunkMap {
         self.full_publications.drain();
         let mut active = Vec::new();
         self.chunks.iter_sync(|pos, holder| {
-            active.push((*pos, Arc::clone(holder)));
+            active.push((*pos, holder.clone()));
             true
         });
 

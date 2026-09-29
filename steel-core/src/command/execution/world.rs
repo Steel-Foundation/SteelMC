@@ -33,7 +33,7 @@ impl WorldArgument {
                     .component();
                 Err(CommandSyntaxError::dynamic(message))
             },
-            |world| Ok(Arc::clone(world)),
+            |world| Ok(world.clone()),
         )
     }
 }

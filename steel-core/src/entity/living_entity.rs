@@ -2447,7 +2447,9 @@ pub trait LivingEntity: Entity {
     ) -> Option<(DVec3, MoveResult)> {
         self.move_relative(self.get_friction_influenced_speed(block_friction), input);
         self.set_velocity(self.handle_on_climbable(self.velocity()));
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = entity
+            .clone()
+            .move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if (result.horizontal_collision || self.is_jumping())
             && (self.on_climbable()
@@ -2579,7 +2581,9 @@ pub trait LivingEntity: Entity {
         }
 
         self.move_relative(speed, input);
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = entity
+            .clone()
+            .move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if result.horizontal_collision && self.on_climbable() {
             movement.y = 0.2;
@@ -2610,7 +2614,9 @@ pub trait LivingEntity: Entity {
         old_y: f64,
     ) -> Option<MoveResult> {
         self.move_relative(0.02, input);
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = entity
+            .clone()
+            .move_entity(MoverType::SelfMovement, self.velocity())?;
         if self.fluid_contact().lava_height() <= self.get_fluid_jump_threshold() {
             let movement = self.velocity();
             self.set_velocity(DVec3::new(
@@ -2752,7 +2758,9 @@ pub trait LivingEntity: Entity {
         let previous_movement = self.velocity();
         let previous_horizontal_speed = horizontal_distance(previous_movement);
         self.set_velocity(self.update_fall_flying_movement(previous_movement));
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
+        let result = entity
+            .clone()
+            .move_entity(MoverType::SelfMovement, self.velocity());
         let new_horizontal_speed = horizontal_distance(self.velocity());
         self.handle_fall_flying_collisions(previous_horizontal_speed, new_horizontal_speed);
         result

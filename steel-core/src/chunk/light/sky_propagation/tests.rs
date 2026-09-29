@@ -124,7 +124,7 @@ fn find_holder(
     holders
         .iter()
         .find(|(holder_pos, _)| *holder_pos == pos)
-        .map(|(_, holder)| Arc::clone(holder))
+        .map(|(_, holder)| holder.clone())
 }
 
 fn set_visible_sky_light(
@@ -168,7 +168,7 @@ fn context_requires_sky_layer() {
         layout,
         LightCacheSetupRadius::Inner,
         true,
-        |pos| (pos == center).then(|| Arc::clone(&holder)),
+        |pos| (pos == center).then(|| holder.clone()),
         |_| true,
     ) else {
         panic!("relaxed setup should accept missing neighbors");
@@ -207,7 +207,7 @@ fn sky_light_chunk_without_edge_checks_propagates_down_air_column() {
         true,
         |pos| {
             if pos == center {
-                Some(Arc::clone(&holder))
+                Some(holder.clone())
             } else {
                 find_holder(&neighbors, pos)
             }
@@ -246,7 +246,7 @@ fn sky_light_chunk_without_edge_checks_keeps_sealed_roof_dark() {
         true,
         |pos| {
             if pos == center {
-                Some(Arc::clone(&holder))
+                Some(holder.clone())
             } else {
                 find_holder(&neighbors, pos)
             }
@@ -291,7 +291,7 @@ fn sky_light_changes_add_and_remove_air_column_shadow() {
         layout,
         LightCacheSetupRadius::Inner,
         true,
-        |pos| (pos == center).then(|| Arc::clone(&holder)),
+        |pos| (pos == center).then(|| holder.clone()),
         |_| true,
     ) else {
         panic!("relaxed setup should accept missing neighbors");
@@ -331,7 +331,7 @@ fn sky_light_changes_add_and_remove_air_column_shadow() {
         layout,
         LightCacheSetupRadius::Inner,
         true,
-        |pos| (pos == center).then(|| Arc::clone(&holder)),
+        |pos| (pos == center).then(|| holder.clone()),
         |_| true,
     ) else {
         panic!("relaxed setup should accept missing neighbors");
@@ -375,9 +375,9 @@ fn sky_light_chunk_edge_checks_pull_neighbor_under_ceiling() {
         true,
         |pos| {
             if pos == center {
-                Some(Arc::clone(&center_holder))
+                Some(center_holder.clone())
             } else if pos == east_chunk {
-                Some(Arc::clone(&east_holder))
+                Some(east_holder.clone())
             } else {
                 find_holder(&neighbors, pos)
             }

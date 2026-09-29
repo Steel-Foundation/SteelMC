@@ -513,7 +513,7 @@ impl<'a> PlacementSource<'a> {
             player: Some(player),
             hand,
             item: PlacementItemSource::PlayerHand(InventoryAccess::new(
-                Arc::clone(&inv.inventory),
+                inv.inventory.clone(),
                 hand,
             )),
             orientation: PlacementOrientation::Player { rotation, pitch },

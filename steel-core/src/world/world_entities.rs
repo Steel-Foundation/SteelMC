@@ -48,7 +48,7 @@ impl World {
                 .iter()
                 .any(|world| Arc::ptr_eq(world, target_world))
         {
-            memberships.push(Arc::clone(target_world));
+            memberships.push(target_world.clone());
         }
         if memberships.is_empty() {
             return false;
@@ -85,7 +85,7 @@ impl World {
         self: &Arc<Self>,
         player: &Arc<Player>,
     ) -> Result<(), AddEntityError> {
-        let entity: SharedEntity = Arc::<Player>::clone(player);
+        let entity: SharedEntity = player.clone();
         let lifecycle = self
             .entity_manager()
             .add_live_entity(entity, EntityOwnership::External)?;
@@ -158,9 +158,9 @@ impl World {
     ) -> bool {
         let installed = if let Some(expected_old_player) = expected_old_player {
             self.players
-                .replace_player(expected_old_player, Arc::clone(&player))
+                .replace_player(expected_old_player, player.clone())
         } else {
-            self.players.insert(Arc::clone(&player))
+            self.players.insert(player.clone())
         };
         if !installed {
             return false;
@@ -169,7 +169,7 @@ impl World {
         if let Err(error) = self.try_register_player_entity(&player) {
             let rolled_back = if let Some(expected_old_player) = expected_old_player {
                 self.players
-                    .replace_player(&player, Arc::clone(expected_old_player))
+                    .replace_player(&player, expected_old_player.clone())
             } else {
                 self.players.remove_player_sync(&player).is_some()
             };
@@ -274,7 +274,7 @@ impl World {
         }
 
         let detached_player = if retain_player_map_entry {
-            Arc::clone(player)
+            player.clone()
         } else {
             let Some(detached_player) = self.players.remove_player_sync(player) else {
                 return false;

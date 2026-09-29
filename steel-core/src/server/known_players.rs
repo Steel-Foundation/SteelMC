@@ -210,7 +210,7 @@ impl Server {
     }
 
     fn start_known_player_save_worker(self: &Arc<Self>) {
-        let server = Arc::clone(self);
+        let server = self.clone();
         tokio::spawn(async move {
             server.run_known_player_save_worker().await;
         });

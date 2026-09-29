@@ -113,7 +113,7 @@ impl ShulkerBoxBlockEntity {
         }));
         let shared_container: SharedContainer = container.clone();
         Self {
-            container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
+            container_ref: ContainerRef::owned_by_block_entity(shared_container, base.clone()),
             base,
             container,
             animation: SyncMutex::new(ShulkerBoxAnimation {

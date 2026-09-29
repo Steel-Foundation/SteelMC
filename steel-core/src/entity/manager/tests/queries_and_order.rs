@@ -178,7 +178,7 @@ fn accessible_entities_keep_tracking_start_order() {
     let first = entity(30, 30, DVec3::new(1.0, 80.0, 1.0));
     let second = entity(10, 10, DVec3::new(17.0, 64.0, 1.0));
     let third = entity(20, 20, DVec3::new(2.0, 64.0, 1.0));
-    for entity in [Arc::clone(&first), Arc::clone(&second), Arc::clone(&third)] {
+    for entity in [first.clone(), second.clone(), third.clone()] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -217,8 +217,8 @@ fn aabb_queries_use_vanilla_section_order_then_section_insertion_order() {
     let second_same_section = entity(3, 3, DVec3::new(2.0, 64.0, 1.0));
     for entity in [
         later_section,
-        Arc::clone(&first_same_section),
-        Arc::clone(&second_same_section),
+        first_same_section.clone(),
+        second_same_section.clone(),
     ] {
         assert!(
             manager
@@ -243,7 +243,7 @@ fn spatial_cell_reentry_preserves_section_insertion_order() {
 
     let first = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let second = entity(2, 2, DVec3::new(1.5, 64.0, 1.0));
-    for entity in [Arc::clone(&first), second] {
+    for entity in [first.clone(), second] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -271,7 +271,7 @@ fn spatial_query_candidates_skip_distant_entities_in_the_same_section() {
 
     let nearby = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let distant = entity(2, 2, DVec3::new(13.0, 64.0, 1.0));
-    for entity in [Arc::clone(&nearby), distant] {
+    for entity in [nearby.clone(), distant] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -300,7 +300,7 @@ fn bounding_box_change_updates_spatial_index_without_position_change() {
     let old_bounds = entity.bounding_box();
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -322,7 +322,7 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -330,15 +330,15 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     let release_first_callback = Arc::new(Barrier::new(2));
     entity.set_level_callback(Arc::new(DelayedFirstBoundsCallback {
         entity_id: entity.id(),
-        manager: Arc::clone(&manager),
-        first_callback_entered: Arc::clone(&first_callback_entered),
-        release_first_callback: Arc::clone(&release_first_callback),
+        manager: manager.clone(),
+        first_callback_entered: first_callback_entered.clone(),
+        release_first_callback: release_first_callback.clone(),
         callback_count: AtomicUsize::new(0),
     }));
 
     let stale_bounds = WorldAabb::new(4.0, 64.0, 0.0, 5.0, 65.0, 1.0);
     let current_bounds = WorldAabb::new(8.0, 64.0, 0.0, 9.0, 65.0, 1.0);
-    let first_entity = Arc::clone(&entity);
+    let first_entity = entity.clone();
     let first_update = thread::spawn(move || {
         first_entity.base().set_bounding_box(stale_bounds);
     });

@@ -91,7 +91,7 @@ impl FullChunkGameEventListeners {
 
         if let Some(listener) = &listener {
             let section_y = SectionPos::block_to_section_coord(pos.y());
-            self.registry.register(section_y, Arc::clone(listener));
+            self.registry.register(section_y, listener.clone());
         }
         bindings.insert(pos, BlockEntityListenerBinding { owner, listener });
         ListenerSelectionCommit::Committed

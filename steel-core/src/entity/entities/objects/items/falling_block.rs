@@ -154,7 +154,7 @@ impl FallingBlockEntity {
             fluid_state_to_block(state.get_fluid_state()),
             UpdateFlags::UPDATE_ALL,
         );
-        if let Err(error) = world.try_add_entity(Arc::clone(&entity) as Arc<dyn Entity>) {
+        if let Err(error) = world.try_add_entity(entity.clone() as Arc<dyn Entity>) {
             log::error!("failed to add falling block entity: {error}");
         }
         entity
@@ -403,7 +403,9 @@ impl Entity for FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
+        let _ = self
+            .clone()
+            .move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
         if let Some(world) = self.level()

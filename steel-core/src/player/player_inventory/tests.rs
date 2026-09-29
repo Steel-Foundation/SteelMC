@@ -932,9 +932,9 @@ impl MenuKind for ReopenSameContainerOnOpen {
         _guard: &mut ContainerLockGuard,
         player: &Player,
     ) {
-        let container = Arc::clone(&self.container);
-        let factory_container = Arc::clone(&container);
-        let factory_saw_unlocked = Arc::clone(&self.factory_saw_unlocked);
+        let container = self.container.clone();
+        let factory_container = container.clone();
+        let factory_saw_unlocked = self.factory_saw_unlocked.clone();
         player.open_menu("Same container", move |context| {
             factory_saw_unlocked.store(factory_container.try_lock().is_some(), Ordering::Relaxed);
             let mut builder =
@@ -958,7 +958,7 @@ impl MenuKind for OpenReplacementOnOpen {
         _guard: &mut ContainerLockGuard,
         player: &Player,
     ) {
-        let replacement_removals = Arc::clone(&self.replacement_removals);
+        let replacement_removals = self.replacement_removals.clone();
         player.open_menu("Replacement", move |context| {
             empty_test_menu(
                 context.player,
@@ -986,7 +986,7 @@ impl_test_menu_kind_downcast!(
 
 impl MenuKind for ReopenOnRemoved {
     fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
-        let replacement_removals = Arc::clone(&self.replacement_removals);
+        let replacement_removals = self.replacement_removals.clone();
         player.open_menu("Replacement", move |context| {
             empty_test_menu(
                 context.player,
@@ -1015,8 +1015,8 @@ impl MenuKind for QueueDrainedReplacementThenRemoveAllOnOpen {
         _guard: &mut ContainerLockGuard,
         player: &Player,
     ) {
-        let transient = Arc::clone(&self.transient);
-        let inventory = Arc::clone(&player.inventory);
+        let transient = self.transient.clone();
+        let inventory = player.inventory.clone();
         player.open_menu("Replacement", move |context| {
             let mut builder =
                 MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
@@ -1104,8 +1104,8 @@ impl MenuKind for QueueReplacementOnOpenAndRemoveAllOnRemoved {
         _guard: &mut ContainerLockGuard,
         player: &Player,
     ) {
-        let transient = Arc::clone(&self.transient);
-        let inventory = Arc::clone(&player.inventory);
+        let transient = self.transient.clone();
+        let inventory = player.inventory.clone();
         player.open_menu("Queued replacement", move |context| {
             let mut builder =
                 MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
@@ -1171,7 +1171,7 @@ fn disconnected_menu_removal_drops_transient_items() {
     init_vanilla_registry();
     let world = fresh_test_world("disconnected_menu_close");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player((*world).clone());
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
@@ -1183,13 +1183,13 @@ fn disconnected_menu_removal_drops_transient_items() {
         all_callbacks_saw_container_unlocked: AtomicBool::new(true),
     });
     let observer_connection = Arc::new(PlayerConnection::Other(Box::new(LockProbeConnection {
-        state: Arc::clone(&probe_state),
-        container: Arc::clone(&transient),
+        state: probe_state.clone(),
+        container: transient.clone(),
     })));
-    let observer = TestPlayerBuilder::new(Arc::clone(&world), "Observer", next_entity_id())
+    let observer = TestPlayerBuilder::new((*world).clone(), "Observer", next_entity_id())
         .connection(observer_connection)
         .build();
-    assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
+    assert!(world.add_player(observer.clone(), ResetReason::InitialJoin));
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
     observer
@@ -1197,8 +1197,8 @@ fn disconnected_menu_removal_drops_transient_items() {
         .lock()
         .mark_chunk_sent_for_test(ChunkPos::new(0, 0));
 
-    let menu_container = Arc::clone(&transient);
-    let inventory = Arc::clone(&player.inventory);
+    let menu_container = transient.clone();
+    let inventory = player.inventory.clone();
     player.open_menu("Transient", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient_slots = builder.section(menu_container, 9);
@@ -1244,13 +1244,13 @@ fn disconnected_menu_removal_drops_transient_items() {
 #[test]
 fn drained_items_return_without_player_inventory_slots() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let transient = SimpleContainer::new(1).into_shared();
     transient
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
     let mut builder = MenuBuilder::new(None, 1);
-    let transient_slots = builder.section(Arc::clone(&transient), 1);
+    let transient_slots = builder.section(transient.clone(), 1);
     builder.drain([transient_slots]);
     let mut menu = builder.build(BasicKind {});
 
@@ -1263,14 +1263,14 @@ fn drained_items_return_without_player_inventory_slots() {
 #[test]
 fn menu_item_return_policy_preserves_world_changes_only() {
     init_vanilla_registry();
-    let connected = test_player(Arc::clone(test_world()));
+    let connected = test_player(test_world().clone());
     assert!(connected.returns_menu_items_to_inventory());
 
-    let changing_world = test_player(Arc::clone(test_world()));
+    let changing_world = test_player(test_world().clone());
     changing_world.set_removed(RemovalReason::ChangedWorld);
     assert!(changing_world.returns_menu_items_to_inventory());
 
-    let killed = test_player(Arc::clone(test_world()));
+    let killed = test_player(test_world().clone());
     killed.set_removed(RemovalReason::Killed);
     assert!(!killed.returns_menu_items_to_inventory());
 }
@@ -1278,7 +1278,7 @@ fn menu_item_return_policy_preserves_world_changes_only() {
 #[test]
 fn menu_tick_hook_can_close_the_current_menu() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     player.open_menu("Close on tick", |context| {
         empty_test_menu(context.player, context.container_id, CloseOnTick)
     });
@@ -1291,9 +1291,9 @@ fn menu_tick_hook_can_close_the_current_menu() {
 #[test]
 fn menu_click_hook_can_close_the_current_menu() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let opened_container_id = Arc::new(AtomicU8::new(0));
-    let factory_container_id = Arc::clone(&opened_container_id);
+    let factory_container_id = opened_container_id.clone();
     player.open_menu("Close on click", move |context| {
         factory_container_id.store(context.container_id, Ordering::Relaxed);
         empty_test_menu(context.player, context.container_id, CloseOnClick)
@@ -1315,7 +1315,7 @@ fn menu_click_hook_can_close_the_current_menu() {
 #[test]
 fn dead_player_container_click_only_resynchronizes() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     player
         .inventory
         .lock()
@@ -1345,7 +1345,7 @@ fn dead_player_container_click_only_resynchronizes() {
 #[test]
 fn malformed_quickcraft_encoding_resets_active_drag() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     {
         let mut menu = player.inventory_menu.lock();
         *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
@@ -1380,10 +1380,10 @@ fn malformed_non_quickcraft_click_resets_active_drag() {
         all_callbacks_saw_container_unlocked: AtomicBool::new(true),
     });
     let connection = Arc::new(PlayerConnection::Other(Box::new(LockProbeConnection {
-        state: Arc::clone(&probe_state),
+        state: probe_state.clone(),
         container: SimpleContainer::new(1).into_shared(),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(test_world()), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(test_world().clone(), "TestPlayer", 1)
         .connection(connection)
         .build();
     player.set_client_loaded(true);
@@ -1449,13 +1449,13 @@ fn closing_menu_while_dead_does_not_return_items_to_inventory() {
     init_vanilla_registry();
     let world = fresh_test_world("dead_menu_close");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player((*world).clone());
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
-    let menu_container = Arc::clone(&transient);
-    let inventory = Arc::clone(&player.inventory);
+    let menu_container = transient.clone();
+    let inventory = player.inventory.clone();
     player.open_menu("Dead close", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient_slots = builder.section(menu_container, 9);
@@ -1481,7 +1481,7 @@ fn closing_menu_while_dead_does_not_return_items_to_inventory() {
 #[test]
 fn programmatic_out_of_range_menu_click_is_ignored() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let mut menu = empty_test_menu(&player, 1, BasicKind {});
     let invalid_slot = menu.behavior().slot_count();
 
@@ -1499,7 +1499,7 @@ fn programmatic_out_of_range_menu_click_is_ignored() {
 #[test]
 fn menu_open_hook_can_close_the_new_menu() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     player.open_menu("Close on open", |context| {
         empty_test_menu(context.player, context.container_id, CloseOnOpen)
     });
@@ -1510,11 +1510,11 @@ fn menu_open_hook_can_close_the_new_menu() {
 #[test]
 fn menu_open_hook_can_replace_the_new_menu() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let own_removals = Arc::new(AtomicUsize::new(0));
     let replacement_removals = Arc::new(AtomicUsize::new(0));
-    let factory_own_removals = Arc::clone(&own_removals);
-    let factory_replacement_removals = Arc::clone(&replacement_removals);
+    let factory_own_removals = own_removals.clone();
+    let factory_replacement_removals = replacement_removals.clone();
     player.open_menu("Replace on open", move |context| {
         empty_test_menu(
             context.player,
@@ -1538,12 +1538,12 @@ fn menu_open_hook_can_replace_the_new_menu() {
 #[test]
 fn menu_hook_defers_a_factory_that_reuses_its_locked_container() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let container = SimpleContainer::new(9).into_shared();
     let factory_saw_unlocked = Arc::new(AtomicBool::new(false));
-    let menu_container = Arc::clone(&container);
-    let kind_container = Arc::clone(&container);
-    let kind_factory_saw_unlocked = Arc::clone(&factory_saw_unlocked);
+    let menu_container = container.clone();
+    let kind_container = container.clone();
+    let kind_factory_saw_unlocked = factory_saw_unlocked.clone();
 
     player.open_menu("Initial", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
@@ -1563,7 +1563,7 @@ fn menu_hook_defers_a_factory_that_reuses_its_locked_container() {
 #[should_panic(expected = "open_menu factory returned container id")]
 fn open_menu_rejects_a_factory_with_the_wrong_container_id() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
 
     player.open_menu("Wrong id", |context| {
         empty_test_menu(
@@ -1577,9 +1577,9 @@ fn open_menu_rejects_a_factory_with_the_wrong_container_id() {
 #[test]
 fn menu_removed_hook_can_open_a_replacement() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let replacement_removals = Arc::new(AtomicUsize::new(0));
-    let factory_replacement_removals = Arc::clone(&replacement_removals);
+    let factory_replacement_removals = replacement_removals.clone();
     player.open_menu("Reopen on removal", move |context| {
         empty_test_menu(
             context.player,
@@ -1599,15 +1599,15 @@ fn menu_removed_hook_can_open_a_replacement() {
 #[test]
 fn terminal_menu_removal_returns_carried_item_and_rejects_replacement() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     player
         .inventory
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
     let replacement_removals = Arc::new(AtomicUsize::new(0));
     let opened_container_id = Arc::new(AtomicU8::new(0));
-    let factory_container_id = Arc::clone(&opened_container_id);
-    let factory_replacement_removals = Arc::clone(&replacement_removals);
+    let factory_container_id = opened_container_id.clone();
+    let factory_replacement_removals = replacement_removals.clone();
     player.open_menu("Reopen on removal", move |context| {
         factory_container_id.store(context.container_id, Ordering::Relaxed);
         empty_test_menu(
@@ -1647,7 +1647,7 @@ fn terminal_menu_removal_returns_carried_item_and_rejects_replacement() {
 #[test]
 fn terminal_menu_removal_skips_queued_factory_and_drains_base_menu() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let crafting = player.crafting_container();
     crafting
         .lock()
@@ -1659,7 +1659,7 @@ fn terminal_menu_removal_skips_queued_factory_and_drains_base_menu() {
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::OAK_LOG, 4));
 
-    let menu_transient = Arc::clone(&transient);
+    let menu_transient = transient.clone();
     player.open_menu("Terminal on open", move |context| {
         empty_test_menu(
             context.player,
@@ -1698,7 +1698,7 @@ fn pending_terminal_removal_preserves_drop_disposition() {
     init_vanilla_registry();
     let world = fresh_test_world("pending_terminal_menu_drop");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player((*world).clone());
     *player.inventory_menu.lock().behavior_mut().carried_mut() =
         ItemStack::with_count(&vanilla_items::STONE, 2);
 
@@ -1730,12 +1730,12 @@ fn pending_terminal_removal_preserves_drop_disposition() {
 #[test]
 fn menu_open_stops_when_predecessor_removal_turns_terminal() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     player.open_menu("Terminal on removal", |context| {
         empty_test_menu(context.player, context.container_id, RemoveAllOnRemoved)
     });
     let factory_called = Arc::new(AtomicBool::new(false));
-    let rejected_factory_called = Arc::clone(&factory_called);
+    let rejected_factory_called = factory_called.clone();
 
     player.open_menu("Rejected", move |context| {
         rejected_factory_called.store(true, Ordering::Relaxed);
@@ -1751,7 +1751,7 @@ fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
     init_vanilla_registry();
     let world = fresh_test_world("prepared_menu_terminal_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player((*world).clone());
     player.open_menu("Open terminal replacement", |context| {
         empty_test_menu(
             context.player,
@@ -1765,8 +1765,8 @@ fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 2));
 
-    let menu_transient = Arc::clone(&transient);
-    let menu_final_removals = Arc::clone(&final_removals);
+    let menu_transient = transient.clone();
+    let menu_final_removals = final_removals.clone();
     player.open_menu("Rejected after construction", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient = builder.section(menu_transient, 9);
@@ -1805,13 +1805,13 @@ fn deferred_factory_is_not_run_when_earlier_close_turns_terminal() {
     init_vanilla_registry();
     let world = fresh_test_world("deferred_open_terminal_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player((*world).clone());
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 4));
 
-    let menu_transient = Arc::clone(&transient);
+    let menu_transient = transient.clone();
     player.open_menu("Queue then remove", move |context| {
         empty_test_menu(
             context.player,
@@ -1842,19 +1842,19 @@ fn deferred_factory_is_not_run_when_earlier_close_turns_terminal() {
 #[test]
 fn terminal_removal_stays_active_while_pending_menu_cleanup_runs() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let factory_entered = Arc::new(Barrier::new(2));
     let factory_release = Arc::new(Barrier::new(2));
     let removal_entered = Arc::new(Barrier::new(2));
     let removal_release = Arc::new(Barrier::new(2));
     let returned_to_inventory = Arc::new(AtomicBool::new(true));
 
-    let opener_player = Arc::clone(&player);
-    let opener_factory_entered = Arc::clone(&factory_entered);
-    let opener_factory_release = Arc::clone(&factory_release);
-    let opener_removal_entered = Arc::clone(&removal_entered);
-    let opener_removal_release = Arc::clone(&removal_release);
-    let opener_returned_to_inventory = Arc::clone(&returned_to_inventory);
+    let opener_player = player.clone();
+    let opener_factory_entered = factory_entered.clone();
+    let opener_factory_release = factory_release.clone();
+    let opener_removal_entered = removal_entered.clone();
+    let opener_removal_release = removal_release.clone();
+    let opener_returned_to_inventory = returned_to_inventory.clone();
     let opener = thread::spawn(move || {
         opener_player.open_menu("Pending cleanup", move |context| {
             opener_factory_entered.wait();
@@ -1880,7 +1880,7 @@ fn terminal_removal_stays_active_while_pending_menu_cleanup_runs() {
 
     player.retry_terminal_menu_removal_for_test();
     let replacement_factory_called = Arc::new(AtomicBool::new(false));
-    let rejected_factory_called = Arc::clone(&replacement_factory_called);
+    let rejected_factory_called = replacement_factory_called.clone();
     player.open_menu("Rejected during cleanup", move |context| {
         rejected_factory_called.store(true, Ordering::Relaxed);
         empty_test_menu(context.player, context.container_id, BasicKind {})
@@ -1896,9 +1896,9 @@ fn terminal_removal_stays_active_while_pending_menu_cleanup_runs() {
 #[test]
 fn opening_a_menu_closes_a_replacement_created_during_removal() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     let replacement_removals = Arc::new(AtomicUsize::new(0));
-    let factory_replacement_removals = Arc::clone(&replacement_removals);
+    let factory_replacement_removals = replacement_removals.clone();
     player.open_menu("Reopen on removal", move |context| {
         empty_test_menu(
             context.player,
@@ -1920,7 +1920,7 @@ fn opening_a_menu_closes_a_replacement_created_during_removal() {
 #[test]
 fn creative_crafting_grid_updates_the_result_slot() {
     init_vanilla_registry();
-    let player = test_player(Arc::clone(test_world()));
+    let player = test_player(test_world().clone());
     assert!(player.change_game_mode_state(GameType::Creative));
     let crafting = player.inventory_crafting_handler();
 

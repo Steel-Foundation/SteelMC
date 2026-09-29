@@ -797,10 +797,7 @@ fn looting_collects_nearby_item_into_main_hand() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [
-        Arc::clone(&mob) as SharedEntity,
-        Arc::clone(&item) as SharedEntity,
-    ] {
+    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");
@@ -860,10 +857,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [
-        Arc::clone(&mob) as SharedEntity,
-        Arc::clone(&item) as SharedEntity,
-    ] {
+    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");
@@ -909,10 +903,7 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [
-        Arc::clone(&mob) as SharedEntity,
-        Arc::clone(&item) as SharedEntity,
-    ] {
+    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");
@@ -1003,7 +994,7 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
         Arc::downgrade(&world),
     ));
     world
-        .try_add_entity(Arc::clone(&mob) as SharedEntity)
+        .try_add_entity(mob.clone() as SharedEntity)
         .expect("test mob should attach to the loaded chunk");
 
     // Wear a leather helmet and force it to always drop, so the swap is
@@ -1166,10 +1157,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [
-        Arc::clone(&mob) as SharedEntity,
-        Arc::clone(&item) as SharedEntity,
-    ] {
+    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");

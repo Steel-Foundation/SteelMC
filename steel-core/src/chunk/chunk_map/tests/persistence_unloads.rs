@@ -14,10 +14,10 @@ fn world_tick_spawns_dirty_unload_save_on_the_chunk_runtime() {
     let _ = world
         .chunk_map
         .unloading_chunks
-        .insert_sync(pos, Arc::clone(&holder));
+        .insert_sync(pos, holder.clone());
     drop(holder);
 
-    let tick_world = Arc::clone(&world);
+    let tick_world = (*world).clone();
     let tick = thread::spawn(move || tick_world.tick_game(1, false));
     assert!(
         tick.join().is_ok(),

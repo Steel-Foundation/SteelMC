@@ -237,7 +237,7 @@ pub(crate) fn spawn_entity(
         apply_item_stack_components(&entity, item_stack, request.user_is_operator)?;
     }
 
-    add_spawned_entity(world, Arc::clone(&entity)).map_err(|_| EntitySpawnError::AddEntity)?;
+    add_spawned_entity(world, entity.clone()).map_err(|_| EntitySpawnError::AddEntity)?;
 
     if request.play_ambient_sound
         && let Some(mob) = entity.as_mob()

@@ -1204,7 +1204,7 @@ mod tests {
             Weak::new(),
         );
         let drops = Arc::new(AtomicUsize::new(0));
-        chunk.install_transient_generation_state(DropSentinel(Arc::clone(&drops)));
+        chunk.install_transient_generation_state(DropSentinel(drops.clone()));
 
         assert!(
             chunk
@@ -1236,7 +1236,7 @@ mod tests {
             Weak::new(),
         );
         let drops = Arc::new(AtomicUsize::new(0));
-        chunk.install_transient_generation_state(DropSentinel(Arc::clone(&drops)));
+        chunk.install_transient_generation_state(DropSentinel(drops.clone()));
 
         let _ = chunk.promote_to_full();
 
@@ -1295,7 +1295,7 @@ mod tests {
             16,
             Weak::new(),
         );
-        let scheduled_ticks = Arc::clone(&proto.scheduled_ticks);
+        let scheduled_ticks = proto.scheduled_ticks.clone();
         let pos = BlockPos::new(3, 4, 5);
         proto.schedule_block_tick(pos, &vanilla_blocks::DIRT, TickPriority::Normal);
 
@@ -1412,7 +1412,7 @@ mod tests {
                 .is_some()
         );
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, sign));
-        assert!(proto.set_block_entity(Arc::clone(&entity)));
+        assert!(proto.set_block_entity(entity.clone()));
 
         assert_eq!(
             proto.set_block_state_for_generation(
@@ -1455,7 +1455,7 @@ mod tests {
         );
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, sign));
         entity.set_removed();
-        assert!(proto.set_block_entity(Arc::clone(&entity)));
+        assert!(proto.set_block_entity(entity.clone()));
 
         assert_eq!(proto.get_block_entities().len(), 1);
         assert_eq!(

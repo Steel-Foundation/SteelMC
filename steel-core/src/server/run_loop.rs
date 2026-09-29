@@ -350,7 +350,7 @@ impl Server {
             return;
         }
         if saves.is_empty() {
-            let server = Arc::clone(self);
+            let server = self.clone();
             saves.spawn(async move {
                 server.autosave_command_data().await;
             });
@@ -424,7 +424,7 @@ impl Server {
         owner: CommandExecutionOwner,
         command: &str,
     ) {
-        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
+        let source = CommandSource::new(owner.sender().clone(), self.clone());
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
@@ -454,7 +454,7 @@ impl Server {
         input: &str,
     ) {
         let suggestions =
-            self.build_command_suggestions(CommandSender::Player(Arc::clone(player)), input);
+            self.build_command_suggestions(CommandSender::Player(player.clone()), input);
         match suggestions {
             Ok(suggestions) => {
                 player.send_packet(command_suggestions_packet(transaction_id, &suggestions));
@@ -471,7 +471,7 @@ impl Server {
         sender: CommandSender,
         input: &str,
     ) -> Result<Suggestions, SuggestionError> {
-        let source = CommandSource::new(sender, Arc::clone(self));
+        let source = CommandSource::new(sender, self.clone());
         let mut reader = StringReader::new(input);
         if reader.peek() == Some('/') {
             reader.skip();
@@ -659,8 +659,6 @@ impl Server {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::Server;
 
     use crate::{
@@ -675,8 +673,8 @@ mod tests {
         let world = fresh_test_world("chunk_send_membership_revalidation");
         let center = ChunkPos::new(0, 0);
         insert_ready_full_chunk(&world, center);
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "ChunkTester", 1).build();
-        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let player = TestPlayerBuilder::new((*world).clone(), "ChunkTester", 1).build();
+        assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 
         let encoding_pool = rayon::ThreadPoolBuilder::new().num_threads(1).build();
@@ -692,7 +690,7 @@ mod tests {
         assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
-        assert!(world.players.insert(Arc::clone(&player)));
+        assert!(world.players.insert(player.clone()));
         world.remove_player_for_world_change(&player);
     }
 }

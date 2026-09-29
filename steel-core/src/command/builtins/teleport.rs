@@ -194,7 +194,7 @@ fn teleport_to_entity(
 
     for target in targets {
         let transition = TeleportTransition {
-            target_world: Arc::clone(&target_world),
+            target_world: target_world.clone(),
             position,
             rotation: wrap_rotation(rotation),
             velocity: DVec3::ZERO,
@@ -239,7 +239,7 @@ fn teleport_to_position(
         let target_rotation = target.rotation();
         let desired_rotation = resolved_rotation.unwrap_or(target_rotation);
         let transition = TeleportTransition {
-            target_world: Arc::clone(source.world()),
+            target_world: source.world().clone(),
             position: packet_position(position, target.position(), relatives),
             rotation: packet_rotation(desired_rotation, target_rotation, relatives),
             velocity: DVec3::ZERO,
@@ -277,7 +277,7 @@ fn perform_teleport(
             camera_id: player.id(),
         });
     }
-    if change_entity_world(Arc::clone(target), &transition).is_none() {
+    if change_entity_world(target.clone(), &transition).is_none() {
         return;
     }
 

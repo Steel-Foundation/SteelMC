@@ -287,7 +287,7 @@ impl ServerJob for WorldSpawnTeleportJob {
                             return JobPoll::Pending;
                         }
                         let transition = TeleportTransition {
-                            target_world: Arc::clone(&self.target_world),
+                            target_world: self.target_world.clone(),
                             position: spawn.position,
                             rotation: spawn.rotation,
                             velocity: DVec3::ZERO,
@@ -296,8 +296,7 @@ impl ServerJob for WorldSpawnTeleportJob {
                             as_passenger: false,
                             post_transition: TeleportPostTransition::do_nothing(),
                         };
-                        let changed_entity =
-                            change_entity_world(Arc::clone(&self.entity), &transition);
+                        let changed_entity = change_entity_world(self.entity.clone(), &transition);
                         return finish_portal_world_change(
                             &self.entity,
                             self.pending_token,
@@ -411,7 +410,7 @@ impl ServerJob for NetherPortalTeleportJob {
             self.clear_pending();
             return JobPoll::Finished;
         };
-        let changed_entity = change_entity_world(Arc::clone(&self.entity), &transition);
+        let changed_entity = change_entity_world(self.entity.clone(), &transition);
         self.finish_transition(changed_entity);
         JobPoll::Finished
     }
@@ -546,7 +545,7 @@ impl ServerJob for EndPortalTeleportJob {
             return JobPoll::Finished;
         }
 
-        let entity = Arc::clone(&self.entity);
+        let entity = self.entity.clone();
         let pending_token = self.pending_token;
         loop {
             match &mut self.phase {
@@ -565,7 +564,7 @@ impl ServerJob for EndPortalTeleportJob {
                         clear_pending_world_change(&entity, pending_token);
                         return JobPoll::Finished;
                     };
-                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
+                    let changed_entity = change_entity_world(entity.clone(), &transition);
                     return finish_portal_world_change(&entity, pending_token, changed_entity);
                 }
                 EndPortalTeleportPhase::ReturningEntity {
@@ -583,7 +582,7 @@ impl ServerJob for EndPortalTeleportJob {
                         entity.as_ref(),
                         respawn_data,
                     );
-                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
+                    let changed_entity = change_entity_world(entity.clone(), &transition);
                     return finish_portal_world_change(&entity, pending_token, changed_entity);
                 }
                 EndPortalTeleportPhase::SearchingPlayerRespawn {
@@ -628,7 +627,7 @@ impl ServerJob for EndPortalTeleportJob {
                         spawn.position,
                         spawn.rotation,
                     );
-                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
+                    let changed_entity = change_entity_world(entity.clone(), &transition);
                     return finish_portal_world_change(&entity, pending_token, changed_entity);
                 }
             }
@@ -707,9 +706,9 @@ impl ServerJob for EndGatewayTeleportJob {
             return JobPoll::Finished;
         }
 
-        let entity = Arc::clone(&self.entity);
+        let entity = self.entity.clone();
         let pending_token = self.pending_token;
-        let source_world = Arc::clone(&self.source_world);
+        let source_world = self.source_world.clone();
         let portal_pos = self.portal_pos;
         let source_is_end = self.source_is_end;
         loop {
@@ -733,7 +732,7 @@ impl ServerJob for EndGatewayTeleportJob {
                             clear_pending_world_change(&entity, pending_token);
                             return JobPoll::Finished;
                         };
-                        let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
+                        let changed_entity = change_entity_world(entity.clone(), &transition);
                         finish_pending_world_change_after_transition(
                             &entity,
                             pending_token,

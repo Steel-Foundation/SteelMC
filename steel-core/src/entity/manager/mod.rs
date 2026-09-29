@@ -693,7 +693,7 @@ impl WorldEntityManager {
 
         let passengers = entry.entity.passengers();
         Self::push_unique_entity(&entry.entity, tracking_stopped_ids, tracking_stopped);
-        retained_entities.push(Arc::clone(&entry.entity));
+        retained_entities.push(entry.entity.clone());
         retained.push(entry);
         for passenger in passengers {
             Self::retain_unloading_entity_tree(
@@ -762,7 +762,7 @@ impl WorldEntityManager {
     ) -> Result<EntityLifecycleChanges, AddEntityError> {
         let mut entries = Vec::with_capacity(entities.len());
         for entity in entities {
-            entries.push(Self::checked_live_entry(Arc::clone(entity), ownership)?);
+            entries.push(Self::checked_live_entry(entity.clone(), ownership)?);
         }
 
         let mut seen_ids = FxHashSet::default();
@@ -949,7 +949,7 @@ impl WorldEntityManager {
             Self::lifecycle_visibility_for(current, Self::chunk_visibility(&state, new_chunk));
         let old_ticking = old_visibility.is_ticking();
         let new_ticking = new_visibility.is_ticking();
-        let entity = Arc::clone(&current.entity);
+        let entity = current.entity.clone();
         let new_bounding_box = entity.bounding_box();
         let new_spatial_cells = EntitySpatialCellBounds::from_aabb(&new_bounding_box).cells();
         let spatial_cells_changed = current.spatial_cells != new_spatial_cells;
@@ -1099,7 +1099,7 @@ impl WorldEntityManager {
         let mut visited = FxHashSet::default();
         visited.insert(entity.id());
 
-        let mut passenger = Arc::clone(entity);
+        let mut passenger = entity.clone();
         let Some(mut vehicle) = passenger.vehicle() else {
             return false;
         };
@@ -1257,7 +1257,7 @@ impl WorldEntityManager {
             .filter(|entry| {
                 Self::is_accessible(&state, entry) && entry.bounding_box.intersects(*aabb)
             })
-            .map(|entry| Arc::clone(&entry.entity))
+            .map(|entry| entry.entity.clone())
             .collect()
     }
 
@@ -1270,7 +1270,7 @@ impl WorldEntityManager {
             .iter()
             .filter_map(|entity_id| state.live_by_id.get(entity_id))
             .filter(|entry| Self::is_accessible(&state, entry))
-            .map(|entry| Arc::clone(&entry.entity))
+            .map(|entry| entry.entity.clone())
             .collect()
     }
 
@@ -1632,7 +1632,7 @@ impl WorldEntityManager {
     ) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        Arc::clone(entity).tick();
+        entity.clone().tick();
         self.mark_dirty_after_tick(entity, dirty_chunks);
         self.tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, dirty_chunks);
     }

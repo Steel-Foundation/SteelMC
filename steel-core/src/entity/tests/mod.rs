@@ -347,14 +347,14 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
     let _target_registration = RegisteredGameEventListener::new(
         target_world,
         listener_section,
-        Arc::clone(&target_shared_listener),
+        target_shared_listener.clone(),
     );
     let source_listener = Arc::new(RecordingGameEventListener::new(listener_position));
     let source_shared_listener: SharedGameEventListener = source_listener.clone();
     let _source_registration = RegisteredGameEventListener::new(
         source_world,
         listener_section,
-        Arc::clone(&source_shared_listener),
+        source_shared_listener.clone(),
     );
 
     let non_living = TypedTestEntity::new(1, &vanilla_entities::ITEM);
@@ -431,7 +431,7 @@ struct RegisteredGameEventListener<'a> {
 
 impl<'a> RegisteredGameEventListener<'a> {
     fn new(world: &'a Arc<World>, section: SectionPos, listener: SharedGameEventListener) -> Self {
-        world.register_game_event_listener(section, Arc::clone(&listener));
+        world.register_game_event_listener(section, listener.clone());
         Self {
             world,
             section,

@@ -71,7 +71,7 @@ fn build_beardifier(
     // position order prevents cross-chunk read cycles when writers are queued.
     let source_holders = source_positions
         .iter()
-        .map(|p| Arc::clone(cache.get(p.0.x, p.0.y)))
+        .map(|p| cache.get(p.0.x, p.0.y).clone())
         .collect::<Vec<_>>();
     let source_chunks = source_holders
         .iter()

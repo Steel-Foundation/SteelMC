@@ -15,7 +15,7 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     let holder = world
         .chunk_map
         .chunks
-        .read_sync(&pos, |_, holder| Arc::clone(holder))
+        .read_sync(&pos, |_, holder| holder.clone())
         .expect("committed ticket should create an active holder");
 
     let removal_receipt = world
@@ -122,7 +122,7 @@ fn cancelled_generation_task_keeps_cached_holders_pinned_for_in_flight_steps() {
                 world.chunk_map.world_gen_context.min_y(),
                 world.chunk_map.world_gen_context.height(),
             ));
-            let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+            let _ = world.chunk_map.chunks.insert_sync(pos, holder.clone());
             cached_holders.push(holder);
         }
     }
@@ -130,13 +130,13 @@ fn cancelled_generation_task_keeps_cached_holders_pinned_for_in_flight_steps() {
     let center = world
         .chunk_map
         .chunks
-        .read_sync(&center_pos, |_, holder| Arc::clone(holder))
+        .read_sync(&center_pos, |_, holder| holder.clone())
         .expect("the center holder should be cached");
     assert!(center.schedule_chunk_generation_task_b(target_status, &world.chunk_map));
     let in_flight_cache = {
         let pending = world.chunk_map.pending_generation_tasks.lock();
         assert_eq!(pending.len(), 1);
-        Arc::clone(&pending[0].cache)
+        pending[0].cache.clone()
     };
     assert!(
         cached_holders
@@ -203,7 +203,7 @@ fn cached_holder_rechecks_publication_and_generation_permission() {
         height,
         Arc::downgrade(&world.chunk_map.full_publications),
     ));
-    let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+    let _ = world.chunk_map.chunks.insert_sync(pos, holder.clone());
     let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
 
     assert!(

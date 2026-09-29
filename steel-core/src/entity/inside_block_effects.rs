@@ -253,8 +253,8 @@ mod tests {
         collector.advance_step(0);
         collector.apply(InsideBlockEffectType::FireIgnite);
         {
-            let calls = Arc::clone(&entity.calls);
-            let alive = Arc::clone(&entity.alive);
+            let calls = entity.calls.clone();
+            let alive = entity.alive.clone();
             collector.run_after(
                 InsideBlockEffectType::FireIgnite,
                 Box::new(move |_| {

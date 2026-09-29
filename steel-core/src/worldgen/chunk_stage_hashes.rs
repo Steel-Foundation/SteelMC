@@ -256,7 +256,7 @@ fn create_test_world(
             dim_type,
             seed as i64,
             WorldConfig {
-                damage_history: Arc::clone(damage_history),
+                damage_history: damage_history.clone(),
                 game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,

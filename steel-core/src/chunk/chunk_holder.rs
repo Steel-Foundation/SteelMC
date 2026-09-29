@@ -679,7 +679,7 @@ impl ChunkHolder {
     pub(crate) fn add_save_dependency(self: &Arc<Self>) -> ChunkSaveDependency {
         self.active_save_dependencies.fetch_add(1, Ordering::AcqRel);
         ChunkSaveDependency {
-            holder: Arc::clone(self),
+            holder: self.clone(),
         }
     }
 
@@ -710,7 +710,7 @@ impl ChunkHolder {
             )
             .ok()
             .map(|_| ChunkSavePreparationGuard {
-                holder: Arc::clone(self),
+                holder: self.clone(),
             })
     }
 
@@ -756,10 +756,10 @@ impl ChunkHolder {
                 light_work_window_gate.try_reserve_centered(self.pos)
             else {
                 return Some(Self::await_light_work_window_and_apply_step(
-                    Arc::clone(self),
+                    self.clone(),
                     step,
-                    Arc::clone(chunk_map),
-                    Arc::clone(cache),
+                    chunk_map.clone(),
+                    cache.clone(),
                     thread_pool,
                     light_work_window_gate,
                 ));
@@ -1105,7 +1105,7 @@ impl ChunkHolder {
         );
 
         match previous_started {
-            Ok(_) => Some(StatusWorkClaim::new(Arc::clone(self), status)),
+            Ok(_) => Some(StatusWorkClaim::new(self.clone(), status)),
             Err(current) => {
                 if current != usize::MAX && current >= status_index {
                     None
@@ -1523,7 +1523,7 @@ mod tests {
         assert!(matches!(futures::poll!(&mut first_waiter), Poll::Pending));
         assert!(matches!(futures::poll!(&mut second_waiter), Poll::Pending));
 
-        let publishing_holder = Arc::clone(&holder);
+        let publishing_holder = holder.clone();
         let publish_task = tokio::spawn(async move {
             publishing_holder
                 .insert_chunk(test_proto_chunk(ChunkStatus::Empty), ChunkStatus::Empty);
@@ -1574,7 +1574,7 @@ mod tests {
         let _ = world
             .chunk_map
             .chunks
-            .insert_sync(chunk_pos, Arc::clone(&holder));
+            .insert_sync(chunk_pos, holder.clone());
         holder.insert_chunk(proto, ChunkStatus::Light);
         holder.upgrade_to_full();
 

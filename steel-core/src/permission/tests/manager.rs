@@ -19,7 +19,7 @@ impl PermissionGroupStore for CapturingStore {
         &self,
         config: PermissionGroupsConfig,
     ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
-        let saved = Arc::clone(&self.saved);
+        let saved = self.saved.clone();
         Box::pin(async move {
             saved.lock().push(config);
             Ok(())
@@ -62,7 +62,7 @@ fn config_with_builder() -> PermissionGroupsConfig {
 async fn manager_persists_before_publishing_replacement() {
     let saved = Arc::new(SyncMutex::new(Vec::new()));
     let manager = manager(Some(Arc::new(CapturingStore {
-        saved: Arc::clone(&saved),
+        saved: saved.clone(),
     })));
     let config = config_with_builder();
 
@@ -86,7 +86,7 @@ async fn manager_keeps_state_when_store_fails() {
 async fn manager_keeps_state_when_validation_fails() {
     let saved = Arc::new(SyncMutex::new(Vec::new()));
     let manager = manager(Some(Arc::new(CapturingStore {
-        saved: Arc::clone(&saved),
+        saved: saved.clone(),
     })));
     let mut invalid = PermissionGroupsConfig::default();
     invalid.groups.remove("op");
@@ -104,10 +104,10 @@ async fn manager_keeps_state_when_validation_fails() {
 async fn manager_updates_the_latest_config_under_one_lock() {
     let saved = Arc::new(SyncMutex::new(Vec::new()));
     let manager = Arc::new(manager(Some(Arc::new(CapturingStore {
-        saved: Arc::clone(&saved),
+        saved: saved.clone(),
     }))));
     let first = {
-        let manager = Arc::clone(&manager);
+        let manager = manager.clone();
         tokio::spawn(async move {
             manager
                 .update_config(|config| {
@@ -119,7 +119,7 @@ async fn manager_updates_the_latest_config_under_one_lock() {
         })
     };
     let second = {
-        let manager = Arc::clone(&manager);
+        let manager = manager.clone();
         tokio::spawn(async move {
             manager
                 .update_config(|config| {
@@ -151,7 +151,7 @@ async fn manager_updates_the_latest_config_under_one_lock() {
 async fn fallible_update_skips_unchanged_and_rejected_writes() {
     let saved = Arc::new(SyncMutex::new(Vec::new()));
     let manager = manager(Some(Arc::new(CapturingStore {
-        saved: Arc::clone(&saved),
+        saved: saved.clone(),
     })));
 
     let unchanged = manager

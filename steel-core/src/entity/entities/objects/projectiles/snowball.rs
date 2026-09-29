@@ -159,7 +159,7 @@ impl Projectile for SnowballEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `Snowball.onHit`: super.onHit() then the server-side break.
-        Arc::clone(&self).projectile_on_hit(hit);
+        self.clone().projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: entity event 3 renders the snowball break
         // particles on clients via `Snowball.handleEntityEvent`; the server
@@ -268,7 +268,7 @@ mod tests {
             },
         };
 
-        Arc::clone(&snowball).on_hit(&hit);
+        snowball.clone().on_hit(&hit);
         assert!(snowball.is_removed());
     }
 }

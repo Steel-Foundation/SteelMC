@@ -84,7 +84,7 @@ fn tick_entities_uses_start_of_tick_snapshot_for_added_entities() {
         1,
         Uuid::from_u128(1),
         DVec3::new(1.0, 64.0, 1.0),
-        Arc::clone(&manager),
+        manager.clone(),
         late_entity.clone(),
     );
     assert!(

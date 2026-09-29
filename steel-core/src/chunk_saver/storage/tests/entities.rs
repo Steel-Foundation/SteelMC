@@ -405,7 +405,7 @@ fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     let vehicle_uuid = vehicle.uuid();
     let passenger_uuid = passenger.uuid();
-    let entities = [Arc::clone(&vehicle), Arc::clone(&passenger)];
+    let entities = [vehicle.clone(), passenger.clone()];
 
     let Some(prepared) =
         ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Features, &entities, true)

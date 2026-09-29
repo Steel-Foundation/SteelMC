@@ -196,7 +196,7 @@ mod tests {
             .set_value(&BlockStateProperties::AGE_25, age);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "ShearsTester", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "ShearsTester", 1).build();
         player.inventory.lock().set_item_in_hand(
             InteractionHand::MainHand,
             ItemStack::new(&vanilla_items::SHEARS),
@@ -204,19 +204,19 @@ mod tests {
 
         let packets = Arc::new(SyncMutex::new(Vec::new()));
         let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
-            packets: Arc::clone(&packets),
+            packets: packets.clone(),
         })));
-        let observer = TestPlayerBuilder::new(Arc::clone(&world), "ShearsObserver", 2)
+        let observer = TestPlayerBuilder::new((*world).clone(), "ShearsObserver", 2)
             .connection(connection)
             .build();
         assert!(observer.try_set_position(block_center(pos)).is_ok());
-        assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
+        assert!(world.add_player(observer.clone(), ResetReason::InitialJoin));
         packets.lock().clear();
 
         let events = Arc::new(SyncMutex::new(Vec::new()));
         let listener: SharedGameEventListener = Arc::new(RecordingGameEventListener {
             pos: block_center(pos),
-            events: Arc::clone(&events),
+            events: events.clone(),
         });
         world.register_game_event_listener(SectionPos::from_block_pos(pos), listener);
 
@@ -252,7 +252,7 @@ mod tests {
             InteractionHand::MainHand,
             hit_result(fixture.pos),
             &fixture.world,
-            Arc::clone(&fixture.player.inventory),
+            fixture.player.inventory.clone(),
         );
         ShearsItem.use_on(&mut context)
     }

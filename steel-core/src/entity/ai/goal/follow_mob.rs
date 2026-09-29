@@ -237,7 +237,7 @@ mod tests {
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
         ));
-        goal.following_mob = Some(Arc::clone(&following_mob));
+        goal.following_mob = Some(following_mob.clone());
 
         goal.tick(mob.as_ref(), &mob_entity);
 

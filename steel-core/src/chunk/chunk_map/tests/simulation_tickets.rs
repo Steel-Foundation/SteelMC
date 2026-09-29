@@ -81,12 +81,12 @@ fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
     let damage_history = Arc::new(DamageHistory::default());
     let world = runtime
         .block_on(World::new_with_config(
-            Arc::clone(&runtime),
+            runtime.clone(),
             Identifier::vanilla_static("restored_portal_ticket"),
             &OVERWORLD,
             TEST_WORLD_SEED,
             WorldConfig {
-                damage_history: Arc::clone(&damage_history),
+                damage_history: damage_history.clone(),
                 game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: Some(directory.path_string()),
@@ -109,7 +109,7 @@ fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
     let holder = world
         .chunk_map
         .chunks
-        .read_sync(&center, |_, holder| Arc::clone(holder))
+        .read_sync(&center, |_, holder| holder.clone())
         .expect("restored portal ticket should load its center holder");
     let expected_level = ChunkTicketLevel::for_full_chunk_radius(PORTAL_TICKET_RADIUS);
     assert_eq!(holder.load_level(), Some(expected_level));
@@ -181,7 +181,7 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
     let holder = world
         .chunk_map
         .chunks
-        .read_sync(&pos, |_, holder| Arc::clone(holder))
+        .read_sync(&pos, |_, holder| holder.clone())
         .expect("committed tickets should create an active holder");
     assert_eq!(
         holder.simulation_level(),

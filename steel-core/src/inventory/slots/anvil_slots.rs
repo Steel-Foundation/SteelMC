@@ -197,7 +197,7 @@ mod tests {
             Arc::new(AtomicI32::new(0)),
             Arc::new(AtomicBool::new(false)),
             anvil_pos,
-            Arc::clone(&world),
+            (*world).clone(),
         );
         handler.damage_anvil(world.get_block_state(anvil_pos));
 

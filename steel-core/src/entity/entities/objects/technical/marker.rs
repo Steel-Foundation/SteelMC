@@ -133,7 +133,7 @@ mod tests {
             Arc::downgrade(world),
         ));
         for _ in 0..100 {
-            Arc::clone(&marker).tick();
+            marker.clone().tick();
         }
         assert_eq!(marker.position(), TEST_POSITION);
     }

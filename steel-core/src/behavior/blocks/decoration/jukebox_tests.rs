@@ -143,7 +143,7 @@ fn jukebox_entity(world: &World, pos: BlockPos) -> SharedBlockEntity {
 }
 
 fn test_player(world: &Arc<World>, id: i32) -> Arc<Player> {
-    TestPlayerBuilder::new(Arc::clone(world), format!("JukeboxTester{id}"), id).build()
+    TestPlayerBuilder::new(world.clone(), format!("JukeboxTester{id}"), id).build()
 }
 
 fn block_bottom_center(pos: BlockPos) -> DVec3 {
@@ -223,14 +223,14 @@ fn recording_player(
 ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
-        packets: Arc::clone(&packets),
+        packets: packets.clone(),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(world), "JukeboxObserver", next_entity_id())
+    let player = TestPlayerBuilder::new(world.clone(), "JukeboxObserver", next_entity_id())
         .connection(connection)
         .build();
     let moved = player.try_set_position(block_bottom_center(pos.above()));
     assert!(moved.is_ok(), "test player should move beside jukebox");
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
     packets.lock().clear();
     (player, packets)
 }
@@ -286,7 +286,7 @@ fn recorded_game_event_count(
 fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     let (world, _holder, pos, behavior) = jukebox_world("jukebox_insert_eject");
     let player = test_player(&world, 1);
-    let mut access = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
+    let mut access = InventoryAccess::new(player.inventory.clone(), InteractionHand::MainHand);
     let hit = hit_result(pos);
 
     player.inventory.lock().set_item_in_hand(
@@ -476,7 +476,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
 fn stackable_component_backed_record_consumes_one_item() {
     let (world, _holder, pos, behavior) = jukebox_world("jukebox_component_insertion");
     let player = test_player(&world, 2);
-    let mut access = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
+    let mut access = InventoryAccess::new(player.inventory.clone(), InteractionHand::MainHand);
     let mut stacked_record = ItemStack::with_count(&vanilla_items::STONE, 2);
     stacked_record.set(
         JUKEBOX_PLAYABLE,
@@ -527,7 +527,7 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let listener: SharedGameEventListener = Arc::new(RecordingGameEventListener {
         pos: block_center(pos),
-        events: Arc::clone(&events),
+        events: events.clone(),
     });
     world.register_game_event_listener(SectionPos::from_block_pos(pos), listener);
 

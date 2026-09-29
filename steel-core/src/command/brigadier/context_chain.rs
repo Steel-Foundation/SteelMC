@@ -30,7 +30,7 @@ where
         let mut contexts = Vec::new();
         let mut current = root;
         loop {
-            let child = current.child_arc().map(Arc::clone);
+            let child = current.child_arc().cloned();
             contexts.push(current);
             let Some(child) = child else {
                 break;
@@ -68,7 +68,7 @@ where
     pub(crate) fn next_stage(&self) -> Option<Self> {
         let position = self.position + 1;
         (position < self.contexts.len()).then(|| Self {
-            contexts: Arc::clone(&self.contexts),
+            contexts: self.contexts.clone(),
             position,
         })
     }
@@ -159,7 +159,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            contexts: Arc::clone(&self.contexts),
+            contexts: self.contexts.clone(),
             position: self.position,
         }
     }

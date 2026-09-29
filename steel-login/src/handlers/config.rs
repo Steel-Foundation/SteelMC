@@ -126,13 +126,13 @@ impl JavaTcpClient {
             self.compression.load(),
             self.network_writer.clone(),
             self.id,
-            Arc::clone(&session),
+            session.clone(),
         );
         let connection = Arc::new(PlayerConnection::Java(java_connection));
         let player = Arc::new(Player::new(
             gameprofile,
             connection,
-            Arc::clone(&session),
+            session.clone(),
             world,
             Arc::downgrade(&self.server),
             self.server.config.clone(),
@@ -144,10 +144,10 @@ impl JavaTcpClient {
             "new client session was already bound to a player"
         );
 
-        let connection = Arc::clone(&player.connection);
+        let connection = player.connection.clone();
         if self
             .connection_updates
-            .send(ConnectionUpdate::Upgrade(Arc::clone(&connection)))
+            .send(ConnectionUpdate::Upgrade(connection.clone()))
             .is_err()
         {
             self.kick("Failed to update connection state".into()).await;

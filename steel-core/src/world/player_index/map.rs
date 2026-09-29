@@ -35,7 +35,7 @@ impl PlayerSlot {
     }
 
     fn load(&self) -> Arc<Player> {
-        Arc::clone(&self.player.load().player)
+        self.player.load().player.clone()
     }
 
     fn replace(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
@@ -97,7 +97,7 @@ impl PlayerMap {
         let _mutation = self.mutations.lock();
         let slot = Arc::new(PlayerSlot::new(player));
 
-        if self.by_uuid.insert_sync(uuid, Arc::clone(&slot)).is_err() {
+        if self.by_uuid.insert_sync(uuid, slot.clone()).is_err() {
             return false;
         }
 
@@ -156,7 +156,7 @@ impl PlayerMap {
         let _mutation = self.mutations.lock();
         let slot = self
             .by_uuid
-            .read_sync(&uuid, |_, current| Arc::clone(current))?;
+            .read_sync(&uuid, |_, current| current.clone())?;
         let current = slot.load();
         if !Arc::ptr_eq(&current, player) {
             return None;
@@ -190,15 +190,12 @@ impl PlayerMap {
         }
 
         let _mutation = self.mutations.lock();
-        let Some(slot) = self
-            .by_uuid
-            .read_sync(&uuid, |_, current| Arc::clone(current))
-        else {
+        let Some(slot) = self.by_uuid.read_sync(&uuid, |_, current| current.clone()) else {
             return false;
         };
         let Some(entity_slot) = self
             .by_entity_id
-            .read_sync(&entity_id, |_, current| Arc::clone(current))
+            .read_sync(&entity_id, |_, current| current.clone())
         else {
             return false;
         };

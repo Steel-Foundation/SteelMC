@@ -77,7 +77,7 @@ impl BlockEntity for ListenerBlockEntity {
 
     fn game_event_listener(&self) -> Option<SharedGameEventListener> {
         self.selections.fetch_add(1, AtomicOrdering::Relaxed);
-        Some(Arc::clone(&self.listener))
+        Some(self.listener.clone())
     }
 
     fn load_additional(&self, _nbt: &BorrowedNbtCompound<'_>) {}
@@ -100,7 +100,7 @@ fn listener_block_entity(
             f64::from(pos.z()) + 0.5,
         ),
         id,
-        events: Arc::clone(events),
+        events: events.clone(),
     });
     Arc::new(ListenerBlockEntity {
         base: BlockEntityBase::new(
@@ -110,7 +110,7 @@ fn listener_block_entity(
             state,
         ),
         listener,
-        selections: Arc::clone(selections),
+        selections: selections.clone(),
     })
 }
 
@@ -135,7 +135,7 @@ fn active_block_entity_listener_uses_stored_selection_for_removal() {
                 .set_block_state(pos, state, UpdateFlags::UPDATE_NONE)
                 .is_some()
         );
-        assert!(chunk.add_and_register_block_entity(Arc::clone(&block_entity)));
+        assert!(chunk.add_and_register_block_entity(block_entity.clone()));
     }
 
     assert_eq!(selections.load(AtomicOrdering::Relaxed), 1);
@@ -211,7 +211,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
     let _ = world
         .chunk_map
         .chunks
-        .insert_sync(chunk_pos, Arc::clone(&holder));
+        .insert_sync(chunk_pos, holder.clone());
     world
         .chunk_map
         .activate_block_entities(slice::from_ref(&holder));
@@ -307,7 +307,7 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
     let _ = world
         .chunk_map
         .chunks
-        .insert_sync(chunk_pos, Arc::clone(&holder));
+        .insert_sync(chunk_pos, holder.clone());
     world
         .chunk_map
         .activate_block_entities(slice::from_ref(&holder));

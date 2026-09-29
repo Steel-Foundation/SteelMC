@@ -195,7 +195,7 @@ impl World {
             .scheduled_block_ticks_this_tick
             .lock()
             .as_ref()
-            .map(Arc::clone);
+            .cloned();
         batch.is_some_and(|batch| batch.contains(pos, block))
     }
 
@@ -205,7 +205,7 @@ impl World {
             .scheduled_fluid_ticks_this_tick
             .lock()
             .as_ref()
-            .map(Arc::clone);
+            .cloned();
         batch.is_some_and(|batch| batch.contains(pos, fluid))
     }
 
@@ -219,7 +219,7 @@ impl World {
             current.is_none(),
             "scheduled block-tick batch was already active"
         );
-        *current = Some(Arc::clone(&batch));
+        *current = Some(batch.clone());
         batch
     }
 
@@ -250,7 +250,7 @@ impl World {
             current.is_none(),
             "scheduled fluid-tick batch was already active"
         );
-        *current = Some(Arc::clone(&batch));
+        *current = Some(batch.clone());
         batch
     }
 

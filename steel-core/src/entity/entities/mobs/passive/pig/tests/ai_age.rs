@@ -219,7 +219,7 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
     assert_eq!(pig.base().dimensions(), vanilla_entities::PIG.dimensions);
     assert_eq!(pig.position(), initial_position);
 
-    Arc::clone(&pig).tick();
+    pig.clone().tick();
 
     assert!(!pig.is_first_tick());
     assert_eq!(pig.position(), initial_position);

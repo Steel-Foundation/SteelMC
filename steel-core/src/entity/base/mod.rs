@@ -1207,7 +1207,7 @@ impl EntityBase {
     }
 
     fn notify_bounding_box_changed(&self, bounding_box: WorldAabb) {
-        let callback = Arc::clone(&self.level_callback.lock());
+        let callback = self.level_callback.lock().clone();
         callback.on_bounding_box_changed(bounding_box);
     }
 

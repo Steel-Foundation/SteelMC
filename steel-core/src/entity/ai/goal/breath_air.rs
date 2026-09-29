@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::DVec3;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -61,7 +59,9 @@ impl Goal for BreathAirGoal {
                 f64::from(input.forward()),
             ),
         );
-        Arc::clone(entity).move_entity(MoverType::SelfMovement, mob.velocity());
+        entity
+            .clone()
+            .move_entity(MoverType::SelfMovement, mob.velocity());
     }
 }
 
@@ -134,7 +134,7 @@ fn gives_air(level: &dyn LevelReader, pos: BlockPos) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};

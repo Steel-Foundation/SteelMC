@@ -559,7 +559,7 @@ impl World {
                 pitch,
                 seed,
             ));
-            played_for.push(Arc::clone(player));
+            played_for.push(player.clone());
         }
 
         played_for

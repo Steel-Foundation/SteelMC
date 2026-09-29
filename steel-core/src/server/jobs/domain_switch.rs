@@ -75,11 +75,11 @@ impl DomainSwitchJob {
         residence_token: DomainResidenceToken,
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
-        let task_server = Arc::clone(server);
-        let task_player = Arc::clone(&player);
+        let task_server = server.clone();
+        let task_player = player.clone();
         let task_source_domain = source_domain.clone();
         let source_data = Arc::new(source_data);
-        let task_source_data = Arc::clone(&source_data);
+        let task_source_data = source_data.clone();
         let task_target_domain = target_domain.clone();
         let task = tokio::spawn(async move {
             let result = async {
@@ -150,7 +150,7 @@ impl DomainSwitchJob {
             return JobPoll::Finished;
         };
         server.queue_relocating_player_disconnect(
-            Arc::clone(&self.player),
+            self.player.clone(),
             self.source_domain.clone(),
             source_data,
             self.pending_token,
@@ -247,9 +247,9 @@ impl DomainSwitchJob {
         }
 
         let restores = server.prepare_domain_restores(&self.player, &state);
-        let restore_player = Arc::clone(&self.player);
+        let restore_player = self.player.clone();
         self.player
-            .reset_after_detached_domain_restore(Arc::clone(&state.world), || {
+            .reset_after_detached_domain_restore(state.world.clone(), || {
                 Server::apply_domain_player_state(&restore_player, &state);
             });
         if !Server::install_domain_restores(&self.player, self.residence_token, &restores) {
@@ -263,7 +263,7 @@ impl DomainSwitchJob {
             let target_data = PersistentPlayerData::from_player(&self.player);
             self.source_data = None;
             server.queue_relocating_player_disconnect(
-                Arc::clone(&self.player),
+                self.player.clone(),
                 self.target_domain.clone(),
                 Arc::new(target_data),
                 self.pending_token,
@@ -282,7 +282,7 @@ impl DomainSwitchJob {
                 self.player.gameprofile.id,
                 PlayerAdmissionState::Relocating,
             );
-            server.queue_player_disconnect(Arc::clone(&self.player));
+            server.queue_player_disconnect(self.player.clone());
             return JobPoll::Finished;
         }
         if !self.player.mark_domain_switch_live(self.pending_token) {
@@ -296,7 +296,7 @@ impl DomainSwitchJob {
                 self.player.gameprofile.id,
                 PlayerAdmissionState::Relocating,
             );
-            server.queue_player_disconnect(Arc::clone(&self.player));
+            server.queue_player_disconnect(self.player.clone());
             return JobPoll::Finished;
         }
         server
@@ -304,7 +304,7 @@ impl DomainSwitchJob {
         server.schedule_domain_restores(&self.player, self.residence_token, restores);
 
         let (sender, receiver) = mpsc::channel();
-        let task_server = Arc::clone(server);
+        let task_server = server.clone();
         let task_target_domain = self.target_domain.clone();
         let uuid = self.player.gameprofile.id;
         let task = tokio::spawn(async move {

@@ -71,7 +71,7 @@ impl DamageHistoryBinding {
                     .then(|| source.clone()),
                 source: descriptor,
                 timestamp: clock.ticks(),
-                clock: Arc::clone(clock),
+                clock: clock.clone(),
             };
             history.records.lock().insert(generation, record)
         };

@@ -1,6 +1,6 @@
 //! `/execute store` result consumers.
 
-use std::{error::Error, fmt, io::Cursor, sync::Arc};
+use std::{error::Error, fmt, io::Cursor};
 
 use simdnbt::{
     borrow::read_compound as read_borrowed_compound,
@@ -151,7 +151,7 @@ fn store_block_data(
         .ok_or_else(invalid_block_data_source)?;
     let path = parsed_path(context)?;
     let scale = parsed_scale(context)?;
-    let world = Arc::clone(source.world());
+    let world = source.world().clone();
     let callback = CommandResultCallback::new(move |success, result| {
         let value = stored_value(store_result, success, result);
         if store_block_data_value(&block_entity, &path, data_type.tag(value, scale)).is_ok() {
@@ -172,7 +172,7 @@ fn store_storage_data(
     let path = parsed_path(context)?;
     let scale = parsed_scale(context)?;
     let source = context.source();
-    let server = Arc::clone(source.server());
+    let server = source.server().clone();
     let domain = source.world().domain().to_owned();
     let callback = CommandResultCallback::new(move |success, result| {
         let Some(storage) = server.command_storage.get(&domain) else {
@@ -203,7 +203,7 @@ fn store_score(
     let objective = objective(context, scoreboard, "objective")?;
     let holders = context.score_holders("targets", ScoreHolderWildcard::Tracked)?;
     let source = context.source();
-    let server = Arc::clone(source.server());
+    let server = source.server().clone();
     let domain = source.world().domain().to_owned();
     let callback = CommandResultCallback::new(move |success, result| {
         let Some(scoreboard) = server.scoreboards.get(&domain) else {

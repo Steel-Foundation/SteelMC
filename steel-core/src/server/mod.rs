@@ -657,7 +657,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
-                    damage_history: Arc::clone(&damage_history),
+                    damage_history: damage_history.clone(),
                     game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
@@ -675,7 +675,7 @@ impl Server {
                     difficulty: world_entry.difficulty,
                 },
                 generation_pool.clone(),
-                Arc::clone(&chunk_encoding_pool),
+                chunk_encoding_pool.clone(),
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
@@ -697,7 +697,7 @@ impl Server {
                     )
                 })?;
             let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
-            let clock = Arc::clone(&primary.game_time);
+            let clock = primary.game_time.clone();
             worlds.insert(primary_config.key.clone(), primary);
             for world_entry in resolved_worlds
                 .worlds
@@ -705,8 +705,7 @@ impl Server {
                 .filter(|world| world.domain == domain.name && world.key != domain.default_world)
             {
                 let world =
-                    construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
-                        .await?;
+                    construct_world(world_entry, GameTimeSource::Derived(clock.clone())).await?;
                 worlds.insert(world_entry.key.clone(), world);
             }
         }

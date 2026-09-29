@@ -11,8 +11,8 @@ impl ChunkMap {
         chunk_holder: &Arc<ChunkHolder>,
     ) -> Option<PreparedChunkSave> {
         let (sender, receiver) = oneshot::channel();
-        let map = Arc::clone(self);
-        let holder = Arc::clone(chunk_holder);
+        let map = self.clone();
+        let holder = chunk_holder.clone();
         self.chunk_encoding_pool.spawn(move || {
             let chunk_pos = holder.get_pos();
             let prepared = {
@@ -155,8 +155,8 @@ impl ChunkMap {
 
                 if is_dirty || has_save_pending_entities {
                     let save_dependency = holder.add_save_dependency();
-                    let holder_clone = Arc::clone(holder);
-                    let map_clone = Arc::clone(self);
+                    let holder_clone = holder.clone();
+                    let map_clone = self.clone();
                     self.task_tracker.spawn_on(
                         async move {
                             map_clone.save_chunk(&holder_clone, save_dependency).await;
@@ -167,7 +167,7 @@ impl ChunkMap {
                 }
 
                 let has_chunk = holder.try_chunk(ChunkStatus::Empty).is_some();
-                finalized.push((*pos, Arc::clone(holder), has_chunk));
+                finalized.push((*pos, holder.clone(), has_chunk));
                 false
             });
         }
@@ -192,7 +192,7 @@ impl ChunkMap {
             self.finalized_block_entity_unloads
                 .lock()
                 .push(FinalizedBlockEntityUnload {
-                    holder: Arc::clone(&holder),
+                    holder: holder.clone(),
                     lifecycle_dispatchers: cleared.lifecycle_dispatchers,
                     positions: cleared.positions,
                 });
@@ -200,7 +200,7 @@ impl ChunkMap {
             world.unregister_full_chunk_ticks(pos);
             world.on_entity_chunk_unload_finalized(pos);
             if has_chunk {
-                let map_clone = Arc::clone(self);
+                let map_clone = self.clone();
                 self.task_tracker.spawn_on(
                     async move {
                         if let Err(e) = map_clone.storage.release_chunk(pos).await {

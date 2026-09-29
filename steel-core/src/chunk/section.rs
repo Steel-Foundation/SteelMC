@@ -248,7 +248,7 @@ impl Sections {
             .map(|(section_index, section)| {
                 SectionHolder::with_random_tick_index(
                     section,
-                    Arc::clone(&randomly_ticking_sections),
+                    randomly_ticking_sections.clone(),
                     section_index,
                 )
             })
@@ -946,7 +946,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
         );
-        let bits = Arc::clone(sections.random_tick_sections());
+        let bits = sections.random_tick_sections().clone();
         assert!(bits.is_empty());
 
         {
@@ -979,7 +979,7 @@ mod tests {
     fn generation_recount_publishes_random_tick_section_bit() {
         init_test_behaviors();
         let sections = Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice());
-        let bits = Arc::clone(sections.random_tick_sections());
+        let bits = sections.random_tick_sections().clone();
 
         {
             let mut section = sections.sections[0].write();

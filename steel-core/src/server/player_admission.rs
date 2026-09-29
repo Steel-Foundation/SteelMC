@@ -216,7 +216,7 @@ impl Server {
             return;
         }
 
-        let server = Arc::clone(self);
+        let server = self.clone();
         tokio::spawn(Self::prepare_and_queue_player_join(server, player));
     }
 
@@ -261,7 +261,7 @@ impl Server {
             }
         };
 
-        if let Err(error) = self.admit_reserved_player(Arc::clone(&player)) {
+        if let Err(error) = self.admit_reserved_player(player.clone()) {
             let reason = match error {
                 PlayerJoinError::DuplicateLogin => {
                     translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg()
@@ -278,7 +278,7 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
 
-        player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);
+        player.reset(state.world.clone(), ResetReason::InitialJoin);
         Self::apply_domain_player_state(&player, &state);
         let residence_token = player.domain_residence_token();
         let restores = self.prepare_domain_restores(&player, &state);
@@ -336,7 +336,7 @@ impl Server {
         let previous = admissions.insert(uuid, PlayerAdmissionState::Joining);
         debug_assert!(previous.is_none());
         Some(PlayerJoinReservation {
-            server: Arc::clone(self),
+            server: self.clone(),
             uuid,
             queued: false,
         })
@@ -555,7 +555,7 @@ impl Server {
         // Connection implementations report transport state; the server owns player removal.
         self.online_players.iter_players(|_, player| {
             if player.connection.closed() {
-                self.queue_player_disconnect(Arc::clone(player));
+                self.queue_player_disconnect(player.clone());
             }
             true
         });
@@ -589,7 +589,7 @@ impl Server {
         }
 
         let world = player.get_world();
-        let (player, domain, player_data) = world.detach_player_for_disconnect(Arc::clone(&player));
+        let (player, domain, player_data) = world.detach_player_for_disconnect(player.clone());
 
         // Vanilla broadcasts before removing the player from its global player list.
         self.broadcast_player_leave_message(&player);
@@ -645,7 +645,7 @@ impl Server {
         let mut pending = self.pending_player_disconnects.drain_prepared();
         pending.extend(self.process_player_disconnects());
         for pending in pending {
-            let server = Arc::clone(self);
+            let server = self.clone();
             saves.spawn(async move {
                 server.save_disconnected_player(pending).await;
             });

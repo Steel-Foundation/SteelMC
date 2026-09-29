@@ -79,7 +79,7 @@ fn start_structure_search(
 
     Ok(LocateStructureSearch {
         source: context.source().clone(),
-        world: Arc::clone(world),
+        world: world.clone(),
         query: query.clone(),
         plan,
         origin: BlockPos::from(context.source().position()),
@@ -276,7 +276,7 @@ impl LocateStructureSearch {
             .world
             .chunk_map
             .chunks
-            .read_sync(&candidate.chunk_pos, |_, holder| Arc::clone(holder))?;
+            .read_sync(&candidate.chunk_pos, |_, holder| holder.clone())?;
         let chunk = holder.try_chunk(ChunkStatus::StructureStarts)?;
         let starts = chunk.structure_starts();
         let structures = self.plan.structures_for_candidate(candidate)?;

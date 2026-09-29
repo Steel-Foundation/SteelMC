@@ -343,7 +343,7 @@ impl ChunkMap {
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
     ) -> Self {
-        let chunk_encoding_pool = Arc::clone(&generation_pool);
+        let chunk_encoding_pool = generation_pool.clone();
         Self::new_with_storage_and_ticket_storage(
             chunk_runtime,
             world,
@@ -420,7 +420,7 @@ impl ChunkMap {
     }
 
     pub(crate) fn light_work_window_gate(&self) -> Arc<LightWorkWindowGate> {
-        Arc::clone(&self.light_work_window_gate)
+        self.light_work_window_gate.clone()
     }
 
     /// Starts the notify-driven generation refill loop for this chunk map.
@@ -429,7 +429,7 @@ impl ChunkMap {
             return;
         }
 
-        let chunk_map = Arc::clone(self);
+        let chunk_map = self.clone();
         self.task_tracker.spawn_on(
             async move {
                 loop {
@@ -511,7 +511,7 @@ impl ChunkMap {
     #[inline]
     fn lookup_active_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
         lookup_or_insert_with(self, pos, || {
-            self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
+            self.chunks.read_sync(&pos, |_, holder| holder.clone())
         })
     }
 
@@ -608,7 +608,7 @@ impl ChunkMap {
         F: FnOnce() -> R,
     {
         let ticket_level = ChunkTicketLevel::for_full_chunk_radius(radius);
-        let lease = ChunkRequestLease::new(Arc::clone(self), Box::new([center]), ticket_level);
+        let lease = ChunkRequestLease::new(self.clone(), Box::new([center]), ticket_level);
         let Some(ticket_receipt) = lease.submission_receipt else {
             unreachable!("one chunk request lease must produce a receipt");
         };
@@ -998,7 +998,7 @@ impl ChunkMap {
         for change in changes {
             let Some(holder) = self
                 .chunks
-                .read_sync(&change.pos, |_, holder| Arc::clone(holder))
+                .read_sync(&change.pos, |_, holder| holder.clone())
             else {
                 continue;
             };

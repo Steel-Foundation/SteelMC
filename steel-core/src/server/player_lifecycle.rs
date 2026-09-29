@@ -239,7 +239,7 @@ impl Server {
             );
             return None;
         };
-        Some(Arc::clone(saved_world))
+        Some(saved_world.clone())
     }
 
     pub(super) fn apply_domain_player_state(player: &Arc<Player>, state: &DomainPlayerState) {
@@ -272,7 +272,7 @@ impl Server {
             })
             .collect();
         PreparedDomainRestores {
-            target_world: Arc::clone(&state.world),
+            target_world: state.world.clone(),
             root_vehicle: Self::root_vehicle_to_restore(state),
             ender_pearls,
         }
@@ -303,8 +303,8 @@ impl Server {
     ) {
         if let Some(root_vehicle) = restores.root_vehicle {
             if let Some(job) = RootVehicleRestoreJob::new(
-                Arc::clone(player),
-                Arc::clone(&restores.target_world),
+                player.clone(),
+                restores.target_world.clone(),
                 &root_vehicle,
                 residence_token,
             ) {
@@ -322,7 +322,7 @@ impl Server {
         for restore in restores.ender_pearls {
             let pearl_uuid = Uuid::from_bytes(restore.payload.entity.uuid);
             if let Some(job) = EnderPearlRestoreJob::new(
-                Arc::clone(player),
+                player.clone(),
                 restore.world,
                 restore.payload.entity,
                 residence_token,

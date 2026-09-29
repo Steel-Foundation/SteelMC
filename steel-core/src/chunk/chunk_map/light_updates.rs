@@ -43,7 +43,7 @@ impl ChunkMap {
 
         if let Some(holder) = self
             .unloading_chunks
-            .read_sync(&chunk_pos, |_, h| Arc::clone(h))
+            .read_sync(&chunk_pos, |_, h| h.clone())
         {
             holder.mark_light_section_dirty(section_pos);
         }
@@ -286,10 +286,10 @@ impl ChunkMap {
 
     pub(super) fn light_update_holder(&self, chunk_pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
         self.chunks
-            .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
+            .read_sync(&chunk_pos, |_, holder| holder.clone())
             .or_else(|| {
                 self.unloading_chunks
-                    .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
+                    .read_sync(&chunk_pos, |_, holder| holder.clone())
             })
     }
 

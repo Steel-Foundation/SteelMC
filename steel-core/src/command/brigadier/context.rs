@@ -156,14 +156,14 @@ where
 
     pub(super) fn branch(&self) -> Self {
         Self {
-            source: Arc::clone(&self.source),
+            source: self.source.clone(),
             root: self.root,
             arguments: self.arguments.clone(),
-            executor: self.executor.as_ref().map(Arc::clone),
+            executor: self.executor.as_ref().cloned(),
             nodes: self.nodes.clone(),
             range: self.range,
             child: self.child.as_ref().map(|child| Box::new(child.branch())),
-            modifier: self.modifier.as_ref().map(Arc::clone),
+            modifier: self.modifier.as_ref().cloned(),
             forks: self.forks,
         }
     }
@@ -200,7 +200,7 @@ where
         self.range = StringRange::encompassing(self.range, range);
         self.modifier = redirect
             .and_then(|redirect| redirect.modifier.as_ref())
-            .map(Arc::clone);
+            .cloned();
         self.forks = redirect.is_some_and(|redirect| redirect.forks);
     }
 
@@ -218,7 +218,7 @@ where
     }
 
     pub(super) fn build(self, input: Arc<str>) -> Arc<CommandContext<S, R>> {
-        let child = self.child.map(|child| child.build(Arc::clone(&input)));
+        let child = self.child.map(|child| child.build(input.clone()));
         Arc::new(CommandContext {
             source: self.source,
             input,
@@ -418,14 +418,14 @@ where
     pub(crate) fn copy_for(&self, source: Arc<S>) -> Self {
         Self {
             source,
-            input: Arc::clone(&self.input),
+            input: self.input.clone(),
             root: self.root,
-            arguments: Arc::clone(&self.arguments),
-            executor: self.executor.as_ref().map(Arc::clone),
-            nodes: Arc::clone(&self.nodes),
+            arguments: self.arguments.clone(),
+            executor: self.executor.as_ref().cloned(),
+            nodes: self.nodes.clone(),
             range: self.range,
-            child: self.child.as_ref().map(Arc::clone),
-            modifier: self.modifier.as_ref().map(Arc::clone),
+            child: self.child.as_ref().cloned(),
+            modifier: self.modifier.as_ref().cloned(),
             forks: self.forks,
         }
     }

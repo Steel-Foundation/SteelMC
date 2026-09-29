@@ -21,11 +21,11 @@ fn set_test_block(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
 
 fn tick_until_settled(entities: &[&Arc<FallingBlockEntity>]) {
     for _ in 0..240 {
-        for entity in entities {
+        for &entity in entities {
             if entity.is_alive() {
                 entity.set_old_position_to_current();
                 entity.advance_tick_count();
-                Arc::clone(entity).tick();
+                entity.clone().tick();
             }
         }
         if entities.iter().all(|entity| entity.is_removed()) {

@@ -388,7 +388,7 @@ impl PistonMovingState {
         let _no_clip = NoClipGuard::set(piston_direction);
         let (x, y, z) = movement.offset();
         let previous_position = entity.position();
-        Arc::clone(entity).move_entity(
+        entity.clone().move_entity(
             MoverType::Piston,
             DVec3::new(
                 delta * f64::from(x),
@@ -728,7 +728,7 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_entity_filter");
-        let player = test_player(Arc::clone(&world));
+        let player = test_player((*world).clone());
 
         assert!(PistonMovingState::can_move_collided_entity(
             player.as_ref(),
@@ -799,7 +799,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(Arc::clone(&entity))
+            .try_add_entity(entity.clone())
             .expect("test entity should enter the loaded chunk");
 
         piston.tick(&world);
@@ -864,7 +864,7 @@ mod tests {
             false,
         ));
         let replacement_entity: SharedBlockEntity = replacement.clone();
-        assert!(world.set_block_entity(Arc::clone(&replacement_entity)));
+        assert!(world.set_block_entity(replacement_entity.clone()));
 
         assert!(stale_piston.final_tick(&world));
 

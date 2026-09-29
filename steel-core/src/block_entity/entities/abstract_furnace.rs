@@ -317,7 +317,7 @@ impl AbstractFurnaceBlockEntity {
         let container = FurnaceContainer::new(kind).into_shared();
         let shared: SharedContainer = container.clone();
         Self {
-            container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
+            container_ref: ContainerRef::owned_by_block_entity(shared, base.clone()),
             base,
             container,
         }

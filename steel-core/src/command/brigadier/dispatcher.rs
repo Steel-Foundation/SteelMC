@@ -281,7 +281,7 @@ where
                 .executor
                 .as_ref()
                 .filter(|_| child.execution_requirement.allows(context.source()))
-                .map(Arc::clone);
+                .cloned();
             context.set_executor(executor);
             let redirect = child.redirect();
             let required_remaining = if redirect.is_some() { 1 } else { 2 };
@@ -289,7 +289,7 @@ where
                 reader.skip();
                 if let Some(target) = redirect {
                     let child_context = ParsedCommandContext::new(
-                        Arc::clone(context.source_arc()),
+                        context.source_arc().clone(),
                         target,
                         reader.cursor(),
                     );

@@ -15,9 +15,7 @@ fn light_changed_marks_unloading_chunk_dirty() {
     let chunk_map = test_chunk_map();
     let pos = ChunkPos::new(2, 3);
     let holder = unloaded_light_holder(pos);
-    let _ = chunk_map
-        .unloading_chunks
-        .insert_sync(pos, Arc::clone(&holder));
+    let _ = chunk_map.unloading_chunks.insert_sync(pos, holder.clone());
 
     let chunk = holder
         .try_chunk(ChunkStatus::Light)

@@ -469,7 +469,7 @@ mod tests {
     fn erased_container_ref_preserves_id_and_typed_access() {
         let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
         let id = ContainerId::from_arc(&crafting);
-        let container_ref = ContainerRef::from(Arc::clone(&crafting));
+        let container_ref = ContainerRef::from(crafting.clone());
 
         assert_eq!(container_ref.container_id(), id);
 
@@ -517,8 +517,8 @@ mod tests {
     fn unlocked_callback_releases_and_reacquires_every_container() {
         let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
         let result = Arc::new(SyncMutex::new(ResultContainer::new()));
-        let crafting_ref = ContainerRef::from(Arc::clone(&crafting));
-        let result_ref = ContainerRef::from(Arc::clone(&result));
+        let crafting_ref = ContainerRef::from(crafting.clone());
+        let result_ref = ContainerRef::from(result.clone());
         let mut guard = ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref]);
 
         let both_unlocked = guard.run_unlocked(|| {

@@ -45,7 +45,7 @@ async fn game_time_primary_only_survives_both_shutdown_save_orders() {
             .await
             .expect("primary");
         let clock = primary.game_time_handle();
-        let mut derived = load(&derived_dir, GameTimeSource::Derived(Arc::clone(&clock)))
+        let mut derived = load(&derived_dir, GameTimeSource::Derived(clock.clone()))
             .await
             .expect("derived");
         assert!(Arc::ptr_eq(&clock, &derived.game_time_handle()));
@@ -99,7 +99,7 @@ async fn game_time_load_validates_only_the_authoritative_time_and_keeps_other_er
     for value in [None, Some("obsolete".into())] {
         write_time(&dir, value).await;
         assert!(load(&dir, GameTimeSource::Primary).await.is_err());
-        let derived = load(&dir, GameTimeSource::Derived(Arc::clone(&clock)))
+        let derived = load(&dir, GameTimeSource::Derived(clock.clone()))
             .await
             .expect("legacy value ignored");
         assert_eq!(derived.game_time_handle().ticks(), 456);

@@ -153,10 +153,7 @@ pub(crate) fn handle_client_request(
         return;
     }
 
-    let source = CommandSource::new(
-        CommandSender::Player(Arc::clone(player)),
-        Arc::clone(server),
-    );
+    let source = CommandSource::new(CommandSender::Player(player.clone()), server.clone());
     if let Err(error) = set_game_mode(&source, slice::from_ref(player), game_mode) {
         log::error!(
             "Failed to apply client game-mode change for {}: {error}",

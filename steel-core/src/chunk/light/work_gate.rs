@@ -68,7 +68,7 @@ impl LightWorkWindowGate {
 
         active_centers.push(center);
         Some(LightWorkWindowReservation {
-            gate: Arc::clone(self),
+            gate: self.clone(),
             center,
         })
     }

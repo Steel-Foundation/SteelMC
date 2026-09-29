@@ -88,7 +88,7 @@ impl MangrovePropaguleBlock {
         world.set_block(pos, replacement, UpdateFlags::UPDATE_NONE);
 
         let mut worldgen_random = WorldgenRandom::from_seed(rng.random());
-        let mut level = Arc::clone(world);
+        let mut level = world.clone();
         let placed = FeatureDecorationRunner::place_tree_feature(
             &mut level,
             &REGISTRY,

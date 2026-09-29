@@ -174,12 +174,12 @@ impl BeaconBlockEntity {
     }
 
     pub(crate) fn state(&self) -> Arc<SyncMutex<BeaconState>> {
-        Arc::clone(&self.state)
+        self.state.clone()
     }
 
     /// Handle the menu uses to mark this beacon changed.
     pub(crate) fn base_handle(&self) -> Arc<BlockEntityBase> {
-        Arc::clone(&self.base)
+        self.base.clone()
     }
 
     pub(crate) fn play_sound(world: &World, pos: BlockPos, sound: SoundEventRef) {

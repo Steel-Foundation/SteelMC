@@ -343,7 +343,8 @@ impl Player {
             self.jump_from_ground();
         }
 
-        if Arc::clone(self)
+        if self
+            .clone()
             .move_entity(MoverType::Player, move_delta)
             .is_none()
         {
@@ -389,7 +390,8 @@ impl Player {
                 );
             }
             self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
-            Arc::clone(self).do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+            self.clone()
+                .do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
             self.remove_latest_movement_recording();
             return;
         }
@@ -399,7 +401,7 @@ impl Player {
         let floating_check = Some((player_stands_on_something, move_delta.y));
 
         let client_delta = target_pos - start_pos;
-        match Arc::clone(self).apply_accepted_client_movement(
+        match self.clone().apply_accepted_client_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),
@@ -523,7 +525,8 @@ impl Player {
             vehicle.reset_fall_distance();
         }
 
-        if Arc::clone(&vehicle)
+        if vehicle
+            .clone()
             .move_entity(MoverType::Player, move_delta)
             .is_none()
         {
@@ -581,7 +584,7 @@ impl Player {
         }
 
         let client_delta = target_pos - old_position;
-        match Arc::clone(&vehicle).apply_accepted_client_vehicle_movement(
+        match vehicle.clone().apply_accepted_client_vehicle_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),
@@ -1086,8 +1089,6 @@ mod tests {
 
     #[test]
     fn sprinting_charges_food_exhaustion_once_per_move() {
-        use std::sync::Arc;
-
         use steel_utils::ChunkPos;
 
         use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -1095,7 +1096,7 @@ mod tests {
         let world = fresh_test_world("sprint_exhaustion_single_charge");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "SprintTester", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "SprintTester", 1).build();
         player.set_client_loaded(true);
 
         let start = DVec3::new(8.0, 64.0, 8.0);

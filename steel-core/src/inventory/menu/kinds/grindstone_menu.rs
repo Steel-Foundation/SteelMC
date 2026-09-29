@@ -77,7 +77,7 @@ pub fn grindstone(
         input_container,
         result_container,
         block_pos: pos,
-        world: Arc::clone(world),
+        world: world.clone(),
         input,
         player,
     })

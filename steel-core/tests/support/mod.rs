@@ -147,7 +147,7 @@ pub(crate) fn insert_full_chunk(
             Some(TickingReadiness::Unready)
         );
     }
-    let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+    let _ = world.chunk_map.chunks.insert_sync(pos, holder.clone());
     world.on_entity_chunk_loaded(pos);
     world.update_entity_chunk_visibility(pos, holder.entity_visibility());
     world
@@ -312,12 +312,12 @@ pub(crate) fn create_test_world_with_damage_history(
     resources
         .runtime
         .block_on(World::new_with_config(
-            Arc::clone(&resources.runtime),
+            resources.runtime.clone(),
             key,
             dimension_type,
             0,
             WorldConfig {
-                damage_history: Arc::clone(history),
+                damage_history: history.clone(),
                 game_time_source,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,
@@ -332,7 +332,7 @@ pub(crate) fn create_test_world_with_damage_history(
                 default_gamemode: GameType::Survival,
                 difficulty,
             },
-            Arc::clone(&resources.generation_pool),
+            resources.generation_pool.clone(),
         ))
         .expect("test world should initialize")
 }
@@ -586,17 +586,17 @@ pub(crate) fn test_domain(domain: &'static str, names: &[&'static str]) -> TestD
             Identifier::new_static(domain, name),
             Difficulty::Normal,
             &vanilla_dimension_types::OVERWORLD,
-            GameTimeSource::Derived(Arc::clone(&primary.game_time)),
+            GameTimeSource::Derived(primary.game_time.clone()),
         );
-        worlds.insert(world.key.clone(), Arc::clone(&world));
+        worlds.insert(world.key.clone(), (*world).clone());
     }
-    worlds.insert(primary.key.clone(), Arc::clone(&primary));
+    worlds.insert(primary.key.clone(), (*primary).clone());
     worlds
         .validate_game_times()
         .expect("test domain must be correctly bound");
     TestDomain {
         worlds,
-        _history: Arc::clone(&primary.history),
+        _history: primary.history.clone(),
     }
 }
 
@@ -628,6 +628,6 @@ pub(crate) fn fresh_test_derived_world(primary: &Arc<World>, name: &'static str)
         Identifier::new(primary.domain().to_owned(), name.to_owned()),
         Difficulty::Normal,
         primary.dimension_type,
-        GameTimeSource::Derived(Arc::clone(&primary.game_time)),
+        GameTimeSource::Derived(primary.game_time.clone()),
     )
 }

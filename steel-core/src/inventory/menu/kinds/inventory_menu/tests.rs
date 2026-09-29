@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::{InventoryKind, inventory_menu};
 use crate::{
     behavior::init_behaviors,
@@ -22,9 +20,9 @@ fn partial_result_overflow_has_no_thrower() {
     init_behaviors();
     let world = fresh_test_world("inventory_menu_partial_result_overflow");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "Crafter", 1).build();
+    let player = TestPlayerBuilder::new((*world).clone(), "Crafter", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
-    let mut menu = inventory_menu(Arc::clone(&player.inventory));
+    let mut menu = inventory_menu(player.inventory.clone());
     let Some(InventoryKind { handler, .. }) = menu.kind().downcast_ref::<InventoryKind>() else {
         panic!("inventory_menu should create an inventory menu");
     };

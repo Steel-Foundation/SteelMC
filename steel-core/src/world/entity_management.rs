@@ -53,7 +53,7 @@ impl World {
     /// Shares the counter used to skip game-event dispatch when no chunk has listeners.
     #[must_use]
     pub(crate) fn game_event_listener_count(&self) -> Arc<GameEventListenerCount> {
-        Arc::clone(&self.game_event_listener_count)
+        self.game_event_listener_count.clone()
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
@@ -216,7 +216,7 @@ impl World {
         if !seen.insert(entity.id()) {
             return;
         }
-        tree.push(Arc::clone(entity));
+        tree.push(entity.clone());
         for passenger in entity.passengers() {
             Self::collect_loaded_entity_tree(&passenger, seen, tree);
         }
@@ -654,7 +654,7 @@ impl World {
         chunk_pos: ChunkPos,
     ) -> Option<Arc<GameEventListenerStorage>> {
         self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            Arc::clone(&chunk.game_event_listeners().registry)
+            chunk.game_event_listeners().registry.clone()
         })
     }
 

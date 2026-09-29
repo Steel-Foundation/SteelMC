@@ -213,7 +213,7 @@ mod tests {
             }
             entity.set_old_position_to_current();
             entity.advance_tick_count();
-            Arc::clone(entity).tick();
+            entity.clone().tick();
         }
         panic!("falling brushable block did not settle within the test limit");
     }

@@ -81,7 +81,7 @@ pub fn anvil(
         input_container,
         result_container,
         block_pos: pos,
-        world: Arc::clone(world),
+        world: world.clone(),
         repair_item_count,
         level_cost: level_cost_data_slot,
         level_cost_value: level_cost,

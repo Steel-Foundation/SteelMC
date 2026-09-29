@@ -8,7 +8,7 @@ fn committed_move_updates_spatial_index_within_the_same_section() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -165,7 +165,7 @@ fn chunk_recovery_refreshes_bounds_changed_while_inactive() {
     let old_bounds = entity.bounding_box();
     assert!(
         manager
-            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 

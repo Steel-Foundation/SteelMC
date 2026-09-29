@@ -441,7 +441,8 @@ impl Entity for ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if Arc::clone(&self)
+        if self
+            .clone()
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {

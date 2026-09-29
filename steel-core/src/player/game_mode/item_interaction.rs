@@ -217,8 +217,6 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::use_item;
     use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
@@ -232,7 +230,7 @@ mod tests {
     fn use_item_discards_non_finite_rotation_components() {
         let world = fresh_test_world("use_item_non_finite_rotation");
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -263,7 +261,7 @@ mod tests {
     fn use_item_refuses_normal_food_at_full_hunger() {
         let world = fresh_test_world("use_item_full_hunger_normal_food");
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -282,7 +280,7 @@ mod tests {
     fn use_item_allows_always_edible_food_at_full_hunger() {
         let world = fresh_test_world("use_item_full_hunger_always_edible_food");
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

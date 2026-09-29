@@ -481,7 +481,7 @@ impl LevelDataManager {
                     )
                 })?;
                 let clock = Arc::new(GameTime::new(ticks));
-                (Arc::clone(&clock), Some(clock))
+                (clock.clone(), Some(clock))
             }
             GameTimeSource::Derived(clock) => {
                 data.game_time = None;
@@ -581,7 +581,7 @@ impl LevelDataManager {
     /// Shared runtime clock, bound before world initialization.
     #[must_use]
     pub fn game_time_handle(&self) -> Arc<GameTime> {
-        Arc::clone(&self.game_time)
+        self.game_time.clone()
     }
 
     /// Advances the domain primary and records the persistence change together.

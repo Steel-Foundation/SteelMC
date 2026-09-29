@@ -208,7 +208,7 @@ impl EnderPearlEntity {
         }
 
         let transition = TeleportTransition {
-            target_world: Arc::clone(world),
+            target_world: world.clone(),
             position: teleport_pos,
             rotation: (0.0, 0.0),
             velocity: DVec3::ZERO,
@@ -217,7 +217,7 @@ impl EnderPearlEntity {
             as_passenger: false,
             post_transition: TeleportPostTransition::do_nothing(),
         };
-        let Some(new_owner) = change_entity_world(Arc::clone(owner), &transition) else {
+        let Some(new_owner) = change_entity_world(owner.clone(), &transition) else {
             log::debug!("failed to teleport ender pearl owner {}", self.id());
             return;
         };
@@ -266,7 +266,7 @@ impl Entity for EnderPearlEntity {
             return;
         }
 
-        Arc::clone(&self).throwable_projectile_tick();
+        self.clone().throwable_projectile_tick();
 
         if self.is_alive() {
             self.update_ender_pearl_ticket(&world);
@@ -344,7 +344,7 @@ impl Projectile for EnderPearlEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        Arc::clone(&self).projectile_on_hit(hit);
+        self.clone().projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {
@@ -476,7 +476,7 @@ mod tests {
 
         let world = fresh_test_world("ender_pearl_ticket_owner");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "Owner", 1).build();
         let owner: SharedEntity = player.clone();
         let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,

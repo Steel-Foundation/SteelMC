@@ -91,7 +91,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     let attacker: SharedEntity = attacker;
     let registration = attached_world
         .entity_manager()
-        .add_live_entity(Arc::clone(&attacker), EntityOwnership::External);
+        .add_live_entity(attacker.clone(), EntityOwnership::External);
     assert!(registration.is_ok());
 
     let victim = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, attached_world);

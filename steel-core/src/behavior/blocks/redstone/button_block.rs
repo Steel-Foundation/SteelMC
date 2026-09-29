@@ -317,7 +317,7 @@ mod tests {
             &vanilla_entities::ARROW,
         );
         world
-            .try_add_entity(Arc::clone(&arrow))
+            .try_add_entity(arrow.clone())
             .expect("test arrow should enter loaded chunk");
 
         let mut effects = InsideBlockEffectCollector::new();

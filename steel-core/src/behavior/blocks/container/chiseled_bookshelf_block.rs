@@ -371,7 +371,7 @@ mod tests {
     }
 
     fn test_player(world: &Arc<World>) -> Arc<Player> {
-        TestPlayerBuilder::new(Arc::clone(world), "BookshelfTester", TEST_PLAYER_ENTITY_ID)
+        TestPlayerBuilder::new(world.clone(), "BookshelfTester", TEST_PLAYER_ENTITY_ID)
             .uuid(TEST_PLAYER_UUID)
             .build()
     }
@@ -575,7 +575,7 @@ mod tests {
         let behavior = ChiseledBookShelfBlock::new(&vanilla_blocks::CHISELED_BOOKSHELF);
         let player = test_player(&world);
         let mut inventory =
-            InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
+            InventoryAccess::new(player.inventory.clone(), InteractionHand::MainHand);
 
         assert_invalid_item_is_rejected(&behavior, &world, state, &player, &mut inventory);
 

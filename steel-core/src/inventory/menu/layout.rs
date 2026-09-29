@@ -1,4 +1,4 @@
-use std::{mem, range::Range, sync::Arc};
+use std::{mem, range::Range};
 
 use steel_registry::item_stack::ItemStack;
 
@@ -34,7 +34,7 @@ impl MenuLayout {
         }
 
         let mut guard = if return_to_inventory {
-            behavior.lock_all_containers_with(ContainerRef::from(Arc::clone(&player.inventory)))
+            behavior.lock_all_containers_with(ContainerRef::from(player.inventory.clone()))
         } else {
             behavior.lock_all_containers()
         };

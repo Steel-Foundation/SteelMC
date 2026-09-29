@@ -247,7 +247,7 @@ where
             frame,
             action: Box::new(BuildContextsAction {
                 chain,
-                original_source: Arc::clone(&source),
+                original_source: source.clone(),
                 sources: vec![source],
                 modifiers: ChainModifiers::default(),
             }),
@@ -583,7 +583,7 @@ where
                     context.increment_cost();
                     let mut next_sources = Vec::new();
                     for source in sources {
-                        let command_context = chain.top_context().copy_for(Arc::clone(&source));
+                        let command_context = chain.top_context().copy_for(source.clone());
                         let new_sources = match modifier(&command_context) {
                             Ok(sources) => sources,
                             Err(error) => {
@@ -743,7 +743,7 @@ where
             return;
         }
         context.increment_cost();
-        let command_context = chain.top_context().copy_for(Arc::clone(&source));
+        let command_context = chain.top_context().copy_for(source.clone());
         let Some(executor) = command_context.executor() else {
             unreachable!("a scheduled execute action always has a terminal executor")
         };
@@ -792,14 +792,14 @@ where
         if !self.source.execution_is_current() {
             self.suspension.cancel();
             return CommandSuspensionPoll::resume(UnavailableCommandResultAction {
-                source: Arc::clone(&self.source),
+                source: self.source.clone(),
             });
         }
         match self.suspension.poll() {
             CommandResultSuspensionPoll::Pending => CommandSuspensionPoll::Pending,
             CommandResultSuspensionPoll::Ready(result) => {
                 CommandSuspensionPoll::resume(CompleteCommandResultAction {
-                    source: Arc::clone(&self.source),
+                    source: self.source.clone(),
                     modifiers: self.modifiers,
                     result,
                 })

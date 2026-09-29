@@ -335,8 +335,6 @@ fn strip_formatting_codes(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::player::connection::NetworkConnection as _;
@@ -349,7 +347,7 @@ mod tests {
         let world = fresh_test_world("use_item_on_non_finite_hit_location");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

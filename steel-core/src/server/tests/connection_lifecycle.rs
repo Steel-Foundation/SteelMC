@@ -42,9 +42,9 @@ fn java_test_player(
         outgoing_packets,
         cancel_token,
         None,
-        Arc::clone(&network_writer),
+        network_writer.clone(),
         1,
-        Arc::clone(&session),
+        session.clone(),
     )));
     let player = Arc::new(Player::new(
         GameProfile {
@@ -54,10 +54,10 @@ fn java_test_player(
             profile_actions: None,
         },
         connection,
-        Arc::clone(&session),
+        session.clone(),
         world,
         Arc::downgrade(server),
-        Arc::clone(&server.config),
+        server.config.clone(),
         1,
         ClientInformation::default(),
     ));
@@ -76,7 +76,7 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
     runtime.block_on(async {
         let storage_root = test_storage_root("blocked-disconnect-write");
         let server = test_server(
-            Arc::clone(&world),
+            (*world).clone(),
             super::PermissionSubjectIndex::new(),
             &storage_root,
         )
@@ -85,10 +85,10 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
             panic!("test server should initialize");
         };
         let (player, receiver, network_writer) =
-            java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+            java_test_player(&server, (*world).clone(), Uuid::from_u128(1));
 
-        assert!(server.online_players.insert(Arc::clone(&player)));
-        assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
+        assert!(server.online_players.insert(player.clone()));
+        assert!(world.add_player(player.clone(), super::ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
 
@@ -173,7 +173,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
     runtime.block_on(async {
         let storage_root = test_storage_root("duplicate-relocation-wait");
         let server = test_server(
-            Arc::clone(&world),
+            (*world).clone(),
             super::PermissionSubjectIndex::new(),
             &storage_root,
         )
@@ -185,7 +185,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         let reasons = Arc::new(SyncMutex::new(Vec::new()));
         let connection = Arc::new(PlayerConnection::Other(Box::new(
             DisconnectRecordingConnection {
-                reasons: Arc::clone(&reasons),
+                reasons: reasons.clone(),
                 closed: AtomicBool::new(false),
             },
         )));
@@ -198,17 +198,17 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 profile_actions: None,
             },
             connection,
-            Arc::clone(&session),
-            Arc::clone(&world),
+            session.clone(),
+            (*world).clone(),
             Arc::downgrade(&server),
-            Arc::clone(&server.config),
+            server.config.clone(),
             1,
             ClientInformation::default(),
         ));
         assert!(session.bind_initial_player(&player));
 
-        assert!(server.online_players.insert(Arc::clone(&player)));
-        assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
+        assert!(server.online_players.insert(player.clone()));
+        assert!(world.add_player(player.clone(), super::ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
         assert!(
@@ -280,7 +280,7 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
     runtime.block_on(async {
         let storage_root = test_storage_root("duplicate-login-deadline");
         let server = test_server(
-            Arc::clone(&world),
+            (*world).clone(),
             super::PermissionSubjectIndex::new(),
             &storage_root,
         )

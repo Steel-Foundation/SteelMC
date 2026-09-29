@@ -92,7 +92,7 @@ impl ActiveCache {
         };
         let holder = self.entries[index]
             .as_ref()
-            .and_then(|entry| entry.holder.as_ref().map(Arc::clone));
+            .and_then(|entry| entry.holder.as_ref().cloned());
         if holder.is_some() {
             self.stats.holder_hits += 1;
         } else {
@@ -256,7 +256,7 @@ where
                     return;
                 };
                 if cache.owner == owner {
-                    cache.insert(pos, holder.as_ref().map(Arc::clone));
+                    cache.insert(pos, holder.as_ref().cloned());
                 }
             });
             holder
@@ -294,7 +294,7 @@ mod tests {
                 ChunkPos::new(x as i32, 0),
                 || {
                     loads += 1;
-                    Some(Arc::clone(holder))
+                    Some(holder.clone())
                 },
             );
             drop(loaded);
@@ -309,7 +309,7 @@ mod tests {
             ChunkPos::new(4, 0),
             || {
                 loads += 1;
-                Some(Arc::clone(&holders[4]))
+                Some(holders[4].clone())
             },
         ));
         drop(lookup_or_insert_for_owner(
@@ -322,7 +322,7 @@ mod tests {
             ChunkPos::new(1, 0),
             || {
                 loads += 1;
-                Some(Arc::clone(&holders[1]))
+                Some(holders[1].clone())
             },
         ));
 
@@ -371,7 +371,7 @@ mod tests {
         drop(lookup_or_insert_for_owner(
             CacheOwner::for_test(&outer_owner),
             pos,
-            || Some(Arc::clone(&holder)),
+            || Some(holder.clone()),
         ));
         assert_eq!(Arc::strong_count(&holder), 2);
 
@@ -408,7 +408,7 @@ mod tests {
             drop(lookup_or_insert_for_owner(
                 CacheOwner::for_test(&owner),
                 pos,
-                || Some(Arc::clone(&holder)),
+                || Some(holder.clone()),
             ));
             assert_eq!(Arc::strong_count(&holder), 2);
         }
@@ -421,7 +421,7 @@ mod tests {
             pos,
             || {
                 loads += 1;
-                Some(Arc::clone(&holder))
+                Some(holder.clone())
             },
         ));
         let stats = scope.finish();
@@ -444,7 +444,7 @@ mod tests {
                 pos,
                 || {
                     loads += 1;
-                    Some(Arc::clone(&holder))
+                    Some(holder.clone())
                 },
             ));
         }

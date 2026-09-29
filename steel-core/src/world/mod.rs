@@ -330,7 +330,7 @@ impl World {
         config: WorldConfig,
         generation_pool: Arc<rayon::ThreadPool>,
     ) -> io::Result<Arc<Self>> {
-        let chunk_encoding_pool = Arc::clone(&generation_pool);
+        let chunk_encoding_pool = generation_pool.clone();
         Self::new_with_config_and_encoding_pool(
             chunk_runtime,
             key,

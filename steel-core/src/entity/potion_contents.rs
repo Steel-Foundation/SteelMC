@@ -67,8 +67,6 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use steel_registry::data_components::PotionContents;
     use steel_registry::{
         MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
@@ -112,7 +110,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let player = TestPlayerBuilder::new((*world).clone(), "Test", 1).build();
         let player_entity: SharedEntity = player.clone();
         player.set_health(1.0);
 

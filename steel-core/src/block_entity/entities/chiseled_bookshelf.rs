@@ -84,7 +84,7 @@ impl ChiseledBookShelfBlockEntity {
             last_interacted_slot: DEFAULT_LAST_INTERACTED_SLOT,
             state_update_pending: false,
         }));
-        let callback_container = Arc::clone(&container);
+        let callback_container = container.clone();
         let after_changed = Arc::new(move || {
             Self::publish_pending_state(&callback_level, pos, &callback_container);
         });
@@ -93,7 +93,7 @@ impl ChiseledBookShelfBlockEntity {
         Self {
             container_ref: ContainerRef::owned_by_block_entity_with_callback(
                 shared_container,
-                Arc::clone(&base),
+                base.clone(),
                 after_changed,
             ),
             base,

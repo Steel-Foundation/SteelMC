@@ -29,7 +29,7 @@ pub struct FireworkRocketItem;
 impl FireworkRocketItem {
     fn add_rocket(world: &Arc<World>, rocket: FireworkRocketEntity) -> SharedEntity {
         let entity: SharedEntity = Arc::new(rocket);
-        if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
+        if let Err(error) = world.try_add_entity(entity.clone()) {
             log::debug!("failed to spawn firework rocket: {error}");
         }
         entity

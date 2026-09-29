@@ -23,10 +23,7 @@ use std::cmp::Ordering as CmpOrdering;
 use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{
-    io,
-    sync::{Arc, Weak},
-};
+use std::{io, sync::Weak};
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };
@@ -639,7 +636,7 @@ impl ChunkStorage {
                     entity.id(),
                     pos,
                 );
-                entities.push(Arc::clone(entity));
+                entities.push(entity.clone());
             }
         }
 

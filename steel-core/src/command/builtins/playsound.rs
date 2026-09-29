@@ -58,7 +58,7 @@ fn execute_as_source(
     let targets = context
         .source()
         .player()
-        .map_or_else(Vec::new, |player| vec![Arc::clone(player)]);
+        .map_or_else(Vec::new, |player| vec![player.clone()]);
     execute(context, source, &targets)
 }
 

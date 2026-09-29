@@ -259,14 +259,11 @@ pub(crate) struct CommandSource {
 
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
-        let player = sender.get_player().map(Arc::clone);
-        let world = player.as_ref().map_or_else(
-            || Arc::clone(server.overworld()),
-            |player| player.get_world(),
-        );
-        let entity = player
+        let player = sender.get_player().cloned();
+        let world = player
             .as_ref()
-            .map(|player| Arc::clone(player) as SharedEntity);
+            .map_or_else(|| server.overworld().clone(), |player| player.get_world());
+        let entity = player.as_ref().map(|player| player.clone() as SharedEntity);
         let position = entity.as_ref().map_or_else(
             || {
                 let level_data = world.level_data.read();

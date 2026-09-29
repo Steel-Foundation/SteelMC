@@ -10,7 +10,7 @@ fn default_entity_tick_dispatches_living_tick() {
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
     let entity_ref: SharedEntity = entity.clone();
 
-    Arc::clone(&entity_ref).tick();
+    entity_ref.clone().tick();
 
     assert_eq!(entity.living_base().death_time(), 1);
 }
@@ -42,7 +42,7 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
     let world = fresh_test_world("kill_credit_victim");
     let player_world = fresh_test_world("kill_credit_player");
     let player: SharedEntity =
-        TestPlayerBuilder::new(Arc::clone(&player_world), "Attacker", 2).build();
+        TestPlayerBuilder::new((*player_world).clone(), "Attacker", 2).build();
     let victim = PigEntity::new(
         &vanilla_entities::PIG,
         1,
