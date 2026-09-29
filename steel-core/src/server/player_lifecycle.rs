@@ -468,6 +468,23 @@ impl Server {
         self.online_players.len()
     }
 
+    /// Returns the currently connected player with this UUID, if any.
+    #[must_use]
+    pub fn online_player(&self, uuid: Uuid) -> Option<Arc<Player>> {
+        self.online_players.get_by_uuid(&uuid)
+    }
+
+    /// Returns every currently connected player.
+    #[must_use]
+    pub fn online_players_snapshot(&self) -> Vec<Arc<Player>> {
+        let mut players = Vec::new();
+        self.online_players.iter_players(|_, player| {
+            players.push(Arc::clone(player));
+            true
+        });
+        players
+    }
+
     /// Returns a sample of up to 12 online players for the server list ping.
     #[must_use]
     pub fn player_sample(&self) -> Vec<(String, String)> {

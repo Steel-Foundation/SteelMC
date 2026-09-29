@@ -312,10 +312,6 @@ impl CommandSource {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "source-aware runtime extensions need access to the original sender"
-    )]
     pub(crate) const fn sender(&self) -> &CommandSender {
         &self.sender
     }
@@ -441,6 +437,18 @@ impl CommandSource {
     )]
     pub(crate) const fn is_silent(&self) -> bool {
         self.silent
+    }
+
+    /// Sends informational command output straight to the sender.
+    ///
+    /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
+    /// game rule and never broadcasts to admins - it's for output the sender
+    /// explicitly asked for (e.g. `/msg`'s echo, `/version`), not
+    /// command-result feedback.
+    pub(crate) fn send_system_message(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
     }
 
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
