@@ -73,6 +73,7 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use super::{apply_potion_contents, scale_effect_duration};
+    use crate::behavior::init_behaviors;
     use crate::entity::LivingEntity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
@@ -107,6 +108,7 @@ mod tests {
     #[test]
     fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
         init_vanilla_registry();
+        init_behaviors();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();

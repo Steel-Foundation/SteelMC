@@ -249,6 +249,7 @@ fn spawn_data_clamps_position_and_refreshes_old_transform() {
 #[test]
 fn command_data_compare_nbt_contains_implemented_living_data() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
     entity
         .attributes()
