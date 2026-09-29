@@ -1,3 +1,5 @@
+use crate::player::Player;
+
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -48,12 +50,12 @@ fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
     ));
     for entity in [&attacker, &projectile] {
         world
-            .try_add_entity(entity.clone())
+            .try_add_entity(Arc::clone(entity))
             .expect("original entity registration");
     }
     let source = DamageSource::environment(&vanilla_damage_types::THROWN)
-        .with_causing_entity(attacker.clone())
-        .with_direct_entity(projectile.clone());
+        .with_causing_entity(Arc::clone(&attacker))
+        .with_direct_entity(Arc::clone(&projectile));
     for entity in [&attacker, &projectile] {
         entity.set_removed(RemovalReason::Discarded);
         assert!(world.get_entity_by_id(entity.id()).is_none());
@@ -103,7 +105,7 @@ fn directness_uses_allocation_identity_and_position_tracks_the_direct_entity() {
     let other = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let environment = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(environment.is_direct());
-    let source = DamageSource::direct(&vanilla_damage_types::GENERIC, first.clone());
+    let source = DamageSource::direct(&vanilla_damage_types::GENERIC, Arc::clone(&first));
     assert!(source.is_direct());
     assert!(!source.clone().with_causing_entity(other).is_direct());
     first
@@ -123,9 +125,9 @@ fn directness_uses_allocation_identity_and_position_tracks_the_direct_entity() {
 fn returned_self_damage_source_outlives_history_expiry_without_a_cycle() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "self_damage_history");
-    let player = TestPlayerBuilder::new(world.clone(), "SelfDamage", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "SelfDamage", 1).build();
     let weak = Arc::downgrade(&player);
-    let entity: SharedEntity = player.clone();
+    let entity: SharedEntity = Arc::<Player>::clone(&player);
     let source = DamageSource::direct(&vanilla_damage_types::INDIRECT_MAGIC, entity);
     player.record_last_damage_source(&source);
     let generation = player.generation();
@@ -151,15 +153,15 @@ fn returned_self_damage_source_outlives_history_expiry_without_a_cycle() {
 fn unmanaged_mutual_damage_does_not_retain_players_or_worlds() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "mutual_damage_history");
-    let first = TestPlayerBuilder::new(world.clone(), "First", 1).build();
-    let second = TestPlayerBuilder::new(world.clone(), "Second", 2).build();
+    let first = TestPlayerBuilder::new(Arc::clone(&world), "First", 1).build();
+    let second = TestPlayerBuilder::new(Arc::clone(&world), "Second", 2).build();
     first.record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(second.clone()),
+            .with_causing_entity(Arc::<Player>::clone(&second)),
     );
     second.record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-            .with_causing_entity(first.clone()),
+            .with_causing_entity(Arc::<Player>::clone(&first)),
     );
     let first_weak = Arc::downgrade(&first);
     let second_weak = Arc::downgrade(&second);
@@ -175,8 +177,8 @@ fn unmanaged_mutual_damage_does_not_retain_players_or_worlds() {
 fn replacing_damage_history_releases_the_previous_source() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "damage_history_replacement");
-    let victim = TestPlayerBuilder::new(world.clone(), "Victim", 1).build();
-    assert!(world.players.insert(victim.clone()));
+    let victim = TestPlayerBuilder::new(Arc::clone(&world), "Victim", 1).build();
+    assert!(world.players.insert(Arc::<Player>::clone(&victim)));
     let first = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&first);
     victim.record_last_damage_source(
@@ -202,10 +204,10 @@ fn replacing_damage_history_releases_the_previous_source() {
 fn returned_source_survives_history_clear_and_owner_teardown() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "damage_history_teardown");
-    let player = TestPlayerBuilder::new(world.clone(), "Retained", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "Retained", 1).build();
     player.record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::GENERIC)
-            .with_direct_entity(player.clone()),
+            .with_direct_entity(Arc::<Player>::clone(&player)),
     );
     let retained = player.last_damage_source().expect("recorded source");
     let weak_player = Arc::downgrade(&player);
@@ -238,10 +240,8 @@ fn projectile_callback_can_build_a_source_after_its_removal() {
         Arc::downgrade(&world),
     ));
     projectile.set_removed(RemovalReason::Discarded);
-    let target_entity: SharedEntity = target.clone();
-    projectile
-        .clone()
-        .on_hit_entity(&target_entity, DVec3::ZERO);
+    let target_entity: SharedEntity = Arc::<PigEntity>::clone(&target);
+    Arc::<SnowballEntity>::clone(&projectile).on_hit_entity(&target_entity, DVec3::ZERO);
     let source = target
         .last_damage_source()
         .expect("zero-damage projectile hit is recorded");

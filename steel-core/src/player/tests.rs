@@ -71,7 +71,7 @@ const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
     let world = fresh_test_world("initial_player_cosmetic_metadata");
-    let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "TestPlayer", 1)
         .uuid(Uuid::from_u128(1))
         .client_information(ClientInformation {
             model_customization: MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET,
@@ -117,7 +117,7 @@ fn client_information_initializes_player_cosmetic_metadata() {
 #[test]
 fn play_client_information_dirties_changed_cosmetic_metadata_once() {
     let world = fresh_test_world("updated_player_cosmetic_metadata");
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
     let _ = player.pack_dirty_entity_data();
 
     let packet = SClientInformation {
@@ -275,7 +275,7 @@ fn test_persistent_entity(
 fn advancing_domain_residence_invalidates_stale_restore_owners() {
     let source_world = fresh_test_world_in_domain("source", "spawn");
     let target_world = fresh_test_world_in_domain("target", "spawn");
-    let player = test_player((*source_world).clone());
+    let player = test_player(Arc::clone(&(*source_world)));
     let source_token = player.domain_residence_token();
     let root_uuid = [2; 16];
     let pearl_uuid = [3; 16];
@@ -376,7 +376,7 @@ impl_test_menu_kind_downcast!(ReopenOnRemoved, "steel:test/menu/player/reopen_on
 
 impl MenuKind for ReopenOnRemoved {
     fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
-        let replacement_removals = self.replacement_removals.clone();
+        let replacement_removals = Arc::clone(&self.replacement_removals);
         player.open_menu("Replacement", move |context| {
             empty_test_menu(
                 context.player,
@@ -442,8 +442,8 @@ fn respawn_request_is_allowed_after_dead_reconnect() {
 fn ai_step_copies_player_yaw_to_head_yaw() {
     init_vanilla_registry();
     init_behaviors();
-    let player = test_player(test_world().clone());
-    let player_entity: SharedEntity = player.clone();
+    let player = test_player(Arc::clone(test_world()));
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
     player.set_rotation((90.0, 15.0));
     player.set_y_head_rot(-45.0);
 
@@ -491,7 +491,7 @@ fn death_keeps_menu_items_until_entity_removal() {
     let world = fresh_test_world("death_menu_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     assert!(world.set_game_rule(&vanilla_game_rules::KEEP_INVENTORY, true));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
     let kept_item = ItemStack::new(&vanilla_items::DIAMOND);
     player.inventory.lock().set_item(0, kept_item);
     let transient = SimpleContainer::new(9).into_shared();
@@ -515,8 +515,8 @@ fn death_keeps_menu_items_until_entity_removal() {
         Some(DragKind::Left)
     );
 
-    let menu_container = transient.clone();
-    let inventory = player.inventory.clone();
+    let menu_container = Arc::clone(&transient);
+    let inventory = Arc::clone(&player.inventory);
     player.open_menu("Death cleanup", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient_slots = builder.section(menu_container, 9);
@@ -603,10 +603,10 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     let world = fresh_test_world("death_entity_pairing_cleanup");
     let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
-        sent_packets: sent_packets.clone(),
+        sent_packets: Arc::clone(&sent_packets),
         closed: AtomicBool::new(false),
     })));
-    let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "TestPlayer", 1)
         .connection(connection)
         .build();
     let item: SharedEntity = Arc::new(ItemEntity::new(
@@ -619,7 +619,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     world.entity_tracker().add(
         &item,
         |_| vec![player.id()],
-        |player_id| (player_id == player.id()).then(|| player.clone()),
+        |player_id| (player_id == player.id()).then(|| Arc::<Player>::clone(&player)),
     );
     assert_eq!(
         world.entity_tracker().tracking_player_ids(item.id()),
@@ -652,7 +652,7 @@ fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
     init_vanilla_registry();
     let world = fresh_test_world("death_respawn_menu_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
@@ -669,8 +669,8 @@ fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
         *inventory_menu.behavior_mut().carried_mut() = ItemStack::empty();
     }
 
-    let menu_container = transient.clone();
-    let inventory = player.inventory.clone();
+    let menu_container = Arc::clone(&transient);
+    let inventory = Arc::clone(&player.inventory);
     player.open_menu("Respawn cleanup", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient_slots = builder.section(menu_container, 9);
@@ -685,7 +685,7 @@ fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
         player.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
         MenuRemovalStatus::Complete
     );
-    let replacement = player.new_respawn_replacement((*world).clone(), false, false, true);
+    let replacement = player.new_respawn_replacement(Arc::clone(&(*world)), false, false, true);
     {
         let mut inventory_menu = replacement.inventory_menu.lock();
         assert_eq!(inventory_menu.behavior().quickcraft(), None);
@@ -723,8 +723,8 @@ fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
 fn end_credits_removes_all_menus_before_detaching() {
     init_vanilla_registry();
     let world = fresh_test_world("end_credits_menu_removal");
-    let player = test_player((*world).clone());
-    assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
+    let player = test_player(Arc::clone(&(*world)));
+    assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
 
     player
@@ -734,7 +734,7 @@ fn end_credits_removes_all_menus_before_detaching() {
     *player.inventory_menu.lock().behavior_mut().carried_mut() =
         ItemStack::with_count(&vanilla_items::DIRT, 3);
     let replacement_removals = Arc::new(AtomicUsize::new(0));
-    let factory_replacement_removals = replacement_removals.clone();
+    let factory_replacement_removals = Arc::clone(&replacement_removals);
     player.open_menu("Reopen on removal", move |context| {
         empty_test_menu(
             context.player,
@@ -767,8 +767,8 @@ fn end_credits_removes_all_menus_before_detaching() {
 fn admitted_world_change_prevents_end_credits_detach() {
     init_vanilla_registry();
     let world = fresh_test_world("end_credits_pending_world_change");
-    let player = test_player((*world).clone());
-    assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
+    let player = test_player(Arc::clone(&(*world)));
+    assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     let Some(pending_token) = player.begin_pending_world_change() else {
         panic!("test player should accept a pending world change");
@@ -790,10 +790,10 @@ fn admitted_world_change_prevents_end_credits_detach() {
 fn duplicate_exact_player_admission_cleans_existing_membership() {
     init_vanilla_registry();
     let world = fresh_test_world("duplicate_player_admission");
-    let player = test_player((*world).clone());
-    assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
+    let player = test_player(Arc::clone(&(*world)));
+    assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
 
-    assert!(!world.add_player(player.clone(), ResetReason::WorldChange));
+    assert!(!world.add_player(Arc::<Player>::clone(&player), ResetReason::WorldChange));
 
     assert!(!world.contains_player(&player));
     assert!(world.get_entity_by_id(player.id()).is_none());
@@ -839,7 +839,7 @@ fn disabled_damage_game_rule_ignores_unrelated_damage() {
 
 #[test]
 fn hurt_uses_explicit_world_difficulty() {
-    let attached_world = test_world().clone();
+    let attached_world = Arc::clone(test_world());
     let damage_world = hard_damage_test_world();
     let player = test_player(attached_world);
     let source = DamageSource::environment(&vanilla_damage_types::EXPLOSION);
@@ -855,7 +855,7 @@ fn hurt_uses_explicit_world_difficulty() {
 #[test]
 fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
     let world = hard_damage_test_world();
-    let causing_player: SharedEntity = test_player(world.clone());
+    let causing_player: SharedEntity = test_player(Arc::clone(world));
     let object: SharedEntity = Arc::new(ItemEntity::new(
         &vanilla_entities::ITEM,
         2,
@@ -867,7 +867,7 @@ fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
         if let Some(cause) = cause {
             source = source.with_causing_entity(cause);
         }
-        let target = test_player(world.clone());
+        let target = test_player(Arc::clone(world));
         assert!(target.hurt(world, &source, 4.0));
         assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
     }
@@ -876,8 +876,8 @@ fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
 #[test]
 fn player_damage_applies_armor_and_absorption() {
     init_vanilla_registry();
-    let world = test_world().clone();
-    let player = test_player(world.clone());
+    let world = Arc::clone(test_world());
+    let player = test_player(Arc::clone(&world));
     {
         let mut attributes = player.attributes().lock();
         attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
@@ -894,7 +894,7 @@ fn player_damage_applies_armor_and_absorption() {
 
 #[test]
 fn player_absorption_amount_clamps_to_attribute_range() {
-    let world = test_world().clone();
+    let world = Arc::clone(test_world());
     let player = test_player(world);
     player
         .attributes()
@@ -911,8 +911,8 @@ fn player_absorption_amount_clamps_to_attribute_range() {
 #[test]
 fn player_damage_hurts_armor_equipment() {
     init_vanilla_registry();
-    let world = test_world().clone();
-    let player = test_player(world.clone());
+    let world = Arc::clone(test_world());
+    let player = test_player(Arc::clone(&world));
     player.inventory.lock().set(
         EquipmentSlot::Chest,
         ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE),
@@ -933,8 +933,8 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("player_attack_thorns");
-    let attacker = test_player((*world).clone());
-    let victim = TestPlayerBuilder::new((*world).clone(), "Victim", 2).build();
+    let attacker = test_player(Arc::clone(&(*world)));
+    let victim = TestPlayerBuilder::new(Arc::clone(&(*world)), "Victim", 2).build();
     victim.set_client_loaded(true);
     {
         let mut inventory = attacker.inventory.lock();
@@ -957,7 +957,7 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
     LivingEntity::detect_equipment_updates(victim.as_ref());
     let attacker_health = attacker.get_health();
     let victim_health = victim.get_health();
-    let target: SharedEntity = victim.clone();
+    let target: SharedEntity = Arc::<Player>::clone(&victim);
 
     assert!(attacker.attack(&target));
 
@@ -1003,8 +1003,8 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
 #[test]
 fn equipping_player_target_uses_inventory_equipment_storage() {
     init_vanilla_registry();
-    let world = test_world().clone();
-    let source = test_player(world.clone());
+    let world = Arc::clone(test_world());
+    let source = test_player(Arc::clone(&world));
     let target = TestPlayerBuilder::new(world, "Target", next_entity_id()).build();
     let mut helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     let Some(mut equippable) = helmet.get_equippable().cloned() else {
@@ -1048,7 +1048,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
 #[test]
 fn living_tick_detects_raw_inventory_equipment_mutation() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
         let attributes = player.attributes().lock();
         (
@@ -1096,7 +1096,7 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
 #[test]
 fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
         let attributes = player.attributes().lock();
         (
@@ -1121,7 +1121,7 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
 
     // Both keep-inventory and spectator respawns retain the stack, while the
     // replacement starts with fresh transient attributes and equipment caches.
-    let replacement = player.new_respawn_replacement(test_world().clone(), false, true, true);
+    let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
     assert_eq!(
         replacement
             .attributes()
@@ -1169,7 +1169,7 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
 #[test]
 fn fresh_death_respawn_discards_stale_pending_equipment_change() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     player.inventory.lock().set(
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
@@ -1180,7 +1180,7 @@ fn fresh_death_respawn_discards_stale_pending_equipment_change() {
         .inventory
         .lock()
         .set(EquipmentSlot::Head, ItemStack::empty());
-    let replacement = player.new_respawn_replacement(test_world().clone(), false, true, true);
+    let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
     LivingEntity::detect_equipment_updates(replacement.as_ref());
 
     assert!(
@@ -1192,7 +1192,7 @@ fn fresh_death_respawn_discards_stale_pending_equipment_change() {
 #[test]
 fn equipment_detection_tracks_selected_main_hand() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     {
         let mut inventory = player.inventory.lock();
         inventory.set_item(0, ItemStack::new(&vanilla_items::STICK));
@@ -1222,7 +1222,7 @@ fn equipment_detection_tracks_selected_main_hand() {
 #[test]
 fn equipment_detection_suppresses_exact_hand_swap_packet() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     {
         let mut inventory = player.inventory.lock();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::STICK));
@@ -1244,7 +1244,7 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
 #[test]
 fn equipment_detection_coalesces_before_tracker_drain() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     player.inventory.lock().set(
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::IRON_HELMET),
@@ -1275,7 +1275,7 @@ fn nullable_game_mode_id_matches_vanilla_encoding() {
 #[test]
 fn clear_matching_items_uses_inventory_crafting_then_carried_order() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     player
         .inventory
         .lock()
@@ -1323,7 +1323,7 @@ fn point_level_up_sound_uses_first_crossed_five_level_boundary() {
 
 #[test]
 fn point_grants_update_entity_score_with_java_wrapping() {
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     player.set_score(i32::MAX - 10);
 
     player.give_experience_points(100);
@@ -1335,7 +1335,7 @@ fn point_grants_update_entity_score_with_java_wrapping() {
 #[test]
 fn persistent_player_data_restores_independent_experience_fields_and_score() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     *player.experience.lock() = Experience::from_parts(7, 0.5, 32);
     player.set_score(19);
     let persistent = PersistentPlayerData::from_player(&player);
@@ -1355,7 +1355,7 @@ fn persistent_player_data_restores_independent_experience_fields_and_score() {
 #[test]
 fn persistent_player_data_restores_equipment_inventory_slots() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
     let helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     let saddle = ItemStack::new(&vanilla_items::SADDLE);
     {
@@ -1379,7 +1379,7 @@ fn persistent_player_data_restores_equipment_inventory_slots() {
 #[test]
 fn effect_visibility_refresh_preserves_spectator_invisibility() {
     init_vanilla_registry();
-    let player = test_player(test_world().clone());
+    let player = test_player(Arc::clone(test_world()));
 
     player.restore_game_modes(GameType::Spectator, Some(GameType::Survival));
     player.living_base.mark_effects_dirty();
@@ -1405,7 +1405,7 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
         UpdateFlags::UPDATE_ALL,
     ));
 
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
     player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
 
     for game_mode in [GameType::Spectator, GameType::Adventure] {
@@ -1460,7 +1460,7 @@ fn creative_drop_throttle_survives_respawn_replacement() {
     for restore_all in [false, true] {
         let world = fresh_test_world("creative_drop_throttle_survives_respawn_replacement");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = test_player((*world).clone());
+        let player = test_player(Arc::clone(&(*world)));
         *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
 
         let drop_packet = || SSetCreativeModeSlot {
@@ -1472,7 +1472,8 @@ fn creative_drop_throttle_survives_respawn_replacement() {
         }
         let dropped_before_respawn = world.entity_manager().count();
 
-        let replacement = player.new_respawn_replacement((*world).clone(), restore_all, true, true);
+        let replacement =
+            player.new_respawn_replacement(Arc::clone(&(*world)), restore_all, true, true);
         replacement.handle_set_creative_mode_slot(drop_packet());
         assert_eq!(world.entity_manager().count(), dropped_before_respawn);
 
@@ -1487,7 +1488,7 @@ fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
     init_vanilla_registry();
     let world = fresh_test_world("extra_items_created_on_use_has_room");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
 
     player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
 
@@ -1511,7 +1512,7 @@ fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
     init_vanilla_registry();
     let world = fresh_test_world("extra_items_created_on_use_full");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
 
     {
         let mut inventory = player.inventory.lock();
@@ -1550,8 +1551,8 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
     init_behaviors();
     let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player((*world).clone());
-    let player_entity: SharedEntity = player.clone();
+    let player = test_player(Arc::clone(&(*world)));
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
 
     {
         let mut inventory = player.inventory.lock();
@@ -1600,7 +1601,7 @@ fn throttle_player_dropping_items_from_creative_menu() {
 
     let world = fresh_test_world("throttle_player_dropping_items_from_creative_menu");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
 
     let check_drop_count = |expected_count: i32| {
         let item_dropped_stat = vanilla_stat_types::ITEM_DROPPED.get(item);
@@ -1639,19 +1640,19 @@ fn throttle_player_dropping_items_from_creative_menu() {
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    player.clone().tick();
+    Arc::<Player>::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
     for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
-        player.clone().tick();
+        Arc::<Player>::clone(&player).tick();
     }
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    player.clone().tick();
+    Arc::<Player>::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }
@@ -1666,7 +1667,7 @@ fn sword_does_not_destroy_blocks_in_creative() {
     insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
     let dirt = vanilla_blocks::DIRT.default_state();
     assert!(world.set_block(pos, dirt, UpdateFlags::UPDATE_ALL,));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
     player.restore_game_modes(GameType::Creative, None);
     player
         .inventory

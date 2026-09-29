@@ -273,7 +273,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(minecart.clone())
+            .try_add_entity(Arc::clone(&minecart))
             .expect("test minecart should enter loaded chunk");
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::DETECTOR_RAIL);

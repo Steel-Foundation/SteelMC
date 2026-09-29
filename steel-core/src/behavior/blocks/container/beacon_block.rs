@@ -57,8 +57,8 @@ impl BlockBehavior for BeaconBlock {
         let state = beacon_entity.state();
         let base = beacon_entity.base_handle();
 
-        let inventory = player.inventory.clone();
-        let world = world.clone();
+        let inventory = Arc::clone(&player.inventory);
+        let world = Arc::clone(world);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_BEACON.msg()),
             move |context| beacon(inventory, context.container_id, pos, &world, state, base),

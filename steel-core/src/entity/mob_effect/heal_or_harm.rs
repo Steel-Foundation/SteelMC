@@ -1,5 +1,7 @@
 //! `HealOrHarmMobEffect` behavior (Instant Health / Instant Damage).
 
+use std::sync::Arc;
+
 use steel_registry::vanilla_damage_types;
 
 use super::{InstantaneousMobEffect, MobEffectBehavior};
@@ -67,9 +69,9 @@ impl InstantaneousMobEffect for HealOrHarmBehavior {
                 &vanilla_damage_types::MAGIC
             });
             if let Some(direct) = direct_entity {
-                source = source.with_direct_entity(direct.clone());
+                source = source.with_direct_entity(Arc::clone(direct));
                 if let Some(cause) = causing_entity {
-                    source = source.with_causing_entity(cause.clone());
+                    source = source.with_causing_entity(Arc::clone(cause));
                 }
             }
             // Vanilla truncates via a Java `(int)` cast; `as i32` on a

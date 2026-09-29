@@ -79,7 +79,7 @@ where
     T: Container + 'static,
 {
     fn from(container: &Shared<T>) -> Self {
-        container.clone().into()
+        Arc::clone(container).into()
     }
 }
 
@@ -91,7 +91,7 @@ impl From<&ContainerRef> for ContainerRef {
 
 impl From<&SharedContainer> for ContainerRef {
     fn from(container: &SharedContainer) -> Self {
-        container.clone().into()
+        Arc::clone(container).into()
     }
 }
 
@@ -469,7 +469,7 @@ mod tests {
     fn erased_container_ref_preserves_id_and_typed_access() {
         let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
         let id = ContainerId::from_arc(&crafting);
-        let container_ref = ContainerRef::from(crafting.clone());
+        let container_ref = ContainerRef::from(Arc::clone(&crafting));
 
         assert_eq!(container_ref.container_id(), id);
 
@@ -490,7 +490,7 @@ mod tests {
             BlockPos::new(1, 2, 3),
             vanilla_blocks::BARREL.default_state(),
         ));
-        let block_entity: SharedBlockEntity = barrel.clone();
+        let block_entity: SharedBlockEntity = Arc::<BarrelBlockEntity>::clone(&barrel);
         let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
             panic!("barrel block entity should expose Container");
         };
@@ -517,8 +517,8 @@ mod tests {
     fn unlocked_callback_releases_and_reacquires_every_container() {
         let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
         let result = Arc::new(SyncMutex::new(ResultContainer::new()));
-        let crafting_ref = ContainerRef::from(crafting.clone());
-        let result_ref = ContainerRef::from(result.clone());
+        let crafting_ref = ContainerRef::from(Arc::clone(&crafting));
+        let result_ref = ContainerRef::from(Arc::clone(&result));
         let mut guard = ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref]);
 
         let both_unlocked = guard.run_unlocked(|| {

@@ -154,7 +154,9 @@ impl FallingBlockEntity {
             fluid_state_to_block(state.get_fluid_state()),
             UpdateFlags::UPDATE_ALL,
         );
-        if let Err(error) = world.try_add_entity(entity.clone() as Arc<dyn Entity>) {
+        if let Err(error) =
+            world.try_add_entity(Arc::<FallingBlockEntity>::clone(&entity) as Arc<dyn Entity>)
+        {
             log::error!("failed to add falling block entity: {error}");
         }
         entity
@@ -403,8 +405,7 @@ impl Entity for FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = self
-            .clone()
+        let _ = Arc::<FallingBlockEntity>::clone(&self)
             .move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
@@ -478,7 +479,12 @@ impl Entity for FallingBlockEntity {
             .get_behavior(self.block_state().get_block())
             .as_fallable()
             .map_or_else(
-                || DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, self.clone()),
+                || {
+                    DamageSource::direct(
+                        &vanilla_damage_types::FALLING_BLOCK,
+                        Arc::<FallingBlockEntity>::clone(&self),
+                    )
+                },
                 |fallable| fallable.get_fall_damage_source(&self),
             );
         let damage = (fall_distance as f32 * damage_per_distance)

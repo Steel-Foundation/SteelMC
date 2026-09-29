@@ -32,9 +32,9 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     "you cannot use this command from the console",
                 ));
             };
-            let server = ctx.source().server().clone();
-            let player = player.clone();
-            let menu_player = player.clone();
+            let server = Arc::clone(ctx.source().server());
+            let player = Arc::<Player>::clone(player);
+            let menu_player = Arc::<Player>::clone(&player);
 
             player.open_menu("Domains", move |context| {
                 domain_menu(context.container_id, menu_player, context.world, &server)
@@ -56,7 +56,7 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(player.clone(), world.clone())
+        .queue_player_world_selection(Arc::<Player>::clone(player), Arc::clone(&world))
         .map_err(CommandSyntaxError::dynamic)?;
 
     source.send_success(
@@ -136,7 +136,7 @@ fn domain_menu(
 
     b.build(DomainMenuKind {
         map,
-        server: server.clone(),
+        server: Arc::clone(server),
         player,
     })
 }
@@ -207,7 +207,7 @@ impl MenuKind for DomainMenuKind {
 
         if let Err(error) = self
             .server
-            .queue_player_world_selection(self.player.clone(), world.clone())
+            .queue_player_world_selection(Arc::<Player>::clone(&self.player), Arc::clone(world))
         {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }

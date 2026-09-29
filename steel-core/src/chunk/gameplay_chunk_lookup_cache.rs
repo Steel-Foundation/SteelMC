@@ -294,7 +294,7 @@ mod tests {
                 ChunkPos::new(x as i32, 0),
                 || {
                     loads += 1;
-                    Some(holder.clone())
+                    Some(Arc::clone(holder))
                 },
             );
             drop(loaded);
@@ -309,7 +309,7 @@ mod tests {
             ChunkPos::new(4, 0),
             || {
                 loads += 1;
-                Some(holders[4].clone())
+                Some(Arc::clone(&holders[4]))
             },
         ));
         drop(lookup_or_insert_for_owner(
@@ -322,7 +322,7 @@ mod tests {
             ChunkPos::new(1, 0),
             || {
                 loads += 1;
-                Some(holders[1].clone())
+                Some(Arc::clone(&holders[1]))
             },
         ));
 
@@ -371,7 +371,7 @@ mod tests {
         drop(lookup_or_insert_for_owner(
             CacheOwner::for_test(&outer_owner),
             pos,
-            || Some(holder.clone()),
+            || Some(Arc::clone(&holder)),
         ));
         assert_eq!(Arc::strong_count(&holder), 2);
 
@@ -408,7 +408,7 @@ mod tests {
             drop(lookup_or_insert_for_owner(
                 CacheOwner::for_test(&owner),
                 pos,
-                || Some(holder.clone()),
+                || Some(Arc::clone(&holder)),
             ));
             assert_eq!(Arc::strong_count(&holder), 2);
         }
@@ -421,7 +421,7 @@ mod tests {
             pos,
             || {
                 loads += 1;
-                Some(holder.clone())
+                Some(Arc::clone(&holder))
             },
         ));
         let stats = scope.finish();
@@ -444,7 +444,7 @@ mod tests {
                 pos,
                 || {
                     loads += 1;
-                    Some(holder.clone())
+                    Some(Arc::clone(&holder))
                 },
             ));
         }

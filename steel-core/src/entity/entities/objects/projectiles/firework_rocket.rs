@@ -216,7 +216,7 @@ impl FireworkRocketEntity {
 
         let movement = self.velocity();
         let hit = self.get_hit_result_on_move_vector();
-        self.clone().move_entity(MoverType::SelfMovement, movement);
+        Arc::<FireworkRocketEntity>::clone(self).move_entity(MoverType::SelfMovement, movement);
         self.apply_effects_from_blocks();
         self.set_velocity(movement);
         hit
@@ -237,7 +237,7 @@ impl FireworkRocketEntity {
 
     fn fireworks_damage_source(self: &Arc<Self>) -> DamageSource {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
-            .with_direct_entity(self.clone());
+            .with_direct_entity(Arc::<FireworkRocketEntity>::clone(self));
         if let Some(owner) = self.get_owner() {
             source = source.with_causing_entity(owner);
         }
@@ -354,7 +354,7 @@ impl Entity for FireworkRocketEntity {
             && self.is_alive()
             && let Some(hit) = &hit
         {
-            self.clone().hit_target_or_deflect_self(hit);
+            Arc::<FireworkRocketEntity>::clone(&self).hit_target_or_deflect_self(hit);
             self.mark_velocity_sync();
         }
 
@@ -652,7 +652,7 @@ mod tests {
             Arc::downgrade(&world),
         ));
         world
-            .try_add_entity(original.clone())
+            .try_add_entity(Arc::clone(&original))
             .expect("register original attachment");
         let mut item = ItemStack::new(&vanilla_items::FIREWORK_ROCKET);
         item.set(
@@ -675,7 +675,7 @@ mod tests {
             Arc::downgrade(&world),
         ));
         world
-            .try_add_entity(replacement.clone())
+            .try_add_entity(Arc::<PigEntity>::clone(&replacement))
             .expect("register replacement");
 
         let replacement_health = replacement.get_health();

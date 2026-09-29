@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{CraftingKind, crafting};
 use crate::{
     behavior::init_behaviors,
@@ -27,9 +29,9 @@ fn partial_result_overflow_uses_the_default_drop_policy() {
         vanilla_blocks::CRAFTING_TABLE.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    let player = TestPlayerBuilder::new((*world).clone(), "Crafter", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "Crafter", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
-    let mut menu = crafting(player.inventory.clone(), 1, pos);
+    let mut menu = crafting(Arc::clone(&player.inventory), 1, pos);
     let Some(kind) = menu.kind().downcast_ref::<CraftingKind>() else {
         panic!("crafting builder should create a crafting menu");
     };

@@ -230,7 +230,7 @@ impl Server {
             return;
         }
         match EndPortalTeleportJob::returning_player(
-            entity.clone(),
+            Arc::clone(&entity),
             source_world,
             target_world,
             respawn_data,
@@ -302,7 +302,7 @@ impl Server {
         }
         let source_is_end = source_world.is_end_dimension_type();
         let Some(job) = EndGatewayTeleportJob::new(
-            entity.clone(),
+            Arc::clone(&entity),
             source_world,
             portal_pos,
             source_is_end,
@@ -474,12 +474,15 @@ impl Server {
         let switches = mem::take(&mut *self.pending_domain_switches.lock());
 
         for request in switches {
-            let player = request.player.clone();
+            let player = Arc::<Player>::clone(&request.player);
             let player_name = player.gameprofile.name.clone();
             let pending_token = request.pending_token;
             if let Err(error) = self.start_domain_switch(request) {
                 player.finish_domain_switch(pending_token);
-                clear_pending_world_change(&(player.clone() as SharedEntity), pending_token);
+                clear_pending_world_change(
+                    &(Arc::<Player>::clone(&player) as SharedEntity),
+                    pending_token,
+                );
                 log::warn!("Did not start domain switch for {player_name}: {error}");
             }
         }
@@ -578,7 +581,7 @@ impl Server {
             return;
         };
         let job = match WorldSpawnTeleportJob::new(
-            entity.clone(),
+            Arc::clone(&entity),
             source_world,
             target_world,
             pending_token,

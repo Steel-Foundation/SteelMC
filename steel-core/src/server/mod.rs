@@ -647,17 +647,17 @@ impl Server {
                     storage_output.level_data_path.as_deref(),
                     &world_entry.generator_config,
                     world_seed,
-                    generation_pool.clone(),
+                    Arc::clone(&generation_pool),
                 )
                 .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config_and_encoding_pool(
-                chunk_runtime.clone(),
+                Arc::clone(&chunk_runtime),
                 world_entry.key.clone(),
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
-                    damage_history: damage_history.clone(),
+                    damage_history: Arc::<DamageHistory>::clone(&damage_history),
                     game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
@@ -674,8 +674,8 @@ impl Server {
                     default_gamemode: world_entry.default_gamemode,
                     difficulty: world_entry.difficulty,
                 },
-                generation_pool.clone(),
-                chunk_encoding_pool.clone(),
+                Arc::clone(&generation_pool),
+                Arc::clone(&chunk_encoding_pool),
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
@@ -697,7 +697,7 @@ impl Server {
                     )
                 })?;
             let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
-            let clock = primary.game_time.clone();
+            let clock = Arc::clone(&primary.game_time);
             worlds.insert(primary_config.key.clone(), primary);
             for world_entry in resolved_worlds
                 .worlds
@@ -705,7 +705,8 @@ impl Server {
                 .filter(|world| world.domain == domain.name && world.key != domain.default_world)
             {
                 let world =
-                    construct_world(world_entry, GameTimeSource::Derived(clock.clone())).await?;
+                    construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
+                        .await?;
                 worlds.insert(world_entry.key.clone(), world);
             }
         }

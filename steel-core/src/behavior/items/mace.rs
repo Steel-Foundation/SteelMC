@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::CSetEntityMotion;
@@ -142,7 +144,7 @@ impl ItemBehavior for MaceItem {
     fn get_item_damage_source(&self, attacker: &SharedEntity) -> Option<DamageSource> {
         let living = attacker.as_living_entity()?;
         Self::can_smash_attack(living)
-            .then(|| DamageSource::direct(&vanilla_damage_types::MACE_SMASH, attacker.clone()))
+            .then(|| DamageSource::direct(&vanilla_damage_types::MACE_SMASH, Arc::clone(attacker)))
     }
 
     fn get_attack_damage_bonus(

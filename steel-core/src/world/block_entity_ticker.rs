@@ -128,7 +128,7 @@ impl WorldBlockEntityTickers {
         }
 
         let wrapper = Arc::new(RebindableBlockEntityTicker::new(binding));
-        state.by_pos.insert(pos, wrapper.clone());
+        state.by_pos.insert(pos, Arc::clone(&wrapper));
         if state.ticking {
             state.pending.push(wrapper);
         } else {
@@ -352,16 +352,16 @@ mod tests {
         let first = sign(BlockPos::new(1, 2, 3));
         let pending = sign(BlockPos::new(2, 2, 3));
         let between = sign(BlockPos::new(3, 2, 3));
-        manager.reconcile(&holder, first.clone(), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&first), Some(sign_ticker()));
 
         let mut added = false;
         manager.tick_phase(true, |_| {
             if !added {
                 added = true;
-                manager.reconcile(&holder, pending.clone(), Some(sign_ticker()));
+                manager.reconcile(&holder, Arc::clone(&pending), Some(sign_ticker()));
             }
         });
-        manager.reconcile(&holder, between.clone(), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&between), Some(sign_ticker()));
 
         let mut observed = Vec::new();
         manager.tick_phase(true, |binding| {
@@ -385,13 +385,13 @@ mod tests {
         let first = sign(BlockPos::new(1, 2, 3));
         let old_second = sign(BlockPos::new(2, 2, 3));
         let new_second = sign(BlockPos::new(2, 2, 3));
-        manager.reconcile(&holder, first.clone(), Some(sign_ticker()));
-        manager.reconcile(&holder, old_second.clone(), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&first), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&old_second), Some(sign_ticker()));
 
         let mut observed = Vec::new();
         manager.tick_phase(true, |binding| {
             if Arc::ptr_eq(&binding.entity, &first) {
-                manager.reconcile(&holder, new_second.clone(), Some(sign_ticker()));
+                manager.reconcile(&holder, Arc::clone(&new_second), Some(sign_ticker()));
                 observed.push("first");
             } else if Arc::ptr_eq(&binding.entity, &new_second) {
                 observed.push("new");
@@ -412,17 +412,17 @@ mod tests {
         let first = sign(BlockPos::new(1, 2, 3));
         let old_second = sign(BlockPos::new(2, 2, 3));
         let new_second = sign(BlockPos::new(2, 2, 3));
-        manager.reconcile(&holder, first.clone(), Some(sign_ticker()));
-        manager.reconcile(&holder, old_second.clone(), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&first), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&old_second), Some(sign_ticker()));
 
         let mut changed = false;
         let mut first_phase = Vec::new();
         manager.tick_phase(true, |binding| {
-            first_phase.push(binding.entity.clone());
+            first_phase.push(Arc::clone(&binding.entity));
             if !changed && Arc::ptr_eq(&binding.entity, &first) {
                 changed = true;
                 manager.remove(&holder, old_second.get_block_pos());
-                manager.reconcile(&holder, new_second.clone(), Some(sign_ticker()));
+                manager.reconcile(&holder, Arc::clone(&new_second), Some(sign_ticker()));
             }
         });
         assert_eq!(first_phase.len(), 1);
@@ -430,7 +430,7 @@ mod tests {
 
         let mut second_phase = Vec::new();
         manager.tick_phase(true, |binding| {
-            second_phase.push(binding.entity.clone());
+            second_phase.push(Arc::clone(&binding.entity));
         });
         assert_eq!(second_phase.len(), 2);
         assert!(Arc::ptr_eq(&second_phase[0], &first));
@@ -444,17 +444,17 @@ mod tests {
         let holder = holder();
         let first = sign(BlockPos::new(1, 2, 3));
         let pending = sign(BlockPos::new(2, 2, 3));
-        manager.reconcile(&holder, first.clone(), Some(sign_ticker()));
+        manager.reconcile(&holder, Arc::clone(&first), Some(sign_ticker()));
 
         manager.tick_phase(true, |_| {
-            manager.reconcile(&holder, pending.clone(), Some(sign_ticker()));
+            manager.reconcile(&holder, Arc::clone(&pending), Some(sign_ticker()));
             manager.remove(&holder, first.get_block_pos());
         });
         manager.tick_phase(false, |_| panic!("frozen phase must suppress callbacks"));
 
         let mut observed = Vec::new();
         manager.tick_phase(true, |binding| {
-            observed.push(binding.entity.clone());
+            observed.push(Arc::clone(&binding.entity));
         });
         assert_eq!(observed.len(), 1);
         assert!(Arc::ptr_eq(&observed[0], &pending));

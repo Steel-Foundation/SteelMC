@@ -78,7 +78,7 @@ impl TestPlayerBuilder {
     pub(crate) fn server(mut self, server: &Arc<Server>) -> Self {
         self.context = TestPlayerContext::Server {
             server: Arc::downgrade(server),
-            config: server.config.clone(),
+            config: Arc::clone(&server.config),
         };
         self
     }
@@ -100,7 +100,7 @@ impl TestPlayerBuilder {
         let player = Arc::new(Player::new(
             self.profile,
             self.connection,
-            session.clone(),
+            Arc::clone(&session),
             self.world,
             server,
             config,

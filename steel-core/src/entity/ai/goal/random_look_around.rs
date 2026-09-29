@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn random_look_around_sets_look_control_to_eye_height() {
         let mob = Arc::new(TestPathfinderMob::new());
-        let mob_entity: SharedEntity = mob.clone();
+        let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
         let mut goal = RandomLookAroundGoal::new();
 
         goal.start(mob.as_ref());

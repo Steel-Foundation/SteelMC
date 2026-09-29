@@ -161,7 +161,7 @@ impl WorldTickSchedulerState {
             due.push(ActiveTickContainer {
                 pos,
                 rank,
-                container: registered.container.clone(),
+                container: Arc::clone(&registered.container),
             });
             registered.set_head(kind, None);
         }
@@ -213,7 +213,7 @@ impl WorldTickScheduler {
         state.chunks.insert(
             chunk.common().pos,
             RegisteredChunkTicks {
-                container: container.clone(),
+                container: Arc::clone(container),
                 block_head,
                 fluid_head,
                 active: None,
@@ -238,7 +238,7 @@ impl WorldTickScheduler {
             .lock()
             .chunks
             .get(&pos)
-            .map(|registered| registered.container.clone())
+            .map(|registered| Arc::clone(&registered.container))
             .ok_or(TickSchedulerError::MissingContainer(pos))?;
         let mut container_state = container.state.lock();
         if container_state.lifecycle != ChunkTickContainerLifecycle::Registered {

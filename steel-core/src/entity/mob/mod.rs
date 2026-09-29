@@ -1319,8 +1319,8 @@ pub trait Mob: LivingEntity + Leashable {
         };
 
         damage_source
-            .with_causing_entity(attacker.clone())
-            .with_direct_entity(attacker.clone())
+            .with_causing_entity(Arc::clone(attacker))
+            .with_direct_entity(Arc::clone(attacker))
     }
 
     /// Returns vanilla `LivingEntity.getKnockback` for mob attacks.

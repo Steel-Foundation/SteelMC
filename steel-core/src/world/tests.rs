@@ -1,3 +1,5 @@
+use crate::player::Player;
+
 use super::*;
 use std::{
     sync::{Arc, Weak},
@@ -29,23 +31,23 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
     init_behaviors();
     let world = fresh_test_world("exact_respawn_world_handoff");
     let uuid = Uuid::from_u128(1);
-    let old = TestPlayerBuilder::new((*world).clone(), "Old", 1)
+    let old = TestPlayerBuilder::new(Arc::clone(&(*world)), "Old", 1)
         .uuid(uuid)
         .build();
-    let replacement = TestPlayerBuilder::new((*world).clone(), "Replacement", 1)
+    let replacement = TestPlayerBuilder::new(Arc::clone(&(*world)), "Replacement", 1)
         .uuid(uuid)
         .build();
-    let stale = TestPlayerBuilder::new((*world).clone(), "Stale", 1)
+    let stale = TestPlayerBuilder::new(Arc::clone(&(*world)), "Stale", 1)
         .uuid(uuid)
         .build();
 
-    assert!(world.add_player(old.clone(), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::<Player>::clone(&old), ResetReason::InitialJoin));
     assert!(!world.player_area_map.is_empty());
     let tracked = TrackerTestEntity::shared(2);
     world.entity_tracker().add(
         &tracked,
         |_| vec![old.id()],
-        |player_id| (player_id == old.id()).then(|| old.clone()),
+        |player_id| (player_id == old.id()).then(|| Arc::<Player>::clone(&old)),
     );
     assert_eq!(world.entity_tracker().tracking_player_ids(2), [old.id()]);
     old.set_sleeping_pos(BlockPos::new(0, 64, 0));
@@ -73,7 +75,7 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
             .all(|(stat, count)| *stat != leave_game || *count == 0)
     );
 
-    assert!(world.install_respawned_player(replacement.clone(), Some(&old)));
+    assert!(world.install_respawned_player(Arc::<Player>::clone(&replacement), Some(&old)));
     let Some(installed) = world.players.get_by_uuid(&uuid) else {
         panic!("fresh player should own the world player map");
     };
@@ -418,7 +420,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     let holder = world
         .chunk_map
         .chunks
-        .read_sync(&chunk_pos, |_, holder| holder.clone())
+        .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
         .expect("loaded test chunk should have a holder");
     assert!(
         world

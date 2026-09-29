@@ -91,7 +91,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     let attacker: SharedEntity = attacker;
     let registration = attached_world
         .entity_manager()
-        .add_live_entity(attacker.clone(), EntityOwnership::External);
+        .add_live_entity(Arc::clone(&attacker), EntityOwnership::External);
     assert!(registration.is_ok());
 
     let victim = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, attached_world);
@@ -99,7 +99,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::ARMOR, 20.0);
-    let source = DamageSource::direct(&vanilla_damage_types::MOB_ATTACK, attacker.clone());
+    let source = DamageSource::direct(&vanilla_damage_types::MOB_ATTACK, Arc::clone(&attacker));
 
     let removed = attached_world
         .entity_manager()

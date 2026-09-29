@@ -30,7 +30,7 @@ impl Player {
         teleport_transition: &TeleportTransition,
     ) -> bool {
         let current_world = self.get_world();
-        let new_world = teleport_transition.target_world.clone();
+        let new_world = Arc::clone(&teleport_transition.target_world);
         if current_world.domain() != new_world.domain() {
             tracing::error!(
                 entity_id = self.id(),

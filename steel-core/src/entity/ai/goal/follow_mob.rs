@@ -230,14 +230,14 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = mob.clone();
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         let following_mob: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
         ));
-        goal.following_mob = Some(following_mob.clone());
+        goal.following_mob = Some(Arc::clone(&following_mob));
 
         goal.tick(mob.as_ref(), &mob_entity);
 

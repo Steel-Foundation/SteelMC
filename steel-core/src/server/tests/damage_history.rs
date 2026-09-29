@@ -1,3 +1,5 @@
+use crate::player::Player;
+
 use super::*;
 use std::sync::Arc;
 
@@ -29,28 +31,28 @@ fn assert_disconnect_releases_damage_history(
         .build()
         .expect("test runtime");
     runtime.block_on(async {
-        let server = test_server((*world).clone(), PermissionSubjectIndex::new())
+        let server = test_server(Arc::clone(&(*world)), PermissionSubjectIndex::new())
             .await
             .expect("test server");
         let first =
-            test_player_with_packets(&server, (*world).clone(), "First", next_entity_id()).0;
+            test_player_with_packets(&server, Arc::clone(&(*world)), "First", next_entity_id()).0;
         let second =
-            test_player_with_packets(&server, (*world).clone(), "Second", next_entity_id()).0;
+            test_player_with_packets(&server, Arc::clone(&(*world)), "Second", next_entity_id()).0;
         for player in [&first, &second] {
-            assert!(server.online_players.insert(player.clone()));
-            assert!(world.add_player(player.clone(), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(Arc::<Player>::clone(player)));
+            assert!(world.add_player(Arc::<Player>::clone(player), ResetReason::InitialJoin));
             let _ = player.mark_joined_world();
         }
 
         let attacker = if mutual_damage { &second } else { &first };
         first.record_last_damage_source(
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-                .with_causing_entity(attacker.clone()),
+                .with_causing_entity(Arc::<Player>::clone(attacker)),
         );
         if mutual_damage {
             second.record_last_damage_source(
                 &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
-                    .with_causing_entity(first.clone()),
+                    .with_causing_entity(Arc::<Player>::clone(&first)),
             );
         }
         let first_weak = Arc::downgrade(&first);

@@ -1147,7 +1147,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| holder.clone()),
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1188,7 +1188,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| holder.clone()),
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1220,7 +1220,7 @@ mod tests {
                 let holder = holder_with_section(pos, section);
                 initialize_holder_light(&holder);
                 if pos == center {
-                    center_holder = Some(holder.clone());
+                    center_holder = Some(Arc::clone(&holder));
                 }
                 holders.push((pos, holder));
             }
@@ -1252,7 +1252,7 @@ mod tests {
                 holders
                     .iter()
                     .find(|(holder_pos, _)| *holder_pos == pos)
-                    .map(|(_, holder)| holder.clone())
+                    .map(|(_, holder)| Arc::clone(holder))
             },
             |_| true,
         ) else {
@@ -1296,7 +1296,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| holder.clone()),
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");
@@ -1329,9 +1329,9 @@ mod tests {
             true,
             |pos| {
                 if pos == center {
-                    Some(center_holder.clone())
+                    Some(Arc::clone(&center_holder))
                 } else if pos == east_chunk {
-                    Some(east_holder.clone())
+                    Some(Arc::clone(&east_holder))
                 } else {
                     None
                 }
@@ -1417,7 +1417,7 @@ mod tests {
             layout,
             LightCacheSetupRadius::Inner,
             true,
-            |pos| (pos == center).then(|| holder.clone()),
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
             |_| true,
         ) else {
             panic!("relaxed setup should accept missing neighbors");

@@ -56,10 +56,10 @@ pub fn grindstone(
         }),
     );
     let result = builder.result_slot(GrindstoneResultHandler::new(
-        input_container.clone(),
-        result_container.clone(),
+        Arc::clone(&input_container),
+        Arc::clone(&result_container),
         pos,
-        world.clone(),
+        Arc::clone(world),
     ));
 
     let player = builder.player_inventory(&inventory);
@@ -77,7 +77,7 @@ pub fn grindstone(
         input_container,
         result_container,
         block_pos: pos,
-        world: world.clone(),
+        world: Arc::clone(world),
         input,
         player,
     })

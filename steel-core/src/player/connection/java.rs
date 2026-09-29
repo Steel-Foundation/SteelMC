@@ -263,7 +263,7 @@ impl ScheduledPlayPacket {
                 player.handle_custom_payload(packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
-                player.handle_chat(*packet, player.clone());
+                player.handle_chat(*packet, Arc::<Player>::clone(&player));
             }
             ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
             ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
@@ -283,7 +283,10 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::ChatCommand(packet) => {
                 player.reset_last_action_time();
                 if server
-                    .submit_command(CommandSender::Player(player.clone()), packet.command)
+                    .submit_command(
+                        CommandSender::Player(Arc::<Player>::clone(&player)),
+                        packet.command,
+                    )
                     .is_err()
                 {
                     player.send_message(
@@ -294,7 +297,11 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
                 if server
-                    .submit_command_suggestions(player.clone(), packet.id, packet.command)
+                    .submit_command_suggestions(
+                        Arc::<Player>::clone(&player),
+                        packet.id,
+                        packet.command,
+                    )
                     .is_err()
                 {
                     player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));
@@ -1026,7 +1033,7 @@ mod tests {
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
         let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new((*world).clone(), "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };
@@ -1406,7 +1413,7 @@ mod tests {
             Arc::new(PlayerSession::new(10, 10)),
         ));
         let sender = task::spawn({
-            let connection = connection.clone();
+            let connection = Arc::clone(&connection);
             async move { connection.sender(outgoing_receiver).await }
         });
 

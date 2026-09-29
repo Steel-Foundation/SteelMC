@@ -3,6 +3,8 @@
 //! Rockets can be placed against a block face or used while fall flying to
 //! attach a boosting rocket to the player.
 
+use crate::player::Player;
+
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -29,7 +31,7 @@ pub struct FireworkRocketItem;
 impl FireworkRocketItem {
     fn add_rocket(world: &Arc<World>, rocket: FireworkRocketEntity) -> SharedEntity {
         let entity: SharedEntity = Arc::new(rocket);
-        if let Err(error) = world.try_add_entity(entity.clone()) {
+        if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
             log::debug!("failed to spawn firework rocket: {error}");
         }
         entity
@@ -62,7 +64,7 @@ impl ItemBehavior for FireworkRocketItem {
             Arc::downgrade(context.world),
             source_item,
         );
-        let owner: SharedEntity = context.player.clone();
+        let owner: SharedEntity = Arc::<Player>::clone(context.player);
         rocket.set_owner_entity(Some(&owner));
         let rocket = Self::add_rocket(context.world, rocket);
         context.inv.with_item(|item| {
@@ -95,7 +97,7 @@ impl ItemBehavior for FireworkRocketItem {
         }
 
         let source_item = context.inv.with_item(|item| item.clone());
-        let owner: SharedEntity = context.player.clone();
+        let owner: SharedEntity = Arc::<Player>::clone(context.player);
         let Some(attached_to) = LivingEntityRef::new(&owner) else {
             panic!("firework user must be a living player");
         };

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::DVec3;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -59,9 +61,7 @@ impl Goal for BreathAirGoal {
                 f64::from(input.forward()),
             ),
         );
-        entity
-            .clone()
-            .move_entity(MoverType::SelfMovement, mob.velocity());
+        Arc::clone(entity).move_entity(MoverType::SelfMovement, mob.velocity());
     }
 }
 
@@ -175,7 +175,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = mob.clone();
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         mob.set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
         goal.tick(mob.as_ref(), &mob_entity);

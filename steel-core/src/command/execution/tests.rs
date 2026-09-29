@@ -37,7 +37,7 @@ struct TestSource {
 
 impl TestSource {
     fn new(name: &'static str, observed: Arc<Observed>) -> Self {
-        let callback_observed = observed.clone();
+        let callback_observed = Arc::clone(&observed);
         Self {
             name,
             callback: CommandResultCallback::new(move |success, result| {
@@ -52,8 +52,8 @@ impl TestSource {
         Self {
             name,
             callback: self.callback.clone(),
-            observed: self.observed.clone(),
-            current: self.current.clone(),
+            observed: Arc::clone(&self.observed),
+            current: Arc::clone(&self.current),
         }
     }
 }
@@ -67,8 +67,8 @@ impl ExecutionCommandSource for TestSource {
         Self {
             name: self.name,
             callback,
-            observed: self.observed.clone(),
-            current: self.current.clone(),
+            observed: Arc::clone(&self.observed),
+            current: Arc::clone(&self.current),
         }
     }
 
@@ -119,7 +119,7 @@ fn chain(
 #[test]
 fn queue_runs_standard_commands_with_the_runtime_source_callback() {
     let observed = Arc::new(Observed::default());
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -138,11 +138,11 @@ fn queue_runs_standard_commands_with_the_runtime_source_callback() {
             ),
         ),
     );
-    let chain = chain(&dispatcher, "run 7", observed.clone());
+    let chain = chain(&dispatcher, "run 7", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
         chain,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -155,7 +155,7 @@ fn queue_runs_standard_commands_with_the_runtime_source_callback() {
 #[test]
 fn queue_drops_a_source_that_became_stale_before_execution() {
     let observed = Arc::new(Observed::default());
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -167,11 +167,11 @@ fn queue_drops_a_source_that_became_stale_before_execution() {
             Ok(1)
         }),
     );
-    let source = TestSource::new("stale", observed.clone());
-    let current = source.current.clone();
+    let source = TestSource::new("stale", Arc::clone(&observed));
+    let current = Arc::clone(&source.current);
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "run", observed.clone()),
+        chain(&dispatcher, "run", Arc::clone(&observed)),
         source,
         CommandResultCallback::empty(),
     );
@@ -185,7 +185,7 @@ fn queue_drops_a_source_that_became_stale_before_execution() {
 #[test]
 fn command_limit_stops_before_the_next_queued_action() {
     let observed = Arc::new(Observed::default());
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -197,17 +197,17 @@ fn command_limit_stops_before_the_next_queued_action() {
             Ok(1)
         }),
     );
-    let first = chain(&dispatcher, "run", observed.clone());
+    let first = chain(&dispatcher, "run", Arc::clone(&observed));
     let second = first.clone();
     let mut execution = CommandExecutionContext::new(1, 10);
     execution.queue_initial_command(
         first,
-        TestSource::new("first", observed.clone()),
+        TestSource::new("first", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     execution.queue_initial_command(
         second,
-        TestSource::new("second", observed.clone()),
+        TestSource::new("second", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -218,7 +218,7 @@ fn command_limit_stops_before_the_next_queued_action() {
 #[test]
 fn forked_sources_execute_in_order() {
     let observed = Arc::new(Observed::default());
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -240,11 +240,11 @@ fn forked_sources_execute_in_order() {
             ])
         }),
     );
-    let chain = chain(&dispatcher, "fork run", observed.clone());
+    let chain = chain(&dispatcher, "fork run", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 3);
     execution.queue_initial_command(
         chain,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -256,7 +256,7 @@ fn forked_sources_execute_in_order() {
 #[test]
 fn standard_modifiers_consume_one_sequence_cost() {
     let observed = Arc::new(Observed::default());
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -274,11 +274,11 @@ fn standard_modifiers_consume_one_sequence_cost() {
         literal::<TestSource>("redirect")
             .redirects_with(root, |context| Ok(context.source().with_name("redirected"))),
     );
-    let chain = chain(&dispatcher, "redirect run", observed.clone());
+    let chain = chain(&dispatcher, "redirect run", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(1, 10);
     execution.queue_initial_command(
         chain,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -289,7 +289,7 @@ fn standard_modifiers_consume_one_sequence_cost() {
 #[test]
 fn fork_limit_uses_vanillas_exclusive_boundary() {
     let observed = Arc::new(Observed::default());
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -311,11 +311,11 @@ fn fork_limit_uses_vanillas_exclusive_boundary() {
             ])
         }),
     );
-    let chain = chain(&dispatcher, "fork run", observed.clone());
+    let chain = chain(&dispatcher, "fork run", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 2);
     execution.queue_initial_command(
         chain,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -353,11 +353,11 @@ fn modifier_failures_follow_fork_suppression_rules() {
         }),
     );
 
-    let redirect = chain(&dispatcher, "redirect run", observed.clone());
+    let redirect = chain(&dispatcher, "redirect run", Arc::clone(&observed));
     let mut redirect_execution = CommandExecutionContext::new(10, 10);
     redirect_execution.queue_initial_command(
         redirect,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     assert_eq!(redirect_execution.run(), ExecutionStop::Completed);
@@ -367,11 +367,11 @@ fn modifier_failures_follow_fork_suppression_rules() {
     );
 
     observed.errors.lock().clear();
-    let fork = chain(&dispatcher, "fork run", observed.clone());
+    let fork = chain(&dispatcher, "fork run", Arc::clone(&observed));
     let mut fork_execution = CommandExecutionContext::new(10, 10);
     fork_execution.queue_initial_command(
         fork,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     assert_eq!(fork_execution.run(), ExecutionStop::Completed);
@@ -390,11 +390,11 @@ fn terminal_failures_invoke_callbacks_but_only_non_forks_report_errors() {
             )))
         }),
     );
-    let direct = chain(&dispatcher, "fail", observed.clone());
+    let direct = chain(&dispatcher, "fail", Arc::clone(&observed));
     let mut direct_execution = CommandExecutionContext::new(10, 10);
     direct_execution.queue_initial_command(
         direct,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     assert_eq!(direct_execution.run(), ExecutionStop::Completed);
@@ -413,11 +413,11 @@ fn terminal_failures_invoke_callbacks_but_only_non_forks_report_errors() {
             Ok(vec![context.source().with_name("forked")])
         }),
     );
-    let fork = chain(&dispatcher, "fork fail", observed.clone());
+    let fork = chain(&dispatcher, "fork fail", Arc::clone(&observed));
     let mut fork_execution = CommandExecutionContext::new(10, 10);
     fork_execution.queue_initial_command(
         fork,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     assert_eq!(fork_execution.run(), ExecutionStop::Completed);
@@ -451,17 +451,17 @@ impl CustomCommandExecutor<TestSource> for FrameReturnExecutor {
 fn custom_executor_returns_from_its_frame_and_discards_queued_work() {
     let observed = Arc::new(Observed::default());
     let frame_results = Arc::new(SyncMutex::new(Vec::new()));
-    let callback_results = frame_results.clone();
+    let callback_results = Arc::clone(&frame_results);
     let depths = Arc::new(SyncMutex::new(Vec::new()));
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
         literal::<TestSource>("return").executes_custom(FrameReturnExecutor {
             result: Some(42),
-            depths: depths.clone(),
+            depths: Arc::clone(&depths),
         }),
     );
-    let normal_observed = observed.clone();
+    let normal_observed = Arc::clone(&observed);
     register(
         &mut dispatcher,
         literal::<TestSource>("normal").executes(move |context| {
@@ -472,19 +472,19 @@ fn custom_executor_returns_from_its_frame_and_discards_queued_work() {
             Ok(1)
         }),
     );
-    let returning = chain(&dispatcher, "return", observed.clone());
-    let normal = chain(&dispatcher, "normal", observed.clone());
+    let returning = chain(&dispatcher, "return", Arc::clone(&observed));
+    let normal = chain(&dispatcher, "normal", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
         returning,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::new(move |success, result| {
             callback_results.lock().push((success, result));
         }),
     );
     execution.queue_initial_command(
         normal,
-        TestSource::new("discarded", observed.clone()),
+        TestSource::new("discarded", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -522,13 +522,13 @@ impl CustomModifierExecutor<TestSource> for ReturningModifier {
 fn custom_modifier_can_continue_with_return_propagation() {
     let observed = Arc::new(Observed::default());
     let frame_results = Arc::new(SyncMutex::new(Vec::new()));
-    let callback_results = frame_results.clone();
+    let callback_results = Arc::clone(&frame_results);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
         literal::<TestSource>("run").executes(|_| Ok(5)),
     );
-    let discarded_observed = observed.clone();
+    let discarded_observed = Arc::clone(&observed);
     register(
         &mut dispatcher,
         literal::<TestSource>("discarded").executes(move |context| {
@@ -544,19 +544,19 @@ fn custom_modifier_can_continue_with_return_propagation() {
         &mut dispatcher,
         literal::<TestSource>("returning").redirects_custom(root, ReturningModifier, false),
     );
-    let returning_chain = chain(&dispatcher, "returning run", observed.clone());
-    let discarded_chain = chain(&dispatcher, "discarded", observed.clone());
+    let returning_chain = chain(&dispatcher, "returning run", Arc::clone(&observed));
+    let discarded_chain = chain(&dispatcher, "discarded", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
         returning_chain,
-        TestSource::new("runtime", observed.clone()),
+        TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::new(move |success, result| {
             callback_results.lock().push((success, result));
         }),
     );
     execution.queue_initial_command(
         discarded_chain,
-        TestSource::new("discarded", observed.clone()),
+        TestSource::new("discarded", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -597,7 +597,7 @@ fn queue_overflow_stops_work_queued_by_a_custom_executor() {
         &mut dispatcher,
         literal::<TestSource>("overflow").executes_custom(OverflowExecutor),
     );
-    let chain = chain(&dispatcher, "overflow", observed.clone());
+    let chain = chain(&dispatcher, "overflow", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::with_queue_limit(10, 10, 1);
     execution.queue_initial_command(
         chain,
@@ -673,8 +673,8 @@ impl CommandResultSuspension for TestResultSuspension {
 fn suspended_normal_executor_reports_its_delayed_result() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_observed = observed.clone();
-    let command_cancellations = cancellations.clone();
+    let command_observed = Arc::clone(&observed);
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -686,14 +686,14 @@ fn suspended_normal_executor_reports_its_delayed_result() {
             Ok(TestResultSuspension {
                 pending_polls: 1,
                 result: Some(Ok(42)),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
-        TestSource::new("waiting", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -712,7 +712,7 @@ fn suspended_normal_executor_reports_its_delayed_result() {
 fn suspended_normal_executor_cancels_when_its_effective_source_becomes_stale() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_cancellations = cancellations.clone();
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -720,15 +720,15 @@ fn suspended_normal_executor_cancels_when_its_effective_source_becomes_stale() {
             Ok(TestResultSuspension {
                 pending_polls: usize::MAX,
                 result: Some(Ok(42)),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
-    let source = TestSource::new("waiting", observed.clone());
-    let current = source.current.clone();
+    let source = TestSource::new("waiting", Arc::clone(&observed));
+    let current = Arc::clone(&source.current);
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
         source,
         CommandResultCallback::empty(),
     );
@@ -744,7 +744,7 @@ fn suspended_normal_executor_cancels_when_its_effective_source_becomes_stale() {
 fn suspended_normal_executor_is_retained_at_the_sequence_limit() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_cancellations = cancellations.clone();
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -752,14 +752,14 @@ fn suspended_normal_executor_is_retained_at_the_sequence_limit() {
             Ok(TestResultSuspension {
                 pending_polls: 0,
                 result: Some(Ok(42)),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
     let mut execution = CommandExecutionContext::new(1, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
-        TestSource::new("waiting", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -775,7 +775,7 @@ fn suspended_normal_executor_is_retained_at_the_sequence_limit() {
 fn suspended_normal_executor_reports_delayed_errors_like_a_standard_executor() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_cancellations = cancellations.clone();
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -783,14 +783,14 @@ fn suspended_normal_executor_reports_delayed_errors_like_a_standard_executor() {
             Ok(TestResultSuspension {
                 pending_polls: 0,
                 result: Some(Err(CommandSyntaxError::dynamic("delayed failure"))),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
-        TestSource::new("waiting", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -818,8 +818,8 @@ fn suspended_normal_executor_reports_startup_errors_without_suspending() {
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
-        TestSource::new("waiting", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -835,8 +835,8 @@ fn suspended_normal_executor_reports_startup_errors_without_suspending() {
 fn suspended_normal_executor_resumes_each_forked_source_and_suppresses_errors() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_observed = observed.clone();
-    let command_cancellations = cancellations.clone();
+    let command_observed = Arc::clone(&observed);
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -848,7 +848,7 @@ fn suspended_normal_executor_resumes_each_forked_source_and_suppresses_errors() 
             Ok(TestResultSuspension {
                 pending_polls: 0,
                 result: Some(Err(CommandSyntaxError::dynamic("forked failure"))),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
@@ -864,8 +864,8 @@ fn suspended_normal_executor_resumes_each_forked_source_and_suppresses_errors() 
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "fork wait", observed.clone()),
-        TestSource::new("original", observed.clone()),
+        chain(&dispatcher, "fork wait", Arc::clone(&observed)),
+        TestSource::new("original", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -885,9 +885,9 @@ fn suspended_normal_executor_preserves_forked_return_semantics() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
     let frame_results = Arc::new(SyncMutex::new(Vec::new()));
-    let callback_results = frame_results.clone();
-    let command_observed = observed.clone();
-    let command_cancellations = cancellations.clone();
+    let callback_results = Arc::clone(&frame_results);
+    let command_observed = Arc::clone(&observed);
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -899,7 +899,7 @@ fn suspended_normal_executor_preserves_forked_return_semantics() {
             Ok(TestResultSuspension {
                 pending_polls: 0,
                 result: Some(Ok(7)),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
@@ -919,8 +919,8 @@ fn suspended_normal_executor_preserves_forked_return_semantics() {
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "fork returning wait", observed.clone()),
-        TestSource::new("original", observed.clone()),
+        chain(&dispatcher, "fork returning wait", Arc::clone(&observed)),
+        TestSource::new("original", Arc::clone(&observed)),
         CommandResultCallback::new(move |success, result| {
             callback_results.lock().push((success, result));
         }),
@@ -938,7 +938,7 @@ fn suspended_normal_executor_preserves_forked_return_semantics() {
 fn cancelling_suspended_normal_execution_cancels_its_work() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_cancellations = cancellations.clone();
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -946,13 +946,13 @@ fn cancelling_suspended_normal_execution_cancels_its_work() {
             Ok(TestResultSuspension {
                 pending_polls: usize::MAX,
                 result: Some(Ok(1)),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             })
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
         TestSource::new("waiting", observed),
         CommandResultCallback::empty(),
     );
@@ -974,7 +974,7 @@ impl CommandSuspension<TestSource> for TestSuspension {
         CommandSuspensionPoll::resume(CompleteSuspensionAction {
             invocation: self.invocation,
             result: self.result,
-            observed: self.observed.clone(),
+            observed: Arc::clone(&self.observed),
         })
     }
 
@@ -1003,8 +1003,8 @@ impl CustomCommandExecutor<TestSource> for SuspendingExecutor {
             pending_polls: self.pending_polls,
             invocation: self.invocation,
             result: self.result,
-            observed: self.observed.clone(),
-            cancellations: self.cancellations.clone(),
+            observed: Arc::clone(&self.observed),
+            cancellations: Arc::clone(&self.cancellations),
         });
     }
 }
@@ -1014,7 +1014,7 @@ fn suspended_execution_resumes_in_queue_order_with_the_original_frame() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
     let frame_results = Arc::new(SyncMutex::new(Vec::new()));
-    let callback_results = frame_results.clone();
+    let callback_results = Arc::clone(&frame_results);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -1022,11 +1022,11 @@ fn suspended_execution_resumes_in_queue_order_with_the_original_frame() {
             pending_polls: 1,
             invocation: "resumed",
             result: 42,
-            observed: observed.clone(),
-            cancellations: cancellations.clone(),
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
         }),
     );
-    let normal_observed = observed.clone();
+    let normal_observed = Arc::clone(&observed);
     register(
         &mut dispatcher,
         literal::<TestSource>("normal").executes(move |_| {
@@ -1034,19 +1034,19 @@ fn suspended_execution_resumes_in_queue_order_with_the_original_frame() {
             Ok(1)
         }),
     );
-    let waiting = chain(&dispatcher, "wait", observed.clone());
-    let normal = chain(&dispatcher, "normal", observed.clone());
+    let waiting = chain(&dispatcher, "wait", Arc::clone(&observed));
+    let normal = chain(&dispatcher, "normal", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
         waiting,
-        TestSource::new("waiting", observed.clone()),
+        TestSource::new("waiting", Arc::clone(&observed)),
         CommandResultCallback::new(move |success, result| {
             callback_results.lock().push((success, result));
         }),
     );
     execution.queue_initial_command(
         normal,
-        TestSource::new("normal", observed.clone()),
+        TestSource::new("normal", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
 
@@ -1081,15 +1081,15 @@ impl CustomCommandExecutor<TestSource> for QueueTwoSuspensions {
             pending_polls: usize::MAX,
             invocation: "first",
             result: 1,
-            observed: self.observed.clone(),
-            cancellations: self.first_cancellations.clone(),
+            observed: Arc::clone(&self.observed),
+            cancellations: Arc::clone(&self.first_cancellations),
         });
         control.suspend(TestSuspension {
             pending_polls: usize::MAX,
             invocation: "second",
             result: 2,
-            observed: self.observed.clone(),
-            cancellations: self.second_cancellations.clone(),
+            observed: Arc::clone(&self.observed),
+            cancellations: Arc::clone(&self.second_cancellations),
         });
     }
 }
@@ -1103,12 +1103,12 @@ fn cancelling_execution_cancels_active_and_queued_suspensions() {
     register(
         &mut dispatcher,
         literal::<TestSource>("wait").executes_custom(QueueTwoSuspensions {
-            observed: observed.clone(),
-            first_cancellations: first_cancellations.clone(),
-            second_cancellations: second_cancellations.clone(),
+            observed: Arc::clone(&observed),
+            first_cancellations: Arc::clone(&first_cancellations),
+            second_cancellations: Arc::clone(&second_cancellations),
         }),
     );
-    let waiting = chain(&dispatcher, "wait", observed.clone());
+    let waiting = chain(&dispatcher, "wait", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
         waiting,
@@ -1167,14 +1167,14 @@ impl CustomCommandExecutor<TestSource> for QueueReadyThenPendingSuspension {
     ) {
         control.suspend(ReturningSuspension {
             result: 1,
-            cancellations: self.first_cancellations.clone(),
+            cancellations: Arc::clone(&self.first_cancellations),
         });
         control.suspend(TestSuspension {
             pending_polls: usize::MAX,
             invocation: "second",
             result: 2,
-            observed: self.observed.clone(),
-            cancellations: self.second_cancellations.clone(),
+            observed: Arc::clone(&self.observed),
+            cancellations: Arc::clone(&self.second_cancellations),
         });
     }
 }
@@ -1188,14 +1188,14 @@ fn frame_return_cancels_discarded_suspension_work() {
     register(
         &mut dispatcher,
         literal::<TestSource>("wait").executes_custom(QueueReadyThenPendingSuspension {
-            observed: observed.clone(),
-            first_cancellations: first_cancellations.clone(),
-            second_cancellations: second_cancellations.clone(),
+            observed: Arc::clone(&observed),
+            first_cancellations: Arc::clone(&first_cancellations),
+            second_cancellations: Arc::clone(&second_cancellations),
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
         TestSource::new("waiting", observed),
         CommandResultCallback::empty(),
     );
@@ -1224,8 +1224,8 @@ impl CustomCommandExecutor<TestSource> for SuspensionOverflowExecutor {
             pending_polls: usize::MAX,
             invocation: "never",
             result: 1,
-            observed: self.observed.clone(),
-            cancellations: self.cancellations.clone(),
+            observed: Arc::clone(&self.observed),
+            cancellations: Arc::clone(&self.cancellations),
         });
         for _ in 0..3 {
             control.queue_next(NoopAction);
@@ -1241,13 +1241,13 @@ fn queue_overflow_cancels_queued_suspension_work() {
     register(
         &mut dispatcher,
         literal::<TestSource>("overflow").executes_custom(SuspensionOverflowExecutor {
-            observed: observed.clone(),
-            cancellations: cancellations.clone(),
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
         }),
     );
     let mut execution = CommandExecutionContext::with_queue_limit(10, 10, 1);
     execution.queue_initial_command(
-        chain(&dispatcher, "overflow", observed.clone()),
+        chain(&dispatcher, "overflow", Arc::clone(&observed)),
         TestSource::new("overflow", observed),
         CommandResultCallback::empty(),
     );
@@ -1267,8 +1267,8 @@ fn pending_execution_queue_polls_once_per_tick_in_fifo_order() {
             pending_polls: 0,
             invocation: "first",
             result: 1,
-            observed: observed.clone(),
-            cancellations: cancellations.clone(),
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
         }),
     );
     register(
@@ -1277,23 +1277,23 @@ fn pending_execution_queue_polls_once_per_tick_in_fifo_order() {
             pending_polls: 1,
             invocation: "second",
             result: 2,
-            observed: observed.clone(),
-            cancellations: cancellations.clone(),
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
         }),
     );
 
     let mut first = CommandExecutionContext::new(10, 10);
     first.queue_initial_command(
-        chain(&dispatcher, "first", observed.clone()),
-        TestSource::new("first", observed.clone()),
+        chain(&dispatcher, "first", Arc::clone(&observed)),
+        TestSource::new("first", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     assert_eq!(first.run(), ExecutionStop::Suspended);
 
     let mut second = CommandExecutionContext::new(10, 10);
     second.queue_initial_command(
-        chain(&dispatcher, "second", observed.clone()),
-        TestSource::new("second", observed.clone()),
+        chain(&dispatcher, "second", Arc::clone(&observed)),
+        TestSource::new("second", Arc::clone(&observed)),
         CommandResultCallback::empty(),
     );
     assert_eq!(second.run(), ExecutionStop::Suspended);
@@ -1331,7 +1331,7 @@ fn pending_execution_queue_polls_once_per_tick_in_fifo_order() {
 fn global_suspension_blocks_every_command_source_until_completion() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));
-    let command_cancellations = cancellations.clone();
+    let command_cancellations = Arc::clone(&cancellations);
     let mut dispatcher = TestDispatcher::new();
     register(
         &mut dispatcher,
@@ -1339,13 +1339,13 @@ fn global_suspension_blocks_every_command_source_until_completion() {
             Ok(GlobalResultSuspension(TestResultSuspension {
                 pending_polls: 1,
                 result: Some(Ok(1)),
-                cancellations: command_cancellations.clone(),
+                cancellations: Arc::clone(&command_cancellations),
             }))
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "global", observed.clone()),
+        chain(&dispatcher, "global", Arc::clone(&observed)),
         TestSource::new("global", observed),
         CommandResultCallback::empty(),
     );
@@ -1390,13 +1390,13 @@ fn pending_execution_queue_cancels_retained_work() {
             pending_polls: usize::MAX,
             invocation: "resumed",
             result: 1,
-            observed: observed.clone(),
-            cancellations: cancellations.clone(),
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
         TestSource::new("waiting", observed),
         CommandResultCallback::empty(),
     );
@@ -1425,13 +1425,13 @@ fn pending_execution_queue_cancels_work_whose_owner_is_stale() {
             pending_polls: usize::MAX,
             invocation: "must not resume",
             result: 1,
-            observed: observed.clone(),
-            cancellations: cancellations.clone(),
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
         }),
     );
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain(&dispatcher, "wait", observed.clone()),
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
         TestSource::new("waiting", observed),
         CommandResultCallback::empty(),
     );

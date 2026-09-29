@@ -89,11 +89,11 @@ fn recording_player(name: &str, entity_id: i32) -> RecordingPlayer {
     let inventories = Arc::new(SyncMutex::new(Vec::new()));
     let callbacks_saw_unlocked_inventories = Arc::new(AtomicBool::new(true));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
-        packets: packets.clone(),
-        inventories: inventories.clone(),
-        callbacks_saw_unlocked_inventories: callbacks_saw_unlocked_inventories.clone(),
+        packets: Arc::clone(&packets),
+        inventories: Arc::clone(&inventories),
+        callbacks_saw_unlocked_inventories: Arc::clone(&callbacks_saw_unlocked_inventories),
     })));
-    let player = TestPlayerBuilder::new(test_world().clone(), name, entity_id)
+    let player = TestPlayerBuilder::new(Arc::clone(test_world()), name, entity_id)
         .detached_config(test_runtime_config(2))
         .connection(connection)
         .build();
@@ -134,7 +134,7 @@ fn player_inventory_updates(packets: &SyncMutex<Vec<EncodedPacket>>) -> Vec<(i32
 }
 
 fn test_player(name: &str, entity_id: i32) -> Arc<Player> {
-    TestPlayerBuilder::new(test_world().clone(), name, entity_id)
+    TestPlayerBuilder::new(Arc::clone(test_world()), name, entity_id)
         .detached_config(test_runtime_config(2))
         .build()
 }
@@ -201,7 +201,7 @@ fn invsee_rejects_players_in_different_domains() {
     assert!(ensure_same_domain(&source, &target).is_ok());
 
     let target_world = fresh_test_world_in_domain("other", "invsee_target");
-    target.set_world((*target_world).clone());
+    target.set_world(Arc::clone(&(*target_world)));
 
     assert!(ensure_same_domain(&source, &target).is_err());
 }
@@ -278,10 +278,10 @@ fn modify_view_edits_armor_slots_within_equipment_rules() {
 fn modify_view_synchronizes_target_armor_without_inventory_locks() {
     let source = test_player("Viewer", 10);
     let target = recording_player("Target", 11);
-    target
-        .inventories
-        .lock()
-        .extend([source.inventory.clone(), target.player.inventory.clone()]);
+    target.inventories.lock().extend([
+        Arc::clone(&source.inventory),
+        Arc::clone(&target.player.inventory),
+    ]);
     let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
 
@@ -320,7 +320,7 @@ fn self_invsee_synchronizes_own_armor_slot() {
     recording
         .inventories
         .lock()
-        .push(recording.player.inventory.clone());
+        .push(Arc::clone(&recording.player.inventory));
     let mut menu = invsee(1, &recording.player, &recording.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
 
@@ -462,7 +462,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
     recording
         .inventories
         .lock()
-        .push(recording.player.inventory.clone());
+        .push(Arc::clone(&recording.player.inventory));
     recording
         .player
         .inventory
@@ -484,7 +484,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0, 39]);
 
-    recording.player.clone().tick();
+    Arc::<Player>::clone(&recording.player).tick();
 
     assert_eq!(
         player_inventory_updates(&recording.packets),
@@ -526,7 +526,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
     }
     recording.packets.lock().clear();
 
-    recording.player.clone().tick();
+    Arc::<Player>::clone(&recording.player).tick();
     assert_eq!(player_inventory_updates(&recording.packets).len(), 0);
 
     recording.player.do_close_container();
@@ -547,7 +547,7 @@ fn normal_menu_does_not_defer_main_inventory_sync() {
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
 
     let menu_slots = SimpleContainer::new(9).into_shared();
-    let inventory = recording.player.inventory.clone();
+    let inventory = Arc::clone(&recording.player.inventory);
     recording.player.open_menu("Normal", move |context| {
         let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         builder.section_with(menu_slots, 9, SectionKind::Display);
@@ -699,9 +699,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     assert!(readonly_menu.still_valid(&source));
 
     let target_world = fresh_test_world_in_domain("other", "invsee_viewer");
-    source.set_world((*target_world).clone());
+    source.set_world(Arc::clone(&(*target_world)));
     assert!(!readonly_menu.still_valid(&source));
-    source.set_world(test_world().clone());
+    source.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));
 
     let target_switch_token = begin_domain_switch(&target);
@@ -710,9 +710,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     assert!(readonly_menu.still_valid(&source));
 
     let target_world = fresh_test_world_in_domain("other", "invsee_domain");
-    target.set_world((*target_world).clone());
+    target.set_world(Arc::clone(&(*target_world)));
     assert!(!readonly_menu.still_valid(&source));
-    target.set_world(test_world().clone());
+    target.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));
 
     target.close_connection();

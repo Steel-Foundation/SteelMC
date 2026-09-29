@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -7,7 +9,6 @@ use super::{
     World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
-use std::sync::Arc;
 
 use crate::player::food_data::food_constants;
 use std::ops::Add;
@@ -42,14 +43,14 @@ impl Player {
         self: &Arc<Self>,
         damage_type: &'static DamageType,
     ) -> DamageSource {
-        DamageSource::direct(damage_type, self.clone())
+        DamageSource::direct(damage_type, Arc::<Player>::clone(self))
     }
 
     fn attack_damage_source(self: &Arc<Self>, attacking_item: &ItemStack) -> DamageSource {
         if let Some(damage_type) = attacking_item.get_damage_type() {
             return self.damage_source_for_attack_type(damage_type);
         }
-        let attacker: SharedEntity = self.clone();
+        let attacker: SharedEntity = Arc::<Player>::clone(self);
         if let Some(source) = ITEM_BEHAVIORS
             .get_behavior(attacking_item.item())
             .get_item_damage_source(&attacker)
@@ -526,7 +527,7 @@ impl Player {
             return InteractionResult::Pass;
         }
 
-        let inventory_access = InventoryAccess::new(self.inventory.clone(), hand);
+        let inventory_access = InventoryAccess::new(Arc::clone(&self.inventory), hand);
         let original_count = inventory_access.with_item(|item| item.count);
         let result = entity.interact(self, hand, location);
 

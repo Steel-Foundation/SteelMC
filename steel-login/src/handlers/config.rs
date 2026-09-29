@@ -81,7 +81,7 @@ impl JavaTcpClient {
         }
         log::debug!("Select known packs packet: {packet:?}");
 
-        let registry_cache = self.server.registry_cache.registry_packets.clone();
+        let registry_cache = Arc::clone(&self.server.registry_cache.registry_packets);
         for encoded_packet in registry_cache.iter() {
             self.send_packet_now(encoded_packet).await;
         }
@@ -113,7 +113,7 @@ impl JavaTcpClient {
 
         let client_info = self.client_information.lock().await.clone();
 
-        let world = self.server.overworld().clone();
+        let world = Arc::clone(self.server.overworld());
         let entity_id = next_entity_id();
 
         let session = Arc::new(PlayerSession::new(
@@ -124,18 +124,18 @@ impl JavaTcpClient {
             self.outgoing_queue.clone(),
             self.cancel_token.clone(),
             self.compression.load(),
-            self.network_writer.clone(),
+            Arc::clone(&self.network_writer),
             self.id,
-            session.clone(),
+            Arc::clone(&session),
         );
         let connection = Arc::new(PlayerConnection::Java(java_connection));
         let player = Arc::new(Player::new(
             gameprofile,
             connection,
-            session.clone(),
+            Arc::clone(&session),
             world,
             Arc::downgrade(&self.server),
-            self.server.config.clone(),
+            Arc::clone(&self.server.config),
             entity_id,
             client_info,
         ));
@@ -144,10 +144,10 @@ impl JavaTcpClient {
             "new client session was already bound to a player"
         );
 
-        let connection = player.connection.clone();
+        let connection = Arc::clone(&player.connection);
         if self
             .connection_updates
-            .send(ConnectionUpdate::Upgrade(connection.clone()))
+            .send(ConnectionUpdate::Upgrade(Arc::clone(&connection)))
             .is_err()
         {
             self.kick("Failed to update connection state".into()).await;

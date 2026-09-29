@@ -35,7 +35,7 @@ fn no_result(_: &CommandContext<String>, _: bool, _: i32) {}
 #[test]
 fn executable_context_uses_runtime_source_and_parsed_arguments() {
     let invocations = Arc::new(SyncMutex::new(Vec::new()));
-    let command_invocations = invocations.clone();
+    let command_invocations = Arc::clone(&invocations);
     let mut dispatcher = CommandDispatcher::new();
     register(
         &mut dispatcher,
@@ -64,7 +64,7 @@ fn executable_context_uses_runtime_source_and_parsed_arguments() {
 #[test]
 fn executable_context_exposes_all_primitive_arguments_and_metadata() {
     let observed = Arc::new(SyncMutex::new(false));
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let mut dispatcher = CommandDispatcher::new();
     let root = dispatcher.root();
     let input = "values true -7 1.5 2.5 'hello world'";
@@ -124,7 +124,7 @@ fn identity_redirects_form_distinct_context_chain_stages() {
 #[test]
 fn redirect_modifier_replaces_the_runtime_source() {
     let sources = Arc::new(SyncMutex::new(Vec::new()));
-    let command_sources = sources.clone();
+    let command_sources = Arc::clone(&sources);
     let mut dispatcher = CommandDispatcher::new();
     register(
         &mut dispatcher,
@@ -149,7 +149,7 @@ fn redirect_modifier_replaces_the_runtime_source() {
 #[test]
 fn forked_execution_counts_successes_instead_of_command_results() {
     let events = Arc::new(SyncMutex::new(Vec::new()));
-    let consumer_events = events.clone();
+    let consumer_events = Arc::clone(&events);
     let mut dispatcher = CommandDispatcher::new();
     register(&mut dispatcher, literal("run").executes(|_| Ok(9)));
     let root = dispatcher.root();
@@ -178,7 +178,7 @@ fn forked_execution_counts_successes_instead_of_command_results() {
 #[test]
 fn forked_command_errors_are_reported_and_suppressed() {
     let events = Arc::new(SyncMutex::new(Vec::new()));
-    let consumer_events = events.clone();
+    let consumer_events = Arc::clone(&events);
     let mut dispatcher = CommandDispatcher::new();
     register(
         &mut dispatcher,
@@ -217,7 +217,7 @@ fn forked_command_errors_are_reported_and_suppressed() {
 #[test]
 fn fork_modifier_errors_are_suppressed_before_the_terminal_stage() {
     let events = Arc::new(SyncMutex::new(Vec::new()));
-    let consumer_events = events.clone();
+    let consumer_events = Arc::clone(&events);
     let mut dispatcher = CommandDispatcher::new();
     register(&mut dispatcher, literal("run").executes(|_| Ok(1)));
     let root = dispatcher.root();
@@ -244,7 +244,7 @@ fn fork_modifier_errors_are_suppressed_before_the_terminal_stage() {
 #[test]
 fn non_forked_command_errors_are_reported_and_propagated() {
     let events = Arc::new(SyncMutex::new(Vec::new()));
-    let consumer_events = events.clone();
+    let consumer_events = Arc::clone(&events);
     let mut dispatcher = CommandDispatcher::new();
     register(
         &mut dispatcher,

@@ -333,7 +333,7 @@ impl Player {
             for world in self.server().worlds.values() {
                 world.broadcast_chat(
                     chat_packet.clone(),
-                    player.clone(),
+                    Arc::<Player>::clone(&player),
                     last_seen.clone(),
                     Some(&sig_array),
                 );

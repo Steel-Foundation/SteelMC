@@ -44,7 +44,7 @@ fn pig_mob_ai_increments_no_action_time() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let pig_entity: SharedEntity = pig.clone();
+    let pig_entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
 
     pig.set_no_action_time(12);
     Mob::mob_server_ai_step(pig.as_ref(), &pig_entity);
@@ -219,7 +219,7 @@ fn pig_growth_skips_position_fudging_until_after_first_tick() {
     assert_eq!(pig.base().dimensions(), vanilla_entities::PIG.dimensions);
     assert_eq!(pig.position(), initial_position);
 
-    pig.clone().tick();
+    Arc::<PigEntity>::clone(&pig).tick();
 
     assert!(!pig.is_first_tick());
     assert_eq!(pig.position(), initial_position);

@@ -348,7 +348,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .bounding_box()
             .expand_towards(self.velocity())
             .inflate(1.0);
-        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| owner.clone());
+        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| Arc::clone(&owner));
         let mut to_check = vec![root_vehicle];
         let mut visited = Vec::new();
 
@@ -592,8 +592,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         true,
                     );
                 }
-                self.clone()
-                    .on_hit_entity(&entity_hit.entity, entity_hit.location);
+                Arc::<Self>::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
                 if let Some(world) = world {
                     world.game_event_at(
                         &vanilla_game_events::PROJECTILE_LAND,
@@ -603,7 +602,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                 }
             }
             ProjectileHit::Block { hit, .. } => {
-                self.clone().on_hit_block(hit);
+                Arc::<Self>::clone(&self).on_hit_block(hit);
                 if let Some(world) = world {
                     let state = world.get_block_state(hit.block_pos);
                     world.game_event(
@@ -717,7 +716,7 @@ where
     );
 
     let entity = create(spawn_pos);
-    let owner: SharedEntity = player.clone();
+    let owner: SharedEntity = Arc::<Player>::clone(player);
     entity.set_owner_entity(Some(&owner));
     entity.set_item_clamped(item_stack.clone());
 
@@ -725,7 +724,7 @@ where
     entity.shoot_from_rotation(player.as_ref(), player_pitch, yaw, 0.0, power, uncertainty);
 
     let entity: SharedEntity = Arc::new(entity);
-    if let Err(error) = world.try_add_entity(entity.clone()) {
+    if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
         log::debug!("failed to spawn throwable item projectile: {error}");
         return None;
     }
@@ -1020,7 +1019,7 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = world_border_projectile_test_world().clone();
+        let world = Arc::clone(world_border_projectile_test_world());
         let firework = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             3,
@@ -1046,7 +1045,7 @@ mod tests {
     fn firework_deflects_without_exploding_on_deflecting_entity() {
         init_vanilla_registry();
 
-        let world = test_world().clone();
+        let world = Arc::clone(test_world());
         let firework = Arc::new(FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             4,
@@ -1061,12 +1060,12 @@ mod tests {
             &vanilla_entities::BREEZE,
         );
 
-        let deflection = firework
-            .clone()
-            .hit_target_or_deflect_self(&ProjectileHit::Entity(EntityHitResult {
+        let deflection = Arc::<FireworkRocketEntity>::clone(&firework).hit_target_or_deflect_self(
+            &ProjectileHit::Entity(EntityHitResult {
                 entity: deflector,
                 location: DVec3::X,
-            }));
+            }),
+        );
 
         assert_eq!(deflection, ProjectileDeflection::Reverse);
         assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
@@ -1080,8 +1079,8 @@ mod tests {
         init_block_entities();
         init_behaviors();
 
-        let world = test_world().clone();
-        let chunk_map = world.chunk_map.clone();
+        let world = Arc::clone(test_world());
+        let chunk_map = Arc::clone(&world.chunk_map);
         let pos = BlockPos::new(1_136, 64, 1_136);
         let block_callback_test =
             chunk_map.with_full_chunks_in_radius(ChunkPos::from_block_pos(pos), 0, || {

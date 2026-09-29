@@ -312,11 +312,11 @@ mod tests {
     fn custom_slot_safe_insert_override_survives_erasure() {
         init_vanilla_registry();
         let container = SimpleContainer::new(1).into_shared();
-        let container_ref = ContainerRef::from(container.clone());
+        let container_ref = ContainerRef::from(Arc::clone(&container));
         let called = Arc::new(AtomicBool::new(false));
         let slot: Box<dyn Slot> = Box::new(SafeInsertOverrideSlot {
             base: NormalSlot::new(container_ref.clone(), 0),
-            called: called.clone(),
+            called: Arc::clone(&called),
         });
         assert!(slot.downcast_ref::<SafeInsertOverrideSlot>().is_some());
         let mut guard = ContainerLockGuard::lock_all(&[container_ref]);

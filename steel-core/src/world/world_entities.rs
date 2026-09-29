@@ -48,7 +48,7 @@ impl World {
                 .iter()
                 .any(|world| Arc::ptr_eq(world, target_world))
         {
-            memberships.push(target_world.clone());
+            memberships.push(Arc::clone(target_world));
         }
         if memberships.is_empty() {
             return false;
@@ -85,7 +85,7 @@ impl World {
         self: &Arc<Self>,
         player: &Arc<Player>,
     ) -> Result<(), AddEntityError> {
-        let entity: SharedEntity = player.clone();
+        let entity: SharedEntity = Arc::<Player>::clone(player);
         let lifecycle = self
             .entity_manager()
             .add_live_entity(entity, EntityOwnership::External)?;
@@ -158,9 +158,9 @@ impl World {
     ) -> bool {
         let installed = if let Some(expected_old_player) = expected_old_player {
             self.players
-                .replace_player(expected_old_player, player.clone())
+                .replace_player(expected_old_player, Arc::<Player>::clone(&player))
         } else {
-            self.players.insert(player.clone())
+            self.players.insert(Arc::<Player>::clone(&player))
         };
         if !installed {
             return false;
@@ -169,7 +169,7 @@ impl World {
         if let Err(error) = self.try_register_player_entity(&player) {
             let rolled_back = if let Some(expected_old_player) = expected_old_player {
                 self.players
-                    .replace_player(&player, expected_old_player.clone())
+                    .replace_player(&player, Arc::<Player>::clone(expected_old_player))
             } else {
                 self.players.remove_player_sync(&player).is_some()
             };
@@ -274,7 +274,7 @@ impl World {
         }
 
         let detached_player = if retain_player_map_entry {
-            player.clone()
+            Arc::<Player>::clone(player)
         } else {
             let Some(detached_player) = self.players.remove_player_sync(player) else {
                 return false;
@@ -328,7 +328,7 @@ impl World {
         if Self::reject_duplicate_player_membership(&player, self, "world change") {
             return false;
         }
-        if !self.players.insert(player.clone()) {
+        if !self.players.insert(Arc::clone(&player)) {
             player.connection.close();
             return false;
         }

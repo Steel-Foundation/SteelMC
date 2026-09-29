@@ -1,3 +1,5 @@
+use crate::player::Player;
+
 use std::path::Path;
 use std::sync::Arc;
 use steel_utils::Identifier;
@@ -24,11 +26,12 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
     for _ in 0..other_domain_start_time {
         second.advance_domain_game_times();
     }
-    let primary = first.default_world("clock_a").expect("primary").clone();
-    let derived = first
-        .get(&steel_utils::Identifier::new_static("clock_a", "derived"))
-        .expect("derived")
-        .clone();
+    let primary = Arc::clone(first.default_world("clock_a").expect("primary"));
+    let derived = Arc::clone(
+        first
+            .get(&steel_utils::Identifier::new_static("clock_a", "derived"))
+            .expect("derived"),
+    );
     let domains: Vec<_> = [&first, &second]
         .iter()
         .map(|map| ResolvedDomainConfig {
@@ -52,9 +55,9 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         .await
         .expect("server");
         let workers = WorldTickWorkers::spawn(server.worlds.values()).expect("workers");
-        let player = test_player(&server, primary.clone());
-        assert!(server.online_players.insert(player.clone()));
-        assert!(primary.add_player(player.clone(), ResetReason::InitialJoin));
+        let player = test_player(&server, Arc::clone(&primary));
+        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
+        assert!(primary.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
         let attacker = TestEntity::shared(
             next_entity_id(),
             DVec3::ZERO,
@@ -76,7 +79,7 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
                 .expect("tick");
         }
         assert!(player.last_damage_source().is_some());
-        player.reset(derived.clone(), ResetReason::WorldChange);
+        player.reset(Arc::clone(&derived), ResetReason::WorldChange);
         assert!(
             player.last_damage_source().is_some(),
             "same-domain transfer preserves history"
@@ -158,12 +161,12 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
         .build()
         .expect("runtime");
     runtime.block_on(async {
-        let server = test_server(primary.clone(), PermissionSubjectIndex::new())
+        let server = test_server(Arc::clone(primary), PermissionSubjectIndex::new())
             .await
             .expect("server");
         let (player, packets) =
-            test_player_with_packets(&server, derived.clone(), "ClockTest", next_entity_id());
-        assert!(derived.add_player(player.clone(), ResetReason::InitialJoin));
+            test_player_with_packets(&server, Arc::clone(derived), "ClockTest", next_entity_id());
+        assert!(derived.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
         packets.lock().clear();
         let periodic_sync_tick = 20;
         for _ in 0..periodic_sync_tick {
@@ -223,7 +226,7 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
             };
             let start = async || {
                 Server::new(
-                    runtime.clone(),
+                    Arc::clone(runtime),
                     CancellationToken::new(),
                     config(),
                     primary_last_worlds_config(&root),
@@ -417,7 +420,7 @@ fn game_time_rejects_ephemeral_primary_before_touching_derived_save() {
             config.services_server = Some(UNROUTABLE_SERVICES.to_owned());
             let cancel = CancellationToken::new();
             let result = Server::new(
-                runtime.clone(),
+                Arc::clone(runtime),
                 cancel.clone(),
                 config,
                 worlds_config,

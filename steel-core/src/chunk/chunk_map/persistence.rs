@@ -1,5 +1,5 @@
 use super::{
-    Arc, Chunk, ChunkHolder, ChunkMap, ChunkPos, ChunkSaveDependency, ChunkStatus, ChunkStorage,
+    Arc, Chunk, ChunkHolder, ChunkMap, ChunkSaveDependency, ChunkStatus, ChunkStorage,
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
@@ -11,8 +11,8 @@ impl ChunkMap {
         chunk_holder: &Arc<ChunkHolder>,
     ) -> Option<PreparedChunkSave> {
         let (sender, receiver) = oneshot::channel();
-        let map = self.clone();
-        let holder = chunk_holder.clone();
+        let map = Arc::clone(self);
+        let holder = Arc::clone(chunk_holder);
         self.chunk_encoding_pool.spawn(move || {
             let chunk_pos = holder.get_pos();
             let prepared = {
@@ -45,12 +45,12 @@ impl ChunkMap {
                     None
                 };
 
+                let prepared = save_preparation.finish(prepared).flatten();
+
                 if prepared.is_none() && dirty {
                     chunk_guard.mark_dirty();
                 }
 
-                // Revival need not wait for encoding or disk I/O once this owned input exists.
-                drop(save_preparation);
                 prepared
             };
 
@@ -120,22 +120,16 @@ impl ChunkMap {
     /// Processes chunks that are pending unload.
     ///
     /// Iterates over `unloading_chunks`. For each chunk with `strong_count == 1`:
-    /// - If staged to revive at the next lifecycle boundary: keep
     /// - If dirty: spawn save task (keep until saved and clean)
     /// - If not dirty: release region handle and remove
-    #[instrument(level = "trace", skip(self, staged_revivals))]
-    pub(super) fn process_unloads(self: &Arc<Self>, staged_revivals: &FxHashSet<ChunkPos>) {
+    #[instrument(level = "trace", skip(self))]
+    pub(super) fn process_unloads(self: &Arc<Self>) {
         self.propagate_queued_light_changes();
 
         let mut finalized = Vec::new();
         {
             let light_updates = self.light_updates.lock();
             self.unloading_chunks.retain_sync(|pos, holder| {
-                // Prepared ticket changes publish only at the next lifecycle boundary.
-                if staged_revivals.contains(pos) {
-                    return true;
-                }
-
                 if light_updates.touches_chunk(*pos) {
                     return true;
                 }
@@ -155,8 +149,8 @@ impl ChunkMap {
 
                 if is_dirty || has_save_pending_entities {
                     let save_dependency = holder.add_save_dependency();
-                    let holder_clone = holder.clone();
-                    let map_clone = self.clone();
+                    let holder_clone = Arc::clone(holder);
+                    let map_clone = Arc::clone(self);
                     self.task_tracker.spawn_on(
                         async move {
                             map_clone.save_chunk(&holder_clone, save_dependency).await;
@@ -167,7 +161,7 @@ impl ChunkMap {
                 }
 
                 let has_chunk = holder.try_chunk(ChunkStatus::Empty).is_some();
-                finalized.push((*pos, holder.clone(), has_chunk));
+                finalized.push((*pos, Arc::clone(holder), has_chunk));
                 false
             });
         }
@@ -192,7 +186,7 @@ impl ChunkMap {
             self.finalized_block_entity_unloads
                 .lock()
                 .push(FinalizedBlockEntityUnload {
-                    holder: holder.clone(),
+                    holder: Arc::clone(&holder),
                     lifecycle_dispatchers: cleared.lifecycle_dispatchers,
                     positions: cleared.positions,
                 });
@@ -200,7 +194,7 @@ impl ChunkMap {
             world.unregister_full_chunk_ticks(pos);
             world.on_entity_chunk_unload_finalized(pos);
             if has_chunk {
-                let map_clone = self.clone();
+                let map_clone = Arc::clone(self);
                 self.task_tracker.spawn_on(
                     async move {
                         if let Err(e) = map_clone.storage.release_chunk(pos).await {
@@ -236,11 +230,11 @@ impl ChunkMap {
         let all_chunks: Vec<Arc<ChunkHolder>> = {
             let mut chunks = Vec::new();
             self.chunks.iter_sync(|_, holder| {
-                chunks.push(holder.clone());
+                chunks.push(Arc::clone(holder));
                 true
             });
             self.unloading_chunks.iter_sync(|_, holder| {
-                chunks.push(holder.clone());
+                chunks.push(Arc::clone(holder));
                 true
             });
             chunks

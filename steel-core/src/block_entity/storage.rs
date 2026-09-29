@@ -90,7 +90,7 @@ impl BlockEntityStorage {
     pub(crate) fn lookup(&self, pos: BlockPos) -> BlockEntityLookup {
         let entries = self.entries.read();
         if let Some(block_entity) = entries.entities.get(&pos) {
-            BlockEntityLookup::Concrete(block_entity.clone())
+            BlockEntityLookup::Concrete(Arc::clone(block_entity))
         } else if entries.pending.contains(&pos) {
             BlockEntityLookup::Pending
         } else {
@@ -187,7 +187,7 @@ impl BlockEntityStorage {
         {
             return false;
         }
-        entries.entities.insert(pos, block_entity.clone());
+        entries.entities.insert(pos, Arc::clone(block_entity));
         true
     }
 
@@ -216,7 +216,7 @@ impl BlockEntityStorage {
         };
         let mut lifecycle_dispatchers = LifecycleDispatchers::new();
         if dispatch {
-            lifecycle_dispatchers.push(expected.clone());
+            lifecycle_dispatchers.push(Arc::clone(expected));
         }
         Some(lifecycle_dispatchers)
     }
@@ -268,7 +268,7 @@ impl BlockEntityStorage {
         };
         let mut lifecycle_dispatchers = LifecycleDispatchers::new();
         if dispatch_removed && let Some(entity) = &removed {
-            lifecycle_dispatchers.push(entity.clone());
+            lifecycle_dispatchers.push(Arc::clone(entity));
         }
         (removed.is_some() || removed_pending, lifecycle_dispatchers)
     }
@@ -363,7 +363,7 @@ impl BlockEntityStorage {
                 let dispatch_clear = block_entity.base().queue_clear_removed();
                 let removed = entries
                     .entities
-                    .insert(pos, block_entity.clone())
+                    .insert(pos, Arc::clone(block_entity))
                     .map(|old| {
                         let dispatch = old.base().queue_set_removed();
                         (old, dispatch)
@@ -373,7 +373,7 @@ impl BlockEntityStorage {
         };
         let mut lifecycle_dispatchers = LifecycleDispatchers::new();
         if dispatch_new {
-            lifecycle_dispatchers.push(block_entity.clone());
+            lifecycle_dispatchers.push(Arc::clone(block_entity));
         }
         if let Some((old, true)) = removed {
             lifecycle_dispatchers.push(old);
@@ -392,17 +392,17 @@ impl BlockEntityStorage {
         let dispatch_new = {
             let mut entries = self.entries.write();
             if let Some(existing) = entries.entities.get(&pos) {
-                return BlockEntityInsert::Existing(existing.clone());
+                return BlockEntityInsert::Existing(Arc::clone(existing));
             }
             entries.pending.remove(&pos);
             let dispatch_state = block_entity.base().queue_block_state_change(block_state);
             let dispatch_clear = block_entity.base().queue_clear_removed();
-            entries.entities.insert(pos, block_entity.clone());
+            entries.entities.insert(pos, Arc::clone(block_entity));
             dispatch_state || dispatch_clear
         };
         let mut lifecycle_dispatchers = LifecycleDispatchers::new();
         if dispatch_new {
-            lifecycle_dispatchers.push(block_entity.clone());
+            lifecycle_dispatchers.push(Arc::clone(block_entity));
         }
         BlockEntityInsert::Inserted(lifecycle_dispatchers)
     }
@@ -421,7 +421,7 @@ impl BlockEntityStorage {
         let dispatch_new = {
             let mut entries = self.entries.write();
             if let Some(existing) = entries.entities.get(&pos) {
-                return (Some(existing.clone()), LifecycleDispatchers::new());
+                return (Some(Arc::clone(existing)), LifecycleDispatchers::new());
             }
             if !entries.pending.remove(&pos) {
                 return (None, LifecycleDispatchers::new());
@@ -429,12 +429,12 @@ impl BlockEntityStorage {
             let dispatch_state = block_state
                 .is_some_and(|state| block_entity.base().queue_block_state_change(state));
             let dispatch_clear = update_lifecycle && block_entity.base().queue_clear_removed();
-            entries.entities.insert(pos, block_entity.clone());
+            entries.entities.insert(pos, Arc::clone(&block_entity));
             dispatch_state || dispatch_clear
         };
         let mut lifecycle_dispatchers = LifecycleDispatchers::new();
         if dispatch_new {
-            lifecycle_dispatchers.push(block_entity.clone());
+            lifecycle_dispatchers.push(Arc::clone(&block_entity));
         }
         (Some(block_entity), lifecycle_dispatchers)
     }
@@ -481,7 +481,7 @@ impl BlockEntityStorage {
         };
         let mut lifecycle_dispatchers = LifecycleDispatchers::new();
         if dispatch_state {
-            lifecycle_dispatchers.push(block_entity.clone());
+            lifecycle_dispatchers.push(Arc::clone(block_entity));
         }
         (true, lifecycle_dispatchers)
     }
@@ -527,7 +527,7 @@ impl BlockEntityStorage {
         for (&pos, entity) in &entries.entities {
             positions.push(pos);
             if entity.base().queue_set_removed() {
-                lifecycle_dispatchers.push(entity.clone());
+                lifecycle_dispatchers.push(Arc::clone(entity));
             }
         }
         entries.entities.clear();
@@ -626,8 +626,8 @@ mod tests {
         assert!(concrete.is_empty());
         assert_eq!(pending, [entity.get_block_pos()]);
 
-        storage.add_and_register(entity.clone());
-        storage.add_and_register(entity.clone());
+        storage.add_and_register(Arc::clone(&entity));
+        storage.add_and_register(Arc::clone(&entity));
 
         assert_eq!(storage.len(), 1);
         assert!(!entity.is_removed());
@@ -645,9 +645,9 @@ mod tests {
             BlockPos::new(1, 2, 3),
             vanilla_blocks::OAK_SIGN.default_state(),
         ));
-        storage.add_and_register(entity.clone());
+        storage.add_and_register(Arc::clone(&entity));
         entity.set_removed();
-        storage.add_and_register(entity.clone());
+        storage.add_and_register(Arc::clone(&entity));
 
         assert!(!storage.remove_if_same_and_removed(entity.get_block_pos(), &entity));
         let Some(current) = storage.get(entity.get_block_pos()) else {
@@ -665,7 +665,7 @@ mod tests {
         let state = vanilla_blocks::OAK_SIGN.default_state();
         let owner: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, state));
         let challenger: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, state));
-        storage.add_and_register(owner.clone());
+        storage.add_and_register(Arc::clone(&owner));
 
         let result = storage.insert_if_absent_staged(&challenger, state);
         let BlockEntityInsert::Existing(existing) = result else {
@@ -691,7 +691,7 @@ mod tests {
             reenter_on_remove: AtomicBool::new(true),
             events: SyncMutex::new(Vec::new()),
         });
-        let entity: SharedBlockEntity = concrete.clone();
+        let entity: SharedBlockEntity = Arc::<ReentrantLifecycleBlockEntity>::clone(&concrete);
         let storage = BlockEntityStorage::new();
         storage.add_and_register(entity);
 
@@ -734,9 +734,9 @@ mod tests {
             reenter_on_remove: AtomicBool::new(false),
             events: SyncMutex::new(Vec::new()),
         });
-        let entity: SharedBlockEntity = concrete.clone();
+        let entity: SharedBlockEntity = Arc::<ReentrantLifecycleBlockEntity>::clone(&concrete);
         let storage = BlockEntityStorage::new();
-        storage.add_and_register(entity.clone());
+        storage.add_and_register(Arc::clone(&entity));
 
         let detached = storage.detach_and_queue_removal(entity.get_block_pos());
         let Some(detached_entity) = detached.entity else {
@@ -776,9 +776,9 @@ mod tests {
             reenter_on_remove: AtomicBool::new(false),
             events: SyncMutex::new(Vec::new()),
         });
-        let entity: SharedBlockEntity = concrete.clone();
+        let entity: SharedBlockEntity = Arc::<ReentrantLifecycleBlockEntity>::clone(&concrete);
         let storage = BlockEntityStorage::new();
-        storage.add_and_register(entity.clone());
+        storage.add_and_register(Arc::clone(&entity));
 
         let (_, lifecycle_dispatchers) = storage.add_staged(&entity, exposed);
         assert_eq!(entity.get_block_state(), exposed);

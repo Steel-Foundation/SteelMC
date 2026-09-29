@@ -17,7 +17,7 @@ fn aabb_matching_query_filters_accessible_entities() {
     );
     assert!(
         manager
-            .add_live_entity(second.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&second), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(matches!(
@@ -42,7 +42,8 @@ fn visibility_transitions_separate_tracking_and_ticking() {
     assert!(result.ticking_started.is_empty());
 
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
-    let changes = match manager.add_live_entity(entity.clone(), EntityOwnership::ManagerOwned) {
+    let changes = match manager.add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+    {
         Ok(changes) => changes,
         Err(error) => panic!("entity should register in active hidden chunk: {error}"),
     };
@@ -149,7 +150,7 @@ fn nearest_aabb_matching_query_returns_closest_match() {
     let near_filtered_out = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let near_match = entity(2, 2, DVec3::new(3.0, 64.0, 1.0));
     let far_match = entity(3, 3, DVec3::new(8.0, 64.0, 1.0));
-    for entity in [near_filtered_out, near_match.clone(), far_match] {
+    for entity in [near_filtered_out, Arc::clone(&near_match), far_match] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -178,7 +179,7 @@ fn accessible_entities_keep_tracking_start_order() {
     let first = entity(30, 30, DVec3::new(1.0, 80.0, 1.0));
     let second = entity(10, 10, DVec3::new(17.0, 64.0, 1.0));
     let third = entity(20, 20, DVec3::new(2.0, 64.0, 1.0));
-    for entity in [first.clone(), second.clone(), third.clone()] {
+    for entity in [Arc::clone(&first), Arc::clone(&second), Arc::clone(&third)] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -217,8 +218,8 @@ fn aabb_queries_use_vanilla_section_order_then_section_insertion_order() {
     let second_same_section = entity(3, 3, DVec3::new(2.0, 64.0, 1.0));
     for entity in [
         later_section,
-        first_same_section.clone(),
-        second_same_section.clone(),
+        Arc::clone(&first_same_section),
+        Arc::clone(&second_same_section),
     ] {
         assert!(
             manager
@@ -243,7 +244,7 @@ fn spatial_cell_reentry_preserves_section_insertion_order() {
 
     let first = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let second = entity(2, 2, DVec3::new(1.5, 64.0, 1.0));
-    for entity in [first.clone(), second] {
+    for entity in [Arc::clone(&first), second] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -271,7 +272,7 @@ fn spatial_query_candidates_skip_distant_entities_in_the_same_section() {
 
     let nearby = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let distant = entity(2, 2, DVec3::new(13.0, 64.0, 1.0));
-    for entity in [nearby.clone(), distant] {
+    for entity in [Arc::clone(&nearby), distant] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)
@@ -300,7 +301,7 @@ fn bounding_box_change_updates_spatial_index_without_position_change() {
     let old_bounds = entity.bounding_box();
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -322,7 +323,7 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -330,15 +331,15 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     let release_first_callback = Arc::new(Barrier::new(2));
     entity.set_level_callback(Arc::new(DelayedFirstBoundsCallback {
         entity_id: entity.id(),
-        manager: manager.clone(),
-        first_callback_entered: first_callback_entered.clone(),
-        release_first_callback: release_first_callback.clone(),
+        manager: Arc::<WorldEntityManager>::clone(&manager),
+        first_callback_entered: Arc::clone(&first_callback_entered),
+        release_first_callback: Arc::clone(&release_first_callback),
         callback_count: AtomicUsize::new(0),
     }));
 
     let stale_bounds = WorldAabb::new(4.0, 64.0, 0.0, 5.0, 65.0, 1.0);
     let current_bounds = WorldAabb::new(8.0, 64.0, 0.0, 9.0, 65.0, 1.0);
-    let first_entity = entity.clone();
+    let first_entity = Arc::clone(&entity);
     let first_update = thread::spawn(move || {
         first_entity.base().set_bounding_box(stale_bounds);
     });

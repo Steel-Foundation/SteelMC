@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 use crate::chunk::chunk_request::{ChunkRequestLease, ChunkTicketKind};
 use futures::FutureExt;
@@ -21,7 +23,7 @@ fn dropping_pending_radius_request_preserves_pearl_simulation() {
     assert!(request.as_mut().now_or_never().is_none());
     let edge_holder = chunk_map
         .chunks
-        .read_sync(&edge, |_, holder| holder.clone())
+        .read_sync(&edge, |_, holder| Arc::clone(holder))
         .expect("the radius request should load its outer edge");
     assert_eq!(edge_holder.load_level(), Some(ChunkTicketLevel::FULL_CHUNK));
 
@@ -32,7 +34,7 @@ fn dropping_pending_radius_request_preserves_pearl_simulation() {
     assert!(edge_holder.load_level().is_none_or(|level| !is_full(level)));
     let pearl_holder = chunk_map
         .chunks
-        .read_sync(&center, |_, holder| holder.clone())
+        .read_sync(&center, |_, holder| Arc::clone(holder))
         .expect("the pearl ticket must retain its center");
     assert_eq!(
         pearl_holder.load_level(),
@@ -78,7 +80,7 @@ fn cancelling_handle_releases_once_and_preserves_another_lease() {
     chunk_map.stop_generation_refill_loop();
     let _runtime = chunk_map.chunk_runtime.enter();
     let lease = ChunkRequestLease::new(
-        chunk_map.clone(),
+        Arc::clone(chunk_map),
         Box::new([center]),
         ChunkTicketLevel::FULL_CHUNK,
     );
@@ -86,7 +88,7 @@ fn cancelling_handle_releases_once_and_preserves_another_lease() {
     chunk_map.advance_scheduling();
     let holder = chunk_map
         .chunks
-        .read_sync(&center, |_, holder| holder.clone())
+        .read_sync(&center, |_, holder| Arc::clone(holder))
         .expect("the requests should load their center");
 
     request.cancel();

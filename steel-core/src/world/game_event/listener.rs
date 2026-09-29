@@ -214,7 +214,7 @@ impl SectionListeners {
         let is_registered = contains_listener(&self.listeners, listener)
             || contains_listener(&self.pending_additions, listener);
         if !contains_listener(&self.pending_removals, listener) {
-            self.pending_removals.push(listener.clone());
+            self.pending_removals.push(Arc::clone(listener));
         }
         (is_registered, None)
     }
@@ -464,7 +464,7 @@ impl GameEventListenerStorage {
                         section_listeners.pending_removal_indices.push(index);
                         NextListener::Removed(removed)
                     } else {
-                        NextListener::Found(listener.clone())
+                        NextListener::Found(Arc::clone(listener))
                     }
                 }
             };
@@ -573,7 +573,7 @@ mod tests {
     impl Drop for ReentrantDropListener {
         fn drop(&mut self) {
             if let Some(storage) = self.storage.upgrade() {
-                storage.register(self.section_y, self.replacement.clone());
+                storage.register(self.section_y, Arc::clone(&self.replacement));
             }
         }
     }
@@ -637,11 +637,11 @@ mod tests {
 
         storage.register(
             SectionPos::from_block_pos(BlockPos::new(2, 64, 0)).y(),
-            near.clone(),
+            Arc::clone(&near),
         );
         storage.register(
             SectionPos::from_block_pos(BlockPos::new(15, 64, 0)).y(),
-            far.clone(),
+            Arc::clone(&far),
         );
 
         let matches = storage.collect_in_range(DVec3::new(0.5, 64.5, 0.5), 64);
@@ -659,7 +659,7 @@ mod tests {
         });
         let section_pos = SectionPos::new(0, 4, 0);
 
-        storage.register(section_pos.y(), listener.clone());
+        storage.register(section_pos.y(), Arc::clone(&listener));
 
         assert!(storage.unregister(section_pos.y(), &listener));
         assert!(
@@ -677,8 +677,8 @@ mod tests {
             radius: 16,
         });
         let section_y = SectionPos::block_to_section_coord(64);
-        storage.register(section_y, listener.clone());
-        storage.register(section_y, listener.clone());
+        storage.register(section_y, Arc::clone(&listener));
+        storage.register(section_y, Arc::clone(&listener));
 
         assert_eq!(
             storage
@@ -698,14 +698,14 @@ mod tests {
     #[test]
     fn repeated_deferred_unregister_decrements_physical_count_once() {
         let listener_count = GameEventListenerCount::shared();
-        let storage = GameEventListenerStorage::with_count(listener_count.clone());
+        let storage = GameEventListenerStorage::with_count(Arc::clone(&listener_count));
         let listener: SharedGameEventListener = Arc::new(FixedListener {
             pos: DVec3::new(0.0, 64.0, 0.0),
             radius: 16,
         });
         let section_y = SectionPos::block_to_section_coord(64);
-        storage.register(section_y, listener.clone());
-        storage.register(section_y, listener.clone());
+        storage.register(section_y, Arc::clone(&listener));
+        storage.register(section_y, Arc::clone(&listener));
         assert_eq!(listener_count.get(), 2);
 
         let mut requested = false;
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn canceling_pending_addition_restores_physical_count() {
         let listener_count = GameEventListenerCount::shared();
-        let storage = GameEventListenerStorage::with_count(listener_count.clone());
+        let storage = GameEventListenerStorage::with_count(Arc::clone(&listener_count));
         let existing: SharedGameEventListener = Arc::new(FixedListener {
             pos: DVec3::new(0.0, 64.0, 0.0),
             radius: 16,
@@ -741,10 +741,10 @@ mod tests {
             radius: 16,
         });
         let section_y = SectionPos::block_to_section_coord(64);
-        storage.register(section_y, existing.clone());
+        storage.register(section_y, Arc::clone(&existing));
 
         storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), section_y, section_y, |_| {
-            storage.register(section_y, added.clone());
+            storage.register(section_y, Arc::clone(&added));
             assert_eq!(listener_count.get(), 2);
             assert!(storage.unregister(section_y, &added));
         });
@@ -759,13 +759,13 @@ mod tests {
     fn dropping_retained_registry_releases_physical_count() {
         let listener_count = GameEventListenerCount::shared();
         {
-            let storage = GameEventListenerStorage::with_count(listener_count.clone());
+            let storage = GameEventListenerStorage::with_count(Arc::clone(&listener_count));
             let listener: SharedGameEventListener = Arc::new(FixedListener {
                 pos: DVec3::new(0.0, 64.0, 0.0),
                 radius: 16,
             });
             let section_y = SectionPos::block_to_section_coord(64);
-            storage.register(section_y, listener.clone());
+            storage.register(section_y, Arc::clone(&listener));
             storage.register(section_y, listener);
             assert_eq!(listener_count.get(), 2);
         }
@@ -782,7 +782,7 @@ mod tests {
 
         storage.register(
             SectionPos::from_block_pos(BlockPos::new(0, 64, 0)).y(),
-            listener.clone(),
+            Arc::clone(&listener),
         );
 
         let matches = storage.collect_in_range(DVec3::new(0.9, 64.5, 0.5), 16);
@@ -808,9 +808,9 @@ mod tests {
             radius: 16,
         });
 
-        storage.register(section_pos.y(), first.clone());
-        storage.register(section_pos.y(), second.clone());
-        storage.register(section_pos.y(), third.clone());
+        storage.register(section_pos.y(), Arc::clone(&first));
+        storage.register(section_pos.y(), Arc::clone(&second));
+        storage.register(section_pos.y(), Arc::clone(&third));
 
         let mut visited = Vec::new();
         storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), 3, 5, |queued| {
@@ -847,12 +847,12 @@ mod tests {
             radius: 16,
         });
 
-        storage.register(section_pos.y(), first.clone());
+        storage.register(section_pos.y(), Arc::clone(&first));
 
         let mut visited = Vec::new();
         storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), 3, 5, |queued| {
             if Arc::ptr_eq(&queued.listener, &first) {
-                storage.register(section_pos.y(), added.clone());
+                storage.register(section_pos.y(), Arc::clone(&added));
                 visited.push(1);
             } else if Arc::ptr_eq(&queued.listener, &added) {
                 visited.push(2);
@@ -878,7 +878,7 @@ mod tests {
             radius: 16,
         });
 
-        storage.register(section_pos.y(), listener.clone());
+        storage.register(section_pos.y(), Arc::clone(&listener));
 
         let mut visited = 0;
         storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), 3, 5, |queued| {
@@ -909,8 +909,8 @@ mod tests {
         });
         let listener = Arc::new_cyclic(|self_listener| ReentrantDropListener {
             storage: Arc::downgrade(&storage),
-            self_listener: self_listener.clone(),
-            replacement: replacement.clone(),
+            self_listener: Weak::clone(self_listener),
+            replacement: Arc::clone(&replacement),
             section_y,
         });
         let listener: SharedGameEventListener = listener;
@@ -945,13 +945,13 @@ mod tests {
             pos: left_pos,
             id: 1,
             delivery_mode: GameEventDeliveryMode::Unspecified,
-            events: events.clone(),
+            events: Arc::clone(&events),
         });
         let right: SharedGameEventListener = Arc::new(RecordingListener {
             pos: right_pos,
             id: 2,
             delivery_mode: GameEventDeliveryMode::Unspecified,
-            events: events.clone(),
+            events: Arc::clone(&events),
         });
 
         world.register_game_event_listener(
@@ -985,13 +985,13 @@ mod tests {
             pos: left_pos,
             id: 1,
             delivery_mode: GameEventDeliveryMode::ByDistance,
-            events: events.clone(),
+            events: Arc::clone(&events),
         });
         let right: SharedGameEventListener = Arc::new(RecordingListener {
             pos: right_pos,
             id: 2,
             delivery_mode: GameEventDeliveryMode::ByDistance,
-            events: events.clone(),
+            events: Arc::clone(&events),
         });
 
         world.register_game_event_listener(

@@ -192,9 +192,9 @@ mod tests {
         ));
 
         for entity in [
-            hunter.clone() as SharedEntity,
-            nearer_pig.clone() as SharedEntity,
-            farther_cow.clone() as SharedEntity,
+            Arc::<PigEntity>::clone(&hunter) as SharedEntity,
+            Arc::<PigEntity>::clone(&nearer_pig) as SharedEntity,
+            Arc::<CowEntity>::clone(&farther_cow) as SharedEntity,
         ] {
             world
                 .try_add_entity(entity)

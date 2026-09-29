@@ -325,7 +325,7 @@ fn pathfinder_mob_reads_below_surface_capability_from_navigation() {
 #[test]
 fn mob_server_ai_step_increments_no_action_time() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
 
     mob.set_no_action_time(12);
     mob.mob_server_ai_step(&mob_entity);
@@ -369,7 +369,7 @@ fn mob_control_flags_disable_goals_for_mob_controller() {
 #[test]
 fn mob_control_flags_disable_jump_when_riding_boat() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let boat: SharedEntity = Arc::new(MobControlVehicleEntity::new(2, &vanilla_entities::OAK_BOAT));
     EntityBase::restore_passenger_relationship(&boat, &mob_entity);
 
@@ -384,7 +384,7 @@ fn mob_control_flags_disable_jump_when_riding_boat() {
 #[test]
 fn mob_attack_damage_source_uses_item_damage_type_component() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let spear = ItemStack::new(&vanilla_items::WOODEN_SPEAR);
 
     let source = mob.mob_attack_damage_source(&spear, &mob_entity);
@@ -506,7 +506,7 @@ fn melee_attack_range_uses_vehicle_expanded_attack_box() {
 
     assert!(!mob.is_within_melee_attack_range(&target));
 
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let vehicle: SharedEntity = Arc::new(MobControlVehicleEntity::new(3, &vanilla_entities::PIG));
     EntityBase::restore_passenger_relationship(&vehicle, &mob_entity);
 
@@ -586,7 +586,7 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         None,
         false,
     ));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     mob.attributes()
         .lock()
         .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
@@ -597,7 +597,7 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         false,
     ));
     target.base().set_world(Arc::downgrade(test_world()));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
 
@@ -620,7 +620,7 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         None,
         false,
     ));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     {
         let mut attributes = mob.attributes().lock();
         attributes.set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
@@ -634,7 +634,7 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         false,
     ));
     target.base().set_world(Arc::downgrade(test_world()));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
 
@@ -702,7 +702,7 @@ fn mob_tick_leash_applies_default_elastic_pull() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&holder);
     assert!(mob.set_leashed_to(&holder_entity));
 
     mob.tick_leash();
@@ -797,7 +797,10 @@ fn looting_collects_nearby_item_into_main_hand() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
+    for entity in [
+        Arc::<PigEntity>::clone(&mob) as SharedEntity,
+        Arc::<ItemEntity>::clone(&item) as SharedEntity,
+    ] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");
@@ -840,7 +843,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     ));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
     mob.set_can_pick_up_loot(true);
     mob.set_no_ai(true);
     assert!(
@@ -857,7 +860,10 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
+    for entity in [
+        Arc::<PigEntity>::clone(&mob) as SharedEntity,
+        Arc::<ItemEntity>::clone(&item) as SharedEntity,
+    ] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");
@@ -903,7 +909,10 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
+    for entity in [
+        Arc::<PigEntity>::clone(&mob) as SharedEntity,
+        Arc::<ItemEntity>::clone(&item) as SharedEntity,
+    ] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");
@@ -994,7 +1003,7 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
         Arc::downgrade(&world),
     ));
     world
-        .try_add_entity(mob.clone() as SharedEntity)
+        .try_add_entity(Arc::<PigEntity>::clone(&mob) as SharedEntity)
         .expect("test mob should attach to the loaded chunk");
 
     // Wear a leather helmet and force it to always drop, so the swap is
@@ -1157,7 +1166,10 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
     ));
     item.set_no_pickup_delay();
 
-    for entity in [mob.clone() as SharedEntity, item.clone() as SharedEntity] {
+    for entity in [
+        Arc::<PigEntity>::clone(&mob) as SharedEntity,
+        Arc::<ItemEntity>::clone(&item) as SharedEntity,
+    ] {
         world
             .try_add_entity(entity)
             .expect("test entity should attach to the loaded chunk");

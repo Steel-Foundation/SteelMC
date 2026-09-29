@@ -148,7 +148,7 @@ impl LeashFenceKnotEntity {
             pos,
             Arc::downgrade(world),
         ));
-        if let Err(error) = world.try_add_entity(knot.clone()) {
+        if let Err(error) = world.try_add_entity(Arc::clone(&knot)) {
             log::warn!("Failed to spawn leash knot entity: {error}");
             return None;
         }

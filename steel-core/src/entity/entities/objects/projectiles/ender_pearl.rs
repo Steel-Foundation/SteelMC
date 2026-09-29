@@ -208,7 +208,7 @@ impl EnderPearlEntity {
         }
 
         let transition = TeleportTransition {
-            target_world: world.clone(),
+            target_world: Arc::clone(world),
             position: teleport_pos,
             rotation: (0.0, 0.0),
             velocity: DVec3::ZERO,
@@ -217,7 +217,7 @@ impl EnderPearlEntity {
             as_passenger: false,
             post_transition: TeleportPostTransition::do_nothing(),
         };
-        let Some(new_owner) = change_entity_world(owner.clone(), &transition) else {
+        let Some(new_owner) = change_entity_world(Arc::clone(owner), &transition) else {
             log::debug!("failed to teleport ender pearl owner {}", self.id());
             return;
         };
@@ -266,7 +266,7 @@ impl Entity for EnderPearlEntity {
             return;
         }
 
-        self.clone().throwable_projectile_tick();
+        Arc::<EnderPearlEntity>::clone(&self).throwable_projectile_tick();
 
         if self.is_alive() {
             self.update_ender_pearl_ticket(&world);
@@ -333,7 +333,7 @@ impl Projectile for EnderPearlEntity {
         // Vanilla `ThrownEnderpearl.onHitEntity`: deal 0 damage with a `thrown`
         // source so the hit entity registers the impact without being hurt.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
-            .with_direct_entity(self.clone());
+            .with_direct_entity(Arc::<EnderPearlEntity>::clone(&self));
         if let Some(owner) = self.get_owner() {
             damage = damage.with_causing_entity(owner);
         }
@@ -344,7 +344,7 @@ impl Projectile for EnderPearlEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        self.clone().projectile_on_hit(hit);
+        Arc::<EnderPearlEntity>::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {
@@ -400,6 +400,7 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos};
 
     use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile};
+    use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
 
@@ -476,8 +477,8 @@ mod tests {
 
         let world = fresh_test_world("ender_pearl_ticket_owner");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new((*world).clone(), "Owner", 1).build();
-        let owner: SharedEntity = player.clone();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
+        let owner: SharedEntity = Arc::<Player>::clone(&player);
         let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
@@ -485,7 +486,7 @@ mod tests {
             Arc::downgrade(&world),
         ));
         pearl.set_owner_entity(Some(&owner));
-        let shared_pearl: SharedEntity = pearl.clone();
+        let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
         if let Err(error) = world.try_add_entity(shared_pearl) {
             panic!("test pearl should be added: {error}");
         }

@@ -87,7 +87,7 @@ impl PacketProcessor {
             execution,
             admission_bytes,
             PendingPlayPacket {
-                session: player.session.clone(),
+                session: Arc::clone(&player.session),
                 packet,
             },
         );
@@ -1050,7 +1050,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Arc, mpsc},
+        sync::{Arc, Weak, mpsc},
         thread,
         time::Duration,
     };
@@ -1078,11 +1078,11 @@ mod tests {
     fn replacement_for(player: &Arc<Player>) -> Arc<Player> {
         Arc::new(Player::new(
             player.gameprofile.clone(),
-            player.connection.clone(),
-            player.session.clone(),
+            Arc::clone(&player.connection),
+            Arc::clone(&player.session),
             player.get_world(),
-            player.server.clone(),
-            player.config.clone(),
+            Weak::clone(&player.server),
+            Arc::clone(&player.config),
             player.id(),
             ClientInformation::default(),
         ))
@@ -1114,7 +1114,7 @@ mod tests {
     #[test]
     fn scheduled_respawn_is_retained_if_domain_switch_queues_before_worker_gate() {
         let world = fresh_test_world("scheduled_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new((*world).clone(), "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "RespawnTester", 1).build();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
@@ -1134,13 +1134,13 @@ mod tests {
     #[test]
     fn queued_packets_resolve_the_player_bound_when_they_start() {
         let world = fresh_test_world("packet_session_replacement_resolution");
-        let original = TestPlayerBuilder::new((*world).clone(), "Original", 1).build();
+        let original = TestPlayerBuilder::new(Arc::clone(&(*world)), "Original", 1).build();
         let replacement = replacement_for(&original);
-        let session = original.session.clone();
+        let session = Arc::clone(&original.session);
         let processor = PacketProcessor::new();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
 
-        processor.schedule(original.clone(), packet, 1);
+        processor.schedule(Arc::<Player>::clone(&original), packet, 1);
         let Some(transition) = processor.pause_player_session(&session) else {
             panic!("session packet lane should pause");
         };
@@ -1337,16 +1337,17 @@ mod tests {
     #[test]
     fn pausing_active_player_session_defers_its_tail_until_exact_resume() {
         let world = fresh_test_world("packet_active_session_pause");
-        let player = TestPlayerBuilder::new((*world).clone(), "Paused", 1).build();
-        let unrelated_player = TestPlayerBuilder::new((*world).clone(), "Unrelated", 2).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "Paused", 1).build();
+        let unrelated_player =
+            TestPlayerBuilder::new(Arc::clone(&(*world)), "Unrelated", 2).build();
         let processor = PacketProcessor::new();
         processor.schedule(
-            player.clone(),
+            Arc::<Player>::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             1,
         );
         processor.schedule(
-            player.clone(),
+            Arc::<Player>::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             2,
         );
@@ -1369,12 +1370,12 @@ mod tests {
             panic!("active session lane should pause");
         };
         processor.schedule(
-            player.clone(),
+            Arc::<Player>::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             3,
         );
         processor.schedule(
-            unrelated_player.clone(),
+            Arc::<Player>::clone(&unrelated_player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             4,
         );
@@ -1717,7 +1718,7 @@ mod tests {
         let Some(active_serialized) = queue.try_next() else {
             panic!("first serialized packet should start");
         };
-        let worker_queue = queue.clone();
+        let worker_queue = Arc::clone(&queue);
         let (sender, receiver) = mpsc::channel();
         let worker = thread::spawn(move || {
             for _ in 0..2 {
@@ -2064,7 +2065,7 @@ mod tests {
     #[test]
     fn blocking_worker_only_starts_work_during_the_open_phase() {
         let queue = Arc::new(PacketQueue::new());
-        let worker_queue = queue.clone();
+        let worker_queue = Arc::clone(&queue);
         let (sender, receiver) = mpsc::channel();
         let worker = thread::spawn(move || {
             while let Some(mut work) = worker_queue.next() {

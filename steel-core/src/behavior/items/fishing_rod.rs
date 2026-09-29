@@ -87,7 +87,7 @@ impl ItemBehavior for FishingRodItem {
 
             let entity: SharedEntity = hook;
 
-            if let Err(error) = world.try_add_entity(entity.clone()) {
+            if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
                 entity.set_removed(RemovalReason::Discarded);
                 log::error!("Failed to spawn fishing hook: {error}");
                 return InteractionResult::Fail;
@@ -103,6 +103,7 @@ impl ItemBehavior for FishingRodItem {
 
 #[cfg(test)]
 mod tests {
+    use crate::player::Player;
     use steel_registry::{item_stack::ItemStack, vanilla_items};
     use steel_utils::types::InteractionHand;
     use uuid::Uuid;
@@ -114,13 +115,13 @@ mod tests {
     #[test]
     fn retrieving_grounded_hook_does_not_relock_inventory() {
         let world = fresh_test_world("fishing_rod_grounded_retrieve");
-        let player = TestPlayerBuilder::new((*world).clone(), Uuid::from_u128(1), 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), Uuid::from_u128(1), 1).build();
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
 
-        let player_owner = player.clone();
+        let player_owner = Arc::<Player>::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = Arc::new(FishingHookEntity::new(
             &vanilla_entities::FISHING_BOBBER,
@@ -135,7 +136,7 @@ mod tests {
             &player,
             InteractionHand::MainHand,
             &world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
 
         assert_eq!(
@@ -154,11 +155,11 @@ mod tests {
 
         let world = fresh_test_world("fishing_rod_cast");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new((*world).clone(), Uuid::from_u128(2), 10).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), Uuid::from_u128(2), 10).build();
         player
             .try_set_position(DVec3::new(8.0, 64.0, 8.0))
             .expect("should position player in center of chunk");
-        world.players.insert(player.clone());
+        world.players.insert(Arc::<Player>::clone(&player));
         player
             .inventory
             .lock()
@@ -168,7 +169,7 @@ mod tests {
             &player,
             InteractionHand::MainHand,
             &world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
 
         assert_eq!(

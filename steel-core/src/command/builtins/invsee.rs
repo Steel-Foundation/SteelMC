@@ -65,8 +65,8 @@ fn command(
             // when `/execute as` changes which player receives the menu. Capture
             // the resulting mode once when the menu opens.
             let modify = ctx.source().has_permission(&modify_permission);
-            let opener = source.clone();
-            let menu_source = source.clone();
+            let opener = Arc::<Player>::clone(source);
+            let menu_source = Arc::<Player>::clone(source);
             opener.open_menu(target.display_name(), move |context| {
                 invsee(context.container_id, &menu_source, &target, modify)
             });

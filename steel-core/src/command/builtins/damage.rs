@@ -1,5 +1,7 @@
 //! Vanilla damage entity command.
 
+use std::sync::Arc;
+
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
     execution::{
@@ -66,7 +68,7 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
     // Else, it's from the "by", or maybe it's nothing
     if let Ok(entity) = context.entity("entity") {
         damage_source = damage_source
-            .with_direct_entity(entity.clone())
+            .with_direct_entity(Arc::clone(&entity))
             .with_causing_entity(entity);
 
         // Maybe even the causing entity is known

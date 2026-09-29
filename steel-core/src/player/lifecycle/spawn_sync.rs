@@ -62,7 +62,7 @@ impl Player {
             if !source_world_detached {
                 old_world.remove_player_for_world_change(self);
             }
-            self.set_world(new_world.clone());
+            self.set_world(Arc::clone(&new_world));
         } else if !source_world_detached {
             old_world.chunk_map.remove_player(self);
         }
@@ -187,11 +187,11 @@ impl Player {
                         world.key
                     );
                 }
-                world.add_player(self.clone(), reason)
+                world.add_player(Arc::clone(self), reason)
             }
             ResetReason::Respawn | ResetReason::EndCredits => {
                 if world.players.get_by_entity_id(self.id()).is_none() {
-                    return world.add_respawned_player(self.clone());
+                    return world.add_respawned_player(Arc::clone(self));
                 }
 
                 // Same world — re-enter chunk tracking

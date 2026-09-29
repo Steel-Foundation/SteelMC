@@ -79,7 +79,7 @@ fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
 fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
     init_vanilla_registry();
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let shared_entity: SharedEntity = entity.clone();
+    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     entity.set_no_jump_delay(2);
     entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
 
@@ -98,7 +98,7 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     init_behaviors();
 
     let slow_falling = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let slow_falling_entity: SharedEntity = slow_falling.clone();
+    let slow_falling_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&slow_falling);
     slow_falling.set_fall_distance(7.0);
     slow_falling.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
     slow_falling.default_ai_step(&slow_falling_entity);
@@ -106,7 +106,7 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     assert_f64_close(slow_falling.fall_distance(), 0.0);
 
     let levitating = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let levitating_entity: SharedEntity = levitating.clone();
+    let levitating_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&levitating);
     levitating.set_fall_distance(7.0);
     levitating.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
     levitating.default_ai_step(&levitating_entity);
@@ -118,7 +118,7 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
 fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
     init_vanilla_registry();
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let shared_entity: SharedEntity = entity.clone();
+    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_on_ground(true);
     entity.set_jumping(true);

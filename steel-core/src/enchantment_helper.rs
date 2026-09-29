@@ -1,5 +1,7 @@
 mod item_in_use;
 
+use std::sync::Arc;
+
 use item_in_use::EnchantedItemInUse;
 
 use steel_registry::enchantment_effect::{
@@ -549,7 +551,7 @@ fn apply_supported_entity_effect(
             let max_damage = max_damage.calculate(level);
             let damage = random_between(min_damage, max_damage);
             let source = match enchanted_entity {
-                Some(entity) => DamageSource::direct(damage_type, entity.clone()),
+                Some(entity) => DamageSource::direct(damage_type, Arc::clone(entity)),
                 None => DamageSource::environment(damage_type),
             };
             entity.hurt(world, &source, damage);
@@ -1356,9 +1358,11 @@ mod tests {
             Identifier::vanilla_static("fire_aspect"),
             2,
         );
-        let damage_source =
-            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
-        let victim_entity: SharedEntity = victim.clone();
+        let damage_source = DamageSource::direct(
+            &vanilla_damage_types::PLAYER_ATTACK,
+            Arc::<TestLivingEntity>::clone(&attacker),
+        );
+        let victim_entity: SharedEntity = Arc::<TestLivingEntity>::clone(&victim);
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
         do_post_attack_effects_from_item(test_world(), &stack, &context);
@@ -1398,9 +1402,11 @@ mod tests {
             Identifier::vanilla_static("fire_aspect"),
             1,
         );
-        let damage_source =
-            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
-        let victim_entity: SharedEntity = victim.clone();
+        let damage_source = DamageSource::direct(
+            &vanilla_damage_types::PLAYER_ATTACK,
+            Arc::<TestLivingEntity>::clone(&attacker),
+        );
+        let victim_entity: SharedEntity = Arc::<TestLivingEntity>::clone(&victim);
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
         apply_post_attack_effects(
@@ -1436,9 +1442,11 @@ mod tests {
         chestplate.set_damage_value(chestplate.get_max_damage() - 1);
         victim.equip(EquipmentSlot::Chest, chestplate);
 
-        let damage_source =
-            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
-        let victim_entity: SharedEntity = victim.clone();
+        let damage_source = DamageSource::direct(
+            &vanilla_damage_types::PLAYER_ATTACK,
+            Arc::<TestLivingEntity>::clone(&attacker),
+        );
+        let victim_entity: SharedEntity = Arc::<TestLivingEntity>::clone(&victim);
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
         let source = ItemStack::empty();
 
@@ -1476,9 +1484,9 @@ mod tests {
             2,
         );
         let damage_source = DamageSource::environment(&vanilla_damage_types::ARROW)
-            .with_causing_entity(attacker.clone())
-            .with_direct_entity(direct_entity.clone());
-        let victim_entity: SharedEntity = victim.clone();
+            .with_causing_entity(Arc::<TestLivingEntity>::clone(&attacker))
+            .with_direct_entity(Arc::<TestLivingEntity>::clone(&direct_entity));
+        let victim_entity: SharedEntity = Arc::<TestLivingEntity>::clone(&victim);
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
 
         do_post_attack_effects_from_item(test_world(), &stack, &context);
@@ -1499,11 +1507,13 @@ mod tests {
             Identifier::vanilla_static("bane_of_arthropods"),
             1,
         );
-        let damage_source =
-            DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker.clone());
-        let spider_entity: SharedEntity = spider.clone();
+        let damage_source = DamageSource::direct(
+            &vanilla_damage_types::PLAYER_ATTACK,
+            Arc::<TestLivingEntity>::clone(&attacker),
+        );
+        let spider_entity: SharedEntity = Arc::<TestLivingEntity>::clone(&spider);
         let spider_context = EnchantmentPostAttackContext::new(&spider_entity, &damage_source);
-        let zombie_entity: SharedEntity = zombie.clone();
+        let zombie_entity: SharedEntity = Arc::<TestLivingEntity>::clone(&zombie);
         let zombie_context = EnchantmentPostAttackContext::new(&zombie_entity, &damage_source);
 
         do_post_attack_effects_from_item(test_world(), &stack, &spider_context);

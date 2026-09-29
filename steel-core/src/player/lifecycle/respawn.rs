@@ -494,7 +494,7 @@ impl Player {
         let personal_respawn = self.personal_respawn(&server, &source_world);
 
         let mut job = match PlayerRespawnJob::new(
-            player_arc.clone(),
+            Arc::<Player>::clone(&player_arc),
             source_world,
             fallback_world,
             fallback_respawn_data,
@@ -586,7 +586,7 @@ impl Player {
             || target_world.get_game_rule(&KEEP_INVENTORY)
             || self.game_mode() == GameType::Spectator;
         let replacement = self.new_respawn_replacement(
-            target_world.clone(),
+            Arc::clone(target_world),
             restore_all,
             transfer_inventory,
             !spawn.missing_respawn_block,
@@ -612,12 +612,14 @@ impl Player {
 
         let expected_world_player =
             (kind == RespawnRequestKind::Death && same_world).then_some(self);
-        if !target_world.install_respawned_player(replacement.clone(), expected_world_player) {
+        if !target_world
+            .install_respawned_player(Arc::<Player>::clone(&replacement), expected_world_player)
+        {
             self.connection.close();
             return RespawnFinish::Failed;
         }
 
-        if !server.replace_online_player(self, replacement.clone()) {
+        if !server.replace_online_player(self, Arc::<Player>::clone(&replacement)) {
             self.connection.close();
             if !target_world.remove_respawned_player(&replacement) {
                 tracing::error!(
@@ -632,7 +634,7 @@ impl Player {
         let _ = replacement.mark_joined_world();
         if !self.session.replace_player(self, &replacement) {
             self.connection.close();
-            if !server.rollback_respawn_online_player(&replacement, self.clone())
+            if !server.rollback_respawn_online_player(&replacement, Arc::<Player>::clone(self))
                 && server.remove_online_player_sync(&replacement).is_none()
             {
                 tracing::error!(
@@ -806,7 +808,7 @@ impl Player {
         let personal_respawn = self.personal_respawn(&server, &source_world);
 
         let mut job = match PlayerRespawnJob::new(
-            self.clone(),
+            Arc::<Player>::clone(self),
             source_world,
             target_world,
             respawn_data,

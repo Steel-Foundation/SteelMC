@@ -330,7 +330,7 @@ impl World {
         config: WorldConfig,
         generation_pool: Arc<rayon::ThreadPool>,
     ) -> io::Result<Arc<Self>> {
-        let chunk_encoding_pool = generation_pool.clone();
+        let chunk_encoding_pool = Arc::clone(&generation_pool);
         Self::new_with_config_and_encoding_pool(
             chunk_runtime,
             key,
@@ -412,7 +412,7 @@ impl World {
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
             let chunk_map = Arc::new(ChunkMap::new_with_storage_and_ticket_storage(
                 chunk_runtime,
-                weak_self.clone(),
+                Weak::clone(weak_self),
                 dimension_type,
                 sea_level,
                 storage,

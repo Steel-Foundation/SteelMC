@@ -1,3 +1,5 @@
+use crate::player::Player;
+
 use super::*;
 use std::ptr;
 use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
@@ -13,7 +15,9 @@ fn live_pig(world: &Arc<World>, id: i32) -> Arc<PigEntity> {
         DVec3::ZERO,
         Arc::downgrade(world),
     ));
-    world.try_add_entity(pig.clone()).expect("register pig");
+    world
+        .try_add_entity(Arc::<PigEntity>::clone(&pig))
+        .expect("register pig");
     pig
 }
 
@@ -22,13 +26,13 @@ fn removed_history_resolves_shooter_after_projectile_is_released_without_rebindi
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "removed_projectile_history");
     let victim = live_pig(&world, 1);
-    let shooter = TestPlayerBuilder::new(world.clone(), "Shooter", 2).build();
-    assert!(world.players.insert(shooter.clone()));
+    let shooter = TestPlayerBuilder::new(Arc::clone(&world), "Shooter", 2).build();
+    assert!(world.players.insert(Arc::<Player>::clone(&shooter)));
     let projectile = TestEntity::shared(3, DVec3::ZERO, Weak::new(), &vanilla_entities::SNOWBALL);
     let projectile_generation = projectile.generation();
     let weak_projectile = Arc::downgrade(&projectile);
     let source = DamageSource::environment(&vanilla_damage_types::THROWN)
-        .with_causing_entity(shooter.clone())
+        .with_causing_entity(Arc::<Player>::clone(&shooter))
         .with_direct_entity(projectile);
     victim.record_last_damage_source(&source);
     victim.set_removed(RemovalReason::Discarded);
@@ -83,15 +87,15 @@ fn active_history_retains_removed_attacker_but_not_its_removed_attacker() {
     let second = live_pig(&world, 3);
     victim.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::MOB_ATTACK,
-        first.clone(),
+        Arc::<PigEntity>::clone(&first),
     ));
     first.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::MOB_ATTACK,
-        second.clone(),
+        Arc::<PigEntity>::clone(&second),
     ));
     second.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::MOB_ATTACK,
-        first.clone(),
+        Arc::<PigEntity>::clone(&first),
     ));
     let second_generation = second.generation();
     let first_weak = Arc::downgrade(&first);
@@ -141,7 +145,7 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
 
     assert!(victim.base().clear_removed());
     world
-        .try_add_entity(victim.clone())
+        .try_add_entity(Arc::<PigEntity>::clone(&victim))
         .expect("reactivate victim");
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&attacker);
@@ -161,7 +165,7 @@ fn world_teardown_releases_self_history_on_the_frozen_ownership_sweep() {
     let victim = live_pig(&world, 1);
     victim.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::GENERIC,
-        victim.clone(),
+        Arc::<PigEntity>::clone(&victim),
     ));
     let weak = Arc::downgrade(&victim);
     drop(victim);
@@ -213,7 +217,7 @@ fn weak_history_preserves_live_position_and_explicit_position_semantics() {
     let victim = live_pig(&world, 1);
     let direct = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC)
-        .with_direct_entity(direct.clone());
+        .with_direct_entity(Arc::clone(&direct));
     victim.record_last_damage_source(&source);
     victim.set_removed(RemovalReason::Discarded);
     let position = DVec3::new(1.0, 2.0, 3.0);

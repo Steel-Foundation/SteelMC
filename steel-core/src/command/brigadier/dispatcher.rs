@@ -289,7 +289,7 @@ where
                 reader.skip();
                 if let Some(target) = redirect {
                     let child_context = ParsedCommandContext::new(
-                        context.source_arc().clone(),
+                        Arc::clone(context.source_arc()),
                         target,
                         reader.cursor(),
                     );

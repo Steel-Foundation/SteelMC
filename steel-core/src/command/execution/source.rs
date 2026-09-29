@@ -260,10 +260,13 @@ pub(crate) struct CommandSource {
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
         let player = sender.get_player().cloned();
-        let world = player
+        let world = player.as_ref().map_or_else(
+            || Arc::clone(server.overworld()),
+            |player| player.get_world(),
+        );
+        let entity = player
             .as_ref()
-            .map_or_else(|| server.overworld().clone(), |player| player.get_world());
-        let entity = player.as_ref().map(|player| player.clone() as SharedEntity);
+            .map(|player| Arc::<Player>::clone(player) as SharedEntity);
         let position = entity.as_ref().map_or_else(
             || {
                 let level_data = world.level_data.read();
@@ -438,6 +441,17 @@ impl CommandSource {
     )]
     pub(crate) const fn is_silent(&self) -> bool {
         self.silent
+    }
+
+    /// Sends informational command output straight to the sender.
+    ///
+    /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
+    /// game rule and never broadcasts to admins - it's for output the sender
+    /// explicitly asked for (e.g. `/version`), not command-result feedback.
+    pub(crate) fn send_system_message(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
     }
 
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {

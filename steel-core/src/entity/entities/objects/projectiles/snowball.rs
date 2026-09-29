@@ -148,7 +148,7 @@ impl Projectile for SnowballEntity {
         // Vanilla `Snowball.onHitEntity`: super.onHitEntity() (no-op), then
         // `entity.hurt(thrown(this, owner), blaze ? 3 : 0)`.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
-            .with_direct_entity(self.clone());
+            .with_direct_entity(Arc::<SnowballEntity>::clone(&self));
         if let Some(owner) = self.get_owner() {
             damage = damage.with_causing_entity(owner);
         }
@@ -159,7 +159,7 @@ impl Projectile for SnowballEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `Snowball.onHit`: super.onHit() then the server-side break.
-        self.clone().projectile_on_hit(hit);
+        Arc::<SnowballEntity>::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: entity event 3 renders the snowball break
         // particles on clients via `Snowball.handleEntityEvent`; the server
@@ -268,7 +268,7 @@ mod tests {
             },
         };
 
-        snowball.clone().on_hit(&hit);
+        Arc::<SnowballEntity>::clone(&snowball).on_hit(&hit);
         assert!(snowball.is_removed());
     }
 }

@@ -67,6 +67,8 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::data_components::PotionContents;
     use steel_registry::{
         MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
@@ -76,6 +78,7 @@ mod tests {
     use super::{apply_potion_contents, scale_effect_duration};
     use crate::behavior::init_behaviors;
     use crate::entity::{LivingEntity, LivingEntityRef, SharedEntity};
+    use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration
@@ -112,8 +115,8 @@ mod tests {
         init_behaviors();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new((*world).clone(), "Test", 1).build();
-        let player_entity: SharedEntity = player.clone();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let player_entity: SharedEntity = Arc::<Player>::clone(&player);
         player.set_health(1.0);
 
         let contents = PotionContents::new(

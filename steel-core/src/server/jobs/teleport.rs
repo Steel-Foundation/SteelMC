@@ -287,7 +287,7 @@ impl ServerJob for WorldSpawnTeleportJob {
                             return JobPoll::Pending;
                         }
                         let transition = TeleportTransition {
-                            target_world: self.target_world.clone(),
+                            target_world: Arc::clone(&self.target_world),
                             position: spawn.position,
                             rotation: spawn.rotation,
                             velocity: DVec3::ZERO,
@@ -296,7 +296,8 @@ impl ServerJob for WorldSpawnTeleportJob {
                             as_passenger: false,
                             post_transition: TeleportPostTransition::do_nothing(),
                         };
-                        let changed_entity = change_entity_world(self.entity.clone(), &transition);
+                        let changed_entity =
+                            change_entity_world(Arc::clone(&self.entity), &transition);
                         return finish_portal_world_change(
                             &self.entity,
                             self.pending_token,
@@ -410,7 +411,7 @@ impl ServerJob for NetherPortalTeleportJob {
             self.clear_pending();
             return JobPoll::Finished;
         };
-        let changed_entity = change_entity_world(self.entity.clone(), &transition);
+        let changed_entity = change_entity_world(Arc::clone(&self.entity), &transition);
         self.finish_transition(changed_entity);
         JobPoll::Finished
     }
@@ -545,7 +546,7 @@ impl ServerJob for EndPortalTeleportJob {
             return JobPoll::Finished;
         }
 
-        let entity = self.entity.clone();
+        let entity = Arc::clone(&self.entity);
         let pending_token = self.pending_token;
         loop {
             match &mut self.phase {
@@ -564,7 +565,7 @@ impl ServerJob for EndPortalTeleportJob {
                         clear_pending_world_change(&entity, pending_token);
                         return JobPoll::Finished;
                     };
-                    let changed_entity = change_entity_world(entity.clone(), &transition);
+                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
                     return finish_portal_world_change(&entity, pending_token, changed_entity);
                 }
                 EndPortalTeleportPhase::ReturningEntity {
@@ -582,7 +583,7 @@ impl ServerJob for EndPortalTeleportJob {
                         entity.as_ref(),
                         respawn_data,
                     );
-                    let changed_entity = change_entity_world(entity.clone(), &transition);
+                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
                     return finish_portal_world_change(&entity, pending_token, changed_entity);
                 }
                 EndPortalTeleportPhase::SearchingPlayerRespawn {
@@ -605,7 +606,7 @@ impl ServerJob for EndPortalTeleportJob {
                         };
                         let request = target_world.request_player_spawn_chunks(position);
                         self.phase = EndPortalTeleportPhase::LoadingPlayerRespawn {
-                            target_world: target_world.clone(),
+                            target_world: Arc::clone(target_world),
                             spawn,
                             request,
                         };
@@ -627,7 +628,7 @@ impl ServerJob for EndPortalTeleportJob {
                         spawn.position,
                         spawn.rotation,
                     );
-                    let changed_entity = change_entity_world(entity.clone(), &transition);
+                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
                     return finish_portal_world_change(&entity, pending_token, changed_entity);
                 }
             }
@@ -706,9 +707,9 @@ impl ServerJob for EndGatewayTeleportJob {
             return JobPoll::Finished;
         }
 
-        let entity = self.entity.clone();
+        let entity = Arc::clone(&self.entity);
         let pending_token = self.pending_token;
-        let source_world = self.source_world.clone();
+        let source_world = Arc::clone(&self.source_world);
         let portal_pos = self.portal_pos;
         let source_is_end = self.source_is_end;
         loop {
@@ -732,7 +733,7 @@ impl ServerJob for EndGatewayTeleportJob {
                             clear_pending_world_change(&entity, pending_token);
                             return JobPoll::Finished;
                         };
-                        let changed_entity = change_entity_world(entity.clone(), &transition);
+                        let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
                         finish_pending_world_change_after_transition(
                             &entity,
                             pending_token,
@@ -842,7 +843,7 @@ fn restore_root_vehicle_for_player(
         return;
     }
 
-    let player_entity: SharedEntity = player.clone();
+    let player_entity: SharedEntity = Arc::<Player>::clone(player);
     EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
     attach_entity.position_rider(player.as_ref());
     player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
@@ -976,7 +977,7 @@ fn restore_ender_pearl_for_player(
         return false;
     }
 
-    let owner: SharedEntity = player.clone();
+    let owner: SharedEntity = Arc::<Player>::clone(player);
     for entity in &entities {
         entity.restore_owner_reference(&owner);
     }

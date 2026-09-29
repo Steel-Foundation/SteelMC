@@ -154,7 +154,7 @@ fn inactive_chunk_stages_lifecycle_callbacks_until_activation() {
         events: SyncMutex::new(Vec::new()),
     });
     concrete.set_removed();
-    let entity: SharedBlockEntity = concrete.clone();
+    let entity: SharedBlockEntity = Arc::<ActivationRecordingBlockEntity>::clone(&concrete);
     assert!(full.add_and_register_block_entity(entity));
     assert!(concrete.events.lock().is_empty());
 
@@ -310,8 +310,8 @@ fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
 
     let barrier = Arc::new(Barrier::new(3));
     let first = {
-        let chunk_owner = chunk_owner.clone();
-        let barrier = barrier.clone();
+        let chunk_owner = Arc::clone(&chunk_owner);
+        let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
             let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -324,8 +324,8 @@ fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
         })
     };
     let second = {
-        let chunk_owner = chunk_owner.clone();
-        let barrier = barrier.clone();
+        let chunk_owner = Arc::clone(&chunk_owner);
+        let barrier = Arc::clone(&barrier);
         thread::spawn(move || {
             barrier.wait();
             let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -374,7 +374,7 @@ fn block_change_replaces_a_structurally_valid_unimplemented_entity_with_the_new_
         pos,
         chest,
     ));
-    assert!(chunk.add_and_register_block_entity(old.clone()));
+    assert!(chunk.add_and_register_block_entity(Arc::clone(&old)));
 
     assert_eq!(
         chunk.set_block_state(pos, comparator, UpdateFlags::UPDATE_NONE),
@@ -410,7 +410,7 @@ fn breaking_an_unimplemented_entity_block_removes_its_unimplemented_entity() {
         pos,
         chest,
     ));
-    assert!(chunk.add_and_register_block_entity(old.clone()));
+    assert!(chunk.add_and_register_block_entity(Arc::clone(&old)));
 
     assert_eq!(
         chunk.set_block_state(
@@ -447,7 +447,7 @@ fn copper_chest_transformation_preserves_entity_identity() {
         copper,
         data,
     ));
-    assert!(chunk.add_and_register_block_entity(original.clone()));
+    assert!(chunk.add_and_register_block_entity(Arc::clone(&original)));
 
     assert_eq!(
         chunk.set_block_state(pos, exposed, UpdateFlags::UPDATE_NONE),
@@ -518,7 +518,7 @@ fn shared_entity_type_does_not_imply_cross_block_preservation() {
         pos,
         chest,
     ));
-    assert!(chunk.add_and_register_block_entity(original.clone()));
+    assert!(chunk.add_and_register_block_entity(Arc::clone(&original)));
 
     assert_eq!(
         chunk.set_block_state(pos, trapped_chest, UpdateFlags::UPDATE_NONE),

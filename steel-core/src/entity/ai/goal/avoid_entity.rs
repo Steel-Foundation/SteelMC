@@ -170,7 +170,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = mob.clone();
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         goal.to_avoid = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
@@ -200,7 +200,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = mob.clone();
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         goal.to_avoid = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,

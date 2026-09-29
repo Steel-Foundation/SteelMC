@@ -114,13 +114,13 @@ fn sheep_shear_drops_wool_and_damages_shears() {
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(shared.clone())
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new((*world).clone(), "Shearer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "Shearer", next_entity_id()).build();
     player
         .inventory
         .lock()
@@ -155,13 +155,13 @@ fn sheep_shear_interaction_is_consumed_when_not_ready() {
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(shared.clone())
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new((*world).clone(), "Shearer", 11).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "Shearer", 11).build();
     player
         .inventory
         .lock()
@@ -270,7 +270,7 @@ fn sheep_shearing_drop_spawns_one_item_entity_per_count_unit() {
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(shared.clone())
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
@@ -307,13 +307,13 @@ fn dye_item_dyes_an_unsheared_sheep_and_consumes_the_dye() {
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(shared.clone())
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new((*world).clone(), "Dyer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::with_count(&vanilla_items::RED_DYE, 2);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -346,12 +346,12 @@ fn dye_item_passes_for_sheared_or_matching_color_sheep() {
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(shared.clone())
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
-    let player = TestPlayerBuilder::new((*world).clone(), "Dyer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::new(&vanilla_items::RED_DYE);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -462,7 +462,7 @@ fn sheep_shear_loot_resolves_the_matching_color_table() {
     sheep.set_color(DyeColor::Red);
     let shared: SharedEntity = Arc::new(sheep);
     world
-        .try_add_entity(shared.clone())
+        .try_add_entity(Arc::clone(&shared))
         .expect("sheep should attach to the loaded test chunk");
     let sheep = shared
         .downcast_ref::<SheepEntity>()

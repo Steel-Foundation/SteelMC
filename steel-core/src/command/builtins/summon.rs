@@ -83,7 +83,7 @@ pub(super) fn create_entity(
         let _ = mob.finalize_spawn(world, EntitySpawnReason::Command, None);
     }
 
-    match world.try_add_entity(entity.clone()) {
+    match world.try_add_entity(Arc::clone(&entity)) {
         Ok(()) => Ok(entity),
         Err(AddEntityError::DuplicateUuid { .. }) => {
             Err(command_failed(&translations::COMMANDS_SUMMON_FAILED_UUID))

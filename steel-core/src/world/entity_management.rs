@@ -53,7 +53,7 @@ impl World {
     /// Shares the counter used to skip game-event dispatch when no chunk has listeners.
     #[must_use]
     pub(crate) fn game_event_listener_count(&self) -> Arc<GameEventListenerCount> {
-        self.game_event_listener_count.clone()
+        Arc::clone(&self.game_event_listener_count)
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
@@ -110,7 +110,7 @@ impl World {
     ) -> Result<(), AddEntityError> {
         let lifecycle = self
             .entity_manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)?;
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)?;
         self.attach_managed_entity_callback(&entity);
         self.apply_entity_lifecycle_changes(lifecycle);
         Ok(())
@@ -216,7 +216,7 @@ impl World {
         if !seen.insert(entity.id()) {
             return;
         }
-        tree.push(entity.clone());
+        tree.push(Arc::clone(entity));
         for passenger in entity.passengers() {
             Self::collect_loaded_entity_tree(&passenger, seen, tree);
         }
@@ -328,7 +328,7 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        if let Err(error) = self.try_add_entity(entity.clone()) {
+        if let Err(error) = self.try_add_entity(Arc::<ItemEntity>::clone(&entity)) {
             log::warn!("Failed to spawn item entity: {error}");
             return None;
         }
@@ -581,7 +581,7 @@ impl World {
                         .as_ref()
                         .is_none_or(|(_, current)| distance_sqr < *current)
                 {
-                    nearest = Some((player.clone(), distance_sqr));
+                    nearest = Some((Arc::clone(player), distance_sqr));
                 }
             }
             true
@@ -654,7 +654,7 @@ impl World {
         chunk_pos: ChunkPos,
     ) -> Option<Arc<GameEventListenerStorage>> {
         self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            chunk.game_event_listeners().registry.clone()
+            Arc::clone(&chunk.game_event_listeners().registry)
         })
     }
 

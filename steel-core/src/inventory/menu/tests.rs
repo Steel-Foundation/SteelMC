@@ -73,7 +73,7 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
     init_vanilla_registry();
     let world = fresh_test_world(world_name);
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = TestPlayerBuilder::new((*world).clone(), "SwapTester", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "SwapTester", 1).build();
     player.restore_game_modes(game_mode, None);
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     {
@@ -88,7 +88,7 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
     target
         .lock()
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
-    let target_ref = ContainerRef::from(target.clone());
+    let target_ref = ContainerRef::from(Arc::clone(&target));
     let mut builder = MenuBuilder::new(None, 1);
     let target_slots = builder.custom_section([SingleItemSlot {
         base: NormalSlot::new(target_ref.clone(), 0),
@@ -113,14 +113,14 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
 fn swap_locks_player_inventory_when_menu_has_no_inventory_slots() {
     init_vanilla_registry();
     let world = fresh_test_world("menu_swap_without_inventory_slots");
-    let player = TestPlayerBuilder::new((*world).clone(), "SwapTester", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "SwapTester", 1).build();
     let container = SimpleContainer::new(45).into_shared();
     container
         .lock()
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, 1);
-    let menu_slots = builder.section(container.clone(), 45);
+    let menu_slots = builder.section(Arc::clone(&container), 45);
     let mut menu = builder.build(BasicKind {});
 
     menu.clicked(
@@ -173,7 +173,7 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
         .expect("full chunk should remain loaded")
         .clear_dirty();
 
-    let player = TestPlayerBuilder::new((*world).clone(), "DrainTester", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "DrainTester", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     let mut builder = MenuBuilder::new(None, 1);
     let drained = builder.section(container, 1);
@@ -193,14 +193,14 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
 fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
     init_vanilla_registry();
     let world = fresh_test_world("one_slot_clone_drag");
-    let player = TestPlayerBuilder::new((*world).clone(), "CloneTester", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "CloneTester", 1).build();
     player.restore_game_modes(GameType::Creative, None);
     let container = SimpleContainer::new(1).into_shared();
     container
         .lock()
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
     let mut builder = MenuBuilder::new(None, 1);
-    let slots = builder.section(container.clone(), 1);
+    let slots = builder.section(Arc::clone(&container), 1);
     let mut menu = builder.build(BasicKind {});
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
 

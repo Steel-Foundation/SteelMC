@@ -201,10 +201,17 @@ impl PlayerInventory {
         slot: EquipmentSlot,
         f: impl FnOnce(&mut ItemStack) -> R,
     ) -> R {
-        let inventory_index = self.equipment_slot_index(slot);
-        let previous = self.items[inventory_index].clone();
-        let result = f(&mut self.items[inventory_index]);
-        if !ItemStack::matches(&self.items[inventory_index], &previous) {
+        self.with_item_mut(self.equipment_slot_index(slot), f)
+    }
+
+    pub(crate) fn with_item_mut<R>(
+        &mut self,
+        index: usize,
+        f: impl FnOnce(&mut ItemStack) -> R,
+    ) -> R {
+        let previous = self.items[index].clone();
+        let result = f(&mut self.items[index]);
+        if !ItemStack::matches(&self.items[index], &previous) {
             Container::set_changed(self);
         }
         result

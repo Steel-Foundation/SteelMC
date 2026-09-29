@@ -326,7 +326,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = Arc::new(pig(1, DVec3::ZERO));
-        let mob_entity: SharedEntity = mob.clone();
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
 

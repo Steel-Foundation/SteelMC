@@ -206,11 +206,6 @@ struct TickingReadinessCandidate {
     target: TickingReadiness,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DeferredChunkRevival {
-    load_level: ChunkTicketLevel,
-}
-
 #[derive(Default)]
 struct ReadinessReconcileResult {
     snapshot_changed: bool,
@@ -226,8 +221,6 @@ pub struct ChunkMap {
     pub(crate) chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Map of chunks currently being unloaded.
     pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
-    /// Ticket states waiting for an unloading holder's save preparation to finish.
-    deferred_revivals: SyncMutex<FxHashMap<ChunkPos, DeferredChunkRevival>>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for generation, save, and unload tasks.
@@ -343,7 +336,7 @@ impl ChunkMap {
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
     ) -> Self {
-        let chunk_encoding_pool = generation_pool.clone();
+        let chunk_encoding_pool = Arc::clone(&generation_pool);
         Self::new_with_storage_and_ticket_storage(
             chunk_runtime,
             world,
@@ -382,7 +375,6 @@ impl ChunkMap {
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
-            deferred_revivals: SyncMutex::new(FxHashMap::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(
@@ -420,7 +412,7 @@ impl ChunkMap {
     }
 
     pub(crate) fn light_work_window_gate(&self) -> Arc<LightWorkWindowGate> {
-        self.light_work_window_gate.clone()
+        Arc::clone(&self.light_work_window_gate)
     }
 
     /// Starts the notify-driven generation refill loop for this chunk map.
@@ -429,7 +421,7 @@ impl ChunkMap {
             return;
         }
 
-        let chunk_map = self.clone();
+        let chunk_map = Arc::clone(self);
         self.task_tracker.spawn_on(
             async move {
                 loop {
@@ -511,7 +503,7 @@ impl ChunkMap {
     #[inline]
     fn lookup_active_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
         lookup_or_insert_with(self, pos, || {
-            self.chunks.read_sync(&pos, |_, holder| holder.clone())
+            self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
         })
     }
 
@@ -608,7 +600,7 @@ impl ChunkMap {
         F: FnOnce() -> R,
     {
         let ticket_level = ChunkTicketLevel::for_full_chunk_radius(radius);
-        let lease = ChunkRequestLease::new(self.clone(), Box::new([center]), ticket_level);
+        let lease = ChunkRequestLease::new(Arc::clone(self), Box::new([center]), ticket_level);
         let Some(ticket_receipt) = lease.submission_receipt else {
             unreachable!("one chunk request lease must produce a receipt");
         };
@@ -673,7 +665,8 @@ impl ChunkMap {
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
-                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
+                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
+                else {
                     return false;
                 };
                 if holder.try_chunk(ChunkStatus::Full).is_none() {
@@ -969,7 +962,7 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("process_unloads").entered();
             let start = Instant::now();
-            self.process_pending_unloads();
+            self.process_unloads();
             timings.scheduling.process_unloads = start.elapsed();
         }
 
@@ -987,7 +980,7 @@ impl ChunkMap {
         let _source_phase_guard = self.source_phase_guard.lock();
         let mut timings = self.run_chunk_source_updates();
         let start = Instant::now();
-        self.process_pending_unloads();
+        self.process_unloads();
         timings.process_unloads = start.elapsed();
         timings
     }
@@ -998,7 +991,7 @@ impl ChunkMap {
         for change in changes {
             let Some(holder) = self
                 .chunks
-                .read_sync(&change.pos, |_, holder| holder.clone())
+                .read_sync(&change.pos, |_, holder| Arc::clone(holder))
             else {
                 continue;
             };
@@ -1042,8 +1035,6 @@ impl ChunkMap {
             timings.ticket_updates = start.elapsed();
             batch
         };
-
-        self.merge_deferred_revivals(&mut batch.load_changes);
 
         {
             let _span = tracing::trace_span!("block_entity_unloads").entered();
@@ -1165,24 +1156,9 @@ impl ChunkMap {
             timings.run_generation = start.elapsed();
         }
 
-        let through_receipt = batch.through_receipt;
-        // A staged revival has not published the ticket's holder state yet. A later
-        // phase returns the same watermark and commits it after every revival lands.
-        if self.deferred_revivals.lock().is_empty() {
-            self.scheduling.publish_committed(through_receipt);
-        }
+        self.scheduling.publish_committed(batch.through_receipt);
         self.scheduling.recycle_update_batch(batch);
         timings
-    }
-
-    fn process_pending_unloads(self: &Arc<Self>) {
-        let staged_revivals = self
-            .deferred_revivals
-            .lock()
-            .keys()
-            .copied()
-            .collect::<FxHashSet<_>>();
-        self.process_unloads(&staged_revivals);
     }
 
     /// Returns full chunks whose simulation level currently allows entity ticks.

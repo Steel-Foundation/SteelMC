@@ -388,7 +388,7 @@ impl PistonMovingState {
         let _no_clip = NoClipGuard::set(piston_direction);
         let (x, y, z) = movement.offset();
         let previous_position = entity.position();
-        entity.clone().move_entity(
+        Arc::clone(entity).move_entity(
             MoverType::Piston,
             DVec3::new(
                 delta * f64::from(x),
@@ -728,7 +728,7 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_entity_filter");
-        let player = test_player((*world).clone());
+        let player = test_player(Arc::clone(&(*world)));
 
         assert!(PistonMovingState::can_move_collided_entity(
             player.as_ref(),
@@ -788,7 +788,7 @@ mod tests {
             true,
             false,
         ));
-        let block_entity: SharedBlockEntity = piston.clone();
+        let block_entity: SharedBlockEntity = Arc::<PistonMovingBlockEntity>::clone(&piston);
         assert!(world.set_block_entity(block_entity));
 
         let start = DVec3::new(f64::from(pos.x()) + 0.1, f64::from(pos.y()), 8.5);
@@ -799,7 +799,7 @@ mod tests {
             &vanilla_entities::MINECART,
         );
         world
-            .try_add_entity(entity.clone())
+            .try_add_entity(Arc::clone(&entity))
             .expect("test entity should enter the loaded chunk");
 
         piston.tick(&world);
@@ -852,7 +852,7 @@ mod tests {
             true,
             false,
         ));
-        let stale_entity: SharedBlockEntity = stale_piston.clone();
+        let stale_entity: SharedBlockEntity = Arc::<PistonMovingBlockEntity>::clone(&stale_piston);
         assert!(world.set_block_entity(stale_entity));
         let replacement = Arc::new(PistonMovingBlockEntity::new_moving(
             Arc::downgrade(&world),
@@ -863,8 +863,9 @@ mod tests {
             true,
             false,
         ));
-        let replacement_entity: SharedBlockEntity = replacement.clone();
-        assert!(world.set_block_entity(replacement_entity.clone()));
+        let replacement_entity: SharedBlockEntity =
+            Arc::<PistonMovingBlockEntity>::clone(&replacement);
+        assert!(world.set_block_entity(Arc::clone(&replacement_entity)));
 
         assert!(stale_piston.final_tick(&world));
 

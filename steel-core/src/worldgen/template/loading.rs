@@ -15,18 +15,18 @@ static VANILLA_TEMPLATE_CACHE: LazyLock<SyncRwLock<FxHashMap<Identifier, Arc<Str
 impl StructureTemplate {
     pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Arc<Self>, String> {
         if let Some(template) = VANILLA_TEMPLATE_CACHE.read().get(key) {
-            return Ok(template.clone());
+            return Ok(Arc::clone(template));
         }
 
         let mut cache = VANILLA_TEMPLATE_CACHE.write();
         if let Some(template) = cache.get(key) {
-            return Ok(template.clone());
+            return Ok(Arc::clone(template));
         }
 
         let bytes = vanilla_template_pools::vanilla_template_nbt_bytes(key)
             .ok_or_else(|| format!("vanilla structure template {key} is not bundled"))?;
         let template = Arc::new(Self::load_gzip_nbt(registry, bytes, &key.to_string())?);
-        cache.insert(key.clone(), template.clone());
+        cache.insert(key.clone(), Arc::clone(&template));
         Ok(template)
     }
 

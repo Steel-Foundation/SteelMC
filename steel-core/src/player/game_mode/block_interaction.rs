@@ -139,7 +139,7 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                let player: SharedEntity = self.clone();
+                let player: SharedEntity = Arc::<Player>::clone(self);
                 self.release_using_item(&player);
             }
             PlayerAction::SwapItemWithOffhand => {
@@ -347,7 +347,7 @@ mod tests {
         let world = fresh_test_world("use_item_on_non_finite_hit_location");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         init_behaviors();
-        let player = TestPlayerBuilder::new((*world).clone(), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&(*world)), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

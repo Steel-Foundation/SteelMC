@@ -40,7 +40,7 @@ impl DamageSource {
     pub fn direct(damage_type: &'static DamageType, entity: SharedEntity) -> Self {
         Self {
             damage_type,
-            causing_entity: Some(entity.clone()),
+            causing_entity: Some(Arc::clone(&entity)),
             direct_entity: Some(entity),
             source_position: None,
         }

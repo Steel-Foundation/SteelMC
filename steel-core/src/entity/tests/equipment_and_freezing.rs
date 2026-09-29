@@ -200,7 +200,7 @@ fn default_ai_step_ticks_freezing_after_travel() {
         true,
         test_world(),
     ));
-    let shared_entity: SharedEntity = entity.clone();
+    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
     for _ in 0..40 {

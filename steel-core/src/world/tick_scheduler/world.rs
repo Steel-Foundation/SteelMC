@@ -219,7 +219,7 @@ impl World {
             current.is_none(),
             "scheduled block-tick batch was already active"
         );
-        *current = Some(batch.clone());
+        *current = Some(Arc::clone(&batch));
         batch
     }
 
@@ -250,7 +250,7 @@ impl World {
             current.is_none(),
             "scheduled fluid-tick batch was already active"
         );
-        *current = Some(batch.clone());
+        *current = Some(Arc::clone(&batch));
         batch
     }
 

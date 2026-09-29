@@ -68,7 +68,7 @@ where
     pub(crate) fn next_stage(&self) -> Option<Self> {
         let position = self.position + 1;
         (position < self.contexts.len()).then(|| Self {
-            contexts: self.contexts.clone(),
+            contexts: Arc::clone(&self.contexts),
             position,
         })
     }
@@ -159,7 +159,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            contexts: self.contexts.clone(),
+            contexts: Arc::clone(&self.contexts),
             position: self.position,
         }
     }

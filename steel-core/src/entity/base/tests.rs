@@ -281,7 +281,7 @@ fn lifecycle_state_tracks_removal() {
         Weak::<World>::new(),
     );
     let callback = Arc::new(CountingCallback::default());
-    base.set_level_callback(callback.clone());
+    base.set_level_callback(Arc::<CountingCallback>::clone(&callback));
 
     assert!(!base.is_removed());
     let Some(pending_token) = base.begin_pending_world_change() else {
@@ -385,7 +385,7 @@ fn dimension_change_notifies_the_level_callback_of_new_bounds() {
         Weak::<World>::new(),
     );
     let callback = Arc::new(CountingCallback::default());
-    base.set_level_callback(callback.clone());
+    base.set_level_callback(Arc::<CountingCallback>::clone(&callback));
 
     base.set_pose_and_dimensions(EntityPose::Standing, EntityDimensions::new(2.0, 3.0, 2.5));
 
@@ -704,7 +704,7 @@ fn base_fall_damage_propagates_to_passengers() {
     init_vanilla_registry();
     let vehicle = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let passenger = FallDamageTestEntity::new(2, Uuid::new_v4());
-    let passenger_entity: SharedEntity = passenger.clone();
+    let passenger_entity: SharedEntity = Arc::<FallDamageTestEntity>::clone(&passenger);
 
     link_vehicle_and_passenger(&vehicle, &passenger_entity);
 

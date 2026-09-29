@@ -66,12 +66,12 @@ impl DamageHistoryBinding {
             };
             let record = DamageRecord {
                 victim_lifetime,
-                owner: state.owner.clone(),
+                owner: Weak::clone(&state.owner),
                 retained: (!state.removed && state.owner.strong_count() > 0)
                     .then(|| source.clone()),
                 source: descriptor,
                 timestamp: clock.ticks(),
-                clock: clock.clone(),
+                clock: Arc::clone(clock),
             };
             history.records.lock().insert(generation, record)
         };

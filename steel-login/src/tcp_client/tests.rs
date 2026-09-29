@@ -30,7 +30,7 @@ fn login_deadline_matches_vanillas_post_increment_boundary() {
 #[tokio::test]
 async fn login_deadline_drops_in_flight_packet_processing() {
     let dropped = Arc::new(AtomicBool::new(false));
-    let operation_dropped = dropped.clone();
+    let operation_dropped = Arc::clone(&dropped);
     let operation = async move {
         let _drop_signal = DropSignal(operation_dropped);
         pending::<()>().await;

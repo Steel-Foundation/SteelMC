@@ -156,7 +156,7 @@ where
 
     pub(super) fn branch(&self) -> Self {
         Self {
-            source: self.source.clone(),
+            source: Arc::clone(&self.source),
             root: self.root,
             arguments: self.arguments.clone(),
             executor: self.executor.clone(),
@@ -218,7 +218,7 @@ where
     }
 
     pub(super) fn build(self, input: Arc<str>) -> Arc<CommandContext<S, R>> {
-        let child = self.child.map(|child| child.build(input.clone()));
+        let child = self.child.map(|child| child.build(Arc::clone(&input)));
         Arc::new(CommandContext {
             source: self.source,
             input,
@@ -418,11 +418,11 @@ where
     pub(crate) fn copy_for(&self, source: Arc<S>) -> Self {
         Self {
             source,
-            input: self.input.clone(),
+            input: Arc::clone(&self.input),
             root: self.root,
-            arguments: self.arguments.clone(),
+            arguments: Arc::clone(&self.arguments),
             executor: self.executor.clone(),
-            nodes: self.nodes.clone(),
+            nodes: Arc::clone(&self.nodes),
             range: self.range,
             child: self.child.clone(),
             modifier: self.modifier.clone(),

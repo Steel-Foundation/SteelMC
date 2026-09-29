@@ -25,11 +25,13 @@ fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
             .with_entity_type(&vanilla_entities::PIG),
     );
 
-    assert!(entity.clone().cause_fall_damage(
-        8.0,
-        1.0,
-        &DamageSource::environment(&vanilla_damage_types::FALL),
-    ));
+    assert!(
+        Arc::<LivingFluidTestEntity>::clone(&entity).cause_fall_damage(
+            8.0,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        )
+    );
 
     assert_f32_close(entity.get_health(), 15.0);
 }
@@ -46,11 +48,13 @@ fn living_fall_damage_caps_distance_from_current_impulse() {
 
     entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 4.0, 0.0));
 
-    assert!(entity.clone().cause_fall_damage(
-        8.0,
-        1.0,
-        &DamageSource::environment(&vanilla_damage_types::FALL),
-    ));
+    assert!(
+        Arc::<LivingFluidTestEntity>::clone(&entity).cause_fall_damage(
+            8.0,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        )
+    );
 
     assert_f32_close(entity.get_health(), 19.0);
     assert!(!entity.is_ignoring_fall_damage_from_current_impulse());
@@ -63,11 +67,13 @@ fn living_fall_damage_resets_current_impulse_when_landing_above_impact() {
 
     entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, -1.0, 0.0));
 
-    assert!(!entity.clone().cause_fall_damage(
-        8.0,
-        1.0,
-        &DamageSource::environment(&vanilla_damage_types::FALL),
-    ));
+    assert!(
+        !Arc::<LivingFluidTestEntity>::clone(&entity).cause_fall_damage(
+            8.0,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        )
+    );
 
     assert_f32_close(entity.get_health(), 20.0);
     assert!(!entity.is_ignoring_fall_damage_from_current_impulse());
@@ -108,7 +114,7 @@ fn lava_contact_is_ignored_until_after_first_tick() {
     assert!(entity.is_first_tick());
     assert!(!entity.is_in_lava());
 
-    entity.clone().tick();
+    Arc::<LivingFluidTestEntity>::clone(&entity).tick();
 
     assert!(!entity.is_first_tick());
     assert!(entity.is_in_lava());

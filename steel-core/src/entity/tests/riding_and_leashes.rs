@@ -7,7 +7,7 @@ fn living_ride_tick_resets_fall_distance() {
 
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     entity.set_fall_distance(7.0);
-    let entity_ref: SharedEntity = entity.clone();
+    let entity_ref: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
 
     entity_ref.ride_tick();
 
@@ -75,7 +75,7 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(transfer_leashables_to_holder(
-        vec![leashable.clone()],
+        vec![Arc::clone(&leashable)],
         &new_holder
     ));
 
@@ -113,7 +113,7 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(!transfer_leashables_to_holder(
-        vec![leashable.clone()],
+        vec![Arc::clone(&leashable)],
         &new_holder
     ));
 
@@ -128,9 +128,9 @@ fn set_leashed_to_notifies_replaced_holder() {
     init_vanilla_registry();
 
     let old_holder_typed = LeashNotificationTestEntity::new(1);
-    let old_holder: SharedEntity = old_holder_typed.clone();
+    let old_holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&old_holder_typed);
     let new_holder_typed = LeashNotificationTestEntity::new(2);
-    let new_holder: SharedEntity = new_holder_typed.clone();
+    let new_holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&new_holder_typed);
     let leashable: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
@@ -153,7 +153,7 @@ fn tick_leash_notifies_live_holder() {
     init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::new(1);
-    let holder: SharedEntity = holder_typed.clone();
+    let holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&holder_typed);
     let leashable: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
@@ -177,7 +177,7 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
     init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::with_position(1, DVec3::new(13.0, 0.0, 0.0));
-    let holder: SharedEntity = holder_typed.clone();
+    let holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&holder_typed);
     let leashable: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
@@ -280,7 +280,7 @@ fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
 
     let passenger =
         KnownMovementTestEntity::shared(1, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);
-    let vehicle = ControlledVehicleTestEntity::shared(2, Some(passenger.clone()));
+    let vehicle = ControlledVehicleTestEntity::shared(2, Some(Arc::clone(&passenger)));
     let root_vehicle = ControlledVehicleTestEntity::shared(3, None);
 
     assert!(start_riding_entities(&passenger, &vehicle));

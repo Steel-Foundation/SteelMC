@@ -1097,7 +1097,7 @@ fn indirect_passengers(entity: &dyn Entity) -> Vec<SharedEntity> {
             if !visited.insert(passenger.id()) {
                 continue;
             }
-            output.push(passenger.clone());
+            output.push(Arc::clone(&passenger));
             collect(passenger.passengers(), visited, output);
         }
     }
@@ -1183,7 +1183,7 @@ fn teleport_entity_cross_world(
 
     if let Err(error) = teleport_transition
         .target_world
-        .try_add_entity(new_entity.clone())
+        .try_add_entity(Arc::clone(&new_entity))
     {
         tracing::warn!(
             entity_id = entity.id(),
@@ -1264,7 +1264,7 @@ fn passenger_transition(
     );
 
     TeleportTransition {
-        target_world: teleport_transition.target_world.clone(),
+        target_world: Arc::clone(&teleport_transition.target_world),
         position,
         rotation,
         velocity: teleport_transition.velocity,

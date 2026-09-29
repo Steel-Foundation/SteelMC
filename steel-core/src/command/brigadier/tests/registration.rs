@@ -320,7 +320,7 @@ fn requirements_remain_generic_source_predicates() {
 #[test]
 fn command_callbacks_receive_the_generic_source_context() {
     let observed = Arc::new(AtomicBool::new(false));
-    let command_observed = observed.clone();
+    let command_observed = Arc::clone(&observed);
     let builder = literal::<TestSource>("test").executes(move |context| {
         command_observed.store(context.source().allowed, Ordering::Relaxed);
         Ok(1)

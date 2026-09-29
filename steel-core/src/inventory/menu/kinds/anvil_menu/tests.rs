@@ -45,9 +45,9 @@ fn test_anvil(key: &'static str) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
         vanilla_blocks::ANVIL.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    let player = test_player((*world).clone());
+    let player = test_player(Arc::clone(&(*world)));
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
-    let menu = anvil(player.inventory.clone(), 1, pos, &world);
+    let menu = anvil(Arc::clone(&player.inventory), 1, pos, &world);
     (world, player, pos, menu)
 }
 
@@ -65,7 +65,7 @@ fn validity_requires_anvil_tag_and_interaction_range() {
 
     let current_world = fresh_test_world("anvil_menu_validity_current_world");
     insert_ready_full_chunk(&current_world, ChunkPos::from_block_pos(pos));
-    player.set_world((*current_world).clone());
+    player.set_world(Arc::clone(&(*current_world)));
     assert!(menu.still_valid(&player));
 
     assert!(world.set_block(
@@ -97,8 +97,10 @@ fn sacrifice_enchantments_conflict_with_earlier_merges() {
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
     };
-    let (input_container, result_container) =
-        (kind.input_container.clone(), kind.result_container.clone());
+    let (input_container, result_container) = (
+        Arc::clone(&kind.input_container),
+        Arc::clone(&kind.result_container),
+    );
 
     let mut book = ItemStack::new(&vanilla_items::ENCHANTED_BOOK);
     book.set_enchantments(
@@ -137,7 +139,7 @@ fn rename_only_result_preserves_unused_second_input() {
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
     };
-    let input_container = kind.input_container.clone();
+    let input_container = Arc::clone(&kind.input_container);
     {
         let mut input = input_container.lock();
         input.set_item(0, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
@@ -165,8 +167,10 @@ fn rename_only_result_restores_default_repair_cost_component() {
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
     };
-    let (input_container, result_container) =
-        (kind.input_container.clone(), kind.result_container.clone());
+    let (input_container, result_container) = (
+        Arc::clone(&kind.input_container),
+        Arc::clone(&kind.result_container),
+    );
 
     let mut input = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
     input.remove(REPAIR_COST);
@@ -200,8 +204,10 @@ fn rename_uses_java_blank_rules() {
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
     };
-    let (input_container, result_container) =
-        (kind.input_container.clone(), kind.result_container.clone());
+    let (input_container, result_container) = (
+        Arc::clone(&kind.input_container),
+        Arc::clone(&kind.result_container),
+    );
     input_container
         .lock()
         .set_item(0, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
@@ -222,8 +228,8 @@ fn unchanged_extended_potion_name_does_not_create_rename_result() {
         panic!("anvil builder should create an anvil menu");
     };
     let (input_container, result_container, level_cost) = (
-        kind.input_container.clone(),
-        kind.result_container.clone(),
+        Arc::clone(&kind.input_container),
+        Arc::clone(&kind.result_container),
         kind.level_cost,
     );
     let long_swiftness = REGISTRY
@@ -254,7 +260,7 @@ fn full_inputs_do_not_fallback_to_the_hotbar() {
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
     };
-    let input_container = kind.input_container.clone();
+    let input_container = Arc::clone(&kind.input_container);
     {
         let mut input = input_container.lock();
         input.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 64));
@@ -291,8 +297,10 @@ fn partial_result_overflow_is_discarded() {
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
     };
-    let (input_container, result_container) =
-        (kind.input_container.clone(), kind.result_container.clone());
+    let (input_container, result_container) = (
+        Arc::clone(&kind.input_container),
+        Arc::clone(&kind.result_container),
+    );
     input_container
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 64));

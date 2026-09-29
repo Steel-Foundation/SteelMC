@@ -68,9 +68,9 @@ impl NetworkConnection for RecordingConnection {
 fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
-        packets: packets.clone(),
+        packets: Arc::clone(&packets),
     })));
-    let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1)
         .connection(connection)
         .build();
     (player, packets)
@@ -119,7 +119,7 @@ fn add_test_comparator(full: FullChunkRef<'_>, pos: BlockPos) -> SharedBlockEnti
     );
     let block_entity: SharedBlockEntity =
         Arc::new(ComparatorBlockEntity::new(full.level_weak(), pos, state));
-    assert!(full.add_and_register_block_entity(block_entity.clone()));
+    assert!(full.add_and_register_block_entity(Arc::clone(&block_entity)));
     block_entity
 }
 
@@ -136,7 +136,7 @@ fn add_test_sign(full: FullChunkRef<'_>, pos: BlockPos) -> SharedBlockEntity {
     );
     let block_entity: SharedBlockEntity =
         Arc::new(SignBlockEntity::new(full.level_weak(), pos, state));
-    assert!(full.add_and_register_block_entity(block_entity.clone()));
+    assert!(full.add_and_register_block_entity(Arc::clone(&block_entity)));
     block_entity
 }
 
@@ -192,7 +192,7 @@ fn insert_active_full_holder_with_ticks(
         Arc::downgrade(&world.chunk_map.full_publications),
     ));
     holder.insert_chunk(chunk, ChunkStatus::Full);
-    let _ = world.chunk_map.chunks.insert_sync(pos, holder.clone());
+    let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
     holder
 }
 

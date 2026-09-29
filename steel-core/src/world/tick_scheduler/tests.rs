@@ -88,7 +88,7 @@ fn registered_container(scheduler: &WorldTickScheduler, pos: ChunkPos) -> Arc<Ch
     let Some(registered) = state.chunks.get(&pos) else {
         panic!("test chunk must remain registered");
     };
-    registered.container.clone()
+    Arc::clone(&registered.container)
 }
 
 fn block_head(scheduler: &WorldTickScheduler, pos: ChunkPos) -> Option<i64> {
@@ -148,15 +148,15 @@ fn proto_pending_scheduling_is_linearized_with_full_promotion() {
         )));
         let barrier = Arc::new(Barrier::new(4));
 
-        let block_container = container.clone();
-        let block_barrier = barrier.clone();
+        let block_container = Arc::clone(&container);
+        let block_barrier = Arc::clone(&barrier);
         let block_worker = thread::spawn(move || {
             block_barrier.wait();
             block_container.schedule_pending_block(test_block(), block_pos, TickPriority::Normal)
         });
 
-        let fluid_container = container.clone();
-        let fluid_barrier = barrier.clone();
+        let fluid_container = Arc::clone(&container);
+        let fluid_barrier = Arc::clone(&barrier);
         let fluid_worker = thread::spawn(move || {
             fluid_barrier.wait();
             fluid_container.schedule_pending_fluid(
@@ -166,8 +166,8 @@ fn proto_pending_scheduling_is_linearized_with_full_promotion() {
             )
         });
 
-        let promotion_container = container.clone();
-        let promotion_barrier = barrier.clone();
+        let promotion_container = Arc::clone(&container);
+        let promotion_barrier = Arc::clone(&barrier);
         let promotion_worker = thread::spawn(move || {
             promotion_barrier.wait();
             promotion_container.promote_to_full()
@@ -219,7 +219,7 @@ fn chunk_snapshot_does_not_wait_for_world_scheduler_metadata() {
 
     let metadata = world.scheduled_ticks.state.lock();
     let barrier = Arc::new(Barrier::new(2));
-    let worker_barrier = barrier.clone();
+    let worker_barrier = Arc::clone(&barrier);
     let (sender, receiver) = mpsc::channel();
     let worker = thread::spawn(move || {
         worker_barrier.wait();

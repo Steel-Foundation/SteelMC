@@ -86,7 +86,7 @@ impl ServiceKeyStore {
         cancel_token: CancellationToken,
     ) -> oneshot::Receiver<()> {
         let (ready_tx, ready_rx) = oneshot::channel();
-        let store = self.clone();
+        let store = Arc::clone(self);
         drop(tokio::spawn(async move {
             let mut has_successful_snapshot = match store.refresh().await {
                 Ok(()) => true,

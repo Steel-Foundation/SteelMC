@@ -8,9 +8,9 @@ fn default_entity_tick_dispatches_living_tick() {
     init_vanilla_registry();
 
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
-    let entity_ref: SharedEntity = entity.clone();
+    let entity_ref: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
 
-    entity_ref.clone().tick();
+    Arc::clone(&entity_ref).tick();
 
     assert_eq!(entity.living_base().death_time(), 1);
 }
@@ -42,14 +42,14 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
     let world = fresh_test_world("kill_credit_victim");
     let player_world = fresh_test_world("kill_credit_player");
     let player: SharedEntity =
-        TestPlayerBuilder::new((*player_world).clone(), "Attacker", 2).build();
+        TestPlayerBuilder::new(Arc::clone(&(*player_world)), "Attacker", 2).build();
     let victim = PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
         Arc::downgrade(&world),
     );
-    let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, player.clone());
+    let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, Arc::clone(&player));
 
     victim.resolve_player_responsible_for_damage(&source);
     drop(source);
@@ -64,7 +64,7 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
 
     victim.resolve_player_responsible_for_damage(&DamageSource::direct(
         &vanilla_damage_types::PLAYER_ATTACK,
-        player.clone(),
+        Arc::clone(&player),
     ));
     for _ in 0..=100 {
         victim.living_base().tick_last_hurt_by_player_memory();
@@ -146,7 +146,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&target);
 
     entity.set_last_hurt_mob(Some(&target_entity));
     assert!(entity.last_hurt_mob().is_some());

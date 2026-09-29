@@ -171,7 +171,7 @@ mod tests {
         sheep.set_sheared(true);
         let shared: SharedEntity = Arc::new(sheep);
         world
-            .try_add_entity(shared.clone())
+            .try_add_entity(Arc::clone(&shared))
             .expect("sheep should attach to the loaded test chunk");
         world.set_block_state(
             shared.block_position().below(),

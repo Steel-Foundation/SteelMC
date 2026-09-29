@@ -119,7 +119,7 @@ mod tests {
             assert!(world.set_block(target, state, UpdateFlags::UPDATE_NONE));
         }
 
-        let player = TestPlayerBuilder::new(world.clone(), "BottleTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "BottleTester", 1).build();
         player
             .try_set_position(feet)
             .expect("test player should move onto the target chunk");
@@ -136,7 +136,7 @@ mod tests {
             player,
             InteractionHand::MainHand,
             world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
         BottleItem.use_item(&mut context)
     }
