@@ -29,8 +29,7 @@ fn assert_disconnect_releases_damage_history(
         .build()
         .expect("test runtime");
     runtime.block_on(async {
-        let root = test_storage_root(world_name);
-        let server = test_server((*world).clone(), PermissionSubjectIndex::new(), &root)
+        let server = test_server((*world).clone(), PermissionSubjectIndex::new())
             .await
             .expect("test server");
         let first =
@@ -89,9 +88,6 @@ fn assert_disconnect_releases_damage_history(
             .expect("frozen tick");
         drop(workers);
         assert_eq!(world.game_time(), damage_time);
-        fs::remove_dir_all(root)
-            .await
-            .expect("test storage cleanup");
 
         assert!(
             first_weak.upgrade().is_none(),

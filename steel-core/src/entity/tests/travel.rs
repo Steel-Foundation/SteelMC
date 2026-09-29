@@ -95,6 +95,7 @@ fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
 #[test]
 fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     init_vanilla_registry();
+    init_behaviors();
 
     let slow_falling = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let slow_falling_entity: SharedEntity = slow_falling.clone();

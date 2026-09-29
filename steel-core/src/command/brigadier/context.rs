@@ -159,11 +159,11 @@ where
             source: self.source.clone(),
             root: self.root,
             arguments: self.arguments.clone(),
-            executor: self.executor.as_ref().cloned(),
+            executor: self.executor.clone(),
             nodes: self.nodes.clone(),
             range: self.range,
             child: self.child.as_ref().map(|child| Box::new(child.branch())),
-            modifier: self.modifier.as_ref().cloned(),
+            modifier: self.modifier.clone(),
             forks: self.forks,
         }
     }
@@ -421,11 +421,11 @@ where
             input: self.input.clone(),
             root: self.root,
             arguments: self.arguments.clone(),
-            executor: self.executor.as_ref().cloned(),
+            executor: self.executor.clone(),
             nodes: self.nodes.clone(),
             range: self.range,
-            child: self.child.as_ref().cloned(),
-            modifier: self.modifier.as_ref().cloned(),
+            child: self.child.clone(),
+            modifier: self.modifier.clone(),
             forks: self.forks,
         }
     }

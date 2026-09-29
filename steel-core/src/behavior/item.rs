@@ -438,6 +438,7 @@ mod tests {
     #[test]
     fn honey_bottle_stack_keeps_remaining_bottles_and_hands_off_the_remainder() {
         init_vanilla_registry();
+        init_behaviors();
         let world = fresh_test_world("finish_consuming_honey_bottle_stack");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new((*world).clone(), "Test", 1).build();
