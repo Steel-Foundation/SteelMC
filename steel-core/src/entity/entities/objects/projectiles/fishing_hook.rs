@@ -130,7 +130,7 @@ impl FishingHookEntity {
         }
 
         let (yaw, pitch) = player.rotation();
-        let player_shared: SharedEntity = player.clone();
+        let player_shared: SharedEntity = Arc::<Player>::clone(player);
 
         self.set_owner(&player_shared);
 
@@ -550,7 +550,7 @@ impl FishingHookEntity {
                             return damage;
                         };
 
-                        self.spawn_loot_award_stat(items, world.clone(), owner.clone());
+                        self.spawn_loot_award_stat(items, Arc::clone(&world), Arc::clone(&owner));
 
                         let orb_pos = DVec3::new(
                             player.position().x,

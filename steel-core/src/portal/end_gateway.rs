@@ -227,7 +227,7 @@ fn gateway_transition(
 ) -> TeleportTransition {
     let is_ender_pearl = entity.entity_type() == &vanilla_entities::ENDER_PEARL;
     TeleportTransition {
-        target_world: world.clone(),
+        target_world: Arc::clone(world),
         position: block_bottom_center(destination),
         rotation: (0.0, 0.0),
         velocity: DVec3::ZERO,

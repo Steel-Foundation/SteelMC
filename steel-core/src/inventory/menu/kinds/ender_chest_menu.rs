@@ -1,5 +1,7 @@
 //! Ender chest menu.
 
+use std::sync::Arc;
+
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::inventory::ender_chest::{ENDER_CHEST_SLOTS, SyncPlayerEnderChest};
@@ -17,7 +19,7 @@ pub fn ender_chest(
     chest_with_kind(
         inventory,
         container_id,
-        container.clone(),
+        Arc::clone(&container),
         ENDER_CHEST_SLOTS / 9,
         EnderChestKind { container },
     )
