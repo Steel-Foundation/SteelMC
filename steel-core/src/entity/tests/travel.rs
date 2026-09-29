@@ -2,9 +2,7 @@ use steel_registry::blocks::BlockRef;
 use steel_utils::types::UpdateFlags;
 
 use super::*;
-use crate::entity::living_entity::{
-    BASE_HORIZONTAL_AIR_DRAG, DEFAULT_BLOCK_FRICTION, compute_modified_friction,
-};
+use crate::entity::living_entity::BASE_HORIZONTAL_AIR_DRAG;
 use crate::entity::{ENTITIES, init_entities, next_entity_id};
 
 #[test]
@@ -304,7 +302,7 @@ fn a_pig_walks_at_the_vanilla_speed_on_ordinary_ground() {
     let walk = walking_speed_on("pig_walk_grass", &vanilla_blocks::GRASS_BLOCK);
 
     let expected = f64::from(PIG_MOVEMENT_SPEED * PIG_MOVEMENT_SPEED)
-        / (1.0 - f64::from(DEFAULT_BLOCK_FRICTION * BASE_HORIZONTAL_AIR_DRAG));
+        / (1.0 - f64::from(vanilla_blocks::GRASS_BLOCK.config.friction * BASE_HORIZONTAL_AIR_DRAG));
     assert!(
         (walk.per_tick - expected).abs() < SPEED_TOLERANCE,
         "expected about {expected} blocks per tick, got {}",
@@ -322,31 +320,5 @@ fn a_pig_slides_much_further_on_ice_than_on_grass() {
         "ice should keep the pig sliding, got {} against {}",
         on_ice.coasted,
         on_grass.coasted
-    );
-}
-
-#[test]
-fn ground_below_default_friction_gets_no_speed_boost() {
-    init_vanilla_registry();
-    init_behaviors();
-    init_entities();
-
-    let world = fresh_test_world("pig_grippy_ground");
-    let pig = ENTITIES
-        .create(
-            &vanilla_entities::PIG,
-            next_entity_id(),
-            DVec3::new(8.5, 64.0, 2.5),
-            Arc::downgrade(&world),
-        )
-        .expect("pig factory should produce an entity");
-    let mob = pig.as_mob().expect("a pig is a mob");
-    mob.set_on_ground(true);
-    mob.set_speed(PIG_MOVEMENT_SPEED);
-
-    let grippy = compute_modified_friction(DEFAULT_BLOCK_FRICTION, 2.0);
-    assert!((mob.get_friction_influenced_speed(grippy) - PIG_MOVEMENT_SPEED).abs() < f32::EPSILON);
-    assert!(
-        mob.get_friction_influenced_speed(vanilla_blocks::ICE.config.friction) < PIG_MOVEMENT_SPEED
     );
 }

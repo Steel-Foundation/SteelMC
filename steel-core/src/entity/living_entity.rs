@@ -4,8 +4,6 @@ use steel_registry::{DyeColor, vanilla_custom_stats};
 use super::*;
 use crate::behavior::{InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 
-/// Ground friction of an ordinary block; anything at or below it needs no speed boost.
-pub(super) const DEFAULT_BLOCK_FRICTION: f32 = 0.6;
 /// The scale that cancels default ground friction, kept as the inlined literal
 /// so the arithmetic matches.
 const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
@@ -2414,10 +2412,6 @@ pub trait LivingEntity: Entity {
     fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
         if !self.on_ground() {
             return self.get_flying_speed();
-        }
-
-        if block_friction <= DEFAULT_BLOCK_FRICTION {
-            return self.get_speed();
         }
 
         let cubed = block_friction * block_friction * block_friction;
