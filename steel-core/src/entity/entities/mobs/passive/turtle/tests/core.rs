@@ -172,6 +172,20 @@ fn growing_up_drops_a_scute() {
     assert_eq!(scutes, 1, "growing up should drop exactly one turtle scute");
 }
 
+fn flood(world: &Arc<World>, span: RangeInclusive<i32>) {
+    const WATER_Y: i32 = 64;
+
+    for x in span.clone() {
+        for z in span.clone() {
+            world.set_block(
+                BlockPos::new(x, WATER_Y, z),
+                vanilla_blocks::WATER.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            );
+        }
+    }
+}
+
 fn lay_sand_floor(world: &Arc<World>, span: RangeInclusive<i32>) {
     const FLOOR_Y: i32 = 63;
 
@@ -293,6 +307,7 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
 
     let (world, turtle) = turtle_in_world("turtle_travel_unloaded", DVec3::new(8.5, 64.0, 8.5));
     lay_sand_floor(&world, 0..=15);
+    flood(&world, 0..=15);
     turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
     turtle.set_travel_pos(Some(BlockPos::new(8, 64, 24)));
 
@@ -311,6 +326,7 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
         }
     }
     lay_sand_floor(&world, -24..=40);
+    flood(&world, -24..=40);
 
     let accepted = (0..ACCEPT_ATTEMPTS).any(|_| {
         let mut goal = TurtleTravelGoal::new(1.0);
@@ -523,6 +539,21 @@ fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
         turtle.get_walk_target_value(sand_pos),
         PREFERRED_WALK_TARGET_VALUE
     );
+}
+
+#[test]
+fn a_traveling_turtle_can_aim_for_open_water() {
+    let (world, turtle) = turtle_in_world("turtle_stable_destination", DVec3::new(8.5, 65.0, 8.5));
+    let open_water = BlockPos::new(4, 70, 4);
+    assert!(world.set_block(
+        open_water,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    assert!(!turtle.is_stable_destination(open_water));
+    turtle.set_travel_pos(Some(BlockPos::new(100, 60, 100)));
+    assert!(turtle.is_stable_destination(open_water));
 }
 
 const BREED_LOVE_TIME: i32 = 600;

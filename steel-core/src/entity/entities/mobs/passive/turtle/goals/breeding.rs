@@ -1,17 +1,20 @@
 use std::ops::Range;
+use std::sync::Arc;
 
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::vanilla_game_rules::MOB_DROPS;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_game_events};
+use steel_registry::{
+    sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_entities, vanilla_game_events,
+};
 use steel_utils::types::UpdateFlags;
 
 use super::{TurtleEntity, as_turtle, closer_to_center_than};
 use crate::behavior::blocks::vegetation::TurtleEggBlock;
 use crate::entity::ai::goal::{BreedGoal, Goal, GoalControls, MoveToBlockGoal};
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{AgeableMob, Animal, PathfinderMob};
+use crate::entity::{AgeableMob, Animal, PathfinderMob, SharedEntity, next_entity_id};
 use crate::world::game_event::GameEventContext;
 
 const EGGS: &IntProperty = &BlockStateProperties::EGGS;
@@ -59,8 +62,16 @@ impl TurtleBreedGoal {
         partner_animal.reset_love();
 
         if world.get_game_rule(&MOB_DROPS) {
-            let xp = rand::random_range(BREED_XP);
-            ExperienceOrbEntity::award(&world, mob.position(), xp);
+            let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
+                &vanilla_entities::EXPERIENCE_ORB,
+                next_entity_id(),
+                mob.position(),
+                rand::random_range(BREED_XP),
+                Arc::downgrade(&world),
+            ));
+            if let Err(error) = world.try_add_entity(orb) {
+                log::debug!("failed to add turtle breeding experience orb: {error}");
+            }
         }
     }
 }
