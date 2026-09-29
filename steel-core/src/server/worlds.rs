@@ -53,6 +53,44 @@ impl WorldMap {
         }
     }
 
+    /// Verifies primary ownership and sharing before the server publishes its worlds.
+    pub(crate) fn validate_game_times(&self) -> Result<(), String> {
+        for domain in self.domain_names() {
+            let primary = self
+                .default_world(domain)
+                .ok_or_else(|| format!("domain {domain} has no loaded primary"))?;
+            if primary.domain() != domain || !primary.level_data.read().owns_game_time() {
+                return Err(format!("domain {domain} has an invalid game-time primary"));
+            }
+            for world in self.values().filter(|world| world.domain() == domain) {
+                if !Arc::ptr_eq(&primary.game_time, &world.game_time)
+                    || (world.key != primary.key && world.level_data.read().owns_game_time())
+                {
+                    return Err(format!(
+                        "world {} is not bound to domain {domain}'s primary clock",
+                        world.key
+                    ));
+                }
+            }
+        }
+        for world in self.values() {
+            if !self.has_domain(world.domain()) {
+                return Err(format!("world {} has no configured domain", world.key));
+            }
+        }
+        Ok(())
+    }
+
+    /// Publishes one simulation increment for every domain before any worker dispatch.
+    pub(crate) fn advance_domain_game_times(&self) {
+        for key in self.default_worlds.values() {
+            let Some(primary) = self.worlds.get(key) else {
+                panic!("validated domain primary is missing: {key}");
+            };
+            primary.level_data.write().advance_game_time();
+        }
+    }
+
     /// Inserts a loaded world.
     pub fn insert(&mut self, key: Identifier, world: Arc<World>) {
         self.worlds.insert(key, world);

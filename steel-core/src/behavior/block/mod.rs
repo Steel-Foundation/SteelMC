@@ -5,6 +5,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
+use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -1033,6 +1034,17 @@ pub trait BlockBehavior: Send + Sync {
         BlockEntityCreation::Unimplemented
     }
 
+    /// Returns the beam tint this block contributes to a beacon beam passing through it.
+    ///
+    /// Steel models Vanilla's `BeaconBeamBlock` marker interface as a trait method so third
+    /// party blocks can join a beacon beam without a new interface: `None` means the block is
+    /// not a beam block, matching a Vanilla class that does not implement `BeaconBeamBlock`.
+    ///
+    /// Vanilla parity: `BeaconBeamBlock.getColor()`.
+    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        None
+    }
+
     /// Returns the server ticker selected by this live block state and entity type.
     ///
     /// Mirrors Vanilla `EntityBlock.getTicker`. Selection runs without chunk,
@@ -1224,6 +1236,15 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
         None
+    }
+
+    /// Whether this block's item may be stored inside container items such as
+    /// shulker boxes and bundles.
+    ///
+    /// Vanilla gates this on the item class, but shulker boxes share
+    /// `BlockItem`, so the rule lives on the block instead.
+    fn fits_inside_container_items(&self) -> bool {
+        true
     }
 }
 

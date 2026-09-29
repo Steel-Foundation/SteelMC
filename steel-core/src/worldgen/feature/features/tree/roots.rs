@@ -22,7 +22,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn place_tree_roots(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         origin: BlockPos,
@@ -45,7 +45,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_mangrove_tree_roots(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         origin: BlockPos,
@@ -95,7 +95,7 @@ impl FeatureDecorationRunner {
     }
 
     fn simulate_mangrove_tree_roots(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         random: &mut WorldgenRandom,
         root_pos: BlockPos,
         direction: Direction,
@@ -167,7 +167,7 @@ impl FeatureDecorationRunner {
     }
 
     fn can_place_mangrove_tree_root(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
 
         pos: BlockPos,
         placement: &MangroveRootPlacement,
@@ -176,7 +176,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_mangrove_tree_root(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -185,7 +185,7 @@ impl FeatureDecorationRunner {
     ) {
         if Self::block_matches_identifiers(
             registry,
-            region.block_state(pos),
+            region.get_block_state(pos),
             &placer.mangrove_root_placement.muddy_roots_in,
         ) {
             let state = Self::sample_block_state_provider(
@@ -211,7 +211,7 @@ impl FeatureDecorationRunner {
 
         let above = pos.above();
         if random.next_f32() < placer.above_root_placement.above_root_placement_chance
-            && region.block_state(above).is_air()
+            && region.get_block_state(above).is_air()
         {
             let state = Self::sample_block_state_provider(
                 region,

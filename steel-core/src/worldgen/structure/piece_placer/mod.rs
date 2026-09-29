@@ -19,10 +19,14 @@ mod swamp_hut;
 mod template_piece;
 mod template_processors;
 
+use std::sync::Weak;
+
+use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::structure::StructureRef;
 use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::random::Random;
@@ -32,6 +36,8 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
+use crate::entity::{ENTITIES, SharedEntity, next_entity_id};
+use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::{
     ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
@@ -45,6 +51,39 @@ impl StructurePiecePlacer {
         UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_KNOWN_SHAPE);
     /// Vanilla template-piece placement flags: `UPDATE_CLIENTS`.
     pub(crate) const TEMPLATE_UPDATE_FLAGS: UpdateFlags = UpdateFlags::UPDATE_CLIENTS;
+
+    /// Creates a structure mob when Steel implements its concrete type.
+    ///
+    /// Unsupported types are skipped instead of leaving behaviorless entities in generated
+    /// chunks. Completed structure placement does not retry these skipped spawns.
+    /// Structure spawn finalization remains tracked in `SteelMC` issue #564.
+    fn create_mob(
+        entity_type: EntityTypeRef,
+        position: DVec3,
+        world: Weak<World>,
+        persistence_required: bool,
+    ) -> Option<SharedEntity> {
+        let Some(entity) = ENTITIES.create(entity_type, next_entity_id(), position, world) else {
+            log::warn!(
+                "Skipping unsupported structure entity spawn for {} at {position:?}",
+                entity_type.key
+            );
+            return None;
+        };
+        let Some(mob) = entity.as_mob() else {
+            log::warn!(
+                "Skipping structure mob spawn for {} at {position:?}: registered implementation is not a mob",
+                entity_type.key
+            );
+            return None;
+        };
+
+        if persistence_required {
+            mob.set_persistence_required();
+        }
+        entity.snap_to(position, 0.0, 0.0);
+        Some(entity)
+    }
 
     /// Places one already-clipped structure piece.
     ///
@@ -355,5 +394,68 @@ impl StructurePiecePlacer {
             || block == &vanilla_blocks::JUNGLE_FENCE
             || block == &vanilla_blocks::LADDER
             || block == &vanilla_blocks::IRON_BARS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::vanilla_entities;
+
+    use super::*;
+    use crate::bootstrap::init_globals;
+
+    #[test]
+    fn registered_non_mob_is_skipped() {
+        init_globals();
+
+        assert!(
+            StructurePiecePlacer::create_mob(
+                &vanilla_entities::ITEM,
+                DVec3::ZERO,
+                Weak::new(),
+                true,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn supported_structure_mob_preserves_placement_and_persistence() {
+        init_globals();
+        let position = DVec3::new(12.5, 64.0, -7.5);
+
+        for persistence_required in [false, true] {
+            let Some(entity) = StructurePiecePlacer::create_mob(
+                &vanilla_entities::PIG,
+                position,
+                Weak::new(),
+                persistence_required,
+            ) else {
+                panic!("registered pig should spawn");
+            };
+            let Some(mob) = entity.as_mob() else {
+                panic!("pig should be a mob");
+            };
+
+            assert_eq!(mob.is_persistence_required(), persistence_required);
+            assert_eq!(entity.position(), position);
+            assert_eq!(entity.base().old_position(), position);
+            assert_eq!(entity.rotation(), (0.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn unsupported_structure_mob_is_skipped() {
+        init_globals();
+
+        assert!(
+            StructurePiecePlacer::create_mob(
+                &vanilla_entities::WITCH,
+                DVec3::ZERO,
+                Weak::new(),
+                true,
+            )
+            .is_none()
+        );
     }
 }

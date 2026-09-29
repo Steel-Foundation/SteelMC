@@ -44,12 +44,24 @@ impl RootVehicleRestoreJob {
 
 impl ServerJob for RootVehicleRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        if self.player.connection.closed()
-            || !self
-                .player
-                .is_domain_residence_current(self.residence_token)
-            || !self.world.contains_player(&self.player)
-        {
+        let Some(player) = self.player.session.current_player() else {
+            return JobPoll::Finished;
+        };
+        if player.connection.closed() || !player.is_domain_residence_current(self.residence_token) {
+            return JobPoll::Finished;
+        }
+        let Some(server) = player.server.upgrade() else {
+            return JobPoll::Finished;
+        };
+        if !server.owns_online_player(&player) {
+            return JobPoll::Finished;
+        }
+        let Some(player_world) = server.live_world_for_player(&player) else {
+            // End credits temporarily detaches a connected player without ending
+            // their domain residence. Retain the payload and resume after respawn.
+            return JobPoll::Pending;
+        };
+        if !Arc::ptr_eq(&player_world, &self.world) {
             return JobPoll::Finished;
         }
 
@@ -60,13 +72,13 @@ impl ServerJob for RootVehicleRestoreJob {
                 let Some(_ready) = self.request.ready_chunks() else {
                     return JobPoll::Pending;
                 };
-                if let Some(root_vehicle) = self.player.take_matching_pending_root_vehicle(
+                if let Some(root_vehicle) = player.take_matching_pending_root_vehicle(
                     self.residence_token,
                     &self.world,
                     self.attach,
                     self.root_uuid,
                 ) {
-                    restore_root_vehicle_for_player(&self.player, &self.world, root_vehicle);
+                    restore_root_vehicle_for_player(&player, &self.world, root_vehicle);
                 }
                 JobPoll::Finished
             }
@@ -884,35 +896,33 @@ impl EnderPearlRestoreJob {
 
 impl ServerJob for EnderPearlRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        // The pearl may live in another world in the same domain, so require a
-        // live same-domain owner rather than membership in the pearl's exact world.
-        if self.player.connection.closed()
-            || !self
-                .player
-                .is_domain_residence_current(self.residence_token)
-        {
-            return JobPoll::Finished;
-        }
-        let Some(server) = self.player.server.upgrade() else {
+        let Some(player) = self.player.session.current_player() else {
             return JobPoll::Finished;
         };
-        if !server.owns_online_player(&self.player) {
+        // The pearl may live in another world in the same domain, so require a
+        // live same-domain owner rather than membership in the pearl's exact world.
+        if player.connection.closed() || !player.is_domain_residence_current(self.residence_token) {
             return JobPoll::Finished;
         }
-        let Some(player_world) = server.live_world_for_player(&self.player) else {
+        let Some(server) = player.server.upgrade() else {
+            return JobPoll::Finished;
+        };
+        if !server.owns_online_player(&player) {
+            return JobPoll::Finished;
+        }
+        let Some(player_world) = server.live_world_for_player(&player) else {
             // End credits temporarily detaches a connected player without ending
             // their domain residence. Retain the payload and resume after respawn.
             return JobPoll::Pending;
         };
         if player_world.domain() != self.world.domain() {
             tracing::error!(
-                player = %self.player.gameprofile.name,
+                player = %player.gameprofile.name,
                 player_domain = player_world.domain(),
                 pearl_domain = self.world.domain(),
                 "Discarding a pending ender pearl whose owner changed domains without a new residence"
             );
-            self.player
-                .discard_pending_ender_pearl(self.residence_token, self.uuid);
+            player.discard_pending_ender_pearl(self.residence_token, self.uuid);
             return JobPoll::Finished;
         }
 
@@ -923,14 +933,14 @@ impl ServerJob for EnderPearlRestoreJob {
                 if self.request.ready_chunks().is_none() {
                     return JobPoll::Pending;
                 }
-                let Some(pearl) = self.player.take_matching_pending_ender_pearl(
+                let Some(pearl) = player.take_matching_pending_ender_pearl(
                     self.residence_token,
                     &self.world,
                     self.uuid,
                 ) else {
                     return JobPoll::Finished;
                 };
-                restore_ender_pearl_for_player(&self.player, &self.world, &pearl.entity);
+                restore_ender_pearl_for_player(&player, &self.world, &pearl.entity);
                 JobPoll::Finished
             }
         }

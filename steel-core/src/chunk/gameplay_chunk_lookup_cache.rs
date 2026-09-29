@@ -31,6 +31,17 @@ pub struct GameplayChunkLookupCacheStats {
     pub evictions: usize,
 }
 
+impl GameplayChunkLookupCacheStats {
+    /// Adds counters from another completed gameplay phase.
+    pub(crate) const fn merge(&mut self, other: Self) {
+        self.holder_hits += other.holder_hits;
+        self.missing_hits += other.missing_hits;
+        self.scc_lookups += other.scc_lookups;
+        self.foreign_map_bypasses += other.foreign_map_bypasses;
+        self.evictions += other.evictions;
+    }
+}
+
 #[derive(PartialEq, Eq)]
 struct CacheOwner(*const ());
 
@@ -146,6 +157,17 @@ pub(crate) struct GameplayChunkLookupCacheScope<'map> {
 }
 
 impl<'map> GameplayChunkLookupCacheScope<'map> {
+    /// Checks the lifecycle precondition that no same-map gameplay scope is active.
+    pub(crate) fn is_active_for(chunk_map: &ChunkMap) -> bool {
+        let owner = CacheOwner::for_chunk_map(chunk_map);
+        ACTIVE_CACHE.with(|cache| {
+            cache
+                .borrow()
+                .as_ref()
+                .is_some_and(|cache| cache.owner == owner)
+        })
+    }
+
     pub(crate) fn enter(chunk_map: &'map ChunkMap) -> Self {
         Self::enter_key(CacheOwner::for_chunk_map(chunk_map))
     }

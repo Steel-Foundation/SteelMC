@@ -8,12 +8,15 @@ use steel_utils::ChunkPos;
 use crate::chunk::{
     chunk_holder::ChunkHolder,
     chunk_map::ChunkMap,
-    chunk_scheduler::ChunkTicketRevision,
-    chunk_ticket_manager::{ChunkTicket, ticket_level_for_status},
+    chunk_scheduler::ChunkTicketReceipt,
+    chunk_ticket_manager::{ChunkTicketLevel, ticket_level_for_status},
     status::ChunkStatus,
 };
 
 /// Why a chunk request is holding tickets.
+///
+/// This is request metadata, not a Vanilla ticket type. Every RAII request
+/// uses Steel's `CHUNK_REQUEST` ticket because it releases the ticket on drop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkTicketKind {
     /// Player-visible chunk loading.
@@ -66,13 +69,43 @@ pub struct ReadyChunks {
     pub holders: Vec<Arc<ChunkHolder>>,
 }
 
-struct ChunkRequestInner {
+/// Owns temporary loading tickets independently of how readiness is checked.
+/// Steel request tickets have no timeout, so every exit must release the lease.
+pub(crate) struct ChunkRequestLease {
     chunk_map: Arc<ChunkMap>,
     positions: Box<[ChunkPos]>,
+    ticket_level: ChunkTicketLevel,
+    pub(crate) submission_receipt: Option<ChunkTicketReceipt>,
+}
+
+impl ChunkRequestLease {
+    pub(crate) fn new(
+        chunk_map: Arc<ChunkMap>,
+        positions: Box<[ChunkPos]>,
+        ticket_level: ChunkTicketLevel,
+    ) -> Self {
+        let submission_receipt = chunk_map.acquire_chunk_request_leases(&positions, ticket_level);
+        Self {
+            chunk_map,
+            positions,
+            ticket_level,
+            submission_receipt,
+        }
+    }
+}
+
+impl Drop for ChunkRequestLease {
+    fn drop(&mut self) {
+        let _ = self
+            .chunk_map
+            .release_chunk_request_leases(&self.positions, self.ticket_level);
+    }
+}
+
+struct ChunkRequestInner {
+    lease: ChunkRequestLease,
     status: ChunkStatus,
     ticket_kind: ChunkTicketKind,
-    ticket: ChunkTicket,
-    submission_revision: Option<ChunkTicketRevision>,
 }
 
 /// Handle for a ticketed chunk request.
@@ -86,26 +119,15 @@ pub struct ChunkRequestHandle {
 
 impl ChunkRequestHandle {
     pub(crate) fn new(chunk_map: Arc<ChunkMap>, request: ChunkRequest) -> Self {
-        let ticket = ChunkTicket::loading(ticket_level_for_status(request.status));
-        Self::new_with_ticket(chunk_map, request, ticket)
-    }
-
-    fn new_with_ticket(
-        chunk_map: Arc<ChunkMap>,
-        request: ChunkRequest,
-        ticket: ChunkTicket,
-    ) -> Self {
         let positions = dedupe_positions(request.positions);
-        let submission_revision = chunk_map.add_chunk_tickets(&positions, ticket);
+        let ticket_level = ticket_level_for_status(request.status);
+        let lease = ChunkRequestLease::new(chunk_map, positions, ticket_level);
 
         Self {
             inner: Some(ChunkRequestInner {
-                chunk_map,
-                positions,
+                lease,
                 status: request.status,
                 ticket_kind: request.ticket_kind,
-                ticket,
-                submission_revision,
             }),
         }
     }
@@ -127,26 +149,28 @@ impl ChunkRequestHandle {
     pub fn positions(&self) -> &[ChunkPos] {
         self.inner
             .as_ref()
-            .map_or(&[], |inner| inner.positions.as_ref())
+            .map_or(&[], |inner| inner.lease.positions.as_ref())
     }
 
-    /// Polls request readiness. Chunk holder creation and generation scheduling
-    /// are owned by the chunk scheduling epochs.
+    /// Polls request readiness. The chunk-source phase owns chunk holder
+    /// creation and generation scheduling.
     #[must_use]
     pub fn poll(&self) -> ChunkRequestState {
         let Some(inner) = &self.inner else {
             return ChunkRequestState::Cancelled;
         };
-        if inner.positions.is_empty() {
+        if inner.lease.positions.is_empty() {
             return ChunkRequestState::Ready;
         }
-        let ticket_revision_committed = inner
-            .submission_revision
-            .is_none_or(|revision| inner.chunk_map.is_ticket_revision_committed(revision));
+        let ticket_receipt_committed = inner
+            .lease
+            .submission_receipt
+            .is_none_or(|receipt| inner.lease.chunk_map.is_ticket_receipt_committed(receipt));
 
         let mut ready = 0;
-        for &pos in &inner.positions {
+        for &pos in &inner.lease.positions {
             let Some(holder) = inner
+                .lease
                 .chunk_map
                 .chunks
                 .read_sync(&pos, |_, holder| holder.clone())
@@ -159,12 +183,12 @@ impl ChunkRequestHandle {
             }
         }
 
-        if ticket_revision_committed && ready == inner.positions.len() {
+        if ticket_receipt_committed && ready == inner.lease.positions.len() {
             ChunkRequestState::Ready
         } else {
             ChunkRequestState::Pending {
                 ready,
-                total: inner.positions.len(),
+                total: inner.lease.positions.len(),
             }
         }
     }
@@ -174,15 +198,17 @@ impl ChunkRequestHandle {
     pub fn ready_chunks(&self) -> Option<ReadyChunks> {
         let inner = self.inner.as_ref()?;
         if inner
-            .submission_revision
-            .is_some_and(|revision| !inner.chunk_map.is_ticket_revision_committed(revision))
+            .lease
+            .submission_receipt
+            .is_some_and(|receipt| !inner.lease.chunk_map.is_ticket_receipt_committed(receipt))
         {
             return None;
         }
-        let mut holders = Vec::with_capacity(inner.positions.len());
+        let mut holders = Vec::with_capacity(inner.lease.positions.len());
 
-        for &pos in &inner.positions {
+        for &pos in &inner.lease.positions {
             let holder = inner
+                .lease
                 .chunk_map
                 .chunks
                 .read_sync(&pos, |_, holder| holder.clone())?;
@@ -200,31 +226,15 @@ impl ChunkRequestHandle {
 
     /// Cancels the request and releases its tickets.
     pub fn cancel(&mut self) {
-        self.release_tickets();
-    }
-
-    fn release_tickets(&mut self) {
-        let Some(inner) = self.inner.take() else {
-            return;
-        };
-
-        let _ = inner
-            .chunk_map
-            .remove_chunk_tickets(&inner.positions, inner.ticket);
-    }
-}
-
-impl Drop for ChunkRequestHandle {
-    fn drop(&mut self) {
-        self.release_tickets();
+        drop(self.inner.take());
     }
 }
 
 impl ChunkMap {
     /// Adds tickets for a chunk request and returns a pollable handle.
     ///
-    /// The returned handle owns the tickets. Holder creation and generation
-    /// scheduling are handled by chunk scheduling epochs.
+    /// The returned handle owns the tickets. The chunk-source phase handles
+    /// holder creation and generation scheduling.
     #[must_use]
     pub fn request_chunks(self: &Arc<Self>, request: ChunkRequest) -> ChunkRequestHandle {
         ChunkRequestHandle::new(self.clone(), request)
@@ -312,8 +322,8 @@ mod tests {
     }
 
     #[test]
-    fn ready_chunk_still_waits_for_its_ticket_revision_to_commit() {
-        let world = fresh_test_world("chunk_request_revision");
+    fn ready_chunk_still_waits_for_its_ticket_receipt_to_commit() {
+        let world = fresh_test_world("chunk_request_receipt");
         let pos = ChunkPos::new(4, -7);
         let first =
             world

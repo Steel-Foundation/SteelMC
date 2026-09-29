@@ -36,6 +36,7 @@ impl BlockBehavior for WeatheringLanternBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.weathering.change_over_time(state, world, pos);
     }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         self.lantern.get_state_for_placement(context)
     }

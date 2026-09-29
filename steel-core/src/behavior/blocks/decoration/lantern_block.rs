@@ -6,7 +6,6 @@ use steel_registry::{
         properties::{BlockStateProperties, BoolProperty},
         shapes::SupportType,
     },
-    fluid::FluidStateExt,
     vanilla_blocks,
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, axis::Axis};
@@ -14,7 +13,6 @@ use steel_utils::{BlockPos, BlockStateId, Direction, axis::Axis};
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, block::schedule_water_tick_if_waterlogged},
     entity::ai::path::PathComputationType,
-    fluid::get_fluid_state,
     world::{LevelReader, ScheduledTickAccess},
 };
 
@@ -44,8 +42,6 @@ impl LanternBlock {
 
 impl BlockBehavior for LanternBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let replaced_fluid_state = get_fluid_state(context.world, context.place_pos());
-
         for dir in context.get_nearest_looking_directions() {
             if dir.axis() == Axis::Y {
                 let state = self
@@ -53,10 +49,7 @@ impl BlockBehavior for LanternBlock {
                     .default_state()
                     .set_value(HANGING, dir == Direction::Up);
                 if self.can_survive(state, context.world, context.place_pos()) {
-                    return Some(state.set_value(
-                        WATERLOGGED,
-                        replaced_fluid_state.is_water() && replaced_fluid_state.is_source(),
-                    ));
+                    return Some(state.set_value(WATERLOGGED, context.is_water_source()));
                 }
             }
         }

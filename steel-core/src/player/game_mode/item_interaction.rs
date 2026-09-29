@@ -140,7 +140,6 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
-
         let is_instantly_used = item_behavior.get_use_duration(&stack_before_use, player) <= 0;
 
         let result = item_behavior.use_item(&mut context);

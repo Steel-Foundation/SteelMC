@@ -1,15 +1,19 @@
+use super::tick_overload::TickOverloadGuard;
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos,
     ChunkSender, CommandExecutionContext, CommandExecutionOwner, CommandRequest,
     CommandResultCallback, CommandSender, CommandSource, Duration, EncodedChunk,
-    ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, Instant, JoinSet, NetworkConnection,
-    PendingCommandExecutionQueue, Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD,
-    Server, StringReader, SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats,
-    ThreadPool, World, command_suggestions_packet, sleep, spawn_blocking,
+    ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, GlobalPlayerData, Instant, JoinSet,
+    MenuRemovalStatus, NetworkConnection, PendingCommandExecutionQueue, PersistentPlayerData,
+    Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD, Server, StringReader,
+    SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
+    command_suggestions_packet, sleep, spawn_blocking,
 };
+use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
+use steel_utils::translations;
 
 impl Server {
     pub(super) fn advance_server_tick(&self) -> (u64, bool) {
@@ -24,8 +28,7 @@ impl Server {
         (tick_count, runs_normally)
     }
 
-    /// Runs gameplay packets, game ticks, and chunk sending. Game-tick boundaries
-    /// fork background chunk-scheduling epochs through each world's task tracker.
+    /// Runs gameplay packets, game ticks, and chunk sending.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         self.packet_processor.open_after_tick();
         let packet_worker_count =
@@ -76,6 +79,94 @@ impl Server {
         }
     }
 
+    /// Saves everything and tears the worlds down, in the order shutdown requires.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a player's menus cannot be removed, which means packets are still being
+    /// processed. Callers must stop packet processing before calling this; the standalone
+    /// server does so by closing its task tracker and awaiting the drain.
+    pub async fn save_and_shutdown(&self) {
+        if let Err(error) = self.flush_known_players().await {
+            log::error!("Failed to flush known player cache during shutdown: {error}");
+        }
+
+        let players = self.get_players();
+        for player in &players {
+            // Claim the removal first so a later tick cannot run the ordinary disconnect
+            // path for the same player and award the leave-game stat twice.
+            let _ = self.reserve_player_disconnect(player);
+            player.disconnect(translations::MULTIPLAYER_DISCONNECT_SERVER_SHUTDOWN.msg());
+            assert_eq!(
+                player.remove_all_menus(),
+                MenuRemovalStatus::Complete,
+                "shutdown menu removal must run after packet processing stops"
+            );
+        }
+
+        for world in self.worlds.values() {
+            world.chunk_map.stop_generation_refill_loop();
+            world.chunk_map.task_tracker.close();
+            world.chunk_map.task_tracker.wait().await;
+        }
+
+        let mut players_to_save = Vec::new();
+        for player in players {
+            let domain = player.get_world().domain().to_owned();
+            player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
+            let data = PersistentPlayerData::from_player(&player);
+            player.store_ender_pearls_with_player();
+            players_to_save.push((player, domain, data));
+        }
+
+        log::info!("Saving world data...");
+        let command_data = self.save_command_data().await;
+        match command_data.scoreboards {
+            Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
+            Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
+        }
+        match command_data.storage {
+            Ok(saved) => log::info!("Saved {saved} domain command storages"),
+            Err(error) => log::error!("Failed to save domain command storage: {error}"),
+        }
+        let mut total_saved = 0;
+        for world in self.worlds.values() {
+            world.cleanup(&mut total_saved).await;
+        }
+        log::info!("Saved {total_saved} chunks");
+
+        log::info!("Saving player data...");
+        let mut saved = 0;
+        for (player, domain, data) in players_to_save {
+            let uuid = player.gameprofile.id;
+            match self
+                .player_data_storage
+                .save_domain_data(&domain, uuid, &data)
+                .await
+            {
+                Ok(()) => {
+                    saved += 1;
+                }
+                Err(e) => {
+                    log::error!("Failed to save player {uuid} domain data during shutdown: {e}");
+                }
+            }
+            if let Err(e) = self
+                .player_data_storage
+                .save_global(
+                    uuid,
+                    &GlobalPlayerData {
+                        last_active_domain: domain,
+                    },
+                )
+                .await
+            {
+                log::error!("Failed to save player {uuid} global data during shutdown: {e}");
+            }
+        }
+        log::info!("Saved {saved} players");
+    }
+
     /// The main game tick loop (20 TPS, governed by tick rate manager).
     #[expect(
         clippy::too_many_lines,
@@ -91,6 +182,7 @@ impl Server {
             }
         };
         let mut next_tick_time = Instant::now();
+        let mut overload_guard = TickOverloadGuard::new();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
@@ -118,6 +210,7 @@ impl Server {
 
             if should_sprint_this_tick {
                 next_tick_time = Instant::now();
+                overload_guard.restart_report_gap(next_tick_time);
             } else {
                 let now = Instant::now();
                 if now < next_tick_time {
@@ -125,6 +218,12 @@ impl Server {
                         () = cancel_token.cancelled() => break,
                         () = sleep(next_tick_time - now) => {}
                     }
+                } else {
+                    overload_guard.skip_backlog_if_overloaded(
+                        now,
+                        &mut next_tick_time,
+                        nanoseconds_per_tick,
+                    );
                 }
                 next_tick_time += Duration::from_nanos(nanoseconds_per_tick);
             }
@@ -135,7 +234,6 @@ impl Server {
 
             let tick_start = Instant::now();
             self.packet_processor.close_for_tick().await;
-            self.advance_chunk_scheduling();
             self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
             let (tick_count, runs_normally) = self.advance_server_tick();
@@ -450,7 +548,7 @@ impl Server {
 
         // Phase 1: prepare (brief lock)
         let prepared = {
-            let mut sender = player.chunk_sender.lock();
+            let mut sender = player.chunk_sender().lock();
             sender.prepare_batch(world, chunk_pos, &player.chunk_send_epoch)
         };
 
@@ -473,7 +571,7 @@ impl Server {
             return;
         }
         let sent_chunks = {
-            let mut sender = player.chunk_sender.lock();
+            let mut sender = player.chunk_sender().lock();
             sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch)
         };
 
@@ -481,78 +579,49 @@ impl Server {
             return;
         }
 
-        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
         world
             .entity_tracker()
             .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
-    /// Commits ready chunk lifecycle epochs and forks the next background work.
-    fn advance_chunk_scheduling(&self) {
-        for (i, world) in self.worlds.values().enumerate() {
-            let timings = world.chunk_map.advance_scheduling();
-
-            let background_elapsed = timings.ticket_updates
-                + timings.schedule_generation
-                + timings.run_generation
-                + timings.process_unloads;
-            let boundary_elapsed = timings.block_entity_unloads
-                + timings.readiness_demotions
-                + timings.lifecycle_commit
-                + timings.readiness_reconcile
-                + timings.ticking_snapshot_rebuild;
-            let work_elapsed = background_elapsed + boundary_elapsed;
-
-            if work_elapsed >= SLOW_CHUNK_TICK_THRESHOLD {
-                tracing::warn!(
-                    world = i,
-                    work_elapsed = ?work_elapsed,
-                    background_elapsed = ?background_elapsed,
-                    boundary_elapsed = ?boundary_elapsed,
-                    ticket_updates = ?timings.ticket_updates,
-                    block_entity_unloads = ?timings.block_entity_unloads,
-                    readiness_demotions = ?timings.readiness_demotions,
-                    lifecycle_commit = ?timings.lifecycle_commit,
-                    readiness_reconcile = ?timings.readiness_reconcile,
-                    post_process_generation = ?timings.post_process_generation,
-                    post_process_chunk_count = timings.post_process_chunk_count,
-                    post_process_position_count = timings.post_process_position_count,
-                    readiness_candidate_count = timings.readiness_candidate_count,
-                    ticking_snapshot_rebuild = ?timings.ticking_snapshot_rebuild,
-                    rebuilt_ticking_chunk_count = timings.rebuilt_ticking_chunk_count,
-                    lookup_cache_holder_hits = timings.lookup_cache.holder_hits,
-                    lookup_cache_missing_hits = timings.lookup_cache.missing_hits,
-                    lookup_cache_scc_lookups = timings.lookup_cache.scc_lookups,
-                    lookup_cache_foreign_map_bypasses = timings.lookup_cache.foreign_map_bypasses,
-                    lookup_cache_evictions = timings.lookup_cache.evictions,
-                    schedule_generation = ?timings.schedule_generation,
-                    scheduled_count = timings.scheduled_count,
-                    run_generation = ?timings.run_generation,
-                    process_unloads = ?timings.process_unloads,
-                    "Chunk scheduling epoch slow"
-                );
-            }
-        }
-    }
-
     #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
-    async fn tick_worlds_game(
+    pub(super) async fn tick_worlds_game(
         &self,
         workers: &WorldTickWorkers,
         tick_count: u64,
         runs_normally: bool,
     ) -> Result<(), WorldTickWorkerError> {
+        if runs_normally {
+            self.worlds.advance_domain_game_times();
+        }
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
                 continue;
             }
             let cm = &timings.chunk_map;
+            let scheduling = &cm.scheduling;
             tracing::warn!(
                 world = i,
                 elapsed = ?timings.elapsed,
                 tick_count,
                 entity_tick = ?timings.entity_tick,
+                ticket_updates = ?scheduling.ticket_updates,
+                block_entity_unloads = ?scheduling.block_entity_unloads,
+                readiness_demotions = ?scheduling.readiness_demotions,
+                lifecycle_commit = ?scheduling.lifecycle_commit,
+                readiness_reconcile = ?scheduling.readiness_reconcile,
+                post_process_generation = ?scheduling.post_process_generation,
+                post_process_chunk_count = scheduling.post_process_chunk_count,
+                post_process_position_count = scheduling.post_process_position_count,
+                readiness_candidate_count = scheduling.readiness_candidate_count,
+                ticking_snapshot_rebuild = ?scheduling.ticking_snapshot_rebuild,
+                rebuilt_ticking_chunk_count = scheduling.rebuilt_ticking_chunk_count,
+                schedule_generation = ?scheduling.schedule_generation,
+                scheduled_count = scheduling.scheduled_count,
+                run_generation = ?scheduling.run_generation,
+                process_unloads = ?scheduling.process_unloads,
                 broadcast_changes = ?cm.broadcast_changes,
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,
@@ -613,10 +682,10 @@ mod tests {
         let mut encode_cache = FxHashMap::default();
         Server::send_chunks_for_player(&player, &world, &mut encode_cache, &encoding_pool);
 
-        let sender = player.chunk_sender.lock();
+        let sender = player.chunk_sender().lock();
         assert!(sender.pending_chunks.contains(&center));
         assert!(!sender.is_chunk_sent(center));
-        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
         assert!(world.players.insert(Arc::clone(&player)));

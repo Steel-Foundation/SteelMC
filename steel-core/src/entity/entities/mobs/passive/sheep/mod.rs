@@ -492,6 +492,17 @@ impl AgeableMob for SheepEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
+
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
+        let parent1_color = self.color();
+        let parent2_color = partner
+            .downcast_ref::<SheepEntity>()
+            .map_or(parent1_color, SheepEntity::color);
+        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
+        if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
+            offspring.set_color(mixed_color);
+        }
+    }
 }
 
 impl Animal for SheepEntity {
@@ -501,17 +512,6 @@ impl Animal for SheepEntity {
 
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         SheepEntity::is_food(item_stack)
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
-        let parent1_color = self.color();
-        let parent2_color = partner
-            .downcast_ref::<SheepEntity>()
-            .map_or(parent1_color, SheepEntity::color);
-        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
-        if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
-            offspring.set_color(mixed_color);
-        }
     }
 }
 

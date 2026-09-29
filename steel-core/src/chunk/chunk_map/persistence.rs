@@ -157,9 +157,12 @@ impl ChunkMap {
                     let save_dependency = holder.add_save_dependency();
                     let holder_clone = Arc::clone(holder);
                     let map_clone = Arc::clone(self);
-                    self.task_tracker.spawn(async move {
-                        map_clone.save_chunk(&holder_clone, save_dependency).await;
-                    });
+                    self.task_tracker.spawn_on(
+                        async move {
+                            map_clone.save_chunk(&holder_clone, save_dependency).await;
+                        },
+                        self.chunk_runtime.handle(),
+                    );
                     return true;
                 }
 
@@ -198,11 +201,14 @@ impl ChunkMap {
             world.on_entity_chunk_unload_finalized(pos);
             if has_chunk {
                 let map_clone = Arc::clone(self);
-                self.task_tracker.spawn(async move {
-                    if let Err(e) = map_clone.storage.release_chunk(pos).await {
-                        tracing::error!(?pos, "Error releasing chunk: {e}");
-                    }
-                });
+                self.task_tracker.spawn_on(
+                    async move {
+                        if let Err(e) = map_clone.storage.release_chunk(pos).await {
+                            tracing::error!(?pos, "Error releasing chunk: {e}");
+                        }
+                    },
+                    self.chunk_runtime.handle(),
+                );
             }
         }
     }

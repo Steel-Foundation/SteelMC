@@ -75,6 +75,19 @@ impl PlayerInventory {
         }
     }
 
+    /// Copies this inventory into a fresh player inventory for player replacement.
+    #[must_use]
+    pub(crate) fn replacement_copy(&self) -> Self {
+        Self {
+            items: array::from_fn(|slot| {
+                let item = &self.items[slot];
+                item.copy_with_count(item.count())
+            }),
+            selected: self.selected,
+            times_changed: 0,
+        }
+    }
+
     /// Returns true if the given slot index is a hotbar slot (0-8).
     #[must_use]
     pub const fn is_hotbar_slot(slot: u8) -> bool {

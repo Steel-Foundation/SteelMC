@@ -4,24 +4,23 @@ use std::{
     cmp::Reverse,
     collections::{BinaryHeap, VecDeque},
     hash::Hash,
+    mem,
     sync::Arc,
 };
 
+use crate::{
+    entity::Entity,
+    player::{
+        Player, PlayerSession, PlayerSessionId,
+        connection::NetworkConnection,
+        connection::{ScheduledPacketExecution, ScheduledPlayPacket},
+    },
+};
 use parking_lot::Condvar;
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_utils::{locks::SyncMutex, translations};
 use tokio::sync::Notify;
 use tokio::task::yield_now;
-use uuid::Uuid;
-
-use crate::{
-    entity::Entity,
-    player::{
-        Player,
-        connection::NetworkConnection,
-        connection::{ScheduledPacketExecution, ScheduledPlayPacket},
-    },
-};
 
 use super::Server;
 
@@ -34,22 +33,20 @@ const MAX_OUTSTANDING_BYTES_PER_PLAYER: usize = 32 * 1024 * 1024;
 const PACKET_ADMISSION_OVERHEAD: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct PlayerPacketLaneKey {
-    player_id: Uuid,
-    entity_id: i32,
-}
+struct PlayerPacketLaneKey(PlayerSessionId);
 
 impl PlayerPacketLaneKey {
-    fn new(player: &Player) -> Self {
-        Self {
-            player_id: player.gameprofile.id,
-            entity_id: player.id(),
-        }
+    const fn new(session: &PlayerSession) -> Self {
+        Self(session.id())
     }
 }
 
+/// Exact ownership of one paused player-session packet lane.
+#[derive(Clone, Copy)]
+pub(crate) struct PlayerPacketTransition(PacketLanePause<PlayerPacketLaneKey>);
+
 struct PendingPlayPacket {
-    player: Arc<Player>,
+    session: Arc<PlayerSession>,
     packet: ScheduledPlayPacket,
 }
 
@@ -57,6 +54,8 @@ struct PendingPlayPacket {
 ///
 /// The processor runs while the game tick is idle. At each tick boundary it drains every packet
 /// submitted before that boundary, while retaining later submissions for the next packet phase.
+/// A player-replacement transition temporarily withdraws that session's queued packets from the
+/// runnable global order and re-admits them in session FIFO order after the replacement is bound.
 pub(super) struct PacketProcessor {
     queued: PacketQueue<PlayerPacketLaneKey, PendingPlayPacket>,
 }
@@ -75,7 +74,7 @@ impl PacketProcessor {
         payload_bytes: usize,
     ) {
         let player_id = player.gameprofile.id;
-        let lane_key = PlayerPacketLaneKey::new(&player);
+        let lane_key = PlayerPacketLaneKey::new(&player.session);
         if player.connection.closed() {
             self.queued.discard_lane(lane_key);
             return;
@@ -88,7 +87,7 @@ impl PacketProcessor {
             execution,
             admission_bytes,
             PendingPlayPacket {
-                player: Arc::clone(&player),
+                session: Arc::clone(&player.session),
                 packet,
             },
         );
@@ -101,7 +100,7 @@ impl PacketProcessor {
 
         tracing::warn!(
             player_id = %player_id,
-            entity_id = lane_key.entity_id,
+            entity_id = player.id(),
             ?error,
             "Disconnecting player after inbound packet admission limit"
         );
@@ -115,16 +114,39 @@ impl PacketProcessor {
             let Some(pending) = work.take() else {
                 continue;
             };
+            let Some(player) = pending.session.current_player() else {
+                continue;
+            };
             if !Self::packet_is_runnable(
-                &pending.player,
+                &player,
                 &pending.packet,
                 server.cancel_token.is_cancelled(),
             ) {
                 continue;
             }
 
-            pending.packet.handle(pending.player, server);
+            pending.packet.handle(player, server);
         }
+    }
+
+    /// Suspends one connection's FIFO lane while its player entity is replaced.
+    pub(super) fn pause_player_session(
+        &self,
+        session: &PlayerSession,
+    ) -> Option<PlayerPacketTransition> {
+        self.queued
+            .pause_lane(PlayerPacketLaneKey::new(session))
+            .map(PlayerPacketTransition)
+    }
+
+    /// Re-admits packets retained during player replacement into the runnable global order.
+    pub(super) fn resume_player_session(&self, transition: PlayerPacketTransition) -> bool {
+        self.queued.resume_lane(transition.0)
+    }
+
+    /// Drops all retained packets for a connection that can no longer own a player.
+    pub(super) fn discard_player_session(&self, session: &PlayerSession) {
+        self.queued.discard_lane(PlayerPacketLaneKey::new(session));
     }
 
     fn packet_is_runnable(
@@ -186,9 +208,17 @@ struct SequencedPacket<T> {
     value: T,
 }
 
+struct DeferredPacket<T> {
+    execution: ScheduledPacketExecution,
+    admission_bytes: usize,
+    value: T,
+}
+
 struct PacketLane<T> {
     queued: VecDeque<SequencedPacket<T>>,
+    deferred: VecDeque<DeferredPacket<T>>,
     active: bool,
+    pause_generation: Option<u64>,
     outstanding_packets: usize,
     outstanding_bytes: usize,
 }
@@ -197,7 +227,9 @@ impl<T> PacketLane<T> {
     const fn new() -> Self {
         Self {
             queued: VecDeque::new(),
+            deferred: VecDeque::new(),
             active: false,
+            pause_generation: None,
             outstanding_packets: 0,
             outstanding_bytes: 0,
         }
@@ -233,6 +265,7 @@ struct PacketQueueState<K, T> {
     serialized: BinaryHeap<Reverse<u64>>,
     exclusive: BinaryHeap<Reverse<u64>>,
     next_sequence: u64,
+    next_pause_generation: u64,
     active: usize,
     serialized_active: bool,
     exclusive_active: bool,
@@ -246,6 +279,12 @@ struct PacketQueue<K, T> {
     work_available: Condvar,
     idle: Notify,
     progress: Notify,
+}
+
+#[derive(Clone, Copy)]
+struct PacketLanePause<K> {
+    key: K,
+    generation: u64,
 }
 
 impl<K, T> PacketQueue<K, T>
@@ -267,6 +306,7 @@ where
                 serialized: BinaryHeap::new(),
                 exclusive: BinaryHeap::new(),
                 next_sequence: 0,
+                next_pause_generation: 0,
                 active: 0,
                 serialized_active: false,
                 exclusive_active: false,
@@ -302,6 +342,22 @@ where
         if admission_bytes > self.limits.per_player_bytes.saturating_sub(player_bytes) {
             return Err(PacketAdmissionError::PlayerByteLimit);
         }
+        let paused = state
+            .lanes
+            .get(&key)
+            .is_some_and(|lane| lane.pause_generation.is_some());
+        if paused {
+            let lane = state.lanes.entry(key).or_insert_with(PacketLane::new);
+            lane.outstanding_packets += 1;
+            lane.outstanding_bytes += admission_bytes;
+            lane.deferred.push_back(DeferredPacket {
+                execution,
+                admission_bytes,
+                value,
+            });
+            return Ok(());
+        }
+
         let sequence = state.next_sequence;
         assert!(sequence != u64::MAX, "packet submission sequence exhausted");
         state.next_sequence = sequence + 1;
@@ -319,11 +375,7 @@ where
         if became_ready {
             Self::mark_ready(&mut state, sequence, key, execution);
         }
-        match execution {
-            ScheduledPacketExecution::PlayerLocal => {}
-            ScheduledPacketExecution::Serialized => state.serialized.push(Reverse(sequence)),
-            ScheduledPacketExecution::Exclusive => state.exclusive.push(Reverse(sequence)),
-        }
+        Self::mark_global_order(&mut state, sequence, execution);
         let should_wake = became_ready && state.phase == PacketPhase::Open;
         drop(state);
         if should_wake {
@@ -437,40 +489,171 @@ where
     }
 
     fn has_work(state: &PacketQueueState<K, T>) -> bool {
-        state.active != 0 || state.lanes.values().any(|lane| !lane.queued.is_empty())
+        state.active != 0
+            || state
+                .lanes
+                .values()
+                .any(|lane| lane.pause_generation.is_none() && !lane.queued.is_empty())
+    }
+
+    fn pause_lane(&self, key: K) -> Option<PacketLanePause<K>> {
+        let mut state = self.state.lock();
+        if state.phase == PacketPhase::Stopped {
+            return None;
+        }
+        if state
+            .lanes
+            .get(&key)
+            .is_some_and(|lane| lane.pause_generation.is_some())
+        {
+            return None;
+        }
+
+        let generation = state.next_pause_generation;
+        assert!(
+            generation != u64::MAX,
+            "packet lane pause generation exhausted"
+        );
+        state.next_pause_generation = generation + 1;
+
+        let queued = {
+            let lane = state.lanes.entry(key).or_insert_with(PacketLane::new);
+            lane.pause_generation = Some(generation);
+            lane.queued.drain(..).collect::<Vec<_>>()
+        };
+
+        state.player_local_ready.retain(|entry| entry.0.1 != key);
+        state.serialized_ready.retain(|entry| entry.0.1 != key);
+        state.exclusive_ready.retain(|entry| entry.0.1 != key);
+        let queued_sequences = queued
+            .iter()
+            .map(|packet| packet.sequence)
+            .collect::<FxHashSet<_>>();
+        state
+            .serialized
+            .retain(|entry| !queued_sequences.contains(&entry.0));
+        state
+            .exclusive
+            .retain(|entry| !queued_sequences.contains(&entry.0));
+        let Some(lane) = state.lanes.get_mut(&key) else {
+            panic!("paused packet lane disappeared while deferring its packets");
+        };
+        lane.deferred
+            .extend(queued.into_iter().map(|packet| DeferredPacket {
+                execution: packet.execution,
+                admission_bytes: packet.admission_bytes,
+                value: packet.value,
+            }));
+
+        let is_idle = state.active == 0;
+        let should_wake = matches!(state.phase, PacketPhase::Open | PacketPhase::Draining(_))
+            && Self::next_ready_sequence(&state).is_some();
+        drop(state);
+        self.progress.notify_one();
+        if should_wake {
+            self.work_available.notify_all();
+        }
+        if is_idle {
+            self.idle.notify_one();
+        }
+        Some(PacketLanePause { key, generation })
+    }
+
+    fn resume_lane(&self, pause: PacketLanePause<K>) -> bool {
+        let mut state = self.state.lock();
+        if state.phase == PacketPhase::Stopped {
+            return false;
+        }
+
+        let Some(lane) = state.lanes.get_mut(&pause.key) else {
+            return false;
+        };
+        if lane.pause_generation != Some(pause.generation) {
+            return false;
+        }
+        lane.pause_generation = None;
+        let active = lane.active;
+        let deferred = mem::take(&mut lane.deferred);
+
+        let Ok(deferred_count) = u64::try_from(deferred.len()) else {
+            panic!("deferred packet count does not fit in the sequence space");
+        };
+        let first_sequence = state.next_sequence;
+        let Some(next_sequence) = first_sequence.checked_add(deferred_count) else {
+            panic!("packet submission sequence exhausted while resuming a lane");
+        };
+        state.next_sequence = next_sequence;
+
+        // Deferred packets deliberately receive fresh sequence numbers. Keeping their original
+        // numbers would let a resumed serialized/exclusive packet jump ahead of unrelated global
+        // work that was allowed to run while this lane was paused.
+        let mut queued = VecDeque::with_capacity(deferred.len());
+        for (sequence, packet) in (first_sequence..next_sequence).zip(deferred) {
+            Self::mark_global_order(&mut state, sequence, packet.execution);
+            queued.push_back(SequencedPacket {
+                sequence,
+                execution: packet.execution,
+                admission_bytes: packet.admission_bytes,
+                value: packet.value,
+            });
+        }
+        let first = queued
+            .front()
+            .map(|packet| (packet.sequence, packet.execution));
+        let Some(lane) = state.lanes.get_mut(&pause.key) else {
+            panic!("resumed packet lane disappeared before packet re-admission");
+        };
+        lane.queued.extend(queued);
+        if !active && let Some((sequence, execution)) = first {
+            Self::mark_ready(&mut state, sequence, pause.key, execution);
+        }
+        if !active && first.is_none() {
+            state.lanes.remove(&pause.key);
+        }
+
+        let should_wake = matches!(state.phase, PacketPhase::Open | PacketPhase::Draining(_))
+            && Self::next_ready_sequence(&state).is_some();
+        drop(state);
+        self.progress.notify_one();
+        if should_wake {
+            self.work_available.notify_all();
+        }
+        true
     }
 
     fn discard_lane(&self, key: K) {
         let mut state = self.state.lock();
-        let Some(lane) = state.lanes.get_mut(&key) else {
-            return;
+        let (discarded_sequences, remove_lane) = {
+            let Some(lane) = state.lanes.get_mut(&key) else {
+                return;
+            };
+            let discarded_packets = lane.queued.len() + lane.deferred.len();
+            let discarded_bytes = lane
+                .queued
+                .iter()
+                .map(|packet| packet.admission_bytes)
+                .chain(lane.deferred.iter().map(|packet| packet.admission_bytes))
+                .sum::<usize>();
+            let discarded_sequences = lane
+                .queued
+                .iter()
+                .map(|packet| packet.sequence)
+                .collect::<FxHashSet<_>>();
+            lane.queued.clear();
+            lane.deferred.clear();
+            lane.pause_generation = None;
+            assert!(
+                lane.outstanding_packets >= discarded_packets,
+                "session packet admission accounting underflow while discarding"
+            );
+            lane.outstanding_packets -= discarded_packets;
+            assert!(
+                lane.outstanding_bytes >= discarded_bytes,
+                "session byte admission accounting underflow while discarding"
+            );
+            lane.outstanding_bytes -= discarded_bytes;
+            (discarded_sequences, !lane.active)
         };
-        let discarded_packets = lane.queued.len();
-        if discarded_packets == 0 {
-            return;
-        }
-        let discarded_bytes = lane
-            .queued
-            .iter()
-            .map(|packet| packet.admission_bytes)
-            .sum::<usize>();
-        let discarded_sequences = lane
-            .queued
-            .iter()
-            .map(|packet| packet.sequence)
-            .collect::<FxHashSet<_>>();
-        lane.queued.clear();
-        assert!(
-            lane.outstanding_packets >= discarded_packets,
-            "session packet admission accounting underflow while discarding"
-        );
-        lane.outstanding_packets -= discarded_packets;
-        assert!(
-            lane.outstanding_bytes >= discarded_bytes,
-            "session byte admission accounting underflow while discarding"
-        );
-        lane.outstanding_bytes -= discarded_bytes;
-        let remove_lane = !lane.active;
 
         state.player_local_ready.retain(|entry| entry.0.1 != key);
         state.serialized_ready.retain(|entry| entry.0.1 != key);
@@ -507,13 +690,15 @@ where
         state.serialized.clear();
         state.exclusive.clear();
         state.lanes.retain(|_, lane| {
-            let lane_discarded_packets = lane.queued.len();
+            let lane_discarded_packets = lane.queued.len() + lane.deferred.len();
             let lane_discarded_bytes = lane
                 .queued
                 .iter()
                 .map(|packet| packet.admission_bytes)
+                .chain(lane.deferred.iter().map(|packet| packet.admission_bytes))
                 .sum::<usize>();
             lane.queued.clear();
+            lane.deferred.clear();
             assert!(
                 lane.outstanding_packets >= lane_discarded_packets,
                 "session packet admission accounting underflow while stopping"
@@ -524,6 +709,7 @@ where
                 "session byte admission accounting underflow while stopping"
             );
             lane.outstanding_bytes -= lane_discarded_bytes;
+            lane.pause_generation = None;
             lane.active
         });
         let is_idle = state.active == 0;
@@ -737,7 +923,7 @@ where
             }
         }
 
-        let next_sequence = {
+        let (next_packet, paused) = {
             let Some(lane) = state.lanes.get_mut(&key) else {
                 panic!("active packet lane disappeared before completion");
             };
@@ -753,18 +939,18 @@ where
                 "session byte admission accounting underflow on completion"
             );
             lane.outstanding_bytes -= admission_bytes;
-            lane.queued.front().map(|packet| packet.sequence)
+            (
+                lane.queued
+                    .front()
+                    .map(|packet| (packet.sequence, packet.execution)),
+                lane.pause_generation.is_some(),
+            )
         };
-        if let Some(sequence) = next_sequence {
-            let Some(lane) = state.lanes.get(&key) else {
-                panic!("packet lane disappeared before its next packet became ready");
-            };
-            let Some(packet) = lane.queued.front() else {
-                panic!("packet lane has no next packet after reporting its sequence");
-            };
-            let next_execution = packet.execution;
-            Self::mark_ready(&mut state, sequence, key, next_execution);
-        } else {
+        if let Some((sequence, next_execution)) = next_packet {
+            if !paused {
+                Self::mark_ready(&mut state, sequence, key, next_execution);
+            }
+        } else if !paused {
             let Some(lane) = state.lanes.get(&key) else {
                 panic!("completed packet lane disappeared before removal");
             };
@@ -804,6 +990,18 @@ where
             ScheduledPacketExecution::PlayerLocal => state.player_local_ready.push(entry),
             ScheduledPacketExecution::Serialized => state.serialized_ready.push(entry),
             ScheduledPacketExecution::Exclusive => state.exclusive_ready.push(entry),
+        }
+    }
+
+    fn mark_global_order(
+        state: &mut PacketQueueState<K, T>,
+        sequence: u64,
+        execution: ScheduledPacketExecution,
+    ) {
+        match execution {
+            ScheduledPacketExecution::PlayerLocal => {}
+            ScheduledPacketExecution::Serialized => state.serialized.push(Reverse(sequence)),
+            ScheduledPacketExecution::Exclusive => state.exclusive.push(Reverse(sequence)),
         }
     }
 
@@ -858,17 +1056,16 @@ mod tests {
     };
 
     use tokio::time::timeout;
-    use uuid::Uuid;
 
     use crate::{
         entity::{Entity as _, LivingEntity as _},
-        player::connection::ScheduledPlayPacket,
+        player::{ClientInformation, Player, connection::ScheduledPlayPacket},
         test_support::{TestPlayerBuilder, fresh_test_world},
     };
 
     use super::{
         PACKET_ADMISSION_OVERHEAD, PacketAdmissionError, PacketAdmissionLimits, PacketProcessor,
-        PacketQueue, PlayerPacketLaneKey, ScheduledPacketExecution,
+        PacketQueue, PendingPlayPacket, ScheduledPacketExecution,
     };
 
     const fn limits(per_player_packets: usize, per_player_bytes: usize) -> PacketAdmissionLimits {
@@ -876,6 +1073,19 @@ mod tests {
             per_player_packets,
             per_player_bytes,
         }
+    }
+
+    fn replacement_for(player: &Arc<Player>) -> Arc<Player> {
+        Arc::new(Player::new(
+            player.gameprofile.clone(),
+            Arc::clone(&player.connection),
+            Arc::clone(&player.session),
+            player.get_world(),
+            player.server.clone(),
+            Arc::clone(&player.config),
+            player.id(),
+            ClientInformation::default(),
+        ))
     }
 
     #[test]
@@ -922,6 +1132,41 @@ mod tests {
     }
 
     #[test]
+    fn queued_packets_resolve_the_player_bound_when_they_start() {
+        let world = fresh_test_world("packet_session_replacement_resolution");
+        let original = TestPlayerBuilder::new(world, "Original", 1).build();
+        let replacement = replacement_for(&original);
+        let session = Arc::clone(&original.session);
+        let processor = PacketProcessor::new();
+        let packet = ScheduledPlayPacket::perform_respawn_for_test();
+
+        processor.schedule(Arc::clone(&original), packet, 1);
+        let Some(transition) = processor.pause_player_session(&session) else {
+            panic!("session packet lane should pause");
+        };
+        assert!(session.replace_player(&original, &replacement));
+
+        // The listener may have captured the old player immediately before the bind. Scheduling
+        // through that stale snapshot must still target the stable session and its replacement.
+        processor.schedule(original, ScheduledPlayPacket::perform_respawn_for_test(), 1);
+        assert!(processor.resume_player_session(transition));
+        processor.queued.open();
+
+        for _ in 0..2 {
+            let Some(mut work) = processor.queued.try_next() else {
+                panic!("retained session packet should become runnable");
+            };
+            let Some(PendingPlayPacket { session, .. }) = work.take() else {
+                panic!("retained packet should still carry its session");
+            };
+            let Some(current) = session.current_player() else {
+                panic!("replacement should be bound before packet work resumes");
+            };
+            assert!(Arc::ptr_eq(&current, &replacement));
+        }
+    }
+
+    #[test]
     fn per_player_byte_limit_is_independent_of_packet_count() {
         let queue = PacketQueue::with_limits(limits(10, 6));
         assert_eq!(
@@ -947,16 +1192,12 @@ mod tests {
         const EXPECTED_PACKETS: usize =
             VANILLA_WATCHDOG_SECONDS * CLIENT_TICKS_PER_SECOND * MOUNTED_PACKETS_PER_CLIENT_TICK;
 
-        let key = PlayerPacketLaneKey {
-            player_id: Uuid::nil(),
-            entity_id: 1,
-        };
         let queue = PacketQueue::new();
         for packet in 0..EXPECTED_PACKETS {
             assert!(
                 queue
                     .try_submit(
-                        key,
+                        1,
                         ScheduledPacketExecution::PlayerLocal,
                         PACKET_ADMISSION_OVERHEAD,
                         packet,
@@ -966,7 +1207,7 @@ mod tests {
         }
 
         let state = queue.state.lock();
-        let lane = state.lanes.get(&key).expect("session lane should exist");
+        let lane = state.lanes.get(&1).expect("session lane should exist");
         assert_eq!(lane.outstanding_packets, EXPECTED_PACKETS);
     }
 
@@ -976,16 +1217,12 @@ mod tests {
         const PACKETS_PER_SESSION: usize = 33;
 
         let queue = PacketQueue::new();
-        for entity_id in 1_i32..=64 {
-            let key = PlayerPacketLaneKey {
-                player_id: Uuid::from_u128(u128::from(entity_id.unsigned_abs())),
-                entity_id,
-            };
+        for session_id in 1_u64..=64 {
             for packet in 0..PACKETS_PER_SESSION {
                 assert!(
                     queue
                         .try_submit(
-                            key,
+                            session_id,
                             ScheduledPacketExecution::PlayerLocal,
                             PACKET_ADMISSION_OVERHEAD,
                             packet,
@@ -1005,15 +1242,8 @@ mod tests {
 
     #[test]
     fn discarding_stale_session_keeps_replacement_session_work() {
-        let player_id = Uuid::nil();
-        let stale_key = PlayerPacketLaneKey {
-            player_id,
-            entity_id: 1,
-        };
-        let replacement_key = PlayerPacketLaneKey {
-            player_id,
-            entity_id: 2,
-        };
+        let stale_key = 1;
+        let replacement_key = 2;
         let queue = PacketQueue::with_limits(limits(10, 100));
         queue.submit(
             stale_key,
@@ -1051,6 +1281,202 @@ mod tests {
             panic!("replacement session packet should remain runnable");
         };
         assert_eq!(work.take(), Some("replacement"));
+    }
+
+    #[test]
+    fn paused_fifo_is_re_admitted_after_unrelated_global_work() {
+        let queue = PacketQueue::with_limits(limits(10, 100));
+        queue.submit(
+            1,
+            ScheduledPacketExecution::Serialized,
+            "deferred serialized",
+        );
+        queue.submit(1, ScheduledPacketExecution::Exclusive, "deferred exclusive");
+        let Some(pause) = queue.pause_lane(1) else {
+            panic!("session lane should pause");
+        };
+
+        queue.submit(
+            2,
+            ScheduledPacketExecution::Serialized,
+            "unrelated serialized",
+        );
+        queue.submit(
+            3,
+            ScheduledPacketExecution::Exclusive,
+            "unrelated exclusive",
+        );
+        queue.open();
+
+        let Some(mut unrelated_serialized) = queue.try_next() else {
+            panic!("paused serialized work must not block another session");
+        };
+        assert_eq!(unrelated_serialized.take(), Some("unrelated serialized"));
+        drop(unrelated_serialized);
+
+        let Some(mut unrelated_exclusive) = queue.try_next() else {
+            panic!("paused exclusive work must not remain a global barrier");
+        };
+        assert_eq!(unrelated_exclusive.take(), Some("unrelated exclusive"));
+        drop(unrelated_exclusive);
+        assert!(queue.try_next().is_none());
+
+        assert!(queue.resume_lane(pause));
+        let Some(mut deferred_serialized) = queue.try_next() else {
+            panic!("resumed FIFO front should become runnable");
+        };
+        assert_eq!(deferred_serialized.take(), Some("deferred serialized"));
+        drop(deferred_serialized);
+
+        let Some(mut deferred_exclusive) = queue.try_next() else {
+            panic!("resumed FIFO tail should follow its front");
+        };
+        assert_eq!(deferred_exclusive.take(), Some("deferred exclusive"));
+    }
+
+    #[test]
+    fn pausing_active_player_session_defers_its_tail_until_exact_resume() {
+        let world = fresh_test_world("packet_active_session_pause");
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Paused", 1).build();
+        let unrelated_player = TestPlayerBuilder::new(world, "Unrelated", 2).build();
+        let processor = PacketProcessor::new();
+        processor.schedule(
+            Arc::clone(&player),
+            ScheduledPlayPacket::perform_respawn_for_test(),
+            1,
+        );
+        processor.schedule(
+            Arc::clone(&player),
+            ScheduledPlayPacket::perform_respawn_for_test(),
+            2,
+        );
+        processor.open_after_tick();
+
+        let Some(mut active) = processor.queued.try_next() else {
+            panic!("respawn packet should be active before its lane pauses");
+        };
+        assert_eq!(active.admission_bytes, PACKET_ADMISSION_OVERHEAD + 1);
+        let Some(PendingPlayPacket {
+            session: active_session,
+            ..
+        }) = active.take()
+        else {
+            panic!("active respawn should carry its player session");
+        };
+        assert!(Arc::ptr_eq(&active_session, &player.session));
+
+        let Some(transition) = processor.pause_player_session(&player.session) else {
+            panic!("active session lane should pause");
+        };
+        processor.schedule(
+            Arc::clone(&player),
+            ScheduledPlayPacket::perform_respawn_for_test(),
+            3,
+        );
+        processor.schedule(
+            Arc::clone(&unrelated_player),
+            ScheduledPlayPacket::perform_respawn_for_test(),
+            4,
+        );
+
+        let Some(mut unrelated) = processor.queued.try_next() else {
+            panic!("paused lane must not block unrelated player work");
+        };
+        assert_eq!(unrelated.admission_bytes, PACKET_ADMISSION_OVERHEAD + 4);
+        let Some(PendingPlayPacket {
+            session: unrelated_session,
+            ..
+        }) = unrelated.take()
+        else {
+            panic!("unrelated packet should carry its player session");
+        };
+        assert!(Arc::ptr_eq(&unrelated_session, &unrelated_player.session));
+        drop(unrelated);
+        assert!(processor.queued.try_next().is_none());
+
+        assert!(processor.resume_player_session(transition));
+        assert!(processor.queued.try_next().is_none());
+        drop(active);
+
+        let Some(mut queued_before_pause) = processor.queued.try_next() else {
+            panic!("exact pause owner should re-admit the original lane tail");
+        };
+        assert_eq!(
+            queued_before_pause.admission_bytes,
+            PACKET_ADMISSION_OVERHEAD + 2
+        );
+        let Some(PendingPlayPacket {
+            session: queued_before_pause_session,
+            ..
+        }) = queued_before_pause.take()
+        else {
+            panic!("packet queued before the pause should retain its session");
+        };
+        assert!(Arc::ptr_eq(&queued_before_pause_session, &player.session));
+        drop(queued_before_pause);
+
+        let Some(mut queued_during_pause) = processor.queued.try_next() else {
+            panic!("packets submitted while paused should retain session FIFO order");
+        };
+        assert_eq!(
+            queued_during_pause.admission_bytes,
+            PACKET_ADMISSION_OVERHEAD + 3
+        );
+        let Some(PendingPlayPacket {
+            session: queued_during_pause_session,
+            ..
+        }) = queued_during_pause.take()
+        else {
+            panic!("packet queued during the pause should retain its session");
+        };
+        assert!(Arc::ptr_eq(&queued_during_pause_session, &player.session));
+    }
+
+    #[test]
+    fn stale_pause_token_cannot_resume_a_later_pause() {
+        let queue = PacketQueue::with_limits(limits(10, 100));
+        let Some(first_pause) = queue.pause_lane(1) else {
+            panic!("first lane pause should succeed");
+        };
+        assert!(queue.resume_lane(first_pause));
+
+        let Some(second_pause) = queue.pause_lane(1) else {
+            panic!("second lane pause should succeed");
+        };
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "deferred");
+        queue.open();
+
+        assert!(!queue.resume_lane(first_pause));
+        assert!(queue.try_next().is_none());
+        assert!(queue.resume_lane(second_pause));
+
+        let Some(mut resumed) = queue.try_next() else {
+            panic!("current pause owner should resume the lane");
+        };
+        assert_eq!(resumed.take(), Some("deferred"));
+    }
+
+    #[tokio::test]
+    async fn paused_packets_do_not_hold_tick_drain_open() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::Exclusive, "deferred");
+        let Some(pause) = queue.pause_lane(1) else {
+            panic!("session lane should pause");
+        };
+        queue.open();
+
+        assert!(
+            timeout(Duration::from_secs(1), queue.drain_for_tick())
+                .await
+                .is_ok()
+        );
+        assert!(queue.resume_lane(pause));
+        queue.open();
+
+        let Some(mut resumed) = queue.try_next() else {
+            panic!("deferred packet should remain retained after the tick drain");
+        };
+        assert_eq!(resumed.take(), Some("deferred"));
     }
 
     #[test]

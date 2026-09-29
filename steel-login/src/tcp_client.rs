@@ -16,7 +16,9 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, PlayerConnection,
-    connection::{JavaNetworkWriter, OutboundPacket},
+    connection::{
+        JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite, OutboundPacket,
+    },
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -44,7 +46,7 @@ use text_components::{
 };
 use tokio::{
     io::{BufReader, BufWriter},
-    net::{TcpStream, tcp::OwnedReadHalf},
+    net::TcpStream,
     select,
     sync::{
         Notify,
@@ -59,7 +61,7 @@ use uuid::Uuid;
 use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
-const SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LoginDeadline {
@@ -232,7 +234,7 @@ pub struct JavaTcpClient {
 }
 
 impl JavaTcpClient {
-    /// Creates a new `JavaTcpClient`.
+    /// Creates a new `JavaTcpClient` over a TCP socket.
     #[must_use]
     pub fn new(
         tcp_stream: TcpStream,
@@ -242,12 +244,41 @@ impl JavaTcpClient {
         server: Arc<Server>,
         connection_session: Arc<ServerConnectionSession>,
         task_tracker: TaskTracker,
-    ) -> (
-        Self,
-        UnboundedReceiver<OutboundPacket>,
-        TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-    ) {
+    ) -> (Self, UnboundedReceiver<OutboundPacket>, JavaNetworkReader) {
         let (read, write) = tcp_stream.into_split();
+        Self::from_transport(
+            Box::new(read),
+            Box::new(write),
+            address,
+            id,
+            cancel_token,
+            server,
+            connection_session,
+            task_tracker,
+        )
+    }
+
+    /// Creates a new `JavaTcpClient` over an already-established transport.
+    ///
+    /// `read` and `write` are the two halves of a byte stream that speaks the Java Edition
+    /// protocol from the handshake onward. [`Self::new`] uses this with a split `TcpStream`;
+    /// an embedder running the server in-process can pass the halves of an in-memory pipe.
+    /// `address` is what the server logs and reports as the client's address.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "same parameters as `new` with the stream split into its two halves"
+    )]
+    pub fn from_transport(
+        read: JavaTransportRead,
+        write: JavaTransportWrite,
+        address: SocketAddr,
+        id: u64,
+        cancel_token: CancellationToken,
+        server: Arc<Server>,
+        connection_session: Arc<ServerConnectionSession>,
+        task_tracker: TaskTracker,
+    ) -> (Self, UnboundedReceiver<OutboundPacket>, JavaNetworkReader) {
         let (outgoing_queue, recv) = mpsc::unbounded_channel();
         let (connection_updates, _) = broadcast::channel(128);
 
@@ -470,10 +501,7 @@ impl JavaTcpClient {
 
     /// Starts a task that will receive packets from the client.
     /// This task will run until the client is closed or the cancellation token is cancelled.
-    pub fn start_incoming_packet_task(
-        self: &Arc<Self>,
-        mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-    ) {
+    pub fn start_incoming_packet_task(self: &Arc<Self>, mut reader: JavaNetworkReader) {
         let cancel_token = self.cancel_token.clone();
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
@@ -523,7 +551,8 @@ impl JavaTcpClient {
                                 }
                             }
                             LoginOperationResult::Completed(Err(err)) => {
-                                log::warn!("Failed to get packet from client {id}: {err}");
+                                self_clone.reject_packet_decode_error(&err).await;
+                                break;
                             }
                             LoginOperationResult::Cancelled => break,
                             LoginOperationResult::TimedOut => {
@@ -612,19 +641,26 @@ impl JavaTcpClient {
         .await
     }
 
-    pub(crate) async fn disconnect_slow_login(&self) {
-        let reason =
-            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
-        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+    /// Kicks with `reason`, falling back to closing the socket if the write stalls.
+    async fn kick_with_flush_timeout(&self, reason: TextComponent, context: &str) {
+        if timeout(DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
             .await
             .is_err()
         {
             log::debug!(
-                "Best-effort slow-login disconnect write for client {} timed out",
+                "Best-effort {context} disconnect write for client {} timed out",
                 self.id
             );
             self.close();
         }
+    }
+
+    pub(crate) async fn disconnect_slow_login(&self) {
+        self.kick_with_flush_timeout(
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg()),
+            "slow-login",
+        )
+        .await;
     }
 
     async fn process_packet(&self, packet: RawPacket) -> Result<ConnectionAction, PacketError> {
@@ -794,6 +830,20 @@ impl JavaTcpClient {
         ))
         .await;
         ConnectionAction::none()
+    }
+
+    /// Kick + close when `process_packet` returns `PacketError` (bad decode / unexpected id).
+    /// Matches vanilla `Connection.exceptionCaught` (`disconnect.genericReason`).
+    pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
+        log::warn!("Failed to get packet from client {}: {error}", self.id);
+        self.kick_with_flush_timeout(
+            TextComponent::translated(
+                translations::DISCONNECT_GENERIC_REASON
+                    .message([format!("Internal Exception: {error}")]),
+            ),
+            "packet-decode",
+        )
+        .await;
     }
 
     /// Kicks the client with a given reason.

@@ -16,9 +16,9 @@ use steel_registry::vanilla_game_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
 use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::{Entity, InsideBlockEffectCollector, SharedEntity};
@@ -287,9 +287,8 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::entity::entities::RawEntity;
     use crate::entity::{InsideBlockEffectCollector, SharedEntity};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
     #[test]
     fn wooden_button_stays_pressed_while_arrow_intersects_its_shape() {
@@ -311,12 +310,12 @@ mod tests {
             bounds.min_y(),
             f64::midpoint(bounds.min_z(), bounds.max_z()),
         );
-        let arrow: SharedEntity = Arc::new(RawEntity::new(
+        let arrow: SharedEntity = TestEntity::shared(
             7_001,
             arrow_pos,
             Arc::downgrade(&world),
             &vanilla_entities::ARROW,
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&arrow))
             .expect("test arrow should enter loaded chunk");

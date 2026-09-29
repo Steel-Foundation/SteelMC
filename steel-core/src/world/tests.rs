@@ -6,21 +6,96 @@ use std::{
 
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{
-    init_vanilla_registry, sound_events, vanilla_entities, vanilla_fluids, vanilla_game_rules,
-    vanilla_items,
+    init_vanilla_registry, sound_events, stat::vanilla_stat_types, vanilla_custom_stats,
+    vanilla_entities, vanilla_fluids, vanilla_game_rules, vanilla_items,
 };
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
-use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
-use crate::entity::{EntityBase, entities::PigEntity};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
+use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::entity::{EntityBase, LivingEntity as _, entities::PigEntity};
+use crate::player::ResetReason;
+use crate::test_support::{
+    TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
+};
 
 const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
 const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
 static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
 
+#[test]
+fn respawn_world_handoff_requires_the_exact_old_player() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("exact_respawn_world_handoff");
+    let uuid = Uuid::from_u128(1);
+    let old = TestPlayerBuilder::new(Arc::clone(&world), "Old", 1)
+        .uuid(uuid)
+        .build();
+    let replacement = TestPlayerBuilder::new(Arc::clone(&world), "Replacement", 1)
+        .uuid(uuid)
+        .build();
+    let stale = TestPlayerBuilder::new(Arc::clone(&world), "Stale", 1)
+        .uuid(uuid)
+        .build();
+
+    assert!(world.add_player(Arc::clone(&old), ResetReason::InitialJoin));
+    assert!(!world.player_area_map.is_empty());
+    let tracked = TrackerTestEntity::shared(2);
+    world.entity_tracker().add(
+        &tracked,
+        |_| vec![old.id()],
+        |player_id| (player_id == old.id()).then(|| Arc::clone(&old)),
+    );
+    assert_eq!(world.entity_tracker().tracking_player_ids(2), [old.id()]);
+    old.set_sleeping_pos(BlockPos::new(0, 64, 0));
+    assert!(old.is_sleeping());
+
+    assert!(world.detach_player_for_respawn(&old, true));
+    let Some(retained) = world.players.get_by_uuid(&uuid) else {
+        panic!("same-world respawn should retain its exact old map occupant");
+    };
+    assert!(Arc::ptr_eq(&retained, &old));
+    assert!(world.get_entity_by_id(old.id()).is_none());
+    assert!(world.player_area_map.is_empty());
+    assert_eq!(
+        world.entity_tracker().tracking_player_ids(2),
+        Vec::<i32>::new()
+    );
+    assert!(old.last_tracking_view.lock().is_none());
+    assert!(!old.is_sleeping());
+    assert!(old.try_set_position(DVec3::new(1.0, 64.0, 1.0)).is_ok());
+
+    let leave_game = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::LEAVE_GAME);
+    assert!(
+        old.stats()
+            .iter()
+            .all(|(stat, count)| *stat != leave_game || *count == 0)
+    );
+
+    assert!(world.install_respawned_player(Arc::clone(&replacement), Some(&old)));
+    let Some(installed) = world.players.get_by_uuid(&uuid) else {
+        panic!("fresh player should own the world player map");
+    };
+    assert!(Arc::ptr_eq(&installed, &replacement));
+    assert!(world.get_entity_by_id(replacement.id()).is_some());
+    assert!(!world.player_area_map.is_empty());
+    assert!(replacement.last_tracking_view.lock().is_some());
+
+    assert!(!world.install_respawned_player(stale, Some(&old)));
+    assert!(!world.detach_player_for_respawn(&old, false));
+    let Some(still_installed) = world.players.get_by_uuid(&uuid) else {
+        panic!("stale cleanup must not remove the installed replacement");
+    };
+    assert!(Arc::ptr_eq(&still_installed, &replacement));
+
+    assert!(world.remove_respawned_player(&replacement));
+    assert!(world.players.get_by_uuid(&uuid).is_none());
+    assert!(world.get_entity_by_id(replacement.id()).is_none());
+}
+
 fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
+    let _runtime_guard = world.chunk_map.chunk_runtime.enter();
     for _ in 0..10_000 {
         world.chunk_map.advance_scheduling();
         if ready() {
@@ -316,14 +391,14 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     let world = fresh_test_world("set_block_publication_gates");
     let pos = BlockPos::new(1_504, 64, 1_504);
     let chunk_pos = ChunkPos::from_block_pos(pos);
-    let simulation_ticket = ChunkTicket::simulated_full_chunks(1);
-    let simulation_revision = world
+    let player_id = Uuid::from_u128(1);
+    let simulation_receipt = world
         .chunk_map
-        .add_chunk_ticket(chunk_pos, simulation_ticket);
+        .queue_test_player_ticket_add(chunk_pos, player_id);
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_revision_committed(simulation_revision)
+            .is_ticket_receipt_committed(simulation_receipt)
             && world.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
             && world
                 .chunk_map
@@ -400,18 +475,17 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     assert!(world.get_block_state(unsupported_fire_pos).is_air());
     assert_eq!(holder.packet_content_revision(), publication_revision + 3);
 
-    let loading_ticket = ChunkTicket::loading(ChunkTicketLevel::BLOCK_TICKING_CHUNK);
-    let loading_revision = world.chunk_map.add_chunk_ticket(chunk_pos, loading_ticket);
-    let removal_revision = world
+    let loading_level = ChunkTicketLevel::BLOCK_TICKING_CHUNK;
+    let loading_receipt = world
         .chunk_map
-        .remove_chunk_ticket(chunk_pos, simulation_ticket);
+        .acquire_chunk_request_leases(&[chunk_pos], loading_level)
+        .expect("one request lease should produce a receipt");
+    let removal_receipt = world
+        .chunk_map
+        .queue_test_player_ticket_remove(chunk_pos, player_id);
     advance_scheduling_until(&world, || {
-        world
-            .chunk_map
-            .is_ticket_revision_committed(loading_revision)
-            && world
-                .chunk_map
-                .is_ticket_revision_committed(removal_revision)
+        world.chunk_map.is_ticket_receipt_committed(loading_receipt)
+            && world.chunk_map.is_ticket_receipt_committed(removal_receipt)
     });
 
     assert!(
@@ -428,20 +502,22 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     ));
     assert_eq!(holder.packet_content_revision(), load_only_revision + 1);
 
-    let full_only_ticket = ChunkTicket::full_chunks(0);
-    let full_only_revision = world
+    let full_only_level = ChunkTicketLevel::FULL_CHUNK;
+    let full_only_receipt = world
         .chunk_map
-        .add_chunk_ticket(chunk_pos, full_only_ticket);
-    let loading_removal_revision = world
+        .acquire_chunk_request_leases(&[chunk_pos], full_only_level)
+        .expect("one request lease should produce a receipt");
+    let loading_removal_receipt = world
         .chunk_map
-        .remove_chunk_ticket(chunk_pos, loading_ticket);
+        .release_chunk_request_leases(&[chunk_pos], loading_level)
+        .expect("one request lease release should produce a receipt");
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_revision_committed(full_only_revision)
+            .is_ticket_receipt_committed(full_only_receipt)
             && world
                 .chunk_map
-                .is_ticket_revision_committed(loading_removal_revision)
+                .is_ticket_receipt_committed(loading_removal_receipt)
     });
 
     assert!(
@@ -460,9 +536,9 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     world.send_block_updated(pos);
     assert_eq!(holder.packet_content_revision(), non_ticking_revision);
 
-    world
+    let _ = world
         .chunk_map
-        .remove_chunk_ticket(chunk_pos, full_only_ticket);
+        .release_chunk_request_leases(&[chunk_pos], full_only_level);
     world.chunk_map.advance_scheduling();
     world
         .chunk_map

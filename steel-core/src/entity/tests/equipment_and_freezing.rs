@@ -285,6 +285,24 @@ fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
 }
 
 #[test]
+fn gliding_non_player_living_entity_forces_velocity_sync() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity_ref: &dyn Entity = &entity;
+
+    assert!(!entity_ref.forces_fall_flying_velocity_sync());
+
+    entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
+    entity.set_on_ground(false);
+    assert!(entity.try_to_start_fall_flying());
+
+    assert!(
+        entity_ref.forces_fall_flying_velocity_sync(),
+        "a gliding mob should keep its velocity synced, the same as a gliding player"
+    );
+}
+
+#[test]
 fn try_to_start_fall_flying_rejects_levitation() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);

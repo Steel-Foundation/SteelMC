@@ -665,9 +665,11 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
-    use crate::entity::{SharedEntity, entities::RawEntity};
+    use crate::entity::SharedEntity;
     use crate::player::Player;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{
+        TestEntity, TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk,
+    };
     use glam::DVec3;
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtTag;
@@ -743,13 +745,13 @@ mod tests {
             false
         ));
 
-        let raw = RawEntity::new(
+        let entity = TestEntity::new(
             8_000,
             DVec3::ZERO,
             Arc::downgrade(&world),
             &vanilla_entities::MINECART,
         );
-        assert!(PistonMovingState::can_move_collided_entity(&raw, true));
+        assert!(PistonMovingState::can_move_collided_entity(&entity, true));
     }
 
     #[test]
@@ -790,12 +792,12 @@ mod tests {
         assert!(world.set_block_entity(block_entity));
 
         let start = DVec3::new(f64::from(pos.x()) + 0.1, f64::from(pos.y()), 8.5);
-        let entity: SharedEntity = Arc::new(RawEntity::new(
+        let entity: SharedEntity = TestEntity::shared(
             8_001,
             start,
             Arc::downgrade(&world),
             &vanilla_entities::MINECART,
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&entity))
             .expect("test entity should enter the loaded chunk");
