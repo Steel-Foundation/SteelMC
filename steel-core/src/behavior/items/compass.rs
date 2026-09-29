@@ -169,7 +169,7 @@ mod tests {
             InteractionHand::MainHand,
             hit_result,
             &world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
 
         let behavior = CompassItem;

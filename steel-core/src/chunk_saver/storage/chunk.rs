@@ -433,7 +433,7 @@ impl ChunkStorage {
                 pos,
                 min_y,
                 height,
-                level.clone(),
+                Weak::clone(&level),
                 block_ticks,
                 fluid_ticks,
                 heightmaps,
@@ -518,7 +518,7 @@ impl ChunkStorage {
                 persistent.postprocessing.iter().map(Vec::clone).collect(),
                 block_ticks,
                 fluid_ticks,
-                level.clone(),
+                Weak::clone(&level),
                 light,
             );
 
@@ -532,7 +532,7 @@ impl ChunkStorage {
                 if let Some(block_entity) = Self::persistent_to_block_entity_at(
                     persistent_be,
                     block_entity_pos,
-                    level.clone(),
+                    Weak::clone(&level),
                     state,
                 ) {
                     let _ = chunk.set_block_entity(block_entity);

@@ -665,7 +665,8 @@ impl ChunkMap {
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
-                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
+                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
+                else {
                     return false;
                 };
                 if holder.try_chunk(ChunkStatus::Full).is_none() {

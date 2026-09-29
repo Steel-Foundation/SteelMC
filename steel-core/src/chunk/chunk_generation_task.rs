@@ -164,11 +164,13 @@ impl ChunkGenerationTask {
             .accumulated_dependencies
             .get_radius_of(ChunkStatus::Empty) as i32;
 
-        let chunk_map_clone = chunk_map.clone();
+        let chunk_map_clone = Arc::clone(&chunk_map);
         let mut cache = StaticCache2D::create(pos.0.x, pos.0.y, worst_case_radius, move |x, y| {
             chunk_map_clone
                 .chunks
-                .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
+                .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| {
+                    Arc::clone(chunk_holder)
+                })
                 .expect(
                     "update_chunk_level installs a holder for every position granted a \
                      loading level before its neighbors can be scheduled",
@@ -244,7 +246,7 @@ impl ChunkGenerationTask {
             pyramid.get_step_to(status),
             &self.chunk_map,
             &self.cache,
-            self.thread_pool.clone(),
+            Arc::clone(&self.thread_pool),
         ) {
             self.neighbor_ready.lock().push(future);
         } else {
