@@ -296,7 +296,7 @@ impl TeleportTransition {
     #[must_use]
     pub fn with_position(&self, position: DVec3) -> Self {
         Self {
-            target_world: self.target_world.clone(),
+            target_world: Arc::clone(&self.target_world),
             position,
             rotation: self.rotation,
             velocity: self.velocity,

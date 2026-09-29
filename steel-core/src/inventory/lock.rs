@@ -79,7 +79,7 @@ where
     T: Container + 'static,
 {
     fn from(container: &Shared<T>) -> Self {
-        container.clone().into()
+        Arc::clone(container).into()
     }
 }
 
@@ -91,7 +91,7 @@ impl From<&ContainerRef> for ContainerRef {
 
 impl From<&SharedContainer> for ContainerRef {
     fn from(container: &SharedContainer) -> Self {
-        container.clone().into()
+        Arc::clone(container).into()
     }
 }
 
@@ -490,7 +490,7 @@ mod tests {
             BlockPos::new(1, 2, 3),
             vanilla_blocks::BARREL.default_state(),
         ));
-        let block_entity: SharedBlockEntity = barrel.clone();
+        let block_entity: SharedBlockEntity = Arc::<BarrelBlockEntity>::clone(&barrel);
         let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
             panic!("barrel block entity should expose Container");
         };

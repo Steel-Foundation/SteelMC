@@ -201,10 +201,10 @@ mod tests {
             Arc::downgrade(&world),
         ));
 
-        let hunter_entity: SharedEntity = hunter.clone();
-        let ally_entity: SharedEntity = ally.clone();
-        let attacker_entity: SharedEntity = attacker.clone();
-        for entity in [hunter_entity, ally_entity, attacker_entity.clone()] {
+        let hunter_entity: SharedEntity = Arc::<PigEntity>::clone(&hunter);
+        let ally_entity: SharedEntity = Arc::<PigEntity>::clone(&ally);
+        let attacker_entity: SharedEntity = Arc::<CowEntity>::clone(&attacker);
+        for entity in [hunter_entity, ally_entity, Arc::clone(&attacker_entity)] {
             world
                 .try_add_entity(entity)
                 .expect("test entity should attach to the loaded chunk");

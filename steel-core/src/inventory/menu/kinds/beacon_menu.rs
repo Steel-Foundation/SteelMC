@@ -67,7 +67,7 @@ pub fn beacon(
     block_entity: Arc<BlockEntityBase>,
 ) -> Menu {
     let payment_container = PaymentContainer::new().into_shared();
-    let payment_ref = ContainerRef::from(payment_container.clone());
+    let payment_ref = ContainerRef::from(Arc::clone(&payment_container));
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::BEACON, container_id);
     let payment = builder.section_with(
@@ -338,7 +338,7 @@ mod tests {
             .expect("beacon block entity type");
 
         let menu = beacon(
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
             1,
             pos,
             world,

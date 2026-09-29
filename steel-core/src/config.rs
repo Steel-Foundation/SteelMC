@@ -307,11 +307,11 @@ impl StorageSelection {
         }
     }
 
-    /// Default file-backed player storage.
+    /// Default disk-backed player storage.
     #[must_use]
-    pub fn default_player_file() -> Self {
+    pub fn default_player_disk() -> Self {
         Self {
-            kind: Identifier::from_steel("file"),
+            kind: Identifier::from_steel("disk"),
             config: None,
         }
     }
@@ -410,7 +410,7 @@ impl WorldsConfig {
         let player_storage = self
             .player_storage
             .clone()
-            .unwrap_or_else(StorageSelection::default_player_file);
+            .unwrap_or_else(StorageSelection::default_player_disk);
         validate_player_storage_selection(&player_storage)?;
 
         let mut default_domain = None;
@@ -775,7 +775,7 @@ pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
 }
 
 fn validate_player_storage_selection(selection: &StorageSelection) -> Result<(), String> {
-    if selection.kind != Identifier::from_steel("file")
+    if selection.kind != Identifier::from_steel("disk")
         && selection.kind != Identifier::from_steel("ram")
     {
         return Err(format!("unknown player storage {}", selection.kind));
@@ -944,7 +944,7 @@ generator = "minecraft:overworld"
 default = true
 "#;
 
-        for kind in ["steel:file", "steel:ram"] {
+        for kind in ["steel:disk", "steel:ram"] {
             let resolved = resolve(&WORLDS.replace("%KIND%", kind))
                 .unwrap_or_else(|error| panic!("{kind} player storage should resolve: {error}"));
             assert_eq!(resolved.player_storage.kind.to_string(), kind);
