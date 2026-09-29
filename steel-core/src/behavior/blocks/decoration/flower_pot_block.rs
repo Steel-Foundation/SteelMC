@@ -48,7 +48,6 @@ impl FlowerPotBlock {
         Self { block, potted }
     }
 
-    /// Checks if the pot is empty.
     fn is_empty(&self) -> bool {
         self.potted == &vanilla_blocks::AIR
     }
@@ -145,8 +144,6 @@ impl BlockBehavior for FlowerPotBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // Vanilla checks `state.canSurvive`, but `FlowerPotBlock` inherits the
-        // default `true`, so this never breaks a floating pot.
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
             vanilla_blocks::AIR.default_state()
         } else {
@@ -220,7 +217,6 @@ mod tests {
             UpdateFlags::UPDATE_ALL
         ));
 
-        // Holding a plant fills the empty pot and consumes the item.
         player
             .inventory
             .lock()
@@ -243,8 +239,6 @@ mod tests {
         );
         assert!(player.inventory.lock().get_selected_item().is_empty());
 
-        // A non-plant item falls through to the empty-hand interaction, which
-        // removes the plant and returns it to the inventory.
         player
             .inventory
             .lock()
@@ -285,7 +279,6 @@ mod tests {
                 .any(|item| item.is(&vanilla_items::DANDELION))
         );
 
-        // An empty pot has nothing to remove.
         assert_eq!(
             empty_pot().use_without_item(
                 world.get_block_state(TEST_POS),
@@ -304,8 +297,6 @@ mod tests {
         init_vanilla_registry();
         let behavior = empty_pot();
         let state = vanilla_blocks::FLOWER_POT.default_state();
-        // No block below: Java flower pots float, so the DOWN update must not
-        // break the pot.
         let level = TestLevel::default();
         assert_eq!(
             behavior.update_shape(
