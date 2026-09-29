@@ -17,20 +17,6 @@ use super::super::{
 };
 use crate::{entity::Entity as _, player::Player};
 
-const SOUND_SOURCES: [SoundSource; 11] = [
-    SoundSource::Master,
-    SoundSource::Music,
-    SoundSource::Records,
-    SoundSource::Weather,
-    SoundSource::Blocks,
-    SoundSource::Hostile,
-    SoundSource::Neutral,
-    SoundSource::Players,
-    SoundSource::Ambient,
-    SoundSource::Voice,
-    SoundSource::Ui,
-];
-
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("playsound"), |_| command())
 }
@@ -38,7 +24,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     let mut sound = argument("sound", SteelArgumentType::sound())
         .executes(|context| execute_as_source(context, SoundSource::Master));
-    for source in SOUND_SOURCES {
+    for source in SoundSource::VALUES {
         sound = sound.then(source_command(source));
     }
     literal("playsound").then(sound)

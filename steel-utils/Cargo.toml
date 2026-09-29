@@ -63,6 +63,7 @@ quote.workspace = true
 phf_codegen.workspace = true
 
 # Utilities
+chrono.workspace = true
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
 reqwest = { workspace = true, features = ["blocking"] }

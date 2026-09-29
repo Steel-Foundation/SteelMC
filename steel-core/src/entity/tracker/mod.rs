@@ -255,7 +255,7 @@ impl EntityTracker {
                 let mut seen_by = tracked.seen_by.write();
                 if visible {
                     if seen_by.insert(player_id) {
-                        entities_to_spawn.push(entity.clone());
+                        entities_to_spawn.push(Arc::clone(&entity));
                     }
                 } else if seen_by.remove(&player_id) {
                     despawn = true;
