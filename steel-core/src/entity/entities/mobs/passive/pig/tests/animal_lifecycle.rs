@@ -27,14 +27,14 @@ fn pig_uses_mob_passenger_as_controller_when_not_player_controlled() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let vehicle: SharedEntity = vehicle_pig.clone();
+    let vehicle: SharedEntity = Arc::<PigEntity>::clone(&vehicle_pig);
     let passenger_pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
         DVec3::ZERO,
         Weak::new(),
     ));
-    let passenger: SharedEntity = passenger_pig.clone();
+    let passenger: SharedEntity = Arc::<PigEntity>::clone(&passenger_pig);
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
 
     assert_eq!(

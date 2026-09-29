@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder};
+use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use crate::entity::Entity;
@@ -17,7 +17,6 @@ use super::{
     DomainPlayerData, DomainPlayerState, PendingPlayerJoin, PreparedSpawn, fresh_test_world,
     test_connection, test_player_with_connection, test_player_with_packets,
     test_player_with_uuid_and_packets, test_server, test_server_with_max_players,
-    test_storage_root,
 };
 
 #[test]
@@ -28,13 +27,7 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         .build()
         .map_err(|error| error.to_string())?;
     runtime.block_on(async {
-        let storage_root = test_storage_root("player-limit-preparation");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await?;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await?;
         let (slow, _) = test_player_with_packets(&server, Arc::clone(&world), "Slow", 1);
         let (fast, _) = test_player_with_packets(&server, world, "Fast", 2);
 
@@ -69,9 +62,7 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         assert_eq!(server.admit_reserved_player(slow), Ok(()));
         drop(retry);
 
-        fs::remove_dir_all(storage_root)
-            .await
-            .map_err(|error| error.to_string())
+        Ok(())
     })
 }
 
@@ -83,15 +74,13 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     runtime.block_on(async {
-        let storage_root = test_storage_root("player-limit-bypass-refresh");
         let uuid = Uuid::from_u128(1);
         let mut subjects = PermissionSubjectIndex::new();
         subjects.set(
             uuid,
             PermissionSubjectState::new(vec!["reserved".to_owned()], PermissionSet::new()),
         );
-        let server =
-            test_server_with_max_players(Arc::clone(&world), subjects, &storage_root, 0).await?;
+        let server = test_server_with_max_players(Arc::clone(&world), subjects, 0).await?;
         let mut groups = PermissionGroupsConfig::default();
         groups.groups.insert(
             "reserved".to_owned(),
@@ -120,9 +109,7 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
             Err(PlayerJoinError::ServerFull)
         );
         assert_eq!(server.player_count(), 0);
-        fs::remove_dir_all(storage_root)
-            .await
-            .map_err(|error| error.to_string())
+        Ok(())
     })
 }
 
@@ -134,14 +121,9 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
         .build()
         .map_err(|error| error.to_string())?;
     runtime.block_on(async {
-        let storage_root = test_storage_root("player-limit-disconnect");
-        let server = test_server_with_max_players(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-            0,
-        )
-        .await?;
+        let server =
+            test_server_with_max_players(Arc::clone(&world), PermissionSubjectIndex::new(), 0)
+                .await?;
         let handles = test_connection();
         let player = test_player_with_connection(
             &server,
@@ -180,9 +162,7 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
         assert!(handles.sent_packets.lock().is_empty());
         assert!(!server.player_admissions.lock().contains_key(&uuid));
         assert!(server.try_reserve_player_join(uuid).is_some());
-        fs::remove_dir_all(storage_root)
-            .await
-            .map_err(|error| error.to_string())
+        Ok(())
     })
 }
 
@@ -194,7 +174,6 @@ fn max_players_bypass_requires_explicit_boolean_metadata() -> Result<(), String>
         .build()
         .map_err(|error| error.to_string())?;
     runtime.block_on(async {
-        let storage_root = test_storage_root("player-limit-bypass");
         let mut subjects = PermissionSubjectIndex::new();
         subjects.set(
             Uuid::from_u128(1),
@@ -222,8 +201,7 @@ fn max_players_bypass_requires_explicit_boolean_metadata() -> Result<(), String>
                 ),
             );
         }
-        let server =
-            test_server_with_max_players(Arc::clone(&world), subjects, &storage_root, 0).await?;
+        let server = test_server_with_max_players(Arc::clone(&world), subjects, 0).await?;
         for (id, bypasses) in candidates {
             let uuid = Uuid::from_u128(id);
             assert_eq!(server.is_player_limit_reached(uuid), !bypasses);
@@ -246,8 +224,6 @@ fn max_players_bypass_requires_explicit_boolean_metadata() -> Result<(), String>
         }
         assert_eq!(server.player_count(), 1);
         assert!(server.is_player_limit_reached(Uuid::from_u128(5)));
-        fs::remove_dir_all(storage_root)
-            .await
-            .map_err(|error| error.to_string())
+        Ok(())
     })
 }

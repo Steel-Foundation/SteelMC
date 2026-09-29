@@ -158,6 +158,7 @@ fn fall_flying_free_fall_interval_matches_vanilla_cadence() {
 #[test]
 fn jump_boost_power_uses_active_effect_amplifier() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert!(entity.get_jump_boost_power().abs() < f32::EPSILON);
@@ -170,6 +171,7 @@ fn jump_boost_power_uses_active_effect_amplifier() {
 #[test]
 fn levitation_travel_uses_active_effect_amplifier() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert!(entity.levitation_travel_y_delta(-0.2).is_none());
@@ -182,6 +184,7 @@ fn levitation_travel_uses_active_effect_amplifier() {
 #[test]
 fn slow_falling_caps_effective_gravity_only_while_falling() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
     entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));

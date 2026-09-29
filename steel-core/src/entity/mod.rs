@@ -1260,7 +1260,7 @@ fn passenger_transition(
     );
 
     TeleportTransition {
-        target_world: teleport_transition.target_world.clone(),
+        target_world: Arc::clone(&teleport_transition.target_world),
         position,
         rotation,
         velocity: teleport_transition.velocity,

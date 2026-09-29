@@ -440,7 +440,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = pig.clone();
+        let entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
         pig.set_custom_name(Some(TextComponent::plain("Existing")));
 
         let mut payload = NbtCompound::new();
@@ -473,7 +473,7 @@ mod tests {
             Weak::new(),
         ));
         pig.set_variant(&vanilla_pig_variants::WARM);
-        let entity: SharedEntity = pig.clone();
+        let entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
         spawn_egg.set(
@@ -497,7 +497,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = cow.clone();
+        let entity: SharedEntity = Arc::<CowEntity>::clone(&cow);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::COW_SPAWN_EGG);
         spawn_egg.set(
@@ -529,7 +529,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = chicken.clone();
+        let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
         spawn_egg.set(
@@ -561,7 +561,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = sheep.clone();
+        let entity: SharedEntity = Arc::<SheepEntity>::clone(&sheep);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::SHEEP_SPAWN_EGG);
         spawn_egg.set(SHEEP_COLOR, DyeColor::Pink);
