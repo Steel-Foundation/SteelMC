@@ -47,7 +47,7 @@ use crate::command::execution::{
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection, WorldsConfig};
+use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, Projectile as _, RemovalReason,
@@ -193,15 +193,13 @@ fn test_storage_root(name: &str) -> PathBuf {
 async fn test_server(
     world: Arc<World>,
     player_permission_states: PermissionSubjectIndex,
-    storage_root: &Path,
 ) -> Result<Arc<Server>, String> {
-    test_server_with_max_players(world, player_permission_states, storage_root, 1).await
+    test_server_with_max_players(world, player_permission_states, 1).await
 }
 
 async fn test_server_with_max_players(
     world: Arc<World>,
     player_permission_states: PermissionSubjectIndex,
-    storage_root: &Path,
     max_players: u32,
 ) -> Result<Arc<Server>, String> {
     let domain = ResolvedDomainConfig {
@@ -214,7 +212,6 @@ async fn test_server_with_max_players(
         slice::from_ref(&domain),
         slice::from_ref(&world),
         player_permission_states,
-        storage_root,
         test_runtime_config_with_max_players(max_players),
     )
     .await
@@ -225,14 +222,12 @@ async fn test_server_with_worlds(
     domains: &[ResolvedDomainConfig],
     loaded_worlds: &[Arc<World>],
     player_permission_states: PermissionSubjectIndex,
-    storage_root: &Path,
 ) -> Result<Arc<Server>, String> {
     test_server_with_worlds_and_config(
         default_domain,
         domains,
         loaded_worlds,
         player_permission_states,
-        storage_root,
         test_runtime_config(),
     )
     .await
@@ -243,7 +238,6 @@ async fn test_server_with_worlds_and_config(
     domains: &[ResolvedDomainConfig],
     loaded_worlds: &[Arc<World>],
     player_permission_states: PermissionSubjectIndex,
-    storage_root: &Path,
     config: Arc<RuntimeConfig>,
 ) -> Result<Arc<Server>, String> {
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
@@ -257,12 +251,7 @@ async fn test_server_with_worlds_and_config(
     let command_storage = DomainCommandStorage::load(&worlds)
         .await
         .map_err(|error| format!("test command storage should load: {error}"))?;
-    let player_data_storage = PlayerDataStorage::new(
-        storage_root.to_owned(),
-        StorageSelection::default_player_file(),
-    )
-    .await
-    .map_err(|error| format!("test player storage should initialize: {error}"))?;
+    let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
     let command_permission_keys = registered_commands
@@ -338,13 +327,11 @@ fn saved_location_planning_honors_explicit_world_selection() {
             worlds: vec![saved_world.key.clone(), selected_world.key.clone()],
         };
         let loaded_worlds = [Arc::clone(&saved_world), Arc::clone(&selected_world)];
-        let storage_root = test_storage_root("explicit-saved-location");
         let server = test_server_with_worlds(
             domain.name.clone(),
             slice::from_ref(&domain),
             &loaded_worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -520,9 +507,6 @@ fn saved_location_planning_honors_explicit_world_selection() {
         ));
 
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -552,13 +536,11 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
             },
         ];
         let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-        let storage_root = test_storage_root("domain-switch-job");
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
             &worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -651,9 +633,6 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -665,13 +644,7 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("detached-pearl-restore");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -727,17 +700,10 @@ fn domain_restore_jobs_wait_while_their_owner_has_no_live_membership() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "the test follows both restore jobs through one replacement transaction"
-)]
 fn domain_restore_jobs_follow_same_session_player_replacement() {
     init_vanilla_registry();
     init_entities();
@@ -749,13 +715,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("same-session-restore-job");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -846,9 +806,6 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
         drop((old_player, replacement, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -860,13 +817,7 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("foreign-session-restore-job");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -944,9 +895,6 @@ fn domain_restore_jobs_do_not_follow_a_different_player_session() {
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
         drop((old_player, foreign_player, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -958,13 +906,7 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("detached-stale-restores");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -1033,9 +975,6 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1049,13 +988,7 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("detached-chunk-epoch");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -1101,9 +1034,6 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1129,13 +1059,11 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
             },
         ];
         let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-        let storage_root = test_storage_root("detached-domain-disconnect-owner");
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
             &worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -1211,9 +1139,6 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1243,13 +1168,11 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
             },
         ];
         let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-        let storage_root = test_storage_root("failed-target-restore-persistence");
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
             &worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -1360,9 +1283,6 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1388,13 +1308,11 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
             },
         ];
         let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-        let storage_root = test_storage_root("domain-switch-deferred-respawn");
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
             &worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -1432,9 +1350,6 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1446,13 +1361,7 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("portal-revalidation");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -1460,7 +1369,7 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
-        let entity: SharedEntity = player.clone();
+        let entity: SharedEntity = Arc::<Player>::clone(&player);
         let Some(pending_token) = entity.begin_pending_world_change() else {
             panic!("live player should acquire a portal relocation token");
         };
@@ -1477,9 +1386,6 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
         assert!(server.online_players.remove_player_sync(&player).is_some());
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1575,13 +1481,11 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
             },
         ];
         let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-        let storage_root = test_storage_root("first-domain-visit");
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
             &worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -1634,9 +1538,6 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
 
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1657,7 +1558,6 @@ fn command_world_scope_survives_entity_transforms() {
         },
     ];
     let loaded_worlds = [Arc::clone(&alpha), Arc::clone(&beta)];
-    let storage_root = test_storage_root("command-world-scope");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1668,7 +1568,6 @@ fn command_world_scope_survives_entity_transforms() {
             &domains,
             &loaded_worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -1709,9 +1608,6 @@ fn command_world_scope_survives_entity_transforms() {
             rcon_source,
         ));
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1736,8 +1632,7 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
                 PermissionSet::from_entries([PermissionEntry::allow(modify_key)]),
             ),
         );
-        let storage_root = test_storage_root("command-entity-transform-authorization");
-        let server = test_server(Arc::clone(&world), published_states, &storage_root).await;
+        let server = test_server(Arc::clone(&world), published_states).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -1796,9 +1691,6 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
             receiver,
         ));
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -1823,7 +1715,6 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         },
     ];
     let loaded_worlds = [Arc::clone(&world), Arc::clone(&remote_world)];
-    let storage_root = test_storage_root("command-domain-residence");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -1834,7 +1725,6 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             &domains,
             &loaded_worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -2058,9 +1948,6 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             remote,
             server,
         ));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2091,7 +1978,6 @@ fn player_world_selection_uses_one_token_owned_route() {
         Arc::clone(&sibling_world),
         Arc::clone(&target_world),
     ];
-    let storage_root = test_storage_root("player-world-selection");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -2102,7 +1988,6 @@ fn player_world_selection_uses_one_token_owned_route() {
             &domains,
             &loaded_worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -2186,9 +2071,6 @@ fn player_world_selection_uses_one_token_owned_route() {
         assert!(player.finish_pending_world_change(request.pending_token));
 
         drop((player, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2210,7 +2092,6 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         worlds: vec![source_world.key.clone(), target_world.key.clone()],
     };
     let loaded_worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-    let storage_root = test_storage_root("safe-same-domain-selection");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -2221,7 +2102,6 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
             slice::from_ref(&domain),
             &loaded_worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -2289,9 +2169,6 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         );
 
         drop((player, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2301,6 +2178,27 @@ fn test_player(server: &Arc<Server>, world: Arc<World>) -> Arc<Player> {
 
 fn test_player_with_uuid(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
     test_player_with_uuid_and_packets(server, world, uuid, "TestPlayer", 1).0
+}
+
+fn send_test_chunk_batch(server: &Server, player: &Player, world: &Arc<World>) -> Vec<ChunkPos> {
+    let center = *player.last_chunk_pos.lock();
+    let batch = player
+        .chunk_sender()
+        .lock()
+        .prepare_batch(world, center, &player.chunk_send_epoch)
+        .expect("ready chunks should prepare");
+    let encoded = ChunkSender::encode_batch(
+        &batch,
+        &mut FxHashMap::default(),
+        None,
+        server.chunk_encoding_pool.as_ref(),
+    );
+    player.chunk_sender().lock().commit_batch(
+        &batch,
+        encoded,
+        &player.connection,
+        &player.chunk_send_epoch,
+    )
 }
 
 fn prepare_respawn_test_world(world: &Arc<World>) {
@@ -2621,14 +2519,9 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("join-player-info-before-spawn");
-        let server = test_server_with_max_players(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-            2,
-        )
-        .await;
+        let server =
+            test_server_with_max_players(Arc::clone(&world), PermissionSubjectIndex::new(), 2)
+                .await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -2704,9 +2597,6 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         drop(joining);
         drop(existing);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2719,13 +2609,7 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("client-information-hat-updates");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -2808,9 +2692,6 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
         drop(observer);
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2822,13 +2703,7 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("initial-admission-restores");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -2879,9 +2754,6 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
         }
         drop(joining);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2894,13 +2766,7 @@ fn player_disconnect_detaches_before_async_persistence() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("disconnect-safe-point");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -2925,9 +2791,6 @@ fn player_disconnect_detaches_before_async_persistence() {
         drop(pending);
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2940,13 +2803,7 @@ fn online_respawn_replacement_rejects_admission_and_stale_owners() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("exact-online-respawn-replacement");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -2976,9 +2833,6 @@ fn online_respawn_replacement_rejects_admission_and_stale_owners() {
 
         assert!(server.remove_online_player_sync(&replacement).is_some());
         drop((old, replacement, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -2991,13 +2845,7 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("batched-disconnects");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3075,9 +2923,6 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
         drop(second);
         drop(survivor);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -3090,13 +2935,7 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("end-credits-shutdown-snapshot");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3127,9 +2966,6 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
         drop(pending);
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -3143,13 +2979,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("death-respawn-fresh-player");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3159,12 +2989,42 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         assert!(world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
+        let requested_chunks_per_tick = 2;
+        assert_ne!(
+            send_test_chunk_batch(&server, &old_player, &world),
+            Vec::<ChunkPos>::new()
+        );
+        assert!(
+            old_player
+                .chunk_sender()
+                .lock()
+                .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
+        );
+
         old_player.set_health(0.0);
         old_player.respawn();
         assert_eq!(server.jobs.len(), 1);
         finish_test_respawn_job(&server, &world).await;
 
         let replacement = current_respawn_replacement(&server, &world, &old_player);
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
+        assert_eq!(
+            send_test_chunk_batch(&server, &replacement, &world).len(),
+            requested_chunks_per_tick
+        );
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
         assert_eq!(replacement.get_health(), replacement.get_max_health());
         assert!(!replacement.experience.lock().dirty);
         assert!(old_player.is_removed());
@@ -3176,13 +3036,14 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
         drop((old_player, replacement, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps session pacing and pearl ownership assertions in the same End respawn lifecycle"
+)]
 fn end_credits_respawn_replaces_the_detached_player_incarnation() {
     let target_world = fresh_test_world_in_domain("survival", "overworld");
     let source_world = fresh_test_derived_world(&target_world, "the_end");
@@ -3194,7 +3055,6 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("end-credits-respawn-fresh-player");
         let domain = ResolvedDomainConfig {
             name: "survival".to_owned(),
             default_world: target_world.key.clone(),
@@ -3206,7 +3066,6 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             slice::from_ref(&domain),
             &worlds,
             PermissionSubjectIndex::new(),
-            &storage_root,
         )
         .await;
         let Ok(server) = server else {
@@ -3224,9 +3083,9 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             DVec3::new(8.5, 100.0, 8.5),
             Arc::downgrade(&source_world),
         ));
-        let old_owner: SharedEntity = old_player.clone();
+        let old_owner: SharedEntity = Arc::<Player>::clone(&old_player);
         pearl.set_owner_entity(Some(&old_owner));
-        let shared_pearl: SharedEntity = pearl.clone();
+        let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
         if let Err(error) = source_world.try_add_entity(Arc::clone(&shared_pearl)) {
             panic!("test pearl should be added: {error}");
         }
@@ -3241,6 +3100,12 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         };
         let leave_game_before_credits = leave_game_count(&old_player);
 
+        let requested_chunks_per_tick = 2;
+        assert_ne!(
+            send_test_chunk_batch(&server, &old_player, &source_world),
+            Vec::<ChunkPos>::new()
+        );
+
         old_player.show_end_credits();
         assert!(!source_world.contains_player(&old_player));
         assert!(server.owns_online_player(&old_player));
@@ -3249,6 +3114,32 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         finish_test_respawn_job(&server, &target_world).await;
 
         let replacement = current_respawn_replacement(&server, &target_world, &old_player);
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
+        assert!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
+        );
+        // Respawn queues the target player's tickets after the job's scheduling pass.
+        target_world.chunk_map.advance_scheduling();
+        assert_eq!(
+            send_test_chunk_batch(&server, &replacement, &target_world).len(),
+            requested_chunks_per_tick
+        );
+        assert_eq!(
+            replacement
+                .chunk_sender()
+                .lock()
+                .unacknowledged_batch_count_for_test(),
+            1
+        );
         assert!(replacement.has_seen_credits());
         assert!(!replacement.has_won_game());
         assert!(!replacement.experience.lock().dirty);
@@ -3286,9 +3177,6 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             target_world.chunk_map.task_tracker.wait(),
         );
         drop((old_player, replacement, shared_pearl, pearl, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -3492,10 +3380,9 @@ fn command_source_and_operator_checks_use_published_subject_state() {
     };
     runtime.block_on(async {
         let uuid = Uuid::from_u128(1);
-        let storage_root = test_storage_root("published-permissions");
         let mut published_states = PermissionSubjectIndex::new();
         published_states.set(uuid, PermissionSubjectState::default());
-        let server = test_server(Arc::clone(&world), published_states, &storage_root).await;
+        let server = test_server(Arc::clone(&world), published_states).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3547,9 +3434,6 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         drop(granted_source);
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -3561,13 +3445,7 @@ fn renamed_join_message_only_reaches_existing_players() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("join-message-recipients");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3593,9 +3471,6 @@ fn renamed_join_message_only_reaches_existing_players() {
 
         drop(joining_player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -3698,18 +3573,12 @@ fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
 #[test]
 fn damage_command_records_by_entity_as_the_responsible_player() {
     let world = fresh_test_world("damage-command-attribution");
-    let storage_root = test_storage_root("damage-command-attribution");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3755,28 +3624,19 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
 
         drop((target, attacker));
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
 #[test]
 fn title_command_delivers_vanilla_packets_to_recorded_connections() {
     let world = fresh_test_world("title-command");
-    let storage_root = test_storage_root("title-command");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3861,9 +3721,6 @@ fn title_command_delivers_vanilla_packets_to_recorded_connections() {
         assert_eq!(packet_payloads(&bob_packets, C_CLEAR_TITLES), [vec![1]]);
 
         drop((alice, bob, server));
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -3878,18 +3735,12 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
     init_block_entities();
     let world = fresh_test_world("setblock-command");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let storage_root = test_storage_root("setblock-command");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -3915,9 +3766,6 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
         );
 
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -4095,13 +3943,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
         panic!("test runtime should initialize");
     };
     runtime.block_on(async {
-        let storage_root = test_storage_root("shutdown-disconnect");
-        let server = test_server(
-            Arc::clone(&world),
-            PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -4128,7 +3970,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
             "shutdown should claim the removal so a later tick does not repeat it"
         );
 
-        shutdown_server(&server, &storage_root).await;
+        server.cancel_token.cancel();
     });
 }
 

@@ -305,6 +305,7 @@ fn gliding_non_player_living_entity_forces_velocity_sync() {
 #[test]
 fn try_to_start_fall_flying_rejects_levitation() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);

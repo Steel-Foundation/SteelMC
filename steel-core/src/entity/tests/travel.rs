@@ -93,6 +93,7 @@ fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
 #[test]
 fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     init_vanilla_registry();
+    init_behaviors();
 
     let slow_falling = LivingFluidTestEntity::new(0.0, 0.0, true);
     slow_falling.set_fall_distance(7.0);
