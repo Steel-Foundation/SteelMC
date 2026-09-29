@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use crate::{entity::LivingEntity as _, world::World};
 
@@ -23,7 +23,7 @@ impl Player {
             Arc::clone(&self.connection),
             Arc::clone(&self.session),
             target_world,
-            self.server.clone(),
+            Weak::clone(&self.server),
             Arc::clone(&self.config),
             self.base.id(),
             self.client_information(),

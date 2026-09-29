@@ -123,32 +123,31 @@ where
         }
     }
 
-    /// Creates an argument for this runtime model that has a custom [`SuggestionProvider`].
-    pub(crate) fn argument_with_suggestions(
-        name: impl Into<Box<str>>,
-        argument_type: R::Argument,
-        custom_suggestions: impl SuggestionProvider<S, R::Argument> + 'static,
+    /// Add a custom [`SuggestionProvider`] to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub(crate) fn suggests(
+        self,
+        suggestion: impl SuggestionProvider<S, R::Argument> + 'static,
     ) -> Self {
-        Self::argument_with_suggestions_arc(name, argument_type, Arc::new(custom_suggestions))
+        self.suggests_arc(Arc::new(suggestion))
     }
 
-    /// Creates an argument for this runtime model that has a custom [`SuggestionProvider`], wrapped in an [`Arc`].
-    pub(crate) fn argument_with_suggestions_arc(
-        name: impl Into<Box<str>>,
-        argument_type: R::Argument,
-        custom_suggestions: Arc<impl SuggestionProvider<S, R::Argument> + 'static>,
+    /// Add a custom [`SuggestionProvider`] wrap in an Arc to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub(crate) fn suggests_arc(
+        mut self,
+        suggestion: Arc<impl SuggestionProvider<S, R::Argument> + 'static>,
     ) -> Self {
-        Self {
-            data: CommandNodeData::Argument(
-                name.into(),
-                ArgumentData::with_suggestions(argument_type, custom_suggestions),
-            ),
-            children: Vec::new(),
-            executor: None,
-            requirement: CommandRequirement::allow_all(),
-            execution_requirement: CommandRequirement::allow_all(),
-            redirect: None,
+        debug_assert!(
+            matches!(self.data, CommandNodeData::Argument(_, _)),
+            "suggests must be called on an argument node"
+        );
+        if let CommandNodeData::Argument(_, data) = &mut self.data {
+            data.custom_suggestions = Some(suggestion);
         }
+        self
     }
 
     /// Returns this node's literal name, or `None` for an argument node.

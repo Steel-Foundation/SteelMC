@@ -1,11 +1,14 @@
+use small_map::FxSmallMap;
+
 use super::{
     BlockPos, BlockStateId, BlockTickList, CarvingMask, Chunk, ChunkBuilder, ChunkHeightmaps,
     ChunkPos, ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList,
     FullChunkRef, FxHashSet, Heightmap, HeightmapType, LoadedChunk, Ordering, PalettedContainer,
     PersistentBiomeData, PersistentChunk, PersistentHeightmap, PersistentLightSection,
     PersistentPoi, PersistentSection, REGISTRY, RegistryExt, SectionHolder, Sections, Weak, World,
-    bits_for_palette_len, io, pack_indices, unpack_indices,
+    bits_for_palette_len, io, pack_indices_from_iter, unpack_indices,
 };
+const PALETTE_INLINE_CAPACITY: usize = 8;
 
 impl ChunkStorage {
     fn invalid_chunk_data(message: impl Into<String>) -> io::Error {
@@ -267,7 +270,10 @@ impl ChunkStorage {
         section: &SectionHolder,
         builder: &mut ChunkBuilder,
     ) -> PersistentSection {
-        let section = section.read();
+        let mut section = section.write();
+        if matches!(&section.states, PalettedContainer::Building(_)) {
+            section.recalculate_counts();
+        }
         let biomes = Self::biomes_to_persistent(&section.biomes, builder);
 
         match &section.states {
@@ -286,23 +292,24 @@ impl ChunkStorage {
                     .map(|(block_id, _)| builder.ensure_block_state(*block_id))
                     .collect();
 
-                // Pack block indices (indices into section-local palette)
+                // Pack block indices (indices into section-local palette),
+                // inverting the palette once instead of scanning it per block.
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous section should have palette length >= 2");
-                let indices: Vec<u32> = data
-                    .cube
+                let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, BlockStateId, u32> = data
+                    .palette
                     .iter()
-                    .flatten()
-                    .flatten()
-                    .map(|block_id| {
-                        data.palette
-                            .iter()
-                            .position(|(v, _)| v == block_id)
-                            .unwrap_or(0) as u32
-                    })
+                    .enumerate()
+                    .map(|(index, (block_id, _))| (*block_id, index as u32))
                     .collect();
-
-                let block_data = pack_indices(&indices, bits);
+                let block_data = pack_indices_from_iter(
+                    data.cube
+                        .as_flattened()
+                        .as_flattened()
+                        .iter()
+                        .map(|block_id| palette_indices.get(block_id).copied().unwrap_or(0)),
+                    bits,
+                );
 
                 PersistentSection::Heterogeneous {
                     palette,
@@ -311,9 +318,8 @@ impl ChunkStorage {
                     biomes,
                 }
             }
-            PalettedContainer::Building(_) => panic!(
-                "section_to_persistent called on a section still in worldgen Building mode; \
-                 finalize_building must be called before serialization"
+            PalettedContainer::Building(_) => unreachable!(
+                "recalculate_counts finalizes Building sections under this same write guard"
             ),
         }
     }
@@ -338,20 +344,20 @@ impl ChunkStorage {
 
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous biome data should have palette length >= 2");
-                let indices: Vec<u32> = data
-                    .cube
+                let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, u16, u32> = data
+                    .palette
                     .iter()
-                    .flatten()
-                    .flatten()
-                    .map(|biome_id| {
-                        data.palette
-                            .iter()
-                            .position(|(v, _)| v == biome_id)
-                            .unwrap_or(0) as u32
-                    })
+                    .enumerate()
+                    .map(|(index, (biome_id, _))| (*biome_id, index as u32))
                     .collect();
-
-                let biome_data = pack_indices(&indices, bits);
+                let biome_data = pack_indices_from_iter(
+                    data.cube
+                        .as_flattened()
+                        .as_flattened()
+                        .iter()
+                        .map(|biome_id| palette_indices.get(biome_id).copied().unwrap_or(0)),
+                    bits,
+                );
 
                 PersistentBiomeData::Heterogeneous {
                     palette,
@@ -427,7 +433,7 @@ impl ChunkStorage {
                 pos,
                 min_y,
                 height,
-                level.clone(),
+                Weak::clone(&level),
                 block_ticks,
                 fluid_ticks,
                 heightmaps,
@@ -512,7 +518,7 @@ impl ChunkStorage {
                 persistent.postprocessing.iter().map(Vec::clone).collect(),
                 block_ticks,
                 fluid_ticks,
-                level.clone(),
+                Weak::clone(&level),
                 light,
             );
 
@@ -526,7 +532,7 @@ impl ChunkStorage {
                 if let Some(block_entity) = Self::persistent_to_block_entity_at(
                     persistent_be,
                     block_entity_pos,
-                    level.clone(),
+                    Weak::clone(&level),
                     state,
                 ) {
                     let _ = chunk.set_block_entity(block_entity);

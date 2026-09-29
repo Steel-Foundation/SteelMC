@@ -311,16 +311,6 @@ impl<S, A> ArgumentData<S, A> {
     pub(crate) const fn argument_type(&self) -> &A {
         &self.argument_type
     }
-
-    pub(crate) const fn with_suggestions(
-        argument_type: A,
-        custom_suggestions: SyncSuggestionProvider<S, A>,
-    ) -> Self {
-        Self {
-            argument_type,
-            custom_suggestions: Some(custom_suggestions),
-        }
-    }
 }
 
 impl<S, A> ArgumentData<S, A> {

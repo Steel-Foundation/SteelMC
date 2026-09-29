@@ -53,6 +53,7 @@ fn living_tick_state_updates_swing_time() {
 #[test]
 fn current_swing_duration_uses_vanilla_dig_effects() {
     init_vanilla_registry();
+    init_behaviors();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION);
@@ -107,7 +108,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&target);
 
     entity.set_last_hurt_mob(Some(&target_entity));
     assert!(entity.last_hurt_mob().is_some());

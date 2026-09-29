@@ -2847,6 +2847,7 @@ name = "steel-utils"
 version = "0.15.3+mc26.2"
 dependencies = [
  "bitflags",
+ "chrono",
  "crc32c",
  "criterion",
  "enum_dispatch",
