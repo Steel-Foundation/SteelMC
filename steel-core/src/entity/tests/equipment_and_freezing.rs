@@ -365,7 +365,11 @@ fn equip_game_events(
     let section = SectionPos::from_block_pos(BlockPos::from(position));
     insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
     let listener = Arc::new(RecordingGameEventListener::new(position));
-    let _registration = RegisteredGameEventListener::new(&world, section, listener.clone());
+    let _registration = RegisteredGameEventListener::new(
+        &world,
+        section,
+        Arc::<RecordingGameEventListener>::clone(&listener),
+    );
 
     entity.base().set_world(Arc::downgrade(&world));
     entity.base().set_position_local(position);
@@ -474,7 +478,11 @@ fn equipping_armor_from_the_hand_runs_the_equip_hook() {
     let section = SectionPos::from_block_pos(BlockPos::from(position));
     insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
     let listener = Arc::new(RecordingGameEventListener::new(position));
-    let _registration = RegisteredGameEventListener::new(&world, section, listener.clone());
+    let _registration = RegisteredGameEventListener::new(
+        &world,
+        section,
+        Arc::<RecordingGameEventListener>::clone(&listener),
+    );
 
     let player = TestPlayerBuilder::new(Arc::clone(&world), "Equipper", next_entity_id()).build();
     assert!(player.try_set_position(position).is_ok());
@@ -489,7 +497,7 @@ fn equipping_armor_from_the_hand_runs_the_equip_hook() {
         &player,
         InteractionHand::MainHand,
         &world,
-        player.inventory.clone(),
+        Arc::clone(&player.inventory),
     );
 
     assert_eq!(behavior.use_item(&mut context), InteractionResult::Success);
