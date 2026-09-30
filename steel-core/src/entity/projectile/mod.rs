@@ -350,7 +350,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .bounding_box()
             .expand_towards(self.velocity())
             .inflate(1.0);
-        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| owner.clone());
+        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| Arc::clone(&owner));
         let mut to_check = vec![root_vehicle];
         let mut visited = Vec::new();
 
@@ -898,6 +898,7 @@ mod tests {
 
     use crate::{
         behavior::init_behaviors,
+        block_entity::init_block_entities,
         entity::{EntityBase, entities::FireworkRocketEntity},
         test_support::{test_world, world_border_projectile_test_world},
     };
@@ -1080,6 +1081,7 @@ mod tests {
     #[test]
     fn base_block_hit_dispatches_vanilla_block_callbacks() {
         init_vanilla_registry();
+        init_block_entities();
         init_behaviors();
 
         let world = Arc::clone(test_world());

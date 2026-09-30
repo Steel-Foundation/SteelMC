@@ -34,6 +34,7 @@ mod tellraw;
 mod tick;
 mod time;
 mod title;
+mod version;
 mod weather;
 mod worldborder;
 
@@ -99,6 +100,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(title::registration())?;
+    builder.register(version::registration())?;
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
@@ -180,6 +182,7 @@ mod tests {
                 "tick",
                 "time",
                 "title",
+                "version",
                 "weather",
                 "worldborder",
                 "invsee"

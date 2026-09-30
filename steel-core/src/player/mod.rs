@@ -94,8 +94,8 @@ use text_components::{
 use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::{
-    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, ItemBehavior,
-    apply_use_remainder,
+    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
+    ItemBehavior, apply_use_remainder,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -566,7 +566,7 @@ impl Player {
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let equipment = inventory.clone();
+        let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
@@ -597,7 +597,7 @@ impl Player {
             last_tracking_view: SyncMutex::new(None),
             client_information: SyncMutex::new(client_information),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
-            inventory: inventory.clone(),
+            inventory: Arc::clone(&inventory),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             ender_chest_inventory,
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
@@ -732,8 +732,8 @@ impl Player {
 
             self.update_player_attributes();
             self.living_base.refresh_speed_from_attributes();
+            self.tick_food_data();
             self.advancements.lock().flush_dirty(self, true);
-            self.tick_regeneration();
 
             if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
                 self.set_sprinting(false);
@@ -1269,7 +1269,7 @@ impl Player {
     /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
     pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
         debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
-        let replacement_entity: SharedEntity = replacement.clone();
+        let replacement_entity: SharedEntity = Arc::<Player>::clone(replacement);
         for pearl in self.ender_pearls() {
             if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
                 pearl.restore_owner_reference(&replacement_entity);
@@ -1919,6 +1919,17 @@ impl LivingEntity for Player {
         Player::die(self, source);
     }
 
+    fn tick_equipment(&self) {
+        // skip main hand because its already being ticked through player inventory
+        InventoryTickContext::tick_equipment(
+            &self.get_world(),
+            self,
+            EquipmentSlot::ALL
+                .into_iter()
+                .filter(|slot| *slot != EquipmentSlot::MainHand),
+        );
+    }
+
     fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
         let inventory = self.inventory.lock();
         visitor(inventory.get_ref(slot));
@@ -1962,8 +1973,8 @@ impl LivingEntity for Player {
             return InteractionResult::Pass;
         }
 
-        let source_ref = ContainerRef::from(player.inventory.clone());
-        let target_ref = ContainerRef::from(self.inventory.clone());
+        let source_ref = ContainerRef::from(Arc::clone(&player.inventory));
+        let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
         let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
@@ -2075,6 +2086,8 @@ impl LivingEntity for Player {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
+        self.tick_regeneration();
+        InventoryTickContext::tick_player_inventory(&self.get_world(), self);
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
         }
