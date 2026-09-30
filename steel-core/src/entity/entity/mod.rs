@@ -975,7 +975,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     entity,
                     WorldChangeRequest::Portal {
                         portal: process.portal(),
-                        source_world: world.clone(),
+                        source_world: Arc::clone(&world),
                         portal_pos: process.entry_position(),
                         pending_token,
                     },

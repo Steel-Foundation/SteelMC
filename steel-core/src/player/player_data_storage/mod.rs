@@ -146,7 +146,7 @@ impl PlayerDataStorage {
         save_root: PathBuf,
         selection: &StorageSelection,
     ) -> io::Result<Self> {
-        if selection.kind == Identifier::from_steel("file") {
+        if selection.kind == Identifier::from_steel("disk") {
             Self::on_disk(save_root).await
         } else if selection.kind == Identifier::from_steel("ram") {
             Ok(Self::in_memory())

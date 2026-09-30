@@ -146,7 +146,7 @@ impl PlayerSession {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Weak};
 
     use crate::{
         entity::Entity as _,
@@ -162,7 +162,7 @@ mod tests {
             Arc::clone(&player.connection),
             session,
             player.get_world(),
-            player.server.clone(),
+            Weak::clone(&player.server),
             Arc::clone(&player.config),
             player.id(),
             ClientInformation::default(),

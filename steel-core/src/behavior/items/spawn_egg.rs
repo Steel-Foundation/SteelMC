@@ -128,7 +128,7 @@ impl SpawnEggItem {
         offspring.set_old_position_to_current();
         offspring.base().set_old_rotation_to_current();
         apply_implicit_item_stack_components(&offspring, stack);
-        add_spawned_entity(&world, offspring.clone()).ok()?;
+        add_spawned_entity(&world, Arc::clone(&offspring)).ok()?;
         Some(offspring)
     }
 }

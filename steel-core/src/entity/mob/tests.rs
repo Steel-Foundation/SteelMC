@@ -368,7 +368,7 @@ fn mob_control_flags_disable_goals_for_mob_controller() {
 #[test]
 fn mob_control_flags_disable_jump_when_riding_boat() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let boat: SharedEntity = Arc::new(MobControlVehicleEntity::new(2, &vanilla_entities::OAK_BOAT));
     EntityBase::restore_passenger_relationship(&boat, &mob_entity);
 
@@ -498,7 +498,7 @@ fn melee_attack_range_uses_vehicle_expanded_attack_box() {
 
     assert!(!mob.is_within_melee_attack_range(&target));
 
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let vehicle: SharedEntity = Arc::new(MobControlVehicleEntity::new(3, &vanilla_entities::PIG));
     EntityBase::restore_passenger_relationship(&vehicle, &mob_entity);
 
@@ -582,7 +582,7 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         None,
         false,
     ));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.do_hurt_target(test_world(), &target_entity));
 
@@ -612,7 +612,7 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         None,
         false,
     ));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.do_hurt_target(test_world(), &target_entity));
 
@@ -680,7 +680,7 @@ fn mob_tick_leash_applies_default_elastic_pull() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&holder);
     assert!(mob.set_leashed_to(&holder_entity));
 
     mob.tick_leash();

@@ -121,7 +121,7 @@ mod tests {
             player,
             InteractionHand::MainHand,
             world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
         BottleItem.use_item(&mut context)
     }

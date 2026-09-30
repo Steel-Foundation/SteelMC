@@ -387,7 +387,7 @@ impl Chunk {
             postprocessing,
             block_ticks,
             fluid_ticks,
-            level.clone(),
+            Weak::clone(&level),
             light,
         );
 
