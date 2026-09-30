@@ -19,8 +19,8 @@ impl ChunkMap {
         let task = Arc::new(ChunkGenerationTask::new(
             pos,
             target_status,
-            self.clone(),
-            self.generation_pool.clone(),
+            Arc::clone(self),
+            Arc::clone(&self.generation_pool),
             self.cancel_token.child_token(),
         ));
         self.pending_generation_tasks.lock().push(Arc::clone(&task));
@@ -76,7 +76,7 @@ impl ChunkMap {
 
         for task in tasks {
             let permit = RunningGenerationTaskPermit {
-                chunk_map: task.chunk_map.clone(),
+                chunk_map: Arc::clone(&task.chunk_map),
                 task: Arc::clone(&task),
             };
             self.task_tracker.spawn_on(
@@ -110,7 +110,7 @@ impl ChunkMap {
     ) -> Option<Arc<ChunkHolder>> {
         // Recover from unloading if possible, else create new holder.
         let (chunk_holder, initialize_simulation) =
-            if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
+            if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) {
                 (holder, false)
             } else {
                 let level = new_level?;
@@ -129,7 +129,7 @@ impl ChunkMap {
                         self.world_gen_context.height(),
                         Arc::downgrade(&self.full_publications),
                     ));
-                    let _ = self.chunks.insert_sync(pos, holder.clone());
+                    let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
                     (holder, true)
                 }
             };

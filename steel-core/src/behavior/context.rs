@@ -604,7 +604,7 @@ impl InventoryAccess {
     /// Prefer [`Self::with_item`] or [`Self::with_inventory`] unless an operation
     /// must interoperate with APIs that require `ContainerLockGuard`.
     pub fn with_guard<R>(&self, f: impl FnOnce(&mut ContainerLockGuard) -> R) -> R {
-        let inv_ref = ContainerRef::from(self.inventory.clone());
+        let inv_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
         f(&mut guard)
     }
@@ -829,7 +829,7 @@ mod tests {
         inventory
             .lock()
             .set_item(0, ItemStack::with_count(&vanilla_items::LIGHT, 2));
-        let access = InventoryAccess::new(inventory.clone(), InteractionHand::MainHand);
+        let access = InventoryAccess::new(Arc::clone(&inventory), InteractionHand::MainHand);
         let mut source = PlacementSource {
             player: None,
             hand: InteractionHand::MainHand,

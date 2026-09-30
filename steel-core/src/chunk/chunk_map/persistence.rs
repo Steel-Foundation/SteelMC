@@ -230,11 +230,11 @@ impl ChunkMap {
         let all_chunks: Vec<Arc<ChunkHolder>> = {
             let mut chunks = Vec::new();
             self.chunks.iter_sync(|_, holder| {
-                chunks.push(holder.clone());
+                chunks.push(Arc::clone(holder));
                 true
             });
             self.unloading_chunks.iter_sync(|_, holder| {
-                chunks.push(holder.clone());
+                chunks.push(Arc::clone(holder));
                 true
             });
             chunks

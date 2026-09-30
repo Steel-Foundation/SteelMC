@@ -68,8 +68,8 @@ impl BlockBehavior for EnderChestBlock {
             return InteractionResult::Success;
         }
 
-        let inventory = player.inventory.clone();
-        let container = player.ender_chest_inventory.clone();
+        let inventory = Arc::clone(&player.inventory);
+        let container = Arc::clone(&player.ender_chest_inventory);
         let chest = Arc::downgrade(&block_entity);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_ENDERCHEST.msg()),

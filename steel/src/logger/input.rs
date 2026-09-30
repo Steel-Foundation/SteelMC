@@ -31,7 +31,7 @@ impl CommandLogger {
     pub async fn input_main(self: Arc<Self>) -> Result<()> {
         let (tx, rx) = mpsc::unbounded_channel();
         enable_raw_mode()?;
-        self.clone().input_receiver(tx);
+        Arc::clone(&self).input_receiver(tx);
         let stopped = self.stopped.clone();
         let result = self.input_key(rx).await;
         stopped.cancel();

@@ -350,7 +350,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .bounding_box()
             .expand_towards(self.velocity())
             .inflate(1.0);
-        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| owner.clone());
+        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| Arc::clone(&owner));
         let mut to_check = vec![root_vehicle];
         let mut visited = Vec::new();
 
