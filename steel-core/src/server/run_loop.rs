@@ -35,7 +35,7 @@ impl Server {
             worker_threads_for_available(self.config.packet_workers, available_worker_threads());
         let mut packet_handles = Vec::with_capacity(packet_worker_count);
         for worker_id in 0..packet_worker_count {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             packet_handles.push(tokio::spawn(async move {
                 if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
@@ -54,16 +54,16 @@ impl Server {
             }
         };
         let game_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
-            let task_guard = GameTickTaskGuard::new(self.clone(), cancel_token.clone());
+            let task_guard = GameTickTaskGuard::new(Arc::clone(&self), cancel_token.clone());
             tokio::spawn(async move {
                 let _task_guard = task_guard;
                 s.run_game_tick(t).await;
             })
         };
         let chunk_send_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
         };
@@ -258,7 +258,7 @@ impl Server {
             self.process_player_joins();
 
             {
-                let server = self.clone();
+                let server = Arc::clone(&self);
                 let _ =
                     spawn_blocking(move || server.process_world_changes(tick_count, runs_normally))
                         .await;
@@ -502,7 +502,7 @@ impl Server {
                 break;
             }
 
-            let server = self.clone();
+            let server = Arc::clone(&self);
             let _ = spawn_blocking(move || {
                 server.tick_chunk_sending();
             })

@@ -8,6 +8,8 @@
 //! - Slots 36-44: Hotbar (9)
 //! - Slot 45: Offhand
 
+use std::sync::Arc;
+
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::{IntoShared, Shared};
 
@@ -31,7 +33,11 @@ pub fn inventory_menu(inventory: Shared<PlayerInventory>) -> Menu {
     let crafting_container = CraftingContainer::new(2, 2).into_shared();
     let result_container = ResultContainer::new().into_shared();
 
-    let handler = CraftingHandler::new(crafting_container.clone(), result_container.clone(), 2);
+    let handler = CraftingHandler::new(
+        Arc::clone(&crafting_container),
+        Arc::clone(&result_container),
+        2,
+    );
 
     let mut builder = MenuBuilder::new(None, INVENTORY_MENU_CONTAINER_ID);
 

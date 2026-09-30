@@ -1,6 +1,35 @@
 use super::*;
+use crate::chunk::chunk_holder::ChunkSavePreparationGuard;
+use crate::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use crate::chunk::chunk_request::{ChunkRequest, ChunkTicketKind};
 use std::thread;
+
+/// Unloads a ready Full holder at `pos` and reserves its save preparation.
+fn unloading_holder_with_save_preparation(
+    world: &Arc<World>,
+    pos: ChunkPos,
+) -> (Arc<ChunkHolder>, ChunkSavePreparationGuard) {
+    let holder = insert_ready_full_chunk(world, pos);
+    world.chunk_map.update_chunk_level(pos, None);
+    let preparation = holder
+        .try_begin_save_preparation()
+        .expect("the unloading holder should reserve save preparation");
+    (holder, preparation)
+}
+
+fn revive_at_full(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
+    world
+        .chunk_map
+        .update_chunk_level(pos, Some(ChunkTicketLevel::FULL_CHUNK))
+        .expect("revival must win the race against an in-flight save preparation")
+}
+
+fn assert_snapshot_discarded(preparation: ChunkSavePreparationGuard) {
+    assert!(
+        preparation.finish(()).is_none(),
+        "the preparation that lost the race must discard its snapshot"
+    );
+}
 
 #[test]
 fn world_tick_spawns_dirty_unload_save_on_the_chunk_runtime() {
@@ -46,66 +75,31 @@ fn save_retry_marks_same_unloading_holder_dirty() {
 }
 
 #[test]
-fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
+fn revival_during_save_preparation_activates_the_holder_immediately() {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("save_preparation_revival");
     let chunk_pos = ChunkPos::new(0, 0);
-    let original = insert_ready_full_chunk(&world, chunk_pos);
+    let (original, preparation) = unloading_holder_with_save_preparation(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None);
-    let preparation = original
-        .try_begin_save_preparation()
-        .expect("the unloading holder should reserve save preparation");
-
-    assert!(
-        world
-            .chunk_map
-            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::FULL_CHUNK))
-            .is_none(),
-        "revival must be staged instead of blocking the lifecycle thread"
-    );
-    assert!(world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
-    assert!(!world.chunk_map.chunks.contains_sync(&chunk_pos));
-
-    drop(preparation);
-
-    let mut changes = Vec::new();
-    world.chunk_map.merge_deferred_revivals(&mut changes);
-    assert_eq!(changes.len(), 1);
-    let change = changes[0];
-    let Some(revived) = world
-        .chunk_map
-        .update_chunk_level(change.pos, change.new_level)
-    else {
-        panic!("revival should retry after save preparation releases the holder");
-    };
+    let revived = revive_at_full(&world, chunk_pos);
 
     assert!(Arc::ptr_eq(&original, &revived));
     assert!(world.chunk_map.chunks.contains_sync(&chunk_pos));
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+    assert_snapshot_discarded(preparation);
 }
 
 #[test]
-fn ticket_receipt_waits_for_deferred_holder_revival() {
-    let world = fresh_test_world("deferred_revival_receipt");
+fn ticket_receipt_commits_while_the_holder_is_still_preparing_a_save() {
+    let world = fresh_test_world("save_preparation_receipt");
     let pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, pos);
-    world.chunk_map.update_chunk_level(pos, None);
-    let preparation = holder
-        .try_begin_save_preparation()
-        .expect("the unloading holder should reserve save preparation");
+    let (holder, preparation) = unloading_holder_with_save_preparation(&world, pos);
 
     let receipt = world
         .chunk_map
         .acquire_chunk_request_leases(&[pos], ChunkTicketLevel::MAX)
         .expect("one request lease should produce a receipt");
-    world.chunk_map.advance_scheduling();
-
-    assert!(!world.chunk_map.is_ticket_receipt_committed(receipt));
-    assert!(!world.chunk_map.chunks.contains_sync(&pos));
-
-    drop(preparation);
     world.chunk_map.advance_scheduling();
 
     assert!(world.chunk_map.is_ticket_receipt_committed(receipt));
@@ -115,41 +109,50 @@ fn ticket_receipt_waits_for_deferred_holder_revival() {
             .chunks
             .read_sync(&pos, |_, active| Arc::ptr_eq(active, &holder))
             .unwrap_or(false),
-        "the receipt should publish only after the original holder revives"
+        "the original holder must be active again without waiting for the save"
     );
+    assert_snapshot_discarded(preparation);
 
     stop_chunk_tasks(&world);
 }
 
 #[test]
-fn newer_ticket_change_replaces_a_deferred_revival() {
+fn revival_during_save_preparation_keeps_the_generation_neighborhood_complete() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("save_preparation_revival_override");
-    let chunk_pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    let world = fresh_test_world("save_preparation_revival_neighborhood");
+    let pinned = ChunkPos::new(0, 0);
+    let neighbor = ChunkPos::new(1, 0);
+    let target_status = ChunkStatus::Biomes;
+    let radius = GENERATION_PYRAMID
+        .get_step_to(target_status)
+        .accumulated_dependencies
+        .get_radius_of(ChunkStatus::Empty) as i32;
 
-    world.chunk_map.update_chunk_level(chunk_pos, None);
-    let preparation = holder
-        .try_begin_save_preparation()
-        .expect("the unloading holder should reserve save preparation");
-    assert!(
-        world
-            .chunk_map
-            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::FULL_CHUNK))
-            .is_none()
-    );
-    drop(preparation);
+    // Every position in the neighbor's dependency square needs a live holder.
+    for x in (neighbor.0.x - radius)..=(neighbor.0.x + radius) {
+        for z in (neighbor.0.y - radius)..=(neighbor.0.y + radius) {
+            let pos = ChunkPos::new(x, z);
+            if pos != pinned {
+                world
+                    .chunk_map
+                    .update_chunk_level(pos, Some(ChunkTicketLevel::MAX));
+            }
+        }
+    }
 
-    let removal = LoadLevelChange {
-        pos: chunk_pos,
-        new_level: None,
-    };
-    let mut changes = vec![removal];
-    world.chunk_map.merge_deferred_revivals(&mut changes);
+    let (holder, preparation) = unloading_holder_with_save_preparation(&world, pinned);
+    let revived = revive_at_full(&world, pinned);
+    assert!(Arc::ptr_eq(&holder, &revived));
 
-    assert_eq!(changes, vec![removal]);
-    assert!(world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+    // Before the fix the pinned position was a hole in `chunks` and this panicked.
+    let task = world
+        .chunk_map
+        .schedule_generation_task_b(target_status, neighbor);
+    assert!(Arc::ptr_eq(task.cache.get(pinned.0.x, pinned.0.y), &holder));
+
+    task.cancel();
+    assert_snapshot_discarded(preparation);
 }
 
 #[test]
@@ -182,7 +185,7 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
     world.chunk_map.rebuild_ticking_chunk_snapshot();
     drop(holder);
     let _runtime_guard = world.chunk_map.chunk_runtime.enter();
-    world.chunk_map.process_unloads(&FxHashSet::default());
+    world.chunk_map.process_unloads();
 
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
     assert!(!world.has_registered_full_chunk_ticks(chunk_pos));

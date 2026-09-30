@@ -89,7 +89,7 @@ async fn init_tracing(
     let layer = LoggerLayer::new(cancel_token, log_config)
         .await
         .map_err(|err| format!("failed to initialize logger: {err}"))?;
-    let logger = layer.0.clone();
+    let logger = Arc::clone(&layer.0);
 
     let tracing = tracing.with(layer);
 
@@ -184,7 +184,7 @@ fn steel_main() {
         .build()
         .unwrap();
 
-    main_runtime.block_on(main_async(chunk_runtime.clone(), steel_config));
+    main_runtime.block_on(main_async(Arc::clone(&chunk_runtime), steel_config));
 
     drop(main_runtime);
     drop(chunk_runtime);
@@ -327,18 +327,22 @@ async fn run_server(
         });
     }
 
-    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone(), steel_config)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut steel = SteelServer::new(
+        Arc::clone(&chunk_runtime),
+        cancel_token.clone(),
+        steel_config,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let server = steel.server.clone();
+    let server = Arc::clone(&steel.server);
 
     if !server.prepare_spawn_area().await {
         server.save_and_shutdown().await;
         return Ok(());
     }
 
-    SERVER.set(steel.server.clone()).ok();
+    SERVER.set(Arc::clone(&steel.server)).ok();
 
     let task_tracker = TaskTracker::new();
 

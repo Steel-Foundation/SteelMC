@@ -382,10 +382,10 @@ impl JavaTcpClient {
         mut sender_recv: UnboundedReceiver<OutboundPacket>,
     ) {
         let cancel_token = self.cancel_token.clone();
-        let network_writer = self.network_writer.clone();
+        let network_writer = Arc::clone(&self.network_writer);
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
-        let connection_updated = self.connection_updated.clone();
+        let connection_updated = Arc::clone(&self.connection_updated);
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
@@ -506,7 +506,7 @@ impl JavaTcpClient {
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
 
-        let self_clone = self.clone();
+        let self_clone = Arc::clone(self);
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
@@ -596,7 +596,7 @@ impl JavaTcpClient {
             drop(connection_updates_recv);
 
             if let Some(connection) = connection {
-                let server = self_clone.server.clone();
+                let server = Arc::clone(&self_clone.server);
                 drop(self_clone);
 
                 match &*connection {
