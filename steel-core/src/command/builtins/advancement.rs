@@ -1,66 +1,102 @@
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use steel_registry::advancement::Advancement;
-use steel_registry::advancement::registry::{AdvancementNode, AdvancementRef};
-use steel_registry::REGISTRY;
 use crate::command::brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError};
 use crate::command::execution::{
     CommandSource, SteelArgumentType, SteelCommandRuntime, argument, literal,
 };
 use crate::command::registration::CommandRegistration;
-use steel_utils::Identifier;
-use crate::player::advancement::PlayerAdvancement;
 use crate::player::Player;
+use crate::player::advancement::PlayerAdvancement;
+use std::sync::Arc;
+use steel_registry::REGISTRY;
+use steel_registry::advancement::Advancement;
+use steel_registry::advancement::registry::{AdvancementNode, AdvancementRef};
+use steel_utils::Identifier;
+use text_components::TextComponent;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("advancement"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("advancement").then(
-        literal("grant")
-        .then(argument("targets", SteelArgumentType::players())
-              .then(literal("only")
-                  .then(argument("advancement", SteelArgumentType::advancement())
-                      .executes(|c|
-                          perform(c.source(),
-                                  c.players("targets"),
-                                  Action::Grant,
-                                  getAdvancements(c,
-                                                  c.advancement("advancement"),
-                                                  Mode.ONLY))))
-                  .then(argument("criterion", ArgumentType::greedy_string())
-                      .suggests(|c,b| b.suggest(c.argument("advancement").criteria.keySet()))
-                      .executes(|c|  performCriterion(c.getSource(),
-                                                      EntityArgument.getPlayers(c, "targets"),
-                                                      Action::Grant,
-                                                      c.advancement("advancement"),
-                                                      StringArgumentType.getString(c, "criterion")))))))
-        .then(literal("from")
-                  .then(argument("advancement", SteelArgumentType::advancement())
-                      .executes(|c| perform(c.getSource(),
-                                             EntityArgument.getPlayers(c, "targets"),
-                                            Action::Grant,
-                                             getAdvancements(c, ResourceKeyArgument.getAdvancement(c, "advancement"), Mode.FROM))))))
-        .then(literal("until")
-            .then(argument("advancement", SteelArgumentType::advancement())
-                .executes(|c| perform((CommandSourceStack)c.getSource(),
-                                       EntityArgument.getPlayers(c, "targets"),
-                                       Action::Grant,
-                                       AdvancementCommands.getAdvancements(c,c.advancement(c, "advancement"), Mode.UNTIL))))))
-    .then(literal("through")
-              .then(argument("advancement", SteelArgumentType::advancement())
-                  .executes(|c| perform(c.source(),
-                                        EntityArgument.getPlayers(c, "targets"),
+    literal("advancement")
+        .then(
+            literal("grant").then(
+                argument("targets", SteelArgumentType::players()).then(
+                    literal("only")
+                        .then(
+                            argument("advancement", SteelArgumentType::advancement()).executes(
+                                |c| {
+                                    perform_and_show(
+                                        c.source()?,
+                                        &c.players("targets")?,
                                         Action::Grant,
-                                        AdvancementCommands.getAdvancements(c,
-                                                                           c.advancement("advancement"),
-                                                                            Mode.THROUGH))))))
-    .then(Commands.literal("everything")
-        .executes(|c| perform(c.source(),
-                              EntityArgument.getPlayers(c, "targets"),
-                              Action.GRANT,
-                              c.getSource().getServer().getAdvancements().getAllAdvancements(), false))))))
+                                        &get_advancements(
+                                            c.advancement("advancement")?,
+                                            Mode::Only,
+                                        ),
+                                    )
+                                },
+                            ),
+                        )
+                        .then(
+                            argument("criterion", ArgumentType::greedy_string())
+                                .suggests(|c, b| {
+                                    b.suggest(c.argument("advancement")?.criteria.keySet())
+                                })
+                                .executes(|c| {
+                                    perform_criterion(
+                                        c.source()?,
+                                        c.players("targets")?,
+                                        Action::Grant,
+                                        c.advancement("advancement")?,
+                                        c.string("criterion")?,
+                                    )
+                                }),
+                        ),
+                ),
+            ),
+        )
+        .then(literal("from").then(
+            argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                perform_and_show(
+                    c.getSource()?,
+                    c.players("targets")?,
+                    Action::Grant,
+                    get_advancements(c.advancement("advancement")?, Mode::From)?,
+                )
+            }),
+        ))
+        .then(literal("until").then(
+            argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                perform_and_show(
+                    c.source()?,
+                    c.players("targets")?,
+                    Action::Grant,
+                    get_advancements(c.advancement("advancement"), Mode::Until)?,
+                )
+            }),
+        ))
+        .then(literal("through").then(
+            argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                perform_and_show(
+                    c.source()?,
+                    c.players("targets")?,
+                    Action::Grant,
+                    get_advancements(c.advancement("advancement"), Mode::Through)?,
+                )
+            }),
+        ))
+        .then(literal("everything").executes(|c| {
+            perform(
+                c.source()?,
+                c.players("targets")?,
+                Action::Grant,
+                c.getSource()
+                    .getServer()
+                    .getAdvancements()
+                    .getAllAdvancements()?,
+                false,
+            )
+        }))
 }
 
 #[derive(Clone, Copy)]
@@ -85,7 +121,7 @@ impl Action {
                 }
                 let criteria: Vec<Arc<str>> = progress.get_remaining_criteria().collect();
                 for criterion in criteria {
-                    guard.award(player,advancement, &criterion);
+                    guard.award(player, advancement, &criterion);
                 }
                 true
             }
@@ -109,20 +145,16 @@ impl Action {
         show_advancement: bool,
     ) -> i32 {
         if !show_advancement {
-            let mut guard = player
-                .advancements
-                .lock();
+            let mut guard = player.advancements.lock();
             guard.flush_dirty(player, true);
         }
         let mut guard = player.advancements.lock();
         let count = advancements
             .iter()
-            .filter(|advancement| self.perform_single_inner(player,&mut guard, advancement))
+            .filter(|advancement| self.perform_single_inner(player, &mut guard, advancement))
             .count() as i32;
         if !show_advancement {
-            let mut guard = player
-                .advancements
-                .lock();
+            let mut guard = player.advancements.lock();
             guard.flush_dirty(player, false);
         }
         count
@@ -136,7 +168,7 @@ impl Action {
     ) -> bool {
         let mut guard = player.advancements.lock();
         match self {
-            Self::Grant => guard.award(player,advancement, criterion),
+            Self::Grant => guard.award(player, advancement, criterion),
             Self::Revoke => guard.revoke(advancement, criterion),
         }
     }
@@ -208,16 +240,26 @@ fn add_children(parent: &AdvancementNode, output: &mut Vec<&Advancement>) {
     }
 }
 
+#[inline]
+fn perform_and_show(
+    context: Arc<CommandSource>,
+    players: &[Arc<Player>],
+    action: Action,
+    advancements: &[AdvancementRef],
+) -> Result<i32, CommandSyntaxError> {
+    perform(context, players, action, advancements, true)
+}
+
 fn perform(
     context: Arc<CommandSource>,
     targets: &[Arc<Player>],
     action: Action,
-    advancements: &[&'static Advancement],
+    advancements: &[AdvancementRef],
     show_advancement: bool,
 ) -> Result<i32, CommandSyntaxError> {
     let mut i = 0;
     for player in targets {
-        i += action.perform(player, advancements, show_advancement).await;
+        i += action.perform(player, advancements, show_advancement);
     }
     if i == 0 {
         return if let [first_advancement] = advancements[..] {
@@ -226,48 +268,45 @@ fn perform(
                     Action::Grant => &ERROR_GRANT_ONE_TO_ONE,
                     Action::Revoke => &ERROR_REVOKE_ONE_TO_ONE,
                 }
-                    .create_without_context_args_slice(&[
-                        first_advancement.name(),
-                        first_player.get_display_name().await,
-                    ]))
+                .create_without_context_args_slice(&[
+                    first_advancement.name(),
+                    first_player.get_display_name(),
+                ]))
             } else {
                 Err(match action {
                     Action::Grant => &ERROR_GRANT_ONE_TO_MANY,
                     Action::Revoke => &ERROR_REVOKE_ONE_TO_MANY,
                 }
-                    .create_without_context_args_slice(&[
-                        first_advancement.name(),
-                        TextComponent::text(targets.len().to_string()),
-                    ]))
+                .create_without_context_args_slice(&[
+                    first_advancement.name(),
+                    targets.len().to_string(),
+                ]))
             }
         } else if let [first_player] = targets {
             Err(match action {
                 Action::Grant => &ERROR_GRANT_MANY_TO_ONE,
                 Action::Revoke => &ERROR_REVOKE_MANY_TO_ONE,
             }
-                .create_without_context_args_slice(&[
-                    TextComponent::text(advancements.len().to_string()),
-                    first_player.get_display_name().await,
-                ]))
+            .create_without_context_args_slice(&[
+                advancements.len().to_string(),
+                first_player.get_display_name(),
+            ]))
         } else {
             Err(match action {
                 Action::Grant => &ERROR_GRANT_MANY_TO_MANY,
                 Action::Revoke => &ERROR_REVOKE_MANY_TO_MANY,
             }
-                .create_without_context_args_slice(&[
-                    TextComponent::text(advancements.len().to_string()),
-                    TextComponent::text(targets.len().to_string()),
-                ]))
+            .create_without_context_args_slice(&[
+                advancements.len().to_string(),
+                targets.len().to_string(),
+            ]))
         };
     }
     let translate = if let [first_advancement] = advancements[..] {
         if let [first_player] = targets {
             TextComponent::translate(
                 format!("{}.one.to.one.success", action.get_key()),
-                [
-                    first_advancement.name(),
-                    first_player.get_display_name().await,
-                ],
+                [first_advancement.name(), first_player.get_display_name()],
             )
         } else {
             TextComponent::translate(
@@ -283,7 +322,7 @@ fn perform(
             format!("{}.many.to.one.success", action.get_key()),
             [
                 TextComponent::text(advancements.len().to_string()),
-                first.get_display_name().await,
+                first.get_display_name(),
             ],
         )
     } else {
@@ -295,6 +334,75 @@ fn perform(
             ],
         )
     };
-    context.send_feedback(translate, true).await;
+    context.send_feedback(translate, true);
     Ok(i)
+}
+
+pub fn perform_criterion(
+    context: &CommandSource,
+    targets: &[Arc<Player>],
+    action: Action,
+    advancement: &'static Advancement,
+    criterion: &str,
+) -> Result<i32, CommandSyntaxError> {
+    if !advancement.criteria.contains(&criterion) {
+        return Err(
+            ERROR_CRITERION_NOT_FOUND.create_without_context_args_slice(&[
+                advancement.name(),
+                TextComponent::text(criterion.to_owned()),
+            ]),
+        );
+    }
+
+    let count = targets
+        .iter()
+        .map(|player| action.perform_criterion(player, advancement, criterion))
+        .filter(|&success| success)
+        .count() as i32;
+
+    if count == 0 {
+        if let [first_player] = targets {
+            Err(match action {
+                Action::Grant => &ERROR_GRANT_CRITERION_TO_ONE_FAILURE,
+                Action::Revoke => &ERROR_REVOKE_CRITERION_TO_ONE_FAILURE,
+            }
+            .create_without_context_args_slice(&[
+                TextComponent::text(criterion.to_owned()),
+                advancement.name(),
+                first_player.get_display_name(),
+            ]))
+        } else {
+            Err(match action {
+                Action::Grant => &ERROR_GRANT_CRITERION_TO_MANY_FAILURE,
+                Action::Revoke => &ERROR_REVOKE_CRITERION_TO_MANY_FAILURE,
+            }
+            .create_without_context_args_slice(&[
+                TextComponent::text(criterion.to_owned()),
+                advancement.name(),
+                TextComponent::text(targets.len().to_string()),
+            ]))
+        }
+    } else {
+        let translate = if let [first_player] = targets {
+            TextComponent::translate(
+                format!("{}.criterion.to.one.success", action.get_key()),
+                [
+                    TextComponent::text(criterion.to_owned()),
+                    advancement.name(),
+                    first_player.get_display_name(),
+                ],
+            )
+        } else {
+            TextComponent::translate(
+                format!("{}.criterion.to.many.success", action.get_key()),
+                [
+                    TextComponent::text(criterion.to_owned()),
+                    advancement.name(),
+                    TextComponent::text(count.to_string()),
+                ],
+            )
+        };
+        context.send_feedback(translate, true);
+        Ok(count)
+    }
 }
