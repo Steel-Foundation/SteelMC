@@ -1,10 +1,15 @@
 //! This module contains the `KeyStore` struct, which is used to store the server's encryption keys.
-use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::{Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey};
+
+/// Returned when decryption fails. Carries no reason so callers can't leak one to clients.
+#[derive(Debug, thiserror::Error)]
+#[error("decryption failed")]
+pub struct DecryptError;
 
 /// A struct that stores the server's encryption keys.
 pub struct KeyStore {
     /// The server's private key.
-    pub private_key: RsaPrivateKey,
+    private_key: RsaPrivateKey,
     /// The server's public key in DER format.
     pub public_key_der: Vec<u8>,
 }
@@ -26,6 +31,13 @@ impl KeyStore {
         }
     }
 
+    /// Decrypts a PKCS#1 v1.5 ciphertext. Failures carry no cause on purpose.
+    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, DecryptError> {
+        self.private_key
+            .decrypt(Pkcs1v15Encrypt, ciphertext)
+            .map_err(|_| DecryptError)
+    }
+
     fn generate_private_key() -> RsaPrivateKey {
         // Found out that OsRng is faster than rand::thread_rng here
         let mut rng = rand::rng();
@@ -37,6 +49,22 @@ impl KeyStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decrypt_reports_no_reason_for_failure() {
+        let ks = KeyStore::create();
+        let public_key = RsaPublicKey::from(&ks.private_key);
+        let secret = b"0123456789abcdef";
+
+        let ciphertext = public_key
+            .encrypt(&mut rand::rng(), Pkcs1v15Encrypt, secret)
+            .unwrap();
+        assert_eq!(ks.decrypt(&ciphertext).unwrap(), secret);
+
+        // Malformed and unpadded ciphertexts must be indistinguishable from each other.
+        assert!(ks.decrypt(&[]).is_err());
+        assert!(ks.decrypt(&[0; 128]).is_err());
+    }
 
     #[test]
     fn public_key_der_round_trips() {

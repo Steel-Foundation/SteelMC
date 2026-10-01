@@ -283,3 +283,31 @@ fn generic_living_hurt_scales_knockback_by_resistance() {
         ),
     );
 }
+
+#[test]
+fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
+    init_vanilla_registry();
+    init_behaviors();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
+    for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
+        entity.with_equipment_slot_mut(slot, &mut |stack| {
+            *stack = ItemStack::new(&vanilla_items::TOTEM_OF_UNDYING);
+        });
+    }
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+
+    assert!(entity.hurt(test_world(), &source, 4.0));
+    assert_f32_close(entity.get_health(), 1.0);
+    assert!(!entity.has_item_in_slot(EquipmentSlot::MainHand));
+    assert!(entity.has_item_in_slot(EquipmentSlot::OffHand));
+    assert!(entity.has_mob_effect(vanilla_mob_effects::REGENERATION));
+
+    for _ in 0..10 {
+        entity.living_base().decrement_invulnerable_time();
+    }
+    let absorbed_and_lethal = entity.get_absorption_amount() + 4.0;
+    assert!(entity.hurt(test_world(), &source, absorbed_and_lethal));
+    assert_f32_close(entity.get_health(), 1.0);
+    assert!(!entity.has_item_in_slot(EquipmentSlot::OffHand));
+    assert_ne!(entity.pose(), EntityPose::Dying);
+}
