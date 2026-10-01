@@ -1,4 +1,9 @@
+use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
+
 use super::*;
+use crate::entity::entities::ExperienceOrbEntity;
+use crate::entity::next_entity_id;
+use crate::test_support::insert_ready_full_chunk;
 
 #[test]
 fn pig_uses_vanilla_animal_fire_path_malus() {
@@ -150,4 +155,49 @@ fn pig_death_tick_removes_after_vanilla_death_duration() {
     }
 
     assert_eq!(pig.removal_reason(), Some(RemovalReason::Killed));
+}
+
+#[test]
+fn breeding_drops_a_single_experience_orb() {
+    const GRID_STEP: f64 = 3.0;
+    const GRID_SIDE: i32 = 4;
+
+    init_vanilla_registry();
+    let world = fresh_test_world("pig_breeding_experience_orb");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    // A split amount would show up as extra orbs; 16 breedings make a lucky
+    // run of unsplittable rolls vanishingly unlikely.
+    for step in 0..GRID_SIDE * GRID_SIDE {
+        let x = 1.5 + f64::from(step % GRID_SIDE) * GRID_STEP;
+        let z = 1.5 + f64::from(step / GRID_SIDE) * GRID_STEP;
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            DVec3::new(x, 64.0, z),
+            Arc::downgrade(&world),
+        );
+        let partner = PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            DVec3::new(x, 64.0, z),
+            Arc::downgrade(&world),
+        );
+        pig.finalize_spawn_child_from_breeding(&world, &partner, None);
+
+        let aabb = WorldAabb::new(x - 1.0, 63.0, z - 1.0, x + 1.0, 66.0, z + 1.0);
+        let orbs: Vec<_> = world
+            .get_entities_in_aabb(&aabb)
+            .into_iter()
+            .filter_map(|entity| {
+                entity
+                    .downcast_ref::<ExperienceOrbEntity>()
+                    .map(|orb| (orb.value(), orb.count()))
+            })
+            .collect();
+        assert_eq!(orbs.len(), 1, "one orb per breeding, got {orbs:?}");
+        let (value, count) = orbs[0];
+        assert_eq!(count, 1);
+        assert!((1..=7).contains(&value), "breeding orb worth {value}");
+    }
 }
