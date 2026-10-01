@@ -136,7 +136,7 @@ coordinate work, share progress, and answer questions. Longer project updates ar
 published on the [SteelMC website](https://steelmc.dev/).
 
 If you enjoy SteelMC, you can support its development by
-[sponsoring the project on GitHub](https://github.com/sponsors/Steel-Foundation).
+[sponsoring the project on GitHub](https://github.com/sponsors/Steel-Foundation). Any support is greatly appreciated!
 
 ## License
 
