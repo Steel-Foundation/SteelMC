@@ -253,6 +253,11 @@ impl Player {
 
     /// Handles a container click packet (slot interaction).
     pub fn handle_container_click(&self, packet: SContainerClick) {
+        self.container_click(packet);
+        self.flush_pending_equips();
+    }
+
+    fn container_click(&self, packet: SContainerClick) {
         self.reset_last_action_time();
         match self.take_open_menu_for_callback(Some(packet.container_id)) {
             Ok(mut menu) => {
@@ -435,6 +440,11 @@ impl Player {
 
     /// Handles a creative mode slot set packet.
     pub fn handle_set_creative_mode_slot(&self, packet: SSetCreativeModeSlot) {
+        self.set_creative_mode_slot(packet);
+        self.flush_pending_equips();
+    }
+
+    fn set_creative_mode_slot(&self, packet: SSetCreativeModeSlot) {
         if self.game_mode() != GameType::Creative {
             return;
         }

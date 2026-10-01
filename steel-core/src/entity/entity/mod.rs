@@ -1355,11 +1355,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 continue;
             }
 
-            mob.set_item_slot(slot, ItemStack::empty());
             player
                 .inventory
                 .lock()
                 .hurt_item_in_hand(hand, 1, has_infinite_materials);
+            mob.set_item_slot(slot, ItemStack::empty());
             mob.set_guaranteed_drop(slot);
             mob.set_persistence_required();
 

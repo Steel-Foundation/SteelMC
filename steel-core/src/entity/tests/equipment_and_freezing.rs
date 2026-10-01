@@ -2,8 +2,13 @@ use super::*;
 use crate::behavior::blocks::PowderSnowBlock;
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext};
 use crate::entity::next_entity_id;
+use crate::inventory::container::Container as _;
 use crate::inventory::equipment::EntityEquipment;
+use crate::player::player_inventory::PlayerInventory;
 use crate::test_support::TestPlayerBuilder;
+use rustc_hash::FxHashMap;
+use steel_protocol::packets::game::{ClickType, HashedStack, SContainerClick};
+use steel_utils::locks::Shared;
 
 #[test]
 fn can_glide_using_matches_vanilla_component_gate() {
@@ -507,4 +512,82 @@ fn equipping_armor_from_the_hand_runs_the_equip_hook() {
     );
     let events: Vec<GameEventRef> = listener.events.lock().iter().map(|(e, _)| *e).collect();
     assert_eq!(events, vec![&vanilla_game_events::EQUIP]);
+}
+
+/// Records, for each game event, whether the player's inventory was free and how many helmets it held.
+struct InventoryProbe {
+    position: DVec3,
+    inventory: Shared<PlayerInventory>,
+    seen: SyncMutex<Vec<Option<usize>>>,
+}
+
+impl GameEventListener for InventoryProbe {
+    fn listener_pos(&self) -> Option<DVec3> {
+        Some(self.position)
+    }
+
+    fn listener_radius(&self) -> i32 {
+        16
+    }
+
+    fn handle_game_event(
+        &self,
+        _world: &Arc<World>,
+        _event: GameEventRef,
+        _context: &GameEventContext<'_>,
+        _source_pos: DVec3,
+    ) -> bool {
+        let helmets = self.inventory.try_lock().map(|inventory| {
+            (0..inventory.get_container_size())
+                .filter(|&slot| inventory.get_item(slot).is(&vanilla_items::IRON_HELMET))
+                .count()
+        });
+        self.seen.lock().push(helmets);
+        true
+    }
+}
+
+#[test]
+fn shift_clicking_armor_announces_the_equip_once_the_inventory_is_settled() {
+    const HOTBAR_FIRST_MENU_SLOT: i16 = 36;
+
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("quick_move_armor_equip_event");
+    let position = DVec3::new(0.5, 64.0, 0.5);
+    let section = SectionPos::from_block_pos(BlockPos::from(position));
+    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+
+    let player =
+        TestPlayerBuilder::new(Arc::clone(&world), "QuickEquipper", next_entity_id()).build();
+    assert!(player.try_set_position(position).is_ok());
+    player.base().set_first_tick(false);
+    player
+        .inventory
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::IRON_HELMET));
+
+    let probe = Arc::new(InventoryProbe {
+        position,
+        inventory: Arc::clone(&player.inventory),
+        seen: SyncMutex::new(Vec::new()),
+    });
+    let _registration =
+        RegisteredGameEventListener::new(&world, section, Arc::<InventoryProbe>::clone(&probe));
+
+    player.handle_container_click(SContainerClick {
+        container_id: 0,
+        state_id: 0,
+        slot_num: HOTBAR_FIRST_MENU_SLOT,
+        button_num: 0,
+        click_type: ClickType::QuickMove,
+        changed_slots: FxHashMap::default(),
+        carried_item: HashedStack::Empty,
+    });
+
+    assert!(
+        EntityEquipment::get_ref(&*player.inventory.lock(), EquipmentSlot::Head)
+            .is(&vanilla_items::IRON_HELMET)
+    );
+    assert_eq!(*probe.seen.lock(), vec![Some(1)]);
 }

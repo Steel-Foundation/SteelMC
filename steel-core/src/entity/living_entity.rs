@@ -1681,7 +1681,6 @@ pub trait LivingEntity: Entity {
             && let Some(sound) = self.equip_sound(slot, new_stack)
             && let Some(world) = self.level()
         {
-            // Vanilla excludes nobody here, so the wearer hears their own equip sound.
             world.play_sound_at(
                 sound,
                 self.sound_source(),

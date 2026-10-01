@@ -161,6 +161,13 @@ use crate::portal::{
 };
 use crate::world::World;
 
+/// An equip change recorded while the player's inventory was locked.
+struct PendingEquip {
+    slot: EquipmentSlot,
+    old_stack: ItemStack,
+    new_stack: ItemStack,
+}
+
 /// A struct representing a player.
 pub struct Player {
     /// The player's game profile.
@@ -215,6 +222,9 @@ pub struct Player {
 
     /// The player's inventory menu (always open, even when `container_id` is 0).
     inventory_menu: SyncMutex<Menu>,
+
+    /// Equip changes made under the inventory lock, announced once it is released.
+    pending_equips: SyncMutex<Vec<PendingEquip>>,
 
     /// The currently open menu (None if player inventory is open).
     /// This is separate from `inventory_menu` which is always present.
@@ -328,6 +338,28 @@ impl PlayerResidenceState {
 impl Player {
     const USING_ITEM_FLAG: i8 = 1;
     const OFF_HAND_ACTIVE_ITEM_FLAG: i8 = 1 << 1;
+
+    /// Queues an equip change made while the inventory is locked.
+    pub(crate) fn record_pending_equip(
+        &self,
+        slot: EquipmentSlot,
+        old_stack: ItemStack,
+        new_stack: ItemStack,
+    ) {
+        self.pending_equips.lock().push(PendingEquip {
+            slot,
+            old_stack,
+            new_stack,
+        });
+    }
+
+    /// Plays the queued equip sounds and events; call with no inventory lock held.
+    pub(crate) fn flush_pending_equips(&self) {
+        let pending: Vec<PendingEquip> = self.pending_equips.lock().drain(..).collect();
+        for equip in pending {
+            self.on_equip_item(equip.slot, &equip.old_stack, &equip.new_stack);
+        }
+    }
 
     /// Returns the chunk sender owned by this player's connection session.
     pub(crate) fn chunk_sender(&self) -> &SyncMutex<ChunkSender> {
@@ -598,6 +630,7 @@ impl Player {
             ender_chest_inventory,
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
             inventory_menu: SyncMutex::new(inventory_menu(inventory)),
+            pending_equips: SyncMutex::new(Vec::new()),
             open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
             container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
