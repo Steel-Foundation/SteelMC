@@ -14,7 +14,7 @@ mod player_handlers;
 pub use container::InvalidHotbarSlot;
 pub(crate) use container::armor_equipment;
 pub use core::PlayerInventory;
-pub use equipment::EquipmentSwapResult;
+pub use equipment::{EquipmentSwapResult, PreparedEquipmentSwap};
 
 /// Inputs supplied when an external menu factory is safe to execute.
 pub struct MenuOpenContext<'a> {

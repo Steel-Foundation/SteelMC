@@ -235,7 +235,13 @@ impl MenuBehavior {
 
         let backwards = direction == FillDirection::Backward;
         let mut anything_changed = false;
-        let source_key = self.slots[source_slot].storage().physical_key();
+        let source = &self.slots[source_slot];
+        let source_key = source.storage().physical_key();
+        let sync_source = |guard: &mut ContainerLockGuard, stack: &ItemStack| {
+            if !source.is_fake() {
+                source.get_item_mut(guard).set_count(stack.count());
+            }
+        };
 
         // First pass: stack onto existing items.
         if item_stack.is_stackable() {
@@ -274,11 +280,13 @@ impl MenuBehavior {
 
                     if total_stack <= max_stack_size {
                         item_stack.set_count(0);
+                        sync_source(guard, item_stack);
                         slot.get_item_mut(guard).set_count(total_stack);
                         slot.set_changed(guard);
                         anything_changed = true;
                     } else if target.count < max_stack_size {
                         item_stack.shrink(max_stack_size - target.count);
+                        sync_source(guard, item_stack);
                         slot.get_item_mut(guard).set_count(max_stack_size);
                         slot.set_changed(guard);
                         anything_changed = true;
@@ -324,12 +332,9 @@ impl MenuBehavior {
                 if target.is_empty() && slot.may_place(item_stack) {
                     let max_stack_size = slot.get_max_stack_size_for_item(guard, item_stack);
                     let to_place = item_stack.count.min(max_stack_size);
-                    slot.set_by_player(
-                        guard,
-                        item_stack.split(to_place),
-                        &ItemStack::empty(),
-                        player,
-                    );
+                    let placed = item_stack.split(to_place);
+                    sync_source(guard, item_stack);
+                    slot.set_by_player(guard, placed, &ItemStack::empty(), player);
                     slot.set_changed(guard);
                     anything_changed = true;
                     break;
