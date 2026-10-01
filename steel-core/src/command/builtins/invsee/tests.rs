@@ -485,7 +485,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0, 39]);
 
-    Arc::<Player>::clone(&recording.player).tick();
+    Arc::clone(&recording.player).tick();
 
     assert_eq!(
         player_inventory_updates(&recording.packets),
@@ -527,7 +527,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
     }
     recording.packets.lock().clear();
 
-    Arc::<Player>::clone(&recording.player).tick();
+    Arc::clone(&recording.player).tick();
     assert_eq!(player_inventory_updates(&recording.packets).len(), 0);
 
     recording.player.do_close_container();

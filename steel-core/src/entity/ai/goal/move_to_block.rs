@@ -273,9 +273,9 @@ mod tests {
     fn move_to_block_goal_requires_world_after_start_delay() {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&pig));
     }
 
     #[test]
@@ -283,9 +283,9 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         goal.next_start_tick = 2;
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&pig));
 
         assert_eq!(goal.next_start_tick, 1);
     }
@@ -319,15 +319,15 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
-        let mob = Arc::new(PigEntity::new(
+        let pig = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(0.5, 0.5, 0.5),
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
+        let pig_entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(pig.as_ref(), &pig_entity);
 
         assert!(goal.is_reached_target());
         assert_eq!(goal.try_ticks, -1);

@@ -1,8 +1,6 @@
 //! `/execute store` result consumers.
 
-use std::sync::Arc;
-
-use std::{error::Error, fmt, io::Cursor};
+use std::{error::Error, fmt, io::Cursor, sync::Arc};
 
 use simdnbt::{
     borrow::read_compound as read_borrowed_compound,

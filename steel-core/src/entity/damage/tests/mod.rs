@@ -1,5 +1,3 @@
-use crate::player::Player;
-
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -13,6 +11,7 @@ use crate::entity::entities::{PigEntity, SnowballEntity};
 use crate::entity::{Entity, LivingEntity, RemovalReason, SharedEntity};
 
 use crate::level_data::GameTimeSource;
+use crate::player::Player;
 use crate::test_support::{
     TestEntity, TestPlayerBuilder, advance_test_game_time_to,
     create_test_world_with_damage_history, fresh_test_world, insert_ready_full_chunk,
@@ -275,6 +274,7 @@ fn successful_damage_uses_the_victims_clock_instead_of_the_supplied_world() {
     advance_test_game_time_to(&supplied_world, 200);
     history.expire();
     assert!(victim.last_damage_source().is_some());
+    // Keep vanilla's boundary explicit so changing the implementation constant cannot mask drift.
     advance_test_game_time_to(&victim_world, 40);
     assert!(victim.last_damage_source().is_some());
     advance_test_game_time_to(&victim_world, 41);

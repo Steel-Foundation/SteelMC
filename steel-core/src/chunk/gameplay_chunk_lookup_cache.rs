@@ -92,7 +92,7 @@ impl ActiveCache {
         };
         let holder = self.entries[index]
             .as_ref()
-            .and_then(|entry| entry.holder.clone());
+            .and_then(|entry| entry.holder.as_ref().map(Arc::clone));
         if holder.is_some() {
             self.stats.holder_hits += 1;
         } else {

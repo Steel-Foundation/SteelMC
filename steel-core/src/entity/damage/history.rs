@@ -22,6 +22,7 @@ const MAX_DAMAGE_SOURCE_AGE_TICKS: i64 = 40;
 
 struct DamageRecord {
     victim_lifetime: Weak<DamageHistoryVictim>,
+    // Gameplay membership can end while damage sources still retain the entity.
     owner: Weak<()>,
     source: WeakDamageSource,
     retained: Option<DamageSource>,
@@ -86,6 +87,7 @@ impl DamageHistory {
     /// Releases expired records and strong sources with no gameplay owner.
     /// Runs while frozen too; expiry still uses the unchanged gameplay clock.
     pub(crate) fn expire(&self) {
+        // Entity destructors can re-enter history; release the mutex before dropping sources.
         let (expired, released) = {
             let mut records = self.records.lock();
             let expired: Vec<_> = records
@@ -108,3 +110,6 @@ impl DamageHistory {
         drop(records);
     }
 }
+
+#[cfg(test)]
+mod tests;
