@@ -1,5 +1,6 @@
 //! Shared vanilla `Animal` state and hooks.
 
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -7,8 +8,8 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
+use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
@@ -18,12 +19,15 @@ use uuid::Uuid;
 use crate::behavior::InteractionResult;
 use crate::entity::ai::path::PathType;
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{AgeableMob, AgeableMobBase, EntitySpawnReason, Mob, MobBase};
+use crate::entity::{
+    AgeableMob, AgeableMobBase, EntitySpawnReason, Mob, MobBase, SharedEntity, next_entity_id,
+};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
 const IN_LOVE_TIME: i32 = 600;
+const BREEDING_XP: RangeInclusive<i32> = 1..=7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AnimalState {
@@ -305,8 +309,16 @@ pub trait Animal: AgeableMob {
         self.broadcast_entity_event(EntityStatus::InLoveHearts);
 
         if world.get_game_rule(&MOB_DROPS) {
-            let xp = rand::random_range(0..7) + 1;
-            ExperienceOrbEntity::award(world, self.position(), xp);
+            let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
+                &vanilla_entities::EXPERIENCE_ORB,
+                next_entity_id(),
+                self.position(),
+                rand::random_range(BREEDING_XP),
+                Arc::downgrade(world),
+            ));
+            if let Err(error) = world.try_add_entity(orb) {
+                log::debug!("failed to add breeding experience orb: {error}");
+            }
         }
     }
 
