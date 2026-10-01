@@ -1,8 +1,11 @@
 use steel_math::DEGREE_90;
+use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
 use crate::behavior::{InventoryTickContext, MOB_EFFECT_BEHAVIORS};
+use crate::entity::consume_effect::apply_consume_effect;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -675,10 +678,12 @@ pub trait LivingEntity: Entity {
         }
 
         if self.is_dead_or_dying() {
-            if took_full_damage {
-                self.play_death_sound();
+            if !self.check_totem_death_protection(source) {
+                if took_full_damage {
+                    self.play_death_sound();
+                }
+                self.die(source);
             }
-            self.die(source);
         } else if took_full_damage {
             self.play_hurt_sound(source);
         }
@@ -933,6 +938,49 @@ pub trait LivingEntity: Entity {
             },
             None,
         );
+    }
+
+    /// Uses a held death-protection item to survive lethal damage. Returns whether one was used.
+    fn check_totem_death_protection(&self, source: &DamageSource) -> bool {
+        if source.bypasses_invulnerability() {
+            return false;
+        }
+
+        let mut used = None;
+        for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
+            self.with_equipment_slot_mut(slot, &mut |stack| {
+                if let Some(protection) = stack.get(DEATH_PROTECTION).cloned() {
+                    used = Some((protection, stack.clone()));
+                    stack.shrink(1);
+                }
+            });
+            if used.is_some() {
+                break;
+            }
+        }
+        let Some((protection, protection_item)) = used else {
+            return false;
+        };
+
+        if let Some(player) = self.as_player() {
+            player.award_stat(&vanilla_stat_types::ITEM_USED, protection_item.item());
+            // TODO: trigger the `used_totem` advancement criterion once advancements exist.
+            if protection_item
+                .get(USE_EFFECTS)
+                .is_some_and(|effects| effects.interact_vibrations)
+            {
+                self.game_event(&vanilla_game_events::ITEM_INTERACT_FINISH);
+            }
+        }
+
+        self.set_health(1.0);
+        if let (Some(world), Some(entity)) = (self.level(), self.as_living_entity()) {
+            for effect in protection.death_effects() {
+                apply_consume_effect(effect, &world, entity);
+            }
+        }
+        self.broadcast_entity_event(EntityStatus::ProtectedFromDeath);
+        true
     }
 
     /// Processes vanilla living death side effects.
