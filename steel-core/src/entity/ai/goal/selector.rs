@@ -530,6 +530,24 @@ mod tests {
         assert!(selector.is_priority_running(3));
     }
 
+    /// Goals that claim nothing hold no locks, so any number run together and
+    /// priority never comes into it.
+    #[test]
+    fn goals_without_controls_all_run_together() {
+        let mob = TestPathfinderMob::new();
+        let mut selector = GoalSelector::new();
+        selector.add_goal(0, StaticGoal::new(GoalControls::EMPTY));
+        selector.add_goal(1, StaticGoal::new(GoalControls::EMPTY));
+        selector.add_goal(2, StaticGoal::new(GoalControls::MOVE));
+
+        selector.tick(&mob);
+
+        assert_eq!(selector.running_goal_count(), 3);
+        assert!(selector.is_priority_running(0));
+        assert!(selector.is_priority_running(1));
+        assert!(selector.is_priority_running(2));
+    }
+
     #[test]
     fn non_interruptable_goal_blocks_replacement() {
         let mob = TestPathfinderMob::new();
