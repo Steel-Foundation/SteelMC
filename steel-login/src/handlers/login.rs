@@ -1,9 +1,9 @@
 //! Login state packet handlers.
 
-use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
 use steel_core::{player::GameProfile, server::DuplicatePlayerWaitError};
+use steel_crypto::key_store::{DecryptError, KeyStore};
 use steel_protocol::{
     packets::login::{CHello, CLoginCompression, CLoginFinished, SHello, SKey},
     utils::ConnectionProtocol,
@@ -119,34 +119,9 @@ impl JavaTcpClient {
         };
         let challenge = self.challenge.load();
 
-        let Ok(challenge_response) = self
-            .server
-            .key_store
-            .private_key
-            .decrypt(Pkcs1v15Encrypt, &packet.challenge)
+        let Ok(secret_key) =
+            Self::decrypt_shared_secret(&self.server.key_store, &packet, challenge)
         else {
-            self.kick("Invalid key".into()).await;
-            return ConnectionAction::none();
-        };
-
-        if challenge_response != challenge {
-            self.kick("Invalid challenge response".into()).await;
-            return ConnectionAction::none();
-        }
-
-        let Ok(secret_key) = self
-            .server
-            .key_store
-            .private_key
-            .decrypt(Pkcs1v15Encrypt, &packet.key)
-        else {
-            self.kick("Invalid key".into()).await;
-            return ConnectionAction::none();
-        };
-
-        let secret_key: [u8; 16] = if let Ok(secret_key) = secret_key.try_into() {
-            secret_key
-        } else {
             self.kick("Invalid key".into()).await;
             return ConnectionAction::none();
         };
@@ -214,6 +189,25 @@ impl JavaTcpClient {
         self.finish_verified_login(profile, Some(secret_key)).await
     }
 
+    /// Decrypts the shared secret and checks the challenge response.
+    ///
+    /// Every failure must get the same disconnect to avoid a padding oracle.
+    /// Both are decrypted up front so rejections cost equal RSA work (not constant time).
+    fn decrypt_shared_secret(
+        key_store: &KeyStore,
+        packet: &SKey,
+        challenge: [u8; 4],
+    ) -> Result<[u8; 16], DecryptError> {
+        let challenge_response = key_store.decrypt(&packet.challenge);
+        let secret_key = key_store.decrypt(&packet.key);
+
+        if challenge_response? != challenge {
+            return Err(DecryptError);
+        }
+
+        secret_key?.try_into().map_err(|_| DecryptError)
+    }
+
     /// Negotiates packet compression before the successful login response.
     ///
     /// # Panics
@@ -256,5 +250,60 @@ impl JavaTcpClient {
 
         self.start_configuration().await;
         ConnectionAction::none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rsa::Pkcs1v15Encrypt;
+
+    use super::*;
+
+    const CHALLENGE: [u8; 4] = [1, 2, 3, 4];
+    const SECRET: [u8; 16] = [7; 16];
+
+    fn encrypt(key_store: &KeyStore, data: &[u8]) -> Vec<u8> {
+        steel_crypto::public_key_from_bytes(&key_store.public_key_der)
+            .expect("server public key should parse")
+            .encrypt(&mut rand::rng(), Pkcs1v15Encrypt, data)
+            .expect("encryption should succeed")
+    }
+
+    #[test]
+    fn decrypt_shared_secret_accepts_valid_packet() {
+        let key_store = KeyStore::create();
+        let packet = SKey {
+            key: encrypt(&key_store, &SECRET),
+            challenge: encrypt(&key_store, &CHALLENGE),
+        };
+
+        let secret = JavaTcpClient::decrypt_shared_secret(&key_store, &packet, CHALLENGE)
+            .expect("valid packet should decrypt");
+        assert_eq!(secret, SECRET);
+    }
+
+    /// A bad padding and a wrong challenge must be indistinguishable to the caller,
+    /// otherwise `handle_key` can report them differently and reopen the padding oracle.
+    #[test]
+    fn decrypt_shared_secret_rejects_all_failures_alike() {
+        let key_store = KeyStore::create();
+        let cases = [
+            (vec![0; 128], encrypt(&key_store, &CHALLENGE)),
+            (encrypt(&key_store, &SECRET), vec![0; 128]),
+            (
+                encrypt(&key_store, &SECRET),
+                encrypt(&key_store, &[9, 9, 9, 9]),
+            ),
+            (
+                encrypt(&key_store, &[7; 8]),
+                encrypt(&key_store, &CHALLENGE),
+            ),
+        ];
+
+        for (key, challenge) in cases {
+            let packet = SKey { key, challenge };
+            let result = JavaTcpClient::decrypt_shared_secret(&key_store, &packet, CHALLENGE);
+            assert!(matches!(result, Err(DecryptError)));
+        }
     }
 }
