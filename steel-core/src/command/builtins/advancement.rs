@@ -11,6 +11,7 @@ use steel_registry::advancement::Advancement;
 use steel_registry::advancement::registry::{AdvancementNode, AdvancementRef};
 use steel_utils::Identifier;
 use text_components::TextComponent;
+use text_components::translation::Translation;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("advancement"), |_| command())
@@ -40,7 +41,10 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         .then(
                             argument("criterion", ArgumentType::greedy_string())
                                 .suggests(|c, b| {
-                                    b.suggest(c.argument("advancement")?.criteria.keySet())
+                                    c.argument("advancement")?
+                                        .criteria
+                                        .keySet()
+                                        .foreach(|name| b.suggest(name))
                                 })
                                 .executes(|c| {
                                     perform_criterion(
@@ -304,34 +308,25 @@ fn perform(
     }
     let translate = if let [first_advancement] = advancements[..] {
         if let [first_player] = targets {
-            TextComponent::translate(
-                format!("{}.one.to.one.success", action.get_key()),
-                [first_advancement.name(), first_player.get_display_name()],
+            TextComponent::translated(
+                Translation(format!("{}.one.to.one.success", action.get_key()))
+                    .message([first_advancement.name(), first_player.get_display_name()]),
             )
         } else {
-            TextComponent::translate(
-                format!("{}.one.to.many.success", action.get_key()),
-                [
-                    first_advancement.name(),
-                    TextComponent::text(targets.len().to_string()),
-                ],
+            TextComponent::translated(
+                Translation(format!("{}.one.to.many.success", action.get_key()))
+                    .message([first_advancement.name(), targets.len().to_string()]),
             )
         }
     } else if let [first] = targets {
-        TextComponent::translate(
+        TextComponent::translated(
             format!("{}.many.to.one.success", action.get_key()),
-            [
-                TextComponent::text(advancements.len().to_string()),
-                first.get_display_name(),
-            ],
+            [advancements.len().to_string(), first.get_display_name()],
         )
     } else {
-        TextComponent::translate(
+        TextComponent::translated(
             format!("{}.many.to.many.success", action.get_key()),
-            [
-                TextComponent::text(advancements.len().to_string()),
-                TextComponent::text(targets.len().to_string()),
-            ],
+            [advancements.len().to_string(), targets.len().to_string()],
         )
     };
     context.send_feedback(translate, true);
