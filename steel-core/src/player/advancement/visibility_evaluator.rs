@@ -17,7 +17,7 @@ fn evaluate_visibility_rule(advancement: AdvancementRef, is_done: bool) -> Visib
     })
 }
 
-/// ascendants is working like a stack
+/// `ascendants` variable is working like a stack so this is why we do `.rev().take(VISIBILITY_DEPTH)`
 fn evaluate_visibility_for_unfinished_node(ascendants: &[VisibilityRule]) -> bool {
     for visibility in ascendants.iter().rev().take(VISIBILITY_DEPTH) {
         match visibility {
@@ -29,7 +29,20 @@ fn evaluate_visibility_for_unfinished_node(ascendants: &[VisibilityRule]) -> boo
     false
 }
 
-pub fn evaluate_visibility_with_rules(
+/// Recursively evaluates the visibility of an advancement and all of its
+/// descendants.
+///
+/// The current node's completion state and display visibility rule are added
+/// to `ascendants` while its children are evaluated. Once all descendants
+/// have been processed, the node is visible if it or any descendant is
+/// complete, or if the inherited visibility rules allow unfinished nodes to
+/// remain visible.
+///
+/// `is_done_test` determines whether each advancement is complete, while
+/// `output` receives the final visibility result for each visited node.
+///
+/// Returns `true` if this node or any of its descendants is complete.
+pub(super) fn evaluate_visibility_with_rules(
     node: AdvancementNodeRef,
     player_advancement: &mut PlayerAdvancement,
     ascendants: &mut Vec<VisibilityRule>,
@@ -59,7 +72,7 @@ pub fn evaluate_visibility_with_rules(
     is_self_or_descendant_done
 }
 
-pub fn evaluate_visibility(
+pub(crate) fn evaluate_visibility(
     node: AdvancementNodeRef,
     player_advancement: &mut PlayerAdvancement,
     is_done: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef) -> bool,
@@ -77,7 +90,7 @@ pub fn evaluate_visibility(
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
-pub enum VisibilityRule {
+pub(super) enum VisibilityRule {
     Show,
     Hide,
     NoChange,

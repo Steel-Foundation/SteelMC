@@ -108,6 +108,7 @@ impl WriteTo for Advancement {
         self.parent.write(writer)?;
         self.display.write(writer)?;
         self.requirements.write(writer)?;
+        self.send_telemetry_event.write(writer)?;
         Ok(())
     }
 }

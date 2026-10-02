@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::ops::Deref;
 use steel_utils::Identifier;
+use steel_utils::codec::VarInt;
 use steel_utils::locks::SyncRwLock;
 use steel_utils::serial::WriteTo;
 use steel_utils::translations::{
@@ -43,12 +44,14 @@ impl WriteTo for DisplayInfo {
         self.title.write(writer)?;
         self.description.write(writer)?;
         self.icon.write(writer)?;
-        self.frame_type.write(writer)?;
+        VarInt(self.frame_type as i32).write(writer)?;
         let flags = i32::from(self.has_background())
             | i32::from(self.show_toast) << 1
             | i32::from(self.hidden) << 2;
         flags.write(writer)?;
-        self.background.write(writer)?;
+        if let Some(background) = &self.background {
+            background.write(writer)?;
+        }
         self.location.read().write(writer)?;
         Ok(())
     }

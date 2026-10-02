@@ -98,6 +98,7 @@ use crate::{
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
 use std::{
+
     fmt::Debug,
     ops::Deref,
     sync::{Once, OnceLock},
@@ -310,8 +311,8 @@ impl Registry {
     #[must_use]
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
-
         vanilla_advancements::register_advancements(&mut registry.advancements);
+        registry.advancements.update_tree();
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);

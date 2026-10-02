@@ -12,8 +12,7 @@ pub type AdvancementRef = &'static Advancement;
 
 impl WriteTo for AdvancementRef {
     fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        (*self).write(writer)?;
-        Ok(())
+        (*self).write(writer)
     }
 }
 
@@ -83,7 +82,7 @@ impl Hash for AdvancementNode {
 }
 
 /// equivalent of the `AdvancementTree` of the minecraft source code
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AdvancementRegistry {
     pub advancements: Vec<AdvancementRef>,
     pub adv_nodes: Vec<AdvancementNode>,

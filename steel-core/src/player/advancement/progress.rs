@@ -1,3 +1,4 @@
+//! represent the different struct related to the progress of an advancement
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -6,9 +7,10 @@ use std::time::SystemTime;
 use steel_registry::advancement::AdvancementRequirement;
 use steel_registry::advancement::registry::AdvancementRef;
 
+/// represent a map of all progress made for advancement of a specific player
 #[derive(Debug, Default)]
 pub struct AdvancementProgressMap {
-    pub map: BTreeMap<AdvancementRef, AdvancementProgress>,
+    pub(crate) map: BTreeMap<AdvancementRef, AdvancementProgress>,
 }
 
 impl AdvancementProgressMap {
@@ -24,26 +26,44 @@ impl AdvancementProgressMap {
         })
     }
 
+    /// clear all the progress made
     #[inline]
     pub fn clear(&mut self) {
         self.map.clear();
     }
 
+    /// insert a new advancement to the progress map
     #[inline]
     pub fn insert(&mut self, advancement: AdvancementRef, progress: AdvancementProgress) {
         self.map.insert(advancement, progress);
     }
 
+    /// return the len of the map
     #[must_use]
     #[inline]
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
+    /// return `true` if empty
     #[must_use]
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
+    }
+
+    /// return whether the advancement has a progress instance
+    #[must_use]
+    #[inline]
+    pub fn has_progress(&self, advancement: AdvancementRef) -> bool {
+        self.map.contains_key(&advancement)
+    }
+
+    /// return the progress of a specific advancement
+    #[must_use]
+    #[inline]
+    pub fn get_progress(&self, advancement: AdvancementRef) -> Option<&AdvancementProgress> {
+        self.map.get(&advancement)
     }
 }
 
@@ -84,6 +104,7 @@ impl AdvancementProgress {
         false
     }
 
+    /// grant a specific criterion
     pub fn grant_progress(&mut self, name: &str) -> bool {
         if let Some(value) = self.criteria.get_mut(name)
             && !value.is_done()
@@ -95,6 +116,7 @@ impl AdvancementProgress {
         }
     }
 
+    /// revoke a specific criterion
     pub fn revoke_progress(&mut self, name: &str) -> bool {
         if let Some(value) = self.criteria.get_mut(name)
             && value.is_done()
@@ -106,6 +128,7 @@ impl AdvancementProgress {
         }
     }
 
+    /// update the progress to match a new `AdvancementRequirement` list
     pub fn update(&mut self, requirements: &AdvancementRequirement) {
         let names = requirements.names();
         self.criteria.retain(|key, _criterion| names.contains(key));
@@ -115,35 +138,40 @@ impl AdvancementProgress {
         self.requirements = requirements.clone();
     }
 
+    /// return the remaining criteria
     #[inline]
-    pub fn get_remaining_criteria(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn get_remaining_criteria(&self) -> impl Iterator<Item = &str> {
         self.criteria
             .iter()
             .filter(|&(_id, criterion)| !criterion.is_done())
             .map(|(id, _criterion)| &**id)
     }
 
+    /// get the completed criteria
     #[inline]
-    pub fn get_completed_criteria(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn get_completed_criteria(&self) -> impl Iterator<Item = &str> {
         self.criteria
             .iter()
             .filter(|&(_id, criterion)| criterion.is_done())
             .map(|(id, _criterion)| &**id)
     }
 }
-
+/// represent a timestamp to when the criterion has been completed or None if it still un completed
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct CriterionProgress(pub Option<SystemTime>);
 
 impl CriterionProgress {
+    /// grant the progress
     pub fn grant(&mut self) {
         self.0 = Some(SystemTime::now());
     }
 
+    /// revoke the progress
     pub const fn revoke(&mut self) {
         self.0 = None;
     }
 
+    /// return whether the criterion has been completed
     #[must_use]
     pub const fn is_done(&self) -> bool {
         self.0.is_some()

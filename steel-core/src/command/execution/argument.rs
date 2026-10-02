@@ -1069,6 +1069,30 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    AdvancementParser,
+    "steel:command/parser/advancement",
+    AdvancementValue,
+    parse | reader,
+    _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
+    suggest | _context,
+    builder | {
+        //let advancements = &REGISTRY.advancements;
+        //info!("{:?}", advancements);
+        suggest_resources(
+            REGISTRY
+                .advancements
+                .advancements
+                .iter()
+                .map(|adv| &adv.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
     ItemStackParser,
     "steel:command/parser/item_stack",
     ItemStackValue,
@@ -1092,27 +1116,6 @@ unit_argument_parser!(
     suggest | _context,
     builder | {
         suggest_item_predicate(builder);
-    },
-    protocol(
-        ProtocolArgumentType::ItemPredicate,
-        Some(ProtocolSuggestionType::AskServer),
-    )
-);
-unit_argument_parser!(
-    AdvancementParser,
-    "steel:command/parser/advancement",
-    AdvancementValue,
-    parse | reader,
-    _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
-    suggest | _context,
-    builder | {
-        suggest_resources(
-            REGISTRY
-                .advancements
-                .iter()
-                .map(|(_, advancement)| &advancement.value.key),
-            builder,
-        );
     },
     protocol(
         ProtocolArgumentType::ItemPredicate,
