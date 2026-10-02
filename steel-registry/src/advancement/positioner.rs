@@ -17,7 +17,7 @@ impl PositionError {
 
 pub type NodePositionIdx = usize;
 
-/// calculate the positions of advancement nodes using the Reingold-Tilford algorithm the same used by minecraft.
+/// calculate the positions of advancement nodes using a variant of the Reingold-Tilford algorithm the same used by minecraft.
 ///
 /// the resulting x position are random so can't really be compared to vanilla
 pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), PositionError> {
@@ -40,6 +40,7 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), Posi
         children: Vec::new(),
         ancestor: root_idx,
         thread: None,
+        // We can put 0 here because it is recalculated later inside the second_walk.
         x: 0,
         y: -1.0,
         r#mod: 0.0,
@@ -113,6 +114,7 @@ impl TreeNodePosition {
                 children: Vec::new(),
                 ancestor: child_idx,
                 thread: None,
+                // We can put 0 here because it is recalculated later inside the second_walk.
                 x: 0,
                 y: -1.0,
                 r#mod: 0.0,
@@ -194,6 +196,7 @@ impl TreeNodePosition {
         min
     }
 
+    /// just make the minimal y coord to be 0
     fn normalize_y(nodes: &mut [TreeNodePosition], offset: f32) {
         for node in nodes.iter_mut() {
             node.y += offset;
@@ -281,7 +284,7 @@ impl TreeNodePosition {
             nodes[outer_right].thread = Some(next_inner_left);
             nodes[outer_right].r#mod += shift_inner_left - shift_outer_right;
         } else {
-            // in the real algorithm it doesn't have an else but minecraft had one
+            // in the real algorithm it doesn't have an else here but minecraft had one
             if let Some(next_inner_right) = Self::previous_or_thread(nodes, inner_right)
                 && Self::previous_or_thread(nodes, outer_left).is_none()
             {

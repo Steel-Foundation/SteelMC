@@ -1,5 +1,6 @@
 //! This module contains all things player-related.
 mod abilities;
+pub mod advancement;
 pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
@@ -2167,6 +2168,5 @@ impl TextResolutor for Player {
     }
 }
 
-pub mod advancement;
 #[cfg(test)]
 mod tests;

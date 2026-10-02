@@ -1,8 +1,12 @@
+//! advancement linked to the player.
+//!
+//! Groups the advancementPlayer, advancement progress and visibility evaluator
+
 pub mod progress;
-pub mod visibility_evaluator;
+mod visibility_evaluator;
 
 use crate::entity::Entity;
-use crate::entity::living_entity::living_entity_loot_ref;
+use crate::entity::living_entity_loot_ref;
 use crate::player::Player;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -21,11 +25,13 @@ use steel_utils::Identifier;
 /// This handles saving, loading, and tracking the state of granted / revoked advancements.
 #[derive(Debug, Default)]
 pub struct PlayerAdvancement {
-    pub progress: AdvancementProgressMap,
-    pub is_first_packet: bool,
-    pub roots_to_update: FxHashSet<AdvancementNodeRef>,
-    pub visible: FxHashSet<AdvancementRef>,
-    pub progress_changed: FxHashSet<AdvancementRef>,
+    /// the progress of the player for each advancement
+    pub(crate) progress: AdvancementProgressMap,
+    is_first_packet: bool,
+    roots_to_update: FxHashSet<AdvancementNodeRef>,
+    visible: FxHashSet<AdvancementRef>,
+    progress_changed: FxHashSet<AdvancementRef>,
+    /// represent the las selected advancement tab
     pub last_selected_tab: Option<AdvancementRef>,
 }
 
@@ -149,7 +155,7 @@ impl PlayerAdvancement {
                 if should_be_visible {
                     if player_advancement.visible.insert(advancement) {
                         added.push(advancement);
-                        if player_advancement.progress.map.contains_key(advancement) {
+                        if player_advancement.progress.has_progress(advancement) {
                             player_advancement.progress_changed.insert(advancement);
                         }
                     }
@@ -162,7 +168,10 @@ impl PlayerAdvancement {
 
     /// send the advancement update packet to a player with the updated tree
     pub fn flush_dirty(&mut self, player: &Player, show_advancement: bool) {
-        if self.is_first_packet || !self.roots_to_update.is_empty() {
+        if self.is_first_packet
+            || !self.roots_to_update.is_empty()
+            || !self.progress_changed.is_empty()
+        {
             let mut progress: FxHashMap<Identifier, &AdvancementProgress> = FxHashMap::default();
             let mut added: Vec<&Advancement> = Vec::new();
             let mut removed: Vec<Identifier> = Vec::new();
@@ -172,7 +181,12 @@ impl PlayerAdvancement {
             self.roots_to_update.clear();
             for advancement in &self.progress_changed {
                 if self.visible.contains(advancement) {
-                    progress.insert(advancement.key.clone(), &self.progress.map[advancement]);
+                    progress.insert(
+                        advancement.key.clone(),
+                        self.progress.get_progress(advancement).unwrap_or_else(|| {
+                            unreachable!("progress changed should only contains valid advancement")
+                        }),
+                    );
                 }
             }
             self.progress_changed.clear();

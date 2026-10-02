@@ -24,88 +24,87 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     macro_rules! build_action {
         ($name:expr, $action:expr) => {
             literal($name)
-                        .then(argument("targets",
-                        SteelArgumentType::players())
-                        .then(
-                            literal("only")
-                            .then(
-                                argument("advancement", SteelArgumentType::advancement()).executes(
-                                    |c| {
-                                        perform_and_show(
-                                            c.source(),
-                                            &c.players("targets")?,
-                                            $action,
-                                            &get_advancements(
-                                                c.advancement("advancement")?,
-                                                Mode::Only,
-                                            ),
-                                        )
-                                    },
-                                ),
-                            )
-                            .then(
-                                argument("criterion", ArgumentType::greedy_string())
-                                .suggests(
-                                    |c: &SteelSuggestionContext<'_, CommandSource>,
-                                    b: &mut SuggestionsBuilder<'_>| {
-                                        let Ok(advancement) = c.advancement("advancement") else {
-                                            return;
-                                        };
-                                        for criterion in advancement.criteria.keys() {
-                                            b.suggest(criterion.as_str());
-                                        }
-                                    },
-                                )
-                                .executes(|c| {
-                                    perform_criterion(
-                                        c.source(),
-                                        &c.players("targets")?,
-                                        $action,
+                .then(argument("targets", SteelArgumentType::players())
+                .then(literal("only")
+                    .then(
+                        argument("advancement", SteelArgumentType::advancement())
+                        .executes(
+                            |c| {
+                                perform_and_show(
+                                    c.source(),
+                                    &c.players("targets")?,
+                                    $action,
+                                    &get_advancements(
                                         c.advancement("advancement")?,
-                                        c.string("criterion")?,
-                                    )
-                                }),
-                            ),
+                                        Mode::Only,
+                                    ),
+                                )
+                            },
                         )
-                        .then(literal("from").then(
-                            argument("advancement", SteelArgumentType::advancement()).executes(|c| {
-                                perform_and_show(
-                                    c.source(),
-                                    &c.players("targets")?,
-                                    $action,
-                                    &get_advancements(c.advancement("advancement")?, Mode::From),
-                                )
-                            }),
-                        ))
-                        .then(literal("until").then(
-                            argument("advancement", SteelArgumentType::advancement()).executes(|c| {
-                                perform_and_show(
-                                    c.source(),
-                                    &c.players("targets")?,
-                                    $action,
-                                    &get_advancements(c.advancement("advancement")?, Mode::Until),
-                                )
-                            }),
-                        ))
-                        .then(literal("through").then(
-                            argument("advancement", SteelArgumentType::advancement()).executes(|c| {
-                                perform_and_show(
-                                    c.source(),
-                                    &c.players("targets")?,
-                                    $action,
-                                    &get_advancements(c.advancement("advancement")?, Mode::Through),
-                                )
-                            }),
-                        ))
-                        .then(literal("everything").executes(|c| {
-                            perform(
-                                c.source(),
-                                &c.players("targets")?,
-                                $action,
-                                &REGISTRY.advancements.advancements,
-                                false,
+                        .then(
+                            argument("criterion", ArgumentType::greedy_string())
+                            .suggests(
+                                |c: &SteelSuggestionContext<'_, CommandSource>,
+                                b: &mut SuggestionsBuilder<'_>| {
+                                    let Ok(advancement) = c.advancement("advancement") else {
+                                        return;
+                                    };
+                                    for criterion in advancement.criteria.keys() {
+                                        b.suggest(criterion.as_str());
+                                    }
+                                },
                             )
-                        })))
+                            .executes(|c| {
+                                perform_criterion(
+                                    c.source(),
+                                    &c.players("targets")?,
+                                    $action,
+                                    c.advancement("advancement")?,
+                                    c.string("criterion")?,
+                                )
+                            }),
+                        ),
+                    ),
+                )
+                .then(literal("from").then(
+                    argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                        perform_and_show(
+                            c.source(),
+                            &c.players("targets")?,
+                            $action,
+                            &get_advancements(c.advancement("advancement")?, Mode::From),
+                        )
+                    }),
+                ))
+                .then(literal("until").then(
+                    argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                        perform_and_show(
+                            c.source(),
+                            &c.players("targets")?,
+                            $action,
+                            &get_advancements(c.advancement("advancement")?, Mode::Until),
+                        )
+                    }),
+                ))
+                .then(literal("through").then(
+                    argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                        perform_and_show(
+                            c.source(),
+                            &c.players("targets")?,
+                            $action,
+                            &get_advancements(c.advancement("advancement")?, Mode::Through),
+                        )
+                    }),
+                ))
+                .then(literal("everything").executes(|c| {
+                    perform(
+                        c.source(),
+                        &c.players("targets")?,
+                        $action,
+                        &REGISTRY.advancements.advancements,
+                        false,
+                    )
+                })))
         };
     }
     literal("advancement")
@@ -200,6 +199,7 @@ enum Mode {
     Through,
     From,
     Until,
+    #[expect(unused, reason = "to match vanilla")]
     Everything,
 }
 
@@ -454,5 +454,23 @@ pub fn perform_criterion(
         };
         context.send_success(&translate, true);
         Ok(count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::behavior::init_behaviors;
+    use crate::block_entity::init_block_entities;
+    use crate::command::brigadier::CommandDispatcher;
+    use crate::command::execution::{CommandSource, SteelCommandRuntime};
+    use steel_registry::init_vanilla_registry;
+
+    type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
+
+    #[test]
+    fn grant_advancement() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
     }
 }
