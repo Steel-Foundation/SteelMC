@@ -371,7 +371,6 @@ use jobs::teleport::{
     RootVehicleRestoreJob, WorldSpawnTeleportJob, clear_pending_world_change,
     portal_entity_still_valid,
 };
-use steel_registry::data_components::Component;
 
 /// The main server struct.
 pub struct Server {

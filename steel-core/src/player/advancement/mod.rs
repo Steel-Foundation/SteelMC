@@ -1,15 +1,15 @@
 pub mod progress;
 pub mod visibility_evaluator;
 
+use crate::entity::Entity;
 use crate::entity::living_entity::living_entity_loot_ref;
-use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::c_update_advancement::CUpdateAdvancements;
 use steel_registry::REGISTRY;
-use steel_registry::advancement::registry::{AdvancementNode, AdvancementNodeRef, AdvancementRef};
+use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
 use steel_registry::advancement::{
     Advancement, AdvancementProgressData, AdvancementRewards, Criteria,
 };
@@ -76,17 +76,19 @@ impl PlayerAdvancement {
         let mut result = false;
         let progress = self.progress.get_mut_or_start_progress(advancement);
         let was_done = progress.is_done();
-        if progress.grantProgress(criterion) {
+        if progress.grant_progress(criterion) {
             //self.unregisterListeners(advancement);
-            self.progress_changed.add(advancement);
+            self.progress_changed.insert(advancement);
             result = true;
-            if !was_done && progress.isDone() {
-                grant_reward(player, advancement.rewards);
-                if let Some(display) = advancement.display {
+            if !was_done && progress.is_done() {
+                grant_reward(player, &advancement.rewards);
+                if let Some(display) = &advancement.display {
                     // TODO GameRule check
                     if display.announce_chat && player.level().is_some() {
                         player.server().broadcast_system_chat(
-                            display.frame_type.create_announcement(advancement, player),
+                            &display
+                                .frame_type
+                                .create_announcement(advancement, player.display_name()),
                             None,
                         );
                     }
@@ -107,7 +109,7 @@ impl PlayerAdvancement {
         let was_done = progress.is_done();
         if progress.revoke_progress(criterion) {
             //self.registerListeners(advancement);
-            self.progress_changed.add(advancement);
+            self.progress_changed.insert(advancement);
             result = true;
         }
 
@@ -129,7 +131,7 @@ impl PlayerAdvancement {
     /// modify the added and the removed from the available tree status
     fn update_tree_visibility(
         &mut self,
-        root: &AdvancementNode,
+        root: AdvancementNodeRef,
         added: &mut Vec<AdvancementRef>,
         removed: &mut Vec<Identifier>,
     ) {

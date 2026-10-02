@@ -45,7 +45,7 @@ impl Advancement {
     }
 
     pub fn decorate_name(&self) -> Option<TextComponent> {
-        match self.display {
+        match &self.display {
             Some(display) => {
                 let color = display.frame_type.color();
                 let over = display
