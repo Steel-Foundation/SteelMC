@@ -148,6 +148,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "advancement",
                 "clear",
                 "deop",
                 "damage",
