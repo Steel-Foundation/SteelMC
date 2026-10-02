@@ -1101,9 +1101,9 @@ unit_argument_parser!(
 unit_argument_parser!(
     AdvancementParser,
     "steel:command/parser/advancement",
-    AdvancementRef,
+    AdvancementValue,
     parse | reader,
-    _source | { parse_advancement(reader) },
+    _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
     suggest | _context,
     builder | {
         suggest_resources(

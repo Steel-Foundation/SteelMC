@@ -15,7 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::{entity::Entity as _, inventory::container::Container as _, player::Player};
+use crate::{entity::Entity as _, player::Player};
 
 const MAX_ALLOWED_ITEM_STACKS: i32 = 100;
 

@@ -63,6 +63,7 @@ pub enum AdvancementType {
 }
 
 impl AdvancementType {
+    #[must_use]
     fn get_translated_text(&self) -> &Translation<2usize> {
         match self {
             Self::Task => &CHAT_TYPE_ADVANCEMENT_TASK,
@@ -71,7 +72,8 @@ impl AdvancementType {
         }
     }
 
-    pub fn color(&self) -> Color {
+    #[must_use]
+    pub const fn color(&self) -> Color {
         match self {
             Self::Task => Color::Green,
             Self::Challenge => Color::DarkPurple,

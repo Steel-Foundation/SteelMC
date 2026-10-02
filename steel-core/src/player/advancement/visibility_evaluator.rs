@@ -1,6 +1,6 @@
 use crate::player::advancement::PlayerAdvancement;
 use steel_registry::REGISTRY;
-use steel_registry::advancement::registry::{AdvancementNode, AdvancementRef};
+use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
 
 static VISIBILITY_DEPTH: usize = 3;
 
@@ -30,11 +30,11 @@ fn evaluate_visibility_for_unfinished_node(ascendants: &[VisibilityRule]) -> boo
 }
 
 pub fn evaluate_visibility_with_rules(
-    node: &AdvancementNode,
+    node: AdvancementNodeRef,
     player_advancement: &mut PlayerAdvancement,
     ascendants: &mut Vec<VisibilityRule>,
-    is_done_test: &mut impl FnMut(&mut PlayerAdvancement, &AdvancementNode) -> bool,
-    output: &mut impl FnMut(&mut PlayerAdvancement, &AdvancementNode, bool),
+    is_done_test: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef) -> bool,
+    output: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef, bool),
 ) -> bool {
     let tree = &REGISTRY.advancements.adv_nodes;
     let is_self_done = is_done_test(player_advancement, node);
@@ -60,10 +60,10 @@ pub fn evaluate_visibility_with_rules(
 }
 
 pub fn evaluate_visibility(
-    node: &AdvancementNode,
+    node: AdvancementNodeRef,
     player_advancement: &mut PlayerAdvancement,
-    is_done: &mut impl FnMut(&mut PlayerAdvancement, &AdvancementNode) -> bool,
-    output: &mut impl FnMut(&mut PlayerAdvancement, &AdvancementNode, bool),
+    is_done: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef) -> bool,
+    output: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef, bool),
 ) -> bool {
     let root = node.root();
     let mut visibility_stack: Vec<VisibilityRule> = Vec::new();

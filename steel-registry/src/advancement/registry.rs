@@ -54,7 +54,7 @@ impl AdvancementNode {
     }
 
     #[must_use]
-    pub fn root(&self) -> AdvancementNodeRef {
+    pub fn root(&'static self) -> AdvancementNodeRef {
         let mut advancement_node = self;
         while let Some(parent) = &advancement_node.parent {
             advancement_node = &REGISTRY.advancements.adv_nodes[*parent];
@@ -85,6 +85,7 @@ impl Hash for AdvancementNode {
 /// equivalent of the `AdvancementTree` of the minecraft source code
 #[derive(Default)]
 pub struct AdvancementRegistry {
+    pub advancements: Vec<AdvancementRef>,
     pub adv_nodes: Vec<AdvancementNode>,
     pub unloaded_advancement: Vec<AdvancementRef>,
     pub by_key: FxHashMap<Identifier, usize>,
@@ -103,6 +104,7 @@ impl AdvancementRegistry {
         let node_idx = self.adv_nodes.len();
         self.adv_nodes
             .push(AdvancementNode::new(advancement, parent_idx));
+        self.advancements.push(advancement);
         self.by_key.insert(id, node_idx);
         if let Some(parent) = parent_idx {
             let parent_node = self
@@ -163,7 +165,7 @@ impl AdvancementRegistry {
     #[must_use]
     #[inline]
     pub fn value_by_key(&self, key: &Identifier) -> Option<AdvancementRef> {
-        self.by_key.get(key).map(|idx| self.adv_nodes[*idx].value)
+        self.by_key.get(key).map(|idx| self.advancements[*idx])
     }
 
     #[must_use]

@@ -21,8 +21,8 @@ use super::{
     selector::EntitySelector,
 };
 use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
+    ArgumentSuggestionContext, CommandContext, CommandNodeBuilder, CommandRedirectTarget,
+    CommandRuntime, CommandSyntaxError, ContextChain,
 };
 use crate::command::execution::argument::{AdvancementValue, DamageTypeValue};
 use crate::command::incorrectly_typed_argument;
@@ -47,6 +47,8 @@ pub(crate) struct SteelCommandRuntime;
 
 pub(crate) type SteelCommandContext<S> = CommandContext<S, SteelCommandRuntime>;
 pub(crate) type SteelContextChain<S> = ContextChain<S, SteelCommandRuntime>;
+pub(crate) type SteelSuggestionContext<'context, S> =
+    ArgumentSuggestionContext<'context, S, SteelArgumentValue>;
 
 type StandardExecutor<S> =
     dyn Fn(&SteelCommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync;
@@ -397,6 +399,20 @@ where
         name: &str,
     ) -> Result<&PermissionGroupName, CommandSyntaxError> {
         self.typed_argument(name)
+    }
+}
+
+impl<S> SteelSuggestionContext<'_, S> {
+    fn typed_argument<T: DowncastType>(&self, name: &str) -> Result<&T, CommandSyntaxError> {
+        self.argument(name)?
+            .downcast_ref::<T>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
+    }
+
+    /// Returns a parsed advancement argument.
+    pub(crate) fn advancement(&self, name: &str) -> Result<AdvancementRef, CommandSyntaxError> {
+        self.typed_argument::<AdvancementValue>(name)
+            .map(|value| value.0)
     }
 }
 
