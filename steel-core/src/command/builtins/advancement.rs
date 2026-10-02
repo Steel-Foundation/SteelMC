@@ -456,21 +456,3 @@ pub fn perform_criterion(
         Ok(count)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::behavior::init_behaviors;
-    use crate::block_entity::init_block_entities;
-    use crate::command::brigadier::CommandDispatcher;
-    use crate::command::execution::{CommandSource, SteelCommandRuntime};
-    use steel_registry::init_vanilla_registry;
-
-    type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
-
-    #[test]
-    fn grant_advancement() {
-        init_vanilla_registry();
-        init_behaviors();
-        init_block_entities();
-    }
-}
