@@ -5,7 +5,7 @@ use std::{
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
 };
@@ -268,7 +268,7 @@ pub struct World {
     /// Sea level sent in login/respawn packets.
     pub sea_level: i32,
     /// Default game mode for first-visit player data.
-    pub default_gamemode: GameType,
+    default_gamemode: AtomicU8,
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
@@ -437,7 +437,7 @@ impl World {
                 compression,
                 is_flat,
                 sea_level,
-                default_gamemode,
+                default_gamemode: AtomicU8::new(default_gamemode as u8),
                 tick_runs_normally: AtomicBool::new(true),
                 handling_tick: AtomicBool::new(false),
                 block_events: SyncMutex::new(BlockEventQueue::default()),

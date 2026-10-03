@@ -1,3 +1,5 @@
+use steel_utils::types::GameType;
+
 use super::{
     ADVANCE_TIME, BlockPos, CChangeDifficulty, ChunkPos, Difficulty, Digest, ErasedGameRuleRef,
     GameRule, GameRuleValue, GameRuleValueType, LevelDataManager, OffsetVoxelShape, Ordering,
@@ -34,6 +36,18 @@ impl World {
             level_data.data().difficulty_locked
         };
         self.broadcast_to_all(CChangeDifficulty { difficulty, locked });
+    }
+
+    /// Returns the default game mode for first-visit players in this world.
+    #[must_use]
+    pub fn default_gamemode(&self) -> GameType {
+        GameType::from(self.default_gamemode.load(Ordering::Relaxed) as i8)
+    }
+
+    /// Sets the default game mode for this world.
+    pub fn set_default_gamemode(&self, default_gamemode: GameType) {
+        self.default_gamemode
+            .store(default_gamemode as u8, Ordering::Release);
     }
 
     /// Returns the total height of the world in blocks.

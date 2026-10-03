@@ -189,11 +189,11 @@ struct PreparedSpawn {
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
     player.base().set_position_local(spawn.position);
     player.set_rotation(spawn.rotation);
-    player.restore_game_modes(world.default_gamemode, None);
+    player.restore_game_modes(world.default_gamemode(), None);
     player
         .abilities
         .lock()
-        .update_for_game_mode(world.default_gamemode);
+        .update_for_game_mode(world.default_gamemode());
 }
 
 fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
