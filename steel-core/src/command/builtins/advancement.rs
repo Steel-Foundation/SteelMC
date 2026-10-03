@@ -46,10 +46,9 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                             .suggests(
                                 |c: &SteelSuggestionContext<'_, CommandSource>,
                                 b: &mut SuggestionsBuilder<'_>| {
-                                    let Ok(advancement) = c.advancement("advancement") else {
-                                        return;
+                                    if let Ok(advancement) = c.advancement("advancement")  {
+                                        suggest_list(b, advancement.criteria.keys());
                                     };
-                                    suggest_list(b, advancement.criteria.keys());
                                 },
                             )
                             .executes(|c| {
