@@ -1,8 +1,13 @@
-use std::collections::BTreeSet;
+use std::io::Cursor;
 
-use super::*;
+use simdnbt::borrow::read_compound as read_borrowed_compound;
+
+use std::clone::Clone;
+use std::collections::BTreeSet;
 use crate::entity::leash::Leashable;
 use steel_math::DEGREE_90;
+
+use super::*;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -101,6 +106,117 @@ impl<T: Entity> EntityEventSource for T {
 pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns a reference to the entity's shared vanilla base fields.
     fn base(&self) -> &EntityBase;
+
+    /// Loads an entity base with all relevant data from an `NbtCompound`
+    ///
+    /// Mirrors vanilla `Entity.load`
+    fn load(&self, nbt: NbtCompound) {
+        self.default_load_data(nbt);
+    }
+
+    /// The actual implementation for loading the data into the entity
+    ///
+    /// Mirrors vanilla `Entity.load`
+    fn default_load_data(&self, nbt: NbtCompound) {
+        if let Some(motion_list) = nbt.list("Motion") {
+            if let Some(motion) = motion_list.doubles()
+                && motion.len() == 3
+            {
+                self.set_velocity(DVec3::from_slice(&motion));
+            } else {
+                self.set_velocity(DVec3::ZERO);
+            }
+        } else {
+            self.set_velocity(DVec3::ZERO);
+        }
+
+        self.mark_velocity_sync();
+
+        self.set_fall_distance(nbt.double("fall_distance").unwrap_or(0.0));
+
+        self.set_remaining_fire_ticks(i32::from(nbt.short("Fire").unwrap_or(0)));
+
+        self.set_on_ground(nbt.byte("OnGround").unwrap_or(0) != 0);
+
+        self.set_invulnerable(nbt.byte("Invulnerable").unwrap_or(0) != 0);
+
+        self.set_portal_cooldown(nbt.int("PortalCooldown").unwrap_or(0));
+
+        if let Some(uuid_data) = nbt.int_array("UUID")
+            && let Some(uuid) = Uuid::from_int_array(uuid_data)
+        {
+            self.base().set_uuid(uuid);
+        }
+
+        if let Some(pos_list) = nbt.list("Pos") {
+            if let Some(pos) = pos_list.doubles()
+                && pos.len() == 3
+            {
+                let _ = self.try_set_position(DVec3::from_slice(&pos));
+            } else {
+                let _ = self.try_set_position(DVec3::ZERO);
+            }
+        } else {
+            let _ = self.try_set_position(DVec3::ZERO);
+        }
+
+        self.set_old_position_to_current();
+
+        if let Some(rotation_list) = nbt.list("Rotation") {
+            if let Some(rotation) = rotation_list.floats()
+                && rotation.len() == 2
+            {
+                self.set_rotation((rotation[0], rotation[1]));
+            } else {
+                self.set_rotation((0., 0.));
+            }
+        } else {
+            self.set_rotation((0., 0.));
+        }
+
+        self.base().set_old_rotation_to_current();
+
+        self.set_custom_name(
+            nbt.string("CustomName")
+                .map(|s| TextComponent::plain(s.to_string())),
+        );
+        self.set_custom_name_visible(nbt.byte("CustomNameVisible").unwrap_or(0) != 0);
+
+        self.set_silent(nbt.byte("Silent").unwrap_or(0) != 0);
+        self.set_no_gravity(nbt.byte("NoGravity").unwrap_or(0) != 0);
+        self.set_glowing(nbt.byte("Glowing").unwrap_or(0) != 0);
+
+        self.set_ticks_frozen(nbt.int("TicksFrozen").unwrap_or(0));
+        self.base()
+            .set_visual_fire(nbt.byte("HasVisualFire").unwrap_or(0) != 0);
+
+        self.set_custom_data(match nbt.get("data") {
+            Some(tag) => tag
+                .clone()
+                .compound()
+                .map_or(NbtCompound::new(), Clone::clone),
+            None => NbtCompound::new(),
+        });
+
+        self.clear_tags();
+
+        if let Some(Some(tags)) = nbt.list("Tags").map(|t| t.strings()) {
+            for tag in tags {
+                self.add_tag(tag.to_string());
+            }
+        }
+
+        self.set_air_supply(i32::from(
+            nbt.short("Air").unwrap_or(self.max_air_supply() as i16),
+        ));
+
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
+            .expect("test nbt should reborrow");
+
+        self.load_additional(BorrowedNbtCompoundView::from(&borrowed));
+    }
 
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
@@ -2908,6 +3024,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().remove_tag(tag)
     }
 
+    /// Clears all vanilla scoreboard tags.
+    fn clear_tags(&self) {
+        self.base().clear_tags();
+    }
+
     /// Returns a snapshot of this entity's vanilla custom data.
     fn custom_data(&self) -> NbtCompound {
         self.base().custom_data()
@@ -3231,6 +3352,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_no_gravity(no_gravity);
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_no_gravity(no_gravity);
+        }
+    }
+
+    /// Sets the shared vanilla `glowing` flag.
+    fn set_glowing(&self, glowing: bool) {
+        self.base().set_glowing(glowing);
+        if let Some(synced_data) = self.synced_data() {
+            synced_data.set_base_glowing_flag(glowing);
         }
     }
 

@@ -25,10 +25,12 @@ use crate::command::brigadier::{
     CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
     SuggestionsBuilder,
 };
+use crate::command::execution::nbt::parse_snbt_compound;
 use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
+use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
@@ -339,6 +341,10 @@ impl SteelArgumentType {
         Self::new(NbtPathParser)
     }
 
+    pub(crate) fn nbt_compound() -> Self {
+        Self::new(NbtCompoundParser)
+    }
+
     pub(crate) fn storage_key() -> Self {
         Self::new(StorageKeyParser)
     }
@@ -534,6 +540,10 @@ argument_value_wrapper!(
     "steel:command/value/component"
 );
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
+argument_value_wrapper!(
+    NbtCompoundValue(NbtCompound),
+    "steel:command/value/nbt_path"
+);
 argument_value_wrapper!(
     IdentifierValue(Identifier),
     "steel:command/value/identifier"
@@ -1107,6 +1117,16 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::NbtPath, None)
+);
+unit_argument_parser!(
+    NbtCompoundParser,
+    "steel:command/parser/nbt_compound",
+    NbtCompoundValue,
+    parse | reader,
+    _source | { parse_snbt_compound(reader).map(NbtCompoundValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Nbt, None)
 );
 unit_argument_parser!(
     StorageKeyParser,

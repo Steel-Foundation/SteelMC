@@ -1,6 +1,9 @@
 //! NBT path command arguments.
 
-use steel_utils::nbt::{NbtPath, parse_nbt_path_argument as parse_path};
+use simdnbt::owned::NbtCompound;
+use steel_utils::nbt::{
+    NbtPath, parse_nbt_path_argument as parse_path, parse_snbt_compound_argument as parse_snbt,
+};
 use text_components::TextComponent;
 
 use crate::command::brigadier::{CommandSyntaxError, CommandSyntaxErrorKind, StringReader};
@@ -16,6 +19,25 @@ pub(super) fn parse_nbt_path(reader: &mut StringReader<'_>) -> Result<NbtPath, C
         Err(error) => {
             if !reader.advance_bytes(error.cursor()) {
                 return Err(dynamic_error(reader, "Invalid NBT path cursor"));
+            }
+            Err(dynamic_error(reader, error.component()))
+        }
+    }
+}
+
+pub(super) fn parse_snbt_compound(
+    reader: &mut StringReader<'_>,
+) -> Result<NbtCompound, CommandSyntaxError> {
+    match parse_snbt(reader.remaining()) {
+        Ok((compound, consumed)) => {
+            if !reader.advance_bytes(consumed) {
+                return Err(dynamic_error(reader, "Invalid SNBT data at cursor"));
+            }
+            Ok(compound)
+        }
+        Err(error) => {
+            if !reader.advance_bytes(error.cursor()) {
+                return Err(dynamic_error(reader, "Invalid SNBT data at cursor"));
             }
             Err(dynamic_error(reader, error.component()))
         }
