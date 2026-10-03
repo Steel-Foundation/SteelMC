@@ -112,7 +112,6 @@ pub struct DimensionType {
 }
 
 impl DimensionType {
-    /// Returns vanilla `DimensionType.getTeleportationScale`.
     #[must_use]
     pub fn get_teleportation_scale(last_dimension_type: &Self, new_dimension_type: &Self) -> f64 {
         last_dimension_type.coordinate_scale / new_dimension_type.coordinate_scale
