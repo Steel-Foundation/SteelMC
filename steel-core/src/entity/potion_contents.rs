@@ -9,7 +9,6 @@ use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
-/// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
 pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,

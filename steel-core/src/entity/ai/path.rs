@@ -46,7 +46,7 @@ pub enum PathType {
     BigMobsCloseToDanger,
 }
 
-/// Vanilla `PathComputationType`.
+/// Which medium a path is being computed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PathComputationType {
     Land,
