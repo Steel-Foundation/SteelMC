@@ -45,10 +45,14 @@ impl TurtleBreedGoal {
             return;
         };
 
-        if let Some(love_cause) = turtle
+        if let Some(player) = turtle
             .love_cause_uuid()
-            .or_else(|| partner_animal.love_cause_uuid())
-            && let Some(player) = world.players.get_by_uuid(&love_cause)
+            .and_then(|uuid| world.players.get_by_uuid(&uuid))
+            .or_else(|| {
+                partner_animal
+                    .love_cause_uuid()
+                    .and_then(|uuid| world.players.get_by_uuid(&uuid))
+            })
         {
             player.award_custom_stat(&vanilla_custom_stats::ANIMALS_BRED);
             // TODO(advancements): trigger the BRED_ANIMALS criterion once Steel
