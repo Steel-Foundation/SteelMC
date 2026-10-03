@@ -429,6 +429,13 @@ impl BlockPos {
         )
     }
 
+    /// Returns whether this block's center is closer than `distance` to `position`.
+    #[must_use]
+    pub fn closer_to_center_than(&self, position: DVec3, distance: f64) -> bool {
+        let (x, y, z) = self.get_center();
+        DVec3::new(x, y, z).distance_squared(position) < distance * distance
+    }
+
     /// Creates a `BlockPos` containing the given floating-point coordinates.
     #[must_use]
     pub const fn containing(x: f64, y: f64, z: f64) -> Self {
@@ -735,5 +742,19 @@ impl ReadFrom for SectionPos {
 impl WriteTo for SectionPos {
     fn write(&self, writer: &mut impl Write) -> io::Result<()> {
         PackedSectionPos::from(*self).write(writer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::BlockPos;
+
+    #[test]
+    fn closer_to_center_than_uses_block_center() {
+        let pos = BlockPos::new(0, 0, 0);
+        assert!(pos.closer_to_center_than(DVec3::new(0.5, 0.5, 0.5), 1.0));
+        assert!(!pos.closer_to_center_than(DVec3::new(1.5, 0.5, 0.5), 1.0));
     }
 }
