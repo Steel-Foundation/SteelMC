@@ -14,6 +14,20 @@ use super::{
     MobEffectInstance, MobEffectSyncChange, POST_IMPULSE_GRACE_TICKS,
 };
 
+/// Mirrors vanilla `MobEffectInstance.endsWithin`: an infinite-duration effect
+/// never "ends within" anything, and the bound is inclusive.
+#[test]
+fn ends_within_treats_infinite_duration_as_never_ending() {
+    init_vanilla_registry();
+    let lasting =
+        |duration| MobEffectInstance::with_duration(vanilla_mob_effects::LUCK, duration, 0);
+
+    assert!(!lasting(-1).ends_within(20));
+    assert!(lasting(20).ends_within(20));
+    assert!(lasting(1).ends_within(20));
+    assert!(!lasting(21).ends_within(20));
+}
+
 #[test]
 fn living_constructor_initializes_health_from_max_health() {
     init_vanilla_registry();

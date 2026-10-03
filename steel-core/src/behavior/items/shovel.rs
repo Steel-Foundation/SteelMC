@@ -5,15 +5,13 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    level_events, sound_events,
-    vanilla_block_tags::BlockTag,
-    vanilla_blocks, vanilla_game_events,
+    level_events, sound_events, vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::Direction;
 use steel_utils::types::UpdateFlags;
 
 use crate::{
-    behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    behavior::{InteractionResult, ItemBehavior, UseOnContext, blocks::CampfireBlock},
     entity::Entity,
     world::game_event::GameEventContext,
 };
@@ -77,28 +75,25 @@ impl ItemBehavior for ShovelItem {
         }
 
         // Campfire extinguishing
-        if block.has_tag(&BlockTag::CAMPFIRES) {
-            if !block_state.get_value(&LIT_PROPERTY) {
-                return InteractionResult::Pass;
-            }
-            context.world.level_event(
-                level_events::SOUND_EXTINGUISH_FIRE,
-                context.hit_result.block_pos,
-                0,
-                None,
-            );
+        if CampfireBlock::is_lit_campfire(block_state) {
+            let pos = context.hit_result.block_pos;
+            context
+                .world
+                .level_event(level_events::SOUND_EXTINGUISH_FIRE, pos, 0, None);
+            CampfireBlock::dowse(Some(context.player), context.world, pos);
             let updated_state = block_state.set_value(&LIT_PROPERTY, false);
-            context.world.set_block(
-                context.hit_result.block_pos,
-                updated_state,
-                UpdateFlags::UPDATE_ALL_IMMEDIATE,
-            );
-            // TODO: hurt_and_break(1, ...) — shovels take durability damage
+            context
+                .world
+                .set_block(pos, updated_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
-                context.hit_result.block_pos,
+                pos,
                 &GameEventContext::new(Some(context.player), Some(updated_state)),
             );
+            let infinite_materials = context.player.has_infinite_materials();
+            context
+                .inv
+                .with_item(|item| item.hurt_and_break(1, infinite_materials));
             return InteractionResult::Success;
         }
 

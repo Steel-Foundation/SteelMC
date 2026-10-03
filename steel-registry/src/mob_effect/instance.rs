@@ -16,6 +16,10 @@ use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 const MAX_EFFECT_DEPTH: usize = 512;
 
+/// Vanilla's sentinel duration for an effect that never expires
+/// (`MobEffectInstance.INFINITE_DURATION`).
+pub const INFINITE_EFFECT_DURATION: i32 = -1;
+
 /// One status-effect instance, including Vanilla's hidden fallback chain.
 #[derive(Debug, Clone)]
 pub struct MobEffectInstance {
@@ -79,6 +83,34 @@ impl MobEffectInstance {
     #[must_use]
     pub const fn amplifier(&self) -> i32 {
         self.amplifier
+    }
+
+    /// Whether this effect never expires.
+    #[must_use]
+    pub const fn is_infinite_duration(&self) -> bool {
+        self.duration == INFINITE_EFFECT_DURATION
+    }
+
+    /// Applies `mapper` to this effect's duration, leaving the infinite and zero sentinels alone.
+    #[must_use]
+    pub fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
+        if self.is_infinite_duration() || self.duration == 0 {
+            self.duration
+        } else {
+            mapper(self.duration)
+        }
+    }
+
+    /// Returns a copy of this effect with its duration scaled by `scale`,
+    /// never rounding a finite duration below 1 tick. The infinite and zero
+    /// sentinels are left alone.
+    #[must_use]
+    pub fn with_scaled_duration(&self, scale: f32) -> Self {
+        Self {
+            duration: self
+                .map_duration(|duration| ((duration as f32 * scale).floor() as i32).max(1)),
+            ..self.clone()
+        }
     }
 
     #[must_use]
@@ -390,8 +422,56 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::{MobEffectInstance, MobEffectInstanceDetails};
-    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
+    use crate::{init_vanilla_registry, vanilla_mob_effects};
+
+    /// The infinite-duration sentinel (`-1`) and a zero duration bypass the mapper entirely.
+    #[test]
+    fn map_duration_leaves_infinite_and_zero_sentinels_untouched() {
+        init_vanilla_registry();
+        let speed = REGISTRY
+            .mob_effects
+            .by_key(&steel_utils::Identifier::vanilla_static("speed"))
+            .expect("speed should be registered");
+        let lasting = |duration| MobEffectInstance::simple(speed, duration, 0);
+
+        assert_eq!(lasting(-1).map_duration(|duration| duration * 2), -1);
+        assert_eq!(lasting(0).map_duration(|duration| duration * 2), 0);
+        assert_eq!(lasting(10).map_duration(|duration| duration * 2), 20);
+
+        assert!(lasting(-1).is_infinite_duration());
+        assert!(!lasting(0).is_infinite_duration());
+    }
+
+    #[test]
+    fn with_scaled_duration_leaves_infinite_and_zero_durations_untouched() {
+        init_vanilla_registry();
+        let lasting = |duration| MobEffectInstance::simple(vanilla_mob_effects::LUCK, duration, 0);
+        let scaled = |duration, scale| lasting(duration).with_scaled_duration(scale).duration();
+
+        assert_eq!(scaled(-1, 0.5), -1);
+        assert_eq!(scaled(0, 0.5), 0);
+        // Even an extreme scale must not touch these sentinels.
+        assert_eq!(scaled(-1, 100.0), -1);
+        assert_eq!(scaled(0, 0.0), 0);
+    }
+
+    /// Vanilla computes `Math.max(Mth.floor(duration * scale), 1)`: a finite
+    /// duration is floor-scaled and never rounds below 1 tick, even when the
+    /// scale would floor it to 0.
+    #[test]
+    fn with_scaled_duration_floors_and_clamps_finite_durations() {
+        init_vanilla_registry();
+        let lasting = |duration| MobEffectInstance::simple(vanilla_mob_effects::LUCK, duration, 0);
+        let scaled = |duration, scale| lasting(duration).with_scaled_duration(scale).duration();
+
+        assert_eq!(scaled(100, 0.5), 50);
+        // floor(9 * 0.34) == floor(3.06) == 3, not a naive round to 3.
+        assert_eq!(scaled(9, 0.34), 3);
+        // A scale that would floor to 0 is clamped up to the 1-tick floor.
+        assert_eq!(scaled(1, 0.1), 1);
+        assert_eq!(scaled(100, 1.0), 100);
+    }
 
     #[test]
     fn effect_instances_round_trip_recursive_details_and_clamp_amplifier() {

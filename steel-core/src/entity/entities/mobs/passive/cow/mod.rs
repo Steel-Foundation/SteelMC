@@ -27,7 +27,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
-use crate::behavior::InteractionResult;
+use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
@@ -225,7 +225,7 @@ impl CowEntity {
             let mut inventory = player.inventory.lock();
             inventory.apply_filled_result(
                 hand,
-                ItemStack::new(&vanilla_items::MILK_BUCKET),
+                ITEM_BEHAVIORS.default_instance(&vanilla_items::MILK_BUCKET),
                 player.has_infinite_materials(),
                 true,
             )
