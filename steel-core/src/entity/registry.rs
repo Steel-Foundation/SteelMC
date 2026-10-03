@@ -10,13 +10,15 @@ use simdnbt::borrow::{
 use steel_registry::RegistryExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
+use steel_utils::BlockPos;
 use uuid::Uuid;
 
-use super::generated_entities::register_entity_factories;
+use super::generated_entities::{register_entity_factories, register_spawn_rules};
 use super::{
-    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, SharedEntity, next_entity_id,
+    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, EntitySpawnReason, SharedEntity,
+    next_entity_id,
 };
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// Factory function type for creating entities.
 ///
@@ -29,6 +31,12 @@ pub type EntityFactory = fn(EntityTypeRef, i32, DVec3, Weak<World>) -> SharedEnt
 ///
 /// Takes the entity type and all base entity fields needed for reconstruction.
 pub type EntityLoadFactory = fn(EntityTypeRef, EntityBaseLoad) -> SharedEntity;
+
+/// Spawn placement predicate of an entity type.
+///
+/// The entity type and random source are not passed because no
+/// registered predicate reads them yet.
+pub(crate) type SpawnRule = fn(&dyn LevelReader, EntitySpawnReason, BlockPos) -> bool;
 
 /// Entity load request before the registry assigns a runtime ID.
 pub struct EntityLoadRequest {
@@ -80,9 +88,11 @@ struct EntityEntry {
     factory: Option<EntityFactory>,
     /// Factory function to load instances from disk.
     load_factory: Option<EntityLoadFactory>,
+    /// Vanilla `SpawnPlacements` predicate, absent when vanilla registers none.
+    spawn_rule: Option<SpawnRule>,
 }
 
-/// Registry for entity factories.
+/// Registry for entity factories and spawn rules.
 ///
 /// Maps `EntityType` to factory functions that can create entity instances.
 /// This is used when loading entities from disk or when entities are spawned.
@@ -91,17 +101,14 @@ pub struct EntityRegistry {
 }
 
 impl EntityRegistry {
-    /// Completes the registered-entity portion of vanilla `Entity.load` after
-    /// the load factory has reconstructed the entity's base state.
-    fn finish_registered_load(entity: &SharedEntity, nbt: &BorrowedNbtCompound<'_>) {
+    fn finish_registered_load_view(entity: &SharedEntity, nbt: &BorrowedNbtCompoundView<'_, '_>) {
         let yaw = entity.rotation().0;
         if let Some(living) = entity.as_living_entity() {
             living.set_y_head_rot(yaw);
             living.set_y_body_rot(yaw);
         }
 
-        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-        entity.load_additional(nbt);
+        entity.load_additional(*nbt);
         entity.set_old_position_to_current();
         entity.base().set_old_rotation_to_current();
         entity.sync_base_entity_data();
@@ -115,6 +122,7 @@ impl EntityRegistry {
             .map(|_| EntityEntry {
                 factory: None,
                 load_factory: None,
+                spawn_rule: None,
             })
             .collect();
 
@@ -151,6 +159,30 @@ impl EntityRegistry {
             entity_type.key
         );
         self.entries[id].load_factory = Some(factory);
+    }
+
+    /// Registers the spawn placement predicate of an entity type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a spawn rule is already registered for the entity type.
+    pub(crate) fn register_spawn_rule(&mut self, entity_type: EntityTypeRef, rule: SpawnRule) {
+        let id = entity_type.id();
+        assert!(
+            self.entries[id].spawn_rule.is_none(),
+            "spawn rule for {} is already registered",
+            entity_type.key
+        );
+        self.entries[id].spawn_rule = Some(rule);
+    }
+
+    /// Returns the spawn placement predicate of an entity type, if it has one.
+    ///
+    /// Read it through `SpawnPlacements`: registered predicates are only checked
+    /// against vanilla for spawner reasons.
+    #[must_use]
+    pub(super) fn spawn_rule(&self, entity_type: EntityTypeRef) -> Option<SpawnRule> {
+        self.entries.get(entity_type.id())?.spawn_rule
     }
 
     /// Creates a new entity instance.
@@ -193,7 +225,22 @@ impl EntityRegistry {
 
         let (_, load) = request.into_base_load();
         let entity = load_factory(entity_type, load);
-        Self::finish_registered_load(&entity, nbt);
+        Self::finish_registered_load_view(&entity, &nbt.into());
+        Some(entity)
+    }
+
+    /// Creates an entity for the normal spawner path from an already borrowed NBT view.
+    pub(crate) fn create_and_load_for_spawn_view(
+        &self,
+        request: EntityLoadRequest,
+        nbt: &BorrowedNbtCompoundView<'_, '_>,
+    ) -> Option<SharedEntity> {
+        let id = request.entity_type.id();
+        let entry = self.entries.get(id)?;
+        let load_factory = entry.load_factory?;
+        let (entity_type, load) = request.into_base_load();
+        let entity = load_factory(entity_type, load);
+        Self::finish_registered_load_view(&entity, nbt);
         Some(entity)
     }
 
@@ -249,6 +296,7 @@ pub fn init_entities() {
     ENTITIES.get_or_init(|| {
         let mut registry = EntityRegistry::new();
         register_entity_factories(&mut registry);
+        register_spawn_rules(&mut registry);
         registry
     });
 }
@@ -256,11 +304,14 @@ pub fn init_entities() {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+    use std::sync::Arc;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
+
+    use crate::entity::entities::PigEntity;
 
     use super::*;
     use crate::test_support::TestEntity;
@@ -353,5 +404,56 @@ mod tests {
         };
 
         assert_eq!(entity.entity_type(), &vanilla_entities::OAK_BOAT);
+    }
+
+    #[test]
+    fn strict_load_needs_only_an_nbt_factory() {
+        init_vanilla_registry();
+        let mut registry = EntityRegistry::new();
+        registry.register_load(&vanilla_entities::PIG, |entity_type, load| {
+            let entity: SharedEntity = Arc::new(PigEntity::from_saved(entity_type, load));
+            entity
+        });
+        assert!(!registry.has_factory(&vanilla_entities::PIG));
+
+        let mut bytes = Vec::new();
+        NbtCompound::new().write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
+            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+        let borrowed_view: BorrowedNbtCompoundView<'_, '_> = (&borrowed).into();
+        let entity = registry.create_and_load_for_spawn_view(
+            EntityLoadRequest {
+                entity_type: &vanilla_entities::PIG,
+                position: DVec3::ZERO,
+                uuid: Uuid::from_u128(1),
+                velocity: DVec3::ZERO,
+                rotation: (0.0, 0.0),
+                fall_distance: 0.0,
+                fire_freeze: EntityFireFreezeState::new(),
+                on_ground: false,
+                save_data: EntityBaseSaveData::new(),
+                world: Weak::new(),
+            },
+            &borrowed_view,
+        );
+
+        assert!(entity.is_some());
+    }
+
+    #[test]
+    fn unimplemented_spawner_entities_have_no_factory() {
+        init_vanilla_registry();
+        init_entities();
+
+        for entity_type in [
+            &vanilla_entities::BLAZE,
+            &vanilla_entities::CAVE_SPIDER,
+            &vanilla_entities::SKELETON,
+            &vanilla_entities::SILVERFISH,
+            &vanilla_entities::SPIDER,
+            &vanilla_entities::ZOMBIE,
+        ] {
+            assert!(!ENTITIES.has_factory(entity_type));
+        }
     }
 }

@@ -48,7 +48,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
-    SpawnGroupData, WeakEntity,
+    SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -338,6 +338,23 @@ pub trait Mob: LivingEntity + Leashable {
     fn mob_flags(&self) -> i8;
 
     fn set_mob_flags(&self, flags: i8);
+
+    /// Returns whether the entity-specific spawn predicate accepts this spawn.
+    fn check_spawn_rules(&self, _world: &Arc<World>, _reason: EntitySpawnReason) -> bool {
+        true
+    }
+
+    /// Returns whether the entity's box is free of liquids and spawn-blocking entities.
+    fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
+        !aabb_contains_any_liquid(world, self.bounding_box())
+            && !world.has_entity_in_aabb_matching(&self.bounding_box(), |entity| {
+                entity.id() != self.id()
+                    && !entity.is_removed()
+                    && !entity.is_spectator()
+                    && entity.blocks_building()
+                    && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
+            })
+    }
 
     /// Returns vanilla `Mob.isSaddled`.
     fn is_saddled(&self) -> bool {
@@ -636,6 +653,14 @@ pub trait Mob: LivingEntity + Leashable {
             .drop_chances()
             .lock()
             .set_guaranteed_drop(slot);
+    }
+
+    /// Sets a vanilla equipment drop chance loaded from a spawner table.
+    fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) -> bool {
+        self.mob_base()
+            .drop_chances()
+            .lock()
+            .set_equipment_chance(slot, chance)
     }
 
     /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search

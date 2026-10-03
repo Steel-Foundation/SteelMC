@@ -29,8 +29,27 @@ use crate::entity::{
     Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity, next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
+use crate::player::ResetReason;
+use crate::test_support::{
+    TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
+};
 use crate::world::{LevelReader, World};
+
+#[test]
+fn spawner_obstruction_rejects_overlapping_players() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("spawner_player_obstruction");
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "SpawnerPlayer", 1).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    let position = player.position();
+    insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(position));
+    let mob = PigEntity::new(&vanilla_entities::PIG, 2, position, Arc::downgrade(&world));
+
+    assert!(!mob.check_spawn_obstruction(&world));
+    mob.snap_to(position + DVec3::new(3.0, 0.0, 0.0), 0.0, 0.0);
+    assert!(mob.check_spawn_obstruction(&world));
+}
 
 #[test]
 fn equipment_drop_attempt_gate_matches_vanilla_conditions() {
