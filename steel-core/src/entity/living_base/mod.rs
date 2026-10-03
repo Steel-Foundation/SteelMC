@@ -558,7 +558,7 @@ impl Default for LivingSwingState {
 }
 
 /// Vanilla active item-use state stored on `LivingEntity`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActiveItemUseState {
     hand: InteractionHand,
     item: ItemRef,
@@ -986,6 +986,10 @@ impl LivingEntityBase {
         let mut attributes = self.attributes.lock();
         let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
 
+        #[expect(
+            clippy::iter_with_drain,
+            reason = "keeps the slot's allocation for the modifiers installed below"
+        )]
         for key in installed_modifiers[slot_index].drain(..) {
             attributes.remove_modifier(key.attribute, &key.id);
         }
@@ -1236,11 +1240,11 @@ impl LivingEntityBase {
 
     /// Refreshes the cached movement speed from the `MOVEMENT_SPEED` attribute.
     pub fn refresh_speed_from_attributes(&self) {
-        if let Some(speed) = self
+        let speed = self
             .attributes
             .lock()
-            .get_value(vanilla_attributes::MOVEMENT_SPEED)
-        {
+            .get_value(vanilla_attributes::MOVEMENT_SPEED);
+        if let Some(speed) = speed {
             self.state.lock().speed = speed as f32;
         }
     }

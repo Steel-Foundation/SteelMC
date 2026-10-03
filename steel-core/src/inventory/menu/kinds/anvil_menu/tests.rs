@@ -308,7 +308,7 @@ fn partial_result_overflow_is_discarded() {
 
     let result = result_container.lock().get_item(0).clone();
     assert_eq!(result.count(), 64);
-    let mut matching = result.clone();
+    let mut matching = result;
     matching.set_count(63);
     {
         let mut inventory = player.inventory.lock();

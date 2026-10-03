@@ -674,7 +674,7 @@ fn right(
 }
 
 /// One generated stronghold piece.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StrongholdGeneratedPiece {
     /// World-space bounding box.
     pub bounding_box: BoundingBox,

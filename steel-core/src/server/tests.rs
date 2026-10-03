@@ -2000,21 +2000,21 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&stale_sibling_world))
+                .queue_player_world_selection(Arc::clone(&player), &stale_sibling_world)
                 .is_err()
         );
         assert!(!player.is_world_change_pending());
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&sibling_world))
+                .queue_player_world_selection(Arc::clone(&player), &sibling_world)
                 .is_ok(),
             "world selection is authorization-neutral after command admission"
         );
         assert!(player.is_world_change_pending());
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
+                .queue_player_world_selection(Arc::clone(&player), &target_world)
                 .is_err(),
             "the relocation lease must reject a repeated selection"
         );
@@ -2037,7 +2037,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&source_world))
+                .queue_player_world_selection(Arc::clone(&player), &source_world)
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2053,7 +2053,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
+                .queue_player_world_selection(Arc::clone(&player), &target_world)
                 .is_ok()
         );
         let request = server.pending_domain_switches.lock().pop();
@@ -2115,7 +2115,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
+                .queue_player_world_selection(Arc::clone(&player), &target_world)
                 .is_ok()
         );
         server.process_world_changes(0, true);

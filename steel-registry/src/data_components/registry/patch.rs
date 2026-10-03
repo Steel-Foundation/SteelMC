@@ -64,7 +64,7 @@ impl DataComponentPatch {
     /// Sets a component value in the patch.
     pub fn set<T: Component + DowncastType>(&mut self, component: DataComponentType<T>, value: T) {
         self.entries.insert(
-            component.key.clone(),
+            component.key,
             ComponentPatchEntry::Set(ComponentData::new(value)),
         );
     }
@@ -96,7 +96,7 @@ impl DataComponentPatch {
     /// Marks a component as removed.
     pub fn remove<T>(&mut self, component: DataComponentType<T>) {
         self.entries
-            .insert(component.key.clone(), ComponentPatchEntry::Removed);
+            .insert(component.key, ComponentPatchEntry::Removed);
     }
 
     /// Marks a dynamically resolved component as removed.

@@ -56,7 +56,7 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world))
+        .queue_player_world_selection(Arc::clone(player), &world)
         .map_err(CommandSyntaxError::dynamic)?;
 
     source.send_success(
@@ -207,7 +207,7 @@ impl MenuKind for DomainMenuKind {
 
         if let Err(error) = self
             .server
-            .queue_player_world_selection(Arc::clone(&self.player), Arc::clone(world))
+            .queue_player_world_selection(Arc::clone(&self.player), world)
         {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }

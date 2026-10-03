@@ -1785,13 +1785,13 @@ mod persistence_tests {
         init_vanilla_registry();
         let mut stack = ItemStack::new(&vanilla_items::STONE);
 
-        stack.toggle_tooltips(&[(LORE.key.clone(), false)]);
+        stack.toggle_tooltips(&[(LORE.key, false)]);
         let display = stack
             .get(TOOLTIP_DISPLAY)
             .expect("tooltip display should be set");
         assert!(!display.shows(LORE));
 
-        stack.toggle_tooltips(&[(LORE.key.clone(), true)]);
+        stack.toggle_tooltips(&[(LORE.key, true)]);
         assert!(
             stack
                 .get(TOOLTIP_DISPLAY)

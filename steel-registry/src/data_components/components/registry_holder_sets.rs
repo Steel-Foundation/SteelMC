@@ -17,7 +17,7 @@ use crate::items::Item;
 pub type ProvidesBannerPatterns = RegistryHolderSet<BannerPattern>;
 
 /// Damage types that cannot hurt an item stack.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DamageResistant {
     types: RegistryHolderSet<DamageType>,
 }
@@ -76,7 +76,7 @@ impl HashComponent for DamageResistant {
 }
 
 /// Items accepted as repair materials for an item stack.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repairable {
     items: RegistryHolderSet<Item>,
 }

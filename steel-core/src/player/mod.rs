@@ -860,7 +860,8 @@ impl Player {
 
     /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
-        if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
+        let dirty_values = self.entity_data.lock().pack_dirty();
+        if let Some(dirty_values) = dirty_values {
             let packet = CSetEntityData::new(self.id(), dirty_values);
             self.get_world()
                 .broadcast_to_entity_trackers(self.id(), packet.clone(), None);

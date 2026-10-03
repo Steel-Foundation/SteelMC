@@ -1146,12 +1146,12 @@ fn teleport_entity_cross_world(
     };
 
     let target_level = Arc::downgrade(&teleport_transition.target_world);
-    let mut new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
+    let new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
         &persistent,
         ChunkPos::from_entity_pos(entity.position()),
         &target_level,
     );
-    let Some(new_entity) = new_entities.drain(..).next() else {
+    let Some(new_entity) = new_entities.into_iter().next() else {
         tracing::warn!(
             entity_id = entity.id(),
             entity_type = ?entity.entity_type().key,

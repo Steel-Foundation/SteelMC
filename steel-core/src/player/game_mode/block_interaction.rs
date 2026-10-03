@@ -319,7 +319,7 @@ impl Player {
 /// This is equivalent to vanilla's `ChatFormatting.stripFormatting()`.
 fn strip_formatting_codes(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
+    let mut chars = text.chars();
 
     while let Some(c) = chars.next() {
         if c == '§' {

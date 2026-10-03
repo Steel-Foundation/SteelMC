@@ -54,7 +54,7 @@ impl BigDripleafBlock {
         tilt: Tilt,
         sound_wrapper: Option<SoundEventRef>,
     ) {
-        Self::set_tilt(state_id, world, pos, tilt.clone());
+        Self::set_tilt(state_id, world, pos, tilt);
         if let Some(tilt_sound) = sound_wrapper {
             Self::play_tilt_sound(world, pos, tilt_sound);
         }
@@ -68,17 +68,17 @@ impl BigDripleafBlock {
         }
     }
 
-    const fn tilt_causes_vibration(tilt: &Tilt) -> bool {
+    const fn tilt_causes_vibration(tilt: Tilt) -> bool {
         matches!(tilt, Tilt::None | Tilt::Partial | Tilt::Full)
     }
 
     fn set_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos, new_tilt: Tilt) {
         let previous_tilt = state_id.get_value(TILT);
-        let new_state = state_id.set_value(TILT, new_tilt.clone());
+        let new_state = state_id.set_value(TILT, new_tilt);
 
         world.set_block(*pos, new_state, UpdateFlags::UPDATE_CLIENTS);
 
-        if Self::tilt_causes_vibration(&new_tilt) && new_tilt != previous_tilt {
+        if Self::tilt_causes_vibration(new_tilt) && new_tilt != previous_tilt {
             world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 *pos,

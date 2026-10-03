@@ -134,10 +134,7 @@ impl GrindstoneKind {
 
         if first.count() <= 1 && second.count() <= 1 {
             if !first.is_empty() && !second.is_empty() {
-                result_container.set_item(
-                    0,
-                    GrindstoneKind::merge_items(first.clone(), second.clone()),
-                );
+                result_container.set_item(0, GrindstoneKind::merge_items(first, second));
             } else {
                 let item = if first.is_empty() { second } else { first };
 
@@ -158,7 +155,7 @@ impl GrindstoneKind {
 
     /// Merges two items and their enchants but gets rid of their non-curse enchants
     #[must_use]
-    fn merge_items(first: ItemStack, second: ItemStack) -> ItemStack {
+    fn merge_items(first: &ItemStack, second: &ItemStack) -> ItemStack {
         if !first.is(second.item()) {
             return ItemStack::empty();
         }
@@ -172,7 +169,7 @@ impl GrindstoneKind {
         if !first.is_damageable_item() {
             count = 2;
 
-            if first.max_stack_size() < 2 || !ItemStack::matches(&first, &second) {
+            if first.max_stack_size() < 2 || !ItemStack::matches(first, second) {
                 return ItemStack::empty();
             }
         }
@@ -183,7 +180,7 @@ impl GrindstoneKind {
             new_item.set_damage_value(max(durability - remaining, 0));
         }
 
-        GrindstoneKind::merge_enchantments_from(&mut new_item, &second);
+        GrindstoneKind::merge_enchantments_from(&mut new_item, second);
         GrindstoneKind::remove_non_curses_from(new_item)
     }
 

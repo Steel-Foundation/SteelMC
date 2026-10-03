@@ -14,7 +14,7 @@ use crate::items::ItemRef;
 use crate::{REGISTRY, RegistryEntry, RegistryExt, vanilla_items};
 
 /// The back, left, right, and front decorations of a decorated pot.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PotDecorations {
     back: Option<ItemRef>,
     left: Option<ItemRef>,

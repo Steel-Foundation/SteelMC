@@ -345,6 +345,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
                             let mut ch_batch = 0;
                             while ch_batch + 4 <= interp_count {
+                                #[expect(
+                                    clippy::multiple_unsafe_ops_per_block,
+                                    reason = "all unchecked reads share the bound proof in the SAFETY comment"
+                                )]
                                 // SAFETY: max index = (z1_base + cell_y_idx + 1) * MAX_INTERP + (ch_batch+3)
                                 //         ≤ ((cell_count_xz+1)*corners_y - 1) * MAX_INTERP + MAX_INTERP - 1
                                 //         < MAX_SLICE_LEN * MAX_INTERP
@@ -396,6 +400,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                             // Scalar tail (when interp_count is not a multiple of 4).
                             while ch_batch < interp_count {
                                 let ch = ch_batch;
+                                #[expect(
+                                    clippy::multiple_unsafe_ops_per_block,
+                                    reason = "all unchecked reads share the bound proof in the SAFETY comment"
+                                )]
                                 // SAFETY: ch < interp_count ≤ MAX_INTERP; indices in bounds (see comment above).
                                 unsafe {
                                     let n000 = *s0.get_unchecked(i0_base + ch);

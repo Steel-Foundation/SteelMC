@@ -1081,13 +1081,13 @@ impl Player {
     /// drops the items.
     #[must_use]
     pub fn returns_menu_items_to_inventory(&self) -> bool {
-        if let Some(disposition) = self
+        let terminal_disposition = self
             .open_menu
             .lock()
             .terminal_removal
             .as_ref()
-            .map(|terminal_removal| terminal_removal.disposition)
-        {
+            .map(|terminal_removal| terminal_removal.disposition);
+        if let Some(disposition) = terminal_disposition {
             return disposition == MenuItemDisposition::ReturnToInventory;
         }
 

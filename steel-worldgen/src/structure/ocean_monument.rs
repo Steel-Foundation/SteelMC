@@ -47,14 +47,14 @@ const SURROUNDING_BIOMES: &[&str] = &[
 ];
 
 /// Runtime state for vanilla `OceanMonumentPieces.MonumentBuilding`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OceanMonumentPieceData {
     /// Internal child pieces generated and placed by `MonumentBuilding`.
     pub child_pieces: Vec<OceanMonumentChildPiece>,
 }
 
 /// One internal ocean-monument child piece.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OceanMonumentChildPiece {
     /// World-space child bounding box after vanilla's building-relative offset.
     pub bounding_box: BoundingBox,
@@ -63,7 +63,7 @@ pub struct OceanMonumentChildPiece {
 }
 
 /// Variant-specific data for monument child pieces.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OceanMonumentChildPieceKind {
     /// `OceanMonumentEntryRoom`.
     EntryRoom {

@@ -38,7 +38,7 @@ impl PerlinSimplexNoise {
         let octave_set: BTreeSet<i32> = octaves.iter().copied().collect();
         assert!(!octave_set.is_empty(), "Need some octaves");
 
-        // SAFETY: assert above guarantees non-empty
+        // assert above guarantees non-empty
         let first_octave = *octave_set.first().expect("non-empty octave set");
         let last_octave = *octave_set.last().expect("non-empty octave set");
         let high_freq_octaves = last_octave;

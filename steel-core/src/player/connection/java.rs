@@ -262,7 +262,7 @@ impl ScheduledPlayPacket {
                 player.handle_custom_payload(packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
-                player.handle_chat(*packet, Arc::clone(&player));
+                player.handle_chat(*packet);
             }
             ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
             ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
