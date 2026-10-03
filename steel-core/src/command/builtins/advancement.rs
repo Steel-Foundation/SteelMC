@@ -3,7 +3,7 @@ use crate::command::brigadier::{
 };
 use crate::command::execution::{
     CommandSource, SteelArgumentType, SteelCommandRuntime, SteelSuggestionContext, argument,
-    literal,
+    literal, suggest_list,
 };
 use crate::command::registration::CommandRegistration;
 use crate::entity::Entity;
@@ -49,9 +49,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                                     let Ok(advancement) = c.advancement("advancement") else {
                                         return;
                                     };
-                                    for criterion in advancement.criteria.keys() {
-                                        b.suggest(criterion.as_str());
-                                    }
+                                    suggest_list(b, advancement.criteria.keys());
                                 },
                             )
                             .executes(|c| {

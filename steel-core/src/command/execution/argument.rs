@@ -16,6 +16,7 @@ use super::{
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
+    suggestions::suggest_resources,
     text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
 };
@@ -1561,28 +1562,6 @@ pub(super) fn unknown_resource(
     reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message)))
 }
 
-fn suggest_resources<'a>(
-    resources: impl Iterator<Item = &'a Identifier>,
-    builder: &mut SuggestionsBuilder<'_>,
-) {
-    let contents = builder.remaining_lowercase();
-    let has_namespace = contents.contains(':');
-    let suggestions = resources.filter_map(|resource| {
-        let full_name = resource.to_string();
-        let matches = if has_namespace {
-            matches_substring(contents, &full_name)
-        } else {
-            matches_substring(contents, resource.namespace.as_ref())
-                || matches_substring(contents, resource.path.as_ref())
-        };
-        matches.then_some(full_name)
-    });
-    let suggestions = suggestions.collect::<Vec<_>>();
-    for suggestion in suggestions {
-        builder.suggest(suggestion);
-    }
-}
-
 fn suggest_storage_keys<S>(source: &S, builder: &mut SuggestionsBuilder<'_>)
 where
     S: CommandArgumentSource + ?Sized,
@@ -1593,25 +1572,6 @@ where
         .filter_map(|key| key.parse::<Identifier>().ok())
         .collect::<Vec<_>>();
     suggest_resources(keys.iter(), builder);
-}
-
-pub(super) fn matches_substring(pattern: &str, input: &str) -> bool {
-    if input.starts_with(pattern) {
-        return true;
-    }
-    input.char_indices().any(|(index, character)| {
-        matches!(character, '.' | '_' | '/')
-            && input[index + character.len_utf8()..].starts_with(pattern)
-    })
-}
-
-pub(super) fn identifier_matches(pattern: &str, identifier: &Identifier) -> bool {
-    if pattern.contains(':') {
-        matches_substring(pattern, &identifier.to_string())
-    } else {
-        matches_substring(pattern, identifier.namespace.as_ref())
-            || matches_substring(pattern, identifier.path.as_ref())
-    }
 }
 
 fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, CommandSyntaxError> {
