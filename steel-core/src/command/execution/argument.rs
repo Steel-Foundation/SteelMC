@@ -32,6 +32,7 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
+use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
@@ -39,6 +40,7 @@ use steel_registry::{
     entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
     world_clock::WorldClockRef,
 };
+use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
@@ -347,6 +349,10 @@ impl SteelArgumentType {
         Self::new(SoundParser)
     }
 
+    pub(crate) fn advancement() -> Self {
+        Self::new(AdvancementParser)
+    }
+
     pub(crate) fn world_clock() -> Self {
         Self::new(WorldClockParser)
     }
@@ -523,6 +529,10 @@ argument_value_wrapper!(
 argument_value_wrapper!(
     EnchantmentValue(EnchantmentRef),
     "steel:command/value/enchantment"
+);
+argument_value_wrapper!(
+    AdvancementValue(AdvancementRef),
+    "steel:command/value/advancement"
 );
 argument_value_wrapper!(
     DamageTypeValue(DamageTypeRef),
@@ -1059,6 +1069,30 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    AdvancementParser,
+    "steel:command/parser/advancement",
+    AdvancementValue,
+    parse | reader,
+    _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
+    suggest | _context,
+    builder | {
+        //let advancements = &REGISTRY.advancements;
+        //info!("{:?}", advancements);
+        suggest_resources(
+            REGISTRY
+                .advancements
+                .advancements
+                .iter()
+                .map(|adv| &adv.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
     ItemStackParser,
     "steel:command/parser/item_stack",
     ItemStackValue,
@@ -1441,6 +1475,19 @@ fn parse_summonable_entity(
         .message([key.to_string()])
         .component();
     Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
+}
+
+fn parse_advancement(reader: &mut StringReader<'_>) -> Result<AdvancementRef, CommandSyntaxError> {
+    parse_identifier(reader).and_then(|key| {
+        REGISTRY.advancements.by_key(&key).map_or(
+            Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                TextComponent::translated(
+                    ADVANCEMENT_ADVANCEMENT_NOT_FOUND.message([key.to_string()]),
+                ),
+            )))),
+            |val| Ok(val.value),
+        )
+    })
 }
 
 fn can_summon(entity_type: EntityTypeRef) -> bool {

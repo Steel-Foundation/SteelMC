@@ -1,5 +1,6 @@
 //! This module contains all things player-related.
 mod abilities;
+pub mod advancement;
 pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
@@ -154,6 +155,7 @@ const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
+use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
@@ -281,6 +283,9 @@ pub struct Player {
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+
+    /// Manage the advancements of the player
+    pub advancements: SyncMutex<PlayerAdvancement>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -620,6 +625,7 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            advancements: SyncMutex::new(PlayerAdvancement::default()),
         }
     }
 
@@ -723,12 +729,12 @@ impl Player {
 
             // TODO: Implement remaining player ticking logic here
             // - Managing game mode specific logic
-            // - Updating advancements
             // - Handling falling
 
             self.update_player_attributes();
             self.living_base.refresh_speed_from_attributes();
             self.tick_food_data();
+            self.advancements.lock().flush_dirty(self, true);
 
             if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
                 self.set_sprinting(false);

@@ -83,6 +83,7 @@ pub mod structure;
 pub use structure::processor as structure_processor;
 pub use structure::set as structure_set;
 pub use structure::template_pool;
+pub mod advancement;
 pub mod ticket_type;
 pub mod timeline;
 pub mod trim_material;
@@ -477,3 +478,8 @@ pub mod vanilla_placed_features;
 #[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_advancements.rs"]
+pub mod vanilla_advancements;

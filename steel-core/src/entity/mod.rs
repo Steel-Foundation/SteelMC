@@ -823,7 +823,7 @@ pub use living_base::{
     LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
     MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::LivingEntity;
+pub use living_entity::{LivingEntity, living_entity_loot_ref};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,

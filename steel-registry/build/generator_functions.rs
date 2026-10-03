@@ -1,5 +1,6 @@
 use crate::shared_structs::{
-    BiomeCondition, BiomeConditionTarget, SpawnConditionEntry, TextComponentJson,
+    BiomeCondition, BiomeConditionTarget, ItemStackTemplateJson, SpawnConditionEntry,
+    TextComponentJson,
 };
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
@@ -119,17 +120,19 @@ pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
             ),
             format: text_components::format::Format {
                 color: Some(#color),
-                font: None,
-                bold: None,
-                italic: None,
-                underlined: None,
-                strikethrough: None,
-                obfuscated: None,
-                shadow_color: None,
+                ..Default::default()
             },
             children: vec![],
             interactions: text_components::interactivity::Interactivity::new(),
         }
+    }
+}
+
+pub fn generate_item_stack_template(template: &ItemStackTemplateJson) -> TokenStream {
+    let name = Ident::new(&template.id.path.to_shouty_snake_case(), Span::call_site());
+    let count = template.count;
+    quote! {
+        ItemStackTemplate::with_count(&*vanilla_items::#name,#count)
     }
 }
 
