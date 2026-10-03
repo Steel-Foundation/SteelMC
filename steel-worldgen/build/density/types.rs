@@ -16,8 +16,6 @@ type NormalNoise = u8;
 // ── Individual density function structs ──────────────────────────────────────
 
 /// A constant density value.
-///
-/// Matches vanilla's `DensityFunctions.Constant`.
 #[derive(Debug, Clone)]
 pub struct Constant {
     /// The constant value.
@@ -27,7 +25,7 @@ pub struct Constant {
 /// A reference to another density function by ID.
 ///
 /// After resolution via [`DensityFunction::resolve`], `resolved` holds the
-/// target function. Matches vanilla's `DensityFunctions.HolderHolder`.
+/// target function.
 #[derive(Debug, Clone)]
 pub struct Reference {
     /// The density function ID (for debugging / serialization).
@@ -40,7 +38,6 @@ pub struct Reference {
 ///
 /// Returns `from_value` at Y = `from_y`, `to_value` at Y = `to_y`,
 /// linearly interpolated between, clamped outside the range.
-/// Matches vanilla's `DensityFunctions.YClampedGradient`.
 #[derive(Debug, Clone)]
 pub struct YClampedGradient {
     /// Starting Y coordinate
@@ -54,8 +51,6 @@ pub struct YClampedGradient {
 }
 
 /// Sample from a noise generator.
-///
-/// Matches vanilla's `DensityFunctions.Noise`.
 #[derive(Debug, Clone)]
 pub struct Noise {
     /// Noise identifier (for debugging / serialization)
@@ -69,8 +64,6 @@ pub struct Noise {
 }
 
 /// Sample from a shifted noise generator.
-///
-/// Matches vanilla's `DensityFunctions.ShiftedNoise`.
 #[derive(Debug, Clone)]
 pub struct ShiftedNoise {
     /// X coordinate shift
@@ -90,8 +83,6 @@ pub struct ShiftedNoise {
 }
 
 /// Shift noise generator A for coordinate offsetting.
-///
-/// Matches vanilla's `DensityFunctions.ShiftA`.
 #[derive(Debug, Clone)]
 pub struct ShiftA {
     /// Noise identifier (for debugging / serialization)
@@ -101,8 +92,6 @@ pub struct ShiftA {
 }
 
 /// Shift noise generator B for coordinate offsetting.
-///
-/// Matches vanilla's `DensityFunctions.ShiftB`.
 #[derive(Debug, Clone)]
 pub struct ShiftB {
     /// Noise identifier (for debugging / serialization)
@@ -112,8 +101,6 @@ pub struct ShiftB {
 }
 
 /// Generic shift noise generator for coordinate offsetting.
-///
-/// Matches vanilla's `DensityFunctions.Shift`.
 #[derive(Debug, Clone)]
 pub struct Shift {
     /// Noise identifier (for debugging / serialization)
@@ -123,8 +110,6 @@ pub struct Shift {
 }
 
 /// The type of two-argument operation.
-///
-/// Matches vanilla's `DensityFunctions.TwoArgumentSimpleFunction.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TwoArgType {
     /// Add two density functions.
@@ -138,8 +123,6 @@ pub enum TwoArgType {
 }
 
 /// A two-argument density function (add, mul, min, max).
-///
-/// Matches vanilla's `DensityFunctions.Ap2` / `TwoArgumentSimpleFunction`.
 #[derive(Debug, Clone)]
 pub struct TwoArgumentSimple {
     /// The operation type
@@ -151,8 +134,6 @@ pub struct TwoArgumentSimple {
 }
 
 /// The type of mapped (pure transformer) operation.
-///
-/// Matches vanilla's `DensityFunctions.Mapped.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MappedType {
     /// Absolute value.
@@ -174,7 +155,6 @@ pub enum MappedType {
 /// A mapped (pure transformer) density function.
 ///
 /// Applies a unary operation to its input.
-/// Matches vanilla's `DensityFunctions.Mapped`.
 #[derive(Debug, Clone)]
 pub struct Mapped {
     /// The mapping type
@@ -184,8 +164,6 @@ pub struct Mapped {
 }
 
 /// Clamp a density function value to a range.
-///
-/// Matches vanilla's `DensityFunctions.Clamp`.
 #[derive(Debug, Clone)]
 pub struct Clamp {
     /// Input density function
@@ -197,8 +175,6 @@ pub struct Clamp {
 }
 
 /// Choose between two functions based on input range.
-///
-/// Matches vanilla's `DensityFunctions.RangeChoice`.
 #[derive(Debug, Clone)]
 pub struct RangeChoice {
     /// Input density function
@@ -214,8 +190,6 @@ pub struct RangeChoice {
 }
 
 /// Choose one of many functions based on ordered input thresholds.
-///
-/// Matches vanilla's `DensityFunctions.IntervalSelect`.
 #[derive(Debug, Clone)]
 pub struct IntervalSelect {
     /// Input density function
@@ -229,8 +203,6 @@ pub struct IntervalSelect {
 }
 
 /// Blended (interpolated) 3D noise.
-///
-/// Matches vanilla's `BlendedNoise`.
 #[derive(Debug, Clone)]
 pub struct BlendedNoise {
     /// XZ scale factor
@@ -248,8 +220,6 @@ pub struct BlendedNoise {
 }
 
 /// Weird scaled sampler (for cave generation).
-///
-/// Matches vanilla's `DensityFunctions.WeirdScaledSampler`.
 #[derive(Debug, Clone)]
 pub struct WeirdScaledSampler {
     /// Input density function
@@ -263,8 +233,6 @@ pub struct WeirdScaledSampler {
 }
 
 /// Blend density (for chunk blending).
-///
-/// Matches vanilla's `DensityFunctions.BlendDensity`.
 #[derive(Debug, Clone)]
 pub struct BlendDensity {
     /// Input density function
@@ -276,7 +244,6 @@ pub struct BlendDensity {
 /// Iterates from an upper bound down to a lower bound in cell-height steps,
 /// evaluating the density function at each Y level. Returns the first Y
 /// where density > 0, or the lower bound if none found.
-/// Matches vanilla's `DensityFunctions.FindTopSurface`.
 #[derive(Debug, Clone)]
 pub struct FindTopSurface {
     /// The density function to evaluate at each Y level.
@@ -290,8 +257,6 @@ pub struct FindTopSurface {
 }
 
 /// The type of cache/marker wrapper.
-///
-/// Matches vanilla's `DensityFunctions.Marker.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkerType {
     /// Interpolated (cell-based interpolation).
@@ -309,7 +274,6 @@ pub enum MarkerType {
 /// A cache/marker wrapper density function.
 ///
 /// These are optimization hints that wrap another density function.
-/// Matches vanilla's `DensityFunctions.Marker`.
 #[derive(Debug, Clone)]
 pub struct Marker {
     /// The marker type
@@ -321,7 +285,6 @@ pub struct Marker {
 /// Cubic spline density function wrapper.
 ///
 /// Wraps an `Arc<CubicSpline>` for spline-based density evaluation.
-/// Matches vanilla's `DensityFunctions.Spline`.
 #[derive(Debug, Clone)]
 pub struct Spline {
     /// The cubic spline.
@@ -329,14 +292,10 @@ pub struct Spline {
 }
 
 /// Blend alpha density function (returns 1.0, placeholder for blending).
-///
-/// Matches vanilla's `DensityFunctions.BlendAlpha`.
 #[derive(Debug, Clone, Copy)]
 pub struct BlendAlpha;
 
 /// Blend offset density function (returns 0.0, placeholder for blending).
-///
-/// Matches vanilla's `DensityFunctions.BlendOffset`.
 #[derive(Debug, Clone, Copy)]
 pub struct BlendOffset;
 

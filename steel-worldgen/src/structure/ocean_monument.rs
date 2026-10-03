@@ -119,7 +119,7 @@ pub enum OceanMonumentChildPieceKind {
     SimpleRoom {
         /// Room snapshot.
         room: OceanMonumentRoomData,
-        /// Vanilla `mainDesign`.
+        /// Index selecting this room's structural design variant.
         main_design: i32,
     },
     /// `OceanMonumentSimpleTopRoom`.
@@ -129,7 +129,7 @@ pub enum OceanMonumentChildPieceKind {
     },
     /// `OceanMonumentWingRoom`.
     WingRoom {
-        /// Vanilla `mainDesign`.
+        /// Index selecting this room's structural design variant.
         main_design: i32,
     },
     /// `OceanMonumentPenthouse`.
