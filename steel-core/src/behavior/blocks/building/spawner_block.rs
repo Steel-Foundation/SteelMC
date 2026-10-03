@@ -20,6 +20,11 @@ pub struct SpawnerBlock {
 }
 
 impl SpawnerBlock {
+    /// Guaranteed experience dropped when a spawner is broken.
+    const BASE_BREAK_EXPERIENCE: i32 = 15;
+    /// Exclusive bound of each of the two random experience bonuses.
+    const BONUS_BREAK_EXPERIENCE_BOUND: i32 = 15;
+
     /// Creates a spawner block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -80,10 +85,10 @@ impl BlockBehavior for SpawnerBlock {
         drop_experience: bool,
     ) {
         if drop_experience {
-            world.pop_experience(
-                pos,
-                15 + rand::random_range(0..15) + rand::random_range(0..15),
-            );
+            let experience = Self::BASE_BREAK_EXPERIENCE
+                + rand::random_range(0..Self::BONUS_BREAK_EXPERIENCE_BOUND)
+                + rand::random_range(0..Self::BONUS_BREAK_EXPERIENCE_BOUND);
+            world.pop_experience(pos, experience);
         }
     }
 }
