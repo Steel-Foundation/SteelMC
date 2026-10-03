@@ -13,13 +13,62 @@ use crate::inventory::{
 
 use super::core::PlayerInventory;
 
-/// Result of swapping a held item with an equipment slot.
+/// Result of preparing a held-item equipment swap at the equip-hook boundary.
 #[derive(Debug, PartialEq)]
+#[must_use]
 pub enum EquipmentSwapResult {
-    /// The swap succeeded. Contains an overflow stack that should be dropped if non-empty.
-    Success(ItemStack),
+    /// Equipment is installed; announce the equip before finishing the swap.
+    Success(PreparedEquipmentSwap),
     /// The swap is blocked by vanilla equipment rules.
     Fail,
+}
+
+/// An installed equipment change whose old stack has not yet been returned.
+#[derive(Debug, PartialEq)]
+#[must_use]
+pub struct PreparedEquipmentSwap {
+    previous: ItemStack,
+    equipped: ItemStack,
+    return_to: EquipmentSwapReturn,
+}
+
+#[derive(Debug, PartialEq)]
+enum EquipmentSwapReturn {
+    Hand(InteractionHand),
+    Inventory,
+    KeepHand,
+}
+
+impl PreparedEquipmentSwap {
+    /// The equipment replaced by this swap.
+    #[must_use]
+    pub const fn previous(&self) -> &ItemStack {
+        &self.previous
+    }
+
+    /// The stack installed before the equip hook.
+    #[must_use]
+    pub const fn equipped(&self) -> &ItemStack {
+        &self.equipped
+    }
+
+    /// Returns old equipment after the equip hook, leaving any overflow for dropping.
+    pub fn finish(self, inventory: &mut PlayerInventory) -> ItemStack {
+        match self.return_to {
+            EquipmentSwapReturn::Hand(hand) => {
+                inventory.set_item_in_hand(hand, self.previous);
+                ItemStack::empty()
+            }
+            EquipmentSwapReturn::Inventory => {
+                let mut overflow = self.previous;
+                if !overflow.is_empty() && inventory.add(&mut overflow) {
+                    overflow = ItemStack::empty();
+                }
+                overflow
+            }
+            EquipmentSwapReturn::KeepHand => ItemStack::empty(),
+        }
+    }
 }
 
 const fn hand_to_equipment_slot(hand: InteractionHand) -> EquipmentSlot {
@@ -181,8 +230,8 @@ impl PlayerInventory {
         true
     }
 
-    /// Attempts to equip the held item into the target equipment slot.
-    pub fn try_swap_with_equipment_slot(
+    /// Installs equipment; run the equip hook unlocked before finishing the swap.
+    pub fn prepare_equipment_swap(
         &mut self,
         hand: InteractionHand,
         slot: EquipmentSlot,
@@ -205,20 +254,31 @@ impl PlayerInventory {
             return EquipmentSwapResult::Fail;
         }
 
-        if in_hand.count() <= 1 {
-            self.swap_single_item_with_equipment_slot(hand, slot, has_infinite_materials);
-            return EquipmentSwapResult::Success(ItemStack::empty());
-        }
-
-        let to_equip = self
-            .get_item_in_hand_mut(hand)
-            .consume_and_return(1, has_infinite_materials);
-        let mut overflow = EntityEquipment::set(self, slot, to_equip);
-        if !overflow.is_empty() && self.add(&mut overflow) {
-            overflow = ItemStack::empty();
-        }
-
-        EquipmentSwapResult::Success(overflow)
+        let single_item = in_hand.count() <= 1;
+        let to_equip = if single_item {
+            if has_infinite_materials {
+                in_hand.copy_with_count(in_hand.count())
+            } else {
+                self.take_item_in_hand(hand)
+            }
+        } else {
+            self.get_item_in_hand_mut(hand)
+                .consume_and_return(1, has_infinite_materials)
+        };
+        let equipped = to_equip.copy_with_count(to_equip.count());
+        let previous = EntityEquipment::set(self, slot, to_equip);
+        let return_to = if !single_item {
+            EquipmentSwapReturn::Inventory
+        } else if has_infinite_materials && previous.is_empty() {
+            EquipmentSwapReturn::KeepHand
+        } else {
+            EquipmentSwapReturn::Hand(hand)
+        };
+        EquipmentSwapResult::Success(PreparedEquipmentSwap {
+            previous,
+            equipped,
+            return_to,
+        })
     }
 
     /// Repairs a random damaged equipped item with `REPAIR_WITH_XP`, returning leftover XP.
@@ -258,28 +318,6 @@ impl PlayerInventory {
                 return 0;
             }
         }
-    }
-
-    fn swap_single_item_with_equipment_slot(
-        &mut self,
-        hand: InteractionHand,
-        slot: EquipmentSlot,
-        has_infinite_materials: bool,
-    ) {
-        if has_infinite_materials {
-            let held = self
-                .get_item_in_hand(hand)
-                .copy_with_count(self.get_item_in_hand(hand).count());
-            let previous = EntityEquipment::set(self, slot, held);
-            if !previous.is_empty() {
-                self.set_item_in_hand(hand, previous);
-            }
-            return;
-        }
-
-        let held = self.take_item_in_hand(hand);
-        let previous = EntityEquipment::set(self, slot, held);
-        self.set_item_in_hand(hand, previous);
     }
 
     fn repair_with_xp_candidate_slots(&self) -> Vec<EquipmentSlot> {

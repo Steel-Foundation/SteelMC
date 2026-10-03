@@ -312,6 +312,14 @@ fn pig_saddle_equip_sound_uses_vanilla_sound() {
         Some("minecraft:entity.pig.saddle".to_owned())
     );
     assert!(LivingEntity::equip_sound(&pig, EquipmentSlot::Head, &saddle).is_none());
+
+    let helmet = ItemStack::new(&vanilla_items::IRON_HELMET);
+    assert_eq!(
+        LivingEntity::equip_sound(&pig, EquipmentSlot::Head, &helmet),
+        LivingEntity::default_equip_sound(&pig, EquipmentSlot::Head, &helmet),
+        "armor on a pig keeps the item's own equip sound"
+    );
+    assert!(LivingEntity::equip_sound(&pig, EquipmentSlot::Head, &helmet).is_some());
 }
 
 #[test]

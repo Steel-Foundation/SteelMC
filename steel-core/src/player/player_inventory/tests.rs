@@ -682,13 +682,13 @@ fn equippable_single_item_moves_to_empty_armor_slot() {
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_HELMET));
 
-    let result = inventory.try_swap_with_equipment_slot(
-        InteractionHand::MainHand,
-        EquipmentSlot::Head,
-        false,
-    );
+    let result =
+        inventory.prepare_equipment_swap(InteractionHand::MainHand, EquipmentSlot::Head, false);
 
-    assert_eq!(result, EquipmentSwapResult::Success(ItemStack::empty()));
+    let EquipmentSwapResult::Success(prepared) = result else {
+        panic!("equipment swap should succeed");
+    };
+    assert!(prepared.finish(&mut inventory).is_empty());
     assert!(inventory.get_selected_item().is_empty());
     assert_eq!(
         inventory.get_ref(EquipmentSlot::Head),
@@ -706,11 +706,8 @@ fn equippable_swap_respects_prevent_armor_change_effect() {
     inventory.set_selected_item(ItemStack::new(&vanilla_items::CARVED_PUMPKIN));
     inventory.set(EquipmentSlot::Head, bound_helmet.copy_with_count(1));
 
-    let result = inventory.try_swap_with_equipment_slot(
-        InteractionHand::MainHand,
-        EquipmentSlot::Head,
-        false,
-    );
+    let result =
+        inventory.prepare_equipment_swap(InteractionHand::MainHand, EquipmentSlot::Head, false);
 
     assert_eq!(result, EquipmentSwapResult::Fail);
     assert_eq!(
@@ -765,13 +762,13 @@ fn equippable_stack_moves_one_item_and_returns_old_equipment_to_inventory() {
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
     );
 
-    let result = inventory.try_swap_with_equipment_slot(
-        InteractionHand::MainHand,
-        EquipmentSlot::Head,
-        false,
-    );
+    let result =
+        inventory.prepare_equipment_swap(InteractionHand::MainHand, EquipmentSlot::Head, false);
 
-    assert_eq!(result, EquipmentSwapResult::Success(ItemStack::empty()));
+    let EquipmentSwapResult::Success(prepared) = result else {
+        panic!("equipment swap should succeed");
+    };
+    assert!(prepared.finish(&mut inventory).is_empty());
     assert_eq!(inventory.get_selected_item().count(), 1);
     assert_eq!(
         inventory.get_ref(EquipmentSlot::Head),

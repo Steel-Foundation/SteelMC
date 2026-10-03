@@ -354,8 +354,11 @@ impl LivingEntity for PigEntity {
         slot == EquipmentSlot::Saddle || Mob::can_pick_up_loot(self)
     }
 
-    fn equip_sound(&self, slot: EquipmentSlot, _stack: &ItemStack) -> Option<SoundEventRef> {
-        (slot == EquipmentSlot::Saddle).then_some(&sound_events::ENTITY_PIG_SADDLE)
+    fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
+        if slot == EquipmentSlot::Saddle {
+            return Some(&sound_events::ENTITY_PIG_SADDLE);
+        }
+        self.default_equip_sound(slot, stack)
     }
 
     fn server_ai_step(&self) {

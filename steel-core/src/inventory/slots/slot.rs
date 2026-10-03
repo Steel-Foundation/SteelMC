@@ -94,6 +94,7 @@ pub trait Slot: ErasedType + Send + Sync {
         guard: &mut ContainerLockGuard,
         stack: ItemStack,
         _previous: &ItemStack,
+        _player: &Player,
     ) {
         self.set_item(guard, stack);
     }
@@ -160,7 +161,7 @@ pub trait Slot: ErasedType + Send + Sync {
         }
 
         if self.get_item(guard).is_empty() {
-            self.set_by_player(guard, ItemStack::empty(), &result);
+            self.set_by_player(guard, ItemStack::empty(), &result, player);
         }
 
         Some(result)
@@ -201,6 +202,7 @@ pub trait Slot: ErasedType + Send + Sync {
         guard: &mut ContainerLockGuard,
         mut input: ItemStack,
         amount: i32,
+        player: &Player,
     ) -> ItemStack {
         if input.is_empty() || !self.may_place(&input) {
             return input;
@@ -215,12 +217,12 @@ pub trait Slot: ErasedType + Send + Sync {
         }
 
         if slot_stack.is_empty() {
-            self.set_by_player(guard, input.split(transferable), &slot_stack);
+            self.set_by_player(guard, input.split(transferable), &slot_stack, player);
         } else if ItemStack::is_same_item_same_components(&slot_stack, &input) {
             input.shrink(transferable);
             let mut new_slot_stack = slot_stack.clone();
             new_slot_stack.grow(transferable);
-            self.set_by_player(guard, new_slot_stack, &slot_stack);
+            self.set_by_player(guard, new_slot_stack, &slot_stack, player);
         }
 
         input
@@ -256,6 +258,7 @@ mod tests {
     use super::*;
     use crate::inventory::slots::normal_slot::NormalSlot;
     use crate::inventory::{container::SimpleContainer, lock::ContainerRef};
+    use crate::test_support::{TestPlayerBuilder, test_world};
 
     struct SafeInsertOverrideSlot {
         base: NormalSlot,
@@ -290,6 +293,7 @@ mod tests {
             _guard: &mut ContainerLockGuard,
             input: ItemStack,
             _amount: i32,
+            _player: &Player,
         ) -> ItemStack {
             self.called.store(true, Ordering::Relaxed);
             input
@@ -321,7 +325,13 @@ mod tests {
         assert!(slot.downcast_ref::<SafeInsertOverrideSlot>().is_some());
         let mut guard = ContainerLockGuard::lock_all(&[container_ref]);
 
-        let remaining = slot.safe_insert(&mut guard, ItemStack::new(&vanilla_items::STONE), 1);
+        let player = TestPlayerBuilder::new(Arc::clone(test_world()), "SlotTester", 1).build();
+        let remaining = slot.safe_insert(
+            &mut guard,
+            ItemStack::new(&vanilla_items::STONE),
+            1,
+            &player,
+        );
 
         assert!(called.load(Ordering::Relaxed));
         assert!(remaining.is(&vanilla_items::STONE));

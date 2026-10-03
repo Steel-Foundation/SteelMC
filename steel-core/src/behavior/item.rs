@@ -93,7 +93,7 @@ pub trait ItemBehavior: Send + Sync {
 
         let slot = equippable.slot;
         let result = context.inv.with_inventory(|inventory| {
-            inventory.try_swap_with_equipment_slot(
+            inventory.prepare_equipment_swap(
                 context.hand,
                 slot,
                 context.player.has_infinite_materials(),
@@ -101,7 +101,13 @@ pub trait ItemBehavior: Send + Sync {
         });
 
         match result {
-            EquipmentSwapResult::Success(overflow) => {
+            EquipmentSwapResult::Success(prepared) => {
+                context
+                    .player
+                    .on_equip_item(slot, prepared.previous(), prepared.equipped());
+                let overflow = context
+                    .inv
+                    .with_inventory(|inventory| prepared.finish(inventory));
                 if !overflow.is_empty() {
                     let _ = context.player.drop_item(overflow, false, false);
                 }
