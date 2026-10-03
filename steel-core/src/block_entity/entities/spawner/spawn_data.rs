@@ -13,7 +13,9 @@ use crate::world::World;
 /// Inclusive light range used by custom spawner rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LightRange {
+    /// Lowest allowed light level.
     pub min: i32,
+    /// Highest allowed light level.
     pub max: i32,
 }
 
@@ -78,7 +80,9 @@ impl LightRange {
 /// Optional light restrictions stored in a spawner's `SpawnData`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CustomSpawnRules {
+    /// Allowed block light range.
     pub block_light_limit: LightRange,
+    /// Allowed sky light range.
     pub sky_light_limit: LightRange,
 }
 
@@ -111,7 +115,9 @@ impl CustomSpawnRules {
 /// Equipment loot-table configuration attached to spawner data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EquipmentTable {
+    /// Loot table used to roll the spawned mob's equipment.
     pub loot_table: Identifier,
+    /// Per-slot drop chances for the rolled equipment.
     pub slot_drop_chances: Vec<(EquipmentSlot, f32)>,
 }
 
@@ -187,15 +193,20 @@ impl EquipmentTable {
 /// One weighted `SpawnPotentials` entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeightedSpawnData {
+    /// Relative selection weight of this entry.
     pub weight: i32,
+    /// Spawn data used when this entry is selected.
     pub data: SpawnData,
 }
 
 /// Entity and optional rules used by a spawner.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpawnData {
+    /// Entity NBT, including its `id`.
     pub entity_to_spawn: NbtCompound,
+    /// Optional light restrictions for the spawn position.
     pub custom_spawn_rules: Option<CustomSpawnRules>,
+    /// Optional equipment loot table for the spawned mob.
     pub equipment: Option<EquipmentTable>,
 }
 
