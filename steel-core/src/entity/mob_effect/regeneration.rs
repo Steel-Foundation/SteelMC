@@ -6,7 +6,7 @@ use crate::world::World;
 
 const HEAL_INTERVAL: i32 = 50;
 
-/// Mirrors vanilla `RegenerationMobEffect`.
+/// Regeneration mob effect behavior.
 pub struct RegenerationBehavior;
 
 impl MobEffectBehavior for RegenerationBehavior {
