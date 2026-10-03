@@ -1,3 +1,4 @@
+use super::tick_overload::TickOverloadGuard;
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
@@ -34,7 +35,7 @@ impl Server {
             worker_threads_for_available(self.config.packet_workers, available_worker_threads());
         let mut packet_handles = Vec::with_capacity(packet_worker_count);
         for worker_id in 0..packet_worker_count {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             packet_handles.push(tokio::spawn(async move {
                 if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
@@ -53,16 +54,16 @@ impl Server {
             }
         };
         let game_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
-            let task_guard = GameTickTaskGuard::new(self.clone(), cancel_token.clone());
+            let task_guard = GameTickTaskGuard::new(Arc::clone(&self), cancel_token.clone());
             tokio::spawn(async move {
                 let _task_guard = task_guard;
                 s.run_game_tick(t).await;
             })
         };
         let chunk_send_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
         };
@@ -181,6 +182,7 @@ impl Server {
             }
         };
         let mut next_tick_time = Instant::now();
+        let mut overload_guard = TickOverloadGuard::new();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
@@ -208,6 +210,7 @@ impl Server {
 
             if should_sprint_this_tick {
                 next_tick_time = Instant::now();
+                overload_guard.restart_report_gap(next_tick_time);
             } else {
                 let now = Instant::now();
                 if now < next_tick_time {
@@ -215,6 +218,12 @@ impl Server {
                         () = cancel_token.cancelled() => break,
                         () = sleep(next_tick_time - now) => {}
                     }
+                } else {
+                    overload_guard.skip_backlog_if_overloaded(
+                        now,
+                        &mut next_tick_time,
+                        nanoseconds_per_tick,
+                    );
                 }
                 next_tick_time += Duration::from_nanos(nanoseconds_per_tick);
             }
@@ -249,7 +258,7 @@ impl Server {
             self.process_player_joins();
 
             {
-                let server = self.clone();
+                let server = Arc::clone(&self);
                 let _ =
                     spawn_blocking(move || server.process_world_changes(tick_count, runs_normally))
                         .await;
@@ -493,7 +502,7 @@ impl Server {
                 break;
             }
 
-            let server = self.clone();
+            let server = Arc::clone(&self);
             let _ = spawn_blocking(move || {
                 server.tick_chunk_sending();
             })

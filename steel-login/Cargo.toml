@@ -8,6 +8,7 @@ authors.workspace = true
 [dependencies]
 # Internal crates
 steel-core.workspace = true
+steel-crypto.workspace = true
 steel-protocol.workspace = true
 steel-registry.workspace = true
 steel-utils.workspace = true
@@ -32,7 +33,6 @@ log.workspace = true
 reqwest.workspace = true
 
 # Cryptography
-rsa.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 rand.workspace = true
@@ -43,6 +43,9 @@ thiserror.workspace = true
 
 # Texts components
 text_components.workspace = true
+
+[dev-dependencies]
+rsa.workspace = true
 
 [lints]
 workspace = true

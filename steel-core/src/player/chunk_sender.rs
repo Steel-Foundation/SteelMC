@@ -413,7 +413,7 @@ impl ChunkSender {
             if let Some(holder) = world
                 .chunk_map
                 .chunks
-                .read_sync(&pos, |_, chunk| chunk.clone())
+                .read_sync(&pos, |_, chunk| Arc::clone(chunk))
                 && holder.published_status() == Some(ChunkStatus::Full)
             {
                 let readiness = holder.ticking_readiness_snapshot();

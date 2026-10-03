@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.15.3+mc26.2"
+version = "0.15.4+mc26.2"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -194,6 +194,8 @@ missing_const_for_fn = "warn"
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "warn"
+clone_on_ref_ptr = "warn"
+cloned_instead_of_copied = "warn"
 
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }
