@@ -1,44 +1,15 @@
-//! Entity-type spawn placement predicates and their central dispatch.
+//! Entity-type spawn placement dispatch.
 
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_entities;
 use steel_utils::{BlockPos, types::Difficulty};
 
-use crate::entity::entities::{ChickenEntity, CowEntity, EndermiteEntity, PigEntity, SheepEntity};
-use crate::entity::{Animal, EntitySpawnReason};
-use crate::world::{LevelReader, World};
+use crate::entity::{ENTITIES, EntitySpawnReason};
+use crate::world::World;
 
-type SpawnRule = fn(&dyn LevelReader, EntitySpawnReason, BlockPos) -> bool;
-
-struct SpawnPlacementRule {
-    entity_type: EntityTypeRef,
-    rule: SpawnRule,
-}
-
-const SPAWN_PLACEMENT_RULES: &[SpawnPlacementRule] = &[
-    SpawnPlacementRule {
-        entity_type: &vanilla_entities::CHICKEN,
-        rule: <ChickenEntity as Animal>::check_animal_spawn_rules,
-    },
-    SpawnPlacementRule {
-        entity_type: &vanilla_entities::COW,
-        rule: <CowEntity as Animal>::check_animal_spawn_rules,
-    },
-    SpawnPlacementRule {
-        entity_type: &vanilla_entities::ENDERMITE,
-        rule: EndermiteEntity::check_endermite_spawn_rules,
-    },
-    SpawnPlacementRule {
-        entity_type: &vanilla_entities::PIG,
-        rule: <PigEntity as Animal>::check_animal_spawn_rules,
-    },
-    SpawnPlacementRule {
-        entity_type: &vanilla_entities::SHEEP,
-        rule: <SheepEntity as Animal>::check_animal_spawn_rules,
-    },
-];
-
-/// Vanilla entity-type spawn-rule dispatch used by normal mob spawners.
+/// Vanilla `SpawnPlacements`.
+///
+/// Predicates are each entity's `SPAWN_RULE`, registered by `#[entity_behavior(spawn_rule)]`.
+/// Placement type and heightmap are not modeled yet because only the spawner path consumes this.
 pub(crate) struct SpawnPlacements;
 
 impl SpawnPlacements {
@@ -52,9 +23,8 @@ impl SpawnPlacements {
             return false;
         }
 
-        SPAWN_PLACEMENT_RULES
-            .iter()
-            .find(|placement| placement.entity_type == entity_type)
-            .is_none_or(|placement| (placement.rule)(world, EntitySpawnReason::Spawner, pos))
+        ENTITIES
+            .spawn_rule(entity_type)
+            .is_none_or(|rule| rule(world, EntitySpawnReason::Spawner, pos))
     }
 }

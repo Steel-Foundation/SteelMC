@@ -20,7 +20,7 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData,
-    LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason,
+    LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason, SpawnRule,
 };
 use crate::physics::MoveResult;
 use crate::world::{LevelReader, World};
@@ -29,7 +29,7 @@ const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const MAX_LIFETIME: i32 = 2400;
 
 /// A hostile endermite entity.
-#[entity_behavior(class = "Endermite")]
+#[entity_behavior(class = "Endermite", spawn_rule)]
 pub struct EndermiteEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -46,6 +46,9 @@ unsafe impl DowncastType for EndermiteEntity {
 }
 
 impl EndermiteEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Endermite.checkEndermiteSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = Self::check_endermite_spawn_rules;
+
     /// Checks the Endermite placement predicate for the spawner-only dispatcher.
     pub(crate) const fn check_endermite_spawn_rules(
         _level: &dyn LevelReader,

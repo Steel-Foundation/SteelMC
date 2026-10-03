@@ -38,7 +38,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData, entity_loot_ref, position_rider_default,
+    PathfinderMob, SpawnGroupData, SpawnRule, entity_loot_ref, position_rider_default,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -119,7 +119,7 @@ impl ChickenState {
 }
 
 /// Vanilla chicken entity.
-#[entity_behavior(class = "Chicken")]
+#[entity_behavior(class = "Chicken", spawn_rule)]
 pub struct ChickenEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -137,6 +137,9 @@ unsafe impl DowncastType for ChickenEntity {
 }
 
 impl ChickenEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = <Self as Animal>::check_animal_spawn_rules;
+
     /// Creates a new chicken at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {

@@ -10,13 +10,15 @@ use simdnbt::borrow::{
 use steel_registry::RegistryExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
+use steel_utils::BlockPos;
 use uuid::Uuid;
 
-use super::generated_entities::register_entity_factories;
+use super::generated_entities::{register_entity_factories, register_spawn_rules};
 use super::{
-    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, SharedEntity, next_entity_id,
+    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, EntitySpawnReason, SharedEntity,
+    next_entity_id,
 };
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// Factory function type for creating entities.
 ///
@@ -29,6 +31,12 @@ pub type EntityFactory = fn(EntityTypeRef, i32, DVec3, Weak<World>) -> SharedEnt
 ///
 /// Takes the entity type and all base entity fields needed for reconstruction.
 pub type EntityLoadFactory = fn(EntityTypeRef, EntityBaseLoad) -> SharedEntity;
+
+/// Spawn placement predicate of an entity type.
+///
+/// The entity type and random source are not passed because no
+/// registered predicate reads them yet.
+pub(crate) type SpawnRule = fn(&dyn LevelReader, EntitySpawnReason, BlockPos) -> bool;
 
 /// Entity load request before the registry assigns a runtime ID.
 pub struct EntityLoadRequest {
@@ -80,9 +88,11 @@ struct EntityEntry {
     factory: Option<EntityFactory>,
     /// Factory function to load instances from disk.
     load_factory: Option<EntityLoadFactory>,
+    /// Vanilla `SpawnPlacements` predicate, absent when vanilla registers none.
+    spawn_rule: Option<SpawnRule>,
 }
 
-/// Registry for entity factories.
+/// Registry for entity factories and spawn rules.
 ///
 /// Maps `EntityType` to factory functions that can create entity instances.
 /// This is used when loading entities from disk or when entities are spawned.
@@ -112,6 +122,7 @@ impl EntityRegistry {
             .map(|_| EntityEntry {
                 factory: None,
                 load_factory: None,
+                spawn_rule: None,
             })
             .collect();
 
@@ -148,6 +159,30 @@ impl EntityRegistry {
             entity_type.key
         );
         self.entries[id].load_factory = Some(factory);
+    }
+
+    /// Registers the spawn placement predicate of an entity type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a spawn rule is already registered for the entity type.
+    pub(crate) fn register_spawn_rule(&mut self, entity_type: EntityTypeRef, rule: SpawnRule) {
+        let id = entity_type.id();
+        assert!(
+            self.entries[id].spawn_rule.is_none(),
+            "spawn rule for {} is already registered",
+            entity_type.key
+        );
+        self.entries[id].spawn_rule = Some(rule);
+    }
+
+    /// Returns the spawn placement predicate of an entity type, if it has one.
+    ///
+    /// Read it through `SpawnPlacements`: registered predicates are only checked
+    /// against vanilla for spawner reasons.
+    #[must_use]
+    pub(super) fn spawn_rule(&self, entity_type: EntityTypeRef) -> Option<SpawnRule> {
+        self.entries.get(entity_type.id())?.spawn_rule
     }
 
     /// Creates a new entity instance.
@@ -261,6 +296,7 @@ pub fn init_entities() {
     ENTITIES.get_or_init(|| {
         let mut registry = EntityRegistry::new();
         register_entity_factories(&mut registry);
+        register_spawn_rules(&mut registry);
         registry
     });
 }

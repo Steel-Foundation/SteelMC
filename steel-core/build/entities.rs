@@ -1,13 +1,14 @@
 //! Code generation for entity factories.
 //!
 //! Scans `src/entity/entities/**/*.rs` for structs annotated with `#[entity_behavior]`,
-//! cross-references with `classes.json`, and generates `register_entity_factories()`.
+//! cross-references with `classes.json`, and generates `register_entity_factories()`
+//! plus `register_spawn_rules()` from the `SPAWN_RULE` of structs that set `spawn_rule`.
 
-use crate::common::{self, JsonArgKind, scan_object_behaviors_with_pattern};
+use crate::common::{self, GeneratedImports, scan_object_behaviors_with_pattern};
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::env;
 
 use crate::to_block_ident;
@@ -25,9 +26,9 @@ pub fn build(entities: &[EntityClass]) -> String {
     let pattern = format!("{manifest_dir}/src/entity/entities/**/*.rs");
     let discovered = scan_object_behaviors_with_pattern(&pattern, "entity_behavior");
 
-    let mut enum_imports: BTreeMap<String, String> = BTreeMap::new();
-    let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
+    let mut imports = GeneratedImports::default();
     let mut registrations = Vec::new();
+    let mut spawn_rules = Vec::new();
     let mut matched_classes = BTreeSet::new();
 
     for entity in entities {
@@ -40,22 +41,7 @@ pub fn build(entities: &[EntityClass]) -> String {
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let entity_type_ident = to_block_ident(&entity.name);
 
-        for field in &info.fields {
-            match &field.kind {
-                JsonArgKind::Enum {
-                    type_name,
-                    module_path,
-                } => {
-                    if let Some(path) = module_path {
-                        enum_imports.insert(type_name.clone(), path.clone());
-                    }
-                }
-                JsonArgKind::Registry(module) => {
-                    registry_modules_used.insert(module.clone());
-                }
-                JsonArgKind::Value | JsonArgKind::IntProvider => {}
-            }
-        }
+        imports.add_fields(&info.fields);
 
         let mut args = Vec::new();
         for field in &info.fields {
@@ -82,6 +68,15 @@ pub fn build(entities: &[EntityClass]) -> String {
         };
 
         registrations.push(registration);
+
+        if info.spawn_rule {
+            spawn_rules.push(quote! {
+                registry.register_spawn_rule(
+                    &vanilla_entities::#entity_type_ident,
+                    #struct_ident::SPAWN_RULE,
+                );
+            });
+        }
     }
 
     for (class_name, info) in &discovered {
@@ -93,28 +88,11 @@ pub fn build(entities: &[EntityClass]) -> String {
         );
     }
 
-    let enum_import_tokens: Vec<_> = enum_imports
-        .iter()
-        .map(|(type_name, module_path)| {
-            let type_ident = Ident::new(type_name, Span::call_site());
-            let path: syn::Path = syn::parse_str(module_path).unwrap_or_else(|_| {
-                panic!("Invalid module path '{module_path}' for enum '{type_name}'")
-            });
-            quote! { use #path::#type_ident; }
-        })
-        .collect();
-
-    let registry_import_tokens: Vec<_> = registry_modules_used
-        .iter()
-        .filter(|module| module.as_str() != "vanilla_entities")
-        .map(|module| {
-            let module_ident = Ident::new(module, Span::call_site());
-            quote! { , #module_ident }
-        })
-        .collect();
+    let enum_import_tokens = imports.enum_import_tokens();
+    let registry_import_tokens = imports.registry_import_tokens("vanilla_entities");
 
     let output = quote! {
-        //! Generated entity factory registrations.
+        //! Generated entity factory and spawn rule registrations.
 
         use std::sync::Arc;
         use steel_registry::{vanilla_entities #(#registry_import_tokens)*};
@@ -128,6 +106,10 @@ pub fn build(entities: &[EntityClass]) -> String {
 
         pub fn register_entity_factories(registry: &mut EntityRegistry) {
             #(#registrations)*
+        }
+
+        pub fn register_spawn_rules(registry: &mut EntityRegistry) {
+            #(#spawn_rules)*
         }
     };
 
