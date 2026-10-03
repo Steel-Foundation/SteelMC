@@ -3,6 +3,7 @@ use super::{
     Identifier, ItemStack, LootContext, LootContextEntity, NumberProvider, NumberProviderRange,
     REGISTRY, RegistryExt, RngExt, TaggedRegistryExt,
 };
+use crate::equipment::EquipmentSlot;
 
 /// A property check for block state conditions.
 #[derive(Debug, Clone)]
@@ -228,7 +229,7 @@ impl LootCondition {
                 unenchanted_chance,
                 enchanted_chance,
             } => {
-                let level = ctx.get_enchantment_level_by_id(enchantment);
+                let level = ctx.get_attacking_entity_enchantment_level(enchantment);
                 let effective_chance = if level > 0 {
                     match enchanted_chance {
                         EnchantedChance::Constant(c) => *c,
@@ -430,16 +431,14 @@ impl EntityFlags {
 impl EntityEquipment {
     fn test<R: rand::Rng>(
         &self,
-        equipment: Option<&EntityEquipmentRef<'_>>,
+        equipment: Option<EntityEquipmentRef<'_>>,
         ctx: &LootContext<'_, R>,
     ) -> bool {
-        let has_predicate = self.mainhand.is_some()
-            || self.offhand.is_some()
-            || self.head.is_some()
-            || self.chest.is_some()
-            || self.legs.is_some()
-            || self.feet.is_some();
-        if !has_predicate {
+        let slot_predicates = self.slot_predicates();
+        if slot_predicates
+            .iter()
+            .all(|(_, predicate)| predicate.is_none())
+        {
             return true;
         }
 
@@ -447,27 +446,21 @@ impl EntityEquipment {
             return false;
         };
 
-        slot_predicate_matches(&self.mainhand, equipment.mainhand, ctx)
-            && slot_predicate_matches(&self.offhand, equipment.offhand, ctx)
-            && slot_predicate_matches(&self.head, equipment.head, ctx)
-            && slot_predicate_matches(&self.chest, equipment.chest, ctx)
-            && slot_predicate_matches(&self.legs, equipment.legs, ctx)
-            && slot_predicate_matches(&self.feet, equipment.feet, ctx)
+        slot_predicates.into_iter().all(|(slot, predicate)| {
+            predicate.is_none_or(|predicate| predicate.test(equipment.get(slot), ctx))
+        })
     }
-}
 
-fn slot_predicate_matches<R: rand::Rng>(
-    predicate: &Option<ToolPredicate>,
-    item_stack: Option<&ItemStack>,
-    ctx: &LootContext<'_, R>,
-) -> bool {
-    let Some(predicate) = predicate else {
-        return true;
-    };
-    let Some(item_stack) = item_stack else {
-        return false;
-    };
-    predicate.test(item_stack, ctx)
+    const fn slot_predicates(&self) -> [(EquipmentSlot, Option<&ToolPredicate>); 6] {
+        [
+            (EquipmentSlot::MainHand, self.mainhand.as_ref()),
+            (EquipmentSlot::OffHand, self.offhand.as_ref()),
+            (EquipmentSlot::Head, self.head.as_ref()),
+            (EquipmentSlot::Chest, self.chest.as_ref()),
+            (EquipmentSlot::Legs, self.legs.as_ref()),
+            (EquipmentSlot::Feet, self.feet.as_ref()),
+        ]
+    }
 }
 
 impl DamageSourcePredicate {

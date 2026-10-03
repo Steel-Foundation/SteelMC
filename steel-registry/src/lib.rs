@@ -11,7 +11,6 @@
     clippy::match_same_arms,
     clippy::missing_fields_in_debug,
     clippy::missing_panics_doc,
-    clippy::ref_option,
     clippy::return_self_not_must_use,
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,

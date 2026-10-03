@@ -1,4 +1,5 @@
-use super::{BlockStateId, DyeColor, Identifier, ItemStack, RngExt};
+use super::{BlockStateId, DyeColor, Identifier, ItemStack, REGISTRY, RegistryExt, RngExt};
+use crate::equipment::EquipmentSlot;
 
 /// Entity target for loot context lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,8 +286,8 @@ pub struct EntityRef<'a> {
     pub entity_type: Option<&'a Identifier>,
     /// Entity flags for predicate checking.
     pub flags: EntityRefFlags,
-    /// Equipment slots for equipment predicates.
-    pub equipment: Option<&'a EntityEquipmentRef<'a>>,
+    /// Equipment slots for equipment predicates. `None` for non-living entities.
+    pub equipment: Option<EntityEquipmentRef<'a>>,
     /// Entity name (for `copy_name` function).
     pub custom_name: Option<&'a str>,
     /// Vanilla `minecraft:components.sheep/color` entity data component.
@@ -308,15 +309,38 @@ pub struct EntityRefFlags {
     pub is_baby: bool,
 }
 
-/// Equipment references for an entity.
+/// One item stack per equipment slot, indexed by [`EquipmentSlot::index`].
+pub type EntityEquipmentSlots = [ItemStack; EquipmentSlot::ALL.len()];
+
+/// Every equipment slot of a living entity.
 #[derive(Debug, Clone, Copy)]
-pub struct EntityEquipmentRef<'a> {
-    pub mainhand: Option<&'a ItemStack>,
-    pub offhand: Option<&'a ItemStack>,
-    pub head: Option<&'a ItemStack>,
-    pub chest: Option<&'a ItemStack>,
-    pub legs: Option<&'a ItemStack>,
-    pub feet: Option<&'a ItemStack>,
+pub struct EntityEquipmentRef<'a>(&'a EntityEquipmentSlots);
+
+impl<'a> EntityEquipmentRef<'a> {
+    #[must_use]
+    pub const fn new(slots: &'a EntityEquipmentSlots) -> Self {
+        Self(slots)
+    }
+
+    /// Vanilla `LivingEntity.getItemBySlot`.
+    #[must_use]
+    pub const fn get(self, slot: EquipmentSlot) -> &'a ItemStack {
+        &self.0[slot.index()]
+    }
+
+    /// Vanilla `EnchantmentHelper.getEnchantmentLevel(Holder<Enchantment>, LivingEntity)`.
+    #[must_use]
+    pub fn get_enchantment_level(self, enchantment: &Identifier) -> i32 {
+        let Some(definition) = REGISTRY.enchantments.by_key(enchantment) else {
+            return 0;
+        };
+        EquipmentSlot::ALL
+            .into_iter()
+            .filter(|slot| definition.matching_slot(*slot))
+            .map(|slot| self.get(slot).get_enchantment_level(enchantment))
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 /// Damage source information for loot context.
@@ -474,6 +498,15 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
     pub fn get_enchantment_level_by_id(&self, enchantment: &Identifier) -> i32 {
         self.tool
             .map_or(0, |t| t.get_enchantment_level(enchantment))
+    }
+
+    /// Get the level of an enchantment on the attacking entity's equipment, as vanilla reads
+    /// `LootContextParams.ATTACKING_ENTITY`.
+    #[must_use]
+    pub fn get_attacking_entity_enchantment_level(&self, enchantment: &Identifier) -> i32 {
+        self.killer_entity
+            .and_then(|entity| entity.equipment)
+            .map_or(0, |equipment| equipment.get_enchantment_level(enchantment))
     }
 
     /// Get an entity reference by target.

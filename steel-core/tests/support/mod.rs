@@ -6,16 +6,20 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
+use steel_registry::data_components::vanilla_components::ENCHANTMENTS;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{
-    init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
+    init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_entities,
+    vanilla_fluids,
 };
 use steel_utils::types::{Difficulty, GameType, UpdateFlags};
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Identifier, WorldAabb};
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
@@ -38,6 +42,9 @@ mod player;
 
 pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
+
+/// Edge length of the cube searched for dropped items in tests.
+pub(crate) const DROPPED_ITEM_SEARCH_SIZE: f64 = 3.0;
 
 pub(crate) struct TestEntity {
     base: EntityBase,
@@ -82,6 +89,34 @@ impl Entity for TestEntity {
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| create_test_world("test"))
+}
+
+pub(crate) fn enchanted_item(item: ItemRef, enchantment: Identifier, level: u32) -> ItemStack {
+    with_enchantment(ItemStack::new(item), enchantment, level)
+}
+
+pub(crate) fn with_enchantment(
+    mut stack: ItemStack,
+    enchantment: Identifier,
+    level: u32,
+) -> ItemStack {
+    let mut enchantments = stack.get_enchantments().cloned().unwrap_or_default();
+    enchantments.set(enchantment, level);
+    stack.set(ENCHANTMENTS, enchantments);
+    stack
+}
+
+/// Returns the dropped item entities within [`DROPPED_ITEM_SEARCH_SIZE`] of `center`.
+pub(crate) fn dropped_items(world: &World, center: DVec3) -> Vec<SharedEntity> {
+    world.get_entities_in_aabb_matching(
+        &WorldAabb::of_size(
+            center,
+            DROPPED_ITEM_SEARCH_SIZE,
+            DROPPED_ITEM_SEARCH_SIZE,
+            DROPPED_ITEM_SEARCH_SIZE,
+        ),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    )
 }
 
 pub(crate) fn fresh_test_world(key: &'static str) -> Arc<World> {

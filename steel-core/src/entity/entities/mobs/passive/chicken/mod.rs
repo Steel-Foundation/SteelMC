@@ -38,7 +38,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData, entity_loot_ref, position_rider_default,
+    PathfinderMob, SpawnGroupData, entity_loot_ref, living_loot_equipment, position_rider_default,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -382,10 +382,11 @@ impl ChickenEntity {
     fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
         let position = self.position();
         let mut rng = rand::rng();
+        let equipment = living_loot_equipment(self);
         // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
         let mut context = LootContext::new(&mut rng)
             .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self));
+            .with_this_entity(entity_loot_ref(self, Some(&equipment)));
 
         let items = loot_table.get_random_items(&mut context);
         let dropped_any = !items.is_empty();
