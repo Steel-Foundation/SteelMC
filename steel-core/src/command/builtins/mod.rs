@@ -186,7 +186,8 @@ mod tests {
                 "version",
                 "weather",
                 "worldborder",
-                "invsee"
+                "invsee",
+                "transfer"
             ]
         );
 
