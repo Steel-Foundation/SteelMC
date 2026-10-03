@@ -140,7 +140,7 @@ impl RespawnAnchorBlock {
         state.get_value(CHARGES) > 0
     }
 
-    fn can_be_charged(state: BlockStateId) -> bool {
+    pub(crate) fn can_be_charged(state: BlockStateId) -> bool {
         state.get_value(CHARGES) < Self::MAX_CHARGES
     }
 
@@ -160,7 +160,12 @@ impl RespawnAnchorBlock {
             .is(&vanilla_items::GLOWSTONE)
     }
 
-    fn charge(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+    pub(crate) fn charge(
+        source: Option<&dyn Entity>,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) {
         let charges = state.get_value(CHARGES);
         let charged_state = state.set_value(CHARGES, charges + 1);
         world.set_block(pos, charged_state, UpdateFlags::UPDATE_ALL);

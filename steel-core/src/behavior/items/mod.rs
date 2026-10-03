@@ -52,6 +52,7 @@ pub use bed_item::BedItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
 pub use bottle::BottleItem;
+pub(crate) use bottle::water_potion_stack;
 pub use brush::BrushItem;
 pub use bucket::BucketItem;
 pub use compass::CompassItem;
