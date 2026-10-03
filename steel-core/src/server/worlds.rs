@@ -82,7 +82,10 @@ impl WorldMap {
     }
 
     /// Publishes one simulation increment for every domain before any worker dispatch.
-    pub(crate) fn advance_domain_game_times(&self) {
+    ///
+    /// # Panics
+    /// Panics if a validated domain primary world is missing from the map.
+    pub fn advance_domain_game_times(&self) {
         for key in self.default_worlds.values() {
             let Some(primary) = self.worlds.get(key) else {
                 panic!("validated domain primary is missing: {key}");

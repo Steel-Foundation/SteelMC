@@ -513,7 +513,7 @@ impl World {
     }
 
     /// Recomputes a state against all neighbors in vanilla shape-update order.
-    pub(crate) fn update_from_neighbor_shapes(
+    pub fn update_from_neighbor_shapes(
         self: &Arc<Self>,
         state: BlockStateId,
         pos: BlockPos,
