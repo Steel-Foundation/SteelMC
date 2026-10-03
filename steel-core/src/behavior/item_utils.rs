@@ -9,7 +9,6 @@ use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 
-/// Vanilla `Item.getPlayerPOVHitResult`.
 #[must_use]
 pub(crate) fn get_player_pov_hit_result(
     world: &World,
@@ -28,7 +27,6 @@ pub(crate) fn get_player_pov_hit_result(
     }
 }
 
-/// Applies vanilla `ItemUtils.createFilledResult`.
 pub(crate) fn create_filled_result(
     context: &UseItemContext,
     result_stack: ItemStack,

@@ -1824,7 +1824,7 @@ impl FullChunkRef<'_> {
         section_guard.states.get(local_x, local_y, local_z)
     }
 
-    /// Mirrors vanilla `ChunkAccess.getHighestFilledSectionIndex`.
+    /// Returns the index of the highest filled section in this chunk, if any.
     #[must_use]
     pub fn highest_filled_section_index(&self) -> Option<usize> {
         self.chunk
@@ -1834,7 +1834,7 @@ impl FullChunkRef<'_> {
             .rposition(|section| !section.read().is_empty())
     }
 
-    /// Mirrors vanilla `ChunkAccess.getHighestSectionPosition`.
+    /// Returns the Y coordinate of the highest filled section in this chunk.
     #[must_use]
     pub fn highest_section_position(&self) -> i32 {
         self.highest_filled_section_index()

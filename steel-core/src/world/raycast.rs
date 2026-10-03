@@ -177,7 +177,8 @@ impl World {
         Self::clip_miss(start_pos, end_pos)
     }
 
-    /// Performs vanilla `CollisionGetter.clipIncludingBorder`.
+    /// Performs a normal ray clip, then clamps the hit to the world border if
+    /// the ray started inside it but the hit landed outside.
     #[must_use]
     pub fn clip_including_border(
         &self,
