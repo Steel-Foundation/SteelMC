@@ -169,10 +169,10 @@ fn unsupported_spawn_data_delays_and_reselects_without_inserting() {
 }
 
 #[test]
-fn weighted_selection_uses_only_positive_weights_and_preserves_order() {
+fn weighted_selection_skips_zero_weights_and_preserves_order() {
     let entries = [
         WeightedSpawnData {
-            weight: -10,
+            weight: 0,
             data: spawn_data("minecraft:pig"),
         },
         WeightedSpawnData {
