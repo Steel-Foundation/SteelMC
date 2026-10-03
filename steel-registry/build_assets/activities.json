@@ -1,0 +1,106 @@
+[
+  {
+    "id": 0,
+    "key": "minecraft:core"
+  },
+  {
+    "id": 1,
+    "key": "minecraft:idle"
+  },
+  {
+    "id": 2,
+    "key": "minecraft:work"
+  },
+  {
+    "id": 3,
+    "key": "minecraft:play"
+  },
+  {
+    "id": 4,
+    "key": "minecraft:rest"
+  },
+  {
+    "id": 5,
+    "key": "minecraft:meet"
+  },
+  {
+    "id": 6,
+    "key": "minecraft:panic"
+  },
+  {
+    "id": 7,
+    "key": "minecraft:raid"
+  },
+  {
+    "id": 8,
+    "key": "minecraft:pre_raid"
+  },
+  {
+    "id": 9,
+    "key": "minecraft:hide"
+  },
+  {
+    "id": 10,
+    "key": "minecraft:fight"
+  },
+  {
+    "id": 11,
+    "key": "minecraft:celebrate"
+  },
+  {
+    "id": 12,
+    "key": "minecraft:admire_item"
+  },
+  {
+    "id": 13,
+    "key": "minecraft:avoid"
+  },
+  {
+    "id": 14,
+    "key": "minecraft:ride"
+  },
+  {
+    "id": 15,
+    "key": "minecraft:play_dead"
+  },
+  {
+    "id": 16,
+    "key": "minecraft:long_jump"
+  },
+  {
+    "id": 17,
+    "key": "minecraft:ram"
+  },
+  {
+    "id": 18,
+    "key": "minecraft:tongue"
+  },
+  {
+    "id": 19,
+    "key": "minecraft:swim"
+  },
+  {
+    "id": 20,
+    "key": "minecraft:lay_spawn"
+  },
+  {
+    "id": 21,
+    "key": "minecraft:sniff"
+  },
+  {
+    "id": 22,
+    "key": "minecraft:investigate"
+  },
+  {
+    "id": 23,
+    "key": "minecraft:roar"
+  },
+  {
+    "id": 24,
+    "key": "minecraft:emerge"
+  },
+  {
+    "id": 25,
+    "key": "minecraft:dig"
+  }
+]
