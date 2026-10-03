@@ -185,6 +185,17 @@ fn parse_name_or_uuid_value(name: String) -> Result<EntitySelector, SelectorPars
     ))
 }
 
+/// Whether `ch` is a valid vanilla selector type letter (the character right
+/// after `@`).
+///
+/// Exposed so message-argument scanning can tell, without attempting a full
+/// selector parse, whether a bare `@` starts a selector at all - matching
+/// vanilla's lenient treatment of `@` followed by anything else as literal
+/// text instead of a syntax error.
+pub(crate) const fn is_selector_type_letter(ch: char) -> bool {
+    matches!(ch, 'a' | 'e' | 'n' | 'p' | 'r' | 's')
+}
+
 fn parse_selector_type(
     reader: &mut SelectorReader<'_>,
     allow_advanced_selectors: bool,
