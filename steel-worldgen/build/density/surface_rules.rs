@@ -7,7 +7,7 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
-use std::{mem, slice};
+use std::slice;
 
 // ── JSON types ──────────────────────────────────────────────────────────────
 
@@ -139,6 +139,8 @@ pub struct SurfaceRuleTranspiler {
     pub block_state_names: Vec<String>,
     /// Whether generated conditions read `ctx.biome_id` directly or indirectly.
     pub uses_biome: bool,
+    /// Distinct `biome_is` sets tested by the rule, as biome keys.
+    pub biome_sets: Vec<Vec<String>>,
     /// Whether generated conditions use `ctx.min_surface_level`.
     pub uses_preliminary_surface: bool,
     /// Whether generated conditions use `ctx.surface_secondary`.
@@ -158,6 +160,7 @@ impl SurfaceRuleTranspiler {
             gradient_ids: Vec::new(),
             block_state_names: Vec::new(),
             uses_biome: false,
+            biome_sets: Vec::new(),
             uses_preliminary_surface,
             uses_surface_secondary: false,
             uses_steep: false,
@@ -259,6 +262,14 @@ impl SurfaceRuleTranspiler {
             }
             SurfaceConditionJson::BiomeIs { biome_is } => {
                 self.uses_biome = true;
+                let set: Vec<String> = biome_is
+                    .as_slice()
+                    .iter()
+                    .map(|b| b.as_str().to_owned())
+                    .collect();
+                if !self.biome_sets.contains(&set) {
+                    self.biome_sets.push(set);
+                }
                 let checks: Vec<_> = biome_is
                     .as_slice()
                     .iter()
@@ -401,6 +412,81 @@ impl SurfaceRuleTranspiler {
     }
 }
 
+impl SurfaceRuleTranspiler {
+    /// Emit the rule as a `PartialSurfaceRule`, keeping only conditions
+    /// decidable from Y and biome below the preliminary surface. Must run after
+    /// [`Self::transpile_rule`], whose block and biome-set indices it reuses.
+    fn partial_rule(&self, rule: &SurfaceRuleJson) -> TokenStream {
+        let path = quote! { steel_worldgen::surface_partial::PartialSurfaceRule };
+        match rule {
+            SurfaceRuleJson::Block { result_state } => {
+                let name = result_state.name.as_str();
+                let Some(index) = self.block_state_names.iter().position(|n| n == name) else {
+                    panic!("surface rule block {name} was not transpiled");
+                };
+                quote! { #path::Block(#index) }
+            }
+            SurfaceRuleJson::Sequence { sequence } => {
+                let rules = sequence.iter().map(|rule| self.partial_rule(rule));
+                quote! { #path::Sequence(&[#(#rules),*]) }
+            }
+            SurfaceRuleJson::Condition { if_true, then_run } => {
+                let condition = self.partial_condition(if_true);
+                let then_run = self.partial_rule(then_run);
+                quote! { #path::Condition(#condition, &#then_run) }
+            }
+            SurfaceRuleJson::Bandlands {} => quote! { #path::Opaque },
+        }
+    }
+
+    fn partial_condition(&self, condition: &SurfaceConditionJson) -> TokenStream {
+        let path = quote! { steel_worldgen::surface_partial::PartialSurfaceCondition };
+        match condition {
+            SurfaceConditionJson::AbovePreliminarySurface {} => {
+                quote! { #path::AbovePreliminarySurface }
+            }
+            SurfaceConditionJson::BiomeIs { biome_is } => {
+                let set: Vec<String> = biome_is
+                    .as_slice()
+                    .iter()
+                    .map(|b| b.as_str().to_owned())
+                    .collect();
+                let Some(index) = self.biome_sets.iter().position(|s| *s == set) else {
+                    panic!("surface rule biome set {set:?} was not transpiled");
+                };
+                quote! { #path::BiomeSet(#index) }
+            }
+            SurfaceConditionJson::VerticalGradient {
+                true_at_and_below,
+                false_at_and_above,
+                ..
+            } => {
+                let true_y = self.resolve_anchor(true_at_and_below);
+                let false_y = self.resolve_anchor(false_at_and_above);
+                quote! {
+                    #path::VerticalGradient {
+                        true_at_and_below: #true_y,
+                        false_at_and_above: #false_y,
+                    }
+                }
+            }
+            SurfaceConditionJson::YAbove {
+                anchor,
+                surface_depth_multiplier: 0,
+                add_stone_depth: false,
+            } => {
+                let anchor_y = self.resolve_anchor(anchor);
+                quote! { #path::YAtLeast(#anchor_y) }
+            }
+            SurfaceConditionJson::Not { invert } => {
+                let inner = self.partial_condition(invert);
+                quote! { #path::Not(&#inner) }
+            }
+            _ => quote! { #path::Opaque },
+        }
+    }
+}
+
 fn rule_uses_preliminary_surface(rule: &SurfaceRuleJson) -> bool {
     match rule {
         SurfaceRuleJson::Block { .. } | SurfaceRuleJson::Bandlands {} => false,
@@ -429,35 +515,36 @@ fn condition_uses_preliminary_surface(condition: &SurfaceConditionJson) -> bool 
     }
 }
 
-/// Generate the complete `try_apply_surface_rule` function for a dimension.
-///
-/// Returns the function token stream, condition noise IDs, and returned block states.
-type SurfaceRuleFunctionArtifacts = (
-    TokenStream,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    bool,
-    bool,
-    bool,
-    bool,
-);
+/// Output of transpiling one dimension's surface rule.
+pub struct SurfaceRuleArtifacts {
+    /// The generated `apply_surface_rule_impl` function.
+    pub func: TokenStream,
+    /// Condition noise IDs, in the order the generated code indexes them.
+    pub noise_ids: Vec<String>,
+    /// Vertical-gradient random IDs.
+    pub gradient_ids: Vec<String>,
+    /// Block states returned by the rule.
+    pub block_state_names: Vec<String>,
+    /// Distinct `biome_is` sets tested by the rule.
+    pub biome_sets: Vec<Vec<String>>,
+    /// The rule as a `PartialSurfaceRule` expression.
+    pub partial_rule: TokenStream,
+    pub uses_biome: bool,
+    pub uses_preliminary_surface: bool,
+    pub uses_surface_secondary: bool,
+    pub uses_steep: bool,
+}
 
+/// Generate the complete `try_apply_surface_rule` function for a dimension.
 pub fn generate_surface_rule_function(
     rule: &SurfaceRuleJson,
     min_y: i32,
     height: i32,
-) -> SurfaceRuleFunctionArtifacts {
+) -> SurfaceRuleArtifacts {
     let uses_preliminary_surface = rule_uses_preliminary_surface(rule);
     let mut transpiler = SurfaceRuleTranspiler::new(min_y, height, uses_preliminary_surface);
     let body = transpiler.transpile_rule(rule);
-    let noise_ids = mem::take(&mut transpiler.noise_ids);
-    let gradient_ids = mem::take(&mut transpiler.gradient_ids);
-    let block_state_names = mem::take(&mut transpiler.block_state_names);
-    let uses_biome = transpiler.uses_biome;
-    let uses_preliminary_surface = transpiler.uses_preliminary_surface;
-    let uses_surface_secondary = transpiler.uses_surface_secondary;
-    let uses_steep = transpiler.uses_steep;
+    let partial_rule = transpiler.partial_rule(rule);
 
     let func = quote! {
         /// Apply this dimension's surface rule at the current context position.
@@ -470,14 +557,16 @@ pub fn generate_surface_rule_function(
         }
     };
 
-    (
+    SurfaceRuleArtifacts {
         func,
-        noise_ids,
-        gradient_ids,
-        block_state_names,
-        uses_biome,
-        uses_preliminary_surface,
-        uses_surface_secondary,
-        uses_steep,
-    )
+        noise_ids: transpiler.noise_ids,
+        gradient_ids: transpiler.gradient_ids,
+        block_state_names: transpiler.block_state_names,
+        biome_sets: transpiler.biome_sets,
+        partial_rule,
+        uses_biome: transpiler.uses_biome,
+        uses_preliminary_surface: transpiler.uses_preliminary_surface,
+        uses_surface_secondary: transpiler.uses_surface_secondary,
+        uses_steep: transpiler.uses_steep,
+    }
 }

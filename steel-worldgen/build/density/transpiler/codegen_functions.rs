@@ -19,6 +19,7 @@ use super::naming::{
     named_fn_ident, named_fn_ident_4x, router_cache_field_ident, router_compute_fn_ident,
     sanitize_name,
 };
+use super::nonpositive::final_density_nonpositive_channels;
 
 impl TranspileContext {
     pub(super) fn gen_named_functions(&mut self, input: &TranspilerInput) -> TokenStream {
@@ -253,6 +254,18 @@ impl TranspileContext {
             quote! { 0.0 }
         };
         let combine_fd_splines = mem::take(&mut self.spline_fns);
+        let nonpositive_channels = entries
+            .get("final_density")
+            .and_then(|info| {
+                final_density_nonpositive_channels(&info.df, &input.registry, info.start)
+            })
+            .map_or_else(
+                || quote! { None },
+                |channels| {
+                    let channels = channels.iter().map(|&c| Literal::usize_unsuffixed(c));
+                    quote! { Some(&[#(#channels),*]) }
+                },
+            );
 
         // Phase 4: Generate combine functions for vein entries
         let combine_vein_toggle_body = if let Some(info) = entries.get("vein_toggle") {
@@ -294,6 +307,10 @@ impl TranspileContext {
 
             /// Whether vein functions have interpolation channels.
             pub const VEIN_INTERP_ENABLED: bool = #has_vein_interp_tok;
+
+            /// Channels that, when `<= 0` at all 8 corners of a cell, prove the
+            /// interpolated final density is not positive anywhere in the cell.
+            pub const FINAL_DENSITY_NONPOSITIVE_CHANNELS: Option<&[usize]> = #nonpositive_channels;
 
             /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
             ///

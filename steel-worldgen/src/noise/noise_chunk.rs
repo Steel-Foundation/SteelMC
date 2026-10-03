@@ -12,10 +12,12 @@
 use std::marker::PhantomData;
 use std::simd::f64x4;
 
+use glam::IVec3;
+
 use steel_math::lerp;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::noise::Beardifier;
+use crate::noise::{Beardifier, CornerColumnStore};
 
 /// Maximum number of interpolation channels supported.
 /// Overworld uses 8 (1 terrain + 4 noodle caves + 3 vein channels), nether/end use 1.
@@ -156,10 +158,14 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         first_cell_z: i32,
         noises: &N,
         cache: &mut N::ColumnCache,
+        corner_columns: &CornerColumnStore,
     ) {
         let cell_width = N::Settings::CELL_WIDTH;
 
         let block_x = cell_x * cell_width;
+        // Chunks sharing a corner column: two across each chunk boundary it lies on.
+        let chunk_boundary = |cell: i32| cell.rem_euclid(cell_count_xz as i32) == 0;
+        let x_users: u8 = if chunk_boundary(cell_x) { 2 } else { 1 };
 
         let mut values = [0.0f64; MAX_INTERP];
 
@@ -170,6 +176,25 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         for cz in 0..=cell_count_xz {
             let cell_z = first_cell_z + cz as i32;
             let block_z = cell_z * cell_width;
+            let users = x_users * if chunk_boundary(cell_z) { 2 } else { 1 };
+            let column_base = cz * corners_y * MAX_INTERP;
+            let column_len = corners_y * MAX_INTERP;
+
+            if users > 1
+                && corner_columns.consume((cell_x, cell_z), |values| {
+                    let column = &mut slice[column_base..column_base + column_len];
+                    for (corner, stored) in column
+                        .as_chunks_mut::<MAX_INTERP>()
+                        .0
+                        .iter_mut()
+                        .zip(values.chunks_exact(interp_count))
+                    {
+                        corner[..interp_count].copy_from_slice(stored);
+                    }
+                })
+            {
+                continue;
+            }
 
             // Ensure column cache for this (x, z)
             cache.ensure(block_x, block_z, noises);
@@ -232,6 +257,18 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
                 cy += 1;
             }
+
+            if users > 1 {
+                corner_columns.produce((cell_x, cell_z), users, || {
+                    slice[column_base..column_base + column_len]
+                        .as_chunks::<MAX_INTERP>()
+                        .0
+                        .iter()
+                        .flat_map(|corner| &corner[..interp_count])
+                        .copied()
+                        .collect()
+                });
+            }
         }
     }
 
@@ -241,6 +278,12 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     /// 1. Trilinearly interpolate each channel independently from cell corners
     /// 2. Apply outer operations (squeeze, min, etc.) via `combine_interpolated`
     /// 3. Call `place_block` with the final density
+    ///
+    /// Cells at or above `unsampled_air_min_y` whose proving channels
+    /// ([`DimensionNoises::final_density_nonpositive_channels`]) are `<= 0` at
+    /// all 8 corners, and that the beardifier cannot reach, are skipped without
+    /// calling `place_block`: every block in them has a non-positive density,
+    /// which the caller guarantees places nothing and changes no state there.
     #[expect(
         clippy::too_many_lines,
         reason = "single SIMD trilinear-interpolation kernel; splitting the loop nest would scatter the per-corner SAFETY invariants"
@@ -254,6 +297,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         noises: &N,
         cache: &mut N::ColumnCache,
         beardifier: Option<&Beardifier>,
+        unsampled_air_min_y: i32,
+        corner_columns: &CornerColumnStore,
         mut place_block: F,
     ) where
         F: FnMut(usize, i32, usize, f64, &[f64], &mut N::ColumnCache),
@@ -290,6 +335,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 first_cell_z,
                 noises,
                 cache,
+                corner_columns,
             );
         }
 
@@ -311,6 +357,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         // channels don't over-allocate.
         let mut scratch = vec![0.0f64; column_len * interp_count * 2];
         let (d0_col, d1_col) = scratch.split_at_mut(column_len * interp_count);
+        let air_channels = N::final_density_nonpositive_channels();
+        let mut air_cells = vec![false; cell_count_y];
 
         for cell_x_idx in 0..cell_count_xz {
             // Borrow both bounding slices once per cell-x strip.
@@ -321,6 +369,32 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 let z0_base = cell_z_idx * corners_y;
                 let z1_base = (cell_z_idx + 1) * corners_y;
 
+                let cell_min_x = (self.first_cell_x + cell_x_idx as i32) * cell_width;
+                let cell_min_z = (self.first_cell_z + cell_z_idx as i32) * cell_width;
+                for (cell_y_idx, air) in air_cells.iter_mut().enumerate() {
+                    let cell_min_world_y = (self.cell_min_y + cell_y_idx as i32) * cell_height;
+                    *air = air_channels.is_some_and(|channels| {
+                        cell_min_world_y >= unsampled_air_min_y
+                            && !beardifier.is_some_and(|beard| {
+                                beard.may_affect(
+                                    IVec3::new(cell_min_x, cell_min_world_y, cell_min_z),
+                                    IVec3::new(
+                                        cell_min_x + cell_width - 1,
+                                        cell_min_world_y + cell_height - 1,
+                                        cell_min_z + cell_width - 1,
+                                    ),
+                                )
+                            })
+                            && channels.iter().all(|&ch| {
+                                let i0 = (z0_base + cell_y_idx) * MAX_INTERP + ch;
+                                let i1 = (z1_base + cell_y_idx) * MAX_INTERP + ch;
+                                [i0, i0 + MAX_INTERP, i1, i1 + MAX_INTERP]
+                                    .into_iter()
+                                    .all(|i| s0[i] <= 0.0 && s1[i] <= 0.0)
+                            })
+                    });
+                }
+
                 for x_in_cell in 0..cell_width {
                     let factor_x = f64::from(x_in_cell) / f64::from(cell_width);
                     let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
@@ -329,7 +403,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     // Stage A: y-stage + x-stage partials for the whole
                     // column. Neither depends on `factor_z`, so the results
                     // are reused by all four z columns below.
-                    for cell_y_idx in 0..cell_count_y {
+                    for (cell_y_idx, &air) in air_cells.iter().enumerate() {
+                        if air {
+                            continue;
+                        }
                         let i0_base = (z0_base + cell_y_idx) * MAX_INTERP;
                         let i1_base = (z1_base + cell_y_idx) * MAX_INTERP;
                         let i0_next = i0_base + MAX_INTERP;
@@ -436,6 +513,9 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                             + self.first_cell_x * cell_width;
 
                         for cell_y_idx in (0..cell_count_y).rev() {
+                            if air_cells[cell_y_idx] {
+                                continue;
+                            }
                             let world_y = (self.cell_min_y + cell_y_idx as i32) * cell_height;
 
                             for y_in_cell in (0..cell_height).rev() {
@@ -498,5 +578,135 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             // No swap needed: all slices are pre-filled and indexed directly
             // via `self.slices[cell_x_idx]` / `[cell_x_idx + 1]`.
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::random::{Random, legacy_random::LegacyRandom, xoroshiro::Xoroshiro};
+
+    use super::NoiseChunk;
+    use crate::density::{ColumnCache, DimensionNoises, NoiseSettings};
+    use crate::density_functions::{
+        end::EndNoises, nether::NetherNoises, overworld::OverworldNoises,
+    };
+    use crate::noise::CornerColumnStore;
+    use crate::noise_parameters::get_noise_parameters;
+
+    type Visit = ((usize, i32, usize), u64);
+
+    fn create_noises<N: DimensionNoises>() -> N {
+        let seed = 1;
+        let splitter = if N::Settings::LEGACY_RANDOM_SOURCE {
+            LegacyRandom::from_seed(seed).next_positional()
+        } else {
+            Xoroshiro::from_seed(seed).next_positional()
+        };
+        N::create(seed, &splitter, &get_noise_parameters())
+    }
+
+    fn fill_visits<N: DimensionNoises>(
+        noises: &N,
+        chunk: (i32, i32),
+        air_min_y: i32,
+        corner_columns: &CornerColumnStore,
+    ) -> Vec<Visit> {
+        let (min_x, min_z) = (chunk.0 * 16, chunk.1 * 16);
+        let mut noise_chunk = NoiseChunk::<N>::new(min_x, min_z);
+        let mut cache = N::ColumnCache::default();
+        cache.init_grid(min_x, min_z, noises);
+        let mut visits = Vec::new();
+        noise_chunk.fill(
+            noises,
+            &mut cache,
+            None,
+            air_min_y,
+            corner_columns,
+            |x, y, z, density, _, _| {
+                visits.push(((x, y, z), density.to_bits()));
+            },
+        );
+        visits
+    }
+
+    /// Skipping every provable cell must leave the visited blocks and their
+    /// densities unchanged, and only drop blocks whose density is not positive.
+    #[expect(
+        clippy::neg_cmp_op_on_partial_ord,
+        reason = "NaN counts as not positive, matching the aquifer's `density > 0` solid test"
+    )]
+    fn assert_air_skip_sound<N: DimensionNoises>() {
+        let noises = create_noises::<N>();
+
+        let mut skipped = 0;
+        for chunk in [(0, 0), (-7, 3), (40, -25), (-300, -120), (1000, 800)] {
+            let all = fill_visits(&noises, chunk, i32::MAX, &CornerColumnStore::default());
+            let mut kept = fill_visits(&noises, chunk, i32::MIN, &CornerColumnStore::default())
+                .into_iter()
+                .peekable();
+            for (pos, bits) in all {
+                if kept.peek().is_some_and(|&(kept_pos, _)| kept_pos == pos) {
+                    let (_, kept_bits) = kept.next().expect("peeked");
+                    assert_eq!(kept_bits, bits, "density changed at {pos:?} in {chunk:?}");
+                } else {
+                    assert!(
+                        !(f64::from_bits(bits) > 0.0),
+                        "skipped solid block {pos:?} in {chunk:?}"
+                    );
+                    skipped += 1;
+                }
+            }
+            assert!(
+                kept.next().is_none(),
+                "skip run visited a block the full run did not"
+            );
+        }
+        assert!(skipped > 0, "no cell was skipped");
+    }
+
+    /// Neighbors filled through one shared store must match independent fills.
+    fn assert_corner_reuse_matches<N: DimensionNoises>() {
+        let noises = create_noises::<N>();
+        let shared = CornerColumnStore::default();
+        for x in -1..=1 {
+            for z in -1..=1 {
+                let chunk = (x + 30, z - 12);
+                assert_eq!(
+                    fill_visits(&noises, chunk, i32::MIN, &shared),
+                    fill_visits(&noises, chunk, i32::MIN, &CornerColumnStore::default()),
+                    "chunk {chunk:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn overworld_corner_reuse_matches() {
+        assert_corner_reuse_matches::<OverworldNoises>();
+    }
+
+    #[test]
+    fn nether_corner_reuse_matches() {
+        assert_corner_reuse_matches::<NetherNoises>();
+    }
+
+    #[test]
+    fn end_corner_reuse_matches() {
+        assert_corner_reuse_matches::<EndNoises>();
+    }
+
+    #[test]
+    fn overworld_air_skip_is_sound() {
+        assert_air_skip_sound::<OverworldNoises>();
+    }
+
+    #[test]
+    fn nether_air_skip_is_sound() {
+        assert_air_skip_sound::<NetherNoises>();
+    }
+
+    #[test]
+    fn end_air_skip_is_sound() {
+        assert_air_skip_sound::<EndNoises>();
     }
 }
