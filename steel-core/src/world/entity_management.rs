@@ -261,7 +261,7 @@ impl World {
         let mut dirty_chunks = FxHashSet::default();
         for entity in &entities {
             let chunk = ChunkPos::from_entity_pos(entity.position());
-            if !self.has_full_chunk(chunk) {
+            if !self.entity_manager.is_chunk_loaded(chunk) {
                 return Err(AddEntityError::ChunkNotLoaded {
                     entity_id: entity.id(),
                     chunk,
