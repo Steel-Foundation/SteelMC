@@ -14,9 +14,11 @@ use super::{
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
-    selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    selector::{
+        EntitySelector, is_selector_type_letter, parse_entity_selector, suggest_entity_selector,
+    },
     structure::{parse_structure_or_tag_key, suggest_structures},
-    text::validate_component_syntax,
+    text::{CommandTextResolutionSource, CommandTextResolver, validate_component_syntax},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -30,7 +32,8 @@ use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+    ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
+    SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
@@ -335,6 +338,14 @@ impl SteelArgumentType {
         Self::new(ComponentParser)
     }
 
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
+    pub(crate) fn word() -> Self {
+        Self::new(WordParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -533,6 +544,60 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
+/// Byte range of one `@selector` occurrence within a [`MessageValue`]'s text.
+#[derive(Clone, Copy, Debug)]
+struct MessageSelectorSpan {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct MessageValue {
+    text: Box<str>,
+    selectors: Vec<MessageSelectorSpan>,
+}
+
+impl_downcast_type!(MessageValue, "steel:command/value/message");
+
+impl MessageValue {
+    /// Returns the raw, unresolved message text (`@selector`s included verbatim).
+    pub(super) fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Splices resolved entity selectors into the message text, matching
+    /// vanilla's `MessageArgument.Message#toComponent`.
+    pub(super) fn resolve<S>(&self, source: &S) -> Result<TextComponent, CommandSyntaxError>
+    where
+        S: CommandTextResolutionSource,
+    {
+        if self.selectors.is_empty() {
+            return Ok(TextComponent::plain(self.text.to_string()));
+        }
+
+        let mut result = TextComponent::new();
+        let mut read_to = 0;
+        for span in &self.selectors {
+            if read_to < span.start {
+                result.children.push(TextComponent::plain(
+                    self.text[read_to..span.start].to_owned(),
+                ));
+            }
+            result.children.push(TextComponent::entity(
+                self.text[span.start..span.end].to_owned(),
+                None,
+            ));
+            read_to = span.end;
+        }
+        if read_to < self.text.len() {
+            result
+                .children
+                .push(TextComponent::plain(self.text[read_to..].to_owned()));
+        }
+        result.try_resolve(&CommandTextResolver::new(source))
+    }
+}
+argument_value_wrapper!(WordValue(Box<str>), "steel:command/value/word");
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -1098,6 +1163,77 @@ unit_argument_parser!(
     _builder | {},
     protocol(ProtocolArgumentType::Component, None)
 );
+/// Reads the rest of the input, scanning for `@selector` occurrences the way
+/// vanilla's `MessageArgument.Message#parseText` does.
+///
+/// A bare `@` not followed by a valid selector type letter is left as
+/// literal text; once the type letter matches, the selector must parse
+/// cleanly or the whole argument fails, matching vanilla's split between
+/// `ERROR_MISSING_SELECTOR_TYPE`/`ERROR_UNKNOWN_SELECTOR_TYPE` (lenient) and
+/// every other selector syntax error (fatal).
+fn parse_message(
+    reader: &mut StringReader<'_>,
+    source: &dyn CommandArgumentSource,
+) -> Result<MessageValue, CommandSyntaxError> {
+    let base = reader.byte_cursor();
+    if !source.allows_entity_selectors() {
+        return Ok(MessageValue {
+            text: reader.read_remaining().into(),
+            selectors: Vec::new(),
+        });
+    }
+
+    let text: Box<str> = reader.remaining().into();
+    let mut selectors = Vec::new();
+    while reader.can_read() {
+        if reader.peek() != Some('@') {
+            reader.skip();
+            continue;
+        }
+
+        let before_at = reader.checkpoint();
+        let start = reader.byte_cursor();
+        reader.skip();
+        if !reader.peek().is_some_and(is_selector_type_letter) {
+            continue;
+        }
+
+        reader.restore(before_at);
+        parse_entity_selector(reader, source, false, false)?;
+        selectors.push(MessageSelectorSpan {
+            start: start - base,
+            end: reader.byte_cursor() - base,
+        });
+    }
+
+    Ok(MessageValue { text, selectors })
+}
+
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    source | { parse_message(reader, source) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None)
+);
+unit_argument_parser!(
+    WordParser,
+    "steel:command/parser/word",
+    WordValue,
+    parse | reader,
+    _source | { Ok(WordValue(reader.read_unquoted_string().into())) },
+    suggest | _context,
+    _builder | {},
+    protocol(
+        ProtocolArgumentType::String {
+            behavior: ArgumentStringTypeBehavior::SingleWord
+        },
+        None,
+    )
+);
 unit_argument_parser!(
     NbtPathParser,
     "steel:command/parser/nbt_path",
@@ -1606,4 +1742,114 @@ fn suggest_time_units(builder: &mut SuggestionsBuilder<'_>) {
 
 fn java_round(value: f32) -> i32 {
     (value + 0.5).floor() as i32
+}
+
+#[cfg(test)]
+mod message_tests {
+    use std::collections::BTreeMap;
+
+    use simdnbt::owned::NbtTag;
+    use steel_utils::text::DisplayResolutor;
+    use text_components::content::NbtSource;
+
+    use super::{
+        CommandSyntaxError, CommandTextResolutionSource, MessageSelectorSpan, MessageValue,
+        TextComponent,
+    };
+
+    #[derive(Default)]
+    struct FakeSource {
+        display_names: BTreeMap<&'static str, Vec<TextComponent>>,
+    }
+
+    impl CommandTextResolutionSource for FakeSource {
+        fn selector_display_names(
+            &self,
+            selector: &str,
+        ) -> Result<Vec<TextComponent>, CommandSyntaxError> {
+            Ok(self
+                .display_names
+                .get(selector)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        fn score_selector_names(
+            &self,
+            _selector: &str,
+        ) -> Result<Option<Vec<String>>, CommandSyntaxError> {
+            Ok(None)
+        }
+
+        fn score(
+            &self,
+            _holder: &str,
+            _objective: &str,
+        ) -> Result<Option<i32>, CommandSyntaxError> {
+            Ok(None)
+        }
+
+        fn nbt_source(&self, _source: &NbtSource) -> Result<Vec<NbtTag>, CommandSyntaxError> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn message(text: &str, spans: &[(usize, usize)]) -> MessageValue {
+        MessageValue {
+            text: text.into(),
+            selectors: spans
+                .iter()
+                .map(|&(start, end)| MessageSelectorSpan { start, end })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn text_without_selectors_resolves_unchanged() {
+        let value = message("hello world", &[]);
+        let Ok(resolved) = value.resolve(&FakeSource::default()) else {
+            panic!("plain text should resolve");
+        };
+        assert_eq!(resolved.to_plain(&DisplayResolutor), "hello world");
+    }
+
+    #[test]
+    fn a_leading_selector_splices_its_display_name_before_the_trailing_text() {
+        let mut source = FakeSource::default();
+        source
+            .display_names
+            .insert("@p", vec![TextComponent::plain("Steve")]);
+        let value = message("@p is banned", &[(0, 2)]);
+        let Ok(resolved) = value.resolve(&source) else {
+            panic!("message with a leading selector should resolve");
+        };
+        assert_eq!(resolved.to_plain(&DisplayResolutor), "Steve is banned");
+    }
+
+    #[test]
+    fn selectors_in_the_middle_and_end_keep_surrounding_text_intact() {
+        let mut source = FakeSource::default();
+        source.display_names.insert(
+            "@a",
+            vec![TextComponent::plain("Alex"), TextComponent::plain("Steve")],
+        );
+        source
+            .display_names
+            .insert("@s", vec![TextComponent::plain("Admin")]);
+
+        let text = "kicked by @s: bye @a";
+        let s_start = text.find("@s").expect("@s should be present");
+        let s_end = s_start + "@s".len();
+        let a_start = text.find("@a").expect("@a should be present");
+        let a_end = a_start + "@a".len();
+        let value = message(text, &[(s_start, s_end), (a_start, a_end)]);
+
+        let Ok(resolved) = value.resolve(&source) else {
+            panic!("message with multiple selectors should resolve");
+        };
+        assert_eq!(
+            resolved.to_plain(&DisplayResolutor),
+            "kicked by Admin: bye Alex, Steve"
+        );
+    }
 }
