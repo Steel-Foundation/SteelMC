@@ -26,7 +26,7 @@ const PLACE_TICK_MAX: i32 = 120;
 const MELT_TICK_MIN: i32 = 20;
 const MELT_TICK_MAX: i32 = 40;
 
-/// Vanilla `FrostedIceBlock`.
+/// Frosted ice block behavior.
 #[block_behavior]
 pub struct FrostedIceBlock {
     block: BlockRef,
@@ -53,8 +53,6 @@ impl FrostedIceBlock {
         true
     }
 
-    /// Vanilla `FrostedIceBlock.slightlyMelt`.
-    ///
     /// Returns `true` when the block fully melted into water or air.
     fn slightly_melt(state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let age = state.get_value(AGE);

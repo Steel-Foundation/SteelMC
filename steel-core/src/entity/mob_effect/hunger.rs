@@ -4,7 +4,7 @@ use super::MobEffectBehavior;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
-/// Mirrors vanilla `HungerMobEffect`.
+/// Hunger mob effect behavior.
 pub struct HungerBehavior;
 
 /// Food exhaustion caused per amplifier level, per tick (vanilla `0.005F`).

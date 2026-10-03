@@ -229,7 +229,8 @@ impl SheepEntity {
         entity_data.wool.set(next);
     }
 
-    /// Returns vanilla `Sheep.readyForShearing`.
+    /// Returns whether this sheep can currently be sheared: not already
+    /// sheared and not a baby.
     #[must_use]
     pub fn ready_for_shearing(&self) -> bool {
         !self.is_sheared() && !AgeableMob::is_baby(self)
@@ -332,7 +333,8 @@ impl SheepEntity {
         None
     }
 
-    /// Returns vanilla `SheepColorSpawnRules.getSheepColor` for the biome.
+    /// Picks a weighted-random wool color for a naturally spawned sheep,
+    /// using the warm/cold/temperate table for `biome`.
     #[must_use]
     pub fn random_sheep_color(biome: BiomeRef, random: &mut impl Random) -> DyeColor {
         if biome.has_tag(&vanilla_biome_tags::BiomeTag::SPAWNS_WARM_VARIANT_FARM_ANIMALS) {
