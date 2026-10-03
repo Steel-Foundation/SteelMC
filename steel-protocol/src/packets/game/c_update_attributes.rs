@@ -33,7 +33,6 @@ pub struct AttributeSnapshot {
 /// Clientbound packet sent to update entity attributes and their modifiers.
 ///
 /// Used for things like sprint speed modifiers, potion effects on speed/health, etc.
-/// Vanilla: `ClientboundUpdateAttributesPacket`
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_UPDATE_ATTRIBUTES)]
 pub struct CUpdateAttributes {

@@ -83,7 +83,6 @@ impl EnchantmentEffectComponent {
     }
 }
 
-/// Vanilla `LevelBasedValue`.
 #[derive(Debug, PartialEq)]
 pub enum LevelBasedValue {
     Constant(f32),
@@ -150,7 +149,6 @@ impl LevelBasedValue {
     }
 }
 
-/// Vanilla `EnchantmentValueEffect`.
 #[derive(Debug, PartialEq)]
 pub enum EnchantmentValueEffect {
     Add { value: &'static LevelBasedValue },
