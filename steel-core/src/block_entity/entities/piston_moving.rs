@@ -45,7 +45,8 @@ impl Drop for NoClipGuard {
     }
 }
 
-/// Vanilla `PistonMovingBlockEntity`.
+/// Block entity attached to a block while a piston pushes or pulls it,
+/// tracking the in-progress movement animation.
 pub struct PistonMovingBlockEntity {
     base: BlockEntityBase,
     moving: SyncMutex<PistonMovingState>,
