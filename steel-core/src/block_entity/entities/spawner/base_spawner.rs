@@ -95,31 +95,31 @@ impl BaseSpawner {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut state = self.state.lock();
         state.spawn_delay = nbt
-            .short("Delay")
-            .map(i32::from)
-            .or_else(|| nbt.int("Delay"))
-            .unwrap_or(DEFAULT_SPAWN_DELAY);
+            .get("Delay")
+            .and_then(|tag| tag.short_value())
+            .map_or(DEFAULT_SPAWN_DELAY, i32::from);
         state.next_spawn_data = nbt
             .compound("SpawnData")
             .and_then(|data| SpawnData::from_nbt(&data));
-        let loaded_spawn_potentials = nbt
-            .list("SpawnPotentials")
-            .and_then(|entries| entries.compounds())
-            .and_then(|entries| {
-                entries
-                    .into_iter()
-                    .map(|entry| {
-                        let weight = entry
-                            .int("weight")
-                            .or_else(|| entry.short("weight").map(i32::from))?;
-                        let data = entry.compound("data")?;
-                        Some(WeightedSpawnData {
-                            weight,
-                            data: SpawnData::from_nbt(&data)?,
-                        })
+        // Vanilla's list codec keeps the valid entries of a partially invalid list.
+        let loaded_spawn_potentials = nbt.list("SpawnPotentials").map(|entries| {
+            entries
+                .compounds()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|entry| {
+                    let weight = entry.get("weight")?.codec_i32()?;
+                    if weight < 0 {
+                        return None;
+                    }
+                    let data = entry.compound("data")?;
+                    Some(WeightedSpawnData {
+                        weight,
+                        data: SpawnData::from_nbt(&data)?,
                     })
-                    .collect::<Option<Vec<_>>>()
-            });
+                })
+                .collect::<Vec<_>>()
+        });
         state.spawn_potentials = loaded_spawn_potentials.unwrap_or_else(|| {
             vec![WeightedSpawnData {
                 weight: 1,
@@ -128,27 +128,27 @@ impl BaseSpawner {
         });
         state.min_spawn_delay = nbt
             .get("MinSpawnDelay")
-            .and_then(|tag| tag.codec_i32())
+            .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_MIN_SPAWN_DELAY);
         state.max_spawn_delay = nbt
             .get("MaxSpawnDelay")
-            .and_then(|tag| tag.codec_i32())
+            .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_MAX_SPAWN_DELAY);
         state.spawn_count = nbt
             .get("SpawnCount")
-            .and_then(|tag| tag.codec_i32())
+            .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_SPAWN_COUNT);
         state.max_nearby_entities = nbt
             .get("MaxNearbyEntities")
-            .and_then(|tag| tag.codec_i32())
+            .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_MAX_NEARBY_ENTITIES);
         state.required_player_range = nbt
             .get("RequiredPlayerRange")
-            .and_then(|tag| tag.codec_i32())
+            .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_REQUIRED_PLAYER_RANGE);
         state.spawn_range = nbt
             .get("SpawnRange")
-            .and_then(|tag| tag.codec_i32())
+            .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_SPAWN_RANGE);
     }
 
@@ -470,7 +470,7 @@ pub(super) fn choose_weighted<R: Rng + ?Sized>(
 ) -> Option<SpawnData> {
     let total_weight = entries
         .iter()
-        .map(|entry| i64::from(entry.weight.max(0)))
+        .map(|entry| i64::from(entry.weight))
         .sum::<i64>();
     if total_weight == 0 {
         return None;
@@ -478,7 +478,7 @@ pub(super) fn choose_weighted<R: Rng + ?Sized>(
 
     let mut selection = random.random_range(0..total_weight);
     for entry in entries {
-        let weight = i64::from(entry.weight.max(0));
+        let weight = i64::from(entry.weight);
         if selection < weight {
             return Some(entry.data.clone());
         }
@@ -501,7 +501,7 @@ fn configured_or_random_position<R: Rng + ?Sized>(
     let Some(values) = entity.list("Pos").and_then(NbtList::doubles) else {
         return random_spawn_position(spawner_pos, spawn_range, random);
     };
-    let &[x, y, z] = values.as_slice() else {
+    let &[x, y, z, ..] = values.as_slice() else {
         return random_spawn_position(spawner_pos, spawn_range, random);
     };
     let position = DVec3::new(x, y, z);

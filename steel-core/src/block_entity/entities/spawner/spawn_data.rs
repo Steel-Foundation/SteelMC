@@ -242,13 +242,11 @@ impl SpawnData {
 }
 
 fn normalize_entity_id(entity: &mut NbtCompound) {
-    let Some(id) = entity.string("id") else {
-        return;
-    };
-    let Ok(id) = id.to_str().parse::<Identifier>() else {
-        while entity.remove("id").is_some() {}
-        return;
-    };
+    let id = entity
+        .string("id")
+        .and_then(|id| id.to_str().parse::<Identifier>().ok());
     while entity.remove("id").is_some() {}
-    entity.insert("id", id.to_string());
+    if let Some(id) = id {
+        entity.insert("id", id.to_string());
+    }
 }

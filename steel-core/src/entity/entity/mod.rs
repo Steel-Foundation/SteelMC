@@ -14,7 +14,7 @@ const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
 pub(crate) fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;
-    let &[x, y, z] = values.as_slice() else {
+    let &[x, y, z, ..] = values.as_slice() else {
         return None;
     };
     Some(DVec3::new(x, y, z))
@@ -25,7 +25,7 @@ pub(crate) fn read_nbt_rotation(
     key: &str,
 ) -> Option<(f32, f32)> {
     let values = nbt.list(key)?.floats()?;
-    let &[yaw, pitch] = values.as_slice() else {
+    let &[yaw, pitch, ..] = values.as_slice() else {
         return None;
     };
     Some((yaw, pitch))

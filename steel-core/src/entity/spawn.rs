@@ -9,7 +9,7 @@ use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt};
-use steel_utils::nbt::merge_nbt_compounds;
+use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds};
 use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -215,17 +215,27 @@ fn load_entity_recursive_inner(
         velocity: sanitize_nbt_motion(motion),
         rotation,
         fall_distance: nbt
-            .double("fall_distance")
+            .get("fall_distance")
+            .and_then(|tag| tag.codec_f64())
             .or_else(|| nbt.double("FallDistance"))
             .unwrap_or(0.0),
         fire_freeze: EntityFireFreezeState::from_parts(
-            read_int(nbt, "Fire").unwrap_or(0),
-            read_int(nbt, "TicksFrozen").unwrap_or(0),
+            nbt.get("Fire")
+                .and_then(|tag| tag.short_value())
+                .map_or(0, i32::from),
+            nbt.get("TicksFrozen")
+                .and_then(|tag| tag.int_value())
+                .unwrap_or(0),
             false,
             false,
-            nbt.byte("HasVisualFire").is_some_and(|value| value != 0),
+            nbt.get("HasVisualFire")
+                .and_then(|tag| tag.byte_value())
+                .is_some_and(|value| value != 0),
         ),
-        on_ground: nbt.byte("OnGround").is_some_and(|value| value != 0),
+        on_ground: nbt
+            .get("OnGround")
+            .and_then(|tag| tag.byte_value())
+            .is_some_and(|value| value != 0),
         save_data,
         world: Arc::downgrade(world),
     };
@@ -266,18 +276,37 @@ fn entity_type_from_nbt(nbt: &BorrowedNbtCompoundView<'_, '_>) -> Option<EntityT
 
 fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSaveData {
     let mut save_data = EntityBaseSaveData::new();
-    save_data.air_supply = read_int(nbt, "Air").unwrap_or(save_data.air_supply);
-    save_data.portal_cooldown = read_int(nbt, "PortalCooldown").unwrap_or(0);
-    save_data.no_gravity = nbt.byte("NoGravity").is_some_and(|value| value != 0);
-    save_data.invulnerable = nbt.byte("Invulnerable").is_some_and(|value| value != 0);
+    save_data.air_supply = nbt
+        .get("Air")
+        .and_then(|tag| tag.int_value())
+        .unwrap_or(save_data.air_supply);
+    save_data.portal_cooldown = nbt
+        .get("PortalCooldown")
+        .and_then(|tag| tag.int_value())
+        .unwrap_or(0);
+    save_data.no_gravity = nbt
+        .get("NoGravity")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    save_data.invulnerable = nbt
+        .get("Invulnerable")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
     save_data.custom_name = nbt
         .get("CustomName")
         .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()));
     save_data.custom_name_visible = nbt
-        .byte("CustomNameVisible")
+        .get("CustomNameVisible")
+        .and_then(|tag| tag.byte_value())
         .is_some_and(|value| value != 0);
-    save_data.silent = nbt.byte("Silent").is_some_and(|value| value != 0);
-    save_data.glowing = nbt.byte("Glowing").is_some_and(|value| value != 0);
+    save_data.silent = nbt
+        .get("Silent")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    save_data.glowing = nbt
+        .get("Glowing")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
     if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
         save_data.tags = tags
             .iter()
@@ -290,12 +319,6 @@ fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSav
         .map(|data| data.to_owned())
         .unwrap_or_default();
     save_data
-}
-
-fn read_int(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<i32> {
-    nbt.int(key)
-        .or_else(|| nbt.short(key).map(i32::from))
-        .or_else(|| nbt.byte(key).map(i32::from))
 }
 
 /// Applies the implicit entity data carried by an item stack.
