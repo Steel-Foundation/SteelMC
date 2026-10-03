@@ -17,7 +17,7 @@ pub use snbt::{
     parse_snbt_compound_argument, to_canonical_snbt,
 };
 
-/// Mirrors vanilla `NbtUtils.compareNbt`.
+/// Compares two NBT tags for equality, optionally allowing partial list matches.
 #[must_use]
 pub fn compare_nbt(
     expected: Option<&NbtTag>,
