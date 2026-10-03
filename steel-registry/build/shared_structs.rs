@@ -88,7 +88,7 @@ pub struct ItemStackTemplateJson {
     pub(crate) id: Identifier,
     #[serde(default = "one")]
     pub(crate) count: i32,
-    // TODO add components
+    // TODO: add components deserialisation
 }
 
 const fn one() -> i32 {

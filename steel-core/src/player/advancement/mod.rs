@@ -18,6 +18,7 @@ use steel_registry::advancement::{
     Advancement, AdvancementProgressData, AdvancementRewards, Criteria,
 };
 use steel_registry::loot_table::LootContext;
+use steel_registry::vanilla_game_rules::SHOW_ADVANCEMENT_MESSAGES;
 use steel_utils::Identifier;
 
 /// Manages a player's collection of advancements.
@@ -83,14 +84,17 @@ impl PlayerAdvancement {
         let progress = self.progress.get_mut_or_start_progress(advancement);
         let was_done = progress.is_done();
         if progress.grant_progress(criterion) {
-            //self.unregisterListeners(advancement);
+            //TODO: register advancement listener
             self.progress_changed.insert(advancement);
             result = true;
             if !was_done && progress.is_done() {
                 grant_reward(player, &advancement.rewards);
                 if let Some(display) = &advancement.display {
-                    // TODO GameRule check
-                    if display.announce_chat && player.level().is_some() {
+                    if display.announce_chat
+                        && player
+                            .level()
+                            .is_some_and(|level| level.get_game_rule(&SHOW_ADVANCEMENT_MESSAGES))
+                    {
                         player.server().broadcast_system_chat(
                             &display
                                 .frame_type
@@ -114,7 +118,7 @@ impl PlayerAdvancement {
         let progress = self.progress.get_mut_or_start_progress(advancement);
         let was_done = progress.is_done();
         if progress.revoke_progress(criterion) {
-            //self.registerListeners(advancement);
+            //TODO: unregister advancement listener
             self.progress_changed.insert(advancement);
             result = true;
         }
