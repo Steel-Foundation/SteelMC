@@ -32,6 +32,7 @@ mod tempt_goal;
 mod try_find_water;
 mod water_avoiding_random_stroll;
 
+pub(crate) use avoid_entity::AvoidEntityGoal;
 pub(crate) use breed_goal::BreedGoal;
 pub(crate) use climb_on_top_of_powder_snow::ClimbOnTopOfPowderSnowGoal;
 pub(crate) use eat_block_goal::EatBlockGoal;
@@ -43,10 +44,10 @@ pub(crate) use melee_attack::MeleeAttackGoal;
 pub(crate) use nearest_attackable_target::NearestAttackableTargetGoal;
 pub(crate) use panic_goal::PanicGoal;
 pub(crate) use random_look_around::RandomLookAroundGoal;
-pub(crate) use selector::{GoalControl, GoalSelector};
+pub(crate) use selector::{Goal, GoalControl, GoalControls, GoalSelector};
 pub(crate) use tempt_goal::TemptGoal;
 pub(crate) use water_avoiding_random_stroll::WaterAvoidingRandomStrollGoal;
 
-pub(super) const fn reduced_tick_delay(ticks: i32) -> i32 {
+pub(crate) const fn reduced_tick_delay(ticks: i32) -> i32 {
     (ticks + 1) / 2
 }
