@@ -63,6 +63,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -297,6 +298,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -540,6 +542,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.allay.Allay",
       "class_hierarchy": [
@@ -833,6 +836,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.AreaEffectCloud",
       "class_hierarchy": [
@@ -1048,6 +1052,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.armadillo.Armadillo",
       "class_hierarchy": [
@@ -1366,6 +1371,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.decoration.ArmorStand",
       "class_hierarchy": [
@@ -1706,6 +1712,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.arrow.Arrow",
       "class_hierarchy": [
@@ -1937,6 +1944,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.axolotl.Axolotl",
       "class_hierarchy": [
@@ -2280,6 +2288,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestRaft",
       "class_hierarchy": [
@@ -2514,6 +2523,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Raft",
       "class_hierarchy": [
@@ -2753,6 +2763,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.ambient.Bat",
       "class_hierarchy": [
@@ -3061,6 +3072,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.bee.Bee",
       "class_hierarchy": [
@@ -3393,6 +3405,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -3627,6 +3640,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -3874,6 +3888,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Blaze",
       "class_hierarchy": [
@@ -4166,6 +4181,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.Display$BlockDisplay",
       "class_hierarchy": [
@@ -4507,6 +4523,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.skeleton.Bogged",
       "class_hierarchy": [
@@ -4820,6 +4837,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.breeze.Breeze",
       "class_hierarchy": [
@@ -5106,6 +5124,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.hurtingprojectile.windcharge.BreezeWindCharge",
       "class_hierarchy": [
@@ -5301,6 +5320,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.camel.Camel",
       "class_hierarchy": [
@@ -5674,6 +5694,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.camel.CamelHusk",
       "class_hierarchy": [
@@ -6047,6 +6068,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.feline.Cat",
       "class_hierarchy": [
@@ -6447,6 +6469,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.spider.CaveSpider",
       "class_hierarchy": [
@@ -6747,6 +6770,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -6981,6 +7005,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -7219,6 +7244,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.MinecartChest",
       "class_hierarchy": [
@@ -7464,6 +7490,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.chicken.Chicken",
       "class_hierarchy": [
@@ -7815,6 +7842,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.fish.Cod",
       "class_hierarchy": [
@@ -8131,6 +8159,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.golem.CopperGolem",
       "class_hierarchy": [
@@ -8434,6 +8463,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": true,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.MinecartCommandBlock",
       "class_hierarchy": [
@@ -8701,6 +8731,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.cow.Cow",
       "class_hierarchy": [
@@ -9048,6 +9079,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.creaking.Creaking",
       "class_hierarchy": [
@@ -9383,6 +9415,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Creeper",
       "class_hierarchy": [
@@ -9695,6 +9728,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -9929,6 +9963,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -10180,6 +10215,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.dolphin.Dolphin",
       "class_hierarchy": [
@@ -10535,6 +10571,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.Donkey",
       "class_hierarchy": [
@@ -10879,6 +10916,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.hurtingprojectile.DragonFireball",
       "class_hierarchy": [
@@ -11066,6 +11104,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.zombie.Drowned",
       "class_hierarchy": [
@@ -11387,6 +11426,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEgg",
       "class_hierarchy": [
@@ -11595,6 +11635,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.ElderGuardian",
       "class_hierarchy": [
@@ -11916,6 +11957,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.EnderMan",
       "class_hierarchy": [
@@ -12243,6 +12285,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Endermite",
       "class_hierarchy": [
@@ -12572,6 +12615,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.boss.enderdragon.EnderDragon",
       "class_hierarchy": [
@@ -12863,6 +12907,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl",
       "class_hierarchy": [
@@ -13046,6 +13091,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.boss.enderdragon.EndCrystal",
       "class_hierarchy": [
@@ -13261,6 +13307,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.illager.Evoker",
       "class_hierarchy": [
@@ -13579,6 +13626,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.EvokerFangs",
       "class_hierarchy": [
@@ -13745,6 +13793,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownExperienceBottle",
       "class_hierarchy": [
@@ -13928,6 +13977,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.ExperienceOrb",
       "class_hierarchy": [
@@ -14096,6 +14146,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.EyeOfEnder",
       "class_hierarchy": [
@@ -14267,6 +14318,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": true,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.item.FallingBlockEntity",
       "class_hierarchy": [
@@ -14451,6 +14503,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.hurtingprojectile.LargeFireball",
       "class_hierarchy": [
@@ -14638,6 +14691,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.FireworkRocketEntity",
       "class_hierarchy": [
@@ -14856,6 +14910,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.fox.Fox",
       "class_hierarchy": [
@@ -15224,6 +15279,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.frog.Frog",
       "class_hierarchy": [
@@ -15557,6 +15613,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.MinecartFurnace",
       "class_hierarchy": [
@@ -15800,6 +15857,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Ghast",
       "class_hierarchy": [
@@ -16120,6 +16178,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.happyghast.HappyGhast",
       "class_hierarchy": [
@@ -16464,6 +16523,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Giant",
       "class_hierarchy": [
@@ -16750,6 +16810,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.decoration.GlowItemFrame",
       "class_hierarchy": [
@@ -16981,6 +17042,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.squid.GlowSquid",
       "class_hierarchy": [
@@ -17323,6 +17385,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.goat.Goat",
       "class_hierarchy": [
@@ -17675,6 +17738,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Guardian",
       "class_hierarchy": [
@@ -17996,6 +18060,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.hoglin.Hoglin",
       "class_hierarchy": [
@@ -18322,6 +18387,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.MinecartHopper",
       "class_hierarchy": [
@@ -18571,6 +18637,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.Horse",
       "class_hierarchy": [
@@ -18928,6 +18995,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.zombie.Husk",
       "class_hierarchy": [
@@ -19274,6 +19342,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.illager.Illusioner",
       "class_hierarchy": [
@@ -19592,6 +19661,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.Interaction",
       "class_hierarchy": [
@@ -19797,6 +19867,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.golem.IronGolem",
       "class_hierarchy": [
@@ -20085,6 +20156,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.item.ItemEntity",
       "class_hierarchy": [
@@ -20257,6 +20329,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.Display$ItemDisplay",
       "class_hierarchy": [
@@ -20589,6 +20662,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.decoration.ItemFrame",
       "class_hierarchy": [
@@ -20795,6 +20869,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -21029,6 +21104,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -21259,6 +21335,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.decoration.LeashFenceKnotEntity",
       "class_hierarchy": [
@@ -21417,6 +21494,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.LightningBolt",
       "class_hierarchy": [
@@ -21604,6 +21682,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.Llama",
       "class_hierarchy": [
@@ -21966,6 +22045,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.LlamaSpit",
       "class_hierarchy": [
@@ -22149,6 +22229,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.cubemob.MagmaCube",
       "class_hierarchy": [
@@ -22471,6 +22552,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -22705,6 +22787,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -22939,6 +23022,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.decoration.Mannequin",
       "class_hierarchy": [
@@ -23244,6 +23328,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.Marker",
       "class_hierarchy": [
@@ -23406,6 +23491,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.Minecart",
       "class_hierarchy": [
@@ -23651,6 +23737,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.cow.MushroomCow",
       "class_hierarchy": [
@@ -24002,6 +24089,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.Mule",
       "class_hierarchy": [
@@ -24371,6 +24459,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.nautilus.Nautilus",
       "class_hierarchy": [
@@ -24726,6 +24815,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -24960,6 +25050,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -25211,6 +25302,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.feline.Ocelot",
       "class_hierarchy": [
@@ -25526,6 +25618,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.OminousItemSpawner",
       "class_hierarchy": [
@@ -25702,6 +25795,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.decoration.painting.Painting",
       "class_hierarchy": [
@@ -25900,6 +25994,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -26134,6 +26229,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -26385,6 +26481,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.panda.Panda",
       "class_hierarchy": [
@@ -26765,6 +26862,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.skeleton.Parched",
       "class_hierarchy": [
@@ -27076,6 +27174,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.parrot.Parrot",
       "class_hierarchy": [
@@ -27437,6 +27536,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Phantom",
       "class_hierarchy": [
@@ -27742,6 +27842,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.pig.Pig",
       "class_hierarchy": [
@@ -28097,6 +28198,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.piglin.Piglin",
       "class_hierarchy": [
@@ -28444,6 +28546,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.piglin.PiglinBrute",
       "class_hierarchy": [
@@ -28769,6 +28872,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.illager.Pillager",
       "class_hierarchy": [
@@ -29108,6 +29212,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.polarbear.PolarBear",
       "class_hierarchy": [
@@ -29439,6 +29544,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownSplashPotion",
       "class_hierarchy": [
@@ -29642,6 +29748,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownLingeringPotion",
       "class_hierarchy": [
@@ -29854,6 +29961,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.fish.Pufferfish",
       "class_hierarchy": [
@@ -30184,6 +30292,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.rabbit.Rabbit",
       "class_hierarchy": [
@@ -30528,6 +30637,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Ravager",
       "class_hierarchy": [
@@ -30853,6 +30963,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.fish.Salmon",
       "class_hierarchy": [
@@ -31187,6 +31298,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.sheep.Sheep",
       "class_hierarchy": [
@@ -31522,6 +31634,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Shulker",
       "class_hierarchy": [
@@ -31829,6 +31942,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.ShulkerBullet",
       "class_hierarchy": [
@@ -32008,6 +32122,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Silverfish",
       "class_hierarchy": [
@@ -32307,6 +32422,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.skeleton.Skeleton",
       "class_hierarchy": [
@@ -32628,6 +32744,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.SkeletonHorse",
       "class_hierarchy": [
@@ -32971,6 +33088,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.cubemob.Slime",
       "class_hierarchy": [
@@ -33297,6 +33415,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.hurtingprojectile.SmallFireball",
       "class_hierarchy": [
@@ -33505,6 +33624,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.sniffer.Sniffer",
       "class_hierarchy": [
@@ -33839,6 +33959,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.throwableitemprojectile.Snowball",
       "class_hierarchy": [
@@ -34043,6 +34164,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.golem.SnowGolem",
       "class_hierarchy": [
@@ -34338,6 +34460,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": true,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.MinecartSpawner",
       "class_hierarchy": [
@@ -34562,6 +34685,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.arrow.SpectralArrow",
       "class_hierarchy": [
@@ -34775,6 +34899,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.spider.Spider",
       "class_hierarchy": [
@@ -35071,6 +35196,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
       "class_hierarchy": [
@@ -35305,6 +35431,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
       "class_hierarchy": [
@@ -35556,6 +35683,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.squid.Squid",
       "class_hierarchy": [
@@ -35880,6 +36008,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.skeleton.Stray",
       "class_hierarchy": [
@@ -36183,6 +36312,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Strider",
       "class_hierarchy": [
@@ -36530,6 +36660,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.cubemob.SulfurCube",
       "class_hierarchy": [
@@ -36891,6 +37022,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.frog.Tadpole",
       "class_hierarchy": [
@@ -37201,6 +37333,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.Display$TextDisplay",
       "class_hierarchy": [
@@ -37549,6 +37682,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.item.PrimedTnt",
       "class_hierarchy": [
@@ -37733,6 +37867,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.vehicle.minecart.MinecartTNT",
       "class_hierarchy": [
@@ -37986,6 +38121,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.TraderLlama",
       "class_hierarchy": [
@@ -38356,6 +38492,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.arrow.ThrownTrident",
       "class_hierarchy": [
@@ -38599,6 +38736,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.fish.TropicalFish",
       "class_hierarchy": [
@@ -38933,6 +39071,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.turtle.Turtle",
       "class_hierarchy": [
@@ -39276,6 +39415,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Vex",
       "class_hierarchy": [
@@ -39589,6 +39729,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.npc.villager.Villager",
       "class_hierarchy": [
@@ -39961,6 +40102,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.illager.Vindicator",
       "class_hierarchy": [
@@ -40286,6 +40428,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader",
       "class_hierarchy": [
@@ -40620,6 +40763,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.warden.Warden",
       "class_hierarchy": [
@@ -40920,6 +41064,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.hurtingprojectile.windcharge.WindCharge",
       "class_hierarchy": [
@@ -41115,6 +41260,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Witch",
       "class_hierarchy": [
@@ -41446,6 +41592,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.boss.wither.WitherBoss",
       "class_hierarchy": [
@@ -41784,6 +41931,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.skeleton.WitherSkeleton",
       "class_hierarchy": [
@@ -42070,6 +42218,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.hurtingprojectile.WitherSkull",
       "class_hierarchy": [
@@ -42275,6 +42424,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.wolf.Wolf",
       "class_hierarchy": [
@@ -42671,6 +42821,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.Zoglin",
       "class_hierarchy": [
@@ -42980,6 +43131,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.zombie.Zombie",
       "class_hierarchy": [
@@ -43314,6 +43466,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.equine.ZombieHorse",
       "class_hierarchy": [
@@ -43665,6 +43818,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.animal.nautilus.ZombieNautilus",
       "class_hierarchy": [
@@ -44051,6 +44205,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.zombie.ZombieVillager",
       "class_hierarchy": [
@@ -44420,6 +44575,7 @@
     "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.monster.zombie.ZombifiedPiglin",
       "class_hierarchy": [
@@ -44737,6 +44893,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.player.Player",
       "class_hierarchy": [
@@ -45051,6 +45208,7 @@
     "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
+    "only_op_can_set_nbt": false,
     "synched_data": {
       "java_class": "net.minecraft.world.entity.projectile.FishingHook",
       "class_hierarchy": [

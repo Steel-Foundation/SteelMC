@@ -132,7 +132,7 @@ mod tests {
 
     use super::BlockItemStateProperties;
     use crate::data_components::vanilla_components::BLOCK_STATE;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: NbtTag) -> Option<BlockItemStateProperties> {
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn extracted_block_items_keep_placement_properties() {
-        init_test_registry();
+        init_vanilla_registry();
         let light = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("light"))

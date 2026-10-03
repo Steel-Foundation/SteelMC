@@ -236,11 +236,11 @@ pub(crate) enum PrimitiveArgumentValue {
 /// Provides primitive Brigadier accessors for a runtime's parsed value.
 pub(crate) trait ContainsPrimitiveArgumentValue {
     /// Returns the primitive value when this runtime value contains one.
-    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue>;
+    fn primitive_value(&self, name: &str) -> Result<&PrimitiveArgumentValue, CommandSyntaxError>;
 }
 
 impl ContainsPrimitiveArgumentValue for PrimitiveArgumentValue {
-    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
-        Some(self)
+    fn primitive_value(&self, _name: &str) -> Result<&PrimitiveArgumentValue, CommandSyntaxError> {
+        Ok(self)
     }
 }

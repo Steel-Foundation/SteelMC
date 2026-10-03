@@ -77,10 +77,10 @@ mod tests {
     use super::InstrumentComponent;
     use crate::RegistryHolder;
     use crate::data_components::vanilla_components::INSTRUMENT;
+    use crate::init_vanilla_registry;
     use crate::instrument::InstrumentValue;
     use crate::item_stack::ItemStack;
     use crate::sound_event::SoundEventHolder;
-    use crate::test_support::init_test_registry;
     use crate::{sound_events, vanilla_instruments, vanilla_items};
 
     fn parse_component(tag: simdnbt::owned::NbtTag) -> Option<InstrumentComponent> {
@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn registry_reference_round_trips_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let component = InstrumentComponent::new(RegistryHolder::reference(
             &vanilla_instruments::PONDER_GOAT_HORN,
         ));
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn valid_inline_instrument_round_trips_and_hashes_its_record() {
-        init_test_registry();
+        init_vanilla_registry();
         let value = InstrumentValue::new(
             SoundEventHolder::Direct {
                 sound_id: Identifier::vanilla_static("custom_horn"),
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn network_rejects_inline_values_that_cannot_persist() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut network = Vec::new();
         VarInt(0)
             .write(&mut network)
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn extracted_goat_horn_uses_ponder_instrument() {
-        init_test_registry();
+        init_vanilla_registry();
         let goat_horn = ItemStack::new(&vanilla_items::GOAT_HORN);
 
         assert_eq!(

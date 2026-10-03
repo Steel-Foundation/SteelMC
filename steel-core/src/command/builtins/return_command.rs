@@ -38,7 +38,7 @@ impl CustomCommandExecutor<CommandSource> for ReturnValue {
         _modifiers: ChainModifiers,
         control: &mut ExecutionControl<'_, CommandSource>,
     ) {
-        let Some(value) = chain.top_context().integer("value") else {
+        let Ok(value) = chain.top_context().integer("value") else {
             unreachable!("the return value executor always follows its integer argument")
         };
         source.callback().on_result(true, value);
@@ -94,14 +94,14 @@ impl CustomModifierExecutor<CommandSource> for ReturnRun {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use crate::command::{brigadier::ArgumentType, execution::SteelArgumentType};
 
     #[test]
     fn return_graph_matches_vanillas_three_forms() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in dispatcher should build");
         };

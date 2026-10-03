@@ -8,7 +8,9 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::CAN_BREAK;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, CAN_PLACE_ON};
+use steel_registry::equipment::EquipmentSlot;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
@@ -21,6 +23,7 @@ use steel_utils::{
 };
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
+use crate::block_entity::BlockEntity;
 use crate::entity::{Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
@@ -28,6 +31,25 @@ use crate::player::food_data::food_constants;
 use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContext};
 
 impl Player {
+    /// Mirrors vanilla `Player.mayUseItemAt` for adventure-mode item use.
+    pub(crate) fn may_use_item_at(
+        &self,
+        pos: BlockPos,
+        direction: Direction,
+        item_stack: &ItemStack,
+    ) -> bool {
+        if self.abilities.lock().may_build {
+            return true;
+        }
+
+        let Some(can_place_on) = item_stack.get(CAN_PLACE_ON) else {
+            return false;
+        };
+        let target = pos.relative(direction.opposite());
+        let world = self.get_world();
+        Self::matches_adventure_mode_predicate(can_place_on, &world, target)
+    }
+
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
     pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
         let game_mode = self.game_mode();
@@ -55,10 +77,10 @@ impl Player {
         let Some(can_break) = can_break else {
             return true;
         };
-        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
+        !Self::matches_adventure_mode_predicate(&can_break, world, pos)
     }
 
-    fn can_break_block_in_adventure_mode(
+    fn matches_adventure_mode_predicate(
         predicate: &AdventureModePredicate,
         world: &World,
         pos: BlockPos,
@@ -340,6 +362,10 @@ impl BlockBreakingManager {
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
+        if player.get_abilities().instabuild && !held_item_can_destroy_in_creative(player) {
+            return false;
+        }
+
         // Check if player's tool can destroy this block
         // TODO: Implement canDestroyBlock check for adventure mode
 
@@ -363,6 +389,11 @@ impl BlockBreakingManager {
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
+
+        // Read before the removal below, so loot generation still sees the
+        // block entity's contents.
+        let block_entity = world.get_block_entity(pos);
+
         // Vanilla removes the live state after `playerWillDestroy`; tripwire uses
         // that callback to set DISARMED before the same block is removed.
         let removed_by_player_break = !state_after_player_will_destroy.is_air()
@@ -408,24 +439,30 @@ impl BlockBreakingManager {
                 .map_or(0.0, |b| b.config.destroy_time);
 
             if block_destroy_time != 0.0 {
-                let mut inv = player.inventory.lock();
-                let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
+                let broke = {
+                    let mut inv = player.inventory.lock();
+                    let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
 
-                if damage_per_block > 0 {
-                    // Use with_selected_item_mut to ensure set_changed() is called
-                    // Skip damage if player has infinite materials (creative mode)
-                    let has_infinite_materials = player.has_infinite_materials();
-                    let broke = inv.with_selected_item_mut(|main_hand| {
-                        main_hand.hurt_and_break(damage_per_block, has_infinite_materials)
-                    });
-                    if broke {
-                        // TODO: Play item break sound/particles
-                        log::debug!("Tool broke while mining block at {pos:?}");
+                    if damage_per_block > 0 {
+                        // Use with_selected_item_mut to ensure set_changed() is called
+                        // Skip damage if player has infinite materials (creative mode)
+                        let has_infinite_materials = player.has_infinite_materials();
+                        inv.with_selected_item_mut(|main_hand| {
+                            let item = main_hand.item;
+                            main_hand
+                                .hurt_and_break(damage_per_block, has_infinite_materials)
+                                .then_some(item)
+                        })
+                    } else {
+                        None
                     }
+                };
+
+                if let Some(item) = broke {
+                    player.on_equipped_item_broken(item, EquipmentSlot::MainHand);
+                    log::debug!("Tool broke while mining block at {pos:?}");
                 }
             }
-
-            player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
             // Handle drops (skip for creative/spectator)
             let game_mode = player.game_mode();
@@ -433,8 +470,17 @@ impl BlockBreakingManager {
                 && game_mode != GameType::Creative
                 && has_correct_tool
             {
-                drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
-                let block_entity = world.get_block_entity(pos);
+                player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
+                player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
+
+                drop_block_loot(
+                    player,
+                    world,
+                    pos,
+                    adjusted_state,
+                    &destroyed_with,
+                    block_entity.as_deref(),
+                );
                 behavior.player_destroy(
                     world,
                     player,
@@ -459,6 +505,12 @@ pub enum BlockBreakAction {
     Stop,
     /// Player aborted breaking a block.
     Abort,
+}
+
+fn held_item_can_destroy_in_creative(player: &Player) -> bool {
+    let inventory = player.inventory.lock();
+    let main_hand = inventory.get_item_in_hand(InteractionHand::MainHand);
+    main_hand.can_destroy_blocks_in_creative()
 }
 
 /// Checks if a block state is air.
@@ -544,6 +596,7 @@ fn drop_block_loot(
     pos: BlockPos,
     state: BlockStateId,
     tool: &ItemStack,
+    block_entity: Option<&dyn BlockEntity>,
 ) {
     let luck = player
         .attributes()
@@ -554,6 +607,7 @@ fn drop_block_loot(
     let drops = BlockLootContext::new(world, pos)
         .with_luck(luck)
         .with_tool(tool)
+        .with_block_entity(block_entity)
         .get_drops(state);
 
     // Spawn each dropped item using the player's world reference (Arc<World>)

@@ -170,6 +170,14 @@ impl FoodData {
         );
     }
 
+    /// Applies nutrition and an already-absolute saturation value, as stored
+    /// on `FoodProperties`. Unlike [`Self::eat`], which recomputes saturation
+    /// from a modifier, this applies the value as-is. Mirrors vanilla
+    /// `FoodData.eat(FoodProperties)`.
+    pub fn add_food(&mut self, nutrition: i32, saturation: f32) {
+        self.add(nutrition, saturation);
+    }
+
     /// Runs one tick of the hunger system.
     /// Returns a [`FoodTickResult`] describing what happened this tick so the
     /// caller (`Player::tick`) can apply healing or starvation damage
@@ -259,7 +267,7 @@ pub enum FoodTickResult {
 }
 
 impl Player {
-    /// Ticks food/hunger regeneration and starvation.
+    /// Ticks peaceful-difficulty health and hunger regeneration.
     pub(super) fn tick_regeneration(&self) {
         let world = self.get_world();
         let difficulty = world.level_data.read().data().difficulty;
@@ -285,7 +293,13 @@ impl Player {
                 }
             }
         }
+    }
 
+    /// Ticks food exhaustion, food-based healing, and starvation.
+    pub(super) fn tick_food_data(&self) {
+        let world = self.get_world();
+        let difficulty = world.level_data.read().data().difficulty;
+        let natural_regen = world.get_game_rule(&NATURAL_HEALTH_REGENERATION);
         let current_health = self.get_health();
         let max_health = self.get_max_health();
 
@@ -346,6 +360,22 @@ mod tests {
         food.exhaustion_level = 5.0;
         let _ = food.tick(Difficulty::Normal, false, 20.0, 20.0);
         assert_eq!(food.food_level, MAX_FOOD_LEVEL - 1);
+    }
+
+    /// `add_food` must apply saturation as-is (it is already the absolute
+    /// value stored on `FoodProperties`), unlike `eat` which recomputes it
+    /// from a modifier — regression guard against re-multiplying it.
+    #[test]
+    fn add_food_applies_absolute_saturation_without_recomputing_it() {
+        let mut food = FoodData::new();
+        food.food_level = 10;
+        food.saturation_level = 0.0;
+
+        // Vanilla apple: nutrition 4, saturation 2.4 (already absolute).
+        food.add_food(4, 2.4);
+
+        assert_eq!(food.food_level, 14);
+        assert!((food.saturation_level - 2.4).abs() < f32::EPSILON);
     }
 
     /// Fast regen: food=20, saturation>0, hurt → heal every 10 ticks.

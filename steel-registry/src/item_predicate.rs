@@ -829,6 +829,12 @@ impl LockCode {
     pub const fn predicate(&self) -> &ItemPredicate {
         &self.predicate
     }
+
+    /// Encodes this lock code as its Vanilla item-predicate NBT without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> NbtTag {
+        self.predicate.to_nbt_tag_ref()
+    }
 }
 
 impl WriteTo for LockCode {
@@ -999,7 +1005,7 @@ mod tests {
     use crate::blocks::block_state_ext::BlockStateExt as _;
     use crate::blocks::properties::BlockStateProperties;
     use crate::data_component_predicate::DataComponentMatchers;
-    use crate::{RegistryHolderSet, test_support::init_test_registry, vanilla_blocks};
+    use crate::{RegistryHolderSet, init_vanilla_registry, vanilla_blocks};
 
     #[test]
     fn double_bounds_use_java_ordering() {
@@ -1026,7 +1032,7 @@ mod tests {
 
     #[test]
     fn block_predicates_use_typed_vanilla_property_order() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let lit = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
             "lit".to_owned(),

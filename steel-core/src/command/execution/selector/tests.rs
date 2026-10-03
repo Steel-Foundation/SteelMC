@@ -3,7 +3,7 @@ use std::{ptr, sync::Weak};
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::{test_support::init_test_registry, vanilla_entities};
+use steel_registry::{init_vanilla_registry, vanilla_entities};
 use steel_utils::types::GameType;
 use text_components::{TextComponent, content::Content};
 
@@ -139,7 +139,7 @@ fn selector_argument_shapes_enforce_cardinality_and_player_only_rules() {
 
 #[test]
 fn selector_parses_core_filters_and_nested_snbt() {
-    init_test_registry();
+    init_vanilla_registry();
     let Ok(selector) = parse_selector_plan(
         "@e[type=pig,nbt={Tags:[\"foo\"]},scores={kills=1..},team=!red]",
         true,
@@ -219,7 +219,7 @@ fn selector_reports_missing_predicate_and_advancement_foundations() {
 
 #[test]
 fn selector_entity_filters_use_command_identity_and_nbt_snapshot() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = SelectorTestEntity::new();
     entity.set_custom_name(Some(TextComponent::plain("Named item")));
     let mut custom_data = NbtCompound::new();
@@ -266,7 +266,7 @@ fn selector_score_and_team_filters_use_one_domain_scoreboard() {
 
 #[test]
 fn selector_suggestions_include_supported_options_and_source_values() {
-    init_test_registry();
+    init_vanilla_registry();
     let source = TestSource::new(true, true);
 
     let Ok(mut root) = SuggestionsBuilder::new("s", 0) else {

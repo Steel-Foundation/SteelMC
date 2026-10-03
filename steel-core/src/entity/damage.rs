@@ -66,7 +66,8 @@ impl DamageSource {
         REGISTRY.damage_types.is_in_tag(self.damage_type, tag)
     }
 
-    /// Returns vanilla `DamageSource.isDirect`.
+    /// Whether the damage was dealt directly by the causing entity rather than
+    /// indirectly, e.g. by a thrown projectile.
     #[must_use]
     pub fn is_direct(&self) -> bool {
         self.causing_entity_id == self.direct_entity_id
@@ -103,9 +104,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_damage_types, vanilla_entities,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_damage_types, vanilla_entities};
 
     use crate::entity::entities::{FireworkRocketEntity, PigEntity};
 
@@ -113,7 +112,7 @@ mod tests {
 
     #[test]
     fn conditional_difficulty_scaling_requires_a_resolved_living_non_player() {
-        init_test_registry();
+        init_vanilla_registry();
         let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         let rocket = FireworkRocketEntity::new(

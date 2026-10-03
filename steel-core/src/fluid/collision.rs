@@ -119,13 +119,13 @@ pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: Flui
 mod tests {
     use crate::behavior::init_behaviors;
     use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
 
     use super::*;
 
     #[test]
     fn waterlogged_source_blocks_block_same_fluid_flowing_variant_spread() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let waterlogged = vanilla_blocks::OAK_LEAVES
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn dry_waterloggable_blocks_reject_flowing_water() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let dry = vanilla_blocks::OAK_SLAB
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn kelp_is_liquid_container_without_waterlogged_property() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let kelp = vanilla_blocks::KELP.default_state();

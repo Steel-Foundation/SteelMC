@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+use steel_registry::{init_vanilla_registry, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 
 use super::*;
@@ -15,7 +15,7 @@ use crate::chunk::{
 };
 
 fn init_tests() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 }
 
@@ -444,5 +444,5 @@ fn sky_light_changes_skip_missing_center_chunk() {
         panic!("dynamic sky changes should skip a missing center chunk");
     };
 
-    assert!(result.updated_sections.is_empty());
+    assert_eq!(result.updated_sections.len(), 0);
 }

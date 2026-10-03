@@ -38,7 +38,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::Mob as _;
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn restrict_sun_goal_requires_world() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = RestrictSunGoal::new();
 
         assert!(!goal.can_use(&pig()));
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn restrict_sun_goal_toggles_navigation_avoid_sun() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = RestrictSunGoal::new();
         let pig = pig();
 

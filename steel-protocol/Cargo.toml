@@ -7,6 +7,7 @@ authors.workspace = true
 
 [dependencies]
 # Internal crates
+steel-math.workspace = true
 steel-macros.workspace = true
 steel-registry.workspace = true
 steel-utils.workspace = true

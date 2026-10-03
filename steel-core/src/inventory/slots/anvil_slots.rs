@@ -70,11 +70,11 @@ impl AnvilResultHandler {
 
 impl ResultHandler for AnvilResultHandler {
     fn result_container(&self) -> ContainerRef {
-        ContainerRef::from(self.result_container.clone())
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     fn dependencies(&self) -> Vec<ContainerRef> {
-        vec![ContainerRef::from(self.input_container.clone())]
+        vec![ContainerRef::from(Arc::clone(&self.input_container))]
     }
 
     fn update_result(&self, _guard: &mut ContainerLockGuard) {}
@@ -146,8 +146,7 @@ mod tests {
 
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::{BlockPos, ChunkPos, locks::IntoShared as _, types::UpdateFlags};
 
@@ -161,7 +160,7 @@ mod tests {
 
     #[test]
     fn anvil_damage_does_not_notify_neighbors() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("anvil_damage_update_flags");
         let anvil_pos = BlockPos::new(8, 64, 8);

@@ -1,14 +1,15 @@
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use super::*;
 
 #[test]
 fn send_changes_broadcasts_dirty_attributes_once() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
-    let entity: SharedEntity = entity_typed.clone();
+    let entity: SharedEntity = Arc::<PairingTestEntity>::clone(&entity_typed);
     tracker.add(&entity, |_| Vec::new(), |_| None);
 
     entity_typed.set_dirty_attributes(vec![AttributeSnapshot {
@@ -59,11 +60,11 @@ fn send_changes_broadcasts_dirty_attributes_once() {
 
 #[test]
 fn send_changes_broadcasts_dirty_equipment_once() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
-    let entity: SharedEntity = entity_typed.clone();
+    let entity: SharedEntity = Arc::<PairingTestEntity>::clone(&entity_typed);
     tracker.add(&entity, |_| Vec::new(), |_| None);
 
     let stack = ItemStack::new(&vanilla_items::ELYTRA);
@@ -115,11 +116,11 @@ fn send_changes_broadcasts_dirty_equipment_once() {
 
 #[test]
 fn send_changes_broadcasts_equipment_before_attributes() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
-    let entity: SharedEntity = entity_typed.clone();
+    let entity: SharedEntity = Arc::<PairingTestEntity>::clone(&entity_typed);
     tracker.add(&entity, |_| Vec::new(), |_| None);
 
     entity_typed.set_dirty_equipment(vec![EquipmentSlotItem {
@@ -153,11 +154,11 @@ fn send_changes_broadcasts_equipment_before_attributes() {
 
 #[test]
 fn send_changes_syncs_hurt_marked_player_motion_to_self() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new_with_type(1, &vanilla_entities::PLAYER, Vec::new());
-    let entity: SharedEntity = entity_typed.clone();
+    let entity: SharedEntity = Arc::<PairingTestEntity>::clone(&entity_typed);
     track_entity_for_player(&tracker, &entity, 99);
 
     entity_typed.set_velocity(DVec3::new(0.25, 0.4, -0.125));
@@ -199,11 +200,11 @@ fn send_changes_syncs_hurt_marked_player_motion_to_self() {
 
 #[test]
 fn send_changes_broadcasts_hurt_marked_non_player_motion() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
-    let entity: SharedEntity = entity_typed.clone();
+    let entity: SharedEntity = Arc::<PairingTestEntity>::clone(&entity_typed);
     track_entity_for_player(&tracker, &entity, 99);
 
     entity_typed.set_velocity(DVec3::new(-0.25, 0.2, 0.125));

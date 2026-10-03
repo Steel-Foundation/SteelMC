@@ -45,7 +45,7 @@ fn projectile_owner_uuid_reports_projectile_owner_identity() {
 
 #[test]
 fn can_use_portal_respects_passenger_gate() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -151,7 +151,7 @@ fn dimension_transition_persistence_keeps_non_chunk_serializable_entities() {
 
 #[test]
 fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = Arc::new(PigEntity::new(
@@ -183,7 +183,7 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
 
 #[test]
 fn can_use_portal_rejects_sleeping_living_entities() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     assert!(entity.can_use_portal(false));

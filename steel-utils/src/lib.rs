@@ -4,7 +4,6 @@
 
 #![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
-/// axis
 pub mod axis;
 /// Vanilla `BlockUtil` helpers.
 pub mod block_util;
@@ -28,6 +27,8 @@ pub mod java;
 pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
+/// Vanilla `Mth` helpers.
+pub mod mth;
 /// Vanilla-compatible NBT helpers.
 pub mod nbt;
 pub mod random;

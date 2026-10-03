@@ -6,6 +6,7 @@ use rsa::pkcs1v15::SigningKey;
 use rsa::sha2::Sha256;
 use rsa::signature::{SignatureEncoding, Signer as RsaSigner, Verifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
+use sha1::Sha1;
 
 use crate::rsa_utils::CryptError;
 
@@ -120,38 +121,46 @@ impl SignatureValidator for RsaPublicKeyValidator {
     }
 }
 
-/// A multi-key validator that tries each public key until one validates.
+/// Validates Mojang profile-key certificates against the current service keys.
 ///
-/// Used for Mojang's multiple player certificate keys.
-pub struct MultiKeyValidator {
-    validators: Vec<RsaPublicKeyValidator>,
+/// Authlib uses `SHA1withRSA` for service signatures. Player chat messages use
+/// `SHA256withRSA` through [`RsaPublicKeyValidator`] instead.
+pub struct ProfileKeyValidator {
+    validators: Vec<rsa::pkcs1v15::VerifyingKey<Sha1>>,
 }
 
-impl MultiKeyValidator {
-    pub fn new(public_keys: Vec<RsaPublicKey>) -> Self {
-        Self {
+impl ProfileKeyValidator {
+    /// Creates a validator from a non-empty service-key snapshot.
+    #[must_use]
+    pub fn new(public_keys: Vec<RsaPublicKey>) -> Option<Self> {
+        if public_keys.is_empty() {
+            return None;
+        }
+
+        Some(Self {
             validators: public_keys
                 .into_iter()
-                .map(RsaPublicKeyValidator::new)
+                .map(rsa::pkcs1v15::VerifyingKey::<Sha1>::new)
                 .collect(),
-        }
+        })
     }
 }
 
-impl SignatureValidator for MultiKeyValidator {
+impl SignatureValidator for ProfileKeyValidator {
     fn validate(
         &self,
         updater: &dyn SignatureUpdater,
         signature: &[u8],
     ) -> Result<bool, CryptError> {
-        // Try each validator - if any succeeds, the signature is valid
-        for validator in &self.validators {
-            if validator.validate(updater, signature)? {
-                return Ok(true);
-            }
-        }
-        // None of the keys validated the signature
-        Ok(false)
+        let mut collector = ByteCollector::new();
+        updater.update(&mut collector)?;
+        let Ok(signature) = rsa::pkcs1v15::Signature::try_from(signature) else {
+            return Ok(false);
+        };
+        Ok(self
+            .validators
+            .iter()
+            .any(|validator| validator.verify(&collector.bytes, &signature).is_ok()))
     }
 }
 
@@ -237,6 +246,31 @@ mod tests {
         let bad_signature = vec![0u8; crate::SIGNATURE_BYTES];
         let is_valid = validator.validate(&updater, &bad_signature).unwrap();
         assert!(!is_valid);
+    }
+
+    #[test]
+    fn profile_key_validator_uses_sha1_service_signatures() {
+        let (private_key, public_key) = generate_key_pair().unwrap();
+        let signer = SigningKey::<Sha1>::new(private_key);
+        let chat_validator = RsaPublicKeyValidator::new(public_key.clone());
+        let validator = ProfileKeyValidator::new(vec![public_key]).unwrap();
+        let updater = TestUpdater {
+            data: b"profile key certificate".to_vec(),
+        };
+        let signature = signer.sign(&updater.data).to_bytes();
+
+        assert!(validator.validate(&updater, &signature).unwrap());
+        assert!(!chat_validator.validate(&updater, &signature).unwrap());
+
+        let tampered = TestUpdater {
+            data: b"different certificate".to_vec(),
+        };
+        assert!(!validator.validate(&tampered, &signature).unwrap());
+    }
+
+    #[test]
+    fn profile_key_validator_requires_service_keys() {
+        assert!(ProfileKeyValidator::new(Vec::new()).is_none());
     }
 
     #[test]

@@ -21,7 +21,7 @@ use crate::world::LevelReader;
 
 use super::{BlockRef, survives_on_tag, vegetation_block::survival_update_shape};
 
-const SEGMENT_PROPERTY: IntProperty = BlockStateProperties::FLOWER_AMOUNT;
+const SEGMENT_PROPERTY: &IntProperty = &BlockStateProperties::FLOWER_AMOUNT;
 
 /// Vanilla `FlowerBedBlock` survival.
 #[block_behavior]
@@ -45,13 +45,13 @@ impl BlockBehavior for FlowerBedBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(segmentable_get_state_for_placement(
             self.block,
-            &SEGMENT_PROPERTY,
+            SEGMENT_PROPERTY,
             context,
         ))
     }
 
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
-        segmentable_can_be_replaced(&SEGMENT_PROPERTY, state, context)
+        segmentable_can_be_replaced(SEGMENT_PROPERTY, state, context)
     }
 
     fn update_shape(
@@ -88,11 +88,11 @@ impl Bonemealable for FlowerBedBlock {
         _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        let amount = state.get_value(&SEGMENT_PROPERTY);
+        let amount = state.get_value(SEGMENT_PROPERTY);
         if amount < 4 {
             world.set_block(
                 pos,
-                state.set_value(&SEGMENT_PROPERTY, amount + 1),
+                state.set_value(SEGMENT_PROPERTY, amount + 1),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         } else {

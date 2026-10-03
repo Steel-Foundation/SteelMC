@@ -203,7 +203,7 @@ mod tests {
     use super::{BlockEntityData, EntityData};
     use crate::data_components::components::CustomData;
     use crate::data_components::vanilla_components::ENTITY_DATA;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: NbtTag) -> Option<T> {
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn entity_data_separates_type_from_payload_on_the_network() {
-        init_test_registry();
+        init_vanilla_registry();
         let pig = REGISTRY
             .entity_types
             .by_key(&steel_utils::Identifier::vanilla_static("pig"))
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn block_entity_data_uses_the_block_entity_registry() {
-        init_test_registry();
+        init_vanilla_registry();
         let chest = REGISTRY
             .block_entity_types
             .by_key(&steel_utils::Identifier::vanilla_static("chest"))
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn extracted_spawn_eggs_use_typed_empty_entity_data() {
-        init_test_registry();
+        init_vanilla_registry();
         let egg = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("pig_spawn_egg"))

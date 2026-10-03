@@ -68,7 +68,8 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
 }
 
 impl Player {
-    /// Returns vanilla `Avatar.POSES` dimensions for a player pose.
+    /// Returns the player hitbox dimensions for a given pose (sleeping,
+    /// swimming, sneaking, dying, or the default standing size).
     pub(super) const fn dimensions_for_pose(pose: EntityPose) -> EntityDimensions {
         match pose {
             EntityPose::Sleeping => PLAYER_SLEEPING_DIMENSIONS,
@@ -119,6 +120,12 @@ impl Player {
 
     /// Returns true if the player is shifting (sneaking).
     pub fn is_crouching(&self) -> bool {
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_shift_key_down)
+    }
+
+    /// Returns true if the player wants to stop riding (is holding the shift key)
+    pub fn wants_to_stop_riding(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }

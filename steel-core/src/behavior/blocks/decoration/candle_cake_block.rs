@@ -1,11 +1,17 @@
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt,
+        properties::{BlockStateProperties, BoolProperty},
+    },
+    entity_data::ParticleData,
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_items,
+    sound_events, vanilla_blocks, vanilla_items, vanilla_particle_types,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -24,12 +30,14 @@ use crate::{
 
 /// Behavior for Candle Cakes
 /// TODO:
-/// - [ ] animation ticks
 /// - [ ] onExplosion
 #[block_behavior]
 pub struct CandleCakeBlock {
     block: BlockRef,
 }
+
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
+const PARTICLE_OFFSETS: [DVec3; 1] = [DVec3::new(8.0 * 0.0625, 16.0 * 0.0625, 8.0 * 0.0625)];
 
 impl CandleCakeBlock {
     /// Creates a new Candle Cake Block Behavior
@@ -73,14 +81,22 @@ impl BlockBehavior for CandleCakeBlock {
             return InteractionResult::Pass; // lighting of candles and candle cakes is handled by the flint and steel/fire charge implementation
         } else if (hit_result.location.y - f64::from(hit_result.block_pos.y())) > 0.5
             && is_empty
-            && state.get_value(&BlockStateProperties::LIT)
+            && state.get_value(LIT)
         {
-            world.set_block(
-                pos,
-                state.set_value(&BlockStateProperties::LIT, false),
-                UpdateFlags::UPDATE_ALL,
-            );
-            // TODO: particles!
+            world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
+            for particle_pos in PARTICLE_OFFSETS {
+                world.send_particles(
+                    ParticleData::simple(&vanilla_particle_types::SMOKE),
+                    DVec3::new(
+                        f64::from(pos.x()) + particle_pos.x,
+                        f64::from(pos.y()) + particle_pos.y,
+                        f64::from(pos.z()) + particle_pos.z,
+                    ),
+                    1,
+                    DVec3::new(0.0, 0.1, 0.0),
+                    1.0,
+                );
+            }
             world.play_block_sound(
                 &sound_events::BLOCK_CANDLE_EXTINGUISH,
                 pos,

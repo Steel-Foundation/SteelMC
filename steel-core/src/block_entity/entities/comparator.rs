@@ -14,7 +14,8 @@ struct ComparatorState {
     output_signal: i32,
 }
 
-/// Vanilla `ComparatorBlockEntity`.
+/// Block entity for comparator blocks, storing the cached output signal
+/// strength between recalculations.
 pub struct ComparatorBlockEntity {
     base: BlockEntityBase,
     state: SyncMutex<ComparatorState>,
@@ -67,12 +68,12 @@ mod tests {
     use std::io::Cursor;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
     fn comparator() -> ComparatorBlockEntity {
-        init_test_registry();
+        init_vanilla_registry();
         ComparatorBlockEntity::new(
             Weak::new(),
             BlockPos::new(4, 65, -9),

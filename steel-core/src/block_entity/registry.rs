@@ -15,11 +15,14 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
-    EndGatewayBlockEntity, EndPortalBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
-    RawBlockEntity, SignBlockEntity,
-};
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::wildcard_imports,
+        reason = "the registry intentionally imports every block entity implementation"
+    )
+)]
+use super::entities::*;
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -75,13 +78,13 @@ impl BlockEntityRegistry {
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
-    /// Creates a block entity, falling back to an NBT-preserving raw entity.
+    /// Creates a block entity, falling back to an NBT-preserving unimplemented entity.
     ///
     /// Use this for disk/worldgen paths where an unimplemented block entity type must still
     /// survive save/load. Gameplay paths that require concrete behavior should call
     /// [`Self::create`] and handle `None`.
     #[must_use]
-    pub fn create_or_raw(
+    pub fn create_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -92,13 +95,18 @@ impl BlockEntityRegistry {
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             factory(level, pos, state)
         } else {
-            Arc::new(RawBlockEntity::new(block_entity_type, level, pos, state))
+            Arc::new(UnimplementedBlockEntity::new(
+                block_entity_type,
+                level,
+                pos,
+                state,
+            ))
         }
     }
 
-    /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
+    /// Creates and loads a block entity, falling back to an unimplemented entity.
     #[must_use]
-    pub fn create_and_load_or_raw(
+    pub fn create_and_load_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -113,7 +121,7 @@ impl BlockEntityRegistry {
             entity
         } else {
             let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
-            Arc::new(RawBlockEntity::with_data(
+            Arc::new(UnimplementedBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
@@ -123,9 +131,9 @@ impl BlockEntityRegistry {
         }
     }
 
-    /// Creates a block entity and loads owned NBT, falling back to raw preservation.
+    /// Creates and loads owned block entity NBT, falling back to an unimplemented entity.
     #[must_use]
-    pub fn create_and_load_owned_or_raw(
+    pub fn create_and_load_owned_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -148,7 +156,7 @@ impl BlockEntityRegistry {
             }
             entity
         } else {
-            Arc::new(RawBlockEntity::with_data(
+            Arc::new(UnimplementedBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
@@ -222,9 +230,45 @@ pub fn init_block_entities() {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
         });
 
+        registry.register(&vanilla_block_entity_types::BEACON, |level, pos, state| {
+            Arc::new(BeaconBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(
+            &vanilla_block_entity_types::BLAST_FURNACE,
+            |level, pos, state| Arc::new(BlastFurnaceBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(&vanilla_block_entity_types::SMOKER, |level, pos, state| {
+            Arc::new(SmokerBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(
+            &vanilla_block_entity_types::CAMPFIRE,
+            |level, pos, state| Arc::new(CampfireBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::CHISELED_BOOKSHELF,
+            |level, pos, state| Arc::new(ChiseledBookShelfBlockEntity::new(level, pos, state)),
+        );
+
+        // Register jukebox block entity factory
+        registry.register(&vanilla_block_entity_types::JUKEBOX, |level, pos, state| {
+            Arc::new(JukeboxBlockEntity::new(level, pos, state))
+        });
+
         // Register beehive block entity factory
         registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
             Arc::new(BeehiveBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::BELL, |level, pos, state| {
+            Arc::new(BellBlockEntity::new(level, pos, state))
         });
 
         // Register comparator block entity factory
@@ -242,6 +286,11 @@ pub fn init_block_entities() {
             Arc::new(PistonMovingBlockEntity::new(level, pos, state))
         });
 
+        registry.register(
+            &vanilla_block_entity_types::BRUSHABLE_BLOCK,
+            |level, pos, state| Arc::new(BrushableBlockEntity::new(level, pos, state)),
+        );
+
         // Register End gateway block entity factory
         registry.register(
             &vanilla_block_entity_types::END_GATEWAY,
@@ -254,10 +303,21 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(EndPortalBlockEntity::new(level, pos, state)),
         );
 
+        // Register ender chest block entity factory
+        registry.register(
+            &vanilla_block_entity_types::ENDER_CHEST,
+            |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
+        );
+
         // Register potent sulfur block entity factory
         registry.register(
             &vanilla_block_entity_types::POTENT_SULFUR,
             |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::SHULKER_BOX,
+            |level, pos, state| Arc::new(ShulkerBoxBlockEntity::new(level, pos, state)),
         );
 
         registry

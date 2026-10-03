@@ -54,14 +54,14 @@ mod tests {
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtTag;
     use steel_registry::blocks::properties::{BlockStateProperties, Direction, PistonType};
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
 
     #[test]
     fn propertyful_block_state_round_trips_vanilla_nbt_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let state = vanilla_blocks::PISTON_HEAD
             .default_state()
             .set_value(&BlockStateProperties::FACING, Direction::East)

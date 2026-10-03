@@ -3,8 +3,8 @@
 use std::{slice, sync::Arc};
 
 use glam::DVec3;
-use steel_protocol::packets::game::{AnimateAction, CAnimate, CSetCamera, RelativeMovement};
-use steel_registry::entity_data::EntityPose;
+use steel_math::wrap_degrees;
+use steel_protocol::packets::game::{CSetCamera, RelativeMovement};
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::TextComponent;
 
@@ -114,9 +114,7 @@ fn teleport_targets_facing_entity_feet(
 fn teleport_targets_facing_entity_anchor(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(anchor) = context.entity_anchor("facingAnchor") else {
-        return Err(missing_argument("facingAnchor"));
-    };
+    let anchor = context.entity_anchor("facingAnchor")?;
     teleport_targets_facing_entity(context, anchor)
 }
 
@@ -176,9 +174,7 @@ fn required_coordinates(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<Coordinates, CommandSyntaxError> {
-    context
-        .coordinates(name)
-        .ok_or_else(|| missing_argument(name))
+    context.coordinates(name)
 }
 
 fn teleport_to_entity(
@@ -275,16 +271,7 @@ fn perform_teleport(
 ) {
     if let Some(player) = target.as_player() {
         if player.is_sleeping() {
-            let world = player.get_world();
-            world.broadcast_to_entity_trackers(
-                player.id(),
-                CAnimate::new(player.id(), AnimateAction::WakeUp),
-                None,
-            );
-            player.send_packet(CAnimate::new(player.id(), AnimateAction::WakeUp));
             player.stop_sleeping();
-            player.set_pose(EntityPose::Standing);
-            // TODO: Complete bed occupancy and sleep aggregation updates with the bed system.
         }
         player.send_packet(CSetCamera {
             camera_id: player.id(),
@@ -428,15 +415,6 @@ fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
     (wrap_degrees(yaw), wrap_degrees(pitch))
 }
 
-fn wrap_degrees(value: f32) -> f32 {
-    let wrapped = value.rem_euclid(360.0);
-    if wrapped >= 180.0 {
-        wrapped - 360.0
-    } else {
-        wrapped
-    }
-}
-
 fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], destination: &dyn Entity) {
     let message = if let [target] = targets {
         translations::COMMANDS_TELEPORT_SUCCESS_ENTITY_SINGLE
@@ -489,12 +467,6 @@ fn target_count(targets: &[SharedEntity]) -> Result<i32, CommandSyntaxError> {
         .map_err(|_| CommandSyntaxError::dynamic("Target count exceeds the command result range"))
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
@@ -505,7 +477,7 @@ mod tests {
     };
     use glam::DVec3;
     use steel_protocol::packets::game::RelativeMovement;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -525,7 +497,7 @@ mod tests {
 
     #[test]
     fn teleport_graph_matches_vanilla_target_and_facing_shapes() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

@@ -311,7 +311,7 @@ fn errors_preserve_semantic_kinds_and_translation_arguments() {
     assert_eq!(invalid_underscore.kind(), &SnbtErrorKind::InvalidUnderscore);
     assert_eq!(
         invalid_underscore.component(),
-        TextComponent::from(&translations::SNBT_PARSER_UNDESCORE_NOT_ALLOWED)
+        TextComponent::from(&translations::SNBT_PARSER_UNDERSCORE_NOT_ALLOWED)
     );
 
     let invalid_uuid = parse_snbt("uuid('invalid')").expect_err("invalid UUID should fail");

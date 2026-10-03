@@ -219,7 +219,7 @@ mod tests {
             }
         }
         assert_eq!(map.len(), 0);
-        assert!(map.get_tracking_players(center).is_empty());
+        assert_eq!(map.get_tracking_players(center).len(), 0);
     }
 
     #[test]

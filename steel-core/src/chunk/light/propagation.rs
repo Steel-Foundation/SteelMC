@@ -5,7 +5,8 @@ use super::{
     CachedLightBlock, LIGHT_BLOCKED, LightAxisDirection, LightCacheLayout, LightDirectionSet,
     LightLayer, LightLayerEdit, LightQueueFlags, LightSectionEmptinessChange,
     LightSectionReadCache, LightWorkset, MAX_LIGHT_LEVEL, PackedLightPropagationQueues,
-    PackedLightQueueEntry, get_light_block_into, get_light_opacity, light_occlusion_shape,
+    PackedLightQueueEntry, PooledPackedLightQueues, get_light_block_into, get_light_opacity,
+    light_occlusion_shape,
 };
 
 /// Error returned when a block-light propagation context is built from mismatched caches.
@@ -92,7 +93,7 @@ pub fn propagate_block_light_changes_with_empty_sections(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Block, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     apply_block_empty_section_changes(
@@ -165,7 +166,7 @@ pub fn propagate_block_light_chunk(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Block, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     light_edit.reset_chunk_sections_to_missing(layout.center_chunk());
@@ -240,7 +241,7 @@ pub fn check_block_light_chunk_edges(
 
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Block, |mut light_edit| {
-                let mut queues = PackedLightPropagationQueues::new();
+                let mut queues = PooledPackedLightQueues::take();
 
                 {
                     let mut context = BlockLightPropagationContext::new(
@@ -1048,8 +1049,7 @@ mod tests {
 
     use steel_registry::{
         blocks::properties::{BlockStateProperties, SlabType},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::{ChunkPos, types::UpdateFlags};
 
@@ -1065,7 +1065,7 @@ mod tests {
     };
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 
@@ -1156,7 +1156,7 @@ mod tests {
         workset.with_chunk_read_cache(|chunk_cache| {
             chunk_cache.with_section_read_cache(|section_cache| {
                 chunk_cache.with_light_edit(LightLayer::Sky, |mut light_edit| {
-                    let mut queues = PackedLightPropagationQueues::new();
+                    let mut queues = PooledPackedLightQueues::take();
                     let result = BlockLightPropagationContext::new(
                         section_cache,
                         &mut light_edit,
@@ -1398,7 +1398,7 @@ mod tests {
             panic!("dynamic block changes should skip a missing center chunk");
         };
 
-        assert!(result.updated_sections.is_empty());
+        assert_eq!(result.updated_sections.len(), 0);
     }
 
     #[test]
@@ -1426,7 +1426,7 @@ mod tests {
         workset.with_chunk_read_cache(|chunk_cache| {
             chunk_cache.with_section_read_cache(|section_cache| {
                 chunk_cache.with_light_edit(LightLayer::Block, |mut light_edit| {
-                    let mut queues = PackedLightPropagationQueues::new();
+                    let mut queues = PooledPackedLightQueues::take();
                     let Ok(context) = BlockLightPropagationContext::new(
                         section_cache,
                         &mut light_edit,

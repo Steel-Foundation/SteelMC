@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::clamp_loaded_entity_position;
 
 impl ChunkStorage {
     pub(super) fn entities_to_persistent(entities: &[SharedEntity]) -> Vec<PersistentEntity> {
@@ -114,23 +115,6 @@ impl ChunkStorage {
                 .collect(),
             custom_data: Self::compound_from_persistent(&persistent.custom_data_nbt, uuid),
         }
-    }
-
-    pub(super) fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
-        DVec3::new(
-            pos.x.clamp(
-                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
-                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
-            ),
-            pos.y.clamp(
-                -ENTITY_LOAD_MAX_VERTICAL_POSITION,
-                ENTITY_LOAD_MAX_VERTICAL_POSITION,
-            ),
-            pos.z.clamp(
-                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
-                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
-            ),
-        )
     }
 
     pub(super) fn entity_to_persistent(
@@ -268,7 +252,7 @@ impl ChunkStorage {
         // Parse and load NBT data
         if persistent.nbt_data.is_empty() {
             // No NBT data, just create the entity without loading
-            Some(BLOCK_ENTITIES.create_or_raw(block_entity_type, level, pos, state))
+            Some(BLOCK_ENTITIES.create_or_unimplemented(block_entity_type, level, pos, state))
         } else {
             // Parse NBT from bytes as borrowed
             let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&persistent.nbt_data)) else {
@@ -280,7 +264,13 @@ impl ChunkStorage {
             };
 
             // Create the block entity and load NBT
-            Some(BLOCK_ENTITIES.create_and_load_or_raw(block_entity_type, level, pos, state, &nbt))
+            Some(BLOCK_ENTITIES.create_and_load_or_unimplemented(
+                block_entity_type,
+                level,
+                pos,
+                state,
+                &nbt,
+            ))
         }
     }
 
@@ -369,7 +359,7 @@ impl ChunkStorage {
             return None;
         }
 
-        let pos = Self::clamp_loaded_entity_position(stored_pos);
+        let pos = clamp_loaded_entity_position(stored_pos);
 
         // Validate position is within expected chunk (sanity check)
         let expected_chunk = ChunkPos::from_entity_pos(pos);
@@ -410,7 +400,7 @@ impl ChunkStorage {
             return None;
         };
 
-        Some(ENTITIES.create_and_load_or_raw(
+        ENTITIES.create_and_load(
             EntityLoadRequest {
                 entity_type,
                 position: pos,
@@ -430,6 +420,6 @@ impl ChunkStorage {
                 world: Weak::clone(level),
             },
             &nbt,
-        ))
+        )
     }
 }

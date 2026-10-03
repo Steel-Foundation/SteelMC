@@ -2,15 +2,16 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::{vanilla_blocks, vanilla_fluids};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
+use crate::behavior::blocks::CoralBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, coral_plant_can_survive, coral_scan_for_water, schedule_coral_die_tick};
+use super::BlockRef;
 
 /// Vanilla `CoralPlantBlock` survival (live coral plants such as `tube_coral`).
 ///
@@ -22,6 +23,8 @@ pub struct CoralPlantBlock {
     dead_block: BlockRef,
 }
 
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl CoralPlantBlock {
     /// Creates a new live coral plant block behavior.
     #[must_use]
@@ -32,13 +35,13 @@ impl CoralPlantBlock {
     fn dead_state(&self) -> BlockStateId {
         self.dead_block
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, false)
+            .set_value(WATERLOGGED, false)
     }
 }
 
 impl BlockBehavior for CoralPlantBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        coral_plant_can_survive(world, pos)
+        CoralBlock::can_survive(world, pos)
     }
 
     fn on_place(
@@ -49,7 +52,7 @@ impl BlockBehavior for CoralPlantBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        schedule_coral_die_tick(state, world, pos, self.block);
+        CoralBlock::schedule_die_tick(state, world, pos, self.block);
     }
 
     fn update_shape(
@@ -65,12 +68,9 @@ impl BlockBehavior for CoralPlantBlock {
             return vanilla_blocks::AIR.default_state();
         }
 
-        schedule_coral_die_tick(state, world, pos, self.block);
+        CoralBlock::schedule_die_tick(state, world, pos, self.block);
 
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         state
     }
@@ -81,11 +81,11 @@ impl BlockBehavior for CoralPlantBlock {
             return None;
         }
         // Vanilla: WATERLOGGED reflects whether the click position has full water.
-        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))
+        Some(state.set_value(WATERLOGGED, context.is_full_water()))
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if !coral_scan_for_water(state, world, pos) {
+        if !CoralBlock::scan_for_water(state, world, pos) {
             world.set_block(pos, self.dead_state(), UpdateFlags::UPDATE_CLIENTS);
         }
     }
@@ -93,7 +93,7 @@ impl BlockBehavior for CoralPlantBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn dry_coral_plant_update_shape_schedules_die_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = CoralPlantBlock::new(
             &vanilla_blocks::TUBE_CORAL,
@@ -118,7 +118,7 @@ mod tests {
         let level = supported_level();
         let state = vanilla_blocks::TUBE_CORAL
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(WATERLOGGED, false);
 
         assert_eq!(
             behavior.update_shape(
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn waterlogged_coral_plant_update_shape_schedules_water_not_die_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = CoralPlantBlock::new(
             &vanilla_blocks::TUBE_CORAL,
@@ -149,7 +149,7 @@ mod tests {
         let level = supported_level();
         let state = vanilla_blocks::TUBE_CORAL
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
 
         assert_eq!(
             behavior.update_shape(

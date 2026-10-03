@@ -138,12 +138,12 @@ mod tests {
 
     use steel_utils::BlockStateId;
 
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, vanilla_blocks};
 
     #[test]
     fn matching_states_respects_property_filter() {
-        init_test_registry();
+        init_vanilla_registry();
         let blocks = &REGISTRY.blocks;
 
         let furnace = blocks.matching_states(&vanilla_blocks::BLAST_FURNACE, &[]);
@@ -165,7 +165,7 @@ mod tests {
     /// block matchers neither under- nor over-match vanilla.
     #[test]
     fn matchers_reproduce_extracted_vanilla_states() {
-        init_test_registry();
+        init_vanilla_registry();
 
         #[derive(serde::Deserialize)]
         struct PoiFile {

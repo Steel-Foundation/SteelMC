@@ -313,9 +313,7 @@ impl WorldBlockEntityTickers {
 mod tests {
     use std::sync::{Arc, Weak};
 
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
@@ -348,7 +346,7 @@ mod tests {
 
     #[test]
     fn additions_during_phase_wait_and_follow_between_phase_additions() {
-        init_test_registry();
+        init_vanilla_registry();
         let manager = WorldBlockEntityTickers::new();
         let holder = holder();
         let first = sign(BlockPos::new(1, 2, 3));
@@ -381,7 +379,7 @@ mod tests {
 
     #[test]
     fn rebind_before_turn_uses_new_owner_in_the_original_slot() {
-        init_test_registry();
+        init_vanilla_registry();
         let manager = WorldBlockEntityTickers::new();
         let holder = holder();
         let first = sign(BlockPos::new(1, 2, 3));
@@ -408,7 +406,7 @@ mod tests {
 
     #[test]
     fn remove_then_add_during_phase_creates_a_pending_tail() {
-        init_test_registry();
+        init_vanilla_registry();
         let manager = WorldBlockEntityTickers::new();
         let holder = holder();
         let first = sign(BlockPos::new(1, 2, 3));
@@ -441,7 +439,7 @@ mod tests {
 
     #[test]
     fn frozen_phase_merges_pending_and_prunes_unbound_without_callbacks() {
-        init_test_registry();
+        init_vanilla_registry();
         let manager = WorldBlockEntityTickers::new();
         let holder = holder();
         let first = sign(BlockPos::new(1, 2, 3));

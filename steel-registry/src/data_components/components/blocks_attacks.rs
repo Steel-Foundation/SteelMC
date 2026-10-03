@@ -4,6 +4,7 @@ use std::io::{Cursor, Error, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
+use steel_math::DEGREE_90;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
@@ -23,7 +24,7 @@ pub struct DamageReduction {
 }
 
 impl DamageReduction {
-    pub const DEFAULT_HORIZONTAL_BLOCKING_ANGLE: f32 = 90.0;
+    pub const DEFAULT_HORIZONTAL_BLOCKING_ANGLE: f32 = DEGREE_90;
 
     pub fn new(
         horizontal_blocking_angle: f32,
@@ -640,7 +641,7 @@ mod tests {
 
     use super::{BlocksAttacks, DamageReduction, ItemDamageFunction};
     use crate::data_components::vanilla_components::BLOCKS_ATTACKS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<BlocksAttacks> {
@@ -652,7 +653,7 @@ mod tests {
 
     #[test]
     fn shield_component_round_trips_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let shield = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("shield"))

@@ -1,7 +1,11 @@
+use crate::block_entity::BlockEntity;
+
 use super::{
     Arc, Axis, BlockLocalAabb, BlockPos, BlockStateId, DVec3, DamageSource, Entity, EntityTypeRef,
-    ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_entities,
+    ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_damage_types,
+    vanilla_entities,
 };
+use crate::entity::entities::FallingBlockEntity;
 
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
@@ -49,6 +53,44 @@ pub trait RailBehavior: Send + Sync {
     fn is_straight(&self) -> bool;
 }
 
+/// Shared behavior exposed by blocks implementing vanilla's `Fallable` interface.
+///
+/// Falling entities use this capability for landing, failed-placement, and
+/// damage-source callbacks without depending on one concrete Rust block type.
+pub trait Fallable: Send + Sync {
+    /// Called after a falling entity successfully places its carried state.
+    fn on_land(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        _replaced_state: BlockStateId,
+        _entity: &FallingBlockEntity,
+    ) {
+    }
+
+    /// Called when a falling entity breaks instead of placing its carried state.
+    fn on_broken_after_fall(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &FallingBlockEntity,
+    ) {
+    }
+
+    /// Returns the damage source used when this falling block hurts entities.
+    fn get_fall_damage_source(&self, entity: &FallingBlockEntity) -> DamageSource {
+        DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
+            .with_direct_entity(entity.id())
+            .with_causing_entity(entity.id())
+    }
+
+    /// Returns whether this behavior is in vanilla's `ConcretePowderBlock` hierarchy.
+    fn is_concrete_powder(&self) -> bool {
+        false
+    }
+}
+
 /// Resolved block-local collision boxes for a live block state.
 ///
 /// Most blocks materialize their extracted static voxel shape here. Dynamic
@@ -65,6 +107,7 @@ pub struct BlockLootContext<'a> {
     world: &'a Arc<World>,
     pos: BlockPos,
     entity: Option<&'a dyn Entity>,
+    block_entity: Option<&'a dyn BlockEntity>,
     tool: Option<&'a ItemStack>,
     luck: f32,
 }
@@ -77,6 +120,7 @@ impl<'a> BlockLootContext<'a> {
             world,
             pos,
             entity: None,
+            block_entity: None,
             tool: None,
             luck: 0.0,
         }
@@ -86,6 +130,13 @@ impl<'a> BlockLootContext<'a> {
     #[must_use]
     pub const fn with_entity(mut self, entity: Option<&'a dyn Entity>) -> Self {
         self.entity = entity;
+        self
+    }
+
+    /// Adds the block entity at the broken position.
+    #[must_use]
+    pub const fn with_block_entity(mut self, block_entity: Option<&'a dyn BlockEntity>) -> Self {
+        self.block_entity = block_entity;
         self
     }
 
@@ -123,6 +174,10 @@ impl<'a> BlockLootContext<'a> {
 
     pub(crate) const fn entity(&self) -> Option<&'a dyn Entity> {
         self.entity
+    }
+
+    pub(crate) const fn block_entity(&self) -> Option<&'a dyn BlockEntity> {
+        self.block_entity
     }
 
     pub(crate) const fn tool(&self) -> Option<&'a ItemStack> {
@@ -174,9 +229,12 @@ impl BlockCollisionContext {
         }
     }
 
-    /// Collision context for vanilla pre-move collision validation.
+    /// Collision context for vanilla `CollisionContext.withPosition(entity, position)`.
+    ///
+    /// In Steel's reduced representation this also matches
+    /// `CollisionContext.placementContext`.
     #[must_use]
-    pub const fn pre_move(entity_bottom: f64, descending: bool) -> Self {
+    pub const fn with_position(entity_bottom: f64, descending: bool) -> Self {
         Self {
             entity_bottom: Some(entity_bottom),
             fall_distance: 0.0,
@@ -187,7 +245,16 @@ impl BlockCollisionContext {
         }
     }
 
-    /// Collision context for vanilla `CollisionContext.positionContext(y)`.
+    /// Placement obstruction context when no entity initiated the placement.
+    ///
+    /// This matches vanilla `CollisionContext.placementContext(null)`.
+    #[must_use]
+    pub const fn placement_without_entity() -> Self {
+        Self::with_position(f64::MIN, false)
+    }
+
+    /// Non-placement collision context anchored at a fixed Y position, with
+    /// no descent or fall distance.
     #[must_use]
     pub const fn position_context(y: f64) -> Self {
         Self {
@@ -251,7 +318,7 @@ impl BlockCollisionContext {
         self.placement
     }
 
-    /// Vanilla `EntityCollisionContext.isAbove`.
+    /// Returns whether the entity is above the given shape at the position.
     #[must_use]
     pub fn is_above(self, shape: VoxelShape, pos: BlockPos, default_value: bool) -> bool {
         let Some(entity_bottom) = self.entity_bottom else {

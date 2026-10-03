@@ -9,8 +9,8 @@ use std::{
 use glam::DVec3;
 use simdnbt::{borrow::BaseNbtCompound as BorrowedNbtCompound, owned::NbtCompound};
 use steel_registry::{
-    game_events::GameEventRef, test_support::init_test_registry, vanilla_block_entity_types,
-    vanilla_blocks, vanilla_game_events,
+    game_events::GameEventRef, init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks,
+    vanilla_game_events,
 };
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, locks::SyncMutex,
@@ -116,7 +116,7 @@ fn listener_block_entity(
 
 #[test]
 fn active_block_entity_listener_uses_stored_selection_for_removal() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("active_block_entity_listener");
     let pos = BlockPos::new(1, 64, 1);
@@ -164,7 +164,7 @@ fn active_block_entity_listener_uses_stored_selection_for_removal() {
 
 #[test]
 fn full_activation_registers_listener_without_block_ticking_readiness() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("full_block_entity_listener_activation");
     let min_y = world.get_min_y();
@@ -228,7 +228,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
 
 #[test]
 fn full_demotion_hides_listener_without_reordering_on_revival() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("retained_block_entity_listeners");
     let first_pos = BlockPos::new(1, 64, 1);
@@ -324,7 +324,7 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
 
 #[test]
 fn retained_block_entity_state_does_not_reselect_listener() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("retained_block_entity_listener_state");
     let pos = BlockPos::new(1, 64, 1);

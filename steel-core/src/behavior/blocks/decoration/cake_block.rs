@@ -2,9 +2,13 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt,
+        properties::{BlockStateProperties, IntProperty},
+    },
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks,
+    sound_events, vanilla_blocks, vanilla_custom_stats,
     vanilla_item_tags::ItemTag,
 };
 use steel_utils::{
@@ -22,14 +26,12 @@ use crate::{
 };
 
 /// Behavior for Cakes
-/// TODO:
-/// - [ ] animation ticks
-/// - [ ] onProjectile
-/// - [ ] onExplosion
 #[block_behavior]
 pub struct CakeBlock {
     block: BlockRef,
 }
+
+const BITES: &IntProperty = &BlockStateProperties::BITES;
 
 impl CakeBlock {
     /// Cakes a new Cake Block Behavior
@@ -46,11 +48,12 @@ impl CakeBlock {
         player: &Player,
     ) -> InteractionResult {
         if player.can_eat(false) {
+            player.award_custom_stat(&vanilla_custom_stats::EAT_CAKE_SLICE);
             let mut food_data = player.food_data.lock();
             food_data.eat(2, 0.1);
-            let bites = state.get_value(&BlockStateProperties::BITES);
+            let bites = state.get_value(BITES);
             let new_state = if bites < 6 {
-                state.set_value(&BlockStateProperties::BITES, bites + 1)
+                state.set_value(BITES, bites + 1)
             } else {
                 vanilla_blocks::AIR.default_state()
             };
@@ -126,16 +129,15 @@ impl BlockBehavior for CakeBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if state.get_value(&BlockStateProperties::BITES) == 0 {
+        if state.get_value(BITES) == 0 {
+            let has_infinite_materials = player.has_infinite_materials();
             let candle_cake = inv.with_item(|item_stack| {
                 let item = item_stack.item();
                 if !item.has_tag(&ItemTag::CANDLES) {
                     return None;
                 }
                 let candle_cake = candle_cakes::candle_to_candle_cake(item)?;
-                if !player.has_infinite_materials() {
-                    item_stack.shrink(1);
-                }
+                item_stack.consume_one(has_infinite_materials);
                 Some(candle_cake)
             });
             let Some(candle_cake) = candle_cake else {
@@ -161,7 +163,7 @@ impl BlockBehavior for CakeBlock {
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        Self::analog_output_signal(i32::from(state.get_value(&BlockStateProperties::BITES)))
+        Self::analog_output_signal(i32::from(state.get_value(BITES)))
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

@@ -1,9 +1,12 @@
 use super::*;
 
+use steel_registry::RegistryEntry as _;
+use steel_registry::vanilla_biomes;
+
 #[test]
-#[should_panic(expected = "persisted chunk status must match its Full runtime state")]
+#[should_panic(expected = "a chunk persisted as Full must have its Full runtime state initialized")]
 fn chunk_save_rejects_full_status_for_proto_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let chunk = Chunk::new(
         single_empty_section(),
@@ -16,8 +19,27 @@ fn chunk_save_rejects_full_status_for_proto_data() {
 }
 
 #[test]
+fn chunk_save_abandons_a_proto_status_snapshot_of_a_promoted_chunk() {
+    init_vanilla_registry();
+
+    let chunk = Chunk::new(
+        single_empty_section(),
+        ChunkPos::new(0, 0),
+        0,
+        16,
+        Weak::new(),
+    );
+    let _ = chunk.promote_to_full();
+
+    assert!(
+        ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Biomes, &[], true).is_none(),
+        "a proto-status snapshot of a promoted chunk must be abandoned"
+    );
+}
+
+#[test]
 fn unknown_referenced_block_state_is_corruption_instead_of_air_recovery() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(0, 0);
     let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -46,7 +68,7 @@ fn unknown_referenced_block_state_is_corruption_instead_of_air_recovery() {
 
 #[test]
 fn unknown_referenced_biome_is_corruption_instead_of_plains_recovery() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(0, 0);
     let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -75,7 +97,7 @@ fn unknown_referenced_biome_is_corruption_instead_of_plains_recovery() {
 
 #[test]
 fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -113,7 +135,7 @@ fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
 
 #[test]
 fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let proto = Chunk::new(
         single_empty_section(),
@@ -142,7 +164,7 @@ fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
 
 #[test]
 fn proto_carving_mask_presence_roundtrips_when_empty() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -170,7 +192,7 @@ fn proto_carving_mask_presence_roundtrips_when_empty() {
 
 #[tokio::test]
 async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -193,7 +215,7 @@ async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
 
 #[test]
 fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -235,7 +257,7 @@ fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
 
 #[test]
 fn proto_postprocessing_roundtrips_through_persistent_chunk() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(-2, 1);
     let marked = BlockPos::new(-17, -63, 31);
@@ -266,7 +288,7 @@ fn proto_postprocessing_roundtrips_through_persistent_chunk() {
 
 #[test]
 fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
-    init_test_core();
+    init_globals();
 
     let pos = ChunkPos::new(-2, 1);
     let marked = BlockPos::new(-17, -63, 31);
@@ -310,4 +332,54 @@ fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
     };
 
     assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
+}
+
+#[test]
+fn heterogeneous_biome_section_roundtrips_through_persistent_chunk() {
+    init_vanilla_registry();
+
+    let pos = ChunkPos::new(0, 0);
+    let mut section = ChunkSection::new_empty();
+    let desert = vanilla_biomes::DESERT.id() as u16;
+    // Change both ends of the 4x4x4 biome cube while leaving the other cells at
+    // their default biome. Saving and loading this heterogeneous section checks
+    // the packed length and preserves the biome values across the whole cube.
+    section.biomes.set(0, 0, 0, desert);
+    section.biomes.set(3, 3, 3, desert);
+    let chunk = Chunk::new(
+        Sections::from_owned(vec![section].into_boxed_slice()),
+        pos,
+        0,
+        16,
+        Weak::new(),
+    );
+    let expected = chunk.sections.read_all_biomes();
+    assert!(expected.contains(&desert));
+
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Empty, &[], true)
+    else {
+        panic!("forced chunk save should produce a payload");
+    };
+    let Some(section) = prepared.persistent.sections.first() else {
+        panic!("a saved chunk keeps every section");
+    };
+    let biomes = match section {
+        PersistentSection::Homogeneous { biomes, .. }
+        | PersistentSection::Heterogeneous { biomes, .. } => biomes,
+    };
+    assert!(matches!(biomes, PersistentBiomeData::Heterogeneous { .. }));
+
+    let loaded = ChunkStorage::try_persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Empty,
+        0,
+        16,
+        Weak::new(),
+    );
+    let loaded = loaded.expect("heterogeneous biome data must keep its exact packed entry count");
+    assert_eq!(
+        loaded.chunk.sections.read_all_biomes().as_ref(),
+        expected.as_ref()
+    );
 }

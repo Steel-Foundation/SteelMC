@@ -1,4 +1,3 @@
-cargo-features = ["codegen-backend"]
 [workspace]
 resolver = "2"
 members = [
@@ -15,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.15.2+mc26.2"
+version = "0.15.4+mc26.2"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -106,7 +105,7 @@ reqwest = { version = "0.13.4", features = [
 ], default-features = false }
 
 # Cryptography
-rsa = { version = "0.10.0-rc.18", features = ["sha2"] }
+rsa = { version = "0.10.0-rc.18", features = ["sha1", "sha2"] }
 rand = "0.10.2"
 aes = "0.9.1"
 cfb8 = "0.9.1"
@@ -195,6 +194,8 @@ missing_const_for_fn = "warn"
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "warn"
+clone_on_ref_ptr = "warn"
+cloned_instead_of_copied = "warn"
 
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }

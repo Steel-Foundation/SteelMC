@@ -6,7 +6,11 @@
 //! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
 use rayon::{ThreadPool, prelude::*};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::sync::{Arc, Weak};
+use smallvec::SmallVec;
+use std::{
+    mem,
+    sync::{Arc, Weak},
+};
 
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::game::{
@@ -34,6 +38,89 @@ const MAX_CHUNKS_PER_TICK: f32 = 500.0;
 const START_CHUNKS_PER_TICK: f32 = 9.0;
 /// Maximum unacknowledged batches after first ack (vanilla: 10)
 const MAX_UNACKNOWLEDGED_BATCHES: u16 = 10;
+
+/// Connection-wide pacing, shared across world changes and player replacements.
+///
+/// Unlike vanilla's single-threaded sender, Steel unlocks the sender while encoding.
+/// ACKs are queued until the next prepare so they cannot reset an in-flight batch's quota.
+#[derive(Debug)]
+struct ChunkBatchPacing {
+    /// Committed batches whose ACK feedback has not yet been applied.
+    unacknowledged_batches: u16,
+    /// Client-reported rate, including fractional chunks of credit per sending tick.
+    desired_chunks_per_tick: f32,
+    /// Accumulated credit; preparation floors this to select whole chunks only.
+    batch_quota: f32,
+    /// Starts at one batch; the first ACK opens the full send window.
+    max_unacknowledged_batches: u16,
+    /// Accepted ACK rates in arrival order, bounded by the outstanding batch count.
+    accepted_feedback: SmallVec<[f32; MAX_UNACKNOWLEDGED_BATCHES as usize]>,
+}
+
+impl ChunkBatchPacing {
+    fn begin_prepare(&mut self) -> Option<usize> {
+        self.drain_feedback();
+
+        if self.unacknowledged_batches >= self.max_unacknowledged_batches {
+            return None;
+        }
+
+        let max_batch_size = self.desired_chunks_per_tick.max(1.0);
+        self.batch_quota = (self.batch_quota + self.desired_chunks_per_tick).min(max_batch_size);
+        Some(self.batch_quota.floor() as usize)
+    }
+
+    fn commit_batch(&mut self, batch_size: usize) {
+        debug_assert!(batch_size > 0);
+        debug_assert!(batch_size as f32 <= self.batch_quota);
+        self.unacknowledged_batches += 1;
+        self.batch_quota -= batch_size as f32;
+    }
+
+    fn record_feedback(&mut self, desired_chunks_per_tick: f32) -> bool {
+        let outstanding_batch_count = usize::from(self.unacknowledged_batches);
+        if self.accepted_feedback.len() >= outstanding_batch_count
+            || self.accepted_feedback.len() >= usize::from(MAX_UNACKNOWLEDGED_BATCHES)
+        {
+            return false;
+        }
+
+        self.accepted_feedback.push(desired_chunks_per_tick);
+        true
+    }
+
+    fn drain_feedback(&mut self) {
+        // Acceptance reserves at most one ACK per outstanding batch. Commits can
+        // only increase that count, so it reaches zero only on the final queued ACK.
+        debug_assert!(self.accepted_feedback.len() <= usize::from(self.unacknowledged_batches));
+        for desired_chunks_per_tick in mem::take(&mut self.accepted_feedback) {
+            self.unacknowledged_batches = self.unacknowledged_batches.saturating_sub(1);
+            self.desired_chunks_per_tick = if desired_chunks_per_tick.is_nan() {
+                MIN_CHUNKS_PER_TICK
+            } else {
+                desired_chunks_per_tick.clamp(MIN_CHUNKS_PER_TICK, MAX_CHUNKS_PER_TICK)
+            };
+
+            if self.unacknowledged_batches == 0 {
+                self.batch_quota = 1.0;
+            }
+
+            self.max_unacknowledged_batches = MAX_UNACKNOWLEDGED_BATCHES;
+        }
+    }
+}
+
+impl Default for ChunkBatchPacing {
+    fn default() -> Self {
+        Self {
+            unacknowledged_batches: 0,
+            desired_chunks_per_tick: START_CHUNKS_PER_TICK,
+            batch_quota: 0.0,
+            max_unacknowledged_batches: 1,
+            accepted_feedback: SmallVec::new(),
+        }
+    }
+}
 
 /// One chunk selected during the prepare phase.
 pub struct PreparedChunk {
@@ -81,25 +168,22 @@ impl EncodedChunk {
 }
 
 /// This struct is responsible for sending chunks to the client.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ChunkSender {
     /// A list of chunks that are waiting to be sent to the client.
     pub pending_chunks: FxHashSet<ChunkPos>,
     /// Chunks whose initial chunk packet has been queued for this client.
     sent_chunks: FxHashSet<ChunkPos>,
-    /// The number of batches that have been sent to the client but have not been acknowledged yet.
-    pub unacknowledged_batches: u16,
-    /// The number of chunks that should be sent to the client per tick.
-    /// This is dynamically adjusted based on client feedback.
-    pub desired_chunks_per_tick: f32,
-    /// The number of chunks that can be sent to the client in the current batch.
-    pub batch_quota: f32,
-    /// The maximum number of unacknowledged batches allowed.
-    /// Starts at 1 and increases to `MAX_UNACKNOWLEDGED_BATCHES` after first ack.
-    pub max_unacknowledged_batches: u16,
+    pacing: ChunkBatchPacing,
 }
 
 impl ChunkSender {
+    /// Clears chunk membership from the previous world while preserving connection pacing.
+    pub(crate) fn clear_world_chunks(&mut self) {
+        self.pending_chunks.clear();
+        self.sent_chunks.clear();
+    }
+
     /// Marks a chunk as pending to be sent to the client.
     pub fn mark_chunk_pending_to_send(&mut self, pos: ChunkPos) {
         self.sent_chunks.remove(&pos);
@@ -119,7 +203,6 @@ impl ChunkSender {
         }
     }
 
-    /// Encodes and sends a packet through the connection.
     fn send_packet<P: ClientPacket>(connection: &PlayerConnection, packet: P) {
         let encoded =
             EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
@@ -130,24 +213,20 @@ impl ChunkSender {
     /// Phase 1: Lock briefly to drain pending chunks and snapshot state.
     ///
     /// Returns `None` if there is nothing to send this tick.
+    /// The caller must complete or discard the returned batch before preparing
+    /// another one for this sender; the server's sending pass enforces this.
     pub fn prepare_batch(
         &mut self,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
         chunk_send_epoch: &SyncMutex<u32>,
     ) -> Option<PreparedBatch> {
-        if self.unacknowledged_batches >= self.max_unacknowledged_batches {
+        let max_batch_size = self.pacing.begin_prepare()?;
+        if max_batch_size == 0 || self.pending_chunks.is_empty() {
             return None;
         }
 
-        let max_batch_size = self.desired_chunks_per_tick.max(1.0);
-        self.batch_quota = (self.batch_quota + self.desired_chunks_per_tick).min(max_batch_size);
-
-        if self.batch_quota < 1.0 || self.pending_chunks.is_empty() {
-            return None;
-        }
-
-        let holders = self.collect_candidates(world, player_chunk_pos);
+        let holders = self.collect_candidates(world, player_chunk_pos, max_batch_size);
         if holders.is_empty() {
             return None;
         }
@@ -252,26 +331,14 @@ impl ChunkSender {
         }
         drop(epoch);
 
-        let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
-        for encoded in encoded_chunks {
-            if !self.pending_chunks.contains(&encoded.pos) {
-                continue;
-            }
-            let Some(prepared) = batch.chunks.iter().find(|chunk| chunk.pos == encoded.pos) else {
-                continue;
-            };
-            if !encoded.is_current_for(prepared) {
-                continue;
-            }
-            valid_chunks.push(encoded);
-        }
+        let valid_chunks =
+            Self::resolve_valid_chunks(&batch.chunks, encoded_chunks, &self.pending_chunks);
 
         if valid_chunks.is_empty() {
             return Vec::new();
         }
 
-        self.unacknowledged_batches += 1;
-        self.batch_quota -= valid_chunks.len() as f32;
+        self.pacing.commit_batch(valid_chunks.len());
 
         Self::send_packet(connection, CChunkBatchStart {});
 
@@ -296,15 +363,44 @@ impl ChunkSender {
         sent_chunks
     }
 
+    /// Keeps the encoded chunks that are still pending and still match their prepared source.
+    ///
+    /// `encoded_chunks` is a subsequence of `prepared` in the same relative order:
+    /// [`Self::encode_batch`] maps over `prepared` with an order-preserving parallel
+    /// iterator and only drops entries. A single forward cursor over `prepared` therefore
+    /// resolves every encoded chunk in one pass, instead of restarting the scan per chunk.
+    fn resolve_valid_chunks(
+        prepared: &[PreparedChunk],
+        encoded_chunks: Vec<EncodedChunk>,
+        pending: &FxHashSet<ChunkPos>,
+    ) -> Vec<EncodedChunk> {
+        let mut prepared_chunks = prepared.iter();
+        let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
+
+        for encoded in encoded_chunks {
+            if !pending.contains(&encoded.pos) {
+                continue;
+            }
+            let Some(prepared) = prepared_chunks.find(|prepared| prepared.pos == encoded.pos)
+            else {
+                continue;
+            };
+            if encoded.is_current_for(prepared) {
+                valid_chunks.push(encoded);
+            }
+        }
+
+        valid_chunks
+    }
+
     fn collect_candidates(
         &mut self,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
+        max_batch_size: usize,
     ) -> Vec<PreparedChunk> {
-        let max_batch_size = self.batch_quota.floor() as usize;
         let mut candidates: Vec<ChunkPos> = self.pending_chunks.iter().copied().collect();
 
-        // Sort by distance to player
         candidates.sort_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
 
         let mut chunks_to_send = Vec::new();
@@ -317,7 +413,7 @@ impl ChunkSender {
             if let Some(holder) = world
                 .chunk_map
                 .chunks
-                .read_sync(&pos, |_, chunk| chunk.clone())
+                .read_sync(&pos, |_, chunk| Arc::clone(chunk))
                 && holder.published_status() == Some(ChunkStatus::Full)
             {
                 let readiness = holder.ticking_readiness_snapshot();
@@ -339,36 +435,9 @@ impl ChunkSender {
         dx.saturating_mul(dx).saturating_add(dz.saturating_mul(dz))
     }
 
-    /// Handles the acknowledgement of a chunk batch from the client.
-    ///
-    /// The client sends back its desired chunks per tick based on how fast it can
-    /// process chunks. We clamp this value and use it to adjust our sending rate.
-    pub const fn on_chunk_batch_received_by_client(
-        &mut self,
-        desired_chunks_per_tick: f32,
-    ) -> bool {
-        if self.unacknowledged_batches == 0 {
-            return false;
-        }
-
-        self.unacknowledged_batches = self.unacknowledged_batches.saturating_sub(1);
-
-        // Handle NaN and clamp to valid range (vanilla uses 0.01-64, we use 0.01-500)
-        self.desired_chunks_per_tick = if desired_chunks_per_tick.is_nan() {
-            MIN_CHUNKS_PER_TICK
-        } else {
-            desired_chunks_per_tick.clamp(MIN_CHUNKS_PER_TICK, MAX_CHUNKS_PER_TICK)
-        };
-
-        // Reset batch quota when all batches are acknowledged
-        if self.unacknowledged_batches == 0 {
-            self.batch_quota = 1.0;
-        }
-
-        // After receiving the first acknowledgement, allow more unacknowledged batches
-        // for better pipelining (vanilla behavior)
-        self.max_unacknowledged_batches = MAX_UNACKNOWLEDGED_BATCHES;
-        true
+    /// Queues accepted client rate feedback for the next prepare boundary.
+    pub fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) -> bool {
+        self.pacing.record_feedback(desired_chunks_per_tick)
     }
 
     /// Returns whether the client has been queued the initial chunk packet.
@@ -388,39 +457,43 @@ impl ChunkSender {
         self.pending_chunks.remove(&pos);
         self.sent_chunks.insert(pos);
     }
-}
 
-impl Default for ChunkSender {
-    fn default() -> Self {
-        Self {
-            pending_chunks: FxHashSet::default(),
-            sent_chunks: FxHashSet::default(),
-            unacknowledged_batches: 0,
-            desired_chunks_per_tick: START_CHUNKS_PER_TICK,
-            batch_quota: 0.0,
-            max_unacknowledged_batches: 1,
-        }
+    #[cfg(test)]
+    pub(crate) const fn unacknowledged_batch_count_for_test(&self) -> u16 {
+        self.pacing.unacknowledged_batches
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::behavior::init_behaviors;
+#[cfg(any(test, feature = "benchmark-support"))]
+/// Fixtures and direct entry points shared by unit tests and Criterion benchmarks.
+///
+/// The commit phase needs a [`PlayerConnection`] and cannot be driven from a
+/// benchmark, so this exposes the pure batch-resolution step that runs inside it
+/// along with the pieces needed to build a realistic batch.
+pub mod benchmark_support {
+    use std::sync::{Arc, Weak};
+
+    use rustc_hash::FxHashSet;
+    use steel_utils::ChunkPos;
+
+    use super::{ChunkSender, EncodedChunk, PreparedChunk};
     use crate::chunk::{
         Chunk,
-        chunk_holder::TickingReadiness,
+        chunk_holder::{ChunkHolder, TickingReadiness},
         chunk_ticket_manager::ChunkTicketLevel,
         heightmap::ChunkHeightmaps,
         light::ChunkLightData,
         section::{ChunkSection, Sections},
+        status::ChunkStatus,
     };
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
-    use std::sync::Weak;
-    use steel_registry::test_support::init_test_registry;
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
-
-    fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
+    /// Builds a block-ticking prepared chunk backed by a real empty full chunk.
+    ///
+    /// The holder is the same shape the prepare phase produces, so an encoded
+    /// chunk built from it passes every [`EncodedChunk::is_current_for`] check.
+    #[must_use]
+    pub fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
         let chunk = Chunk::from_full_disk(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             pos,
@@ -452,204 +525,35 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parallel_chunk_encoding_preserves_batch_order_and_cache_entries() {
-        init_test_registry();
-        init_behaviors();
-        let positions = [
-            ChunkPos::new(3, -2),
-            ChunkPos::new(-1, 4),
-            ChunkPos::new(8, 5),
-            ChunkPos::new(0, 0),
-        ];
-        let batch = PreparedBatch {
-            chunks: positions.into_iter().map(prepared_full_chunk).collect(),
-            has_skylight: true,
-            epoch_snapshot: 0,
-        };
-        let encoding_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(2)
-            .build()
-            .expect("test chunk encoding pool should initialize");
-        let mut cache = FxHashMap::default();
-
-        let encoded = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
-
-        assert_eq!(
-            encoded.iter().map(|chunk| chunk.pos).collect::<Vec<_>>(),
-            positions
-        );
-        assert_eq!(cache.len(), positions.len());
-        for chunk in &encoded {
-            let cached = cache
-                .get(&chunk.pos)
-                .expect("every encoded chunk should be cached");
-            assert!(Arc::ptr_eq(
-                &cached.packet.encoded_data,
-                &chunk.packet.encoded_data
-            ));
-        }
-
-        let encoded_again = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
-        for (first, second) in encoded.iter().zip(&encoded_again) {
-            assert_eq!(first.pos, second.pos);
-            assert!(Arc::ptr_eq(
-                &first.packet.encoded_data,
-                &second.packet.encoded_data
-            ));
-        }
+    /// Position the encoded chunk was built for.
+    #[must_use]
+    pub const fn encoded_pos(encoded: &EncodedChunk) -> ChunkPos {
+        encoded.pos
     }
 
-    #[test]
-    fn readiness_demotion_invalidates_prepared_chunk_encoding() {
-        init_test_registry();
-        init_behaviors();
-        let prepared = prepared_full_chunk(ChunkPos::new(4, -7));
-        prepared
-            .holder
-            .transition_ticking_readiness(TickingReadiness::Unready);
-        let batch = PreparedBatch {
-            chunks: vec![prepared],
-            has_skylight: true,
-            epoch_snapshot: 0,
-        };
-        let encoding_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("test chunk encoding pool should initialize");
-        let mut cache = FxHashMap::default();
-
-        assert!(ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool).is_empty());
-        assert!(cache.is_empty());
+    /// Whether an encoded chunk still matches the prepared chunk it came from.
+    ///
+    /// Exposed so a benchmark can drive an alternative resolution strategy through
+    /// the exact validity check the commit phase uses.
+    #[must_use]
+    pub fn encoded_is_current_for(encoded: &EncodedChunk, prepared: &PreparedChunk) -> bool {
+        encoded.is_current_for(prepared)
     }
 
-    #[test]
-    fn encoding_cache_requires_holder_identity_and_exact_readiness_generation() {
-        init_test_registry();
-        init_behaviors();
-        let pos = ChunkPos::new(-5, 9);
-        let first_batch = PreparedBatch {
-            chunks: vec![prepared_full_chunk(pos)],
-            has_skylight: true,
-            epoch_snapshot: 0,
-        };
-        let encoding_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("test chunk encoding pool should initialize");
-        let mut cache = FxHashMap::default();
-
-        let first = ChunkSender::encode_batch(&first_batch, &mut cache, None, &encoding_pool);
-        assert_eq!(first.len(), 1);
-
-        let replacement_batch = PreparedBatch {
-            chunks: vec![prepared_full_chunk(pos)],
-            has_skylight: true,
-            epoch_snapshot: 0,
-        };
-        let replacement =
-            ChunkSender::encode_batch(&replacement_batch, &mut cache, None, &encoding_pool);
-        assert_eq!(replacement.len(), 1);
-        assert!(!Arc::ptr_eq(
-            &first[0].packet.encoded_data,
-            &replacement[0].packet.encoded_data
-        ));
-
-        let holder = Arc::clone(&replacement_batch.chunks[0].holder);
-        holder.transition_ticking_readiness(TickingReadiness::Unready);
-        holder.transition_ticking_readiness(TickingReadiness::BlockTicking);
-        let rebound_batch = PreparedBatch {
-            chunks: vec![PreparedChunk {
-                pos,
-                readiness: holder.ticking_readiness_snapshot(),
-                holder,
-            }],
-            has_skylight: true,
-            epoch_snapshot: 0,
-        };
-        let rebound = ChunkSender::encode_batch(&rebound_batch, &mut cache, None, &encoding_pool);
-        assert_eq!(rebound.len(), 1);
-        assert!(!Arc::ptr_eq(
-            &replacement[0].packet.encoded_data,
-            &rebound[0].packet.encoded_data
-        ));
-    }
-
-    #[test]
-    fn chunk_batch_ack_without_outstanding_batch_does_not_update_pacing() {
-        let mut sender = ChunkSender::default();
-
-        assert!(!sender.on_chunk_batch_received_by_client(64.0));
-        assert_eq!(sender.unacknowledged_batches, 0);
-        assert_eq!(
-            sender.desired_chunks_per_tick.to_bits(),
-            START_CHUNKS_PER_TICK.to_bits()
-        );
-        assert_eq!(sender.batch_quota.to_bits(), 0.0_f32.to_bits());
-        assert_eq!(sender.max_unacknowledged_batches, 1);
-    }
-
-    #[test]
-    fn chunk_batch_ack_updates_pacing_for_outstanding_batch() {
-        let mut sender = ChunkSender {
-            unacknowledged_batches: 1,
-            ..ChunkSender::default()
-        };
-
-        assert!(sender.on_chunk_batch_received_by_client(f32::NAN));
-        assert_eq!(sender.unacknowledged_batches, 0);
-        assert_eq!(
-            sender.desired_chunks_per_tick.to_bits(),
-            MIN_CHUNKS_PER_TICK.to_bits()
-        );
-        assert_eq!(sender.batch_quota.to_bits(), 1.0_f32.to_bits());
-        assert_eq!(
-            sender.max_unacknowledged_batches,
-            MAX_UNACKNOWLEDGED_BATCHES
-        );
-    }
-
-    #[test]
-    fn marking_chunk_pending_clears_sent_state() {
-        let mut sender = ChunkSender::default();
-        let pos = ChunkPos::new(2, -3);
-        sender.sent_chunks.insert(pos);
-
-        sender.mark_chunk_pending_to_send(pos);
-
-        assert!(sender.pending_chunks.contains(&pos));
-        assert!(!sender.is_chunk_sent(pos));
-    }
-
-    #[test]
-    fn chunk_distance_squared_handles_far_chunk_coordinates() {
-        let distance = ChunkSender::chunk_distance_squared(
-            ChunkPos::new(1_250_000, -1_250_000),
-            ChunkPos::new(0, 0),
-        );
-
-        assert_eq!(distance, 3_125_000_000_000);
-    }
-
-    #[test]
-    fn chunk_distance_squared_handles_valid_world_extremes() {
-        let max = ChunkPos::MAX_COORDINATE_VALUE;
-        let delta = u64::from(max.abs_diff(-max));
-        let expected = delta * delta * 2;
-
-        let distance =
-            ChunkSender::chunk_distance_squared(ChunkPos::new(max, max), ChunkPos::new(-max, -max));
-
-        assert_eq!(distance, expected);
-    }
-
-    #[test]
-    fn chunk_distance_squared_saturates_for_invalid_i32_extremes() {
-        let distance = ChunkSender::chunk_distance_squared(
-            ChunkPos::new(i32::MIN, i32::MIN),
-            ChunkPos::new(i32::MAX, i32::MAX),
-        );
-
-        assert_eq!(distance, u64::MAX);
+    /// Runs the batch-resolution step of [`ChunkSender::commit_batch`].
+    #[must_use]
+    #[expect(
+        clippy::implicit_hasher,
+        reason = "mirrors the FxHashSet the commit phase actually passes"
+    )]
+    pub fn resolve_valid_chunks(
+        prepared: &[PreparedChunk],
+        encoded_chunks: Vec<EncodedChunk>,
+        pending: &FxHashSet<ChunkPos>,
+    ) -> Vec<EncodedChunk> {
+        ChunkSender::resolve_valid_chunks(prepared, encoded_chunks, pending)
     }
 }
+
+#[cfg(test)]
+mod tests;

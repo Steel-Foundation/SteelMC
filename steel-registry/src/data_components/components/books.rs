@@ -242,6 +242,18 @@ impl WrittenBookContent {
         self.generation
     }
 
+    /// Returns the signed-book content created by one crafting copy.
+    #[must_use]
+    pub fn craft_copy(&self) -> Self {
+        Self {
+            title: self.title.clone(),
+            author: self.author.clone(),
+            generation: self.generation + 1,
+            pages: self.pages.clone(),
+            resolved: self.resolved,
+        }
+    }
+
     #[must_use]
     pub fn pages(&self) -> &[Filterable<TextComponent>] {
         &self.pages
@@ -597,7 +609,7 @@ mod tests {
 
     use super::{Filterable, WritableBookContent, WrittenBookContent};
     use crate::data_components::vanilla_components::WRITABLE_BOOK_CONTENT;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: simdnbt::owned::NbtTag) -> Option<T> {
@@ -661,7 +673,7 @@ mod tests {
 
     #[test]
     fn extracted_writable_book_starts_with_empty_pages() {
-        init_test_registry();
+        init_vanilla_registry();
         let item = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("writable_book"))

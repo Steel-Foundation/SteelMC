@@ -1,11 +1,11 @@
 //! Branch-local command parse state.
 
-use std::sync::Arc;
-
 use super::{
     BrigadierRuntime, CommandRuntime, CommandSyntaxError, ContainsPrimitiveArgumentValue, NodeId,
     PrimitiveArgumentValue, StringRange, StringReader, node::CommandRedirect,
 };
+use crate::command::{incorrectly_typed_argument, missing_argument};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 struct ParsedArgument<V> {
@@ -38,64 +38,44 @@ impl<V> ParsedArguments<V> {
         }
     }
 
-    fn argument(&self, name: &str) -> Option<&V> {
+    fn argument(&self, name: &str) -> Result<&V, CommandSyntaxError> {
         self.values
             .iter()
             .find(|(argument_name, _)| argument_name.as_ref() == name)
             .map(|(_, argument)| &argument.value)
+            .ok_or_else(|| missing_argument(name))
     }
+}
+
+macro_rules! impl_get_primitive_argument_value {
+    ($name:ident, $ty:ty, $argument_value:ident) => {
+        fn $name(&self, name: &str) -> Result<$ty, CommandSyntaxError> {
+            let PrimitiveArgumentValue::$argument_value(value) =
+                self.argument(name)?.primitive_value(name)?
+            else {
+                return Err(incorrectly_typed_argument(name));
+            };
+            Ok(*value)
+        }
+    };
 }
 
 impl<V> ParsedArguments<V>
 where
     V: ContainsPrimitiveArgumentValue,
 {
-    fn boolean(&self, name: &str) -> Option<bool> {
-        let Some(PrimitiveArgumentValue::Bool(value)) = self.argument(name)?.primitive_value()
-        else {
-            return None;
-        };
-        Some(*value)
-    }
+    impl_get_primitive_argument_value!(boolean, bool, Bool);
+    impl_get_primitive_argument_value!(integer, i32, Integer);
+    impl_get_primitive_argument_value!(long, i64, Long);
+    impl_get_primitive_argument_value!(float, f32, Float);
+    impl_get_primitive_argument_value!(double, f64, Double);
 
-    fn integer(&self, name: &str) -> Option<i32> {
-        let Some(PrimitiveArgumentValue::Integer(value)) = self.argument(name)?.primitive_value()
+    fn string(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        let PrimitiveArgumentValue::String(value) = self.argument(name)?.primitive_value(name)?
         else {
-            return None;
+            return Err(incorrectly_typed_argument(name));
         };
-        Some(*value)
-    }
-
-    fn long(&self, name: &str) -> Option<i64> {
-        let Some(PrimitiveArgumentValue::Long(value)) = self.argument(name)?.primitive_value()
-        else {
-            return None;
-        };
-        Some(*value)
-    }
-
-    fn float(&self, name: &str) -> Option<f32> {
-        let Some(PrimitiveArgumentValue::Float(value)) = self.argument(name)?.primitive_value()
-        else {
-            return None;
-        };
-        Some(*value)
-    }
-
-    fn double(&self, name: &str) -> Option<f64> {
-        let Some(PrimitiveArgumentValue::Double(value)) = self.argument(name)?.primitive_value()
-        else {
-            return None;
-        };
-        Some(*value)
-    }
-
-    fn string(&self, name: &str) -> Option<&str> {
-        let Some(PrimitiveArgumentValue::String(value)) = self.argument(name)?.primitive_value()
-        else {
-            return None;
-        };
-        Some(value)
+        Ok(value)
     }
 }
 
@@ -116,7 +96,7 @@ impl<'context, S, V> ArgumentSuggestionContext<'context, S, V> {
     }
 
     /// Returns a previously parsed argument from this context segment.
-    pub(crate) fn argument(&self, name: &str) -> Option<&V> {
+    pub(crate) fn argument(&self, name: &str) -> Result<&V, CommandSyntaxError> {
         self.arguments.argument(name)
     }
 }
@@ -317,7 +297,7 @@ where
     }
 
     /// Returns a parsed runtime argument by name.
-    pub(crate) fn argument(&self, name: &str) -> Option<&R::ArgumentValue> {
+    pub(crate) fn argument(&self, name: &str) -> Result<&R::ArgumentValue, CommandSyntaxError> {
         self.arguments.argument(name)
     }
 
@@ -333,32 +313,32 @@ where
     R::ArgumentValue: ContainsPrimitiveArgumentValue,
 {
     /// Returns a parsed boolean argument.
-    pub(crate) fn boolean(&self, name: &str) -> Option<bool> {
+    pub(crate) fn boolean(&self, name: &str) -> Result<bool, CommandSyntaxError> {
         self.arguments.boolean(name)
     }
 
     /// Returns a parsed integer argument.
-    pub(crate) fn integer(&self, name: &str) -> Option<i32> {
+    pub(crate) fn integer(&self, name: &str) -> Result<i32, CommandSyntaxError> {
         self.arguments.integer(name)
     }
 
     /// Returns a parsed long argument.
-    pub(crate) fn long(&self, name: &str) -> Option<i64> {
+    pub(crate) fn long(&self, name: &str) -> Result<i64, CommandSyntaxError> {
         self.arguments.long(name)
     }
 
     /// Returns a parsed float argument.
-    pub(crate) fn float(&self, name: &str) -> Option<f32> {
+    pub(crate) fn float(&self, name: &str) -> Result<f32, CommandSyntaxError> {
         self.arguments.float(name)
     }
 
     /// Returns a parsed double argument.
-    pub(crate) fn double(&self, name: &str) -> Option<f64> {
+    pub(crate) fn double(&self, name: &str) -> Result<f64, CommandSyntaxError> {
         self.arguments.double(name)
     }
 
     /// Returns a parsed string argument.
-    pub(crate) fn string(&self, name: &str) -> Option<&str> {
+    pub(crate) fn string(&self, name: &str) -> Result<&str, CommandSyntaxError> {
         self.arguments.string(name)
     }
 }
@@ -410,7 +390,7 @@ where
     }
 
     /// Returns a parsed runtime argument by name.
-    pub(crate) fn argument(&self, name: &str) -> Option<&R::ArgumentValue> {
+    pub(crate) fn argument(&self, name: &str) -> Result<&R::ArgumentValue, CommandSyntaxError> {
         self.arguments.argument(name)
     }
 
@@ -473,32 +453,32 @@ where
     R::ArgumentValue: ContainsPrimitiveArgumentValue,
 {
     /// Returns a parsed boolean argument.
-    pub(crate) fn boolean(&self, name: &str) -> Option<bool> {
+    pub(crate) fn boolean(&self, name: &str) -> Result<bool, CommandSyntaxError> {
         self.arguments.boolean(name)
     }
 
     /// Returns a parsed integer argument.
-    pub(crate) fn integer(&self, name: &str) -> Option<i32> {
+    pub(crate) fn integer(&self, name: &str) -> Result<i32, CommandSyntaxError> {
         self.arguments.integer(name)
     }
 
     /// Returns a parsed long argument.
-    pub(crate) fn long(&self, name: &str) -> Option<i64> {
+    pub(crate) fn long(&self, name: &str) -> Result<i64, CommandSyntaxError> {
         self.arguments.long(name)
     }
 
     /// Returns a parsed float argument.
-    pub(crate) fn float(&self, name: &str) -> Option<f32> {
+    pub(crate) fn float(&self, name: &str) -> Result<f32, CommandSyntaxError> {
         self.arguments.float(name)
     }
 
     /// Returns a parsed double argument.
-    pub(crate) fn double(&self, name: &str) -> Option<f64> {
+    pub(crate) fn double(&self, name: &str) -> Result<f64, CommandSyntaxError> {
         self.arguments.double(name)
     }
 
     /// Returns a parsed string argument.
-    pub(crate) fn string(&self, name: &str) -> Option<&str> {
+    pub(crate) fn string(&self, name: &str) -> Result<&str, CommandSyntaxError> {
         self.arguments.string(name)
     }
 }

@@ -3,7 +3,6 @@ pub(super) use std::sync::LazyLock;
 pub(super) use rustc_hash::FxHashSet;
 pub(super) use steel_math::{fast_floor, lerp};
 pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
-pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
     properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,
@@ -48,6 +47,7 @@ pub(super) use crate::behavior::BLOCK_BEHAVIORS;
 pub(super) use crate::chunk::heightmap::HeightmapType;
 pub(super) use crate::chunk::status::ChunkStatus;
 pub(super) use crate::fluid::state::get_fluid_state_from_block;
+pub(super) use crate::world::{LevelAccessor, LevelReader};
 pub(super) use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 pub(super) use crate::worldgen::region::{WorldGenBulkSectionAccess, WorldGenRegion};
 

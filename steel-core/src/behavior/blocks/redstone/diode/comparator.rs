@@ -5,12 +5,15 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, ComparatorMode, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, ComparatorMode, Direction, EnumProperty,
+};
 use steel_registry::{REGISTRY, sound_events, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, WorldAabb};
 
 use super::base::DiodeBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext,
     InteractionResult, InventoryAccess, PlacementSource,
@@ -31,6 +34,10 @@ pub struct ComparatorBlock {
     diode: DiodeBlock,
 }
 
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const MODE_COMPARATOR: &EnumProperty<ComparatorMode> = &BlockStateProperties::MODE_COMPARATOR;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl ComparatorBlock {
     /// Creates comparator behavior for `block`.
     #[must_use]
@@ -42,19 +49,19 @@ impl ComparatorBlock {
 
     fn output_signal(level: &dyn LevelReader, pos: BlockPos) -> i32 {
         let Some(block_entity) = level.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         block_entity
             .downcast_ref::<ComparatorBlockEntity>()
-            .map_or(0, ComparatorBlockEntity::output_signal)
+            .map_or(MIN_REDSTONE_SIGNAL, ComparatorBlockEntity::output_signal)
     }
 
     fn set_output_signal(world: &Arc<World>, pos: BlockPos, output_signal: i32) -> i32 {
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let Some(comparator) = block_entity.downcast_ref::<ComparatorBlockEntity>() else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let old_output = comparator.output_signal();
         comparator.set_output_signal(output_signal);
@@ -86,7 +93,7 @@ impl ComparatorBlock {
 
     fn get_input_signal(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> i32 {
         let mut result = DiodeBlock::get_input_signal(world.as_ref(), pos, state);
-        let direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let direction = state.get_value(HORIZONTAL_FACING);
         let mut target_pos = pos.relative(direction);
         let mut target_state = world.get_block_state(target_pos);
         let mut target_behavior = BLOCK_BEHAVIORS.get_behavior(target_state.get_block());
@@ -99,7 +106,9 @@ impl ComparatorBlock {
             );
         }
 
-        if result >= 15 || !is_redstone_conductor(world.as_ref(), target_state, target_pos) {
+        if result >= MAX_REDSTONE_SIGNAL
+            || !is_redstone_conductor(world.as_ref(), target_state, target_pos)
+        {
             return result;
         }
 
@@ -129,8 +138,8 @@ impl ComparatorBlock {
     }
 
     const fn calculate_output_signal(input: i32, alternate: i32, mode: ComparatorMode) -> i32 {
-        if input == 0 || alternate > input {
-            return 0;
+        if input == MIN_REDSTONE_SIGNAL || alternate > input {
+            return MIN_REDSTONE_SIGNAL;
         }
         match mode {
             ComparatorMode::Compare => input,
@@ -141,15 +150,11 @@ impl ComparatorBlock {
     fn calculate_output(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> i32 {
         let input = Self::get_input_signal(world, pos, state);
         let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
-        Self::calculate_output_signal(
-            input,
-            alternate,
-            state.get_value(&BlockStateProperties::MODE_COMPARATOR),
-        )
+        Self::calculate_output_signal(input, alternate, state.get_value(MODE_COMPARATOR))
     }
 
     const fn should_turn_on_from_signals(input: i32, alternate: i32, mode: ComparatorMode) -> bool {
-        input != 0
+        input != MIN_REDSTONE_SIGNAL
             && (input > alternate
                 || (input == alternate && matches!(mode, ComparatorMode::Compare)))
     }
@@ -157,11 +162,7 @@ impl ComparatorBlock {
     fn should_turn_on(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> bool {
         let input = Self::get_input_signal(world, pos, state);
         let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
-        Self::should_turn_on_from_signals(
-            input,
-            alternate,
-            state.get_value(&BlockStateProperties::MODE_COMPARATOR),
-        )
+        Self::should_turn_on_from_signals(input, alternate, state.get_value(MODE_COMPARATOR))
     }
 
     fn check_tick_on_neighbor(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
@@ -170,8 +171,7 @@ impl ComparatorBlock {
         }
         let output = Self::calculate_output(world, pos, state);
         if output == Self::output_signal(world.as_ref(), pos)
-            && state.get_value(&BlockStateProperties::POWERED)
-                == Self::should_turn_on(world, pos, state)
+            && state.get_value(POWERED) == Self::should_turn_on(world, pos, state)
         {
             return;
         }
@@ -186,18 +186,16 @@ impl ComparatorBlock {
     fn refresh_output_state(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let output = Self::calculate_output(world, pos, state);
         let old_output = Self::set_output_signal(world, pos, output);
-        if old_output == output
-            && state.get_value(&BlockStateProperties::MODE_COMPARATOR) != ComparatorMode::Compare
-        {
+        if old_output == output && state.get_value(MODE_COMPARATOR) != ComparatorMode::Compare {
             return;
         }
 
         let should_turn_on = Self::should_turn_on(world, pos, state);
-        let powered = state.get_value(&BlockStateProperties::POWERED);
+        let powered = state.get_value(POWERED);
         if powered != should_turn_on {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWERED, should_turn_on),
+                state.set_value(POWERED, should_turn_on),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         }
@@ -245,7 +243,7 @@ impl BlockBehavior for ComparatorBlock {
             return InteractionResult::Pass;
         }
 
-        let mode = state.get_value(&BlockStateProperties::MODE_COMPARATOR);
+        let mode = state.get_value(MODE_COMPARATOR);
         let next_mode = if mode == ComparatorMode::Compare {
             ComparatorMode::Subtract
         } else {
@@ -256,7 +254,7 @@ impl BlockBehavior for ComparatorBlock {
         } else {
             0.5
         };
-        let next_state = state.set_value(&BlockStateProperties::MODE_COMPARATOR, next_mode);
+        let next_state = state.set_value(MODE_COMPARATOR, next_mode);
         world.play_block_sound(
             &sound_events::BLOCK_COMPARATOR_CLICK,
             pos,
@@ -391,7 +389,7 @@ impl BlockBehavior for ComparatorBlock {
 mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -468,7 +466,7 @@ mod tests {
 
     #[test]
     fn comparator_creates_typed_output_storage() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = ComparatorBlock::new(&vanilla_blocks::COMPARATOR);
         let entity = behavior
             .new_block_entity(
@@ -483,7 +481,7 @@ mod tests {
 
     #[test]
     fn item_frame_signal_uses_item_frame_capability() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("comparator_item_frame_capability");
         let pos = BlockPos::new(8, 64, 8);
         insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));

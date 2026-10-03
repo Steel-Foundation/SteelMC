@@ -1,19 +1,5 @@
 use std::{f32::consts::TAU, mem, sync::Arc};
 
-use glam::DVec3;
-use steel_protocol::packets::game::{
-    CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
-};
-use steel_registry::item_stack::ItemStack;
-use steel_utils::{
-    Downcast as _,
-    locks::Shared,
-    types::{GameType, InteractionHand},
-};
-use text_components::TextComponent;
-
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
@@ -28,6 +14,24 @@ use crate::{
     },
     player::{Player, connection::NetworkConnection as _},
 };
+use glam::DVec3;
+use steel_protocol::packets::game::{
+    CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetBeacon,
+    SSetCarriedItem, SSetCreativeModeSlot,
+};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::vanilla_custom_stats;
+use steel_registry::{REGISTRY, RegistryExt};
+use steel_utils::{
+    Downcast as _,
+    locks::Shared,
+    translations,
+    types::{GameType, InteractionHand},
+};
+use text_components::TextComponent;
 
 use super::{
     DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,
@@ -185,6 +189,52 @@ impl Player {
         }
     }
 
+    /// Resolves an optional beacon effect ID, rejecting IDs vanilla's packet codec would reject.
+    pub(super) fn resolve_beacon_effect(id: Option<i32>) -> Result<Option<MobEffectRef>, ()> {
+        id.map(|id| {
+            let id = usize::try_from(id).map_err(|_| ())?;
+            REGISTRY.mob_effects.by_id(id).ok_or(())
+        })
+        .transpose()
+    }
+
+    /// Handles a beacon effect selection from the set-beacon packet.
+    pub fn handle_set_beacon_packet(&self, packet: SSetBeacon) {
+        let (Ok(primary), Ok(secondary)) = (
+            Self::resolve_beacon_effect(packet.primary),
+            Self::resolve_beacon_effect(packet.secondary),
+        ) else {
+            log::warn!(
+                "Player {} sent an unknown beacon effect id",
+                self.gameprofile.name
+            );
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
+            return;
+        };
+
+        let Ok(mut menu) = self.take_open_menu_for_callback(None) else {
+            return;
+        };
+        if !menu.still_valid(self) {
+            log::debug!(
+                "Player {} interacted with invalid menu",
+                self.gameprofile.name
+            );
+            self.finish_open_menu_callback(menu);
+            return;
+        }
+        if !menu.update_effects(primary, secondary, &self.connection) {
+            log::warn!(
+                "Player {} tried to set invalid beacon effects",
+                self.gameprofile.name
+            );
+            self.finish_open_menu_callback(menu);
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
+            return;
+        }
+        self.finish_open_menu_callback(menu);
+    }
+
     /// Handles a container button click packet (e.g., enchanting table buttons).
     pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
         log::debug!(
@@ -203,6 +253,7 @@ impl Player {
 
     /// Handles a container click packet (slot interaction).
     pub fn handle_container_click(&self, packet: SContainerClick) {
+        self.reset_last_action_time();
         match self.take_open_menu_for_callback(Some(packet.container_id)) {
             Ok(mut menu) => {
                 self.process_container_click(&mut menu, packet);
@@ -412,16 +463,19 @@ impl Player {
                 .set_remote_slot_known(slot_index, &item_stack);
             menu.behavior_mut().broadcast_changes(&self.connection);
         } else if drop && valid_data {
-            // TODO: Implement drop spam throttling
-            // For now, just drop the item
-            if !item_stack.is_empty() {
-                // TODO: Actually drop the item into the world
-                log::debug!(
-                    "Player {} would drop {:?} in creative mode",
-                    self.gameprofile.name,
-                    item_stack
-                );
+            {
+                let mut throttler = self.session.drop_spam_throttler.lock();
+                if throttler.is_under_threshold() {
+                    throttler.increment();
+                } else {
+                    log::warn!(
+                        "Player {} was dropping items too fast in creative mode; ignoring",
+                        self.gameprofile.name,
+                    );
+                    return;
+                }
             }
+            let _ = self.drop_item(item_stack, false, true);
         }
     }
 
@@ -437,6 +491,8 @@ impl Player {
                 "{} tried to set an invalid carried item",
                 self.gameprofile.name
             );
+        } else {
+            self.reset_last_action_time();
         }
     }
 
@@ -961,8 +1017,8 @@ impl Player {
         let spawn_y = self.get_eye_y() - 0.3;
 
         let velocity = if throw_randomly {
-            let power = rand::random::<f32>() * 0.5;
-            let angle = rand::random::<f32>() * TAU;
+            let power = rand::random_range(0.0..0.5);
+            let angle = rand::random_range(0.0..TAU);
             DVec3::new(
                 f64::from(-angle.sin() * power),
                 0.2,
@@ -977,8 +1033,8 @@ impl Player {
             let sin_yaw = yaw_rad.sin();
             let cos_yaw = yaw_rad.cos();
 
-            let angle_offset = rand::random::<f32>() * TAU;
-            let power_offset = 0.02 * rand::random::<f32>();
+            let angle_offset = rand::random_range(0.0..TAU);
+            let power_offset = rand::random_range(0.0..0.02);
 
             DVec3::new(
                 f64::from(-sin_yaw * cos_pitch * 0.3)
@@ -991,12 +1047,17 @@ impl Player {
 
         let spawn_pos = DVec3::new(pos.x, spawn_y, pos.z);
 
+        let item_ref = item.item;
+        let item_count = item.count;
+
         let entity = self
             .get_world()
             .spawn_item_with_velocity(spawn_pos, item, velocity)?;
         entity.set_pickup_delay(40);
         if thrown_from_hand {
             entity.set_thrower(self.gameprofile.id);
+            self.award_stat_with_count(&vanilla_stat_types::ITEM_DROPPED, item_ref, item_count);
+            self.award_custom_stat(&vanilla_custom_stats::DROP);
         }
         Some(entity)
     }

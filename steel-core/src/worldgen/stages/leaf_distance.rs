@@ -338,8 +338,7 @@ fn has_leaf_distance_property(block: BlockRef) -> bool {
 #[cfg(test)]
 mod tests {
     use steel_registry::{
-        blocks::block_state_ext::BlockStateExt as _, test_support::init_test_registry,
-        vanilla_blocks,
+        blocks::block_state_ext::BlockStateExt as _, init_vanilla_registry, vanilla_blocks,
     };
 
     use super::*;
@@ -353,7 +352,7 @@ mod tests {
 
     #[test]
     fn resolves_center_leaves_from_sources_across_chunk_boundaries() {
-        init_test_registry();
+        init_vanilla_registry();
         let center = ChunkPos::new(0, 0);
         let center_leaf = BlockPos::new(15, 8, 8);
         let neighbor_leaf = BlockPos::new(16, 8, 8);
@@ -396,7 +395,7 @@ mod tests {
 
     #[test]
     fn stale_leaf_distances_without_a_source_converge_to_seven() {
-        init_test_registry();
+        init_vanilla_registry();
         let first = BlockPos::new(8, 8, 8);
         let second = BlockPos::new(9, 8, 8);
         let leaves = vanilla_blocks::OAK_LEAVES.default_state();
@@ -426,7 +425,7 @@ mod tests {
 
     #[test]
     fn six_block_halo_preserves_the_distance_seven_boundary() {
-        init_test_registry();
+        init_vanilla_registry();
         let seed = BlockPos::new(15, 8, 8);
         let leaves = vanilla_blocks::OAK_LEAVES.default_state();
         let mut distance_six_states = FxHashMap::default();
@@ -482,7 +481,7 @@ mod tests {
 
     #[test]
     fn scaffolding_distance_is_not_leaf_distance() {
-        init_test_registry();
+        init_vanilla_registry();
         let scaffolding = vanilla_blocks::SCAFFOLDING
             .default_state()
             .set_value(&BlockStateProperties::STABILITY_DISTANCE, 1);

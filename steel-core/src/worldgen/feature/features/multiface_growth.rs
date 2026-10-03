@@ -1,19 +1,11 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::behavior::blocks::multiface_face_property;
+use crate::behavior::blocks::vegetation::{
+    MultifaceSpreadPos, MultifaceSpreadType, multiface_spread_pos,
+};
 use smallvec::SmallVec;
 use steel_registry::vanilla_block_tags::BlockTag;
-
-#[derive(Clone, Copy)]
-enum MultifaceSpreadType {
-    SamePosition,
-    SamePlane,
-    WrapAround,
-}
-
-struct MultifaceSpreadPos {
-    pos: BlockPos,
-    face: Direction,
-}
 
 struct ResolvedMultifaceGrowth<'a> {
     raw: &'a MultifaceGrowthConfiguration,
@@ -200,7 +192,7 @@ impl FeatureDecorationRunner {
 
         for spread_type in Self::multiface_spread_types(config) {
             let spread_pos =
-                Self::multiface_spread_pos(pos, spread_direction, starting_face, spread_type);
+                multiface_spread_pos(pos, spread_direction, starting_face, spread_type);
             if Self::multiface_can_spread_into(region, config, pos, &spread_pos) {
                 return Some(spread_pos);
             }
@@ -365,7 +357,7 @@ impl FeatureDecorationRunner {
                 config.default_state
             }
         };
-        new_state = new_state.set_value(Self::multiface_face_property(placement_direction), true);
+        new_state = new_state.set_value(multiface_face_property(placement_direction), true);
         Some(new_state)
     }
 
@@ -429,28 +421,6 @@ impl FeatureDecorationRunner {
         ]
     }
 
-    fn multiface_spread_pos(
-        pos: BlockPos,
-        spread_direction: Direction,
-        from_face: Direction,
-        spread_type: MultifaceSpreadType,
-    ) -> MultifaceSpreadPos {
-        match spread_type {
-            MultifaceSpreadType::SamePosition => MultifaceSpreadPos {
-                pos,
-                face: spread_direction,
-            },
-            MultifaceSpreadType::SamePlane => MultifaceSpreadPos {
-                pos: pos.relative(spread_direction),
-                face: from_face,
-            },
-            MultifaceSpreadType::WrapAround => MultifaceSpreadPos {
-                pos: pos.relative(spread_direction).relative(from_face),
-                face: spread_direction.opposite(),
-            },
-        }
-    }
-
     fn multiface_shuffled_valid_directions(
         random: &mut WorldgenRandom,
         config: &ResolvedMultifaceGrowth<'_>,
@@ -497,19 +467,8 @@ impl FeatureDecorationRunner {
 
     fn multiface_has_face(state: BlockStateId, direction: Direction) -> bool {
         state
-            .try_get_value(Self::multiface_face_property(direction))
+            .try_get_value(multiface_face_property(direction))
             .unwrap_or(false)
-    }
-
-    const fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
-        match direction {
-            Direction::Up => &BlockStateProperties::UP,
-            Direction::Down => &BlockStateProperties::DOWN,
-            Direction::North => &BlockStateProperties::NORTH,
-            Direction::South => &BlockStateProperties::SOUTH,
-            Direction::East => &BlockStateProperties::EAST,
-            Direction::West => &BlockStateProperties::WEST,
-        }
     }
 
     fn multiface_is_air_or_water(state: BlockStateId) -> bool {

@@ -150,7 +150,7 @@ mod tests {
 
     use super::FoodProperties;
     use crate::data_components::vanilla_components::FOOD;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: NbtTag) -> Option<FoodProperties> {
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn extracted_food_prototypes_keep_vanilla_values() {
-        init_test_registry();
+        init_vanilla_registry();
         let apple = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("apple"))

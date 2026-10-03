@@ -92,6 +92,11 @@ Contributions are welcome. Most changes begin by reading the vanilla source,
 understanding the behavior it implements, and deciding how to express that behavior
 cleanly in Rust.
 
+As a new contributor, please limit yourself to 3 open PRs at a time,
+so we can give feedback on your existing ones before you open more.
+Also, start with a small, simple contribution first,
+around 1k lines changed or less, so it's quicker to review.
+
 Before you start:
 
 1. Check existing issues and pull requests, then discuss substantial changes with
@@ -112,17 +117,26 @@ cargo clippy -r --all-targets --all-features
 typos
 ```
 
+Nix and NixOS users can get the pinned toolchain, `lld`, `prek`, and `typos` in one
+step with `nix develop` (or `direnv allow`, using the checked-in `.envrc`).
+
 Generated documentation for SteelMC's Rust crates is available in the
 [Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).
 
 AI may be used as a tool, but contributors must understand and be able to explain
 every line they submit. Fully autonomous pull requests are not accepted.
 
+For an easy entry into SteelMC as a new contributor, you can check out issues with the tag `good first issue`, or our [tracker](https://steelmc.dev/tracker/) of unimplemented content,
+which is always a good first start.
+
 ## Community
 
 The [SteelMC Discord](https://steelmc.dev/discord) is where we discuss designs,
 coordinate work, share progress, and answer questions. Longer project updates are
 published on the [SteelMC website](https://steelmc.dev/).
+
+If you enjoy SteelMC, you can support its development by
+[sponsoring the project on GitHub](https://github.com/sponsors/Steel-Foundation). Any support is greatly appreciated!
 
 ## License
 

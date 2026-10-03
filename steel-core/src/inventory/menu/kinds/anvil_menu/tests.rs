@@ -1,23 +1,5 @@
 use std::sync::Arc;
 
-use glam::DVec3;
-use steel_registry::{
-    REGISTRY, RegistryExt, RegistryReference,
-    data_components::{
-        components::PotionContents,
-        vanilla_components::{CUSTOM_NAME, POTION_CONTENTS, REPAIR_COST},
-    },
-    item_stack::ItemStack,
-    test_support::init_test_registry,
-    vanilla_blocks, vanilla_enchantments, vanilla_entities, vanilla_items,
-};
-use steel_utils::Downcast as _;
-use steel_utils::{
-    BlockPos, ChunkPos, WorldAabb,
-    types::{GameType, UpdateFlags},
-};
-use uuid::Uuid;
-
 use super::{AnvilKind, anvil};
 use crate::{
     behavior::init_behaviors,
@@ -31,13 +13,29 @@ use crate::{
     test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     world::World,
 };
+use glam::DVec3;
+use steel_registry::{
+    REGISTRY, RegistryExt, RegistryReference,
+    data_components::{
+        components::PotionContents,
+        vanilla_components::{CUSTOM_NAME, POTION_CONTENTS, REPAIR_COST},
+    },
+    init_vanilla_registry,
+    item_stack::ItemStack,
+    vanilla_blocks, vanilla_enchantments, vanilla_entities, vanilla_items,
+};
+use steel_utils::Downcast as _;
+use steel_utils::{
+    BlockPos, ChunkPos, WorldAabb,
+    types::{GameType, UpdateFlags},
+};
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    TestPlayerBuilder::new(world, Uuid::from_u128(1), "AnvilTester", 1).build()
+    TestPlayerBuilder::new(world, "AnvilTester", 1).build()
 }
 
 fn test_anvil(key: &'static str) -> (Arc<World>, Arc<Player>, BlockPos, Menu) {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);
     let pos = BlockPos::new(0, 64, 0);

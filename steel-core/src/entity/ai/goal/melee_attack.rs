@@ -234,7 +234,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::ai::goal::selector::Goal;
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn melee_attack_goal_requires_world_to_start() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(1.0, 0.0, 0.0));
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn melee_attack_goal_start_without_path_still_sets_aggressive() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
 
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn melee_attack_goal_stop_clears_aggression_and_navigation() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
         mob.set_aggressive(true);
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn melee_attack_goal_without_unseen_following_requires_active_navigation() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, false);
         let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn melee_attack_goal_tick_recalculates_path_with_failed_move_penalty() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));

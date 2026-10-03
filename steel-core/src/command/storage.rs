@@ -243,7 +243,7 @@ mod tests {
 
         storage.set(key.clone(), NbtCompound::new());
         assert!(storage.get(&key).is_empty());
-        assert!(storage.keys().is_empty());
+        assert_eq!(storage.keys().len(), 0);
     }
 
     #[tokio::test]

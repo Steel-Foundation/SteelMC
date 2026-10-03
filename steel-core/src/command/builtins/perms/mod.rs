@@ -4,10 +4,6 @@ mod config;
 
 use std::{convert::Infallible, fmt};
 
-use steel_utils::Identifier;
-use text_components::TextComponent;
-use tokio::{sync::oneshot, task::JoinHandle};
-
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
     execution::{
@@ -17,11 +13,15 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::command::missing_argument;
 use crate::permission::{
     PermissionContext, PermissionEntry, PermissionExpr, PermissionKey, PermissionMetadataEntry,
     PermissionMetadataExpression, PermissionMetadataValue, PermissionResolutionSource,
     PermissionRuleExpression, PermissionState, PermissionSubjectState,
 };
+use steel_utils::Identifier;
+use text_components::TextComponent;
+use tokio::{sync::oneshot, task::JoinHandle};
 
 pub(super) const MANAGE_ALL_PERMISSION: &str = "steel.permission.manage.*";
 pub(super) const GROUP_ALL_PERMISSION: &str = "steel.permission.group.*";
@@ -504,9 +504,7 @@ fn group_priority(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
     let group = managed_group(context)?;
-    let priority = context
-        .integer("priority")
-        .ok_or_else(|| missing_argument("priority"))?;
+    let priority = context.integer("priority")?;
     start(context, Operation::GroupPriority { group, priority })
 }
 
@@ -597,40 +595,31 @@ fn default_group(
 fn targets(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<GameProfileArgument, CommandSyntaxError> {
-    context
-        .game_profile_argument("targets")
-        .cloned()
-        .ok_or_else(|| missing_argument("targets"))
+    context.game_profile_argument("targets").cloned()
 }
 
 fn permission_expression(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermissionRuleExpression, CommandSyntaxError> {
-    context
-        .permission_rule_expression("permission")
-        .cloned()
-        .ok_or_else(|| missing_argument("permission"))
+    context.permission_rule_expression("permission").cloned()
 }
 
 fn metadata_expression(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermissionMetadataExpression, CommandSyntaxError> {
-    context
-        .permission_metadata_expression("metadata")
-        .cloned()
-        .ok_or_else(|| missing_argument("metadata"))
+    context.permission_metadata_expression("metadata").cloned()
 }
 
 fn metadata_value(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermissionMetadataValue, CommandSyntaxError> {
-    if let Some(value) = context.long("metadata_int_value") {
+    if let Ok(value) = context.long("metadata_int_value") {
         return Ok(PermissionMetadataValue::Integer(value));
     }
-    if let Some(value) = context.boolean("metadata_bool_value") {
+    if let Ok(value) = context.boolean("metadata_bool_value") {
         return Ok(PermissionMetadataValue::Bool(value));
     }
-    if let Some(value) = context.string("metadata_string_value") {
+    if let Ok(value) = context.string("metadata_string_value") {
         return Ok(PermissionMetadataValue::String(value.to_owned()));
     }
     Err(missing_argument("metadata value"))
@@ -643,7 +632,6 @@ fn group_argument(
     context
         .permission_group(name)
         .map(|group| group.as_str().to_owned())
-        .ok_or_else(|| missing_argument(name))
 }
 
 fn managed_group(
@@ -652,10 +640,6 @@ fn managed_group(
     let group = group_argument(context, "group")?;
     require_group_management(context.source(), &group)?;
     Ok(group)
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!("Missing permission command argument '{name}'"))
 }
 
 fn require_permission_management(
@@ -1420,7 +1404,7 @@ impl CommandResultSuspension for PermsCommandSuspension {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::{GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION};
     use crate::command::{
@@ -1448,7 +1432,7 @@ mod tests {
 
     #[test]
     fn perms_exposes_the_management_surface_without_old_aliases() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in dispatcher should build");
         };
@@ -1484,7 +1468,7 @@ mod tests {
 
     #[test]
     fn perms_discovery_contains_static_admin_and_granular_command_permissions() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
             panic!("built-in dispatcher should build");
         };

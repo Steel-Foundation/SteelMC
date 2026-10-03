@@ -1,11 +1,13 @@
 use std::{fmt, sync::Arc};
 
 use super::{
-    BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
-    ScoreHolderArgument, StructureOrTagKey, WorldArgument,
+    BiomeOrTag, BlockInput, BlockPredicate, CommandArgumentSource, Coordinates, IntRange,
+    ItemPredicate, ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
-    block::{parse_block_predicate, suggest_blocks},
-    coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+    block::{parse_block_input, parse_block_predicate, suggest_block_inputs, suggest_blocks},
+    coordinates::{
+        parse_block_pos, parse_rotation, parse_vec2, parse_vec3, suggest_coordinates, suggest_vec2,
+    },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
@@ -23,6 +25,7 @@ use crate::command::brigadier::{
     CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
     SuggestionsBuilder,
 };
+use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
@@ -174,6 +177,10 @@ impl SteelArgumentType {
         Self::new(Vec3Parser { center_integers })
     }
 
+    pub(crate) fn vec2(center_integers: bool) -> Self {
+        Self::new(Vec2Parser { center_integers })
+    }
+
     pub(crate) fn rotation() -> Self {
         Self::new(RotationParser)
     }
@@ -288,6 +295,10 @@ impl SteelArgumentType {
         Self::new(BlockPredicateParser)
     }
 
+    pub(crate) fn block_state() -> Self {
+        Self::new(BlockStateParser)
+    }
+
     pub(crate) fn game_mode() -> Self {
         Self::new(GameModeParser)
     }
@@ -330,6 +341,10 @@ impl SteelArgumentType {
 
     pub(crate) fn storage_key() -> Self {
         Self::new(StorageKeyParser)
+    }
+
+    pub(crate) fn sound() -> Self {
+        Self::new(SoundParser)
     }
 
     pub(crate) fn world_clock() -> Self {
@@ -412,8 +427,9 @@ impl fmt::Debug for SteelArgumentValue {
 }
 
 impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
-    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
+    fn primitive_value(&self, name: &str) -> Result<&PrimitiveArgumentValue, CommandSyntaxError> {
         self.downcast_ref::<PrimitiveArgumentValue>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
     }
 }
 
@@ -421,7 +437,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
 pub(crate) trait SteelArgumentSuggestionContext {
     fn source(&self) -> &dyn CommandArgumentSource;
 
-    fn argument(&self, name: &str) -> Option<&SteelArgumentValue>;
+    fn argument(&self, name: &str) -> Result<&SteelArgumentValue, CommandSyntaxError>;
 }
 
 impl<S> SteelArgumentSuggestionContext for ArgumentSuggestionContext<'_, S, SteelArgumentValue>
@@ -432,7 +448,7 @@ where
         ArgumentSuggestionContext::source(self)
     }
 
-    fn argument(&self, name: &str) -> Option<&SteelArgumentValue> {
+    fn argument(&self, name: &str) -> Result<&SteelArgumentValue, CommandSyntaxError> {
         ArgumentSuggestionContext::argument(self, name)
     }
 }
@@ -483,6 +499,7 @@ impl_downcast_type!(
     "steel:command/value/structure_or_tag_key"
 );
 impl_downcast_type!(BlockPredicate, "steel:command/value/block_predicate");
+impl_downcast_type!(BlockInput, "steel:command/value/block_input");
 impl_downcast_type!(WorldArgument, "steel:command/value/world");
 impl_downcast_type!(ItemPredicate, "steel:command/value/item_predicate");
 
@@ -666,6 +683,37 @@ impl SteelArgumentParser for Vec3Parser {
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         (ProtocolArgumentType::Vec3, None)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Vec2Parser {
+    center_integers: bool,
+}
+
+impl_downcast_type!(Vec2Parser, "steel:command/parser/vec2");
+
+impl SteelArgumentParser for Vec2Parser {
+    type Value = Coordinates;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_vec2(reader, self.center_integers)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_vec2(builder, |reader| parse_vec2(reader, self.center_integers));
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Vec2, None)
     }
 }
 
@@ -853,6 +901,18 @@ unit_argument_parser!(
         },
         Some(ProtocolSuggestionType::AskServer),
     )
+);
+unit_argument_parser!(
+    BlockStateParser,
+    "steel:command/parser/block_state",
+    BlockInput,
+    parse | reader,
+    _source | { parse_block_input(reader) },
+    suggest | _context,
+    builder | {
+        suggest_block_inputs(builder);
+    },
+    protocol(ProtocolArgumentType::BlockState, None)
 );
 unit_argument_parser!(
     BlockPredicateParser,
@@ -1064,6 +1124,24 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    SoundParser,
+    "steel:command/parser/sound",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY.sound_events.iter().map(|(_, sound)| &sound.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AvailableSounds),
+    )
+);
+unit_argument_parser!(
     WorldClockParser,
     "steel:command/parser/world_clock",
     WorldClockValue,
@@ -1194,7 +1272,8 @@ fn selected_clock(
         return context.source().default_world_clock();
     };
     context
-        .argument(clock_argument)?
+        .argument(clock_argument)
+        .ok()?
         .downcast_ref::<WorldClockValue>()
         .map(|clock| clock.0)
 }

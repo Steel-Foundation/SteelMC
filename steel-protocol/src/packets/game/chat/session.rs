@@ -1,11 +1,15 @@
 use std::{
-    io::{Cursor, Read},
+    io::Cursor,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use steel_macros::ServerPacket;
 use steel_utils::codec::VarInt;
+use steel_utils::serial::PrefixedRead;
 use uuid::Uuid;
+
+const MAX_PUBLIC_KEY_SIZE: usize = 512;
+const MAX_KEY_SIGNATURE_SIZE: usize = 4096;
 
 /// Network-serializable chat session data.
 ///
@@ -91,13 +95,9 @@ impl steel_utils::serial::ReadFrom for SChatSessionUpdate {
         let session_id = Uuid::read(reader)?;
         let expires_at = i64::read(reader)?;
 
-        let key_len = VarInt::read(reader)?.0 as usize;
-        let mut public_key = vec![0u8; key_len];
-        reader.read_exact(&mut public_key)?;
-
-        let sig_len = VarInt::read(reader)?.0 as usize;
-        let mut key_signature = vec![0u8; sig_len];
-        reader.read_exact(&mut key_signature)?;
+        let public_key = Vec::<u8>::read_prefixed_bound::<VarInt>(reader, MAX_PUBLIC_KEY_SIZE)?;
+        let key_signature =
+            Vec::<u8>::read_prefixed_bound::<VarInt>(reader, MAX_KEY_SIGNATURE_SIZE)?;
 
         Ok(Self {
             session_id,
@@ -105,5 +105,97 @@ impl steel_utils::serial::ReadFrom for SChatSessionUpdate {
             public_key,
             key_signature,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, ErrorKind};
+
+    use steel_utils::serial::{ReadFrom as _, WriteTo as _};
+    use uuid::Uuid;
+
+    use super::{MAX_KEY_SIGNATURE_SIZE, MAX_PUBLIC_KEY_SIZE, SChatSessionUpdate, VarInt};
+
+    fn encoded_packet(
+        public_key_length: i32,
+        public_key: &[u8],
+        signature: Option<(i32, &[u8])>,
+    ) -> Vec<u8> {
+        let mut packet = Vec::new();
+        Uuid::nil()
+            .write(&mut packet)
+            .expect("test session ID should encode");
+        0_i64
+            .write(&mut packet)
+            .expect("test expiration should encode");
+        VarInt(public_key_length)
+            .write(&mut packet)
+            .expect("test public key length should encode");
+        packet.extend_from_slice(public_key);
+
+        if let Some((signature_length, signature)) = signature {
+            VarInt(signature_length)
+                .write(&mut packet)
+                .expect("test signature length should encode");
+            packet.extend_from_slice(signature);
+        }
+
+        packet
+    }
+
+    fn decode(packet: &[u8]) -> std::io::Result<SChatSessionUpdate> {
+        SChatSessionUpdate::read(&mut Cursor::new(packet))
+    }
+
+    #[test]
+    fn accepts_vanilla_maximum_field_lengths() {
+        let public_key = vec![1; MAX_PUBLIC_KEY_SIZE];
+        let signature = vec![2; MAX_KEY_SIGNATURE_SIZE];
+        let packet = encoded_packet(
+            MAX_PUBLIC_KEY_SIZE as i32,
+            &public_key,
+            Some((MAX_KEY_SIGNATURE_SIZE as i32, &signature)),
+        );
+
+        let decoded = decode(&packet).expect("fields at the vanilla limits should decode");
+
+        assert_eq!(decoded.public_key, public_key);
+        assert_eq!(decoded.key_signature, signature);
+    }
+
+    #[test]
+    fn rejects_fields_above_vanilla_limits() {
+        let oversized_public_key =
+            encoded_packet(MAX_PUBLIC_KEY_SIZE as i32 + 1, &[], Some((0, &[])));
+        decode(&oversized_public_key).expect_err("an oversized public key should be rejected");
+
+        let oversized_signature =
+            encoded_packet(0, &[], Some((MAX_KEY_SIGNATURE_SIZE as i32 + 1, &[])));
+        decode(&oversized_signature).expect_err("an oversized signature should be rejected");
+    }
+
+    #[test]
+    fn rejects_negative_and_extreme_field_lengths() {
+        for length in [-1, i32::MAX] {
+            let public_key = encoded_packet(length, &[], Some((0, &[])));
+            decode(&public_key).expect_err("an invalid public key length should be rejected");
+
+            let signature = encoded_packet(0, &[], Some((length, &[])));
+            decode(&signature).expect_err("an invalid signature length should be rejected");
+        }
+    }
+
+    #[test]
+    fn rejects_truncated_field_bodies() {
+        let truncated_public_key = encoded_packet(1, &[], None);
+        let error = decode(&truncated_public_key)
+            .expect_err("a truncated public key body should be rejected");
+        assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+
+        let truncated_signature = encoded_packet(0, &[], Some((1, &[])));
+        let error = decode(&truncated_signature)
+            .expect_err("a truncated signature body should be rejected");
+        assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
     }
 }

@@ -81,7 +81,7 @@ fn structure_persistence_filters_empty_starts_and_sorts_entries() {
     reason = "single fixture verifies every persisted jigsaw field roundtrips together"
 )]
 fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let structure_id = Identifier::from_steel("test_jigsaw_structure");
     let piece_type = Identifier::new_static("minecraft", "jigsaw");
@@ -202,7 +202,7 @@ fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
     reason = "single roundtrip fixture covers every structure piece payload variant together"
 )]
 fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let structure_id = Identifier::from_steel("test_payload_variants");
     let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");
@@ -586,7 +586,7 @@ fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
     };
     assert_eq!(payload.height_position, Some(63));
     assert_eq!(payload.has_placed_chest, [true, false, true, false]);
-    assert!(payload.potential_suspicious_sand_world_positions.is_empty());
+    assert_eq!(payload.potential_suspicious_sand_world_positions.len(), 0);
     assert_eq!(payload.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
 
     let StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(payload)) =

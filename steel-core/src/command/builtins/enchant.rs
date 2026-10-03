@@ -47,9 +47,7 @@ fn enchant_default_level(
 fn enchant_with_level(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(level) = context.integer("level") else {
-        return Err(missing_argument("level"));
-    };
+    let level = context.integer("level")?;
     enchant(context, level)
 }
 
@@ -58,9 +56,7 @@ fn enchant(
     level: i32,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.entities("targets")?;
-    let Some(enchantment) = context.enchantment("enchantment") else {
-        return Err(missing_argument("enchantment"));
-    };
+    let enchantment = context.enchantment("enchantment")?;
     let level = u32::try_from(level)
         .map_err(|_| CommandSyntaxError::dynamic("Enchantment level cannot be negative"))?;
     if level > enchantment.max_level {
@@ -208,20 +204,14 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
     component
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{
-        entity_type::EntityTypeRef, equipment::EquipmentSlot, item_stack::ItemStack,
-        test_support::init_test_registry, vanilla_enchantments, vanilla_entities, vanilla_items,
+        entity_type::EntityTypeRef, equipment::EquipmentSlot, init_vanilla_registry,
+        item_stack::ItemStack, vanilla_enchantments, vanilla_entities, vanilla_items,
     };
     use steel_utils::locks::SyncMutex;
 
@@ -253,7 +243,7 @@ mod tests {
 
     #[test]
     fn enchant_graph_uses_all_entities_and_an_enchantment_resource() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -287,7 +277,7 @@ mod tests {
 
     #[test]
     fn enchant_main_hand_applies_once_and_then_rejects_the_same_enchantment() {
-        init_test_registry();
+        init_vanilla_registry();
         let target = TestLivingEntity::new(&vanilla_entities::ZOMBIE);
         target.equip(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
 

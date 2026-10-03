@@ -57,7 +57,7 @@ fn executable_context_uses_runtime_source_and_parsed_arguments() {
     assert_eq!(result, Ok(4));
     assert_eq!(
         *invocations.lock(),
-        [("runtime source".to_owned(), Some(3), "add 3".to_owned())]
+        [("runtime source".to_owned(), Ok(3), "add 3".to_owned())]
     );
 }
 
@@ -78,11 +78,11 @@ fn executable_context_exposes_all_primitive_arguments_and_metadata() {
                             move |context: &CommandContext<String>| {
                                 assert_eq!(context.root(), root);
                                 assert_eq!(context.range().start(), 0);
-                                assert_eq!(context.boolean("boolean"), Some(true));
-                                assert_eq!(context.long("long"), Some(-7));
-                                assert_eq!(context.float("float"), Some(1.5));
-                                assert_eq!(context.double("double"), Some(2.5));
-                                assert_eq!(context.string("string"), Some("hello world"));
+                                assert_eq!(context.boolean("boolean"), Ok(true));
+                                assert_eq!(context.long("long"), Ok(-7));
+                                assert_eq!(context.float("float"), Ok(1.5));
+                                assert_eq!(context.double("double"), Ok(2.5));
+                                assert_eq!(context.string("string"), Ok("hello world"));
                                 assert!(context.child().is_none());
                                 *command_observed.lock() = true;
                                 Ok(1)

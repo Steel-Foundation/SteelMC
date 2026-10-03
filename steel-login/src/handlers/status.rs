@@ -25,7 +25,7 @@ impl JavaTcpClient {
                     .map(|(name, id)| Sample { name, id })
                     .collect(),
             }),
-            enforce_secure_chat: self.server.config.enforce_secure_chat,
+            enforces_secure_chat: self.server.enforces_secure_chat(),
             favicon: load_favicon(&self.server.config),
             version: Some(Version {
                 name: MC_VERSION,

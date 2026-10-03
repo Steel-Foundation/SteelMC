@@ -1,9 +1,7 @@
 //! Vanilla command coordinate expressions.
 
-use std::f32::consts::PI;
-
 use glam::DVec3;
-use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_90, trig};
 use steel_utils::{BlockPos, translations};
 use text_components::{TextComponent, translation::Translation};
 
@@ -136,10 +134,9 @@ impl LocalCoordinates {
     }
 
     fn position(self, anchor: DVec3, (yaw, pitch): (f32, f32)) -> DVec3 {
-        let radians_per_degree = PI / 180.0;
-        let y_rotation = (yaw + 90.0) * radians_per_degree;
-        let x_rotation = -pitch * radians_per_degree;
-        let x_up_rotation = (-pitch + 90.0) * radians_per_degree;
+        let y_rotation = (yaw + DEGREE_90) * DEG_TO_RAD;
+        let x_rotation = -pitch * DEG_TO_RAD;
+        let x_up_rotation = (-pitch + DEGREE_90) * DEG_TO_RAD;
         let y_cos = f64::from(trig::cos(f64::from(y_rotation)));
         let y_sin = f64::from(trig::sin(f64::from(y_rotation)));
         let x_cos = f64::from(trig::cos(f64::from(x_rotation)));
@@ -173,6 +170,58 @@ pub(super) fn parse_vec3(
         parse_local_coordinates(reader)
     } else {
         parse_world_coordinates_double(reader, center_integers)
+    }
+}
+
+pub(super) fn parse_vec2(
+    reader: &mut StringReader<'_>,
+    center_integers: bool,
+) -> Result<Coordinates, CommandSyntaxError> {
+    let start = reader.checkpoint();
+    if !reader.can_read() {
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_POS2D_INCOMPLETE,
+        ));
+    }
+    let x = parse_world_coordinate_double(reader, center_integers)?;
+    if reader.peek() != Some(' ') {
+        reader.restore(start);
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_POS2D_INCOMPLETE,
+        ));
+    }
+    reader.skip();
+    let z = parse_world_coordinate_double(reader, center_integers)?;
+    Ok(Coordinates::World(WorldCoordinates::new(
+        x,
+        WorldCoordinate::new(true, 0.0),
+        z,
+    )))
+}
+
+pub(super) fn suggest_vec2(
+    builder: &mut SuggestionsBuilder<'_>,
+    parser: impl Fn(&mut StringReader<'_>) -> Result<Coordinates, CommandSyntaxError>,
+) {
+    let input = builder.remaining();
+    let coordinate = if input.starts_with('^') { "^" } else { "~" };
+    if input.is_empty() {
+        let full = format!("{coordinate} {coordinate}");
+        if valid_coordinates(&full, &parser) {
+            builder.suggest(coordinate);
+            builder.suggest(full);
+        }
+        return;
+    }
+
+    let fields = input.trim_end().split(' ').collect::<Vec<_>>();
+    if let [x] = fields.as_slice() {
+        let full = format!("{x} {coordinate}");
+        if valid_coordinates(&full, &parser) {
+            builder.suggest(full);
+        }
     }
 }
 

@@ -1,11 +1,11 @@
 use glam::DVec3;
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
-    vanilla_damage_types, vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items,
-    vanilla_mob_effects,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items, vanilla_mob_effects,
 };
 use steel_utils::{BlockPos, types::InteractionHand};
 
+use crate::behavior::init_behaviors;
 use crate::entity::damage::DamageSource;
 use crate::inventory::equipment::EquipmentSlot;
 
@@ -16,7 +16,7 @@ use super::{
 
 #[test]
 fn living_constructor_initializes_health_from_max_health() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     let mut entity_data = PlayerEntityData::new();
 
@@ -35,7 +35,7 @@ fn living_constructor_initializes_health_from_max_health() {
 
 #[test]
 fn absorption_amount_clamps_to_attribute_range() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     base.attributes()
         .lock()
@@ -62,7 +62,7 @@ fn fall_damage_starts_above_safe_fall_distance() {
 
 #[test]
 fn last_damage_source_expires_after_vanilla_window() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
@@ -79,7 +79,7 @@ fn last_damage_source_expires_after_vanilla_window() {
 
 #[test]
 fn last_hurt_by_player_memory_ticks_down_then_clears_reference() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
     let player_uuid = uuid::Uuid::from_u128(7);
 
@@ -118,7 +118,7 @@ fn fall_damage_applies_block_and_attribute_multipliers() {
 
 #[test]
 fn post_impulse_grace_counts_down_by_tick() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     base.apply_post_impulse_grace_time(2);
@@ -132,7 +132,7 @@ fn post_impulse_grace_counts_down_by_tick() {
 
 #[test]
 fn post_impulse_grace_keeps_larger_existing_window() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     base.apply_post_impulse_grace_time(5);
@@ -149,7 +149,7 @@ fn post_impulse_grace_keeps_larger_existing_window() {
 
 #[test]
 fn current_impulse_context_tracks_fall_damage_impact_position() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     let impact_pos = DVec3::new(1.0, 72.0, -3.0);
 
@@ -162,7 +162,7 @@ fn current_impulse_context_tracks_fall_damage_impact_position() {
 
 #[test]
 fn current_impulse_context_resets_after_grace_window() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     base.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 72.0, 0.0));
@@ -181,7 +181,7 @@ fn current_impulse_context_resets_after_grace_window() {
 
 #[test]
 fn fall_flying_is_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     assert!(!base.is_fall_flying());
@@ -193,7 +193,7 @@ fn fall_flying_is_living_entity_state() {
 
 #[test]
 fn fall_flying_ticks_are_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     assert_eq!(base.fall_flying_ticks(), 0);
@@ -206,7 +206,7 @@ fn fall_flying_ticks_are_living_entity_state() {
 
 #[test]
 fn living_rotation_is_base_tick_snapshot_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
 
     base.set_y_body_rot(30.0);
@@ -233,7 +233,7 @@ fn living_rotation_is_base_tick_snapshot_state() {
 
 #[test]
 fn living_swing_uses_vanilla_restart_gate() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
 
     assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
@@ -260,7 +260,7 @@ fn living_swing_uses_vanilla_restart_gate() {
 
 #[test]
 fn living_swing_time_updates_attack_animation() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
 
     assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
@@ -291,10 +291,10 @@ fn living_swing_time_updates_attack_animation() {
 
 #[test]
 fn equipment_is_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
-    assert!(base.equipment().lock().non_empty_items().is_empty());
+    assert_eq!(base.equipment().lock().non_empty_items().len(), 0);
 
     base.equipment()
         .lock()
@@ -310,7 +310,7 @@ fn equipment_is_living_entity_state() {
 
 #[test]
 fn sprinting_is_living_entity_state_and_speed_modifier() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
     let base_speed = base
@@ -344,7 +344,7 @@ fn sprinting_is_living_entity_state_and_speed_modifier() {
 
 #[test]
 fn active_mob_effect_presence_is_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
@@ -360,7 +360,7 @@ fn active_mob_effect_presence_is_living_entity_state() {
 
 #[test]
 fn active_mob_effect_amplifier_is_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     base.set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
@@ -373,7 +373,7 @@ fn active_mob_effect_amplifier_is_living_entity_state() {
 
 #[test]
 fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
     let base_speed = base
@@ -410,79 +410,8 @@ fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
 }
 
 #[test]
-fn player_respawn_reset_clears_living_runtime_and_effect_state() {
-    init_test_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
-    let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
-    let base_speed = base
-        .attributes()
-        .lock()
-        .get_value(movement_speed)
-        .expect("player should have movement speed");
-
-    base.set_sprinting(true);
-    base.set_sleeping_pos(BlockPos::new(1, 64, 1));
-    base.set_fall_flying(true);
-    base.tick_fall_flying_state(true);
-    base.attributes()
-        .lock()
-        .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
-    base.set_absorption_amount(4.0);
-    base.skip_drop_experience();
-    base.set_no_action_time(80);
-    base.set_last_hurt_by_player(uuid::Uuid::from_u128(9), 100);
-    base.record_last_damage_source(
-        &DamageSource::environment(&vanilla_damage_types::GENERIC),
-        7,
-    );
-    assert!(base.apply_damage_cooldown(4.0, false).is_some());
-    assert!(base.mark_death_processed());
-    assert_eq!(base.increment_death_time(), 1);
-    base.set_mob_effect(vanilla_mob_effects::SPEED, 1);
-    base.set_mob_effect(vanilla_mob_effects::INVISIBILITY, 0);
-    base.drain_dirty_mob_effects();
-
-    base.reset_for_player_respawn();
-
-    assert!(!base.is_sprinting());
-    assert_eq!(base.sleeping_pos(), None);
-    assert!(!base.is_fall_flying());
-    assert_eq!(base.fall_flying_ticks(), 0);
-    assert_eq!(base.absorption_amount().to_bits(), 0.0_f32.to_bits());
-    assert!(!base.was_experience_consumed());
-    assert_eq!(base.no_action_time(), 0);
-    assert!(base.last_hurt_by_player_uuid().is_none());
-    assert!(base.last_damage_source(7).is_none());
-    assert!(!base.has_mob_effect(vanilla_mob_effects::SPEED));
-    assert!(!base.has_mob_effect(vanilla_mob_effects::INVISIBILITY));
-    assert_eq!(
-        base.attributes()
-            .lock()
-            .get_value(movement_speed)
-            .expect("player should have movement speed")
-            .to_bits(),
-        base_speed.to_bits()
-    );
-
-    let state = base.state.lock();
-    assert!(!state.death_processed);
-    assert_eq!(state.death_time, 0);
-    assert_eq!(state.last_hurt.to_bits(), 0.0_f32.to_bits());
-    drop(state);
-
-    let changes = base.drain_dirty_mob_effects();
-    assert!(changes.contains(&MobEffectSyncChange::Remove {
-        effect: vanilla_mob_effects::SPEED
-    }));
-    assert!(changes.contains(&MobEffectSyncChange::Remove {
-        effect: vanilla_mob_effects::INVISIBILITY
-    }));
-    assert!(base.take_effects_dirty());
-}
-
-#[test]
 fn mob_effect_duration_tick_removes_expired_effect() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     base.add_mob_effect(MobEffectInstance::with_duration(
@@ -505,7 +434,7 @@ fn mob_effect_duration_tick_removes_expired_effect() {
 
 #[test]
 fn stronger_shorter_effect_downgrades_to_hidden_effect() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     base.add_mob_effect(MobEffectInstance::with_duration(
@@ -539,7 +468,7 @@ fn stronger_shorter_effect_downgrades_to_hidden_effect() {
 
 #[test]
 fn sleeping_uses_living_entity_sleeping_position() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     let bed_pos = BlockPos::new(12, 64, -4);
 
@@ -557,7 +486,7 @@ fn sleeping_uses_living_entity_sleeping_position() {
 
 #[test]
 fn last_climbable_pos_is_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
     let climbable_pos = BlockPos::new(-5, 72, 3);
 
@@ -568,7 +497,7 @@ fn last_climbable_pos_is_living_entity_state() {
 
 #[test]
 fn discard_friction_is_living_entity_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     assert!(!base.should_discard_friction());
@@ -580,7 +509,7 @@ fn discard_friction_is_living_entity_state() {
 
 #[test]
 fn living_travel_input_is_shared_living_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     assert_eq!(base.travel_input(), LivingTravelInput::ZERO);
@@ -596,7 +525,7 @@ fn living_travel_input_is_shared_living_state() {
 
 #[test]
 fn jumping_and_jump_delay_are_shared_living_state() {
-    init_test_registry();
+    init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
     assert!(!base.is_jumping());
@@ -610,4 +539,35 @@ fn jumping_and_jump_delay_are_shared_living_state() {
     base.tick_no_jump_delay();
     base.tick_no_jump_delay();
     assert_eq!(base.no_jump_delay(), 0);
+}
+
+#[test]
+fn poison_and_regeneration_tick_schedules_match_vanilla_interval_formulas() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    // Vanilla `PoisonMobEffect`: interval = 25 >> amplifier, applied when
+    // remaining duration is a multiple of the interval.
+    let poison = MobEffectInstance::with_duration(vanilla_mob_effects::POISON, 50, 0);
+    assert!(poison.should_apply_effect_tick_this_tick(0));
+    let poison_amplified = MobEffectInstance::with_duration(vanilla_mob_effects::POISON, 48, 1);
+    // 25 >> 1 == 12; 48 % 12 == 0.
+    assert!(poison_amplified.should_apply_effect_tick_this_tick(0));
+    let poison_off_schedule = MobEffectInstance::with_duration(vanilla_mob_effects::POISON, 49, 1);
+    assert!(!poison_off_schedule.should_apply_effect_tick_this_tick(0));
+
+    // Vanilla `RegenerationMobEffect`: interval = 50 >> amplifier.
+    let regen = MobEffectInstance::with_duration(vanilla_mob_effects::REGENERATION, 50, 0);
+    assert!(regen.should_apply_effect_tick_this_tick(0));
+    let regen_off_schedule =
+        MobEffectInstance::with_duration(vanilla_mob_effects::REGENERATION, 49, 0);
+    assert!(!regen_off_schedule.should_apply_effect_tick_this_tick(0));
+
+    // Vanilla `HungerMobEffect`: applies every tick.
+    let hunger = MobEffectInstance::with_duration(vanilla_mob_effects::HUNGER, 100, 0);
+    assert!(hunger.should_apply_effect_tick_this_tick(0));
+
+    // An effect with no vanilla tick schedule (e.g. Speed) never ticks.
+    let speed = MobEffectInstance::with_duration(vanilla_mob_effects::SPEED, 100, 0);
+    assert!(!speed.should_apply_effect_tick_this_tick(0));
 }

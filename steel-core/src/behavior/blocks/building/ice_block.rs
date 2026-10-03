@@ -15,7 +15,7 @@ use crate::chunk::light::LightLayer;
 use crate::player::Player;
 use crate::world::World;
 
-/// Vanilla `IceBlock` behavior.
+/// Ice block behavior.
 #[block_behavior]
 pub struct IceBlock {
     block: BlockRef,
@@ -30,13 +30,13 @@ impl IceBlock {
         Self { block }
     }
 
-    /// Vanilla `IceBlock.meltsInto`.
+    /// Returns the block state that ice melts into.
     #[must_use]
     pub fn melts_into() -> BlockStateId {
         vanilla_blocks::WATER.default_state()
     }
 
-    /// Vanilla `IceBlock.melt`.
+    /// Melts the ice block at the given position.
     pub fn melt(_state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if world.dimension_type.water_evaporates {
             world.set_block(
@@ -111,13 +111,13 @@ impl BlockBehavior for IceBlock {
 #[cfg(test)]
 mod tests {
     use super::IceBlock;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::test_support::init_test_registry;
     use steel_registry::{vanilla_blocks, vanilla_enchantments, vanilla_items};
 
     #[test]
     fn melts_into_water_by_default() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_eq!(
             IceBlock::melts_into(),
             vanilla_blocks::WATER.default_state()
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn prevents_ice_melting_with_silk_touch() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         assert!(!IceBlock::prevents_ice_melting(&tool));
 

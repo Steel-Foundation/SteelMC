@@ -11,7 +11,7 @@ const fn default_log_file() -> bool {
 }
 
 const fn default_max_history() -> usize {
-    50
+    LogConfig::DEFAULT_MAX_HISTORY
 }
 
 /// Logging configuration
@@ -42,6 +42,11 @@ pub struct LogConfig {
     /// Amount of console commands saved
     #[serde(default = "default_max_history")]
     pub max_history: usize,
+}
+
+impl LogConfig {
+    /// Default console command history length when logging config is absent.
+    pub const DEFAULT_MAX_HISTORY: usize = 50;
 }
 
 /// Time format for log entries

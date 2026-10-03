@@ -45,7 +45,7 @@ impl Goal for RandomLookAroundGoal {
     }
 
     fn start(&mut self, _mob: &dyn PathfinderMob) {
-        let direction = TAU * rand::random::<f64>();
+        let direction = rand::random_range(0.0..TAU);
         self.rel_x = direction.cos();
         self.rel_z = direction.sin();
         self.look_time = 20 + rand::random_range(0..20);
@@ -75,7 +75,7 @@ mod tests {
     use std::sync::Weak;
 
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
     use steel_utils::locks::SyncMutex;
 
     use super::*;
@@ -91,7 +91,7 @@ mod tests {
 
     impl TestPathfinderMob {
         fn new() -> Self {
-            init_test_registry();
+            init_vanilla_registry();
             Self {
                 base: EntityBase::new(
                     1,

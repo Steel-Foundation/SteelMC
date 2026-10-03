@@ -1,7 +1,7 @@
 //! Entity registry for creating entity instances.
 
 use std::ops::Deref;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{OnceLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::{
@@ -12,7 +12,6 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
 use uuid::Uuid;
 
-use super::entities::RawEntity;
 use super::generated_entities::register_entity_factories;
 use super::{
     EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, SharedEntity, next_entity_id,
@@ -103,6 +102,8 @@ impl EntityRegistry {
 
         let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
         entity.load_additional(nbt);
+        entity.set_old_position_to_current();
+        entity.base().set_old_rotation_to_current();
         entity.sync_base_entity_data();
     }
 
@@ -170,25 +171,30 @@ impl EntityRegistry {
             .map(|f| f(entity_type, entity_id, pos, world))
     }
 
-    /// Creates an entity from persisted data, falling back to raw NBT preservation.
+    /// Creates an entity from persisted data.
+    ///
+    /// Returns `None` and logs a warning when Steel has no load factory for the type.
+    /// Skipped entities and their passenger trees are not retained when the chunk is saved.
     #[must_use]
-    pub fn create_and_load_or_raw(
+    pub fn create_and_load(
         &self,
         request: EntityLoadRequest,
         nbt: &BorrowedNbtCompound<'_>,
-    ) -> SharedEntity {
-        let (entity_type, load) = request.into_base_load();
+    ) -> Option<SharedEntity> {
+        let entity_type = request.entity_type;
         let id = entity_type.id();
-        if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
-            let entity = load_factory(entity_type, load);
-            Self::finish_registered_load(&entity, nbt);
-            return entity;
-        }
+        let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) else {
+            log::warn!(
+                "Skipping unsupported entity {} while loading",
+                entity_type.key
+            );
+            return None;
+        };
 
-        let entity: SharedEntity = Arc::new(RawEntity::from_saved(load, entity_type));
-        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-        entity.load_additional(nbt);
-        entity
+        let (_, load) = request.into_base_load();
+        let entity = load_factory(entity_type, load);
+        Self::finish_registered_load(&entity, nbt);
+        Some(entity)
     }
 
     /// Returns whether a factory is registered for the given type.
@@ -222,6 +228,10 @@ impl EntityRegistryLock {
         self.0.set(registry)
     }
 
+    fn get_or_init(&self, init: impl FnOnce() -> EntityRegistry) -> &EntityRegistry {
+        self.0.get_or_init(init)
+    }
+
     /// Returns the initialized registry, if entity factories have been installed.
     #[must_use]
     pub fn get(&self) -> Option<&EntityRegistry> {
@@ -234,36 +244,13 @@ impl EntityRegistryLock {
 /// Access via deref: `ENTITIES.create(type, entity_id, pos)`
 pub static ENTITIES: EntityRegistryLock = EntityRegistryLock(OnceLock::new());
 
-/// Initializes the global entity registry.
-///
-/// This should be called once after the main registry is frozen.
-///
-/// # Panics
-///
-/// Panics if called more than once.
+/// Initializes the global entity registry, once the main registry is frozen.
 pub fn init_entities() {
-    let mut registry = EntityRegistry::new();
-    register_entity_factories(&mut registry);
-
-    assert!(
-        ENTITIES.set(registry).is_ok(),
-        "Entity registry already initialized"
-    );
-}
-
-#[cfg(test)]
-pub(crate) fn init_test_entities() {
-    use steel_registry::test_support::init_test_registry;
-
-    init_test_registry();
-
-    if ENTITIES.get().is_some() {
-        return;
-    }
-
-    let mut registry = EntityRegistry::new();
-    register_entity_factories(&mut registry);
-    let _ = ENTITIES.set(registry);
+    ENTITIES.get_or_init(|| {
+        let mut registry = EntityRegistry::new();
+        register_entity_factories(&mut registry);
+        registry
+    });
 }
 
 #[cfg(test)]
@@ -272,14 +259,15 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
 
     use super::*;
+    use crate::test_support::TestEntity;
 
     #[test]
     fn registered_living_load_restores_current_head_and_body_yaw() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut registry = EntityRegistry::new();
         register_entity_factories(&mut registry);
         let mut bytes = Vec::new();
@@ -287,7 +275,7 @@ mod tests {
         let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
             .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
-        let entity = registry.create_and_load_or_raw(
+        let Some(entity) = registry.create_and_load(
             EntityLoadRequest {
                 entity_type: &vanilla_entities::PIG,
                 position: DVec3::ZERO,
@@ -301,7 +289,9 @@ mod tests {
                 world: Weak::new(),
             },
             &borrowed,
-        );
+        ) else {
+            panic!("registered pig should load");
+        };
 
         assert_eq!(entity.rotation(), (135.0, -20.0));
         assert_eq!(entity.base().old_rotation(), (135.0, -20.0));
@@ -316,17 +306,15 @@ mod tests {
     }
 
     #[test]
-    fn create_and_load_or_raw_preserves_unregistered_entity_data() {
-        init_test_registry();
+    fn create_and_load_skips_unregistered_entity_type() {
+        init_vanilla_registry();
         let registry = EntityRegistry::new();
-        let mut nbt = NbtCompound::new();
-        nbt.insert("SteelRawMarker", "raw");
         let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
+        NbtCompound::new().write(&mut bytes);
         let borrowed =
             read_borrowed_compound(&mut Cursor::new(&bytes)).expect("test nbt should reborrow");
 
-        let entity = registry.create_and_load_or_raw(
+        let entity = registry.create_and_load(
             EntityLoadRequest {
                 entity_type: &vanilla_entities::VILLAGER,
                 position: DVec3::new(1.0, 2.0, 3.0),
@@ -346,30 +334,16 @@ mod tests {
             &borrowed,
         );
 
-        assert_eq!(&entity.entity_type().key, &vanilla_entities::VILLAGER.key);
-        assert_eq!(entity.position(), DVec3::new(1.0, 2.0, 3.0));
-        assert_eq!(entity.velocity(), DVec3::new(0.1, 0.0, 0.2));
-        assert_eq!(entity.rotation(), (45.0, 10.0));
-        assert!((entity.fall_distance() - 2.25).abs() <= f64::EPSILON);
-        assert!(entity.on_ground());
-        assert!(entity.is_no_gravity());
-        assert!(entity.is_invulnerable());
-
-        let mut saved = NbtCompound::new();
-        entity.save_additional(&mut saved);
-        assert_eq!(
-            saved.string("SteelRawMarker").map(ToString::to_string),
-            Some("raw".to_owned())
-        );
+        assert!(entity.is_none());
     }
 
     #[test]
     fn create_forwards_entity_type_to_factory() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut registry = EntityRegistry::new();
         registry.register(
             &vanilla_entities::OAK_BOAT,
-            |entity_type, id, pos, world| Arc::new(RawEntity::new(id, pos, world, entity_type)),
+            |entity_type, id, pos, world| TestEntity::shared(id, pos, world, entity_type),
         );
 
         let Some(entity) =

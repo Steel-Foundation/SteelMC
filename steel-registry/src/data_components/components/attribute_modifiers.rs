@@ -49,6 +49,25 @@ impl ItemAttributeModifiers {
             .iter()
             .filter(move |entry| entry.slot.test(slot))
     }
+
+    /// Vanilla `ItemAttributeModifiers.compute`: fold the modifiers this item
+    /// grants for `attribute` in `slot` onto `base_value`, applying each entry's
+    /// operation. Used to approximate the attribute value an entity would have if
+    /// it wore the stack in that slot.
+    #[must_use]
+    pub fn compute(&self, attribute: AttributeRef, base_value: f64, slot: EquipmentSlot) -> f64 {
+        let mut value = base_value;
+        for entry in &self.modifiers {
+            if entry.slot.test(slot) && entry.attribute.key == attribute.key {
+                value += match entry.operation {
+                    AttributeModifierOperation::AddValue => entry.amount,
+                    AttributeModifierOperation::AddMultipliedBase => entry.amount * base_value,
+                    AttributeModifierOperation::AddMultipliedTotal => entry.amount * value,
+                };
+            }
+        }
+        value
+    }
 }
 
 impl Default for ItemAttributeModifiers {
@@ -372,9 +391,7 @@ mod tests {
     use crate::attribute::AttributeModifierOperation;
     use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
     use crate::item_stack::ItemStack;
-    use crate::{
-        RegistryEntry, test_support::init_test_registry, vanilla_attributes, vanilla_items,
-    };
+    use crate::{RegistryEntry, init_vanilla_registry, vanilla_attributes, vanilla_items};
 
     use super::{ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers};
 
@@ -397,7 +414,7 @@ mod tests {
 
     #[test]
     fn generated_diamond_sword_has_main_hand_attack_modifiers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
         let modifiers = stack
@@ -425,7 +442,7 @@ mod tests {
 
     #[test]
     fn generated_carved_pumpkin_has_hidden_head_modifier() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
         let modifiers = stack
@@ -452,7 +469,7 @@ mod tests {
 
     #[test]
     fn unknown_attribute_modifier_slot_group_id_falls_back_to_any() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut bytes = Vec::new();
         let Some(attribute_id) = vanilla_attributes::ARMOR.try_id() else {
@@ -487,7 +504,7 @@ mod tests {
 
     #[test]
     fn attribute_modifier_nbt_coerces_amount_and_rejects_invalid_optional_fields() {
-        init_test_registry();
+        init_vanilla_registry();
         let parsed = with_borrowed_tag(
             NbtTag::List(NbtList::Compound(vec![modifier_nbt()])),
             ItemAttributeModifiers::from_nbt_tag,

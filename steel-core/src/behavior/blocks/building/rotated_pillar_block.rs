@@ -23,7 +23,7 @@ pub struct RotatedPillarBlock {
 
 impl RotatedPillarBlock {
     /// Axis property for the pillar orientation.
-    pub const AXIS: EnumProperty<Axis> = BlockStateProperties::AXIS;
+    pub const AXIS: &EnumProperty<Axis> = &BlockStateProperties::AXIS;
 
     /// Creates a new rotated pillar block behavior for the given block.
     #[must_use]
@@ -39,7 +39,7 @@ impl RotatedPillarBlock {
     ) -> BlockStateId {
         block
             .default_state()
-            .set_value(&Self::AXIS, context.clicked_face().get_axis())
+            .set_value(Self::AXIS, context.clicked_face().get_axis())
     }
 }
 

@@ -469,7 +469,7 @@ impl PointOfInterestStorage {
 #[cfg(test)]
 mod tests {
     use super::{OccupationStatus, PointOfInterestStorage};
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_utils::BlockPos;
 
     fn sorted_positions(mut positions: Vec<(BlockPos, usize)>) -> Vec<BlockPos> {
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn horizontal_square_query_matches_y_unbounded_vanilla_search() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut storage = PointOfInterestStorage::new();
         storage.add(BlockPos::new(0, -64, 0), 7, 0);
         storage.add(BlockPos::new(0, 320, 0), 7, 0);

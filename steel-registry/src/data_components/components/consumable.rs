@@ -174,6 +174,11 @@ impl Consumable {
     }
 
     #[must_use]
+    pub fn consume_ticks(&self) -> i32 {
+        (self.consume_seconds * 20.0) as i32
+    }
+
+    #[must_use]
     pub const fn animation(&self) -> ItemUseAnimation {
         self.animation
     }
@@ -500,7 +505,7 @@ mod tests {
         RemoveStatusEffectsConsumeEffect, TeleportRandomlyConsumeEffect,
     };
     use crate::data_components::vanilla_components::{CONSUMABLE, DEATH_PROTECTION};
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: simdnbt::owned::NbtTag) -> Option<T> {
@@ -531,7 +536,7 @@ mod tests {
 
     #[test]
     fn extracted_consumables_keep_typed_effects_and_round_trip() {
-        init_test_registry();
+        init_vanilla_registry();
         let golden_apple = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("golden_apple"))
@@ -553,6 +558,11 @@ mod tests {
             .get(CONSUMABLE)
             .expect("milk should be consumable");
         assert_eq!(milk.animation(), ItemUseAnimation::Drink);
+        assert_eq!(
+            milk.consume_ticks(),
+            (milk.consume_seconds() * 20.0) as i32,
+            "consume_ticks must match vanilla (int)(seconds * 20)"
+        );
         assert!(!milk.has_consume_particles());
         assert!(
             milk.on_consume_effects()[0]
@@ -578,7 +588,7 @@ mod tests {
 
     #[test]
     fn extracted_totem_death_protection_round_trips() {
-        init_test_registry();
+        init_vanilla_registry();
         let totem = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("totem_of_undying"))

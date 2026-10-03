@@ -4,6 +4,9 @@ use steel_registry::{REGISTRY, world_clock::WorldClockRef};
 use steel_utils::Identifier;
 use thiserror::Error;
 
+/// Game-time synchronization interval, measured in simulation ticks.
+const GAME_TIME_SYNC_INTERVAL_TICKS: i64 = 20;
+
 /// One persisted instance of a registered world clock.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -217,7 +220,7 @@ use super::{CSetTime, RegistryExt, World, clock};
 impl World {
     /// Returns vanilla level game time.
     pub fn game_time(&self) -> i64 {
-        self.level_data.read().game_time()
+        self.game_time.ticks()
     }
 
     /// Returns the total ticks of one clock in this world.
@@ -230,7 +233,7 @@ impl World {
         let level_data = self.level_data.read();
         let advance_time = self.advance_time_with_guard(&level_data);
         CSetTime::new(
-            level_data.game_time(),
+            self.game_time(),
             level_data.world_clocks().network_updates(advance_time),
         )
     }
@@ -280,24 +283,22 @@ impl World {
             let update = level_data
                 .world_clocks()
                 .network_update(clock, advance_time)?;
-            (result, CSetTime::new(level_data.game_time(), vec![update]))
+            (result, CSetTime::new(self.game_time(), vec![update]))
         };
         self.broadcast_to_all(packet);
         Some(result)
     }
 
-    /// Advances game time and this world's clock instances, then periodically synchronizes game time.
+    /// Advances this world's clocks and periodically synchronizes the shared game time.
     pub(super) fn tick_time(&self) {
         let game_time = {
             let mut lock = self.level_data.write();
-            let updated_game_time = lock.game_time().wrapping_add(1);
-            lock.set_game_time(updated_game_time);
             let advance_time = self.advance_time_with_guard(&lock);
             lock.world_clocks_mut().tick(advance_time);
-            updated_game_time
+            self.game_time()
         };
 
-        if game_time % 20 == 0 {
+        if game_time % GAME_TIME_SYNC_INTERVAL_TICKS == 0 {
             self.broadcast_to_all(CSetTime::new(game_time, Vec::new()));
         }
     }
@@ -305,13 +306,13 @@ impl World {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_world_clocks};
+    use steel_registry::{init_vanilla_registry, vanilla_world_clocks};
 
     use super::*;
 
     #[test]
     fn initializes_every_registered_clock() {
-        init_test_registry();
+        init_vanilla_registry();
         let manager = WorldClockManager::new();
 
         assert_eq!(
@@ -324,7 +325,7 @@ mod tests {
 
     #[test]
     fn separate_worlds_keep_independent_clock_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut first_world = WorldClockManager::new();
         let second_world = WorldClockManager::new();
 
@@ -344,7 +345,7 @@ mod tests {
 
     #[test]
     fn rate_accumulates_partial_ticks_like_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_rate(&vanilla_world_clocks::OVERWORLD, 0.25),
@@ -366,12 +367,8 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "paused and non-advancing clocks must report the exact zero network rate"
-    )]
     fn pause_and_advance_time_gate_network_rate_and_ticks() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_paused(&vanilla_world_clocks::OVERWORLD, true),
@@ -396,7 +393,7 @@ mod tests {
 
     #[test]
     fn repeating_time_marker_moves_strictly_forward() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_total_ticks(&vanilla_world_clocks::OVERWORLD, 1_000),
@@ -418,7 +415,7 @@ mod tests {
 
     #[test]
     fn manager_round_trips_through_toml() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_total_ticks(&vanilla_world_clocks::OVERWORLD, 12_345),

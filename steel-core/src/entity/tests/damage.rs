@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn generic_living_hurt_applies_health_damage() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
@@ -13,7 +13,8 @@ fn generic_living_hurt_applies_health_damage() {
 
 #[test]
 fn generic_living_hurt_ignores_fire_damage_with_fire_resistance() {
-    init_test_registry();
+    init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::LAVA);
@@ -25,7 +26,7 @@ fn generic_living_hurt_ignores_fire_damage_with_fire_resistance() {
 
 #[test]
 fn generic_living_hurt_processes_default_death_once() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
@@ -37,7 +38,7 @@ fn generic_living_hurt_processes_default_death_once() {
 
 #[test]
 fn generic_living_hurt_applies_armor_and_absorption() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     {
         let mut attributes = entity.attributes().lock();
@@ -55,7 +56,8 @@ fn generic_living_hurt_applies_armor_and_absorption() {
 
 #[test]
 fn generic_living_hurt_applies_resistance() {
-    init_test_registry();
+    init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_mob_effect(vanilla_mob_effects::RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
@@ -67,7 +69,7 @@ fn generic_living_hurt_applies_resistance() {
 
 #[test]
 fn damage_reductions_use_victim_attached_world() {
-    init_test_registry();
+    init_vanilla_registry();
     let attached_world = cross_world_damage_test_world();
     let explicit_world = test_world();
     assert!(!Arc::ptr_eq(attached_world, explicit_world));
@@ -114,7 +116,7 @@ fn damage_reductions_use_victim_attached_world() {
 
 #[test]
 fn generic_living_hurt_applies_damage_protection_enchantments() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     let mut boots = ItemStack::new(&vanilla_items::DIAMOND_BOOTS);
     boots.set_enchantments(&[(Identifier::vanilla_static("protection"), 4)], false);
@@ -129,7 +131,7 @@ fn generic_living_hurt_applies_damage_protection_enchantments() {
 
 #[test]
 fn generic_living_default_does_not_damage_armor_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(
         EquipmentSlot::Chest,
@@ -146,7 +148,7 @@ fn generic_living_default_does_not_damage_armor_equipment() {
 
 #[test]
 fn generic_living_hurt_applies_source_position_knockback() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_on_ground(true);
     let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
@@ -163,7 +165,7 @@ fn generic_living_hurt_applies_source_position_knockback() {
 
 #[test]
 fn try_as_dyn_exposes_living_entity_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let entity_ref: &dyn Entity = &entity;
     let Some(living) = entity_ref.as_living_entity() else {
@@ -178,7 +180,7 @@ fn try_as_dyn_exposes_living_entity_behavior() {
 
 #[test]
 fn head_yaw_uses_living_head_rotation_only() {
-    init_test_registry();
+    init_vanilla_registry();
     let living = LivingFluidTestEntity::new(0.0, 0.0, true);
     living.set_rotation((35.0, 0.0));
     living.set_y_head_rot(120.0);
@@ -192,7 +194,7 @@ fn head_yaw_uses_living_head_rotation_only() {
 
 #[test]
 fn living_equipment_attribute_modifiers_refresh_for_slot() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let (base_armor, base_toughness) = {
         let attributes = entity.attributes().lock();
@@ -244,7 +246,7 @@ fn living_equipment_attribute_modifiers_refresh_for_slot() {
 
 #[test]
 fn generic_living_hurt_respects_no_knockback_damage_tag() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_on_ground(true);
     entity.set_velocity(DVec3::new(0.2, 0.3, -0.1));
@@ -260,7 +262,7 @@ fn generic_living_hurt_respects_no_knockback_damage_tag() {
 
 #[test]
 fn generic_living_hurt_scales_knockback_by_resistance() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_on_ground(true);
     entity
@@ -280,4 +282,32 @@ fn generic_living_hurt_scales_knockback_by_resistance() {
             0.0,
         ),
     );
+}
+
+#[test]
+fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
+    init_vanilla_registry();
+    init_behaviors();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
+    for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
+        entity.with_equipment_slot_mut(slot, &mut |stack| {
+            *stack = ItemStack::new(&vanilla_items::TOTEM_OF_UNDYING);
+        });
+    }
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+
+    assert!(entity.hurt(test_world(), &source, 4.0));
+    assert_f32_close(entity.get_health(), 1.0);
+    assert!(!entity.has_item_in_slot(EquipmentSlot::MainHand));
+    assert!(entity.has_item_in_slot(EquipmentSlot::OffHand));
+    assert!(entity.has_mob_effect(vanilla_mob_effects::REGENERATION));
+
+    for _ in 0..10 {
+        entity.living_base().decrement_invulnerable_time();
+    }
+    let absorbed_and_lethal = entity.get_absorption_amount() + 4.0;
+    assert!(entity.hurt(test_world(), &source, absorbed_and_lethal));
+    assert_f32_close(entity.get_health(), 1.0);
+    assert!(!entity.has_item_in_slot(EquipmentSlot::OffHand));
+    assert_ne!(entity.pose(), EntityPose::Dying);
 }

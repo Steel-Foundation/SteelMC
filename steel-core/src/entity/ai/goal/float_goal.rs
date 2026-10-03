@@ -40,7 +40,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
     use steel_utils::locks::SyncMutex;
 
     use super::*;
@@ -58,7 +58,7 @@ mod tests {
 
     impl TestPathfinderMob {
         fn new(water_height: f64, lava_height: f64) -> Self {
-            init_test_registry();
+            init_vanilla_registry();
             let base = EntityBase::new(
                 1,
                 DVec3::ZERO,
@@ -139,6 +139,7 @@ mod tests {
         let shallow_water_mob = TestPathfinderMob::new(0.3, 0.0);
         let deep_water_mob = TestPathfinderMob::new(0.5, 0.0);
         let lava_mob = TestPathfinderMob::new(0.0, 0.1);
+        lava_mob.set_first_tick(false);
         let mut goal = FloatGoal;
 
         assert!(!goal.can_use(&shallow_water_mob));

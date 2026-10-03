@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, ptr, sync::Arc};
 
 use glam::DVec3;
+use steel_math::{DEGREE_90, wrap_degrees};
 use steel_registry::{
     vanilla_game_rules::{
         LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
@@ -407,7 +408,7 @@ impl CommandSource {
         let delta = target - self.anchor_position();
         let horizontal = delta.x.hypot(delta.z);
         let pitch = -delta.y.atan2(horizontal).to_degrees() as f32;
-        let yaw = delta.z.atan2(delta.x).to_degrees() as f32 - 90.0;
+        let yaw = delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90;
         self.with_rotation((yaw, pitch))
     }
 
@@ -440,6 +441,17 @@ impl CommandSource {
     )]
     pub(crate) const fn is_silent(&self) -> bool {
         self.silent
+    }
+
+    /// Sends informational command output straight to the sender.
+    ///
+    /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
+    /// game rule and never broadcasts to admins - it's for output the sender
+    /// explicitly asked for (e.g. `/version`), not command-result feedback.
+    pub(crate) fn send_system_message(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
     }
 
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
@@ -857,16 +869,8 @@ fn admin_broadcast_source_name(
     )
 }
 
-fn normalize_rotation((mut yaw, mut pitch): (f32, f32)) -> (f32, f32) {
-    yaw = yaw.rem_euclid(360.0);
-    if yaw >= 180.0 {
-        yaw -= 360.0;
-    }
-    pitch = pitch.rem_euclid(360.0);
-    if pitch >= 180.0 {
-        pitch -= 360.0;
-    }
-    (yaw, pitch)
+fn normalize_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
+    (wrap_degrees(yaw), wrap_degrees(pitch))
 }
 
 #[cfg(test)]

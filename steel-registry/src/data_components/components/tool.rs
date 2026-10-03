@@ -362,7 +362,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     use super::{Tool, ToolRule, ToolRuleBlocks};
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::vanilla_blocks::{COBWEB, STONE};
 
     fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn tool_network_round_trips_tag_and_direct_holder_sets() {
-        init_test_registry();
+        init_vanilla_registry();
         let tool = sample_tool();
         let mut bytes = Vec::new();
         tool.write(&mut bytes).expect("tool should serialize");
@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn tool_nbt_uses_compact_holder_sets_and_numeric_coercion() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut rule = NbtCompound::new();
         rule.insert("blocks", "minecraft:cobweb");
         rule.insert("speed", 5.5_f64);
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn malformed_present_tool_fields_fail_the_codec() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(parse_tool(NbtTag::Compound(NbtCompound::new())).is_none());
 
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn tool_hash_matches_its_persistent_codec_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let tool = Tool {
             rules: vec![ToolRule {
                 blocks: ToolRuleBlocks::Direct(vec![&COBWEB]),

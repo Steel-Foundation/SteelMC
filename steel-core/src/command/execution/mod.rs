@@ -15,13 +15,14 @@ mod score;
 mod selector;
 mod source;
 mod structure;
+mod suggestion_provider;
 mod text;
 mod world;
 
 pub(crate) use argument::SteelArgumentType;
 pub(crate) use argument::{SteelArgumentParser, SteelArgumentSuggestionContext};
 pub(crate) use biome::BiomeOrTag;
-pub(crate) use block::BlockPredicate;
+pub(crate) use block::{BlockInput, BlockPredicate, placement_flags};
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use permission::PermissionGroupName;
@@ -52,6 +53,7 @@ pub(crate) use source::{
     ExecutionCommandSource,
 };
 pub(crate) use structure::StructureOrTagKey;
+pub(crate) use suggestion_provider::FixedSuggestionProvider;
 pub(crate) use text::CommandTextResolver;
 pub(crate) use world::WorldArgument;
 

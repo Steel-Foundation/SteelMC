@@ -16,11 +16,10 @@ use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::EmptyChunkGenerator;
 use std::io::Cursor;
-use std::thread;
 use steel_protocol::packet_traits::CompressionInfo;
 use steel_registry::{
+    init_vanilla_registry,
     packets::play::{C_BLOCK_CHANGED_ACK, C_BLOCK_UPDATE},
-    test_support::init_test_registry,
     vanilla_blocks,
     vanilla_dimension_types::OVERWORLD,
     vanilla_fluids,
@@ -30,7 +29,9 @@ use steel_utils::serial::ReadFrom;
 use steel_utils::types::UpdateFlags;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 use text_components::TextComponent;
-use uuid::Uuid;
+
+const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 0;
+const TEST_VIEW_DISTANCE_CHUNKS: u8 = 0;
 
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -69,7 +70,7 @@ fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<Encod
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1)
         .connection(connection)
         .build();
     (player, packets)
@@ -87,15 +88,22 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
     }
 }
 
-fn advance_until_revision(chunk_map: &Arc<ChunkMap>, revision: ChunkTicketRevision) {
-    for _ in 0..10_000 {
-        chunk_map.advance_scheduling();
-        if chunk_map.is_ticket_revision_committed(revision) {
-            return;
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-    panic!("chunk ticket revision did not commit");
+fn advance_until_receipt(chunk_map: &Arc<ChunkMap>, receipt: ChunkTicketReceipt) {
+    let _runtime_guard = chunk_map.chunk_runtime.enter();
+    chunk_map.advance_scheduling();
+    assert!(
+        chunk_map.is_ticket_receipt_committed(receipt),
+        "the unified source phase should commit its drained receipt"
+    );
+}
+
+fn stop_chunk_tasks(world: &Arc<World>) {
+    world.chunk_map.stop_generation_refill_loop();
+    world.chunk_map.task_tracker.close();
+    world
+        .chunk_map
+        .chunk_runtime
+        .block_on(world.chunk_map.task_tracker.wait());
 }
 
 fn add_test_comparator(full: FullChunkRef<'_>, pos: BlockPos) -> SharedBlockEntity {
@@ -202,13 +210,15 @@ fn assert_postprocessing_drained(holder: &ChunkHolder) {
 }
 
 fn test_chunk_map() -> Arc<ChunkMap> {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     Arc::new(ChunkMap::new_with_storage(
         Arc::new(Runtime::new().expect("test runtime should initialize")),
         Weak::new(),
         &OVERWORLD,
         63,
+        TEST_VIEW_DISTANCE_CHUNKS,
+        TEST_SIMULATION_DISTANCE_CHUNKS,
         Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world())),
         Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new())),
         Arc::new(
@@ -277,5 +287,8 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
 mod light_updates;
 mod persistence_unloads;
 mod player_tracking;
+mod request_cleanup;
 mod scheduled_ticks;
+mod simulation_tickets;
 mod tickets_generation_readiness;
+mod timed_simulation;

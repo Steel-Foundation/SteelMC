@@ -7,6 +7,7 @@ authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
+steel-math.workspace = true
 steel-macros.workspace = true
 
 # Async runtime
@@ -62,6 +63,7 @@ quote.workspace = true
 phf_codegen.workspace = true
 
 # Utilities
+chrono.workspace = true
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
 reqwest = { workspace = true, features = ["blocking"] }

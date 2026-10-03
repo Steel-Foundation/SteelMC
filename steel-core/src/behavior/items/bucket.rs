@@ -11,6 +11,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
     pickup_waterlogged_block,
 };
+use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
@@ -21,6 +22,7 @@ use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::sound_events;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_game_events;
@@ -99,11 +101,15 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     if let Some(result) =
         block_behavior.pickup_block(context.world, hit_pos, hit_state, Some(context.player))
     {
+        context.inv.with_item(|item| {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
         // Apply sound
         if let Some(sound) = result.sound {
-            context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+            // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
+            context.player.play_sound(sound, 1.0, 1.0);
         }
 
         // Give filled bucket
@@ -125,10 +131,14 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         hit_state,
         Some(context.player),
     ) {
-        if let Some(sound) = result.sound {
+        context.inv.with_item(|item| {
             context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
+        if let Some(sound) = result.sound {
+            // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
+            context.player.play_sound(sound, 1.0, 1.0);
         }
 
         create_filled_result(context, result.filled_bucket, true);
@@ -311,9 +321,14 @@ fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_
     } else {
         &sound_events::ITEM_BUCKET_EMPTY_LAVA
     };
-    context
-        .world
-        .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+    context.world.play_block_sound(
+        sound_event,
+        pos,
+        1.0,
+        1.0,
+        // Vanilla `BucketItem.playEmptySound`: `level.playSound(user, pos, ...)` excludes the placing player.
+        Some(context.player.id()),
+    );
     context.world.game_event(
         &vanilla_game_events::FLUID_PLACE,
         pos,
@@ -337,13 +352,13 @@ fn filled_bucket_primary_pos(
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
     #[test]
     fn filled_water_bucket_targets_non_waterlogged_liquid_container_in_place() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let kelp = vanilla_blocks::KELP.default_state();

@@ -14,9 +14,11 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
+use crate::chunk::heightmap::HeightmapType;
+use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::world::game_event::GameEventContext;
 
-const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
+use super::World;
 
 /// Read-only level access needed by block behavior and worldgen predicates.
 pub trait LevelReader {
@@ -55,9 +57,10 @@ pub trait LevelReader {
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;
 
-    /// Returns vanilla `BlockAndLightGetter.canSeeSky`.
+    /// Returns whether sky light reaches full brightness here, i.e. nothing
+    /// between this position and the sky blocks it.
     fn can_see_sky(&self, pos: BlockPos) -> bool {
-        self.raw_brightness(pos, 0) >= 15
+        self.raw_brightness(pos, 0) >= MAX_LIGHT_LEVEL
     }
 
     /// Returns this dimension's vanilla ambient light factor.
@@ -71,6 +74,11 @@ pub trait LevelReader {
     /// Returns the build height.
     fn height(&self) -> i32;
 
+    /// Returns the vanilla heightmap value at a column.
+    fn height_at(&self, _heightmap_type: HeightmapType, _x: i32, _z: i32) -> i32 {
+        self.min_y()
+    }
+
     /// Returns the exclusive maximum build height.
     fn max_y_exclusive(&self) -> i32 {
         self.min_y() + self.height()
@@ -81,27 +89,26 @@ pub trait LevelReader {
         y < self.min_y() || y >= self.max_y_exclusive()
     }
 
-    /// Returns vanilla `LevelReader.getMaxLocalRawBrightness`.
+    /// Returns raw brightness at a position, treating positions outside the
+    /// world's horizontal bounds as fully lit.
     fn max_local_raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
-        if pos.x() < -VANILLA_HORIZONTAL_LIMIT
-            || pos.z() < -VANILLA_HORIZONTAL_LIMIT
-            || pos.x() >= VANILLA_HORIZONTAL_LIMIT
-            || pos.z() >= VANILLA_HORIZONTAL_LIMIT
-        {
-            return 15;
+        if !World::is_in_world_bounds_horizontal(pos) {
+            return MAX_LIGHT_LEVEL;
         }
 
         self.raw_brightness(pos, sky_darkening)
     }
 
-    /// Returns vanilla `LevelReader.getLightLevelDependentMagicValue`.
+    /// Converts local light level into the non-linear brightness value vanilla
+    /// uses for mob spawning and AI light checks, blended with ambient light.
     fn light_level_dependent_magic_value(&self, pos: BlockPos) -> f32 {
-        let value = f32::from(self.max_local_raw_brightness(pos, 0)) / 15.0;
+        let value = f32::from(self.max_local_raw_brightness(pos, 0)) / f32::from(MAX_LIGHT_LEVEL);
         let curved_value = value / value.mul_add(-3.0, 4.0);
         curved_value + self.ambient_light() * (1.0 - curved_value)
     }
 
-    /// Returns vanilla `LevelReader.getPathfindingCostFromLightLevels`.
+    /// Returns the light-based cost modifier used by mob pathfinding, derived
+    /// from the light-curved brightness at a position.
     fn pathfinding_cost_from_light_levels(&self, pos: BlockPos) -> f32 {
         self.light_level_dependent_magic_value(pos) - 0.5
     }
@@ -154,6 +161,19 @@ pub trait ScheduledTickAccess: LevelReader {
 pub trait LevelAccessor: ScheduledTickAccess {
     /// Sets a block state with vanilla update flags.
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool;
+
+    /// Destroys a block and optionally drops its resources.
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool;
+
+    /// Returns whether this surface accepts writes into the given chunk.
+    fn can_write_to_chunk(&self, _chunk_x: i32, _chunk_z: i32) -> bool {
+        true
+    }
+
+    /// Returns whether multi-block placements must be dry-run before committing.
+    fn requires_live_write_preflight(&self) -> bool {
+        false
+    }
 
     /// Plays a block sound when this level surface supports runtime side effects.
     #[expect(

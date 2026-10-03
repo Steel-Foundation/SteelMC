@@ -3,7 +3,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -29,6 +29,8 @@ use crate::world::{
 pub struct BubbleColumnBlock {
     block: BlockRef,
 }
+
+const DRAG: &BoolProperty = &BlockStateProperties::DRAG;
 
 impl BubbleColumnBlock {
     /// Creates a bubble column block behavior.
@@ -86,7 +88,7 @@ impl BubbleColumnBlock {
             .has_tag(&FluidTag::BUBBLE_COLUMN_CAN_OCCUPY)
             && occupy_state.get_block() == &vanilla_blocks::WATER
             && fluid_state.is_source()
-            && fluid_state.amount >= 8
+            && fluid_state.is_full()
     }
 
     fn column_state(
@@ -101,17 +103,13 @@ impl BubbleColumnBlock {
             .get_block()
             .has_tag(&BlockTag::ENABLES_BUBBLE_COLUMN_PUSH_UP)
         {
-            return bubble_column
-                .default_state()
-                .set_value(&BlockStateProperties::DRAG, false);
+            return bubble_column.default_state().set_value(DRAG, false);
         }
         if below_state
             .get_block()
             .has_tag(&BlockTag::ENABLES_BUBBLE_COLUMN_DRAG_DOWN)
         {
-            return bubble_column
-                .default_state()
-                .set_value(&BlockStateProperties::DRAG, true);
+            return bubble_column.default_state().set_value(DRAG, true);
         }
 
         if occupy_state.get_block() == bubble_column {
@@ -142,7 +140,7 @@ impl BubbleColumnBlock {
             return;
         }
 
-        let drag_down = state.get_value(&BlockStateProperties::DRAG);
+        let drag_down = state.get_value(DRAG);
         if Self::is_open_above(level, pos) {
             entity.on_above_bubble_column(drag_down, pos);
         } else {
@@ -242,7 +240,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
     use steel_utils::locks::SyncMutex;
 
@@ -307,12 +305,12 @@ mod tests {
     fn bubble_column_state(drag_down: bool) -> BlockStateId {
         vanilla_blocks::BUBBLE_COLUMN
             .default_state()
-            .set_value(&BlockStateProperties::DRAG, drag_down)
+            .set_value(DRAG, drag_down)
     }
 
     #[test]
     fn bubble_column_update_shape_schedules_water_and_column_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = BubbleColumnBlock::new(&vanilla_blocks::BUBBLE_COLUMN);
         let level = TestLevel::default();
         let state = vanilla_blocks::BUBBLE_COLUMN.default_state();
@@ -339,7 +337,7 @@ mod tests {
 
     #[test]
     fn bubble_column_update_column_uses_push_up_and_drag_down_blocks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default()
             .with_block(BlockPos::ZERO, vanilla_blocks::WATER.default_state())
@@ -359,13 +357,13 @@ mod tests {
         assert_eq!(placed.len(), 2);
         assert!(placed.iter().all(|placed| {
             placed.state.get_block() == &vanilla_blocks::BUBBLE_COLUMN
-                && !placed.state.get_value(&BlockStateProperties::DRAG)
+                && !placed.state.get_value(DRAG)
         }));
     }
 
     #[test]
     fn precise_entity_with_open_block_above_uses_above_bubble_column_hook() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let entity = RecordingEntity::new();
@@ -390,7 +388,7 @@ mod tests {
 
     #[test]
     fn precise_entity_with_fluid_above_stays_inside_bubble_column() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default().with_block(
             BlockPos::ZERO.above(),
@@ -414,7 +412,7 @@ mod tests {
 
     #[test]
     fn imprecise_entity_does_not_apply_bubble_column_effect() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let entity = RecordingEntity::new();

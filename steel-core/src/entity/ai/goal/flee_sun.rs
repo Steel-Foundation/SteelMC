@@ -112,7 +112,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn flee_sun_goal_requires_world() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = FleeSunGoal::new(1.0);
 
         assert!(!goal.can_use(&pig()));
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn flee_sun_hide_pos_accepts_sheltered_negative_walk_target() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig();
         let mut visited = Vec::new();
 
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn flee_sun_hide_pos_rejects_sky_exposed_positions() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig();
         let mut visited = Vec::new();
 
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn flee_sun_hide_pos_rejects_non_negative_walk_targets() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig();
 
         assert!(get_hide_pos_with(&mob, |_| false, |_| 0.0).is_none());

@@ -19,12 +19,12 @@ use relationships::{EntityLifecycleState, EntityRelationshipState};
 
 use std::{
     collections::VecDeque,
-    mem,
     sync::{Arc, Weak},
 };
 
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
+use steel_math::{DEGREE_90, DEGREE_360};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
@@ -35,24 +35,26 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityLevelCallback, EntityMoveError, InsideBlockEffectType, NullEntityCallback, RemovalReason,
-    SharedEntity,
+    EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
+    NullEntityCallback, RemovalReason, SharedEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
 use crate::world::World;
 
+const BOARDING_COOLDOWN: i32 = 60;
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
 const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
 const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
 const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
 const MOVEMENT_TRACE_LIMIT: usize = 100;
 const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
-/// Default vanilla `Entity.getTicksRequiredToFreeze` value.
+/// Default ticks of powder-snow exposure required before an entity starts
+/// taking freeze damage.
 pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
-/// Default vanilla `Entity.getMaxAirSupply` value.
+/// Default maximum air supply in ticks before an entity starts drowning.
 pub const DEFAULT_MAX_AIR_SUPPLY: i32 = 300;
-/// Vanilla scoreboard tag limit for a single entity.
+/// Maximum number of scoreboard tags a single entity may carry.
 pub const MAX_ENTITY_TAGS: usize = 1024;
 const FIRE_IGNITE_TICKS: i32 = 8 * 20;
 const LAVA_IGNITE_TICKS: i32 = 15 * 20;
@@ -69,7 +71,10 @@ fn normalize_rotation(rotation: (f32, f32)) -> (f32, f32) {
         rotation.0.is_finite() && rotation.1.is_finite(),
         "entity rotation must be finite: {rotation:?}"
     );
-    (rotation.0 % 360.0, rotation.1.clamp(-90.0, 90.0) % 360.0)
+    (
+        rotation.0 % DEGREE_360,
+        rotation.1.clamp(-DEGREE_90, DEGREE_90) % DEGREE_360,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -211,6 +216,7 @@ pub struct EntityAmethystStepSound {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityBaseState {
     tick_count: i32,
+    first_tick: bool,
     position: DVec3,
     old_position: DVec3,
     last_known_position: Option<DVec3>,
@@ -243,6 +249,7 @@ impl EntityBaseState {
         require_finite_position(position, "position");
         Self {
             tick_count: 0,
+            first_tick: true,
             position,
             old_position: position,
             last_known_position: None,
@@ -375,6 +382,8 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    /// Generation counter for this runtime construction of the entity.
+    generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
     id: i32,
     /// Persistent UUID for this entity.
@@ -444,6 +453,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            generation: EntityGeneration::next(),
             id,
             uuid,
             world: SyncMutex::new(world),
@@ -473,6 +483,12 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    /// Gets the generation counter of this runtime construction of the entity.
+    #[inline]
+    pub const fn generation(&self) -> EntityGeneration {
+        self.generation
     }
 
     /// Gets the entity's unique network ID.
@@ -505,10 +521,22 @@ impl EntityBase {
         self.state.lock().last_known_speed
     }
 
-    /// Returns vanilla `Entity.tickCount`.
+    /// Returns the number of ticks this entity has existed for.
     #[inline]
     pub fn tick_count(&self) -> i32 {
         self.state.lock().tick_count
+    }
+
+    /// Returns whether the entity has not completed its first tick.
+    #[inline]
+    pub fn is_first_tick(&self) -> bool {
+        self.state.lock().first_tick
+    }
+
+    /// Sets whether the entity has not completed its first tick.
+    #[inline]
+    pub fn set_first_tick(&self, first_tick: bool) {
+        self.state.lock().first_tick = first_tick;
     }
 
     /// Gets the entity's current bounding box.
@@ -668,7 +696,7 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
-    /// Returns the synchronized vanilla `Air` value.
+    /// Returns this entity's current air supply in ticks.
     #[inline]
     pub fn air_supply(&self) -> i32 {
         self.save_data.lock().air_supply
@@ -692,13 +720,13 @@ impl EntityBase {
         *self.portal_process.lock()
     }
 
-    /// Returns the shared vanilla `NoGravity` flag.
+    /// Returns whether this entity ignores gravity.
     #[inline]
     pub fn no_gravity(&self) -> bool {
         self.save_data.lock().no_gravity
     }
 
-    /// Returns the shared vanilla `Invulnerable` flag.
+    /// Returns whether this entity is invulnerable to non-bypassing damage.
     #[inline]
     pub fn invulnerable(&self) -> bool {
         self.save_data.lock().invulnerable
@@ -738,7 +766,8 @@ impl EntityBase {
         self.save_data.lock().custom_data.clone()
     }
 
-    /// Returns true when vanilla `ServerEntity` should consider a velocity sync.
+    /// Returns whether this entity's velocity has changed enough to need
+    /// syncing to clients.
     #[inline]
     pub fn needs_velocity_sync(&self) -> bool {
         self.state.lock().needs_velocity_sync
@@ -872,63 +901,6 @@ impl EntityBase {
         }
     }
 
-    /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
-    pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
-        self.reset_for_player_respawn_inner(dimensions, None);
-    }
-
-    /// Resets death-respawn state while retaining the relocation that owns admission.
-    pub(crate) fn reset_for_player_respawn_during_world_change(
-        &self,
-        dimensions: EntityDimensions,
-        pending_token: PendingWorldChangeToken,
-    ) {
-        self.reset_for_player_respawn_inner(dimensions, Some(pending_token));
-    }
-
-    fn reset_for_player_respawn_inner(
-        &self,
-        dimensions: EntityDimensions,
-        pending_world_change: Option<PendingWorldChangeToken>,
-    ) {
-        let bounding_box = {
-            let mut state = self.state.lock();
-            let position = state.position;
-            state.old_position = position;
-            state.last_known_position = None;
-            state.last_known_speed = DVec3::ZERO;
-            state.velocity = DVec3::ZERO;
-            state.old_rotation = state.rotation;
-            state.pose = EntityPose::Standing;
-            state.dimensions = dimensions;
-            state.bounding_box = EntityBaseState::make_bounding_box(position, dimensions);
-            state.movement_flags = EntityMovementFlags::new();
-            state.ground_contact = EntityGroundContact::airborne();
-            state.movement_progress = EntityMovementProgress::new();
-            state.fire_freeze = EntityFireFreezeState::new();
-            state.in_block_state = None;
-            state.fluid_contact = EntityFluidContact::default();
-            state.was_eye_in_water = false;
-            state.piston_movement = EntityPistonMovement::new();
-            state.fall_distance = 0.0;
-            state.stuck_speed_multiplier = DVec3::ZERO;
-            state.no_physics = false;
-            state.needs_velocity_sync = false;
-            state.hurt_marked = false;
-            state.bounding_box
-        };
-        self.notify_bounding_box_changed(bounding_box);
-
-        self.movement_trace.lock().reset();
-        *self.portal_process.lock() = None;
-        self.lifecycle.lock().pending_world_change = pending_world_change;
-
-        let mut save_data = self.save_data.lock();
-        let tags = mem::take(&mut save_data.tags);
-        *save_data = EntityBaseSaveData::new();
-        save_data.tags = tags;
-    }
-
     /// Updates the world reference used by this entity.
     pub(crate) fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
@@ -1034,7 +1006,7 @@ impl EntityBase {
 
         if let Some(vehicle) = vehicle {
             vehicle.base().remove_passenger_id(self.id);
-            self.set_boarding_cooldown(60);
+            self.set_boarding_cooldown(BOARDING_COOLDOWN);
         }
     }
 
@@ -1048,7 +1020,7 @@ impl EntityBase {
 
         for passenger in passengers {
             if passenger.base().clear_vehicle_if(self.id) {
-                passenger.base().set_boarding_cooldown(60);
+                passenger.base().set_boarding_cooldown(BOARDING_COOLDOWN);
             }
         }
     }
@@ -1084,9 +1056,7 @@ impl EntityBase {
 
     /// Clears the removed flag and returns whether the entity had been removed.
     ///
-    /// Steel reuses the same `Player` instance across respawn while vanilla
-    /// constructs a fresh `ServerPlayer`, so player respawn needs an explicit
-    /// way to reset this base lifecycle flag.
+    /// Vanilla uses this when an entity instance itself survives a world change.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
@@ -1155,7 +1125,7 @@ impl EntityBase {
         self.state.lock().old_position = old_position;
     }
 
-    /// Sets vanilla `yRotO`/`xRotO` to the current rotation.
+    /// Copies the current rotation into the old-rotation snapshot used for interpolation.
     pub fn set_old_rotation_to_current(&self) {
         let mut state = self.state.lock();
         state.old_rotation = state.rotation;
@@ -1167,7 +1137,7 @@ impl EntityBase {
         state.old_rotation.0 = state.rotation.0;
     }
 
-    /// Sets vanilla `yRotO`/`xRotO` explicitly.
+    /// Sets the old-rotation snapshot explicitly, normalizing the angles.
     pub fn set_old_rotation(&self, old_rotation: (f32, f32)) {
         self.state.lock().old_rotation = normalize_rotation(old_rotation);
     }
@@ -1237,7 +1207,7 @@ impl EntityBase {
         }
     }
 
-    /// Advances vanilla `Entity.tickCount` by one tick.
+    /// Advances this entity's tick counter by one.
     #[inline]
     pub fn advance_tick_count(&self) {
         let mut state = self.state.lock();
@@ -1278,7 +1248,7 @@ impl EntityBase {
             progress.crystal_sound_intensity
         };
 
-        let pitch = 0.5 + intensity * rand::random::<f32>() * 1.2;
+        let pitch = rand::random_range(0.5..0.5 + intensity * 1.2);
         let volume = 0.1 + intensity * 1.2;
         Some(EntityAmethystStepSound { volume, pitch })
     }
@@ -1293,7 +1263,7 @@ impl EntityBase {
         self.state.lock().no_physics = no_physics;
     }
 
-    /// Sets the synchronized vanilla `Air` value.
+    /// Sets this entity's air supply in ticks.
     pub fn set_air_supply(&self, air_supply: i32) {
         self.save_data.lock().air_supply = air_supply;
     }
@@ -1327,17 +1297,22 @@ impl EntityBase {
         })
     }
 
+    /// Replaces active portal timing state during vanilla player restoration.
+    pub(crate) fn set_portal_process(&self, portal_process: Option<PortalProcessor>) {
+        *self.portal_process.lock() = portal_process;
+    }
+
     /// Clears the active vanilla portal process.
     pub fn clear_portal_process(&self) {
         *self.portal_process.lock() = None;
     }
 
-    /// Sets the shared vanilla `NoGravity` flag.
+    /// Sets whether this entity ignores gravity.
     pub fn set_no_gravity(&self, no_gravity: bool) {
         self.save_data.lock().no_gravity = no_gravity;
     }
 
-    /// Sets the shared vanilla `Invulnerable` flag.
+    /// Sets whether this entity is invulnerable to non-bypassing damage.
     pub fn set_invulnerable(&self, invulnerable: bool) {
         self.save_data.lock().invulnerable = invulnerable;
     }
@@ -1377,7 +1352,7 @@ impl EntityBase {
         self.save_data.lock().custom_data = custom_data;
     }
 
-    /// Marks velocity for vanilla `ServerEntity` synchronization.
+    /// Marks this entity's velocity as needing to be synced to clients.
     pub fn mark_velocity_sync(&self) {
         self.state.lock().needs_velocity_sync = true;
     }
@@ -1412,22 +1387,22 @@ impl EntityBase {
         self.set_fall_distance(0.0);
     }
 
-    /// Returns vanilla `remainingFireTicks`.
+    /// Returns the ticks remaining before this entity stops burning.
     pub fn remaining_fire_ticks(&self) -> i32 {
         self.state.lock().fire_freeze.remaining_fire_ticks()
     }
 
-    /// Sets vanilla `remainingFireTicks`.
+    /// Sets the ticks remaining before this entity stops burning.
     pub fn set_remaining_fire_ticks(&self, remaining_fire_ticks: i32) {
         self.state.lock().fire_freeze.remaining_fire_ticks = remaining_fire_ticks;
     }
 
-    /// Returns synchronized vanilla `TicksFrozen`.
+    /// Returns ticks this entity has spent freezing in powder snow.
     pub fn ticks_frozen(&self) -> i32 {
         self.state.lock().fire_freeze.ticks_frozen()
     }
 
-    /// Sets synchronized vanilla `TicksFrozen`.
+    /// Sets ticks this entity has spent freezing in powder snow.
     pub fn set_ticks_frozen(&self, ticks_frozen: i32) {
         self.state.lock().fire_freeze.ticks_frozen = ticks_frozen;
     }
@@ -1442,12 +1417,12 @@ impl EntityBase {
         self.state.lock().fire_freeze.was_in_powder_snow()
     }
 
-    /// Sets vanilla `hasVisualFire`.
+    /// Sets whether this entity currently renders as visually on fire.
     pub fn set_visual_fire(&self, has_visual_fire: bool) {
         self.state.lock().fire_freeze.has_visual_fire = has_visual_fire;
     }
 
-    /// Returns vanilla `hasVisualFire`.
+    /// Returns whether this entity currently renders as visually on fire.
     pub fn has_visual_fire(&self) -> bool {
         self.state.lock().fire_freeze.has_visual_fire()
     }
@@ -1630,7 +1605,7 @@ impl EntityBase {
     /// Applies vanilla base-tick fall-distance damping while touching lava.
     pub fn dampen_fall_distance_in_lava(&self) {
         let mut state = self.state.lock();
-        if state.fluid_contact.lava_height() > 0.0 {
+        if !state.first_tick && state.fluid_contact.lava_height() > 0.0 {
             state.fall_distance *= 0.5;
         }
     }
@@ -1671,6 +1646,13 @@ impl EntityBase {
     /// Stores the current vanilla fluid contact snapshot.
     pub fn set_fluid_contact(&self, fluid_contact: EntityFluidContact) {
         self.state.lock().fluid_contact = fluid_contact;
+    }
+
+    /// Returns whether the entity is currently touching lava.
+    #[inline]
+    pub fn is_in_lava(&self) -> bool {
+        let state = self.state.lock();
+        !state.first_tick && state.fluid_contact.lava_height() > 0.0
     }
 
     /// Stores fluid contact for a vanilla base-tick refresh.

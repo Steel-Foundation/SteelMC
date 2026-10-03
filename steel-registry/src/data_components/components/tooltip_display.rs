@@ -230,7 +230,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use crate::data_components::vanilla_components::{DAMAGE, ENCHANTMENTS, LORE};
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
 
     use super::TooltipDisplay;
 
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn codecs_round_trip_registered_component_types() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let display = TooltipDisplay::DEFAULT
             .with_hidden(LORE, true)

@@ -1239,7 +1239,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::IVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_dimension_types};
+    use steel_registry::{init_vanilla_registry, vanilla_dimension_types};
     use steel_worldgen::biomes::BiomeSourceKind;
 
     use crate::behavior::init_behaviors;
@@ -1307,7 +1307,7 @@ mod tests {
 
     #[test]
     fn retained_and_rebuilt_aquifers_produce_identical_carver_output() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(1)

@@ -10,15 +10,16 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_game_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::{Entity, InsideBlockEffectCollector, SharedEntity};
 use crate::player::Player;
@@ -42,6 +43,8 @@ pub struct ButtonBlock {
     #[json_arg(sound_events, json = "type_button_click_off")]
     sound_click_off: SoundEventRef,
 }
+
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 
 impl ButtonBlock {
     /// Creates a new button block behavior.
@@ -84,7 +87,7 @@ impl ButtonBlock {
         pos: BlockPos,
         player: Option<&Player>,
     ) {
-        let powered_state = state.set_value(&BlockStateProperties::POWERED, true);
+        let powered_state = state.set_value(POWERED, true);
         world.set_block(pos, powered_state, UpdateFlags::UPDATE_ALL);
         self.update_button_neighbors(powered_state, world, pos);
         world.schedule_block_tick_default(
@@ -119,11 +122,11 @@ impl ButtonBlock {
     fn check_pressed(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let first_arrow = self.first_arrow(state, world, pos);
         let should_be_pressed = first_arrow.is_some();
-        let was_pressed = state.get_value(&BlockStateProperties::POWERED);
+        let was_pressed = state.get_value(POWERED);
         if should_be_pressed != was_pressed {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWERED, should_be_pressed),
+                state.set_value(POWERED, should_be_pressed),
                 UpdateFlags::UPDATE_ALL,
             );
             self.update_button_neighbors(state, world, pos);
@@ -190,7 +193,7 @@ impl BlockBehavior for ButtonBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let powered: bool = state.get_value(&BlockStateProperties::POWERED);
+        let powered: bool = state.get_value(POWERED);
         if powered {
             return InteractionResult::Consume;
         }
@@ -199,7 +202,7 @@ impl BlockBehavior for ButtonBlock {
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let powered: bool = state.get_value(&BlockStateProperties::POWERED);
+        let powered: bool = state.get_value(POWERED);
         if !powered {
             return;
         }
@@ -215,7 +218,7 @@ impl BlockBehavior for ButtonBlock {
         _effect_collector: &mut InsideBlockEffectCollector,
         _is_precise: bool,
     ) {
-        if self.arrow_sensitive && !state.get_value(&BlockStateProperties::POWERED) {
+        if self.arrow_sensitive && !state.get_value(POWERED) {
             self.check_pressed(state, world, pos);
         }
     }
@@ -230,7 +233,7 @@ impl BlockBehavior for ButtonBlock {
         if moved_by_piston {
             return;
         }
-        let powered: bool = state.get_value(&BlockStateProperties::POWERED);
+        let powered: bool = state.get_value(POWERED);
         if !powered {
             return;
         }
@@ -248,10 +251,10 @@ impl BlockBehavior for ButtonBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
-            15
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -263,12 +266,12 @@ impl BlockBehavior for ButtonBlock {
         direction: Direction,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED)
+        if state.get_value(POWERED)
             && FaceAttachedHorizontalDirectionalBlock::connected_direction(state) == direction
         {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }
@@ -278,19 +281,18 @@ mod tests {
     use std::sync::Arc;
 
     use glam::DVec3;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::entity::entities::RawEntity;
     use crate::entity::{InsideBlockEffectCollector, SharedEntity};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
     #[test]
     fn wooden_button_stays_pressed_while_arrow_intersects_its_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("wooden_button_arrow");
         let pos = BlockPos::new(8, 64, 8);
@@ -308,12 +310,12 @@ mod tests {
             bounds.min_y(),
             f64::midpoint(bounds.min_z(), bounds.max_z()),
         );
-        let arrow: SharedEntity = Arc::new(RawEntity::new(
+        let arrow: SharedEntity = TestEntity::shared(
             7_001,
             arrow_pos,
             Arc::downgrade(&world),
             &vanilla_entities::ARROW,
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&arrow))
             .expect("test arrow should enter loaded chunk");
@@ -323,11 +325,7 @@ mod tests {
             .get_behavior(&vanilla_blocks::OAK_BUTTON)
             .entity_inside(state, &world, pos, arrow.as_ref(), &mut effects, true);
 
-        assert!(
-            world
-                .get_block_state(pos)
-                .get_value(&BlockStateProperties::POWERED)
-        );
+        assert!(world.get_block_state(pos).get_value(POWERED));
         assert!(world.has_scheduled_block_tick(pos, &vanilla_blocks::OAK_BUTTON));
     }
 }

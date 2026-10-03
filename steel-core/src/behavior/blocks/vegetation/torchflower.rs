@@ -26,6 +26,8 @@ pub struct TorchflowerCropBlock {
     block: BlockRef,
 }
 
+const AGE: &IntProperty = &BlockStateProperties::AGE_1;
+
 impl TorchflowerCropBlock {
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
@@ -40,7 +42,7 @@ impl CropLike for TorchflowerCropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        &BlockStateProperties::AGE_1
+        AGE
     }
 
     fn max_age(&self) -> u8 {
@@ -93,18 +95,18 @@ impl Bonemealable for TorchflowerCropBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
     #[test]
     fn torchflower_age_two_becomes_flower_block() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TorchflowerCropBlock::new(&vanilla_blocks::TORCHFLOWER_CROP);
 
         let age_one = behavior.get_state_for_age(1);
         assert_eq!(age_one.get_block(), &vanilla_blocks::TORCHFLOWER_CROP);
-        assert_eq!(age_one.get_value(&BlockStateProperties::AGE_1), 1);
+        assert_eq!(age_one.get_value(AGE), 1);
 
         let mature = behavior.get_state_for_age(2);
         assert_eq!(mature.get_block(), &vanilla_blocks::TORCHFLOWER);

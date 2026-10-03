@@ -117,7 +117,7 @@ mod tests {
 
     use super::Recipes;
     use crate::data_components::vanilla_components::RECIPES;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: NbtTag) -> Option<Recipes> {
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn extracted_knowledge_book_keeps_its_empty_recipe_list() {
-        init_test_registry();
+        init_vanilla_registry();
         let knowledge_book = REGISTRY
             .items
             .by_key(&Identifier::vanilla_static("knowledge_book"))

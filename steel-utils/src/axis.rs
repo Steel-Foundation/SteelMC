@@ -1,3 +1,5 @@
+//! Axis types
+
 /// An axis in 3D space.
 #[derive(Copy, Clone, Debug, Eq)]
 #[derive_const(PartialEq)]
@@ -26,6 +28,14 @@ impl Axis {
             Axis::X => "x",
             Axis::Y => "y",
             Axis::Z => "z",
+        }
+    }
+    #[must_use]
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Axis::X => 0,
+            Axis::Y => 1,
+            Axis::Z => 2,
         }
     }
 }

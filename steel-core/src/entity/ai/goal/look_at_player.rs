@@ -200,7 +200,7 @@ mod tests {
     use super::*;
     use crate::entity::entities::PigEntity;
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     #[test]
     fn look_at_player_goal_claims_only_look_control() {
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn look_at_player_goal_uses_vanilla_adjusted_look_time() {
-        init_test_registry();
+        init_vanilla_registry();
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         let mut goal = LookAtPlayerGoal::new(6.0);
 

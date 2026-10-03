@@ -60,7 +60,8 @@ impl BarrelBlockEntity {
         let container = Arc::new(SyncMutex::new(BarrelContainer {
             items: vec![ItemStack::empty(); BARREL_SLOTS],
         }));
-        let shared_container: SharedContainer = container.clone();
+        let shared_container: SharedContainer =
+            Arc::<SyncMutex<BarrelContainer>>::clone(&container);
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
             base,
@@ -171,12 +172,12 @@ impl Container for BarrelContainer {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
 
     use super::*;
 
     fn test_barrel() -> BarrelBlockEntity {
-        init_test_registry();
+        init_vanilla_registry();
         BarrelBlockEntity::new(
             Weak::new(),
             BlockPos::new(1, 2, 3),

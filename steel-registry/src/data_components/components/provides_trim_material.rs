@@ -78,8 +78,8 @@ mod tests {
     use super::ProvidesTrimMaterial;
     use crate::RegistryHolder;
     use crate::data_components::vanilla_components::PROVIDES_TRIM_MATERIAL;
+    use crate::init_vanilla_registry;
     use crate::item_stack::ItemStack;
-    use crate::test_support::init_test_registry;
     use crate::trim_material::{MaterialAssetGroup, MaterialAssetInfo, TrimMaterialValue};
     use crate::{REGISTRY, vanilla_items, vanilla_trim_materials};
 
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn registry_reference_round_trips_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let component =
             ProvidesTrimMaterial::new(RegistryHolder::reference(&vanilla_trim_materials::IRON));
 
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn inline_material_round_trips_and_hashes_its_flattened_record() {
-        init_test_registry();
+        init_vanilla_registry();
         let component = inline_component();
 
         let mut network = Vec::new();
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn invalid_asset_suffixes_are_rejected_by_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         assert!(MaterialAssetInfo::new("Bad Suffix").is_err());
 
         let mut network = Vec::new();
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn extracted_item_prototypes_reference_every_vanilla_trim_material() {
-        init_test_registry();
+        init_vanilla_registry();
         let prototypes = [
             (
                 &*vanilla_items::REDSTONE,

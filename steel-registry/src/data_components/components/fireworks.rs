@@ -119,6 +119,17 @@ impl FireworkExplosion {
         self.has_twinkle
     }
 
+    #[must_use]
+    pub fn with_fade_colors(&self, fade_colors: Vec<i32>) -> Self {
+        Self {
+            shape: self.shape,
+            colors: self.colors.clone(),
+            fade_colors,
+            has_trail: self.has_trail,
+            has_twinkle: self.has_twinkle,
+        }
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert("shape", self.shape.serialized_name());
@@ -489,7 +500,7 @@ mod tests {
 
     use super::{FireworkExplosion, FireworkExplosionShape, Fireworks};
     use crate::data_components::vanilla_components::FIREWORKS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: NbtTag) -> Option<T> {
@@ -585,7 +596,7 @@ mod tests {
 
     #[test]
     fn extracted_firework_rocket_has_one_unit_of_flight() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("firework_rocket"))

@@ -26,6 +26,8 @@ pub struct BeetrootBlock {
     block: BlockRef,
 }
 
+const AGE: &IntProperty = &BlockStateProperties::AGE_3;
+
 impl BeetrootBlock {
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
@@ -40,11 +42,11 @@ impl CropLike for BeetrootBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        &BlockStateProperties::AGE_3
+        AGE
     }
 
     fn max_age(&self) -> u8 {
-        3
+        AGE.max
     }
 
     fn clone_item_stack(&self) -> ItemStack {

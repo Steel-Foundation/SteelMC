@@ -5,6 +5,7 @@
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::behavior::blocks::multiface_face_property;
 use core::mem;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -687,7 +688,7 @@ impl FeatureDecorationRunner {
                 state
             }
         };
-        new_state = new_state.set_value(Self::sculk_vein_face_property(placement_direction), true);
+        new_state = new_state.set_value(multiface_face_property(placement_direction), true);
         Some(new_state)
     }
 
@@ -717,7 +718,7 @@ impl FeatureDecorationRunner {
 
         for &face in faces {
             if Self::can_attach_to_multiface(region, pos, face) {
-                new_state = new_state.set_value(Self::sculk_vein_face_property(face), true);
+                new_state = new_state.set_value(multiface_face_property(face), true);
                 has_face = true;
             }
         }
@@ -746,7 +747,7 @@ impl FeatureDecorationRunner {
             if Self::sculk_vein_has_face(state, direction)
                 && region.block_state(pos.relative(direction)).get_block() == &vanilla_blocks::SCULK
             {
-                state = state.set_value(Self::sculk_vein_face_property(direction), false);
+                state = state.set_value(multiface_face_property(direction), false);
             }
         }
 
@@ -1086,18 +1087,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_has_face(state: BlockStateId, direction: Direction) -> bool {
         state
-            .try_get_value(Self::sculk_vein_face_property(direction))
+            .try_get_value(multiface_face_property(direction))
             .unwrap_or(false)
-    }
-
-    const fn sculk_vein_face_property(direction: Direction) -> &'static BoolProperty {
-        match direction {
-            Direction::Up => &BlockStateProperties::UP,
-            Direction::Down => &BlockStateProperties::DOWN,
-            Direction::North => &BlockStateProperties::NORTH,
-            Direction::South => &BlockStateProperties::SOUTH,
-            Direction::East => &BlockStateProperties::EAST,
-            Direction::West => &BlockStateProperties::WEST,
-        }
     }
 }

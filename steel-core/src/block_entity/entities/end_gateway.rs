@@ -16,7 +16,8 @@ const COOLDOWN_TIME: i32 = 40;
 const ATTENTION_INTERVAL: i64 = 2400;
 const EVENT_COOLDOWN: i32 = 1;
 
-/// Vanilla `TheEndGatewayBlockEntity`.
+/// Block entity for end gateways, tracking beam age, teleport cooldown, and
+/// the linked exit portal position.
 pub struct EndGatewayBlockEntity {
     base: BlockEntityBase,
     gateway: SyncMutex<EndGatewayState>,
@@ -50,13 +51,14 @@ impl EndGatewayBlockEntity {
         }
     }
 
-    /// Returns vanilla `TheEndGatewayBlockEntity.isSpawning`.
+    /// Returns whether the gateway is still in its initial spawning phase,
+    /// during which it isn't yet usable for teleportation.
     #[must_use]
     pub fn is_spawning(&self) -> bool {
         self.gateway.lock().age < SPAWN_TIME
     }
 
-    /// Returns vanilla `TheEndGatewayBlockEntity.isCoolingDown`.
+    /// Returns whether the gateway is on cooldown from a recent teleport.
     #[must_use]
     pub fn is_cooling_down(&self) -> bool {
         self.gateway.lock().teleport_cooldown > 0
@@ -195,7 +197,7 @@ mod tests {
     use std::sync::Weak;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
@@ -208,7 +210,7 @@ mod tests {
     }
 
     fn gateway() -> EndGatewayBlockEntity {
-        init_test_registry();
+        init_vanilla_registry();
         EndGatewayBlockEntity::new(
             Weak::new(),
             BlockPos::new(4, 65, -9),

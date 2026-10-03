@@ -2,15 +2,18 @@
 
 use glam::DVec3;
 use std::sync::Arc;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270};
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_utils::BlockPos;
 use steel_utils::locks::Shared;
 use steel_utils::types::InteractionHand;
 
-use crate::behavior::BlockStateBehaviorExt;
-use crate::entity::Entity;
+use crate::behavior::{BlockStateBehaviorExt, ITEM_BEHAVIORS};
+use crate::entity::{Entity, LivingEntity};
 use crate::fluid::FluidStateExt;
+use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
@@ -403,11 +406,11 @@ impl PlacementOrientation {
         match self {
             Self::Player { rotation, .. } => rotation,
             Self::Directional { direction } => match direction {
-                Direction::Down | Direction::Up => -90.0,
+                Direction::Down | Direction::Up => -DEGREE_90,
                 Direction::South => 0.0,
-                Direction::West => 90.0,
-                Direction::North => 180.0,
-                Direction::East => 270.0,
+                Direction::West => DEGREE_90,
+                Direction::North => DEGREE_180,
+                Direction::East => DEGREE_270,
             },
         }
     }
@@ -601,7 +604,7 @@ impl InventoryAccess {
     /// Prefer [`Self::with_item`] or [`Self::with_inventory`] unless an operation
     /// must interoperate with APIs that require `ContainerLockGuard`.
     pub fn with_guard<R>(&self, f: impl FnOnce(&mut ContainerLockGuard) -> R) -> R {
-        let inv_ref = ContainerRef::from(self.inventory.clone());
+        let inv_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
         f(&mut guard)
     }
@@ -688,12 +691,117 @@ impl<'a> UseItemContext<'a> {
     }
 }
 
+/// Context for an item inventory tick
+pub struct InventoryTickContext<'a> {
+    /// The current world
+    pub world: &'a Arc<World>,
+    /// The entity carrying the item
+    pub owner: &'a dyn Entity,
+    /// `None` if the slot is not selected and or in the main player inventory
+    pub slot: Option<EquipmentSlot>,
+    item: ItemRef,
+    source: InventoryTickSource<'a>,
+}
+
+enum InventoryTickSource<'a> {
+    PlayerInventory {
+        inventory: &'a Shared<PlayerInventory>,
+        index: usize,
+    },
+    Equipment {
+        owner: &'a dyn LivingEntity,
+        slot: EquipmentSlot,
+    },
+}
+
+impl<'a> InventoryTickContext<'a> {
+    pub(crate) fn tick_player_inventory(world: &'a Arc<World>, player: &'a Player) {
+        for index in 0..PlayerInventory::INVENTORY_SIZE {
+            let (item, selected) = {
+                let inventory = player.inventory.lock();
+                let stack = &inventory.get_items()[index];
+                if stack.is_empty() {
+                    continue;
+                }
+                (
+                    stack.item(),
+                    index == usize::from(inventory.get_selected_slot()),
+                )
+            };
+
+            let mut context = Self {
+                world,
+                owner: player,
+                slot: selected.then_some(EquipmentSlot::MainHand),
+                item,
+                source: InventoryTickSource::PlayerInventory {
+                    inventory: &player.inventory,
+                    index,
+                },
+            };
+            ITEM_BEHAVIORS
+                .get_behavior(item)
+                .inventory_tick(&mut context);
+        }
+    }
+
+    pub(crate) fn tick_equipment(
+        world: &'a Arc<World>,
+        owner: &'a dyn LivingEntity,
+        slots: impl IntoIterator<Item = EquipmentSlot>,
+    ) {
+        for slot in slots {
+            let mut item = None;
+            owner.with_equipment_slot(slot, &mut |stack| {
+                if !stack.is_empty() {
+                    item = Some(stack.item());
+                }
+            });
+            let Some(item) = item else {
+                continue;
+            };
+
+            let mut context = Self {
+                world,
+                owner,
+                slot: Some(slot),
+                item,
+                source: InventoryTickSource::Equipment { owner, slot },
+            };
+            ITEM_BEHAVIORS
+                .get_behavior(item)
+                .inventory_tick(&mut context);
+        }
+    }
+
+    /// Runs `f` on the stack that is being ticked, or returns `None` if the slot no longer contains it.
+    pub fn with_item<R>(&self, f: impl FnOnce(&mut ItemStack) -> R) -> Option<R> {
+        match self.source {
+            InventoryTickSource::PlayerInventory { inventory, index } => inventory
+                .lock()
+                .with_item_mut(index, |stack| stack.is(self.item).then(|| f(stack))),
+            InventoryTickSource::Equipment { owner, slot } => {
+                let mut f = Some(f);
+                let mut result = None;
+                owner.with_equipment_slot_mut(slot, &mut |stack| {
+                    if stack.is(self.item)
+                        && let Some(f) = f.take()
+                    {
+                        result = Some(f(stack));
+                    }
+                });
+                result
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use steel_registry::data_components::vanilla_components::BLOCK_STATE;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_items;
     use steel_utils::locks::SyncMutex;
 
@@ -715,13 +823,13 @@ mod tests {
 
     #[test]
     fn player_hand_source_reads_current_components_and_mutates_the_hand() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
         inventory
             .lock()
             .set_item(0, ItemStack::with_count(&vanilla_items::LIGHT, 2));
-        let access = InventoryAccess::new(inventory.clone(), InteractionHand::MainHand);
+        let access = InventoryAccess::new(Arc::clone(&inventory), InteractionHand::MainHand);
         let mut source = PlacementSource {
             player: None,
             hand: InteractionHand::MainHand,
@@ -734,7 +842,7 @@ mod tests {
         };
 
         assert!(source.with_item(|item| item.get(BLOCK_STATE).is_some()));
-        source.with_item_mut(|item| item.shrink(1));
+        source.with_item_mut(ItemStack::shrink_one);
         assert_eq!(
             inventory
                 .lock()
@@ -746,7 +854,7 @@ mod tests {
 
     #[test]
     fn replacement_dispatch_does_not_hold_the_inventory_lock() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
@@ -783,7 +891,7 @@ mod tests {
 
     #[test]
     fn direct_source_mutates_the_callers_exact_stack() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut stack = ItemStack::with_count(&vanilla_items::LIGHT, 2);
         {
@@ -797,14 +905,14 @@ mod tests {
                 false,
             );
             assert!(source.with_item(|item| item.get(BLOCK_STATE).is_some()));
-            source.with_item_mut(|item| item.shrink(1));
+            source.with_item_mut(ItemStack::shrink_one);
         }
         assert_eq!(stack.count(), 1);
     }
 
     #[test]
     fn at_changes_geometry_and_retains_the_direct_source() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let mut stack = ItemStack::new(&vanilla_items::STONE);
@@ -836,14 +944,14 @@ mod tests {
         assert_eq!(shifted.click_location(), DVec3::new(5.0, 90.5, 7.5));
         assert!(!shifted.is_inside());
         assert!(shifted.with_item(|item| item.is(&vanilla_items::STONE)));
-        shifted.with_item_mut(|item| item.shrink(1));
+        shifted.with_item_mut(ItemStack::shrink_one);
         drop(shifted);
         assert!(stack.is_empty());
     }
 
     #[test]
     fn directional_context_uses_vanilla_direction_order() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let mut stack = ItemStack::new(&vanilla_items::STONE);
@@ -872,7 +980,7 @@ mod tests {
 
     #[test]
     fn singular_look_direction_is_not_reordered_around_clicked_face() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let mut stack = ItemStack::new(&vanilla_items::PISTON);

@@ -136,7 +136,7 @@ mod tests {
         };
         assert_eq!(data.height_position, None);
         assert_eq!(data.has_placed_chest, [false; 4]);
-        assert!(data.potential_suspicious_sand_world_positions.is_empty());
+        assert_eq!(data.potential_suspicious_sand_world_positions.len(), 0);
         assert_eq!(data.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
     }
 }

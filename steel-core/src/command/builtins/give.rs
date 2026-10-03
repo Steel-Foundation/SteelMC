@@ -46,9 +46,7 @@ fn give_default_count(
 fn give_with_count(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(count) = context.integer("count") else {
-        return Err(missing_argument("count"));
-    };
+    let count = context.integer("count")?;
     give(context, count)
 }
 
@@ -57,9 +55,7 @@ fn give(
     count: i32,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
-    let Some(prototype) = context.item_stack("item") else {
-        return Err(missing_argument("item"));
-    };
+    let prototype = context.item_stack("item")?;
     let max_allowed_count = prototype.max_stack_size() * MAX_ALLOWED_ITEM_STACKS;
     if count > max_allowed_count {
         let message = translations::COMMANDS_GIVE_FAILED_TOOMANYITEMS
@@ -142,15 +138,9 @@ fn item_display_name(stack: &ItemStack) -> TextComponent {
         .unwrap_or_else(|| TextComponent::plain(stack.item().key.to_string()))
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use super::*;
@@ -174,7 +164,7 @@ mod tests {
 
     #[test]
     fn give_graph_uses_players_item_stack_and_positive_count() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

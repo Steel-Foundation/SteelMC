@@ -8,16 +8,23 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::{BlockBehavior, default_can_be_replaced};
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, can_attach_to_multiface};
+use super::BlockRef;
 
 /// Vanilla `VineBlock` survival and neighbor shape updates.
 #[block_behavior]
 pub struct VineBlock {
     block: BlockRef,
 }
+
+const EAST: &BoolProperty = &BlockStateProperties::EAST;
+const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+const UP: &BoolProperty = &BlockStateProperties::UP;
+const WEST: &BoolProperty = &BlockStateProperties::WEST;
 
 impl VineBlock {
     /// Creates a new vine block behavior.
@@ -47,7 +54,7 @@ impl VineBlock {
             return false;
         }
 
-        if can_attach_to_multiface(world, pos.relative(direction), direction) {
+        if Self::is_acceptable_neighbour(world, pos.relative(direction), direction) {
             return true;
         }
 
@@ -64,7 +71,12 @@ impl VineBlock {
         neighbour_pos: BlockPos,
         direction_to_neighbour: Direction,
     ) -> bool {
-        can_attach_to_multiface(level, neighbour_pos, direction_to_neighbour)
+        MultifaceBlock::can_attach_to_state(
+            level,
+            direction_to_neighbour,
+            neighbour_pos,
+            level.get_block_state(neighbour_pos),
+        )
     }
     fn can_spread(&self, world: &Arc<World>, pos: BlockPos) -> bool {
         let mut max = 5;
@@ -117,9 +129,9 @@ impl VineBlock {
         pos: BlockPos,
     ) -> BlockStateId {
         let above_pos = pos.above();
-        if state.get_value(&BlockStateProperties::UP) {
+        if state.get_value(UP) {
             state = state.set_value(
-                &BlockStateProperties::UP,
+                UP,
                 Self::is_acceptable_neighbour(world, above_pos, Direction::Down),
             );
         }
@@ -295,11 +307,11 @@ const VINE_FACE_DIRECTIONS: [Direction; 5] = [
 
 fn get_property_for_face(direction: Direction) -> &'static BoolProperty {
     match direction {
-        Direction::Up => &BlockStateProperties::UP,
-        Direction::North => &BlockStateProperties::NORTH,
-        Direction::East => &BlockStateProperties::EAST,
-        Direction::South => &BlockStateProperties::SOUTH,
-        Direction::West => &BlockStateProperties::WEST,
+        Direction::Up => UP,
+        Direction::North => NORTH,
+        Direction::East => EAST,
+        Direction::South => SOUTH,
+        Direction::West => WEST,
         Direction::Down => unreachable!("vine has no DOWN face property"),
     }
 }
@@ -389,11 +401,11 @@ impl BlockBehavior for VineBlock {
 mod tests {
     use super::*;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn face_count_matches_vanilla_replacement_limit() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut state = vanilla_blocks::VINE.default_state();
         assert_eq!(VineBlock::count_faces(state), 0);
@@ -406,7 +418,7 @@ mod tests {
 
     #[test]
     fn shape_update_removes_faceless_vine() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let vine = VineBlock::new(&vanilla_blocks::VINE);
         let state = vanilla_blocks::VINE.default_state();

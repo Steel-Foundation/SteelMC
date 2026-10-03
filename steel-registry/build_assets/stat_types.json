@@ -1,0 +1,38 @@
+[
+  {
+    "id": 0,
+    "key": "minecraft:mined"
+  },
+  {
+    "id": 1,
+    "key": "minecraft:crafted"
+  },
+  {
+    "id": 2,
+    "key": "minecraft:used"
+  },
+  {
+    "id": 3,
+    "key": "minecraft:broken"
+  },
+  {
+    "id": 4,
+    "key": "minecraft:picked_up"
+  },
+  {
+    "id": 5,
+    "key": "minecraft:dropped"
+  },
+  {
+    "id": 6,
+    "key": "minecraft:killed"
+  },
+  {
+    "id": 7,
+    "key": "minecraft:killed_by"
+  },
+  {
+    "id": 8,
+    "key": "minecraft:custom"
+  }
+]

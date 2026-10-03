@@ -4,6 +4,7 @@ use crate::behavior::blocks::FireBlock;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use steel_macros::item_behavior;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -49,7 +50,7 @@ impl ItemBehavior for FlintAndSteelItem {
             &sound_events::ITEM_FLINTANDSTEEL_USE,
             fire_pos,
             1.0,
-            rand::random::<f32>() * 0.4 + 0.8,
+            rand::random_range(0.8..1.2),
             Some(context.player.id()),
         );
 
@@ -88,7 +89,7 @@ impl ItemBehavior for FireChargeItem {
             &sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(ItemStack::shrink_one);
             return InteractionResult::Success;
         }
 
@@ -118,7 +119,7 @@ impl ItemBehavior for FireChargeItem {
             &GameEventContext::new(Some(context.player), None),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(ItemStack::shrink_one);
 
         InteractionResult::Success
     }
@@ -173,7 +174,7 @@ fn can_light(state: BlockStateId) -> bool {
 }
 
 fn flint_and_steel_pitch() -> f32 {
-    rand::random::<f32>() * 0.4 + 0.8
+    rand::random_range(0.8..1.2)
 }
 
 fn fire_charge_pitch() -> f32 {
@@ -184,15 +185,14 @@ fn fire_charge_pitch() -> f32 {
 mod tests {
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
 
     use super::can_light;
 
     #[test]
     fn can_light_rejects_waterlogged_campfires_and_candles() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let waterlogged_campfire = vanilla_blocks::CAMPFIRE
             .default_state()
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn can_light_accepts_unlit_candle_cakes() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let unlit_candle_cake = vanilla_blocks::CANDLE_CAKE
             .default_state()

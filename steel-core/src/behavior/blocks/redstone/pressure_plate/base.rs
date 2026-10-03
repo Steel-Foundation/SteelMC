@@ -177,18 +177,17 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::{
-        sound_events, test_support::init_test_registry, vanilla_entities, vanilla_game_events,
+        init_vanilla_registry, sound_events, vanilla_entities, vanilla_game_events,
     };
 
     use super::*;
-    use crate::entity::entities::RawEntity;
-    use crate::test_support::TestLevel;
+    use crate::test_support::{TestEntity, TestLevel};
 
     #[test]
     fn redstone_transition_side_effects_match_vanilla_for_pressure_plates() {
-        init_test_registry();
+        init_vanilla_registry();
         let level = TestLevel::default();
-        let source = RawEntity::new(42, DVec3::ZERO, Weak::new(), &vanilla_entities::ARMOR_STAND);
+        let source = TestEntity::new(42, DVec3::ZERO, Weak::new(), &vanilla_entities::ARMOR_STAND);
         let pos = BlockPos::new(3, 64, -2);
 
         BasePressurePlateBlock::emit_transition_effects(

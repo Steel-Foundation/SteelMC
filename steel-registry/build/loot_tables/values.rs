@@ -70,10 +70,6 @@ pub(super) fn generate_equipment_slot_group(slot: &str) -> TokenStream {
 }
 
 /// Generate the `DyeColor` enum variant at build time.
-#[expect(
-    dead_code,
-    reason = "loot table generator keeps dye helper for extracted predicate coverage"
-)]
 pub(super) fn generate_dye_color(color: &str) -> TokenStream {
     match color {
         "white" => quote! { DyeColor::White },
@@ -344,11 +340,42 @@ pub(super) fn generate_entity_predicate(predicate: &EntityPredicateJson) -> Toke
     let flags = generate_entity_flags(&predicate.flags);
     let equipment = generate_entity_equipment(&predicate.equipment);
 
+    let sheep_color = predicate
+        .components
+        .as_ref()
+        .and_then(|components| components.sheep_color.as_deref())
+        .map_or_else(
+            || quote! { None },
+            |color| {
+                let color = generate_dye_color(color);
+                quote! { Some(#color) }
+            },
+        );
+    let chicken_variant = predicate
+        .components
+        .as_ref()
+        .and_then(|components| components.chicken_variant.as_deref())
+        .map_or_else(
+            || quote! { None },
+            |variant| {
+                let variant = variant.strip_prefix("minecraft:").unwrap_or(variant);
+                quote! { Some(Identifier::vanilla_static(#variant)) }
+            },
+        );
+    let sheep_sheared = predicate
+        .sheep_type_specific
+        .as_ref()
+        .and_then(|sheep| sheep.sheared)
+        .map_or_else(|| quote! { None }, |sheared| quote! { Some(#sheared) });
+
     quote! {
         EntityPredicate {
             entity_type: #entity_type,
             flags: #flags,
             equipment: #equipment,
+            sheep_color: #sheep_color,
+            sheep_sheared: #sheep_sheared,
+            chicken_variant: #chicken_variant,
         }
     }
 }

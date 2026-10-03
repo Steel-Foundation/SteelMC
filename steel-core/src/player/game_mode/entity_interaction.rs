@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -7,6 +9,10 @@ use super::{
     World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
+use crate::player::food_data::food_constants;
+use std::ops::Add;
+use steel_registry::particle_type::ParticleData;
+use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
@@ -90,7 +96,8 @@ impl Player {
         (1.0 / attack_speed * 20.0) as f32
     }
 
-    /// Returns vanilla `Player.getAttackStrengthScale`.
+    /// Returns how much of the current weapon's attack cooldown has
+    /// recovered, in [0.0, 1.0], for scaling attack damage.
     #[must_use]
     pub fn attack_strength_scale(&self, partial_tick: f32) -> f32 {
         let attack_strength_delay = self.current_item_attack_strength_delay();
@@ -356,7 +363,7 @@ impl Player {
 
         self.item_attack_interaction(entity, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
-        self.cause_food_exhaustion(0.1);
+        self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
     }
 
@@ -420,7 +427,11 @@ impl Player {
             return false;
         }
 
-        // TODO: Apply crits, sweep attacks, damage stats, and sounds.
+        let old_entity_living_health = entity
+            .as_living_entity()
+            .map_or(0.0, LivingEntity::get_health);
+
+        // TODO: Apply crits, sweep attacks, and sounds.
         let old_movement = entity.velocity();
         let Some(target_world) = entity.level() else {
             return false;
@@ -436,7 +447,8 @@ impl Player {
                 old_movement,
             );
             self.item_attack_interaction(entity, &damage_source, true);
-            self.cause_food_exhaustion(0.1);
+            self.damage_stats_and_hearts(entity, old_entity_living_health);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         }
 
         let world = self.get_world();
@@ -510,7 +522,7 @@ impl Player {
             return InteractionResult::Pass;
         }
 
-        let inventory_access = InventoryAccess::new(self.inventory.clone(), hand);
+        let inventory_access = InventoryAccess::new(Arc::clone(&self.inventory), hand);
         let original_count = inventory_access.with_item(|item| item.count);
         let result = entity.interact(self, hand, location);
 
@@ -569,6 +581,8 @@ impl Player {
         let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
             return;
         };
+
+        self.reset_last_action_time();
 
         let target_pos = target.block_position();
         if !world.world_border_snapshot().is_within_bounds_with_margin(
@@ -643,6 +657,7 @@ impl Player {
         }
 
         let world = self.get_world();
+        self.reset_last_action_time();
         let target = world.get_accessible_entity_by_id(packet.entity_id);
         self.set_crouching(packet.using_secondary_action);
         let Some(target) = target else {
@@ -670,5 +685,34 @@ impl Player {
             self.swing(packet.hand, true);
         }
         self.broadcast_inventory_changes();
+    }
+
+    /// Awards stats and sends particles when an entity gets attacked by this player.
+    pub fn damage_stats_and_hearts(&self, entity: &dyn Entity, old_entity_living_health: f32) {
+        const PARTICLES_PER_HEALTH: f32 = 0.5;
+        const PARTICLE_SPREAD_XZ: f64 = 0.1;
+        const PARTICLE_SPEED: f64 = 0.2;
+
+        if let Some(entity) = entity.as_living_entity() {
+            let actual_damage = old_entity_living_health - entity.get_health();
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_DEALT,
+                (actual_damage * 10.0).round() as i32,
+            );
+
+            let count = (actual_damage * 0.5).round() as i32;
+            let offset = DVec3::new(
+                0.0,
+                f64::from(entity.base().dimensions().height * PARTICLES_PER_HEALTH),
+                0.0,
+            );
+            self.get_world().send_particles(
+                ParticleData::simple(&vanilla_particle_types::DAMAGE_INDICATOR),
+                entity.position().add(offset),
+                count,
+                DVec3::new(PARTICLE_SPREAD_XZ, 0.0, PARTICLE_SPREAD_XZ),
+                PARTICLE_SPEED,
+            );
+        }
     }
 }

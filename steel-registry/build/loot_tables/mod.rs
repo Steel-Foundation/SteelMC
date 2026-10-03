@@ -285,6 +285,31 @@ struct EntityPredicateJson {
     flags: Option<EntityFlagsJson>,
     #[serde(alias = "minecraft:equipment", default)]
     equipment: Option<EntityEquipmentJson>,
+    /// Entity data components (`minecraft:components`). Only `sheep/color` and
+    /// `chicken/variant` are modeled.
+    #[serde(rename = "minecraft:components", default)]
+    components: Option<EntityComponentsJson>,
+    /// Type-specific predicates. `minecraft:type_specific/sheep` is a single
+    /// registry-style flat key, not a nested object.
+    #[serde(rename = "minecraft:type_specific/sheep", default)]
+    sheep_type_specific: Option<SheepTypeSpecificJson>,
+}
+
+/// Entity data-component predicates (`minecraft:components`).
+#[derive(Deserialize, Debug, Clone)]
+struct EntityComponentsJson {
+    #[serde(rename = "minecraft:sheep/color", default)]
+    sheep_color: Option<String>,
+    #[serde(rename = "minecraft:chicken/variant", default)]
+    chicken_variant: Option<String>,
+}
+
+/// Type-specific entity predicates (`minecraft:type_specific/sheep`).
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+struct SheepTypeSpecificJson {
+    #[serde(default)]
+    sheared: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

@@ -45,7 +45,8 @@ impl Drop for NoClipGuard {
     }
 }
 
-/// Vanilla `PistonMovingBlockEntity`.
+/// Block entity attached to a block while a piston pushes or pulls it,
+/// tracking the in-progress movement animation.
 pub struct PistonMovingBlockEntity {
     base: BlockEntityBase,
     moving: SyncMutex<PistonMovingState>,
@@ -538,7 +539,7 @@ impl PistonMovingState {
                 new_state,
                 pos,
                 UpdateFlags::UPDATE_ALL,
-                512,
+                World::UPDATE_LIMIT,
             );
             return;
         }
@@ -662,27 +663,27 @@ impl BlockEntity for PistonMovingBlockEntity {
 mod tests {
     use std::io::Cursor;
 
-    use glam::DVec3;
-    use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use simdnbt::owned::NbtTag;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
-    use steel_utils::{ChunkPos, types::GameType};
-    use uuid::Uuid;
-
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
-    use crate::entity::{SharedEntity, entities::RawEntity};
+    use crate::entity::SharedEntity;
     use crate::player::Player;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{
+        TestEntity, TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk,
+    };
+    use glam::DVec3;
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use simdnbt::owned::NbtTag;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+    use steel_utils::{ChunkPos, types::GameType};
 
     fn test_player(world: Arc<World>) -> Arc<Player> {
-        TestPlayerBuilder::new(world, Uuid::from_u128(1), "PistonTestPlayer", 1).build()
+        TestPlayerBuilder::new(world, "PistonTestPlayer", 1).build()
     }
 
     #[test]
     fn moving_state_and_progress_round_trip_with_vanilla_keys() {
-        init_test_registry();
+        init_vanilla_registry();
         let state = vanilla_blocks::MOVING_PISTON
             .default_state()
             .set_value(&BlockStateProperties::FACING, Direction::West)
@@ -725,7 +726,7 @@ mod tests {
 
     #[test]
     fn collided_entity_filter_matches_vanilla_player_and_spectator_rules() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_entity_filter");
         let player = test_player(Arc::clone(&world));
@@ -745,13 +746,13 @@ mod tests {
             false
         ));
 
-        let raw = RawEntity::new(
+        let entity = TestEntity::new(
             8_000,
             DVec3::ZERO,
             Arc::downgrade(&world),
             &vanilla_entities::MINECART,
         );
-        assert!(PistonMovingState::can_move_collided_entity(&raw, true));
+        assert!(PistonMovingState::can_move_collided_entity(&entity, true));
     }
 
     #[test]
@@ -769,7 +770,7 @@ mod tests {
 
     #[test]
     fn piston_entity_move_can_reenter_moving_block_collision() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_collision_reentry");
         let pos = BlockPos::new(8, 64, 8);
@@ -788,16 +789,16 @@ mod tests {
             true,
             false,
         ));
-        let block_entity: SharedBlockEntity = piston.clone();
+        let block_entity: SharedBlockEntity = Arc::<PistonMovingBlockEntity>::clone(&piston);
         assert!(world.set_block_entity(block_entity));
 
         let start = DVec3::new(f64::from(pos.x()) + 0.1, f64::from(pos.y()), 8.5);
-        let entity: SharedEntity = Arc::new(RawEntity::new(
+        let entity: SharedEntity = TestEntity::shared(
             8_001,
             start,
             Arc::downgrade(&world),
             &vanilla_entities::MINECART,
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&entity))
             .expect("test entity should enter the loaded chunk");
@@ -810,7 +811,7 @@ mod tests {
 
     #[test]
     fn final_tick_marks_a_detached_moving_entity_removed() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("detached_piston_final_tick");
         let pos = BlockPos::new(8, 64, 8);
@@ -834,7 +835,7 @@ mod tests {
 
     #[test]
     fn stale_final_tick_cannot_remove_or_finish_a_replacement() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("stale_piston_final_tick");
         let pos = BlockPos::new(8, 64, 8);
@@ -852,7 +853,7 @@ mod tests {
             true,
             false,
         ));
-        let stale_entity: SharedBlockEntity = stale_piston.clone();
+        let stale_entity: SharedBlockEntity = Arc::<PistonMovingBlockEntity>::clone(&stale_piston);
         assert!(world.set_block_entity(stale_entity));
         let replacement = Arc::new(PistonMovingBlockEntity::new_moving(
             Arc::downgrade(&world),
@@ -863,7 +864,8 @@ mod tests {
             true,
             false,
         ));
-        let replacement_entity: SharedBlockEntity = replacement.clone();
+        let replacement_entity: SharedBlockEntity =
+            Arc::<PistonMovingBlockEntity>::clone(&replacement);
         assert!(world.set_block_entity(Arc::clone(&replacement_entity)));
 
         assert!(stale_piston.final_tick(&world));

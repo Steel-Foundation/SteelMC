@@ -3,15 +3,17 @@
 //! Handles sign placement and block entity creation for all sign types.
 
 use std::cmp::Ordering;
-use std::f64::consts::PI;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, convert_to_rotation_segment};
 use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
+};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
@@ -25,18 +27,6 @@ use crate::block_entity::{BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
-
-/// Converts a rotation in degrees to a 16-segment rotation value (0-15).
-///
-/// This is equivalent to vanilla's `RotationSegment.convertToSegment(float)`.
-/// Each segment is 22.5 degrees, and rotation is measured clockwise from south.
-fn convert_to_rotation_segment(degrees: f32) -> u8 {
-    // Normalize to 0-360
-    let normalized = degrees.rem_euclid(360.0);
-    // Convert to segment (each segment is 22.5 degrees)
-    // Round to nearest segment
-    (((normalized / 22.5) + 0.5) as u8) & 15
-}
 
 /// Gets the nearest looking directions from the player's rotation.
 ///
@@ -60,7 +50,7 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
         .iter()
         .map(|&dir| {
             let dir_angle = dir.to_yaw();
-            let diff = (rotation - dir_angle + 180.0).rem_euclid(360.0) - 180.0;
+            let diff = (rotation - dir_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
             (dir, diff.abs())
         })
         .collect();
@@ -87,7 +77,7 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
 ///
 /// Uses the sign's rotation (from block state) and the player's position
 /// relative to the sign to determine which side they're looking at.
-fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> bool {
+pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> bool {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
@@ -97,22 +87,22 @@ fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> 
     let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
 
     // Calculate angle from sign to player (in degrees, -90 to account for Minecraft's coordinate system)
-    let player_angle = (dz.atan2(dx) * 180.0 / PI) as f32 - 90.0;
+    let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
     // Front text if the angle difference is <= 90 degrees
-    let diff = (sign_y_rot - player_angle + 180.0).rem_euclid(360.0) - 180.0;
-    diff.abs() <= 90.0
+    let diff = (sign_y_rot - player_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
+    diff.abs() <= DEGREE_90
 }
 
 /// Gets the Y rotation of a sign in degrees from its block state.
 fn get_sign_rotation_degrees(state: BlockStateId) -> f32 {
     // Standing signs use "rotation" property (0-15, each step is 22.5 degrees)
-    if let Some(rotation) = state.try_get_value(&BlockStateProperties::ROTATION_16) {
+    if let Some(rotation) = state.try_get_value(ROTATION_16) {
         return f32::from(rotation) * 22.5;
     }
 
     // Wall signs use "facing" property
-    if let Some(facing) = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING) {
+    if let Some(facing) = state.try_get_value(HORIZONTAL_FACING) {
         return facing.to_yaw();
     }
 
@@ -166,9 +156,7 @@ fn can_attach_to(
         && block.key.path.contains("wall_hanging_sign")
     {
         // Wall hanging signs can chain if they're on the same axis
-        if let Some(neighbor_facing) =
-            attach_state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
-        {
+        if let Some(neighbor_facing) = attach_state.try_get_value(HORIZONTAL_FACING) {
             return neighbor_facing.axis() == sign_facing.axis();
         }
     }
@@ -282,6 +270,10 @@ pub struct StandingSignBlock {
     block: BlockRef,
 }
 
+const ATTACHED: &BoolProperty = &BlockStateProperties::ATTACHED;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const ROTATION_16: &IntProperty = &BlockStateProperties::ROTATION_16;
+
 impl StandingSignBlock {
     /// Creates a new standing sign block behavior.
     #[must_use]
@@ -291,6 +283,10 @@ impl StandingSignBlock {
 }
 
 impl BlockBehavior for StandingSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -316,13 +312,9 @@ impl BlockBehavior for StandingSignBlock {
 
         // Calculate rotation from player's yaw
         // Vanilla: RotationSegment.convertToSegment(context.getRotation() + 180.0F)
-        let rotation = convert_to_rotation_segment(context.rotation() + 180.0);
+        let rotation = convert_to_rotation_segment(context.rotation() + DEGREE_180);
 
-        Some(
-            self.block
-                .default_state()
-                .set_value(&BlockStateProperties::ROTATION_16, rotation),
-        )
+        Some(self.block.default_state().set_value(ROTATION_16, rotation))
     }
 
     fn new_block_entity(
@@ -374,6 +366,10 @@ impl WallSignBlock {
 }
 
 impl BlockBehavior for WallSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -385,7 +381,7 @@ impl BlockBehavior for WallSignBlock {
     ) -> BlockStateId {
         // Wall signs break when the block they're attached to is removed
         // The sign is attached to the block opposite of its facing direction
-        if let Some(facing) = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+        if let Some(facing) = state.try_get_value(HORIZONTAL_FACING)
             && direction.opposite() == facing
             && !can_wall_sign_survive(world, pos, facing)
         {
@@ -408,7 +404,7 @@ impl BlockBehavior for WallSignBlock {
                 return Some(
                     self.block
                         .default_state()
-                        .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing),
+                        .set_value(HORIZONTAL_FACING, facing),
                 );
             }
         }
@@ -466,6 +462,10 @@ impl CeilingHangingSignBlock {
 }
 
 impl BlockBehavior for CeilingHangingSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -513,14 +513,10 @@ impl BlockBehavior for CeilingHangingSignBlock {
         // Determine if attached to middle based on vanilla logic
         let attached_to_middle = if is_below_hanging_sign {
             // When below another hanging sign, check if we can chain
-            if let Some(above_facing) =
-                above_state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
-            {
+            if let Some(above_facing) = above_state.try_get_value(HORIZONTAL_FACING) {
                 // Wall hanging sign above - check axis alignment
                 above_facing.axis() != direction.axis()
-            } else if let Some(above_rotation) =
-                above_state.try_get_value(&BlockStateProperties::ROTATION_16)
-            {
+            } else if let Some(above_rotation) = above_state.try_get_value(ROTATION_16) {
                 // Ceiling hanging sign above - check if we can align
                 let above_direction = rotation_to_direction(above_rotation);
                 above_direction.is_none_or(|d| d.axis() != direction.axis())
@@ -534,7 +530,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
         // Calculate rotation
         let rotation = if attached_to_middle {
             // Attached to middle - use player rotation
-            convert_to_rotation_segment(context.rotation() + 180.0)
+            convert_to_rotation_segment(context.rotation() + DEGREE_180)
         } else {
             // Attached to chains - align with direction
             convert_to_rotation_segment(direction.opposite().to_yaw())
@@ -543,8 +539,8 @@ impl BlockBehavior for CeilingHangingSignBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::ROTATION_16, rotation)
-                .set_value(&BlockStateProperties::ATTACHED, attached_to_middle),
+                .set_value(ROTATION_16, rotation)
+                .set_value(ATTACHED, attached_to_middle),
         )
     }
 
@@ -608,6 +604,10 @@ impl WallHangingSignBlock {
 }
 
 impl BlockBehavior for WallHangingSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -619,7 +619,7 @@ impl BlockBehavior for WallHangingSignBlock {
     ) -> BlockStateId {
         // Wall hanging signs break when blocks on the perpendicular axis are removed
         // and they can no longer survive
-        if let Some(facing) = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING) {
+        if let Some(facing) = state.try_get_value(HORIZONTAL_FACING) {
             // Check if the change is on the perpendicular axis (clockwise/counterclockwise)
             if direction.axis() == facing.rotate_y_clockwise().axis()
                 && !can_wall_hanging_sign_survive(world, pos, facing)
@@ -649,7 +649,7 @@ impl BlockBehavior for WallHangingSignBlock {
                 return Some(
                     self.block
                         .default_state()
-                        .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing),
+                        .set_value(HORIZONTAL_FACING, facing),
                 );
             }
         }
@@ -694,19 +694,21 @@ impl BlockBehavior for WallHangingSignBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::{TestLevel, fresh_test_world};
 
+    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
     #[test]
     fn standing_sign_only_schedules_water_when_support_survives() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::new(0, 64, 0);
         let sign = StandingSignBlock::new(&vanilla_blocks::OAK_SIGN);
         let state = vanilla_blocks::OAK_SIGN
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
         let supported =
             TestLevel::default().with_block(pos.below(), vanilla_blocks::STONE.default_state());
 
@@ -740,7 +742,7 @@ mod tests {
 
     #[test]
     fn sign_variants_select_their_matching_vanilla_tickers() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("sign_ticker_selection");
 
         let standing = StandingSignBlock::new(&vanilla_blocks::OAK_SIGN);

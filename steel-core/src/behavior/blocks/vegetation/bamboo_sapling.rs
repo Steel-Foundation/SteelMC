@@ -5,7 +5,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
-        properties::{BambooLeaves, BlockStateProperties},
+        properties::{BambooLeaves, BlockStateProperties, EnumProperty},
     },
     item_stack::ItemStack,
     vanilla_blocks, vanilla_items,
@@ -26,6 +26,8 @@ pub struct BambooSaplingBlock {
     block: BlockRef,
 }
 
+const BAMBOO_LEAVES: &EnumProperty<BambooLeaves> = &BlockStateProperties::BAMBOO_LEAVES;
+
 impl BambooSaplingBlock {
     /// Creates a new Bamboo Sapling Behavior
     #[must_use]
@@ -39,7 +41,7 @@ impl BambooSaplingBlock {
             pos.above(),
             vanilla_blocks::BAMBOO
                 .default_state()
-                .set_value(&BlockStateProperties::BAMBOO_LEAVES, BambooLeaves::Small),
+                .set_value(BAMBOO_LEAVES, BambooLeaves::Small),
             UpdateFlags::UPDATE_ALL,
         );
     }

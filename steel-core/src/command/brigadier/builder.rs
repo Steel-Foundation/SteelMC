@@ -1,23 +1,23 @@
 //! Command node builders.
 
-use std::sync::Arc;
-
 use super::{
     ArgumentType, BrigadierRuntime, CommandContext, CommandRequirement, CommandRuntime,
-    CommandSyntaxError, NodeId, RegistrationError, RegistrationErrorKind,
+    CommandSyntaxError, NodeId, RegistrationError, RegistrationErrorKind, SuggestionProvider,
     node::{
         CommandNodeData, CommandRedirect, CommandRedirectTarget, UnregisteredCommandNode,
         merge_or_push,
     },
     runtime::{BrigadierExecutor, BrigadierModifier},
 };
+use crate::command::brigadier::node::ArgumentData;
+use std::sync::Arc;
 
 /// Builds one literal or argument command node and its descendants.
 pub(crate) struct CommandNodeBuilder<S, R = BrigadierRuntime>
 where
     R: CommandRuntime<S>,
 {
-    data: CommandNodeData<R::Argument>,
+    data: CommandNodeData<S, R::Argument>,
     children: Vec<Self>,
     executor: Option<Arc<R::Executor>>,
     requirement: CommandRequirement<S>,
@@ -114,16 +114,40 @@ where
     /// Creates an argument for this runtime model.
     pub(crate) fn argument(name: impl Into<Box<str>>, argument_type: R::Argument) -> Self {
         Self {
-            data: CommandNodeData::Argument {
-                name: name.into(),
-                argument_type,
-            },
+            data: CommandNodeData::Argument(name.into(), ArgumentData::new(argument_type)),
             children: Vec::new(),
             executor: None,
             requirement: CommandRequirement::allow_all(),
             execution_requirement: CommandRequirement::allow_all(),
             redirect: None,
         }
+    }
+
+    /// Add a custom [`SuggestionProvider`] to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub(crate) fn suggests(
+        self,
+        suggestion: impl SuggestionProvider<S, R::Argument> + 'static,
+    ) -> Self {
+        self.suggests_arc(Arc::new(suggestion))
+    }
+
+    /// Add a custom [`SuggestionProvider`] wrap in an Arc to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub(crate) fn suggests_arc(
+        mut self,
+        suggestion: Arc<impl SuggestionProvider<S, R::Argument> + 'static>,
+    ) -> Self {
+        debug_assert!(
+            matches!(self.data, CommandNodeData::Argument(_, _)),
+            "suggests must be called on an argument node"
+        );
+        if let CommandNodeData::Argument(_, data) = &mut self.data {
+            data.custom_suggestions = Some(suggestion);
+        }
+        self
     }
 
     /// Returns this node's literal name, or `None` for an argument node.

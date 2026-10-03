@@ -119,7 +119,7 @@ pub enum OceanMonumentChildPieceKind {
     SimpleRoom {
         /// Room snapshot.
         room: OceanMonumentRoomData,
-        /// Vanilla `mainDesign`.
+        /// Index selecting this room's structural design variant.
         main_design: i32,
     },
     /// `OceanMonumentSimpleTopRoom`.
@@ -129,7 +129,7 @@ pub enum OceanMonumentChildPieceKind {
     },
     /// `OceanMonumentWingRoom`.
     WingRoom {
-        /// Vanilla `mainDesign`.
+        /// Index selecting this room's structural design variant.
         main_design: i32,
     },
     /// `OceanMonumentPenthouse`.
@@ -965,7 +965,7 @@ mod tests {
         else {
             panic!("ocean monument should use its procedural payload");
         };
-        assert!(!data.child_pieces.is_empty());
+        assert_ne!(data.child_pieces.len(), 0);
         assert!(matches!(
             data.child_pieces[0].kind,
             OceanMonumentChildPieceKind::EntryRoom { .. }

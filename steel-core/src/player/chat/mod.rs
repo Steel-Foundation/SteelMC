@@ -7,7 +7,6 @@ pub mod message_chain;
 mod message_validator;
 pub mod profile_key;
 mod signature_cache;
-mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
@@ -15,7 +14,7 @@ pub use signature_cache::{LastSeen, MessageCache};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use steel_crypto::{SignatureValidator, public_key_from_bytes, signature::NoValidation};
+use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::game::{
     CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, FilterType, SChat, SChatAck,
     SChatSessionUpdate,
@@ -24,17 +23,20 @@ use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
 use text_components::Modifier;
 use text_components::TextComponent;
+use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
 use crate::player::Player;
+use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
-use spam_throttler::TickThrottler;
+
+const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
 
 /// All chat-related state for a player.
 ///
-/// Stored behind a single `SyncMutex` on `Player`. The fields were previously
+/// Stored behind a single `SyncMutex` on `PlayerSession`. The fields were previously
 /// individual atomics/mutexes but are always accessed within short critical
 /// sections per-player, so a single lock is simpler with no real contention cost.
 pub struct ChatState {
@@ -52,6 +54,38 @@ pub struct ChatState {
     pub message_chain: Option<SignedMessageChain>,
     chat_spam_throttler: TickThrottler,
     command_spam_throttler: TickThrottler,
+}
+
+enum ChatSessionUpdateOutcome {
+    Unchanged,
+    MissingServiceKeys,
+    ExpiryDowngrade,
+    Accepted(RemoteChatSession),
+    Invalid(profile_key::ValidationError),
+}
+
+fn validate_chat_session_update(
+    old_profile_key: Option<&profile_key::ProfilePublicKeyData>,
+    new_session: profile_key::RemoteChatSessionData,
+    profile_id: uuid::Uuid,
+    validator: Option<&dyn SignatureValidator>,
+) -> ChatSessionUpdateOutcome {
+    if old_profile_key == Some(&new_session.profile_public_key) {
+        return ChatSessionUpdateOutcome::Unchanged;
+    }
+    if old_profile_key
+        .is_some_and(|old_key| new_session.profile_public_key.expires_at < old_key.expires_at)
+    {
+        return ChatSessionUpdateOutcome::ExpiryDowngrade;
+    }
+    let Some(validator) = validator else {
+        return ChatSessionUpdateOutcome::MissingServiceKeys;
+    };
+
+    match new_session.validate(profile_id, validator) {
+        Ok(session) => ChatSessionUpdateOutcome::Accepted(session),
+        Err(error) => ChatSessionUpdateOutcome::Invalid(error),
+    }
 }
 
 impl ChatState {
@@ -78,11 +112,14 @@ impl ChatState {
 }
 
 impl Player {
-    /// Decays the per player chat and command spam counters once per server tick
-    pub fn tick_spam_throttlers(&self) {
-        let mut chat = self.chat.lock();
+    /// Decays the throttlers of the player once per server tick.
+    pub fn tick_throttlers(&self) {
+        let mut chat = self.chat().lock();
         chat.chat_spam_throttler.tick();
         chat.command_spam_throttler.tick();
+        drop(chat);
+
+        self.session.drop_spam_throttler.lock().tick();
     }
 
     const fn should_disconnect_for_rate_spam(
@@ -98,7 +135,7 @@ impl Player {
     pub fn detect_command_rate_spam(&self) {
         let is_operator = self.is_operator();
         let should_disconnect = {
-            let mut chat = self.chat.lock();
+            let mut chat = self.chat().lock();
             Self::should_disconnect_for_rate_spam(&mut chat.command_spam_throttler, is_operator)
         };
 
@@ -110,7 +147,7 @@ impl Player {
     fn detect_chat_rate_spam(&self) {
         let is_operator = self.is_operator();
         let should_disconnect = {
-            let mut chat = self.chat.lock();
+            let mut chat = self.chat().lock();
             Self::should_disconnect_for_rate_spam(&mut chat.chat_spam_throttler, is_operator)
         };
 
@@ -121,7 +158,7 @@ impl Player {
 
     /// Gets the next `messages_received` counter and increments it
     pub fn get_and_increment_messages_received(&self) -> i32 {
-        let mut chat = self.chat.lock();
+        let mut chat = self.chat().lock();
         let val = chat.messages_received;
         chat.messages_received += 1;
         val
@@ -131,9 +168,7 @@ impl Player {
         &self,
         packet: &SChat,
     ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
-        const MESSAGE_EXPIRES_AFTER: Duration = Duration::from_mins(5);
-
-        let mut chat = self.chat.lock();
+        let mut chat = self.chat().lock();
         let session = chat.chat_session.clone().ok_or("No chat session")?;
         let signature = packet.signature.as_ref().ok_or("No signature present")?;
 
@@ -159,10 +194,11 @@ impl Player {
             .duration_since(timestamp)
             .unwrap_or(Duration::from_secs(0));
 
-        if message_age > MESSAGE_EXPIRES_AFTER {
+        if message_age > MESSAGE_EXPIRES_AFTER_SERVER {
             return Err(format!(
-                "Message expired (age: {}s, max: 300s)",
-                message_age.as_secs()
+                "Message expired (age: {}s, max: {}s)",
+                message_age.as_secs(),
+                MESSAGE_EXPIRES_AFTER_SERVER.as_secs()
             ));
         }
 
@@ -203,6 +239,7 @@ impl Player {
 
     /// Handles a chat message from the player.
     pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
+        player.reset_last_action_time();
         let chat_message = packet.message.clone();
 
         let verification_result = if let Some(_signature) = &packet.signature {
@@ -220,7 +257,7 @@ impl Player {
             None
         };
 
-        if self.config.enforce_secure_chat {
+        if self.server().enforces_secure_chat() {
             match &verification_result {
                 Some(Ok(_)) => {}
                 Some(Err(err)) => {
@@ -243,7 +280,7 @@ impl Player {
         };
 
         let sender_index = {
-            let mut chat = player.chat.lock();
+            let mut chat = player.chat().lock();
             let idx = chat.messages_sent;
             chat.messages_sent += 1;
             idx
@@ -314,6 +351,20 @@ impl Player {
         self.send_packet(CSystemChat::new(text, false, self));
     }
 
+    /// Sends an overlay system message to the player
+    pub fn send_overlay_message(&self, text: &TextComponent) {
+        self.send_packet(CSystemChat::new(text, true, self));
+    }
+
+    /// Sends vanilla's red upper build-height limit overlay.
+    pub(crate) fn send_build_limit_too_high_message(&self, limit: i32) {
+        let limit = TextComponent::plain(limit.to_string());
+        let message = translations::BUILD_TOO_HIGH
+            .message([limit])
+            .color(Color::Red);
+        self.send_overlay_message(&message);
+    }
+
     /// Updates the player's chat session and initializes the message chain.
     ///
     /// This should be called when receiving a `ChatSessionUpdate` packet from the client.
@@ -329,7 +380,7 @@ impl Player {
                     self.gameprofile.name,
                     err
                 );
-                let mut chat = self.chat.lock();
+                let mut chat = self.chat().lock();
                 chat.chat_session = Some(session);
                 chat.message_chain = Some(chain);
                 return;
@@ -337,7 +388,7 @@ impl Player {
         };
 
         {
-            let mut chat = self.chat.lock();
+            let mut chat = self.chat().lock();
             chat.chat_session = Some(session);
             chat.message_chain = Some(chain);
         }
@@ -354,12 +405,12 @@ impl Player {
 
     /// Gets a reference to the player's chat session if present
     pub fn chat_session(&self) -> Option<RemoteChatSession> {
-        self.chat.lock().chat_session.clone()
+        self.chat().lock().chat_session.clone()
     }
 
     /// Checks if the player has a valid chat session
     pub fn has_chat_session(&self) -> bool {
-        self.chat.lock().chat_session.is_some()
+        self.chat().lock().chat_session.is_some()
     }
 
     /// Handles a chat session update packet from the client.
@@ -368,7 +419,7 @@ impl Player {
     pub fn handle_chat_session_update(&self, packet: SChatSessionUpdate) {
         log::info!("Player {} sent chat session update", self.gameprofile.name);
 
-        let expires_at = UNIX_EPOCH + Duration::from_millis(packet.expires_at as u64);
+        let expires_at = profile_key::system_time_from_millis(packet.expires_at);
 
         let public_key = match public_key_from_bytes(&packet.public_key) {
             Ok(key) => key,
@@ -377,13 +428,9 @@ impl Player {
                     "Player {} sent invalid public key: {err}",
                     self.gameprofile.name
                 );
-                if self.config.enforce_secure_chat {
-                    log::error!(
-                        "Player {} kicked for invalid public key",
-                        self.gameprofile.name
-                    );
-                    self.disconnect("Invalid profile public key");
-                }
+                self.disconnect(
+                    translations::MULTIPLAYER_DISCONNECT_INVALID_PUBLIC_KEY_SIGNATURE.msg(),
+                );
                 return;
             }
         };
@@ -391,25 +438,42 @@ impl Player {
         let profile_key_data =
             profile_key::ProfilePublicKeyData::new(expires_at, public_key, packet.key_signature);
 
-        let validator = Box::new(NoValidation) as Box<dyn SignatureValidator>;
-
         let session_data = profile_key::RemoteChatSessionData {
             session_id: packet.session_id,
             profile_public_key: profile_key_data,
         };
 
-        match session_data.validate(self.gameprofile.id, &*validator) {
-            Ok(session) => {
-                self.set_chat_session(session);
-            }
-            Err(err) => {
+        let old_profile_key = self
+            .chat_session()
+            .map(|session| session.profile_public_key.data().clone());
+        let validator = self.server().profile_key_signature_validator();
+        match validate_chat_session_update(
+            old_profile_key.as_ref(),
+            session_data,
+            self.gameprofile.id,
+            validator
+                .as_deref()
+                .map(|validator| validator as &dyn SignatureValidator),
+        ) {
+            ChatSessionUpdateOutcome::Unchanged => {}
+            ChatSessionUpdateOutcome::MissingServiceKeys => {
                 log::warn!(
-                    "Player {} sent invalid chat session: {err}",
+                    "Ignoring chat session from {} due to missing services public key",
                     self.gameprofile.name
                 );
-                if self.config.enforce_secure_chat {
-                    self.disconnect(format!("Chat session validation failed: {err}"));
-                }
+            }
+            ChatSessionUpdateOutcome::ExpiryDowngrade => {
+                self.disconnect(translations::MULTIPLAYER_DISCONNECT_EXPIRED_PUBLIC_KEY.msg());
+            }
+            ChatSessionUpdateOutcome::Accepted(session) => self.set_chat_session(session),
+            ChatSessionUpdateOutcome::Invalid(error) => {
+                log::warn!(
+                    "Player {} sent invalid chat session: {error}",
+                    self.gameprofile.name
+                );
+                self.disconnect(
+                    translations::MULTIPLAYER_DISCONNECT_INVALID_PUBLIC_KEY_SIGNATURE.msg(),
+                );
             }
         }
     }
@@ -417,7 +481,7 @@ impl Player {
     /// Handles a chat acknowledgment packet from the client.
     pub fn handle_chat_ack(&self, packet: SChatAck) {
         if let Err(err) = self
-            .chat
+            .chat()
             .lock()
             .message_validator
             .apply_offset(packet.offset.0)
@@ -432,7 +496,38 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChatState, Player};
+    use steel_crypto::{
+        CryptError, SignatureValidator, generate_key_pair, signature::SignatureUpdater,
+    };
+    use uuid::Uuid;
+
+    use super::{
+        ChatSessionUpdateOutcome, ChatState, Player, profile_key, validate_chat_session_update,
+    };
+
+    struct FixedValidator(bool);
+
+    impl SignatureValidator for FixedValidator {
+        fn validate(
+            &self,
+            _updater: &dyn SignatureUpdater,
+            _signature: &[u8],
+        ) -> Result<bool, CryptError> {
+            Ok(self.0)
+        }
+    }
+
+    fn session(expires_at_millis: i64) -> profile_key::RemoteChatSessionData {
+        let (_, public_key) = generate_key_pair().expect("test player key should generate");
+        profile_key::RemoteChatSessionData {
+            session_id: Uuid::new_v4(),
+            profile_public_key: profile_key::ProfilePublicKeyData::new(
+                profile_key::system_time_from_millis(expires_at_millis),
+                public_key,
+                vec![1],
+            ),
+        }
+    }
 
     #[test]
     fn operators_are_exempt_from_both_spam_disconnects() {
@@ -459,6 +554,70 @@ mod tests {
         assert!(Player::should_disconnect_for_rate_spam(
             &mut chat.chat_spam_throttler,
             false,
+        ));
+    }
+
+    #[test]
+    fn unchanged_profile_key_does_not_reset_the_session() {
+        let current = session(2);
+        let new_session = profile_key::RemoteChatSessionData {
+            session_id: Uuid::new_v4(),
+            profile_public_key: current.profile_public_key.clone(),
+        };
+
+        assert!(matches!(
+            validate_chat_session_update(
+                Some(&current.profile_public_key),
+                new_session,
+                Uuid::new_v4(),
+                None,
+            ),
+            ChatSessionUpdateOutcome::Unchanged
+        ));
+    }
+
+    #[test]
+    fn expiry_downgrade_precedes_service_key_availability() {
+        let current = session(2);
+
+        assert!(matches!(
+            validate_chat_session_update(
+                Some(&current.profile_public_key),
+                session(1),
+                Uuid::new_v4(),
+                None,
+            ),
+            ChatSessionUpdateOutcome::ExpiryDowngrade
+        ));
+    }
+
+    #[test]
+    fn missing_service_keys_ignore_new_session() {
+        assert!(matches!(
+            validate_chat_session_update(None, session(1), Uuid::new_v4(), None),
+            ChatSessionUpdateOutcome::MissingServiceKeys
+        ));
+    }
+
+    #[test]
+    fn service_signature_result_controls_session_acceptance() {
+        assert!(matches!(
+            validate_chat_session_update(
+                None,
+                session(1),
+                Uuid::new_v4(),
+                Some(&FixedValidator(true)),
+            ),
+            ChatSessionUpdateOutcome::Accepted(_)
+        ));
+        assert!(matches!(
+            validate_chat_session_update(
+                None,
+                session(1),
+                Uuid::new_v4(),
+                Some(&FixedValidator(false)),
+            ),
+            ChatSessionUpdateOutcome::Invalid(profile_key::ValidationError::InvalidSignature)
         ));
     }
 }

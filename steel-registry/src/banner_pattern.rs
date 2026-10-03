@@ -227,7 +227,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::BannerPatternValue;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, vanilla_banner_patterns};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<BannerPatternValue> {
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn generated_patterns_follow_vanilla_registry_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let keys = REGISTRY
             .banner_patterns
             .iter()
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn direct_codecs_and_hash_match_vanilla_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let pattern = vanilla_banner_patterns::BASE.value().clone();
         let mut network = Vec::new();
         pattern.write(&mut network).expect("pattern should encode");

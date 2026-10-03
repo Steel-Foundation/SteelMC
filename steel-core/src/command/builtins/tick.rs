@@ -1,6 +1,3 @@
-use steel_utils::{Identifier, translations};
-use text_components::TextComponent;
-
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
     execution::{
@@ -9,6 +6,9 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::command::execution::FixedSuggestionProvider;
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("tick"), |_| command())
@@ -19,36 +19,41 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
         .subcommand_permission(["freeze"])
 }
 
+pub const DEFAULT_TICK_RATE: &str = "20";
+
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tick")
         .then(literal("query").executes(query_tick))
         .then(
-            literal("rate")
-                .then(argument("rate", ArgumentType::float(1.0, 10_000.0)).executes(set_tick_rate)),
+            literal("rate").then(
+                argument("rate", ArgumentType::float(1.0, 10_000.0))
+                    .suggests(FixedSuggestionProvider::new(&[DEFAULT_TICK_RATE]))
+                    .executes(set_tick_rate),
+            ),
         )
         .then(
             literal("step")
                 .executes(|context| step(context, 1))
                 .then(literal("stop").executes(stop_step))
                 .then(
-                    argument("time", SteelArgumentType::time(1)).executes(|context| {
-                        let Some(ticks) = context.time("time") else {
-                            return Err(missing_argument("time"));
-                        };
-                        step(context, ticks)
-                    }),
+                    argument("time", SteelArgumentType::time(1))
+                        .suggests(FixedSuggestionProvider::new(&["1t", "1s"]))
+                        .executes(|context| {
+                            let ticks = context.time("time")?;
+                            step(context, ticks)
+                        }),
                 ),
         )
         .then(
             literal("sprint")
                 .then(literal("stop").executes(stop_sprint))
                 .then(
-                    argument("time", SteelArgumentType::time(1)).executes(|context| {
-                        let Some(ticks) = context.time("time") else {
-                            return Err(missing_argument("time"));
-                        };
-                        sprint(context, ticks)
-                    }),
+                    argument("time", SteelArgumentType::time(1))
+                        .suggests(FixedSuggestionProvider::new(&["60s", "1d", "3d"]))
+                        .executes(|context| {
+                            let ticks = context.time("time")?;
+                            sprint(context, ticks)
+                        }),
                 ),
         )
         .then(literal("unfreeze").executes(|context| set_frozen(context, false)))
@@ -150,9 +155,7 @@ fn query_tick(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
     reason = "the bounded tick rate intentionally returns its truncated command result"
 )]
 fn set_tick_rate(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let Some(rate) = context.float("rate") else {
-        return Err(missing_argument("rate"));
-    };
+    let rate = context.float("rate")?;
     context
         .source()
         .server()
@@ -316,12 +319,6 @@ fn stop_sprint(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comm
     }
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed `{name}` is missing from the tick command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
@@ -329,7 +326,7 @@ mod tests {
         brigadier::{ArgumentType, CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -349,7 +346,7 @@ mod tests {
 
     #[test]
     fn tick_graph_matches_the_target_shape_and_permissions() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

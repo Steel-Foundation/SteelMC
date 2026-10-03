@@ -2,6 +2,11 @@ use super::{
     Component, ComponentData, DataComponentMap, DataComponentType, Debug, DowncastType, FxHashMap,
     Identifier,
 };
+use rustc_hash::FxBuildHasher;
+
+static EMPTY: DataComponentPatch = DataComponentPatch {
+    entries: FxHashMap::with_hasher(FxBuildHasher),
+};
 
 /// Entry in a component patch.
 #[derive(Debug, Clone)]
@@ -33,6 +38,12 @@ pub struct DataComponentPatch {
 }
 
 impl DataComponentPatch {
+    /// Returns a shared patch with no entries.
+    #[must_use]
+    pub fn empty() -> &'static Self {
+        &EMPTY
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -137,6 +148,16 @@ impl DataComponentPatch {
     /// Iterates over all entries.
     pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentPatchEntry)> {
         self.entries.iter()
+    }
+
+    /// Applies another patch after this one, giving the added patch precedence.
+    pub fn apply(&mut self, added: &Self) {
+        self.entries.extend(
+            added
+                .entries
+                .iter()
+                .map(|(key, entry)| (key.clone(), entry.clone())),
+        );
     }
 
     pub(crate) fn sanitize_against(&mut self, prototype: &DataComponentMap) {

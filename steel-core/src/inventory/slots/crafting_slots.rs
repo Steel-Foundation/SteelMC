@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::Shared;
 
@@ -34,12 +36,6 @@ impl CraftingHandler {
         }
     }
 
-    /// Whether the grid size of the crafting container is a 2x2
-    #[must_use]
-    pub const fn is_2x2(&self) -> bool {
-        self.grid_size == 2
-    }
-
     /// The `ContainerId` of the crafting container
     #[must_use]
     pub fn crafting_id(&self) -> ContainerId {
@@ -49,7 +45,7 @@ impl CraftingHandler {
     /// A shared handle to the crafting container.
     #[must_use]
     pub fn crafting_container(&self) -> Shared<CraftingContainer> {
-        self.crafting_container.clone()
+        Arc::clone(&self.crafting_container)
     }
 
     /// The `ContainerId` of the result container
@@ -61,20 +57,21 @@ impl CraftingHandler {
 
 impl ResultHandler for CraftingHandler {
     fn result_container(&self) -> ContainerRef {
-        ContainerRef::from(self.result_container.clone())
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     fn dependencies(&self) -> Vec<ContainerRef> {
-        vec![ContainerRef::from(self.crafting_container.clone())]
+        vec![ContainerRef::from(Arc::clone(&self.crafting_container))]
     }
 
     fn update_result(&self, guard: &mut ContainerLockGuard) {
+        // TODO: Enforce limited crafting and retain the recipe once player recipe books exist.
         let crafting = guard
             .get_typed::<CraftingContainer>(self.crafting_id())
             .expect("crafting container not locked");
 
-        let result_stack = recipe_manager::find_recipe(crafting, self.is_2x2())
-            .map_or_else(ItemStack::empty, |r| r.assemble());
+        let result_stack =
+            recipe_manager::assemble_for_container(crafting).unwrap_or_else(ItemStack::empty);
 
         let result_container = guard
             .get_typed_mut::<ResultContainer>(self.result_id())
@@ -88,13 +85,14 @@ impl ResultHandler for CraftingHandler {
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Unlock the recipe and trigger RECIPE_CRAFTED once their foundations exist.
         let mut remainder_overflow: Vec<ItemStack> = Vec::new();
 
         let remainders_and_positioned = {
             let crafting = guard
                 .get_typed::<CraftingContainer>(self.crafting_id())
                 .expect("crafting container not locked");
-            recipe_manager::get_remaining_items(crafting, self.is_2x2())
+            recipe_manager::get_remaining_items(crafting)
         };
 
         let Some((remainders, positioned)) = remainders_and_positioned else {
@@ -125,7 +123,7 @@ impl ResultHandler for CraftingHandler {
                     {
                         let item = crafting.get_item_mut(grid_slot);
                         if !item.is_empty() {
-                            item.shrink(1);
+                            item.shrink_one();
                         }
                     }
 
@@ -171,10 +169,10 @@ impl ResultHandler for CraftingHandler {
             return false;
         };
 
-        let Some(recipe) = recipe_manager::find_recipe(crafting, self.is_2x2()) else {
+        let Some(assembled) = recipe_manager::assemble_for_container(crafting) else {
             return false;
         };
 
-        ItemStack::matches(result_item, &recipe.assemble())
+        ItemStack::matches(result_item, &assembled)
     }
 }

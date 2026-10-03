@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::TestConnection;
 use crate::config::RuntimeConfig;
-use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
+use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession};
 use crate::server::Server;
 use crate::world::World;
 
@@ -13,23 +13,16 @@ pub(crate) fn test_runtime_config(max_players: u32) -> Arc<RuntimeConfig> {
         max_players,
         view_distance: 2,
         simulation_distance: 2,
-        max_chained_neighbor_updates: 1_000_000,
         online_mode: false,
-        auth_server: None,
-        profile_server: None,
         encryption: false,
-        allow_flight: false,
-        motd: String::new(),
         use_favicon: false,
         favicon: String::new(),
-        enforce_secure_chat: false,
-        chat_spam_threshold_seconds: 10,
-        command_spam_threshold_seconds: 10,
+        motd: String::new(),
         compression: None,
-        server_links: None,
         packet_workers: Some(1),
         chunk_generation_threads: Some(1),
         chunk_encoding_threads: Some(1),
+        ..RuntimeConfig::default()
     })
 }
 
@@ -39,6 +32,7 @@ pub(crate) struct TestPlayerBuilder {
     world: Arc<World>,
     context: TestPlayerContext,
     entity_id: i32,
+    client_information: ClientInformation,
 }
 
 enum TestPlayerContext {
@@ -50,15 +44,10 @@ enum TestPlayerContext {
 }
 
 impl TestPlayerBuilder {
-    pub(crate) fn new(
-        world: Arc<World>,
-        uuid: Uuid,
-        name: impl Into<String>,
-        entity_id: i32,
-    ) -> Self {
+    pub(crate) fn new(world: Arc<World>, name: impl Into<String>, entity_id: i32) -> Self {
         Self {
             profile: GameProfile {
-                id: uuid,
+                id: Uuid::new_v4(),
                 name: name.into(),
                 properties: Vec::new(),
                 profile_actions: None,
@@ -67,7 +56,13 @@ impl TestPlayerBuilder {
             world,
             context: TestPlayerContext::Detached(test_runtime_config(1)),
             entity_id,
+            client_information: ClientInformation::default(),
         }
+    }
+
+    pub(crate) fn uuid(mut self, uuid: Uuid) -> Self {
+        self.profile.id = uuid;
+        self
     }
 
     pub(crate) fn connection(mut self, connection: Arc<PlayerConnection>) -> Self {
@@ -88,19 +83,31 @@ impl TestPlayerBuilder {
         self
     }
 
+    pub(crate) fn client_information(mut self, client_information: ClientInformation) -> Self {
+        self.client_information = client_information;
+        self
+    }
+
     pub(crate) fn build(self) -> Arc<Player> {
         let (server, config) = match self.context {
             TestPlayerContext::Detached(config) => (Weak::new(), config),
             TestPlayerContext::Server { server, config } => (server, config),
         };
-        Arc::new(Player::new(
+        let session = Arc::new(PlayerSession::new(
+            config.chat_spam_threshold_seconds,
+            config.command_spam_threshold_seconds,
+        ));
+        let player = Arc::new(Player::new(
             self.profile,
             self.connection,
+            Arc::clone(&session),
             self.world,
             server,
             config,
             self.entity_id,
-            ClientInformation::default(),
-        ))
+            self.client_information,
+        ));
+        assert!(session.bind_initial_player(&player));
+        player
     }
 }

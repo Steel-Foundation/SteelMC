@@ -4,15 +4,20 @@
 
 use std::sync::Arc;
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::items::LeadItem;
+use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+};
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for fence blocks.
@@ -27,18 +32,19 @@ pub struct FenceBlock {
     block: BlockRef,
 }
 
-impl FenceBlock {
-    /// North connection property.
-    pub const NORTH: BoolProperty = BlockStateProperties::NORTH;
-    /// East connection property.
-    pub const EAST: BoolProperty = BlockStateProperties::EAST;
-    /// South connection property.
-    pub const SOUTH: BoolProperty = BlockStateProperties::SOUTH;
-    /// West connection property.
-    pub const WEST: BoolProperty = BlockStateProperties::WEST;
-    /// Waterlogged property.
-    pub const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+/// North connection property.
+pub const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+/// East connection property.
+pub const EAST: &BoolProperty = &BlockStateProperties::EAST;
+/// South connection property.
+pub const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+/// West connection property.
+pub const WEST: &BoolProperty = &BlockStateProperties::WEST;
+/// Waterlogged property.
+pub const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
+impl FenceBlock {
     /// Creates a new fence block behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -64,9 +70,7 @@ impl FenceBlock {
             // Fence gates connect perpendicular to their facing direction
             // A gate facing north/south connects to fences to its east/west
             // A gate facing east/west connects to fences to its north/south
-            if let Some(gate_facing) =
-                neighbor_state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
-            {
+            if let Some(gate_facing) = neighbor_state.try_get_value(HORIZONTAL_FACING) {
                 // Gate connects perpendicular to its facing
                 let connects = match (gate_facing, direction) {
                     // Gate facing N/S connects to blocks on E/W sides,
@@ -103,25 +107,25 @@ impl FenceBlock {
         let north_pos = Direction::North.relative(pos);
         let north_state = world.get_block_state(north_pos);
         let connects_north = Self::connects_to(world, north_state, north_pos, Direction::North);
-        state = state.set_value(&Self::NORTH, connects_north);
+        state = state.set_value(NORTH, connects_north);
 
         // Check east
         let east_pos = Direction::East.relative(pos);
         let east_state = world.get_block_state(east_pos);
         let connects_east = Self::connects_to(world, east_state, east_pos, Direction::East);
-        state = state.set_value(&Self::EAST, connects_east);
+        state = state.set_value(EAST, connects_east);
 
         // Check south
         let south_pos = Direction::South.relative(pos);
         let south_state = world.get_block_state(south_pos);
         let connects_south = Self::connects_to(world, south_state, south_pos, Direction::South);
-        state = state.set_value(&Self::SOUTH, connects_south);
+        state = state.set_value(SOUTH, connects_south);
 
         // Check west
         let west_pos = Direction::West.relative(pos);
         let west_state = world.get_block_state(west_pos);
         let connects_west = Self::connects_to(world, west_state, west_pos, Direction::West);
-        state = state.set_value(&Self::WEST, connects_west);
+        state = state.set_value(WEST, connects_west);
 
         state
     }
@@ -136,7 +140,7 @@ impl BlockBehavior for FenceBlock {
         );
         Some(
             self.get_connection_state(context.world, context.place_pos())
-                .set_value(&Self::WATERLOGGED, context.is_water_source()),
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -149,42 +153,51 @@ impl BlockBehavior for FenceBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&Self::WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         // Only update for horizontal directions
         match direction {
             Direction::North => {
                 let connects =
                     Self::connects_to(world, neighbor_state, neighbor_pos, Direction::North);
-                state.set_value(&Self::NORTH, connects)
+                state.set_value(NORTH, connects)
             }
             Direction::East => {
                 let connects =
                     Self::connects_to(world, neighbor_state, neighbor_pos, Direction::East);
-                state.set_value(&Self::EAST, connects)
+                state.set_value(EAST, connects)
             }
             Direction::South => {
                 let connects =
                     Self::connects_to(world, neighbor_state, neighbor_pos, Direction::South);
-                state.set_value(&Self::SOUTH, connects)
+                state.set_value(SOUTH, connects)
             }
             Direction::West => {
                 let connects =
                     Self::connects_to(world, neighbor_state, neighbor_pos, Direction::West);
-                state.set_value(&Self::WEST, connects)
+                state.set_value(WEST, connects)
             }
             // Vertical directions don't affect fence connections
             Direction::Up | Direction::Down => state,
         }
     }
+
+    fn use_without_item(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        LeadItem::bind_player_mobs(player, world, pos)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
     use steel_utils::BlockPos;
 
     use crate::test_support::TestLevel;
@@ -193,12 +206,12 @@ mod tests {
 
     #[test]
     fn waterlogged_fence_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = FenceBlock::new(&vanilla_blocks::OAK_FENCE);
         let state = vanilla_blocks::OAK_FENCE
             .default_state()
-            .set_value(&FenceBlock::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
         let level = TestLevel::default();
 
         let updated = behavior.update_shape(

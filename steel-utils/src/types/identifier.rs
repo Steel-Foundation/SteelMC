@@ -1,12 +1,12 @@
+use serde::{Deserialize, Serialize, de::Error as _};
+use simdnbt::owned::NbtTag;
+use std::cmp::Ordering;
 use std::{
     borrow::Cow,
     fmt::{self, Debug, Display, Formatter},
     mem::MaybeUninit,
     str::FromStr,
 };
-
-use serde::{Deserialize, Serialize, de::Error as _};
-use simdnbt::owned::NbtTag;
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
 
 use crate::hash::{ComponentHasher, HashComponent};
@@ -111,6 +111,20 @@ impl Identifier {
 impl Display for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.namespace, self.path)
+    }
+}
+
+impl PartialOrd for Identifier {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Identifier {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.path
+            .cmp(&other.path)
+            .then_with(|| self.namespace.cmp(&other.namespace))
     }
 }
 

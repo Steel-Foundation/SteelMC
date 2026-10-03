@@ -8,6 +8,7 @@ use crate::chunk::chunk_map::ChunkMap;
 
 pub mod behavior;
 pub mod block_entity;
+pub mod bootstrap;
 pub mod chunk;
 pub mod chunk_saver;
 pub mod command;
@@ -29,3 +30,8 @@ pub mod server;
 pub(crate) mod test_support;
 pub mod world;
 pub mod worldgen;
+
+/// The full hash of the commit this build was made from.
+pub const GIT_HASH: &str = env!("GIT_HASH");
+/// The short hash of the commit this build was made from.
+pub const GIT_HASH_SHORT: &str = env!("GIT_HASH_SHORT");

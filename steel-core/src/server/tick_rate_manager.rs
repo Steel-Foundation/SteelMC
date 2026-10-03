@@ -303,7 +303,7 @@ impl TickRateManager {
             return self.tick_rate;
         }
         // TPS = 1000ms / mspt, but capped at the configured tick rate
-        (1000.0 / mspt).min(self.tick_rate)
+        (MS_PER_SEC as f32 / mspt).min(self.tick_rate)
     }
 
     /// Returns a copy of the tick times array for percentile calculation.

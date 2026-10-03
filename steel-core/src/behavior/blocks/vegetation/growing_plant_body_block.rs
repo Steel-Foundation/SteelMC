@@ -13,7 +13,7 @@ use crate::{
         block::default_can_be_replaced,
         blocks::vegetation::{
             bonemealable::{BonemealAction, Bonemealable},
-            get_top_connected_block, growing_plant_can_survive,
+            get_top_connected_block, growing_plant_block,
             growing_plant_head_block::GrowingPlantHeadBlock,
         },
     },
@@ -50,7 +50,8 @@ impl GrowingPlantBodyBlock {
         }
     }
 
-    /// Configures the vanilla `updateHeadAfterConvertedFromBody` specialization.
+    /// Sets the per-block callback that computes the new head state when a
+    /// body segment converts into the head (default: leave it unchanged).
     #[must_use]
     pub const fn with_update_head_after_converted_from_body(
         mut self,
@@ -93,7 +94,7 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        growing_plant_can_survive(
+        growing_plant_block::can_survive(
             world,
             pos,
             self.growth_direction,
@@ -200,7 +201,7 @@ impl Bonemealable for GrowingPlantBodyBlock {
 mod tests {
     use glam::DVec3;
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items,
     };
     use steel_utils::{BlockPos, types::InteractionHand};
 
@@ -237,7 +238,7 @@ mod tests {
 
     #[test]
     fn replacement_rejects_head_item_and_preserves_default_result() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let behavior = GrowingPlantBodyBlock::new(

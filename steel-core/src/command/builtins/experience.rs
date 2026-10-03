@@ -232,9 +232,7 @@ fn clear_targets(context: &SteelCommandContext<CommandSource>) -> Result<i32, Co
 fn required_amount(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    context.integer("amount").ok_or_else(|| {
-        CommandSyntaxError::dynamic("Parsed experience amount is missing from the command context")
-    })
+    context.integer("amount")
 }
 
 fn player_count_result(players: &[Arc<Player>]) -> Result<i32, CommandSyntaxError> {
@@ -257,7 +255,7 @@ enum Mutation {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use super::*;
@@ -292,7 +290,7 @@ mod tests {
         reason = "one table-shaped test keeps both command aliases on the same graph contract"
     )]
     fn experience_and_xp_roots_share_the_expected_graph() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

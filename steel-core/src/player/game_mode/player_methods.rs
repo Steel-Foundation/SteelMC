@@ -7,8 +7,14 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
+use steel_protocol::packets::game::SSwing;
 
 impl Player {
+    /// Default reach distance for block interactions, in blocks.
+    pub const DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+    /// Default reach distance for entity interactions, in blocks.
+    pub const DEFAULT_ENTITY_INTERACTION_RANGE: f64 = 3.0;
+
     /// Sets the player's game mode and notifies the client.
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
@@ -37,7 +43,7 @@ impl Player {
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
-        // TODO: Refresh sleeping-player aggregation once world sleep tracking is implemented.
+        self.get_world().update_sleeping_player_list();
 
         if gamemode == GameType::Creative {
             self.reset_current_impulse_context();
@@ -214,6 +220,15 @@ impl Player {
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         self.is_within_block_interaction_range_with_buffer(pos, 1.0)
     }
+    /// Returns this player's current block interaction range, from the
+    /// attribute modifier if set, or the default range otherwise.
+    #[must_use]
+    pub fn block_interaction_range(&self) -> f64 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+            .unwrap_or(Self::DEFAULT_BLOCK_INTERACTION_RANGE)
+    }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.
     #[must_use]
@@ -237,11 +252,7 @@ impl Player {
         let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
-        let base_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let base_range = self.block_interaction_range();
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -267,7 +278,7 @@ impl Player {
             .attributes()
             .lock()
             .get_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
-            .unwrap_or(3.0);
+            .unwrap_or(Self::DEFAULT_ENTITY_INTERACTION_RANGE);
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -277,6 +288,8 @@ impl Player {
         if !self.has_client_loaded() || self.game_mode() != GameType::Spectator {
             return;
         }
+
+        self.reset_last_action_time();
 
         let Some(entity_id) = packet.spectate_entity_id else {
             return;
@@ -302,5 +315,11 @@ impl Player {
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
         self.is_crouching()
+    }
+
+    /// Handles a player swing packet.
+    pub fn handle_animate(&self, packet: SSwing) {
+        self.reset_last_action_time();
+        self.swing(packet.hand, false);
     }
 }

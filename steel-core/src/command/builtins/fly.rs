@@ -67,9 +67,7 @@ fn set_target_flight(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
-    let Some(allowed) = context.boolean("value") else {
-        return Err(missing_argument("value"));
-    };
+    let allowed = context.boolean("value")?;
     set_flight(&targets, allowed);
     Ok(1)
 }
@@ -119,9 +117,7 @@ fn source_player(
 }
 
 fn required_speed(context: &SteelCommandContext<CommandSource>) -> Result<f32, CommandSyntaxError> {
-    context
-        .float("speed")
-        .ok_or_else(|| missing_argument("speed"))
+    context.float("speed")
 }
 
 fn toggle_flight(targets: &[Arc<Player>]) {
@@ -185,12 +181,6 @@ fn speed_from_multiplier(multiplier: f32) -> f32 {
     multiplier * DEFAULT_FLYING_SPEED
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
@@ -202,7 +192,7 @@ mod tests {
         },
         player::{Abilities, DEFAULT_FLYING_SPEED},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -222,7 +212,7 @@ mod tests {
 
     #[test]
     fn fly_graph_uses_explicit_target_and_bounded_speed_branches() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

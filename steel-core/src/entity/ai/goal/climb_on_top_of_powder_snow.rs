@@ -67,7 +67,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn climb_on_top_of_powder_snow_goal_requires_powder_snow_contact() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
         let mob = pig();
 
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn climb_on_top_of_powder_snow_goal_uses_entity_type_tag_not_equipment_walkability() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
         let mob = pig();
         mob.apply_inside_block_effect(InsideBlockEffectType::Freeze);
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn climb_on_top_of_powder_snow_goal_requires_world_after_tag_and_contact() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
         let mob = PigEntity::new(&vanilla_entities::RABBIT, 1, DVec3::ZERO, Weak::new());
         mob.apply_inside_block_effect(InsideBlockEffectType::Freeze);
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn climb_on_top_of_powder_snow_goal_ticks_jump_control() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
         let mob = pig();
 

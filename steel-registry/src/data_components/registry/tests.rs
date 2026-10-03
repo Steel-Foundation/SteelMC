@@ -10,10 +10,9 @@ use crate::{
         POTION_DURATION_SCALE, RARITY, STORED_ENCHANTMENTS, SWING_ANIMATION, SwingAnimationType,
         TOOLTIP_DISPLAY, USE_EFFECTS,
     },
+    init_vanilla_registry,
     item_stack::ItemStack,
-    sound_events,
-    test_support::init_test_registry,
-    vanilla_chicken_variants, vanilla_items,
+    sound_events, vanilla_chicken_variants, vanilla_items,
 };
 use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
 use steel_utils::Identifier;
@@ -98,7 +97,7 @@ fn persistent_hash_rejects_values_rejected_by_the_persistent_codec() {
 
 #[test]
 fn persistent_patch_nbt_omits_transient_components() {
-    init_test_registry();
+    init_vanilla_registry();
     let mut patch = DataComponentPatch::new();
     patch.set(MAX_STACK_SIZE, 16);
     patch.set(CREATIVE_SLOT_LOCK, ());
@@ -116,7 +115,7 @@ fn persistent_patch_nbt_omits_transient_components() {
 
 #[test]
 fn persistent_patch_hash_uses_each_component_codec_hash() {
-    init_test_registry();
+    init_vanilla_registry();
     let mut patch = DataComponentPatch::new();
     patch.set(ENCHANTMENT_GLINT_OVERRIDE, true);
 
@@ -147,7 +146,7 @@ fn persistent_patch_hash_uses_each_component_codec_hash() {
 
 #[test]
 fn persistent_patch_decode_fails_on_invalid_entries() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut valid = NbtCompound::new();
     valid.insert("minecraft:max_stack_size", OwnedNbtTag::Double(16.9));
@@ -173,7 +172,7 @@ fn persistent_patch_decode_fails_on_invalid_entries() {
 
 #[test]
 fn text_component_persistent_codec_collapses_plain_text() {
-    init_test_registry();
+    init_vanilla_registry();
     let entry = REGISTRY
         .data_components
         .by_key(&CUSTOM_NAME.key)
@@ -190,7 +189,7 @@ fn text_component_persistent_codec_collapses_plain_text() {
 
 #[test]
 fn common_defaults_and_extracted_item_overrides_match_vanilla() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let common = DataComponentMap::common_item_components();
     assert_eq!(common.len(), 10);

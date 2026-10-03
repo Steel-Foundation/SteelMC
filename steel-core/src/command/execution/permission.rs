@@ -112,12 +112,14 @@ impl SteelArgumentParser for PermissionRuleParser {
             PermissionSuggestionScope::All => context.source().permission_rule_suggestions(),
             PermissionSuggestionScope::UserOwned => context
                 .argument("targets")
+                .ok()
                 .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
                 .map_or_else(Vec::new, |targets| {
                     context.source().user_permission_rule_suggestions(targets)
                 }),
             PermissionSuggestionScope::GroupOwned => context
                 .argument("group")
+                .ok()
                 .and_then(|value| value.downcast_ref::<PermissionGroupName>())
                 .map_or_else(Vec::new, |group| {
                     context
@@ -189,6 +191,7 @@ impl SteelArgumentParser for PermissionMetadataParser {
             PermissionSuggestionScope::All => context.source().permission_metadata_suggestions(),
             PermissionSuggestionScope::UserOwned => context
                 .argument("targets")
+                .ok()
                 .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
                 .map_or_else(Vec::new, |targets| {
                     context
@@ -197,6 +200,7 @@ impl SteelArgumentParser for PermissionMetadataParser {
                 }),
             PermissionSuggestionScope::GroupOwned => context
                 .argument("group")
+                .ok()
                 .and_then(|value| value.downcast_ref::<PermissionGroupName>())
                 .map_or_else(Vec::new, |group| {
                     context
