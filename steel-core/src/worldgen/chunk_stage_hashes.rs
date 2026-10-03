@@ -531,11 +531,11 @@ fn describe_state(state_id: i32) -> String {
     let Some(block) = REGISTRY.blocks.by_state_id(bsid) else {
         return format!("{state_id} (unknown)");
     };
-    let props = REGISTRY.blocks.get_properties(bsid);
-    if props.is_empty() {
+    let props = REGISTRY.blocks.properties(bsid);
+    if props.len() == 0 {
         format!("{state_id} ({})", block.key)
     } else {
-        let prop_str: Vec<_> = props.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        let prop_str: Vec<_> = props.map(|(k, v)| format!("{k}={v}")).collect();
         format!("{state_id} ({}[{}])", block.key, prop_str.join(","))
     }
 }

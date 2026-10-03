@@ -523,8 +523,8 @@ mod tests {
         assert!(
             steel_registry::REGISTRY
                 .blocks
-                .get_properties(ready.get_block_state(pos))
-                .contains(&("east", "true"))
+                .properties(ready.get_block_state(pos))
+                .any(|property| property == ("east", "true"))
         );
     }
 }

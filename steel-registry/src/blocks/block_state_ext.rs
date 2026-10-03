@@ -35,7 +35,7 @@ pub trait BlockStateExt {
     #[must_use]
     fn set_value<P: Property>(&self, property: &P, value: P::Value) -> BlockStateId;
     fn copy_value<P: Property, O: BlockStateExt>(&self, property: &P, other: &O) -> BlockStateId;
-    fn get_property_str(&self, name: &str) -> Option<String>;
+    fn get_property_str(&self, name: &str) -> Option<&'static str>;
     fn with_properties_of(&self, source: BlockStateId) -> BlockStateId;
     fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_collision_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
@@ -146,13 +146,8 @@ impl BlockStateExt for BlockStateId {
         self.set_value(property, other.get_value(property))
     }
 
-    fn get_property_str(&self, name: &str) -> Option<String> {
-        REGISTRY
-            .blocks
-            .get_properties(*self)
-            .into_iter()
-            .find(|(n, _)| *n == name)
-            .map(|(_, v)| v.to_string())
+    fn get_property_str(&self, name: &str) -> Option<&'static str> {
+        REGISTRY.blocks.get_property_str(*self, name)
     }
 
     fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape {

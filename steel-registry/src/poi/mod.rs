@@ -156,7 +156,7 @@ mod tests {
         let all_beds = blocks.matching_states(&vanilla_blocks::WHITE_BED, &[]);
         assert_eq!(heads.len() * 2, all_beds.len());
         for state in heads {
-            assert!(blocks.get_properties(state).contains(&("part", "head")));
+            assert_eq!(blocks.get_property_str(state, "part"), Some("head"));
         }
     }
 

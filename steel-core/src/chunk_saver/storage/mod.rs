@@ -404,7 +404,7 @@ impl<'a> ChunkBuilder<'a> {
             .blocks
             .by_state_id(block_id)
             .expect("Invalid block state ID");
-        let properties = self.registry.blocks.get_properties(block_id);
+        let properties = self.registry.blocks.properties(block_id).collect();
 
         let persistent = PersistentBlockState {
             name: block.key.clone(),
