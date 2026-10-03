@@ -101,18 +101,19 @@ mod tests {
     #[test]
     fn teleport_randomly_leaves_the_player_in_place_with_no_valid_landing() {
         init_vanilla_registry();
-        let world = fresh_test_world("teleport_randomly_no_valid_landing");
+        let world_fixture = fresh_test_world("teleport_randomly_no_valid_landing");
+        let world = &world_fixture.world;
         for x in -1..=0 {
             for z in -1..=0 {
-                insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+                insert_ready_full_chunk(world, ChunkPos::new(x, z));
             }
         }
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         let origin = player.position();
 
         teleport_randomly(
             TeleportRandomlyConsumeEffect::default_value(),
-            &world,
+            world,
             player.as_ref(),
         );
 
@@ -126,10 +127,11 @@ mod tests {
     fn teleport_randomly_lands_on_solid_ground_within_diameter() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("teleport_randomly_valid_landing");
+        let world_fixture = fresh_test_world("teleport_randomly_valid_landing");
+        let world = &world_fixture.world;
         for x in -1..=0 {
             for z in -1..=0 {
-                insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+                insert_ready_full_chunk(world, ChunkPos::new(x, z));
             }
         }
         for x in -8..8 {
@@ -141,12 +143,12 @@ mod tests {
                 );
             }
         }
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         let origin = player.position();
 
         teleport_randomly(
             TeleportRandomlyConsumeEffect::default_value(),
-            &world,
+            world,
             player.as_ref(),
         );
 

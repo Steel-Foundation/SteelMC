@@ -188,7 +188,8 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::{
-        TestLevel, fresh_test_world, fresh_test_world_with_dimension_type, insert_ready_full_chunk,
+        TestLevel, TestWorld, fresh_test_world, fresh_test_world_with_dimension_type,
+        insert_ready_full_chunk,
     };
 
     fn behavior() -> FrostedIceBlock {
@@ -201,13 +202,14 @@ mod tests {
             .set_value(&BlockStateProperties::AGE_3, age)
     }
 
-    fn world_with_block(key: &'static str, pos: BlockPos, state: BlockStateId) -> Arc<World> {
+    fn world_with_block(key: &'static str, pos: BlockPos, state: BlockStateId) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(key);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
-        world
+        world_fixture
     }
 
     #[test]
@@ -223,11 +225,12 @@ mod tests {
 
     #[test]
     fn custom_world_key_retains_end_dimension_semantics() {
-        let world = fresh_test_world_with_dimension_type(
+        let world_fixture = fresh_test_world_with_dimension_type(
             "other",
             "the_end",
             &vanilla_dimension_types::THE_END,
         );
+        let world = &world_fixture.world;
 
         assert_ne!(world.key, Identifier::vanilla_static("the_end"));
         assert!(world.is_end_dimension_type());
@@ -260,32 +263,33 @@ mod tests {
     fn slightly_melt_increments_age_before_melting() {
         init_vanilla_registry();
         let pos = BlockPos::new(8, 64, 8);
-        let world = world_with_block("frosted_ice_age", pos, aged(0));
+        let world_fixture = world_with_block("frosted_ice_age", pos, aged(0));
+        let world = &world_fixture.world;
 
         assert!(!FrostedIceBlock::slightly_melt(
             world.get_block_state(pos),
-            &world,
+            world,
             pos
         ));
         assert_eq!(world.get_block_state(pos).get_value(AGE), 1);
 
         assert!(!FrostedIceBlock::slightly_melt(
             world.get_block_state(pos),
-            &world,
+            world,
             pos
         ));
         assert_eq!(world.get_block_state(pos).get_value(AGE), 2);
 
         assert!(!FrostedIceBlock::slightly_melt(
             world.get_block_state(pos),
-            &world,
+            world,
             pos
         ));
         assert_eq!(world.get_block_state(pos).get_value(AGE), 3);
 
         assert!(FrostedIceBlock::slightly_melt(
             world.get_block_state(pos),
-            &world,
+            world,
             pos
         ));
         assert_eq!(
@@ -298,11 +302,12 @@ mod tests {
     fn on_place_schedules_a_tick() {
         init_vanilla_registry();
         let pos = BlockPos::new(8, 64, 8);
-        let world = world_with_block(
+        let world_fixture = world_with_block(
             "frosted_ice_place",
             pos,
             vanilla_blocks::STONE.default_state(),
         );
+        let world = &world_fixture.world;
         let state = vanilla_blocks::FROSTED_ICE.default_state();
         assert!(world.set_block(
             pos,
@@ -311,7 +316,7 @@ mod tests {
         ));
         behavior().on_place(
             state,
-            &world,
+            world,
             pos,
             vanilla_blocks::AIR.default_state(),
             false,
@@ -323,11 +328,12 @@ mod tests {
     fn neighbor_change_melts_isolated_frosted_ice() {
         init_vanilla_registry();
         let pos = BlockPos::new(8, 64, 8);
-        let world = world_with_block("frosted_ice_neighbor", pos, aged(0));
+        let world_fixture = world_with_block("frosted_ice_neighbor", pos, aged(0));
+        let world = &world_fixture.world;
 
         behavior().handle_neighbor_changed(
             world.get_block_state(pos),
-            &world,
+            world,
             pos,
             &vanilla_blocks::FROSTED_ICE,
             false,
@@ -342,13 +348,14 @@ mod tests {
     fn neighbor_change_keeps_well_supported_frosted_ice() {
         init_vanilla_registry();
         let pos = BlockPos::new(8, 64, 8);
-        let world = world_with_block("frosted_ice_supported", pos, aged(0));
+        let world_fixture = world_with_block("frosted_ice_supported", pos, aged(0));
+        let world = &world_fixture.world;
         assert!(world.set_block(pos.above(), aged(0), UpdateFlags::UPDATE_NONE,));
         assert!(world.set_block(pos.below(), aged(0), UpdateFlags::UPDATE_NONE,));
 
         behavior().handle_neighbor_changed(
             world.get_block_state(pos),
-            &world,
+            world,
             pos,
             &vanilla_blocks::FROSTED_ICE,
             false,

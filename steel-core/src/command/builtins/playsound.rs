@@ -1,7 +1,6 @@
 //! Vanilla sound playback command.
 
 use std::sync::Arc;
-
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::sound_event::SoundEventHolder;
 use steel_utils::{Identifier, translations};
@@ -15,6 +14,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+
 use crate::{entity::Entity as _, player::Player};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -58,7 +58,7 @@ fn execute_as_source(
     let targets = context
         .source()
         .player()
-        .map_or_else(Vec::new, |player| vec![Arc::clone(player)]);
+        .map_or_else(Vec::new, |player| vec![Arc::<Player>::clone(player)]);
     execute(context, source, &targets)
 }
 

@@ -224,7 +224,7 @@ impl Entity for EyeOfEnderEntity {
         false
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         let next_pos = self.position() + self.velocity();
 
         let target_pos = self.state.lock().target_pos;

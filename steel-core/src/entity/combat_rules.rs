@@ -22,13 +22,8 @@ pub(super) fn get_damage_after_absorb(
     let armor_fraction = real_armor / ARMOR_PROTECTION_DIVIDER;
     let mut modified_armor_fraction = armor_fraction;
 
-    if let Some(world) = victim.level()
-        && let Some(direct_entity) = source
-            .direct_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id))
-    {
-        let context =
-            EnchantmentDamageContext::from_damage_source(&world, victim.entity_type(), source);
+    if let Some(direct_entity) = source.direct_entity() {
+        let context = EnchantmentDamageContext::from_damage_source(victim.entity_type(), source);
         direct_entity.with_weapon_item(&mut |weapon| {
             if let Some(weapon) = weapon {
                 modified_armor_fraction = enchantment_helper::modify_armor_effectiveness(

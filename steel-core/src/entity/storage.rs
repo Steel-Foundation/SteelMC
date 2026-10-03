@@ -226,7 +226,7 @@ mod tests {
             let storage = Arc::new(EntityStorage::new());
             let barrier = Arc::new(Barrier::new(2));
             let entity = test_item(id);
-            let add_storage = Arc::clone(&storage);
+            let add_storage = Arc::<EntityStorage>::clone(&storage);
             let add_barrier = Arc::clone(&barrier);
             let add_entity = Arc::clone(&entity);
             let add_thread = thread::spawn(move || {

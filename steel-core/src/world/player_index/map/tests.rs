@@ -33,9 +33,9 @@ fn replacement_updates_both_indexes_without_reordering() {
     let replacement = player(replaced_uuid, "Replacement", 10);
     let map = PlayerMap::new();
 
-    assert!(map.insert(Arc::clone(&original)));
+    assert!(map.insert(Arc::<Player>::clone(&original)));
     assert!(map.insert(other));
-    assert!(map.replace_player(&original, Arc::clone(&replacement)));
+    assert!(map.replace_player(&original, Arc::<Player>::clone(&replacement)));
 
     let indexed = indexed_player(&map, &replaced_uuid, 10);
     assert!(Arc::ptr_eq(&indexed, &replacement));
@@ -57,8 +57,8 @@ fn stale_expected_player_cannot_replace_current_player() {
     let rejected = player(uuid, "Rejected", 30);
     let map = PlayerMap::new();
 
-    assert!(map.insert(Arc::clone(&original)));
-    assert!(map.replace_player(&original, Arc::clone(&current)));
+    assert!(map.insert(Arc::<Player>::clone(&original)));
+    assert!(map.replace_player(&original, Arc::<Player>::clone(&current)));
     assert!(!map.replace_player(&original, rejected));
 
     let indexed = indexed_player(&map, &uuid, 30);
@@ -73,7 +73,7 @@ fn replacement_rejects_changed_index_keys() {
     let changed_entity_id = player(uuid, "ChangedEntityId", 41);
     let map = PlayerMap::new();
 
-    assert!(map.insert(Arc::clone(&original)));
+    assert!(map.insert(Arc::<Player>::clone(&original)));
     assert!(!map.replace_player(&original, changed_uuid));
     assert!(!map.replace_player(&original, changed_entity_id));
 
@@ -89,13 +89,13 @@ fn concurrent_replacements_with_the_same_expected_player_have_one_winner() {
     let second_replacement = player(uuid, "Second", 60);
     let map = Arc::new(PlayerMap::new());
     let barrier = Arc::new(Barrier::new(3));
-    assert!(map.insert(Arc::clone(&original)));
+    assert!(map.insert(Arc::<Player>::clone(&original)));
 
     let first_attempt = {
         let map = Arc::clone(&map);
         let barrier = Arc::clone(&barrier);
-        let original = Arc::clone(&original);
-        let replacement = Arc::clone(&first_replacement);
+        let original = Arc::<Player>::clone(&original);
+        let replacement = Arc::<Player>::clone(&first_replacement);
         thread::spawn(move || {
             barrier.wait();
             map.replace_player(&original, replacement)
@@ -104,8 +104,8 @@ fn concurrent_replacements_with_the_same_expected_player_have_one_winner() {
     let second_attempt = {
         let map = Arc::clone(&map);
         let barrier = Arc::clone(&barrier);
-        let original = Arc::clone(&original);
-        let replacement = Arc::clone(&second_replacement);
+        let original = Arc::<Player>::clone(&original);
+        let replacement = Arc::<Player>::clone(&second_replacement);
         thread::spawn(move || {
             barrier.wait();
             map.replace_player(&original, replacement)

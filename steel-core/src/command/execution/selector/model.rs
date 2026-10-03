@@ -132,7 +132,7 @@ impl EntitySelector {
                 if selected_player_world(server, player, selection).is_some()
                     && self.matches_entity(player.as_ref(), position, aabb, source)?
                 {
-                    vec![Arc::clone(player)]
+                    vec![Arc::<Player>::clone(player)]
                 } else {
                     Vec::new()
                 }

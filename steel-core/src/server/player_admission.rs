@@ -261,7 +261,7 @@ impl Server {
             }
         };
 
-        if let Err(error) = self.admit_reserved_player(Arc::clone(&player)) {
+        if let Err(error) = self.admit_reserved_player(Arc::<Player>::clone(&player)) {
             let reason = match error {
                 PlayerJoinError::DuplicateLogin => {
                     translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg()
@@ -555,7 +555,7 @@ impl Server {
         // Connection implementations report transport state; the server owns player removal.
         self.online_players.iter_players(|_, player| {
             if player.connection.closed() {
-                self.queue_player_disconnect(Arc::clone(player));
+                self.queue_player_disconnect(Arc::<Player>::clone(player));
             }
             true
         });
@@ -589,7 +589,8 @@ impl Server {
         }
 
         let world = player.get_world();
-        let (player, domain, player_data) = world.detach_player_for_disconnect(Arc::clone(&player));
+        let (player, domain, player_data) =
+            world.detach_player_for_disconnect(Arc::<Player>::clone(&player));
 
         // Vanilla broadcasts before removing the player from its global player list.
         self.broadcast_player_leave_message(&player);

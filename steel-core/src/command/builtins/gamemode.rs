@@ -154,7 +154,7 @@ pub(crate) fn handle_client_request(
     }
 
     let source = CommandSource::new(
-        CommandSender::Player(Arc::clone(player)),
+        CommandSender::Player(Arc::<Player>::clone(player)),
         Arc::clone(server),
     );
     if let Err(error) = set_game_mode(&source, slice::from_ref(player), game_mode) {

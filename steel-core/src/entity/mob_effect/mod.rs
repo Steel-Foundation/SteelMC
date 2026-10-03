@@ -30,6 +30,7 @@ pub use wind_charged::WindChargedBehavior;
 pub use wither::WitherBehavior;
 
 use crate::entity::LivingEntity;
+use crate::entity::SharedEntity;
 use crate::world::World;
 
 /// One vanilla `MobEffect` subtype's runtime behavior. Default methods match
@@ -67,8 +68,8 @@ pub trait InstantaneousMobEffect: MobEffectBehavior {
         world: &World,
         user: &dyn LivingEntity,
         amplifier: i32,
-        direct_entity: Option<i32>,
-        causing_entity: Option<i32>,
+        direct_entity: Option<&SharedEntity>,
+        causing_entity: Option<&SharedEntity>,
         scale: f32,
     ) {
         let _ = (direct_entity, causing_entity, scale);
