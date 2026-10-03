@@ -39,10 +39,10 @@ pub const MAX_AGE: u8 = 25;
 
 /// Shared behavior exposed by blocks in vanilla's `GrowingPlantHeadBlock` hierarchy.
 pub trait GrowingPlantHeadBehavior: Send + Sync {
-    /// Vanilla `GrowingPlantHeadBlock.isMaxAge`.
+    /// Returns whether the block is at maximum growth age.
     fn is_max_age(&self, state: BlockStateId) -> bool;
 
-    /// Vanilla `GrowingPlantHeadBlock.getMaxAgeState`.
+    /// Returns the block state at maximum age.
     fn get_max_age_state(&self, state: BlockStateId) -> BlockStateId;
 }
 
@@ -71,7 +71,8 @@ impl GrowingPlantHeadBlock {
         }
     }
 
-    /// Configures the vanilla `updateBodyAfterConvertedFromHead` specialization.
+    /// Sets the per-block callback that computes the new body state when the
+    /// head converts into a body segment (default: leave it unchanged).
     #[must_use]
     pub const fn with_update_body_after_converted_from_head(
         mut self,

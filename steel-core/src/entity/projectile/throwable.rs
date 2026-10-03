@@ -6,7 +6,6 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::projectile::Projectile;
 use crate::entity::{InsideBlockEffectCollector, RemovalReason};
 
-/// Vanilla `ThrowableProjectile.getDefaultGravity`.
 const DEFAULT_GRAVITY: f64 = 0.03;
 
 /// Vanilla drag multiplier while submerged (`ThrowableProjectile.applyInertia`).
@@ -14,12 +13,12 @@ const WATER_INERTIA: f64 = 0.8;
 
 /// Vanilla-shaped behavior shared by entities that extend `ThrowableProjectile`.
 pub trait ThrowableProjectile: Projectile {
-    /// Vanilla `ThrowableProjectile.getAirDrag`.
+    /// Air drag multiplier applied to velocity each tick while airborne (0.99, i.e. 1% loss).
     fn get_air_drag(&self) -> f32 {
         0.99
     }
 
-    /// Vanilla `ThrowableProjectile.getDefaultGravity` (0.03).
+    /// Downward acceleration applied each tick while this projectile is airborne.
     fn throwable_default_gravity(&self) -> f64 {
         DEFAULT_GRAVITY
     }
@@ -35,8 +34,6 @@ pub trait ThrowableProjectile: Projectile {
         self.set_velocity(self.velocity() * inertia);
     }
 
-    /// Vanilla `ThrowableProjectile.tick`.
-    ///
     /// Reached from a subclass's `tick` as `super.tick()`. Applies gravity and
     /// drag, raycasts the move vector, moves to the hit (or full move), updates
     /// rotation, runs the `Projectile`/`Entity` base tick, then resolves the hit.
