@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_AUTH_SERVER","MAX_RETRIES"],"enum":["AuthError","TextureError"],"fn":["build_auth_url","mojang_authenticate","signed_bytes_be_to_hex"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AttributeOperation","BonusFormula","CopyDataOp","CopySource","EnchantmentOptions","FireworkShape","InstrumentOptions","ListOperation","LootFunction","NameTarget"],"struct":["AttributeModifier","BannerPattern","ConditionalLootFunction","CopyDataOperation","FireworkExplosion","StewEffect"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PigModelType"],"struct":["PigVariant","PigVariantRegistry"],"type":["PigVariantRef"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BASE_MELT_LIGHT_LEVEL"],"struct":["IceBlock"]};

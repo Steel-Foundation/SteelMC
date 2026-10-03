@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InteractionResult","InventoryTickSource","PlacementItemSource","PlacementMode","PlacementOrientation"],"fn":["directional_placement_directions"],"struct":["BlockHitResult","BlockPlaceContext","InventoryAccess","InventoryTickContext","PlacementSource","UseItemContext","UseOnContext"]};

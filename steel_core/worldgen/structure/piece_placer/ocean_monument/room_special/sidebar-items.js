@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["place_penthouse","place_wing_room"]};

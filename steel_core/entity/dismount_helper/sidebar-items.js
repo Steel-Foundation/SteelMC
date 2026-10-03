@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["block_floor_height","can_dismount_to","can_dismount_to_pose","find_ceiling_from","find_safe_dismount_location","is_block_dangerous","is_block_floor_valid","non_climbable_shape","offsets_for_direction"]};

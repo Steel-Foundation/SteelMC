@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CowModelType"],"struct":["CowVariant","CowVariantRegistry"],"type":["CowVariantRef"]};

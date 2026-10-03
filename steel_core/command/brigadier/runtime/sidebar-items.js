@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BrigadierRuntime"],"trait":["CommandRuntime"],"type":["BrigadierExecutor","BrigadierModifier"]};

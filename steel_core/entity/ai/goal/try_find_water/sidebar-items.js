@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WATER_MOVE_SPEED_MODIFIER","WATER_SEARCH_HORIZONTAL_RADIUS","WATER_SEARCH_VERTICAL_BELOW"],"fn":["first_matching_pos_in_closed_box","water_search_bounds"],"struct":["TryFindWaterGoal"]};

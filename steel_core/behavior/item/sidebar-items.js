@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ItemUseAnimation"],"fn":["apply_use_remainder","emit_consume_particles_and_sounds","finish_consuming_stack","should_emit_consume_particles_and_sounds"],"struct":["ItemBehaviorRegistry"],"trait":["ItemBehavior"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["ability_flags"],"struct":["CPlayerAbilities"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GAME_TIME_SYNC_INTERVAL_TICKS"],"enum":["WorldClockLoadError"],"struct":["ClockState","WorldClockManager"]};

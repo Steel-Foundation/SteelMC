@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GIT_HASH","GIT_HASH_SHORT"],"mod":["behavior","block_entity","bootstrap","chunk","chunk_saver","command","config","enchantment_helper","entity","fluid","inventory","level_data","permission","physics","player","poi","portal","scoreboard","server","world","worldgen"]};

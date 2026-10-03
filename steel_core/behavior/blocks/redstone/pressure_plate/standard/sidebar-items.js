@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POWERED","PRESSED_TIME"],"enum":["PressurePlateSensitivity"],"struct":["PressurePlateBlock"]};

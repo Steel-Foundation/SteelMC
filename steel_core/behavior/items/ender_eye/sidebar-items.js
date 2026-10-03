@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["END_PORTAL_PATTERN","END_PORTAL_PATTERN_DISTANCE","PATTERN_DIRECTIONS"],"fn":["end_portal_frame_matches","end_portal_pattern_entry_matches","end_portal_pattern_matches","find_completed_end_portal_origin","spawn_end_portal"],"struct":["EnderEyeItem"]};

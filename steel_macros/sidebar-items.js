@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"attr":["block_behavior","entity_behavior","item_behavior"],"derive":["ClientPacket","ReadFrom","ServerPacket","WriteTo"],"mod":["behavior","packet","read_from","strategy","write_to"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INVENTORY_MENU_CONTAINER_ID"],"fn":["inventory_menu"],"struct":["InventoryKind"]};

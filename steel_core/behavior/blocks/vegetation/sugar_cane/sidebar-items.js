@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE","MAX_SUGAR_CANE_HEIGHT"],"struct":["SugarCaneBlock"]};

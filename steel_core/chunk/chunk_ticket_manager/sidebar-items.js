@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FULL_CHUNK_LEVEL_RAW","MAX_LEVEL_RAW","MAX_SUPPORTED_VIEW_DISTANCE","RADIUS_AROUND_FULL_CHUNK"],"enum":["FullChunkStatus"],"fn":["full_status","generation_status","is_block_ticking","is_entity_ticking","is_full","ticket_level_for_status"],"struct":["ChunkTicketLevel","LoadLevelChange"],"type":["LoadTicketManager"]};

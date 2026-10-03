@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["can_hold_any_fluid_state","can_hold_fluid","can_hold_specific_fluid","can_pass_horizontally_internal","can_pass_through_wall","is_fluid_excluded_block"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONTINUE_MASK"],"fn":["equipment_slot_packet_id","vanilla_equipment_slot_id"],"struct":["CSetEquipment","EquipmentSlotItem"]};

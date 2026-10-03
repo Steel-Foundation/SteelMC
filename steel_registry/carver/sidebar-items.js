@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConfiguredCarverKind"],"struct":["CanyonCarverConfiguration","CanyonShapeConfiguration","CarverConfiguration","CaveCarverConfiguration","ConfiguredCarver","ConfiguredCarverRegistry"],"type":["ConfiguredCarverRef"]};

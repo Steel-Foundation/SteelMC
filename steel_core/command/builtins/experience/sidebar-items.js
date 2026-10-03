@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ExperienceType","Mutation"],"fn":["add_experience","add_levels","add_points","clear_source","clear_targets","command","experience_operation","player_count_result","query_experience","query_levels","query_points","registration","required_amount","send_mutation_success","set_experience","set_levels","set_points"]};

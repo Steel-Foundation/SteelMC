@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MIN_VISIBILITY_DISTANCE_FOR_INVISIBLE_TARGET"],"struct":["TargetingConditions"],"type":["TargetingSelector"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_consume_effect"],"mod":["apply_effects","clear_all_effects","play_sound","remove_effects","teleport_randomly"],"struct":["ApplyEffectsBehavior","ClearAllEffectsBehavior","PlaySoundBehavior","RemoveEffectsBehavior","TeleportRandomlyBehavior"],"trait":["ConsumeEffectBehavior"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PALETTE_INLINE_CAPACITY"]};

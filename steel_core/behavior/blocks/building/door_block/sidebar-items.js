@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DOOR_HINGE","DOUBLE_BLOCK_HALF","HORIZONTAL_FACING","OPEN","POWERED"],"struct":["DoorBlock","WeatheringCopperDoorBlock"]};

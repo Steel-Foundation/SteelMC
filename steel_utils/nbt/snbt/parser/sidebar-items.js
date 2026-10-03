@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TypedArrayKind"],"fn":["parse_snbt","parse_snbt_argument","parse_snbt_compound","parse_snbt_compound_argument"],"struct":["Parser"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HORIZONTAL_AXIS"],"struct":["NetherPortalBlock"]};

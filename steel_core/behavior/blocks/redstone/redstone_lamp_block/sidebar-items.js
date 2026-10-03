@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LIT","TURN_OFF_DELAY"],"struct":["RedstoneLampBlock"]};

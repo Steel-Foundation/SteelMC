@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["grid","placement","roof","rooms","template","walls"],"struct":["WoodlandMansionStructure"]};

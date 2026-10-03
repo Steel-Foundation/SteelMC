@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ACTIVATION_TICKS_ARROWS","ACTIVATION_TICKS_OTHER","POWER","RESET_ON_PLACE_FLAGS"],"struct":["TargetBlock"]};

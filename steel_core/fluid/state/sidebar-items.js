@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FALLING_FLOW_DOWNWARD","FLOW_BELOW_HEIGHT_OFFSET"],"fn":["affects_flow_with","fluid_state_to_block","fluid_state_to_block_with_existing","get_flow","get_flow_with","get_fluid_state","get_fluid_state_from_block","get_height","get_height_with","get_own_height","is_solid_face_with","lava_id","water_id"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ArgumentType","PrimitiveArgumentValue","StringType"],"trait":["CommandArgumentParser","ContainsPrimitiveArgumentValue"]};

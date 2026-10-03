@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ABANDONED_MINESHAFT_LOOT","CAVE_SPIDER_ENTITY"],"struct":["MineshaftPlacer"]};

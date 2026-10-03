@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ServerLinksType"],"mod":["c_finish_configuration","c_registry_data","c_select_known","c_server_links","s_finish_configuration","s_select_known"],"struct":["CFinishConfiguration","CRegistryData","CSelectKnownPacks","CServerLinks","Link","RegistryEntry","SFinishConfiguration","SSelectKnownPacks"]};

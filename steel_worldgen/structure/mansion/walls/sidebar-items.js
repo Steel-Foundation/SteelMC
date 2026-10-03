@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["place_entrance","traverse_inner_turn","traverse_outer_walls","traverse_turn","traverse_wall_piece"]};
