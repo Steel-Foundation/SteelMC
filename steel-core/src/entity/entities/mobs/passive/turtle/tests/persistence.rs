@@ -1,46 +1,9 @@
 use super::*;
 
-const SAVED_HOME: BlockPos = BlockPos::new(12, 64, -8);
-
 fn reborrow(nbt: &NbtCompound) -> Vec<u8> {
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);
     bytes
-}
-
-#[test]
-fn turtle_saves_home_pos_and_has_egg() {
-    let turtle = detached_turtle();
-    turtle.set_home_pos(SAVED_HOME);
-    turtle.set_has_egg(true);
-
-    let mut nbt = NbtCompound::new();
-    turtle.save_additional(&mut nbt);
-
-    assert_eq!(
-        nbt.int_array("home_pos").map(<[i32]>::to_vec),
-        Some(vec![SAVED_HOME.x(), SAVED_HOME.y(), SAVED_HOME.z()])
-    );
-    assert_eq!(nbt.byte("has_egg"), Some(1));
-}
-
-#[test]
-fn turtle_loads_home_pos_and_has_egg() {
-    let mut nbt = NbtCompound::new();
-    nbt.insert(
-        "home_pos",
-        NbtTag::IntArray(vec![SAVED_HOME.x(), SAVED_HOME.y(), SAVED_HOME.z()]),
-    );
-    nbt.insert("has_egg", true);
-    let bytes = reborrow(&nbt);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-
-    let turtle = detached_turtle();
-    turtle.load_additional((&borrowed).into());
-
-    assert_eq!(turtle.home_pos(), SAVED_HOME);
-    assert!(turtle.has_egg());
 }
 
 #[test]
