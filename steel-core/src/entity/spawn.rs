@@ -188,6 +188,9 @@ fn load_entity_recursive_inner(
     post_load: &impl Fn(&SharedEntity),
 ) -> Option<LoadedEntity> {
     let entity_type = entity_type_from_nbt(nbt)?;
+    if world.difficulty() == Difficulty::Peaceful && !entity_type.allowed_in_peaceful {
+        return None;
+    }
     let position = read_nbt_dvec3(nbt, "Pos").unwrap_or(DVec3::ZERO);
     if !position.is_finite() {
         return None;
@@ -512,6 +515,7 @@ mod tests {
         vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_entities, vanilla_items,
         vanilla_pig_variants,
     };
+    use steel_utils::types::Difficulty;
     use text_components::TextComponent;
 
     use crate::entity::entities::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
@@ -592,6 +596,38 @@ mod tests {
             .expect("loaded passengers should be inserted with the root");
         drop(loaded);
         assert_eq!(root.passengers().len(), 2);
+    }
+
+    #[test]
+    fn recursive_spawner_load_rejects_hostile_entities_in_peaceful() {
+        init_vanilla_registry();
+        init_entities();
+        let world = fresh_test_world("spawner_recursive_load_peaceful");
+        world.set_difficulty(Difficulty::Peaceful);
+
+        assert!(
+            load_entity_recursive_owned(
+                &world,
+                &entity_nbt("minecraft:endermite"),
+                EntitySpawnReason::Spawner,
+                |_| {},
+            )
+            .is_none()
+        );
+
+        let mut root = entity_nbt("minecraft:pig");
+        root.insert(
+            "Passengers",
+            NbtList::Compound(vec![
+                entity_nbt("minecraft:endermite"),
+                entity_nbt("minecraft:chicken"),
+            ]),
+        );
+        let loaded = load_entity_recursive_owned(&world, &root, EntitySpawnReason::Spawner, |_| {})
+            .expect("a peaceful-safe root should still load");
+        let passengers = loaded.root.passengers();
+        assert_eq!(passengers.len(), 1);
+        assert_eq!(passengers[0].entity_type(), &vanilla_entities::CHICKEN);
     }
 
     #[test]

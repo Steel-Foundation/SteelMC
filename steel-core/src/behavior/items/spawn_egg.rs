@@ -9,16 +9,16 @@ use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{vanilla_blocks, vanilla_game_events, vanilla_game_rules};
+use steel_registry::{vanilla_game_events, vanilla_game_rules};
 use steel_utils::types::Difficulty;
-use steel_utils::{BlockPos, Downcast};
+use steel_utils::{BlockPos, translations};
+use text_components::TextComponent;
 
 use crate::behavior::item_utils::get_player_pov_hit_result;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, ITEM_BEHAVIORS,
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
-use crate::block_entity::entities::{Spawner, SpawnerBlockEntity};
 use crate::entity::{
     AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
     add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
@@ -151,24 +151,21 @@ impl ItemBehavior for SpawnEggItem {
 
         let clicked_pos = context.hit_result.block_pos;
         let clicked_state = context.world.get_block_state(clicked_pos);
-        if clicked_state.get_block() == &vanilla_blocks::SPAWNER {
+        if let Some(block_entity) = context.world.get_block_entity(clicked_pos)
+            && let Some(spawner) = block_entity.as_spawner()
+        {
             if !context
                 .world
                 .get_game_rule(&vanilla_game_rules::SPAWNER_BLOCKS_WORK)
             {
+                context.player.send_message(&TextComponent::translated(
+                    translations::ADV_MODE_NOT_ENABLED_SPAWNER.msg(),
+                ));
                 return InteractionResult::Fail;
             }
 
-            let Some(block_entity) = context.world.get_block_entity(clicked_pos) else {
-                return InteractionResult::Fail;
-            };
-            let Some(spawner) = block_entity.downcast_ref::<SpawnerBlockEntity>() else {
-                return InteractionResult::Fail;
-            };
             spawner.set_entity_id(entity_type);
-            context
-                .inv
-                .with_item(|item| item.consume_one(context.player.has_infinite_materials()));
+            context.inv.with_item(|item| item.shrink(1));
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 clicked_pos,

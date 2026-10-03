@@ -266,7 +266,6 @@ impl BaseSpawner {
         }
 
         if self.decrement_spawn_delay() {
-            result.state_changed = true;
             return result;
         }
 

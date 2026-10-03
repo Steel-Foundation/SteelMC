@@ -86,6 +86,10 @@ impl BlockEntity for SpawnerBlockEntity {
         self.spawner.on_event_triggered(event)
     }
 
+    fn as_spawner(&self) -> Option<&dyn Spawner> {
+        Some(self)
+    }
+
     fn tick(&self, world: &Arc<World>) {
         let result = self.spawner.server_tick(world, self.get_block_pos());
         if result.state_changed {
