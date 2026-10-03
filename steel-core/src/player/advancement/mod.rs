@@ -89,19 +89,18 @@ impl PlayerAdvancement {
             result = true;
             if !was_done && progress.is_done() {
                 grant_reward(player, &advancement.rewards);
-                if let Some(display) = &advancement.display {
-                    if display.announce_chat
-                        && player
-                            .level()
-                            .is_some_and(|level| level.get_game_rule(&SHOW_ADVANCEMENT_MESSAGES))
-                    {
-                        player.server().broadcast_system_chat(
-                            &display
-                                .frame_type
-                                .create_announcement(advancement, player.display_name()),
-                            None,
-                        );
-                    }
+                if let Some(display) = &advancement.display
+                    && display.announce_chat
+                    && player
+                        .level()
+                        .is_some_and(|level| level.get_game_rule(&SHOW_ADVANCEMENT_MESSAGES))
+                {
+                    player.server().broadcast_system_chat(
+                        &display
+                            .frame_type
+                            .create_announcement(advancement, player.display_name()),
+                        None,
+                    );
                 }
             }
         }
