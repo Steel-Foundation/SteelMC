@@ -775,6 +775,9 @@ impl Player {
 
     /// Handles a chat command packet from the client, with only unsigned arguments
     pub fn handle_command(self: &Arc<Self>, packet: SChatCommand, server: &Arc<Server>) {
+        self.reset_last_action_time();
+        self.detect_command_rate_spam();
+
         // check if this has a signed argument, in this case, do nothing
         if server.enforces_secure_chat()
             && server.command_requires_signed_arguments(
@@ -792,7 +795,6 @@ impl Player {
             return;
         }
 
-        self.reset_last_action_time();
         if server
             .submit_command(
                 CommandSender::Player(Arc::clone(self)),
@@ -805,7 +807,6 @@ impl Player {
                 &TextComponent::const_plain("Command queue is full").color(Color::Red),
             );
         }
-        self.detect_command_rate_spam();
     }
 
     /// Handles a chat command packet from the client. Can contain signed arguments
