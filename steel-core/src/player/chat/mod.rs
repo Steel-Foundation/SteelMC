@@ -815,15 +815,7 @@ impl Player {
         packet: SChatCommandSigned,
         server: &Arc<Server>,
     ) {
-        if !server.enforces_secure_chat() {
-            self.handle_command(
-                SChatCommand {
-                    command: packet.command,
-                },
-                server,
-            );
-            return;
-        }
+        self.detect_command_rate_spam();
 
         // Check allow char
         for char in packet.command.chars() {
@@ -920,7 +912,6 @@ impl Player {
             );
         }
 
-        self.detect_command_rate_spam();
     }
 }
 
