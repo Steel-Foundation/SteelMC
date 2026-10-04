@@ -315,7 +315,7 @@ impl AbstractFurnaceBlockEntity {
     ) -> Self {
         let base = Arc::new(BlockEntityBase::new(block_entity_type, level, pos, state));
         let container = FurnaceContainer::new(kind).into_shared();
-        let shared: SharedContainer = container.clone();
+        let shared: SharedContainer = Arc::<SyncMutex<FurnaceContainer>>::clone(&container);
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
             base,
@@ -442,7 +442,11 @@ pub(crate) fn pop_furnace_experience(
 
 macro_rules! furnace_block_entity {
     ($name:ident, $key:literal, $type:ident, $kind:ident) => {
-        #[doc = concat!("Concrete Vanilla `", stringify!($name), "` implementation.")]
+        #[doc = concat!(
+                                            "`",
+                                            stringify!($name),
+                                            "` block entity backed by the shared smelting logic."
+                                        )]
         pub struct $name {
             common: AbstractFurnaceBlockEntity,
         }

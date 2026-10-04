@@ -136,7 +136,7 @@ fn domain_menu(
 
     b.build(DomainMenuKind {
         map,
-        server: server.clone(),
+        server: Arc::clone(server),
         player,
     })
 }

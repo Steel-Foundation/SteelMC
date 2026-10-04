@@ -135,6 +135,9 @@ The [SteelMC Discord](https://steelmc.dev/discord) is where we discuss designs,
 coordinate work, share progress, and answer questions. Longer project updates are
 published on the [SteelMC website](https://steelmc.dev/).
 
+If you enjoy SteelMC, you can support its development by
+[sponsoring the project on GitHub](https://github.com/sponsors/Steel-Foundation). Any support is greatly appreciated!
+
 ## License
 
 SteelMC is free software licensed under the

@@ -72,7 +72,6 @@ impl ItemBehavior for BottleItem {
     }
 }
 
-/// Vanilla `PotionContents.createItemStack(Items.POTION, Potions.WATER)`.
 fn water_potion_stack() -> ItemStack {
     let mut stack = ItemStack::new(&vanilla_items::POTION);
     stack.set(
@@ -136,7 +135,7 @@ mod tests {
             player,
             InteractionHand::MainHand,
             world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
         BottleItem.use_item(&mut context)
     }

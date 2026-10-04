@@ -187,7 +187,6 @@ impl Player {
 
     /// Checks if movement validation should be performed for this player.
     ///
-    /// Matches vanilla's `ServerGamePacketListenerImpl.shouldValidateMovement()`.
     /// Uses the `playerMovementCheck` and `elytraMovementCheck` gamerules.
     ///
     /// Returns `true` if movement should be validated, `false` to skip validation.
@@ -206,8 +205,6 @@ impl Player {
     }
 
     /// Handles a move player packet.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.handleMovePlayer()`.
     ///
     /// # Panics
     ///
@@ -443,8 +440,6 @@ impl Player {
     }
 
     /// Handles a controlled-vehicle movement packet.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.handleMoveVehicle()`.
     #[expect(
         clippy::too_many_lines,
         reason = "matches vanilla handleMoveVehicle; splitting would hurt readability"
@@ -760,8 +755,6 @@ impl Player {
     ///
     /// Sends a `CPlayerPosition` packet and waits for client acknowledgment.
     /// Until acknowledged, movement packets from the client will be rejected.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
     pub fn teleport(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
         self.teleport_with_velocity(pos, DVec3::ZERO, yaw, pitch)
     }
@@ -840,8 +833,6 @@ impl Player {
     }
 
     /// Handles a teleport acknowledgment from the client.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.handleAcceptTeleportPacket()`.
     pub fn handle_accept_teleportation(&self, packet: SAcceptTeleportation) {
         let mut tp = self.teleport_state.lock();
 

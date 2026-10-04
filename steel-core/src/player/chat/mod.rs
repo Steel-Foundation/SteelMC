@@ -43,7 +43,6 @@ use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 use uuid::Uuid;
 
-/// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
 
 /// All chat-related state for a player.

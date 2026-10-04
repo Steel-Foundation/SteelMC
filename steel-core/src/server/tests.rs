@@ -1369,7 +1369,7 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
-        let entity: SharedEntity = player.clone();
+        let entity: SharedEntity = Arc::<Player>::clone(&player);
         let Some(pending_token) = entity.begin_pending_world_change() else {
             panic!("live player should acquire a portal relocation token");
         };
@@ -3088,9 +3088,9 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
             DVec3::new(8.5, 100.0, 8.5),
             Arc::downgrade(&source_world),
         ));
-        let old_owner: SharedEntity = old_player.clone();
+        let old_owner: SharedEntity = Arc::<Player>::clone(&old_player);
         pearl.set_owner_entity(Some(&old_owner));
-        let shared_pearl: SharedEntity = pearl.clone();
+        let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
         if let Err(error) = source_world.try_add_entity(Arc::clone(&shared_pearl)) {
             panic!("test pearl should be added: {error}");
         }

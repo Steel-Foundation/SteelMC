@@ -53,13 +53,13 @@ pub fn anvil(
 
     let input = builder.section_all(&input_container);
     let result = builder.result_slot(AnvilResultHandler::new(
-        input_container.clone(),
-        result_container.clone(),
-        repair_item_count.clone(),
-        level_cost.clone(),
-        only_renaming.clone(),
+        Arc::clone(&input_container),
+        Arc::clone(&result_container),
+        Arc::clone(&repair_item_count),
+        Arc::clone(&level_cost),
+        Arc::clone(&only_renaming),
         pos,
-        world.clone(),
+        Arc::clone(world),
     ));
 
     let player = builder.player_inventory(&inventory);
