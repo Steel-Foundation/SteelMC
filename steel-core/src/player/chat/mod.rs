@@ -255,10 +255,6 @@ impl OutgoingChatMessage {
                         // Add to pending messages for acknowledgment tracking
                         chat.message_validator
                             .add_pending(Some(Box::new(*signature) as Box<[u8]>));
-                    } else {
-                        // Even unsigned messages update the pending tracker
-                        chat.message_validator.add_pending(None);
-                        log::debug!("  Added unsigned message to pending list");
                     }
 
                     // Check against Vanilla DOS/memory leak threshold
