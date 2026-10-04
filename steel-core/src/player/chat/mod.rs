@@ -288,13 +288,6 @@ impl OutgoingChatMessage {
             };
         };
 
-        // If secure chat is not enforced, fall back to disguised
-        if !source.server().enforces_secure_chat() {
-            return Self::Disguised {
-                content: TextComponent::plain(message),
-            };
-        }
-
         let signing_ctx = source.signing_context();
         let raw_sig = signing_ctx
             .as_ref()
