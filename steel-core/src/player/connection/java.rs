@@ -243,10 +243,6 @@ impl ScheduledPlayPacket {
         )
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "flat dispatch over every scheduled packet kind"
-    )]
     pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;

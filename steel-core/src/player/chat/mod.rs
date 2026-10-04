@@ -13,7 +13,7 @@ pub use signature_cache::{LastSeen, MessageCache};
 
 use crate::command::execution::CommandSource;
 use crate::command::sender::CommandSender;
-use crate::command::signing_context::CommandSigningContext;
+use crate::command::signing_context::{CommandSigningContext, SignedArgument};
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
@@ -21,6 +21,7 @@ use crate::server::Server;
 use log::warn;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
@@ -40,6 +41,7 @@ use text_components::Modifier;
 use text_components::TextComponent;
 use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
+use uuid::Uuid;
 
 /// Vanilla `PlayerChatMessage.MESSAGE_EXPIRES_AFTER_SERVER`.
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
@@ -289,48 +291,54 @@ impl OutgoingChatMessage {
         };
 
         let signing_ctx = source.signing_context();
-        let raw_sig = signing_ctx
-            .as_ref()
-            .and_then(|sc| sc.get_argument_signature(argument_name));
 
-        // If the command context did not provide a valid signature, fallback or disguised
-        let Some(raw_sig) = raw_sig else {
+        // Ensure the player's active chat session has not been superseded while waiting in queue
+        let is_session_current = signing_ctx.as_ref().is_some_and(|sc| {
+            player
+                .chat()
+                .lock()
+                .chat_session
+                .as_ref()
+                .is_some_and(|active| active.session_id == sc.session_id)
+        });
+
+        if !is_session_current {
+            // A newer chat session was announced: degrade to disguised to avoid client signature errors
+            return Self::Disguised {
+                content: TextComponent::plain(message),
+            };
+        }
+
+        // Extract context and target signed argument (signature + individual chain index)
+        let Some(sc) = signing_ctx else {
             return Self::Disguised {
                 content: TextComponent::plain(message),
             };
         };
 
+        let Some(signed_arg) = sc.argument_signatures.get(argument_name) else {
+            return Self::Disguised {
+                content: TextComponent::plain(message),
+            };
+        };
+
+        // Validate signature byte length
         let mut sig_array = [0u8; 256];
-        if raw_sig.0.len() == 256 {
-            sig_array.copy_from_slice(&raw_sig.0);
+        if signed_arg.signature.0.len() == 256 {
+            sig_array.copy_from_slice(&signed_arg.signature.0);
         } else {
             return Self::Disguised {
                 content: TextComponent::plain(message),
             };
         }
 
-        let (timestamp, salt, sender_index, sender_last_seen) = if let Some(sc) = signing_ctx {
-            (
-                sc.timestamp as i64,
-                sc.salt,
-                sc.sender_index,
-                sc.last_seen.clone(),
-            )
-        } else {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
-            (now, 0, 0, LastSeen::default())
-        };
-
         let packet = CPlayerChat::new(
             player.gameprofile.id,
-            sender_index,
+            signed_arg.index,
             Some(MessageSignature(sig_array)),
             message,
-            timestamp,
-            salt,
+            sc.timestamp as i64,
+            sc.salt,
             Box::new([]),
             None,
             ChatTypeBound::default(),
@@ -339,7 +347,7 @@ impl OutgoingChatMessage {
         Self::Player {
             packet: Box::new(packet),
             signature: Some(sig_array),
-            sender_last_seen,
+            sender_last_seen: sc.last_seen.clone(),
         }
     }
 }
@@ -809,6 +817,103 @@ impl Player {
         }
     }
 
+    /// Validates chat acknowledgements, checks session expiration, and verifies
+    /// all signable arguments against the cryptographic chain.
+    fn verify_command_signatures(
+        self: &Arc<Self>,
+        packet: &SChatCommandSigned,
+        required_signed_args: &[(String, &str)],
+        server: &Arc<Server>,
+    ) -> Option<(LastSeen, FxHashMap<Box<str>, SignedArgument>, Uuid)> {
+        let mut chat = self.chat().lock();
+
+        let last_seen_sigs = match chat.message_validator.apply_update(
+            packet.last_seen.acknowledged,
+            packet.last_seen.offset.0,
+            0,
+        ) {
+            Ok(signatures) => LastSeen::new(signatures),
+            Err(error) => {
+                log::error!(
+                    "Failed to validate message acknowledgements from {}: {}",
+                    self.name(),
+                    error
+                );
+                drop(chat);
+                self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
+                return None;
+            }
+        };
+
+        let Some(session) = chat.chat_session.clone() else {
+            drop(chat);
+            self.disconnect(CHAT_DISABLED_MISSING_PROFILE_KEY.msg());
+            return None;
+        };
+
+        if session.has_expired() {
+            drop(chat);
+            self.send_message(
+                &CHAT_DISABLED_EXPIRED_PROFILE_KEY
+                    .msg()
+                    .component()
+                    .color(Color::Red),
+            );
+            if server.enforces_secure_chat() {
+                self.disconnect(CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component());
+            }
+            return None;
+        }
+
+        let mut verified_args = FxHashMap::default();
+
+        // Verify each argument against its extracted string slice
+        for (arg_name, argument_value) in required_signed_args {
+            let Some(entry) = packet
+                .argument_signatures
+                .iter()
+                .find(|e| e.name.as_str() == arg_name.as_str())
+            else {
+                continue;
+            };
+
+            match Self::verify_and_advance_chain(
+                &mut chat,
+                &session,
+                argument_value,
+                packet.timestamp as u64,
+                packet.salt,
+                last_seen_sigs.clone(),
+                &entry.signature,
+            ) {
+                Ok(link) => {
+                    verified_args.insert(
+                        entry.name.clone().into_boxed_str(),
+                        SignedArgument {
+                            index: link.index,
+                            signature: MessageSignature(entry.signature),
+                        },
+                    );
+                }
+                Err(err) => {
+                    drop(chat);
+                    warn!(
+                        "Failed to update secure chat state for {}: '{}'",
+                        self.gameprofile.name,
+                        err.clone().into_component().color(Color::Red)
+                    );
+                    self.send_message(&err.clone().into_component().color(Color::Red));
+                    if server.enforces_secure_chat() {
+                        self.disconnect(err.into_component());
+                    }
+                    return None;
+                }
+            }
+        }
+
+        Some((last_seen_sigs, verified_args, session.session_id))
+    }
+
     /// Handles a chat command packet from the client. Can contain signed arguments
     pub fn handle_signed_command(
         self: &Arc<Self>,
@@ -828,86 +933,48 @@ impl Player {
 
         self.reset_last_action_time();
 
-        // Unpack last seen
-        let (last_seen, sender_index) = {
-            let mut chat = self.chat().lock();
+        // Collect all arguments in the command syntax that require cryptographic signatures
+        let required_signed_args: Vec<(String, &str)> = server
+            .collect_signable_arguments(&packet.command, CommandSender::Player(Arc::clone(self)));
 
-            let last_seen_sigs = match chat.message_validator.apply_update(
-                packet.last_seen.acknowledged,
-                packet.last_seen.offset.0,
-                0,
-            ) {
-                Ok(signatures) => LastSeen::new(signatures),
-                Err(error) => {
-                    log::error!(
-                        "Failed to validate message acknowledgements from {}: {}",
-                        self.name(),
-                        error
-                    );
-                    drop(chat);
-                    self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
-                    return;
-                }
-            };
-
-            let Some(session) = chat.chat_session.clone() else {
-                drop(chat);
-                self.disconnect(CHAT_DISABLED_MISSING_PROFILE_KEY.msg());
-                return;
-            };
-
-            let argument_value = packet.command.split_once(' ').map_or("", |(_, arg)| arg);
-            if session.has_expired() {
-                drop(chat);
-                self.send_message(
-                    &CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component().color(Color::Red),
-                );
-                if server.enforces_secure_chat() {
-                    self.disconnect(CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component());
-                }
-                return;
-            }
-
-            let mut sender_index = 0;
-            for entry in &packet.argument_signatures {
-                match Self::verify_and_advance_chain(
-                    &mut chat,
-                    &session,
-                    argument_value,
-                    packet.timestamp as u64,
-                    packet.salt,
-                    last_seen_sigs.clone(),
-                    &entry.signature,
-                ) {
-                    Ok(link) => {
-                        sender_index = link.index;
-                    }
-                    Err(err) => {
-                        drop(chat);
-                        log::warn!(
-                            "Failed to update secure chat state for {}: '{}'",
-                            self.gameprofile.name,
-                            err.clone().into_component().color(Color::Red)
-                        );
-                        self.send_message(&err.into_component().color(Color::Red));
-                        return;
-                    }
-                }
-            }
-
-            (last_seen_sigs, sender_index)
-        };
-
-        let signing_context = CommandSigningContext::new(
-            packet.timestamp as u64,
-            packet.salt,
+        // Reject commands with missing signatures (ex: empty list on /say)
+        let has_all_required_signatures = required_signed_args.iter().all(|(req_name, _)| {
             packet
                 .argument_signatures
-                .into_iter()
-                .map(|entry| (entry.name, MessageSignature(entry.signature))),
+                .iter()
+                .any(|entry| entry.name.as_str() == req_name.as_str())
+        });
+
+        if !has_all_required_signatures {
+            warn!(
+                "Received signed command packet from {} missing expected argument signatures: {}",
+                self.gameprofile.name, packet.command
+            );
+            self.send_message(
+                &CHAT_DISABLED_INVALID_SIGNATURE
+                    .msg()
+                    .component()
+                    .color(Color::Red),
+            );
+            if server.enforces_secure_chat() {
+                self.disconnect(CHAT_DISABLED_INVALID_SIGNATURE.msg().component());
+            }
+            return;
+        }
+
+        let Some((last_seen, argument_signatures, session_id)) =
+            self.verify_command_signatures(&packet, &required_signed_args, server)
+        else {
+            return;
+        };
+
+        let signing_context = CommandSigningContext {
+            session_id,
+            timestamp: packet.timestamp as u64,
+            salt: packet.salt,
+            argument_signatures,
             last_seen,
-            sender_index,
-        );
+        };
 
         if server
             .submit_command(
@@ -921,7 +988,6 @@ impl Player {
                 &TextComponent::const_plain("Command queue is full").color(Color::Red),
             );
         }
-
     }
 }
 

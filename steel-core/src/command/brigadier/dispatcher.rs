@@ -396,6 +396,27 @@ where
         }
         false
     }
+
+    pub(crate) fn collect_signable_arguments<'a>(
+        &self,
+        parse: &ParseResults<'_, S, R>,
+        command: &'a str,
+    ) -> Vec<(String, &'a str)> {
+        let mut signable_args = Vec::new();
+
+        for parsed_node in parse.context().nodes() {
+            if let Some(node) = self.node(parsed_node.node())
+                && let CommandNodeData::Argument(name, arg_data) = &node.data
+                && arg_data.argument_type().is_signed()
+            {
+                let range = parsed_node.range();
+                let slice = &command[range.start()..range.end()];
+                signable_args.push((name.to_string(), slice));
+            }
+        }
+
+        signable_args
+    }
 }
 
 #[cfg(test)]

@@ -895,4 +895,18 @@ impl Server {
         let parse = dispatcher.parse(command, source);
         dispatcher.has_signed_arguments(&parse)
     }
+
+    /// Inspects the parsed command nodes and collects the names and text slices
+    /// of all arguments requiring cryptographic signatures (e.g. `minecraft:message`).
+    pub fn collect_signable_arguments<'a>(
+        self: &Arc<Self>,
+        command: &'a str,
+        sender: CommandSender,
+    ) -> Vec<(String, &'a str)> {
+        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+
+        dispatcher.collect_signable_arguments(&parse, command)
+    }
 }

@@ -1,43 +1,61 @@
 use crate::player::LastSeen;
 use rustc_hash::FxHashMap;
 use steel_protocol::packets::game::MessageSignature;
+use uuid::Uuid;
+
+/// Individual signature and sequence index for a signed command argument.
+#[derive(Clone, Debug)]
+pub struct SignedArgument {
+    /// Monotonically increasing index in the player's secure chat session chain.
+    pub index: i32,
+    /// Raw cryptographic signature of the argument content.
+    pub signature: MessageSignature,
+}
 
 /// Signing metadata and argument signatures associated with an executed command.
 #[derive(Clone, Debug)]
 pub struct CommandSigningContext {
+    /// Id of the current chat session.
+    pub session_id: Uuid,
     /// Client-side emission timestamp in epoch milliseconds.
     pub timestamp: u64,
     /// Random 64-bit salt used to prevent signature replay attacks.
     pub salt: i64,
-    /// Map associating each signed Brigadier argument name with its raw binary signature.
-    pub argument_signatures: FxHashMap<Box<str>, MessageSignature>,
-    /// Window of previously received message signatures acknowledged by the client when submitting this command.
+    /// Map associating each signed Brigadier argument name with its signature and chain index.
+    pub argument_signatures: FxHashMap<Box<str>, SignedArgument>,
+    /// Window of previously received message signatures acknowledged by the client.
     pub last_seen: LastSeen,
-    /// Monotonically increasing the index of this message within the player's secure chat session chain.
-    pub sender_index: i32,
 }
 
 impl CommandSigningContext {
     /// Creates a new signing context with the given timestamp, salt, and argument signatures.
     pub fn new(
+        session_id: Uuid,
         timestamp: u64,
         salt: i64,
-        signatures: impl IntoIterator<Item = (impl Into<Box<str>>, MessageSignature)>,
+        signatures: impl IntoIterator<Item = (impl Into<Box<str>>, SignedArgument)>,
         last_seen: LastSeen,
-        sender_index: i32,
     ) -> Self {
         Self {
+            session_id,
             timestamp,
             salt,
             argument_signatures: signatures.into_iter().map(|(k, v)| (k.into(), v)).collect(),
             last_seen,
-            sender_index,
         }
     }
 
-    /// Returns the raw binary signature for a specific argument name, if present.
+    /// Returns the raw cryptographic signature for a specific argument name, if present.
     #[must_use]
     pub fn get_argument_signature(&self, argument_name: &str) -> Option<&MessageSignature> {
+        self.argument_signatures
+            .get(argument_name)
+            .map(|arg| &arg.signature)
+    }
+
+    /// Returns the signed argument metadata (signature and chain index) for a specific argument name, if present.
+    #[must_use]
+    pub fn get_signed_argument(&self, argument_name: &str) -> Option<&SignedArgument> {
         self.argument_signatures.get(argument_name)
     }
 
