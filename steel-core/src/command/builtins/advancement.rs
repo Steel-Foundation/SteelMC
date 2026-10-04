@@ -160,17 +160,15 @@ impl Action {
         advancements: &[AdvancementRef],
         show_advancement: bool,
     ) -> i32 {
+        let mut guard = player.advancements.lock();
         if !show_advancement {
-            let mut guard = player.advancements.lock();
             guard.flush_dirty(player, true);
         }
-        let mut guard = player.advancements.lock();
         let count = advancements
             .iter()
             .filter(|advancement| self.perform_single_inner(player, &mut guard, advancement))
             .count() as i32;
         if !show_advancement {
-            let mut guard = player.advancements.lock();
             guard.flush_dirty(player, false);
         }
         count
