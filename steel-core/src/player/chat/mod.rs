@@ -857,6 +857,16 @@ impl Player {
             };
 
             let argument_value = packet.command.split_once(' ').map_or("", |(_, arg)| arg);
+            if session.has_expired() {
+                drop(chat);
+                self.send_message(
+                    &CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component().color(Color::Red),
+                );
+                if server.enforces_secure_chat() {
+                    self.disconnect(CHAT_DISABLED_EXPIRED_PROFILE_KEY.msg().component());
+                }
+                return;
+            }
 
             let mut sender_index = 0;
             for entry in &packet.argument_signatures {
