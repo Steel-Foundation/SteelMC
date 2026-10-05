@@ -987,7 +987,7 @@ impl EntityBase {
                 lifecycle.pending_world_change = None;
                 (
                     Some(self.level_callback.lock().clone()),
-                    self.damage_history.set_removed(true),
+                    self.damage_history.release_on_removal(),
                 )
             }
         };
@@ -1074,7 +1074,7 @@ impl EntityBase {
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
         lifecycle.pending_world_change = None;
-        let _ = self.damage_history.set_removed(false);
+        self.damage_history.clear_removed();
         was_removed
     }
 

@@ -81,15 +81,9 @@ impl DamageHistoryBinding {
 
     /// Both the source and the upgraded history can own entities. Drop them outside
     /// the entity lifecycle lock, including when this is the last history handle.
-    pub(crate) fn set_removed(
-        &self,
-        removed: bool,
-    ) -> Option<(Arc<DamageHistory>, Option<DamageSource>)> {
+    pub(crate) fn release_on_removal(&self) -> Option<(Arc<DamageHistory>, Option<DamageSource>)> {
         let mut state = self.state.lock();
-        state.removed = removed;
-        if !removed {
-            return None;
-        }
+        state.removed = true;
         let victim = state.victim.as_ref()?;
         let history = victim.history.upgrade()?;
         let released = history
@@ -98,6 +92,10 @@ impl DamageHistoryBinding {
             .get_mut(&victim.generation)
             .and_then(|record| record.retained.take());
         Some((history, released))
+    }
+
+    pub(crate) fn clear_removed(&self) {
+        self.state.lock().removed = false;
     }
 
     pub(crate) fn last_damage_source(&self) -> Option<RecentDamageSource> {

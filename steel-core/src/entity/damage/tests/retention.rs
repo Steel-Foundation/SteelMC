@@ -127,23 +127,34 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "late_damage_record");
     let victim = live_pig(&world, 1);
+    let _owner = victim.base().damage_history().retain_owner();
     victim.set_removed(RemovalReason::Discarded);
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+    let attacker_generation = attacker.generation();
     let weak = Arc::downgrade(&attacker);
     victim.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::GENERIC,
-        attacker,
+        Arc::clone(&attacker),
     ));
-    assert!(weak.upgrade().is_none());
-    assert!(
-        victim
-            .last_damage_source()
-            .expect("late record")
-            .causing_entity()
-            .is_none()
-    );
+    assert_eq!(weak.strong_count(), 1, "late hits must not retain sources");
 
+    advance_test_game_time_to(&world, 40);
     assert!(victim.base().clear_removed());
+    drop(attacker);
+    assert!(weak.upgrade().is_none());
+    let recent = victim
+        .last_damage_source()
+        .expect("old metadata after reactivation");
+    assert_eq!(
+        recent.causing_entity_generation(),
+        Some(attacker_generation)
+    );
+    assert!(recent.causing_entity().is_none());
+    advance_test_game_time_to(&world, 41);
+    assert!(
+        victim.last_damage_source().is_none(),
+        "clearing removal must not reset age"
+    );
     world
         .try_add_entity(Arc::<PigEntity>::clone(&victim))
         .expect("reactivate victim");
