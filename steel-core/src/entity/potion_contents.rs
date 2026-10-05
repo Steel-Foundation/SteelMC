@@ -55,9 +55,7 @@ pub(crate) const fn to_runtime_instance(
         .with_show_icon(effect.show_icon())
 }
 
-/// This function exists purely to reproduce Vanilla bug MC-276746,
-/// where a splash potion's `show_icon` is silently replaced by its
-/// `show_particles`; drop it if Mojang ever fixes it.
+/// Reproduces MC-276746: splash potions use `show_particles` for `show_icon`
 pub(crate) const fn to_runtime_instance_icon_from_visibility(
     effect: &RegistryMobEffectInstance,
     duration: i32,
