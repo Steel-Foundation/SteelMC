@@ -46,19 +46,19 @@ pub struct PersistentPlayerData {
     /// Whether the player is elytra gliding.
     pub fall_flying: bool,
 
-    /// Vanilla `remainingFireTicks`.
+    /// Remaining fire duration, in ticks.
     pub remaining_fire_ticks: i32,
 
     /// Synchronized vanilla `TicksFrozen`.
     pub ticks_frozen: i32,
 
-    /// Vanilla `isInPowderSnow`.
+    /// Whether the player is currently standing in powder snow.
     pub is_in_powder_snow: bool,
 
-    /// Vanilla `wasInPowderSnow`.
+    /// Whether the player was standing in powder snow last tick.
     pub was_in_powder_snow: bool,
 
-    /// Vanilla `hasVisualFire`.
+    /// Whether the player renders as on fire regardless of actual fire ticks.
     pub has_visual_fire: bool,
 
     /// Current health points.
@@ -109,7 +109,7 @@ pub struct PersistentPlayerData {
     /// Vanilla death-screen score. Point grants change it with Java `int` wrapping.
     pub score: i32,
 
-    /// Vanilla `ServerPlayer.seenCredits`.
+    /// Whether this player has already seen the End credits screen.
     pub seen_credits: bool,
 
     /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.

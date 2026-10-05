@@ -128,8 +128,8 @@ fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
 
 /// Global counter for allocating unique entity IDs.
 ///
-/// Mirrors vanilla's `Entity.ENTITY_COUNTER`. Each new entity increments this
-/// counter to get a unique network ID. Starts at 1 (0 is reserved).
+/// Each new entity increments this counter to get a unique network ID. Starts
+/// at 1 (0 is reserved).
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -593,7 +593,6 @@ fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
     }
 }
 
-/// Matches vanilla `LivingEntity.resetForwardDirectionOfRelativePortalPosition`.
 #[must_use]
 pub(crate) const fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
     DVec3::new(offsets.x, offsets.y, 0.0)
