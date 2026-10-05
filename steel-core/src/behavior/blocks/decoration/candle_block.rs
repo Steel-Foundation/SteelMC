@@ -74,8 +74,7 @@ impl CandleBlock {
             && state.try_get_value(LIT_PROPERTY) == Some(true)
     }
 
-    /// Vanilla `AbstractCandleBlock.extinguish`: unlights a candle or candle
-    /// cake, plays the extinguish sound and emits a `BLOCK_CHANGE` game event.
+    /// Extinguishes a candle or candle cake plays the sound and emits `BLOCK_CHANGE`
     pub fn extinguish(
         player: Option<&Player>,
         state: steel_utils::BlockStateId,
