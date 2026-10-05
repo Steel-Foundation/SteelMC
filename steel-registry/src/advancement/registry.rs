@@ -10,12 +10,6 @@ use steel_utils::serial::WriteTo;
 
 pub type AdvancementRef = &'static Advancement;
 
-impl WriteTo for AdvancementRef {
-    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        (*self).write(writer)
-    }
-}
-
 #[derive(Debug)]
 pub struct AdvancementNode {
     pub children: Vec<usize>,
@@ -26,6 +20,14 @@ pub struct AdvancementNode {
 }
 
 pub type AdvancementNodeRef = &'static AdvancementNode;
+
+impl WriteTo for AdvancementNodeRef {
+    fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.value.write(writer)?;
+        self.x.write(writer)?;
+        self.y.write(writer)
+    }
+}
 
 impl AdvancementNode {
     pub fn add_child(&mut self, child: usize) {
@@ -50,7 +52,7 @@ impl AdvancementNode {
     }
 
     #[inline]
-    pub fn set_location(&mut self, x: f32, y: f32) {
+    pub const fn set_location(&mut self, x: f32, y: f32) {
         self.x = x;
         self.y = y;
     }

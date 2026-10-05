@@ -15,7 +15,7 @@ use steel_protocol::packets::game::c_update_advancement::CUpdateAdvancements;
 use steel_registry::REGISTRY;
 use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
 use steel_registry::advancement::{
-    Advancement, AdvancementProgressData, AdvancementRewards, Criteria,
+    AdvancementProgressData, AdvancementRewards, Criteria,
 };
 use steel_registry::loot_table::LootContext;
 use steel_registry::vanilla_game_rules::SHOW_ADVANCEMENT_MESSAGES;
@@ -141,7 +141,7 @@ impl PlayerAdvancement {
     fn update_tree_visibility(
         &mut self,
         root: AdvancementNodeRef,
-        added: &mut Vec<AdvancementRef>,
+        added: &mut Vec<AdvancementNodeRef>,
         removed: &mut Vec<Identifier>,
     ) {
         visibility_evaluator::evaluate_visibility(
@@ -157,7 +157,7 @@ impl PlayerAdvancement {
                 let advancement = node.value;
                 if should_be_visible {
                     if player_advancement.visible.insert(advancement) {
-                        added.push(advancement);
+                        added.push(node);
                         if player_advancement.progress.has_progress(advancement) {
                             player_advancement.progress_changed.insert(advancement);
                         }
@@ -176,7 +176,7 @@ impl PlayerAdvancement {
             || !self.progress_changed.is_empty()
         {
             let mut progress: FxHashMap<Identifier, &AdvancementProgress> = FxHashMap::default();
-            let mut added: Vec<&Advancement> = Vec::new();
+            let mut added: Vec<AdvancementNodeRef> = Vec::new();
             let mut removed: Vec<Identifier> = Vec::new();
             for root in self.roots_to_update.clone() {
                 self.update_tree_visibility(root, &mut added, &mut removed);

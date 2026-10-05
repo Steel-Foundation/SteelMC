@@ -348,14 +348,7 @@ mod tests {
     use steel_utils::Identifier;
 
     fn get_location(registry: &AdvancementRegistry, key: &Identifier) -> (f32, f32) {
-        let loc = registry.by_key(key).map(|val| {
-            *val.value
-                .display
-                .as_ref()
-                .expect("does not have display")
-                .location
-                .read()
-        });
+        let loc: Option<(f32, f32)> = registry.by_key(key).map(|val| (val.x, val.y));
         loc.unwrap_or_else(|| panic!("unbale to get the location of {key}"))
     }
 

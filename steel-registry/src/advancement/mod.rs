@@ -39,11 +39,13 @@ impl Advancement {
         self.parent.is_none()
     }
 
+    #[must_use]
     pub fn name(&self) -> TextComponent {
         self.decorate_name()
             .unwrap_or(TextComponent::plain(self.key.to_string()))
     }
 
+    #[must_use]
     pub fn decorate_name(&self) -> Option<TextComponent> {
         match &self.display {
             Some(display) => {
