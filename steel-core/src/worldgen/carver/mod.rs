@@ -372,7 +372,6 @@ where
     F: FnMut(BlockPos) -> u16,
 {
     /// Carve every block inside the given ellipsoid that falls in this chunk.
-    /// Mirrors vanilla's `WorldCarver.carveEllipsoid`.
     ///
     /// Returns `true` if at least one block was carved.
     #[expect(

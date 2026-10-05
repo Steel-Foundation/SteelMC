@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_ticket_storage::{ChunkTicketStorage, PersistentChunkTickets};
+use crate::chunk::chunk_ticket_storage::ChunkTicketStorage;
 use crate::chunk::full_chunk::{FullChunkBlockSetResult, FullChunkRef};
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
 use crate::chunk::light::{
@@ -380,11 +380,7 @@ impl World {
         if level_data.is_dirty() {
             level_data.save().await?;
         }
-        let persistent_chunk_tickets: PersistentChunkTickets = saved_data
-            .load_or_default(saved_data_names::CHUNK_TICKETS)
-            .await?;
-        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let ticket_storage = ChunkTicketStorage::load(&saved_data, &key).await;
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -408,7 +404,7 @@ impl World {
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
             let chunk_map = Arc::new(ChunkMap::new_with_storage_and_ticket_storage(
                 chunk_runtime,
-                weak_self.clone(),
+                Weak::clone(weak_self),
                 dimension_type,
                 sea_level,
                 storage,

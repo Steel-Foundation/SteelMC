@@ -127,9 +127,9 @@ fn set_leashed_to_notifies_replaced_holder() {
     init_vanilla_registry();
 
     let old_holder_typed = LeashNotificationTestEntity::new(1);
-    let old_holder: SharedEntity = old_holder_typed.clone();
+    let old_holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&old_holder_typed);
     let new_holder_typed = LeashNotificationTestEntity::new(2);
-    let new_holder: SharedEntity = new_holder_typed.clone();
+    let new_holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&new_holder_typed);
     let leashable: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
@@ -152,7 +152,7 @@ fn tick_leash_notifies_live_holder() {
     init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::new(1);
-    let holder: SharedEntity = holder_typed.clone();
+    let holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&holder_typed);
     let leashable: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,
@@ -176,7 +176,7 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
     init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::with_position(1, DVec3::new(13.0, 0.0, 0.0));
-    let holder: SharedEntity = holder_typed.clone();
+    let holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&holder_typed);
     let leashable: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         3,

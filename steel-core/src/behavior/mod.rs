@@ -73,8 +73,8 @@ pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;
 pub use consume_effect::{CONSUME_EFFECT_BEHAVIORS, ConsumeEffectBehaviorRegistry};
 pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
-    PlacementSource, UseItemContext, UseOnContext,
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, InventoryTickContext,
+    PlacementOrientation, PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub(crate) use item::apply_use_remainder;
@@ -134,7 +134,8 @@ impl Deref for ItemBehaviorLock {
 /// This is separate from `BlockStateExt` (in steel-registry) because these methods
 /// require access to the behavior registry which lives in steel-core.
 pub trait BlockStateBehaviorExt {
-    /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
+    /// Returns whether this block state can hold a fluid inside it, such as
+    /// a waterlogged block, cauldron, or seagrass.
     fn is_liquid_container(&self) -> bool;
 
     /// Returns whether this block state can be replaced by the given fluid block.

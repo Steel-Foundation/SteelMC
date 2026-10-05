@@ -541,21 +541,14 @@ impl ChunkStorage {
         }
     }
 
-    /// Saves a chunk to the appropriate region.
-    ///
-    /// The chunk is serialized, compressed, and written to disk immediately.
-    /// If the region was already open (has loaded chunks), the header update is
-    /// deferred. If this call opened the region, it will be closed after saving.
-    ///
-    /// If the chunk is not dirty and `force` is false, this is a no-op.
-    /// Returns `Ok(true)` if the chunk was saved.
     /// Prepares chunk data and its authoritative persisted status for saving.
-    /// Call this during the holder's snapshot-preparation phase, then pass the result to
-    /// `save_chunk_data` after ending that phase.
+    /// Call during the holder's snapshot-preparation phase; end it before `save_chunk_data`.
+    ///
+    /// Returns `None` if nothing needs saving or promotion invalidated `status`; retry later.
     ///
     /// # Panics
     ///
-    /// Panics if `status` does not match whether Full runtime state is initialized.
+    /// Panics if `status` is Full but the chunk has no Full runtime state.
     #[must_use]
     #[expect(
         clippy::similar_names,
@@ -571,25 +564,21 @@ impl ChunkStorage {
         runtime_entities: &[SharedEntity],
         force: bool,
     ) -> Option<PreparedChunkSave> {
-        assert_eq!(
-            status == ChunkStatus::Full,
-            chunk.full_runtime().is_some(),
-            "persisted chunk status must match its Full runtime state"
+        let has_full_runtime = chunk.full_runtime().is_some();
+        assert!(
+            status != ChunkStatus::Full || has_full_runtime,
+            "a chunk persisted as Full must have its Full runtime state initialized"
         );
-        if !force && !chunk.is_dirty() {
+        if status != ChunkStatus::Full && has_full_runtime {
+            tracing::debug!(
+                chunk = ?chunk.pos(),
+                ?status,
+                "Abandoning chunk save preparation: the chunk was promoted while it was snapshotted"
+            );
             return None;
         }
-
-        // Finalize any sections still in worldgen Building mode. Proto chunks
-        // can be saved before being upgraded by `Chunk::promote_to_full`
-        // (which is where `recalculate_counts` normally runs and implicitly
-        // finalizes). Without this, `section_to_persistent` would panic on
-        // the Building variant.
-        for section_holder in &chunk.sections().sections {
-            let mut guard = section_holder.write();
-            if matches!(&guard.states, PalettedContainer::Building(_)) {
-                guard.recalculate_counts();
-            }
+        if !force && !chunk.is_dirty() {
+            return None;
         }
 
         let pos = chunk.pos();
@@ -653,7 +642,12 @@ impl ChunkStorage {
             // Proto ticks are pending, so Vanilla ignores the current game
             // time when serializing their already-relative delays.
             let Some(snapshot) = chunk.scheduled_ticks.snapshot(0) else {
-                panic!("Proto chunk scheduled-tick container was finalized before saving");
+                tracing::debug!(
+                    chunk = ?pos,
+                    "Abandoning chunk save preparation: the proto scheduled-tick container was \
+                     finalized while the chunk was snapshotted"
+                );
+                return None;
             };
             let bt = Self::block_ticks_to_persistent(snapshot.block, pos);
             let ft = Self::fluid_ticks_to_persistent(snapshot.fluid, pos);

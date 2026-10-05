@@ -118,7 +118,6 @@ use uuid::Uuid;
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
-/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 /// Wall-clock interval between saves of command-owned persistent server data.
 /// Matches vanilla's intended five-minute autosave cadence.
@@ -644,12 +643,12 @@ impl Server {
                     storage_output.level_data_path.as_deref(),
                     &world_entry.generator_config,
                     world_seed,
-                    generation_pool.clone(),
+                    Arc::clone(&generation_pool),
                 )
                 .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config_and_encoding_pool(
-                chunk_runtime.clone(),
+                Arc::clone(&chunk_runtime),
                 world_entry.key.clone(),
                 generator_output.dimension_type,
                 world_seed,
@@ -670,7 +669,7 @@ impl Server {
                     default_gamemode: world_entry.default_gamemode,
                     difficulty: world_entry.difficulty,
                 },
-                generation_pool.clone(),
+                Arc::clone(&generation_pool),
                 Arc::clone(&chunk_encoding_pool),
             )
             .await
