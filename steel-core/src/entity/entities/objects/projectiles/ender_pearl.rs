@@ -266,7 +266,7 @@ impl Entity for EnderPearlEntity {
             return;
         }
 
-        Arc::<EnderPearlEntity>::clone(&self).throwable_projectile_tick();
+        Arc::clone(&self).throwable_projectile_tick();
 
         if self.is_alive() {
             self.update_ender_pearl_ticket(&world);
@@ -333,7 +333,7 @@ impl Projectile for EnderPearlEntity {
         // Vanilla `ThrownEnderpearl.onHitEntity`: deal 0 damage with a `thrown`
         // source so the hit entity registers the impact without being hurt.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
-            .with_direct_entity(Arc::<EnderPearlEntity>::clone(&self));
+            .with_direct_entity(Arc::<Self>::clone(&self));
         if let Some(owner) = self.get_owner() {
             damage = damage.with_causing_entity(owner);
         }
@@ -344,7 +344,7 @@ impl Projectile for EnderPearlEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        Arc::<EnderPearlEntity>::clone(&self).projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {

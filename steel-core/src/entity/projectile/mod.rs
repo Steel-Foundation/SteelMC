@@ -600,7 +600,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         true,
                     );
                 }
-                Arc::<Self>::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
+                Arc::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
                 if let Some(world) = world {
                     world.game_event_at(
                         &vanilla_game_events::PROJECTILE_LAND,
@@ -610,7 +610,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                 }
             }
             ProjectileHit::Block { hit, .. } => {
-                Arc::<Self>::clone(&self).on_hit_block(hit);
+                Arc::clone(&self).on_hit_block(hit);
                 if let Some(world) = world {
                     let state = world.get_block_state(hit.block_pos);
                     world.game_event(
@@ -1067,12 +1067,12 @@ mod tests {
             &vanilla_entities::BREEZE,
         );
 
-        let deflection = Arc::<FireworkRocketEntity>::clone(&firework).hit_target_or_deflect_self(
-            &ProjectileHit::Entity(EntityHitResult {
+        let deflection = Arc::clone(&firework).hit_target_or_deflect_self(&ProjectileHit::Entity(
+            EntityHitResult {
                 entity: deflector,
                 location: DVec3::X,
-            }),
-        );
+            },
+        ));
 
         assert_eq!(deflection, ProjectileDeflection::Reverse);
         assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));

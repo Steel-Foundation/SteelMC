@@ -225,7 +225,7 @@ impl FishingHookEntity {
     /// Determines if the fishing hook should hit a target or be deflected.
     fn check_collision(self: &Arc<Self>) {
         if let Some(hit_result) = self.get_hit_result_on_move_vector() {
-            Arc::<FishingHookEntity>::clone(self).hit_target_or_deflect_self(&hit_result);
+            Arc::clone(self).hit_target_or_deflect_self(&hit_result);
         }
     }
 
@@ -893,8 +893,7 @@ impl Entity for FishingHookEntity {
                             .set_velocity(self.base.velocity().add(DVec3::new(0.0, -0.03, 0.0)));
                     }
 
-                    Arc::<FishingHookEntity>::clone(&self)
-                        .move_entity(MoverType::SelfMovement, self.base.velocity());
+                    Arc::clone(&self).move_entity(MoverType::SelfMovement, self.base.velocity());
                     self.apply_effects_from_blocks();
                     self.update_rotation();
 
@@ -1034,7 +1033,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = Arc::<Player>::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = test_hook(world, 51);
         hook.set_owner(&owner);
@@ -1110,7 +1109,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = Arc::<Player>::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = test_hook(world, 201);
         hook.set_owner(&owner);
@@ -1121,7 +1120,7 @@ mod tests {
         hook.try_set_position(player.position())
             .expect("should position hook");
 
-        Arc::<FishingHookEntity>::clone(&hook).tick();
+        Arc::clone(&hook).tick();
 
         let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
         assert!(
@@ -1157,7 +1156,7 @@ mod tests {
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-        let player_owner = Arc::<Player>::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
 
         let hook = test_hook(world, 301);
@@ -1167,7 +1166,7 @@ mod tests {
         hook.set_velocity(DVec3::ZERO);
         hook.hook_state.lock().bobber_state = BobberState::Bobbing;
 
-        Arc::<FishingHookEntity>::clone(&hook).tick();
+        Arc::clone(&hook).tick();
 
         assert!(
             hook.velocity().y > 0.0,

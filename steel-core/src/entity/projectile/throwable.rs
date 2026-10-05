@@ -160,12 +160,12 @@ mod tests {
             Arc::downgrade(world),
         ));
         world
-            .try_add_entity(Arc::<SnowballEntity>::clone(&snowball) as SharedEntity)
+            .try_add_entity(Arc::clone(&snowball) as SharedEntity)
             .expect("snowball should attach to the loaded chunk");
 
         assert!(snowball.is_first_tick());
 
-        Arc::<SnowballEntity>::clone(&snowball).tick();
+        Arc::clone(&snowball).tick();
 
         assert!(!snowball.is_first_tick());
         assert!(
@@ -178,7 +178,7 @@ mod tests {
             .expect("snowball should return to its initial position");
         snowball.set_velocity(DVec3::ZERO);
 
-        Arc::<SnowballEntity>::clone(&snowball).tick();
+        Arc::clone(&snowball).tick();
 
         assert!(
             snowball.position().y < initial_position.y,

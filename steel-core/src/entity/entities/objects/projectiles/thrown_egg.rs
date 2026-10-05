@@ -211,7 +211,7 @@ impl Projectile for ThrownEggEntity {
         // Vanilla `ThrownEgg.onHitEntity`: super.onHitEntity() (no-op), then
         // deal 0 damage with a `thrown` source so the hit registers the impact.
         let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
-            .with_direct_entity(Arc::<ThrownEggEntity>::clone(&self));
+            .with_direct_entity(Arc::<Self>::clone(&self));
         if let Some(owner) = self.get_owner() {
             damage = damage.with_causing_entity(owner);
         }
@@ -222,7 +222,7 @@ impl Projectile for ThrownEggEntity {
 
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEgg.onHit`: super.onHit() then the server-side hatch.
-        Arc::<ThrownEggEntity>::clone(&self).projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         let Some(world) = self.level() else {
             return;

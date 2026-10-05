@@ -216,7 +216,7 @@ impl FireworkRocketEntity {
 
         let movement = self.velocity();
         let hit = self.get_hit_result_on_move_vector();
-        Arc::<FireworkRocketEntity>::clone(self).move_entity(MoverType::SelfMovement, movement);
+        Arc::clone(self).move_entity(MoverType::SelfMovement, movement);
         self.apply_effects_from_blocks();
         self.set_velocity(movement);
         hit
@@ -237,7 +237,7 @@ impl FireworkRocketEntity {
 
     fn fireworks_damage_source(self: &Arc<Self>) -> DamageSource {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
-            .with_direct_entity(Arc::<FireworkRocketEntity>::clone(self));
+            .with_direct_entity(Arc::<Self>::clone(self));
         if let Some(owner) = self.get_owner() {
             source = source.with_causing_entity(owner);
         }
@@ -354,7 +354,7 @@ impl Entity for FireworkRocketEntity {
             && self.is_alive()
             && let Some(hit) = &hit
         {
-            Arc::<FireworkRocketEntity>::clone(&self).hit_target_or_deflect_self(hit);
+            Arc::clone(&self).hit_target_or_deflect_self(hit);
             self.mark_velocity_sync();
         }
 
