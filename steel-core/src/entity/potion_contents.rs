@@ -87,7 +87,6 @@ mod tests {
     #[test]
     fn splash_rebuild_takes_its_icon_flag_from_visibility() {
         init_vanilla_registry();
-        // Particles on, icon off — the only shape where the two differ.
         let effect = RegistryMobEffectInstance::new(
             vanilla_mob_effects::LUCK,
             100,

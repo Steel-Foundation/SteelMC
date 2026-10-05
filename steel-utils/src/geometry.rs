@@ -279,8 +279,6 @@ impl<I> Aabb<DVec3, I> {
     }
 
     /// Returns the squared distance from `other` to this box.
-    ///
-    /// Mirrors vanilla `AABB.distanceToSqr(AABB)`.
     #[must_use]
     pub fn distance_to_sqr_aabb(self, other: Self) -> f64 {
         let dx = f64::max(

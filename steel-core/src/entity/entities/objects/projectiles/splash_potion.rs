@@ -26,7 +26,7 @@ use crate::entity::{
 };
 use crate::world::{ClipHitResult, World};
 
-/// Vanilla `MobEffectInstance.endsWithin` cutoff applied after scaling duration.
+/// Scaled effects lasting 20 ticks or less are skipped
 const MIN_REMAINING_TICKS: i32 = 20;
 
 /// A thrown splash potion.
@@ -70,8 +70,7 @@ impl SplashPotionEntity {
         }
     }
 
-    /// Applies one potion effect to an affected entity (vanilla's per-effect
-    /// body of `ThrownSplashPotion.onHitAsPotion`'s inner loop).
+    /// Applies one effect with distance falloff and duration scaling
     fn apply_effect(
         &self,
         world: &World,
@@ -97,14 +96,10 @@ impl SplashPotionEntity {
         let duration = effect.map_duration(|base_duration| {
             (scale * f64::from(base_duration) * f64::from(duration_scale) + 0.5) as i32
         });
-        // Vanilla builds the new instance first and asks *it* whether it ends
-        // within 20 ticks, so the check sees the scaled duration.
         let scaled_effect = to_runtime_instance_icon_from_visibility(effect, duration);
         if scaled_effect.ends_within(MIN_REMAINING_TICKS) {
             return;
         }
-        // Vanilla `Projectile.getEffectSource()`: the thrower when it is still
-        // resolvable, otherwise the potion itself.
         let effect_source: &dyn Entity = owner.map_or(self, |owner| owner.as_ref());
         living.add_mob_effect_with_source(scaled_effect, Some(effect_source));
     }

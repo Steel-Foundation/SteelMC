@@ -134,8 +134,7 @@ impl PotionContents {
             .unwrap_or(default_color)
     }
 
-    /// Returns vanilla `PotionContents.getColorOptional`: the amplifier-weighted
-    /// average of every visible effect's color, or `None` when no effect is visible.
+    /// Blends visible effect colors weighted by amplifier + 1 and returns `None` when no effect is visible
     fn color_from_effects(effects: &[MobEffectInstance]) -> Option<i32> {
         let mut red: i64 = 0;
         let mut green: i64 = 0;
