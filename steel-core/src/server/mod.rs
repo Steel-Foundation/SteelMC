@@ -238,7 +238,7 @@ pub async fn test_server_with_worlds_and_config(
         command_requests: CommandRequestQueue::new(),
         packet_processor: PacketProcessor::new(),
         chunk_encoding_pool: Arc::new(
-            rayon::ThreadPoolBuilder::new()
+            ThreadPoolBuilder::new()
                 .num_threads(1)
                 .build()
                 .expect("test chunk encoding pool should initialize"),
