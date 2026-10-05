@@ -1,10 +1,4 @@
-//! Thrown splash potion projectile entity (`ThrownSplashPotion`).
-//!
-//! `Projectile → ThrowableProjectile → ThrowableItemProjectile → AbstractThrownPotion`
-//! trait stack. On impact it applies its potion contents to every affected
-//! `LivingEntity` in a 4-block radius, scaled by distance falloff, then
-//! discards itself (shared [`AbstractThrownPotion::thrown_potion_on_hit`]
-//! logic handles the water-splash branch, break level-event, and discard).
+//! Splash potion projectile with distance scaled effects and water interactions
 
 use std::sync::{Arc, Weak};
 
