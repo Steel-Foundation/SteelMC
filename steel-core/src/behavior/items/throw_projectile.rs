@@ -37,8 +37,7 @@ pub(super) struct ThrowParams {
     pub uncertainty: f32,
 }
 
-/// Plays the throw sound, spawns the projectile from the player's rotation,
-/// awards `ITEM_USED`, and consumes one from the stack
+/// Throws a projectile plays its sound awards `ITEM_USED` and consumes one item
 pub(super) fn throw_item_projectile<E>(
     context: &mut UseItemContext,
     params: &ThrowParams,
