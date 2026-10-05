@@ -14,8 +14,6 @@ pub enum VerticalAnchor {
 
 impl VerticalAnchor {
     /// Resolve this anchor to a world Y coordinate.
-    ///
-    /// Matches vanilla's `VerticalAnchor.resolveY(WorldGenerationContext)`.
     #[must_use]
     pub const fn resolve_y(self, min_y: i32, height: i32) -> i32 {
         match self {
