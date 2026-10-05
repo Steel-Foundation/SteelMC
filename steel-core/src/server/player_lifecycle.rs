@@ -303,7 +303,7 @@ impl Server {
     ) {
         if let Some(root_vehicle) = restores.root_vehicle {
             if let Some(job) = RootVehicleRestoreJob::new(
-                Arc::<Player>::clone(player),
+                Arc::clone(player),
                 Arc::clone(&restores.target_world),
                 &root_vehicle,
                 residence_token,
@@ -322,7 +322,7 @@ impl Server {
         for restore in restores.ender_pearls {
             let pearl_uuid = Uuid::from_bytes(restore.payload.entity.uuid);
             if let Some(job) = EnderPearlRestoreJob::new(
-                Arc::<Player>::clone(player),
+                Arc::clone(player),
                 restore.world,
                 restore.payload.entity,
                 residence_token,

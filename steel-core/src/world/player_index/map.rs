@@ -35,7 +35,7 @@ impl PlayerSlot {
     }
 
     fn load(&self) -> Arc<Player> {
-        Arc::<Player>::clone(&self.player.load().player)
+        Arc::clone(&self.player.load().player)
     }
 
     fn replace(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {

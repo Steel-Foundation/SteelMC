@@ -263,7 +263,7 @@ impl ScheduledPlayPacket {
                 player.handle_custom_payload(packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
-                player.handle_chat(*packet, Arc::<Player>::clone(&player));
+                player.handle_chat(*packet, Arc::clone(&player));
             }
             ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
             ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
@@ -283,10 +283,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::ChatCommand(packet) => {
                 player.reset_last_action_time();
                 if server
-                    .submit_command(
-                        CommandSender::Player(Arc::<Player>::clone(&player)),
-                        packet.command,
-                    )
+                    .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
                     .is_err()
                 {
                     player.send_message(
@@ -297,11 +294,7 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
                 if server
-                    .submit_command_suggestions(
-                        Arc::<Player>::clone(&player),
-                        packet.id,
-                        packet.command,
-                    )
+                    .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
                     .is_err()
                 {
                     player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));

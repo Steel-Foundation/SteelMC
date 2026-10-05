@@ -574,8 +574,8 @@ impl Entity for ItemEntity {
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
-            if let Some(result) = Arc::<ItemEntity>::clone(&self)
-                .move_entity(MoverType::SelfMovement, self.velocity())
+            if let Some(result) =
+                Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity())
             {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {

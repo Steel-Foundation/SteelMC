@@ -266,7 +266,7 @@ impl CommandSource {
         );
         let entity = player
             .as_ref()
-            .map(|player| Arc::<Player>::clone(player) as SharedEntity);
+            .map(|player| Arc::clone(player) as SharedEntity);
         let position = entity.as_ref().map_or_else(
             || {
                 let level_data = world.level_data.read();

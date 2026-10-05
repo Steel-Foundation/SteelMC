@@ -625,7 +625,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     world.entity_tracker().add(
         &item,
         |_| vec![player.id()],
-        |player_id| (player_id == player.id()).then(|| Arc::<Player>::clone(&player)),
+        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
     );
     assert_eq!(
         world.entity_tracker().tracking_player_ids(item.id()),
@@ -803,7 +803,7 @@ fn duplicate_exact_player_admission_cleans_existing_membership() {
     let player = test_player(Arc::clone(world));
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
 
-    assert!(!world.add_player(Arc::<Player>::clone(&player), ResetReason::WorldChange));
+    assert!(!world.add_player(Arc::clone(&player), ResetReason::WorldChange));
 
     assert!(!world.contains_player(&player));
     assert!(world.get_entity_by_id(player.id()).is_none());
@@ -1657,19 +1657,19 @@ fn throttle_player_dropping_items_from_creative_menu() {
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    Arc::<Player>::clone(&player).tick();
+    Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
     for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
-        Arc::<Player>::clone(&player).tick();
+        Arc::clone(&player).tick();
     }
     player.handle_set_creative_mode_slot(packet.clone());
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 1);
 
     // Decay the Throttler just enough to allow the player drop one more stack.
-    Arc::<Player>::clone(&player).tick();
+    Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
 }

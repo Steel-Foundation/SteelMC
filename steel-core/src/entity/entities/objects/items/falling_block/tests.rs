@@ -26,7 +26,7 @@ fn tick_until_settled(entities: &[&Arc<FallingBlockEntity>]) {
             if entity.is_alive() {
                 entity.set_old_position_to_current();
                 entity.advance_tick_count();
-                Arc::<FallingBlockEntity>::clone(entity).tick();
+                Arc::clone(entity).tick();
             }
         }
         if entities.iter().all(|entity| entity.is_removed()) {

@@ -231,7 +231,7 @@ fn recording_player(
         .build();
     let moved = player.try_set_position(block_bottom_center(pos.above()));
     assert!(moved.is_ok(), "test player should move beside jukebox");
-    assert!(world.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     packets.lock().clear();
     (player, packets)
 }

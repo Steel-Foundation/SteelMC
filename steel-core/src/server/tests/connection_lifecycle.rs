@@ -82,11 +82,8 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         let (player, receiver, network_writer) =
             java_test_player(&server, Arc::clone(world), Uuid::from_u128(1));
 
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(world.add_player(
-            Arc::<Player>::clone(&player),
-            super::ResetReason::InitialJoin
-        ));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
 
@@ -197,11 +194,8 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         ));
         assert!(session.bind_initial_player(&player));
 
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(world.add_player(
-            Arc::<Player>::clone(&player),
-            super::ResetReason::InitialJoin
-        ));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
         assert!(

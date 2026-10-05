@@ -211,7 +211,7 @@ mod tests {
             .connection(connection)
             .build();
         assert!(observer.try_set_position(block_center(pos)).is_ok());
-        assert!(world.add_player(Arc::<Player>::clone(&observer), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
         packets.lock().clear();
 
         let events = Arc::new(SyncMutex::new(Vec::new()));

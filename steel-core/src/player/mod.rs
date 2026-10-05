@@ -1372,7 +1372,7 @@ impl Entity for Player {
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            Arc::<Player>::clone(&self).default_ride_tick();
+            Arc::clone(&self).default_ride_tick();
             self.reset_fall_distance();
         }
         self.check_riding_statistics(self.position() - pre);

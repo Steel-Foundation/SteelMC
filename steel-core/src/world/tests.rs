@@ -1,5 +1,3 @@
-use crate::player::Player;
-
 use super::*;
 use std::{
     sync::{Arc, Weak},
@@ -42,13 +40,13 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
         .uuid(uuid)
         .build();
 
-    assert!(world.add_player(Arc::<Player>::clone(&old), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&old), ResetReason::InitialJoin));
     assert!(!world.player_area_map.is_empty());
     let tracked = TrackerTestEntity::shared(2);
     world.entity_tracker().add(
         &tracked,
         |_| vec![old.id()],
-        |player_id| (player_id == old.id()).then(|| Arc::<Player>::clone(&old)),
+        |player_id| (player_id == old.id()).then(|| Arc::clone(&old)),
     );
     assert_eq!(world.entity_tracker().tracking_player_ids(2), [old.id()]);
     old.set_sleeping_pos(BlockPos::new(0, 64, 0));
@@ -76,7 +74,7 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
             .all(|(stat, count)| *stat != leave_game || *count == 0)
     );
 
-    assert!(world.install_respawned_player(Arc::<Player>::clone(&replacement), Some(&old)));
+    assert!(world.install_respawned_player(Arc::clone(&replacement), Some(&old)));
     let Some(installed) = world.players.get_by_uuid(&uuid) else {
         panic!("fresh player should own the world player map");
     };

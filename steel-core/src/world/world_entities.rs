@@ -158,9 +158,9 @@ impl World {
     ) -> bool {
         let installed = if let Some(expected_old_player) = expected_old_player {
             self.players
-                .replace_player(expected_old_player, Arc::<Player>::clone(&player))
+                .replace_player(expected_old_player, Arc::clone(&player))
         } else {
-            self.players.insert(Arc::<Player>::clone(&player))
+            self.players.insert(Arc::clone(&player))
         };
         if !installed {
             return false;
@@ -169,7 +169,7 @@ impl World {
         if let Err(error) = self.try_register_player_entity(&player) {
             let rolled_back = if let Some(expected_old_player) = expected_old_player {
                 self.players
-                    .replace_player(&player, Arc::<Player>::clone(expected_old_player))
+                    .replace_player(&player, Arc::clone(expected_old_player))
             } else {
                 self.players.remove_player_sync(&player).is_some()
             };
@@ -274,7 +274,7 @@ impl World {
         }
 
         let detached_player = if retain_player_map_entry {
-            Arc::<Player>::clone(player)
+            Arc::clone(player)
         } else {
             let Some(detached_player) = self.players.remove_player_sync(player) else {
                 return false;

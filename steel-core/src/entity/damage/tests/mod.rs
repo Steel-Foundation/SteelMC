@@ -127,7 +127,7 @@ fn returned_self_damage_source_outlives_history_expiry_without_a_cycle() {
     let world = history_world(&history, "self_damage_history");
     let player = TestPlayerBuilder::new(Arc::clone(&world), "SelfDamage", 1).build();
     let weak = Arc::downgrade(&player);
-    let entity: SharedEntity = Arc::<Player>::clone(&player);
+    let entity = Arc::clone(&player);
     let source = DamageSource::direct(&vanilla_damage_types::INDIRECT_MAGIC, entity);
     player.record_last_damage_source(&source);
     let generation = player.generation();
@@ -178,7 +178,7 @@ fn replacing_damage_history_releases_the_previous_source() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "damage_history_replacement");
     let victim = TestPlayerBuilder::new(Arc::clone(&world), "Victim", 1).build();
-    assert!(world.players.insert(Arc::<Player>::clone(&victim)));
+    assert!(world.players.insert(Arc::clone(&victim)));
     let first = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&first);
     victim.record_last_damage_source(
@@ -242,7 +242,7 @@ fn projectile_callback_can_build_a_source_after_its_removal() {
     ));
     projectile.set_removed(RemovalReason::Discarded);
     let target_entity: SharedEntity = Arc::<PigEntity>::clone(&target);
-    Arc::<SnowballEntity>::clone(&projectile).on_hit_entity(&target_entity, DVec3::ZERO);
+    Arc::clone(&projectile).on_hit_entity(&target_entity, DVec3::ZERO);
     let source = target
         .last_damage_source()
         .expect("zero-damage projectile hit is recorded");

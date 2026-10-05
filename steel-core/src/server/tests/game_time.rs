@@ -1,5 +1,3 @@
-use crate::player::Player;
-
 use std::path::Path;
 use std::sync::Arc;
 use steel_utils::Identifier;
@@ -56,8 +54,8 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         .expect("server");
         let workers = WorldTickWorkers::spawn(server.worlds.values()).expect("workers");
         let player = test_player(&server, Arc::clone(&primary));
-        assert!(server.online_players.insert(Arc::<Player>::clone(&player)));
-        assert!(primary.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(primary.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let attacker = TestEntity::shared(
             next_entity_id(),
             DVec3::ZERO,
@@ -166,7 +164,7 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
             .expect("server");
         let (player, packets) =
             test_player_with_packets(&server, Arc::clone(derived), "ClockTest", next_entity_id());
-        assert!(derived.add_player(Arc::<Player>::clone(&player), ResetReason::InitialJoin));
+        assert!(derived.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         packets.lock().clear();
         let periodic_sync_tick = 20;
         for _ in 0..periodic_sync_tick {

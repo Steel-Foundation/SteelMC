@@ -335,8 +335,8 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
     let source_world_storage = &source_world_storage_fixture.world;
     let target_world_storage_fixture = fresh_test_world("kill_game_event_target");
     let target_world_storage = &target_world_storage_fixture.world;
-    let source_world = &source_world_storage;
-    let target_world = &target_world_storage;
+    let source_world = source_world_storage;
+    let target_world = target_world_storage;
     assert!(!Arc::ptr_eq(source_world, target_world));
     let non_living_position = DVec3::new(0.25, 64.75, -0.125);
     let living_position = DVec3::new(1.25, 64.75, -0.125);

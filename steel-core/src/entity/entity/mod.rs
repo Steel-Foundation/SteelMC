@@ -866,7 +866,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Called every game tick while this entity is riding another entity.
     fn ride_tick(self: Arc<Self>) {
-        Arc::<Self>::clone(&self).default_ride_tick();
+        Arc::clone(&self).default_ride_tick();
         if let Some(living) = self.as_living_entity() {
             living.reset_fall_distance();
         }
@@ -875,7 +875,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// The default implementation of `Entity.rideTick` when not overridden.
     fn default_ride_tick(self: Arc<Self>) {
         self.set_velocity(DVec3::ZERO);
-        Arc::<Self>::clone(&self).tick();
+        Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
         }
@@ -2406,11 +2406,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             accepted.horizontal_collision,
             accepted.movement,
         );
-        if Arc::<Self>::clone(&self).do_check_fall_damage(
-            accepted.movement,
-            accepted.on_ground,
-            world,
-        ) {
+        if Arc::clone(&self).do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
             return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
@@ -3305,7 +3301,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.refresh_fluid_contact();
 
         if self.is_server_driven_movement()
-            && Arc::<Self>::clone(&self).apply_fall_damage_after_move(&result, &world)
+            && Arc::clone(&self).apply_fall_damage_after_move(&result, &world)
         {
             return Some(result);
         }
@@ -3403,13 +3399,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        Arc::<Self>::clone(&self).check_fall_damage(
-            movement.y,
-            on_ground,
-            effect_state,
-            effect_pos,
-            world,
-        );
+        Arc::clone(&self).check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
     }
 
@@ -3442,7 +3432,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let fall_context =
                 EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                let damage_applied = Arc::<Self>::clone(&self).cause_fall_damage(
+                let damage_applied = Arc::clone(&self).cause_fall_damage(
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,

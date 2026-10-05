@@ -1142,7 +1142,7 @@ mod tests {
         let processor = PacketProcessor::new();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
 
-        processor.schedule(Arc::<Player>::clone(&original), packet, 1);
+        processor.schedule(Arc::clone(&original), packet, 1);
         let Some(transition) = processor.pause_player_session(&session) else {
             panic!("session packet lane should pause");
         };
@@ -1344,12 +1344,12 @@ mod tests {
         let unrelated_player = TestPlayerBuilder::new(Arc::clone(world), "Unrelated", 2).build();
         let processor = PacketProcessor::new();
         processor.schedule(
-            Arc::<Player>::clone(&player),
+            Arc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             1,
         );
         processor.schedule(
-            Arc::<Player>::clone(&player),
+            Arc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             2,
         );
@@ -1372,12 +1372,12 @@ mod tests {
             panic!("active session lane should pause");
         };
         processor.schedule(
-            Arc::<Player>::clone(&player),
+            Arc::clone(&player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             3,
         );
         processor.schedule(
-            Arc::<Player>::clone(&unrelated_player),
+            Arc::clone(&unrelated_player),
             ScheduledPlayPacket::perform_respawn_for_test(),
             4,
         );

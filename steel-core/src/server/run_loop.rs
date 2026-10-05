@@ -453,8 +453,8 @@ impl Server {
         transaction_id: i32,
         input: &str,
     ) {
-        let suggestions = self
-            .build_command_suggestions(CommandSender::Player(Arc::<Player>::clone(player)), input);
+        let suggestions =
+            self.build_command_suggestions(CommandSender::Player(Arc::clone(player)), input);
         match suggestions {
             Ok(suggestions) => {
                 player.send_packet(command_suggestions_packet(transaction_id, &suggestions));
@@ -664,7 +664,7 @@ mod tests {
     use super::Server;
 
     use crate::{
-        player::{Player, ResetReason},
+        player::ResetReason,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     };
     use rustc_hash::FxHashMap;
@@ -693,7 +693,7 @@ mod tests {
         assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
-        assert!(world.players.insert(Arc::<Player>::clone(&player)));
+        assert!(world.players.insert(Arc::clone(&player)));
         world.remove_player_for_world_change(&player);
     }
 }

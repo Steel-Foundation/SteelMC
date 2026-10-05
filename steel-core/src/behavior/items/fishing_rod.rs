@@ -103,7 +103,6 @@ impl ItemBehavior for FishingRodItem {
 
 #[cfg(test)]
 mod tests {
-    use crate::player::Player;
     use steel_registry::{item_stack::ItemStack, vanilla_items};
     use steel_utils::types::InteractionHand;
     use uuid::Uuid;
@@ -122,7 +121,7 @@ mod tests {
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
 
-        let player_owner = Arc::<Player>::clone(&player);
+        let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let hook = Arc::new(FishingHookEntity::new(
             &vanilla_entities::FISHING_BOBBER,
@@ -161,7 +160,7 @@ mod tests {
         player
             .try_set_position(DVec3::new(8.0, 64.0, 8.0))
             .expect("should position player in center of chunk");
-        world.players.insert(Arc::<Player>::clone(&player));
+        world.players.insert(Arc::clone(&player));
         player
             .inventory
             .lock()

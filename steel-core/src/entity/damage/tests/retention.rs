@@ -27,7 +27,7 @@ fn removed_history_resolves_shooter_after_projectile_is_released_without_rebindi
     let world = history_world(&history, "removed_projectile_history");
     let victim = live_pig(&world, 1);
     let shooter = TestPlayerBuilder::new(Arc::clone(&world), "Shooter", 2).build();
-    assert!(world.players.insert(Arc::<Player>::clone(&shooter)));
+    assert!(world.players.insert(Arc::clone(&shooter)));
     let projectile = TestEntity::shared(3, DVec3::ZERO, Weak::new(), &vanilla_entities::SNOWBALL);
     let projectile_generation = projectile.generation();
     let weak_projectile = Arc::downgrade(&projectile);

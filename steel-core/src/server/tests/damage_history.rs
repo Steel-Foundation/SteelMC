@@ -40,8 +40,8 @@ fn assert_disconnect_releases_damage_history(
         let second =
             test_player_with_packets(&server, Arc::clone(world), "Second", next_entity_id()).0;
         for player in [&first, &second] {
-            assert!(server.online_players.insert(Arc::<Player>::clone(player)));
-            assert!(world.add_player(Arc::<Player>::clone(player), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(Arc::clone(player)));
+            assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
             let _ = player.mark_joined_world();
         }
 

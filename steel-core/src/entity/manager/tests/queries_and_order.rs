@@ -331,7 +331,7 @@ fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
     let release_first_callback = Arc::new(Barrier::new(2));
     entity.set_level_callback(Arc::new(DelayedFirstBoundsCallback {
         entity_id: entity.id(),
-        manager: Arc::<WorldEntityManager>::clone(&manager),
+        manager: Arc::clone(&manager),
         first_callback_entered: Arc::clone(&first_callback_entered),
         release_first_callback: Arc::clone(&release_first_callback),
         callback_count: AtomicUsize::new(0),
