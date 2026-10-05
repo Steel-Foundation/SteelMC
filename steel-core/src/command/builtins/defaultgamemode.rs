@@ -46,12 +46,22 @@ fn apply_default_game_mode(
     context: &SteelCommandContext<CommandSource>,
     domain: &str,
 ) -> Result<i32, CommandSyntaxError> {
+    if !context.source().allows_execution_domain(domain) {
+        return Err(CommandSyntaxError::dynamic(
+            "Players cannot execute commands across Steel domains",
+        ));
+    }
+
     let game_mode = context.game_mode("gamemode")?;
     let worlds = context.source().server().worlds.worlds_in_domain(domain);
 
     for world in worlds {
         world.set_default_gamemode(game_mode);
     }
+
+    // TODO: Enforce the new game mode on online players when `force-gamemode=true` and return the
+    // count of updated players. This also needs to apply when saved players join, requiring a shared
+    // `force-gamemode` foundation.
 
     let message = translations::COMMANDS_DEFAULTGAMEMODE_SUCCESS
         .message([TextComponent::from(game_mode_translation(game_mode))])

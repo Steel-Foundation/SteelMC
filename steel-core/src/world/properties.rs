@@ -41,13 +41,13 @@ impl World {
     /// Returns the default game mode for first-visit players in this world.
     #[must_use]
     pub fn default_gamemode(&self) -> GameType {
-        GameType::from(self.default_gamemode.load(Ordering::Relaxed) as i8)
+        GameType::from(self.default_gamemode.load(Ordering::Relaxed))
     }
 
     /// Sets the default game mode for this world.
     pub fn set_default_gamemode(&self, default_gamemode: GameType) {
         self.default_gamemode
-            .store(default_gamemode as u8, Ordering::Release);
+            .store(default_gamemode.into(), Ordering::Relaxed);
     }
 
     /// Returns the total height of the world in blocks.
