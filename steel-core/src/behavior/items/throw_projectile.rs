@@ -16,11 +16,9 @@ use crate::entity::{
     Entity, Projectile, SharedEntity, ThrowableItemProjectile, spawn_throwable_item_projectile,
 };
 
-/// Numerator of vanilla's throw pitch jitter, `0.4 / (random * 0.4 + 0.8)`.
 const THROW_PITCH_NUMERATOR: f32 = 0.4;
-/// Lower bound of that jitter's divisor.
 const THROW_PITCH_DIVISOR_MIN: f32 = 0.8;
-/// Upper bound of that jitter's divisor.
+const THROW_PITCH_DIVISOR_MAX: f32 = 1.2;
 const THROW_PITCH_DIVISOR_MAX: f32 = 1.2;
 
 /// The per-item constants of vanilla's throw `use`.
