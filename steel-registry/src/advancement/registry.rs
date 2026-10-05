@@ -21,6 +21,8 @@ pub struct AdvancementNode {
     pub children: Vec<usize>,
     pub parent: Option<usize>,
     pub value: AdvancementRef,
+    pub x: f32,
+    pub y: f32,
 }
 
 pub type AdvancementNodeRef = &'static AdvancementNode;
@@ -36,6 +38,8 @@ impl AdvancementNode {
             value,
             parent,
             children: Vec::new(),
+            x: 0f32,
+            y: 0f32,
         }
     }
 
@@ -47,9 +51,8 @@ impl AdvancementNode {
 
     #[inline]
     pub fn set_location(&mut self, x: f32, y: f32) {
-        if let Some(display) = &self.value.display {
-            *display.location.write() = (x, y);
-        }
+        self.x = x;
+        self.y = y;
     }
 
     #[must_use]

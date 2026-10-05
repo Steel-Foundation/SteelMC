@@ -2,10 +2,8 @@ use crate::ItemStackTemplate;
 use crate::advancement::registry::AdvancementRef;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::ops::Deref;
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
-use steel_utils::locks::SyncRwLock;
 use steel_utils::serial::WriteTo;
 use steel_utils::translations::{
     CHAT_TYPE_ADVANCEMENT_CHALLENGE, CHAT_TYPE_ADVANCEMENT_GOAL, CHAT_TYPE_ADVANCEMENT_TASK,
@@ -24,15 +22,9 @@ pub struct DisplayInfo {
     pub show_toast: bool,
     pub announce_chat: bool,
     pub hidden: bool,
-    pub location: SyncRwLock<(f32, f32)>,
 }
 
 impl DisplayInfo {
-    #[must_use]
-    pub fn position(&self) -> (f32, f32) {
-        *self.location.read().deref()
-    }
-
     #[must_use]
     pub const fn has_background(&self) -> bool {
         self.background.is_some()
@@ -52,7 +44,6 @@ impl WriteTo for DisplayInfo {
         if let Some(background) = &self.background {
             background.write(writer)?;
         }
-        self.location.read().write(writer)?;
         Ok(())
     }
 }
