@@ -223,9 +223,9 @@ impl FishingHookEntity {
     }
 
     /// Determines if the fishing hook should hit a target or be deflected.
-    fn check_collision(&self) {
+    fn check_collision(self: &Arc<Self>) {
         if let Some(hit_result) = self.get_hit_result_on_move_vector() {
-            self.hit_target_or_deflect_self(&hit_result);
+            Arc::clone(self).hit_target_or_deflect_self(&hit_result);
         }
     }
 
@@ -669,7 +669,7 @@ impl FishingHookEntity {
 
     /// Bobber specific ticking logic. We return a `bool` here, so we can return early inside `tick`.
     fn tick_bobber(
-        &self,
+        self: &Arc<Self>,
         bobber_state: BobberState,
         world: &World,
         is_in_water: bool,
@@ -842,7 +842,7 @@ impl Entity for FishingHookEntity {
     }
 
     /// Responsible for all state-changes.
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         {
             let mut synchronized_random = self.synchronized_random.lock();
             let least_significant_bits = self.uuid().as_u64_pair().1;
@@ -893,7 +893,7 @@ impl Entity for FishingHookEntity {
                             .set_velocity(self.base.velocity().add(DVec3::new(0.0, -0.03, 0.0)));
                     }
 
-                    self.move_entity(MoverType::SelfMovement, self.base.velocity());
+                    Arc::clone(&self).move_entity(MoverType::SelfMovement, self.base.velocity());
                     self.apply_effects_from_blocks();
                     self.update_rotation();
 
@@ -940,7 +940,7 @@ impl Projectile for FishingHookEntity {
     }
 
     /// Stores the hit entity inside `hooked_in`.
-    fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         self.set_hooked_entity(Some(Arc::clone(entity)));
     }
 }
@@ -985,10 +985,11 @@ mod tests {
 
     #[test]
     fn spawn_data_identifies_the_owning_player() {
-        let world = fresh_test_world("fishing_hook_spawn_data");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), 37).build();
+        let world_fixture = fresh_test_world("fishing_hook_spawn_data");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), 37).build();
         let owner: SharedEntity = player;
-        let hook = test_hook(&world, 38);
+        let hook = test_hook(world, 38);
         hook.set_owner_entity(Some(&owner));
 
         assert_eq!(hook.spawn_data(), owner.id());
@@ -996,12 +997,13 @@ mod tests {
 
     #[test]
     fn removal_only_clears_the_matching_active_hook() {
-        let world = fresh_test_world("fishing_hook_owner_lifecycle");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(2), 40).build();
+        let world_fixture = fresh_test_world("fishing_hook_owner_lifecycle");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(2), 40).build();
         let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
-        let first = test_hook(&world, 41);
-        let second = test_hook(&world, 42);
+        let first = test_hook(world, 41);
+        let second = test_hook(world, 42);
 
         first.set_owner(&owner);
         assert!(
@@ -1024,15 +1026,16 @@ mod tests {
 
     #[test]
     fn retrieving_discards_the_active_hook() {
-        let world = fresh_test_world("fishing_hook_retrieve_lifecycle");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(3), 50).build();
+        let world_fixture = fresh_test_world("fishing_hook_retrieve_lifecycle");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(3), 50).build();
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
         let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
-        let hook = test_hook(&world, 51);
+        let hook = test_hook(world, 51);
         hook.set_owner(&owner);
         let rod = ItemStack::new(&vanilla_items::FISHING_ROD);
 
@@ -1043,13 +1046,14 @@ mod tests {
 
     #[test]
     fn shoot_from_player_respects_pitch_and_yaw_signs() {
-        let world = fresh_test_world("fishing_hook_shoot_signs");
+        let world_fixture = fresh_test_world("fishing_hook_shoot_signs");
+        let world = &world_fixture.world;
 
         // Straight down: pitch = 90.0, yaw = 0.0 -> Y velocity must be negative (downwards)
         let player_down =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(10), 100).build();
+            TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(10), 100).build();
         player_down.set_rotation((0.0, 90.0));
-        let hook_down = test_hook(&world, 101);
+        let hook_down = test_hook(world, 101);
         hook_down.shoot_from_player(&player_down, 0, 0);
         assert!(
             hook_down.velocity().y < -2.0,
@@ -1058,10 +1062,9 @@ mod tests {
         );
 
         // Straight up: pitch = -90.0, yaw = 0.0 -> Y velocity must be positive (upwards)
-        let player_up =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(11), 110).build();
+        let player_up = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(11), 110).build();
         player_up.set_rotation((0.0, -90.0));
-        let hook_up = test_hook(&world, 111);
+        let hook_up = test_hook(world, 111);
         hook_up.shoot_from_player(&player_up, 0, 0);
         assert!(
             hook_up.velocity().y > 2.0,
@@ -1071,9 +1074,9 @@ mod tests {
 
         // West: yaw = 90.0, pitch = 0.0 -> X velocity must be negative (-X is West)
         let player_west =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(12), 120).build();
+            TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(12), 120).build();
         player_west.set_rotation((90.0, 0.0));
-        let hook_west = test_hook(&world, 121);
+        let hook_west = test_hook(world, 121);
         hook_west.shoot_from_player(&player_west, 0, 0);
         assert!(
             hook_west.velocity().x < -0.8,
@@ -1083,9 +1086,9 @@ mod tests {
 
         // East: yaw = -90.0, pitch = 0.0 -> X velocity must be positive (+X is East)
         let player_east =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(13), 130).build();
+            TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(13), 130).build();
         player_east.set_rotation((-90.0, 0.0));
-        let hook_east = test_hook(&world, 131);
+        let hook_east = test_hook(world, 131);
         hook_east.shoot_from_player(&player_east, 0, 0);
         assert!(
             hook_east.velocity().x > 0.8,
@@ -1099,15 +1102,16 @@ mod tests {
         steel_registry::init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("fishing_hook_grounded_owner");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(20), 200).build();
+        let world_fixture = fresh_test_world("fishing_hook_grounded_owner");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(20), 200).build();
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
         let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
-        let hook = test_hook(&world, 201);
+        let hook = test_hook(world, 201);
         hook.set_owner(&owner);
         hook.set_on_ground(true);
         hook.set_velocity(DVec3::ZERO);
@@ -1116,7 +1120,7 @@ mod tests {
         hook.try_set_position(player.position())
             .expect("should position hook");
 
-        hook.tick();
+        Arc::clone(&hook).tick();
 
         let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
         assert!(
@@ -1134,8 +1138,9 @@ mod tests {
         steel_registry::init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("fishing_hook_buoyancy");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("fishing_hook_buoyancy");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let water = vanilla_blocks::WATER.default_state();
         let pos_submerged = BlockPos::new(0, 60, 0);
@@ -1143,7 +1148,7 @@ mod tests {
         world.set_block(pos_submerged, water, UpdateFlags::UPDATE_NONE);
         world.set_block(pos_above, water, UpdateFlags::UPDATE_NONE);
 
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(30), 300).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(30), 300).build();
         player
             .try_set_position(DVec3::new(0.5, 61.0, 0.5))
             .expect("should position player near water");
@@ -1154,14 +1159,14 @@ mod tests {
         let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
 
-        let hook = test_hook(&world, 301);
+        let hook = test_hook(world, 301);
         hook.set_owner(&owner);
         hook.try_set_position(DVec3::new(0.5, 60.5, 0.5))
             .expect("should position hook");
         hook.set_velocity(DVec3::ZERO);
         hook.hook_state.lock().bobber_state = BobberState::Bobbing;
 
-        hook.tick();
+        Arc::clone(&hook).tick();
 
         assert!(
             hook.velocity().y > 0.0,
@@ -1179,8 +1184,9 @@ mod tests {
         steel_registry::init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("fishing_hook_open_water");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("fishing_hook_open_water");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let water = vanilla_blocks::WATER.default_state();
         let air = vanilla_blocks::AIR.default_state();
@@ -1212,7 +1218,7 @@ mod tests {
             }
         }
 
-        let hook = test_hook(&world, 401);
+        let hook = test_hook(world, 401);
         assert!(
             hook.calculate_open_water(center),
             "5x5 open water lake must be considered open water"

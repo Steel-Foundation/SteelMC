@@ -273,10 +273,11 @@ mod tests {
     fn placed_propagules_are_mature_and_preserve_source_water() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("mangrove_propagule_placement");
+        let world_fixture = fresh_test_world("mangrove_propagule_placement");
+        let world = &world_fixture.world;
         let wet_pos = BlockPos::new(8, 64, 8);
         let dry_pos = wet_pos.east();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wet_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(wet_pos));
         assert!(world.set_block(
             wet_pos.below(),
             vanilla_blocks::DIRT.default_state(),
@@ -297,7 +298,7 @@ mod tests {
         let wet_state = {
             let mut stack = ItemStack::new(&vanilla_items::MANGROVE_PROPAGULE);
             let context = BlockPlaceContext::directional(
-                &world,
+                world,
                 wet_pos,
                 Direction::Down,
                 &mut stack,
@@ -310,7 +311,7 @@ mod tests {
         let dry_state = {
             let mut stack = ItemStack::new(&vanilla_items::MANGROVE_PROPAGULE);
             let context = BlockPlaceContext::directional(
-                &world,
+                world,
                 dry_pos,
                 Direction::Down,
                 &mut stack,
@@ -380,14 +381,15 @@ mod tests {
     fn planted_bonemeal_advances_stage_before_growing_tree() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("mangrove_propagule_stage");
+        let world_fixture = fresh_test_world("mangrove_propagule_stage");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::MANGROVE_PROPAGULE.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
         let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
 
-        behavior.perform_bonemeal(state, &world, &mut ZeroRng, pos);
+        behavior.perform_bonemeal(state, world, &mut ZeroRng, pos);
 
         assert_eq!(world.get_block_state(pos).get_value(STAGE), 1);
     }
@@ -396,12 +398,13 @@ mod tests {
     fn mature_planted_propagule_generates_mangrove_tree() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("mangrove_propagule_tree");
+        let world_fixture = fresh_test_world("mangrove_propagule_tree");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let center = ChunkPos::from_block_pos(pos);
         for chunk_x in center.0.x - 1..=center.0.x + 1 {
             for chunk_z in center.0.y - 1..=center.0.y + 1 {
-                insert_ready_full_chunk(&world, ChunkPos::new(chunk_x, chunk_z));
+                insert_ready_full_chunk(world, ChunkPos::new(chunk_x, chunk_z));
             }
         }
         for x in pos.x() - 12..=pos.x() + 12 {
@@ -420,7 +423,7 @@ mod tests {
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
         let placed = (0..64).any(|seed| {
             let mut rng = StdRng::seed_from_u64(seed);
-            MangrovePropaguleBlock::grow_tree(&world, pos, state, &mut rng)
+            MangrovePropaguleBlock::grow_tree(world, pos, state, &mut rng)
         });
 
         assert!(placed);

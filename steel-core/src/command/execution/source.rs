@@ -264,7 +264,7 @@ impl CommandSource {
         server: Arc<Server>,
         signing_context: Option<CommandSigningContext>,
     ) -> Self {
-        let player = sender.get_player().map(Arc::clone);
+        let player = sender.get_player().cloned();
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
             |player| player.get_world(),

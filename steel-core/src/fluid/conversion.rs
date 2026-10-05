@@ -380,8 +380,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("fluid_spread_closest_slope");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("fluid_spread_closest_slope");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let origin = BlockPos::new(8, 64, 8);
         let source_water = vanilla_blocks::WATER.default_state();
         let thin_lava = vanilla_blocks::LAVA
@@ -400,7 +401,7 @@ mod tests {
             assert!(world.set_block_with_limit(pos, state, flags, 0));
         }
 
-        let blocked = get_spread(&world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
+        let blocked = get_spread(world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
         assert_eq!(blocked.len(), 0);
 
         assert!(world.set_block_with_limit(
@@ -409,7 +410,7 @@ mod tests {
             flags,
             0,
         ));
-        let open = get_spread(&world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
+        let open = get_spread(world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
         assert_eq!(
             open,
             vec![(

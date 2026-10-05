@@ -294,9 +294,10 @@ mod tests {
     fn wooden_button_stays_pressed_while_arrow_intersects_its_shape() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("wooden_button_arrow");
+        let world_fixture = fresh_test_world("wooden_button_arrow");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::OAK_BUTTON.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
@@ -313,7 +314,7 @@ mod tests {
         let arrow: SharedEntity = TestEntity::shared(
             7_001,
             arrow_pos,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             &vanilla_entities::ARROW,
         );
         world
@@ -323,7 +324,7 @@ mod tests {
         let mut effects = InsideBlockEffectCollector::new();
         BLOCK_BEHAVIORS
             .get_behavior(&vanilla_blocks::OAK_BUTTON)
-            .entity_inside(state, &world, pos, arrow.as_ref(), &mut effects, true);
+            .entity_inside(state, world, pos, arrow.as_ref(), &mut effects, true);
 
         assert!(world.get_block_state(pos).get_value(POWERED));
         assert!(world.has_scheduled_block_tick(pos, &vanilla_blocks::OAK_BUTTON));
