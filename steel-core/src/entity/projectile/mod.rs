@@ -12,12 +12,15 @@
 mod throwable;
 mod throwable_item;
 
+#[cfg(test)]
+mod owner_tests;
+
 use std::mem;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::owned::NbtCompound;
 use steel_math::{DEGREE_180, DEGREE_360};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
@@ -26,13 +29,13 @@ use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLO
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, UuidExt, WorldAabb};
+use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{Entity, EntityReference, LivingEntity, SharedEntity};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
@@ -145,8 +148,7 @@ impl ProjectileDeflection {
 }
 
 struct ProjectileState {
-    owner: Option<Uuid>,
-    owner_entity: Option<Weak<dyn Entity>>,
+    owner: Option<EntityReference>,
     left_owner: bool,
     left_owner_checked: bool,
     has_been_shot: bool,
@@ -165,7 +167,6 @@ impl ProjectileBase {
         Self {
             state: SyncMutex::new(ProjectileState {
                 owner: None,
-                owner_entity: None,
                 left_owner: false,
                 left_owner_checked: false,
                 has_been_shot: false,
@@ -235,50 +236,36 @@ pub trait Projectile: Entity + ProjectileEventSource {
 
     /// Sets the persisted owner UUID and clears the live owner cache.
     fn set_owner_uuid(&self, owner: Option<Uuid>) {
-        let mut state = self.projectile_base().state.lock();
-        state.owner = owner;
-        state.owner_entity = None;
+        self.projectile_base().state.lock().owner = owner.map(EntityReference::from_uuid);
     }
 
     /// Sets the owning entity and caches its live reference.
     fn set_owner_entity(&self, owner: Option<&SharedEntity>) {
-        let mut state = self.projectile_base().state.lock();
-        state.owner = owner.map(|owner| owner.uuid());
-        state.owner_entity = owner.map(Arc::downgrade);
+        self.projectile_base().state.lock().owner = owner.map(EntityReference::from_entity);
     }
 
     /// Caches a live owner reference when it matches the saved owner UUID.
     fn cache_owner_entity(&self, owner: &SharedEntity) {
-        let mut state = self.projectile_base().state.lock();
-        if state.owner == Some(owner.uuid()) {
-            state.owner_entity = Some(Arc::downgrade(owner));
+        if let Some(reference) = &self.projectile_base().state.lock().owner {
+            reference.cache_entity(owner);
         }
     }
 
     /// Returns the owner UUID, if any.
     fn owner_uuid(&self) -> Option<Uuid> {
-        self.projectile_base().state.lock().owner
-    }
-
-    /// Resolves the cached owner, then looks up its UUID in the current world.
-    fn get_owner(&self) -> Option<SharedEntity> {
-        let uuid = self.owner_uuid()?;
-        if let Some(owner) = self
-            .projectile_base()
+        self.projectile_base()
             .state
             .lock()
-            .owner_entity
+            .owner
             .as_ref()
-            .and_then(Weak::upgrade)
-            && !owner.is_removed()
-            && owner.uuid() == uuid
-        {
-            return Some(owner);
-        }
+            .map(EntityReference::uuid)
+    }
 
-        let owner = self.level()?.get_entity_by_uuid(&uuid)?;
-        self.cache_owner_entity(&owner);
-        Some(owner)
+    /// Resolves the cached owner, then looks up its UUID in the current domain.
+    fn get_owner(&self) -> Option<SharedEntity> {
+        let world = self.level()?;
+        let owner = self.projectile_base().state.lock().owner.clone()?;
+        owner.get_entity(&world)
     }
 
     /// Returns whether this projectile may interact with the block at `pos`:
@@ -469,8 +456,12 @@ pub trait Projectile: Entity + ProjectileEventSource {
     ) -> bool {
         deflection.apply(self.as_projectile_event_source(), deflecting_entity);
         let mut state = self.projectile_base().state.lock();
-        state.owner = new_owner_uuid;
-        state.owner_entity = new_owner_entity.map(Arc::downgrade);
+        state.owner = new_owner_uuid.map(EntityReference::from_uuid);
+        if let Some(reference) = &state.owner
+            && let Some(entity) = new_owner_entity
+        {
+            reference.cache_entity(entity);
+        }
         drop(state);
         self.on_deflection(by_attack);
         true
@@ -674,8 +665,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Saves vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
     fn save_projectile(&self, nbt: &mut NbtCompound) {
         let state = self.projectile_base().state.lock();
-        if let Some(owner) = state.owner {
-            nbt.insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
+        if let Some(owner) = &state.owner {
+            owner.store(nbt, "Owner");
         }
         if state.left_owner {
             nbt.insert("LeftOwner", 1i8);
@@ -686,11 +677,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Loads vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
     fn load_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.projectile_base().state.lock();
-        if let Some(owner_arr) = nbt.int_array("Owner")
-            && let Some(uuid) = Uuid::from_int_array(&owner_arr)
-        {
-            state.owner = Some(uuid);
-        }
+        state.owner = EntityReference::read(&nbt, "Owner");
         state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
         state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
     }
@@ -916,7 +903,7 @@ mod tests {
                     id,
                     position,
                     vanilla_entities::ENDER_PEARL.dimensions,
-                    Weak::new(),
+                    Arc::downgrade(test_world()),
                 ),
                 projectile_base: ProjectileBase::new(),
             }
@@ -959,7 +946,12 @@ mod tests {
             entity_type: EntityTypeRef,
         ) -> SharedEntity {
             Arc::new(Self {
-                base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    id,
+                    position,
+                    entity_type.dimensions,
+                    Arc::downgrade(test_world()),
+                ),
                 pickable,
                 entity_type,
             })
