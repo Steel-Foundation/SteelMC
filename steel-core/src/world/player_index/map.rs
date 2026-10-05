@@ -10,23 +10,42 @@ use uuid::Uuid;
 use crate::{entity::Entity, player::Player};
 
 struct PlayerSlot {
-    player: ArcSwap<Player>,
+    player: ArcSwap<RegisteredPlayer>,
+}
+
+struct RegisteredPlayer {
+    player: Arc<Player>,
+    _damage_history_owner: Arc<()>,
+}
+
+impl RegisteredPlayer {
+    fn new(player: Arc<Player>) -> Self {
+        Self {
+            _damage_history_owner: player.base().damage_history().retain_owner(),
+            player,
+        }
+    }
 }
 
 impl PlayerSlot {
     fn new(player: Arc<Player>) -> Self {
         Self {
-            player: ArcSwap::new(player),
+            player: ArcSwap::from_pointee(RegisteredPlayer::new(player)),
         }
     }
 
     fn load(&self) -> Arc<Player> {
-        self.player.load_full()
+        Arc::clone(&self.player.load().player)
     }
 
     fn replace(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
-        let previous = self.player.compare_and_swap(expected, replacement);
-        Arc::ptr_eq(&previous, expected)
+        let current = self.player.load_full();
+        if !Arc::ptr_eq(&current.player, expected) {
+            return false;
+        }
+        let replacement = Arc::new(RegisteredPlayer::new(replacement));
+        let previous = self.player.compare_and_swap(&current, replacement);
+        Arc::ptr_eq(&previous, &current)
     }
 }
 

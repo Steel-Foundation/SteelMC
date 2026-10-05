@@ -367,10 +367,11 @@ mod tests {
     fn redstone_holds_big_dripleaf_upright() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("big_dripleaf_redstone");
+        let world_fixture = fresh_test_world("big_dripleaf_redstone");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let power_pos = pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(
             power_pos,
             vanilla_blocks::REDSTONE_BLOCK.default_state(),
@@ -384,7 +385,7 @@ mod tests {
 
         behavior.handle_neighbor_changed(
             tilted,
-            &world,
+            world,
             pos,
             &vanilla_blocks::REDSTONE_BLOCK,
             false,
@@ -394,14 +395,14 @@ mod tests {
         let entity = TestEntity::shared(
             7_003,
             DVec3::new(8.5, 65.0, 8.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             &vanilla_entities::PIG,
         );
         entity.set_on_ground(true);
         let mut effects = InsideBlockEffectCollector::new();
         behavior.entity_inside(
             world.get_block_state(pos),
-            &world,
+            world,
             pos,
             entity.as_ref(),
             &mut effects,

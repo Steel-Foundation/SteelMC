@@ -36,6 +36,7 @@ use crate::command::{
 #[cfg(any(test, feature = "flint"))]
 use crate::config::ResolvedDomainConfig;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
+use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
@@ -220,8 +221,22 @@ pub async fn test_server_with_worlds_and_config(
         .map_err(|error| format!("test chunk encoding pool should initialize: {error}"))?;
     let service_keys = ServiceKeyStore::new(None)
         .map_err(|error| format!("test services key store should initialize: {error}"))?;
+    let damage_history = loaded_worlds
+        .first()
+        .and_then(|world| world.damage_history.upgrade())
+        .ok_or("test worlds must have a live damage history owner")?;
+    let shares_history = loaded_worlds.iter().all(|world| {
+        world
+            .damage_history
+            .upgrade()
+            .is_some_and(|history| Arc::ptr_eq(&history, &damage_history))
+    });
+    if !shares_history {
+        return Err("test worlds must share the server's history owner".to_owned());
+    }
 
     Ok(Arc::new(Server {
+        damage_history,
         config,
         permission_groups,
         cancel_token: CancellationToken::new(),
@@ -451,6 +466,7 @@ use jobs::teleport::{
 
 /// The main server struct.
 pub struct Server {
+    pub(crate) damage_history: Arc<DamageHistory>,
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
     /// Runtime permission groups and their persistence boundary.
@@ -698,6 +714,7 @@ impl Server {
             &resolved_worlds.worlds,
         );
 
+        let damage_history = Arc::new(DamageHistory::default());
         let mut construct_world = async |world_entry: &ResolvedWorldConfig,
                                          game_time_source: GameTimeSource|
                -> Result<Arc<World>, String> {
@@ -730,6 +747,7 @@ impl Server {
                 generator_output.dimension_type,
                 world_seed,
                 WorldConfig {
+                    damage_history: Arc::clone(&damage_history),
                     game_time_source,
                     storage: storage_output.storage,
                     level_data_path: storage_output
@@ -805,6 +823,7 @@ impl Server {
         }
 
         Ok(Server {
+            damage_history,
             config,
             permission_groups,
             cancel_token,

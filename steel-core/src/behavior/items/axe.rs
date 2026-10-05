@@ -97,7 +97,7 @@ impl ItemBehavior for AxeItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
-            &GameEventContext::new(Some(context.player), Some(new_block_state)),
+            &GameEventContext::new(Some(context.player.as_ref()), Some(new_block_state)),
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
