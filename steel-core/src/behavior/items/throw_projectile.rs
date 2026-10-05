@@ -13,7 +13,6 @@ use crate::entity::{
 const THROW_PITCH_NUMERATOR: f32 = 0.4;
 const THROW_PITCH_DIVISOR_MIN: f32 = 0.8;
 const THROW_PITCH_DIVISOR_MAX: f32 = 1.2;
-const THROW_PITCH_DIVISOR_MAX: f32 = 1.2;
 
 /// The per-item constants of vanilla's throw `use`.
 pub(super) struct ThrowParams {
