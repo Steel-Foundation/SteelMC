@@ -184,9 +184,6 @@ mod tests;
 /// Builds a server around already loaded worlds without starting any server loops.
 ///
 /// Used by Steel tests and by the Flint test adapter.
-///
-/// # Panics
-/// Panics if the single-thread chunk encoding pool or the service key store fails to initialize.
 #[cfg(any(test, feature = "flint"))]
 pub async fn test_server_with_worlds_and_config(
     default_domain: String,
@@ -217,6 +214,12 @@ pub async fn test_server_with_worlds_and_config(
     let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
         .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     let registry_cache = RegistryCache::new(config.compression);
+    let chunk_encoding_pool = ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .map_err(|error| format!("test chunk encoding pool should initialize: {error}"))?;
+    let service_keys = ServiceKeyStore::new(None)
+        .map_err(|error| format!("test services key store should initialize: {error}"))?;
 
     Ok(Arc::new(Server {
         config,
@@ -236,12 +239,7 @@ pub async fn test_server_with_worlds_and_config(
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
         packet_processor: PacketProcessor::new(),
-        chunk_encoding_pool: Arc::new(
-            ThreadPoolBuilder::new()
-                .num_threads(1)
-                .build()
-                .expect("test chunk encoding pool should initialize"),
-        ),
+        chunk_encoding_pool: Arc::new(chunk_encoding_pool),
         jobs: ServerJobQueue::new(),
         player_data_storage,
         player_permission_states: SyncRwLock::new(player_permission_states),
@@ -249,9 +247,7 @@ pub async fn test_server_with_worlds_and_config(
         known_players: SyncMutex::new(KnownPlayerCacheState::new(KnownPlayers::new())),
         known_player_save_idle: Notify::new(),
         profile_lookup_client: reqwest::Client::new(),
-        service_keys: Arc::new(
-            ServiceKeyStore::new(None).expect("test services key store should initialize"),
-        ),
+        service_keys: Arc::new(service_keys),
         pending_player_joins: PlayerJoinQueue::new(),
         pending_player_disconnects: PlayerDisconnectQueue::new(),
         pending_world_changes: SyncMutex::new(Vec::new()),
