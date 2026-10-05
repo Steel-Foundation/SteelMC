@@ -73,8 +73,8 @@ pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;
 pub use consume_effect::{CONSUME_EFFECT_BEHAVIORS, ConsumeEffectBehaviorRegistry};
 pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
-    PlacementSource, UseItemContext, UseOnContext,
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, InventoryTickContext,
+    PlacementOrientation, PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub(crate) use item::apply_use_remainder;

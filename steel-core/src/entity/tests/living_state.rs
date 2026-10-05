@@ -108,7 +108,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&target);
 
     entity.set_last_hurt_mob(Some(&target_entity));
     assert!(entity.last_hurt_mob().is_some());

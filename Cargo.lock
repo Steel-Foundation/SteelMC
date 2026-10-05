@@ -2771,6 +2771,7 @@ dependencies = [
  "sha1",
  "sha2",
  "steel-core",
+ "steel-crypto",
  "steel-protocol",
  "steel-registry",
  "steel-utils",
@@ -2847,6 +2848,7 @@ name = "steel-utils"
 version = "0.15.3+mc26.2"
 dependencies = [
  "bitflags",
+ "chrono",
  "crc32c",
  "criterion",
  "enum_dispatch",
