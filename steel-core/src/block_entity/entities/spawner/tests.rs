@@ -147,11 +147,12 @@ fn unsupported_spawn_data_delays_and_reselects_without_inserting() {
 
     let spawner = load_spawner(&root);
 
-    let world = fresh_test_world("spawner_skips_unsupported_entity");
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "SpawnerPlayer", 1).build();
+    let world_fixture = fresh_test_world("spawner_skips_unsupported_entity");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SpawnerPlayer", 1).build();
     assert!(world.add_player(player, ResetReason::InitialJoin));
 
-    let result = spawner.server_tick(&world, BlockPos::ZERO);
+    let result = spawner.server_tick(world, BlockPos::ZERO);
 
     assert!(result.state_changed);
     assert!(result.next_spawn_data_changed);
