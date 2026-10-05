@@ -735,6 +735,7 @@ impl Player {
             self.living_base.refresh_speed_from_attributes();
             self.advancements.lock().flush_dirty(self, true);
             self.tick_food_data();
+            self.advancements.lock().flush_dirty(self, true);
 
             if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
                 self.set_sprinting(false);
