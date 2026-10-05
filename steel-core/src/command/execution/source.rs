@@ -452,6 +452,7 @@ impl CommandSource {
     #[must_use]
     pub const fn signing_context(&self) -> Option<&CommandSigningContext> {
         self.signing_context.as_ref()
+    }
 
     /// Sends informational command output straight to the sender.
     ///
