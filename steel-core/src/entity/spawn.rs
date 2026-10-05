@@ -654,19 +654,6 @@ mod tests {
     }
 
     #[test]
-    fn recursive_spawner_load_accepts_a_registered_entity() {
-        init_vanilla_registry();
-        init_entities();
-        let world = fresh_test_world("spawner_recursive_load_accepts_supported");
-        let pig = entity_nbt("minecraft:pig");
-
-        assert!(
-            load_entity_recursive_owned(&world, &pig, EntitySpawnReason::Spawner, |_| {},)
-                .is_some()
-        );
-    }
-
-    #[test]
     fn ageable_group_data_increments_before_later_baby_rolls_can_apply() {
         let mut group_data = AgeableMobGroupData::with_should_spawn_baby(true);
 

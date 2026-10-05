@@ -101,7 +101,6 @@ impl BaseSpawner {
         state.next_spawn_data = nbt
             .compound("SpawnData")
             .and_then(|data| SpawnData::from_nbt(&data));
-        // Vanilla's list codec keeps the valid entries of a partially invalid list.
         let loaded_spawn_potentials = nbt.list("SpawnPotentials").map(|entries| {
             entries
                 .compounds()
@@ -179,7 +178,8 @@ impl BaseSpawner {
     }
 
     /// Selects or returns the active spawn data.
-    pub fn get_or_create_next_spawn_data(&self) -> SpawnData {
+    #[cfg(test)]
+    pub(super) fn get_or_create_next_spawn_data(&self) -> SpawnData {
         let mut random = rng();
         self.get_or_create_next_spawn_data_with_rng(&mut random).0
     }
@@ -198,7 +198,7 @@ impl BaseSpawner {
         (data, true)
     }
 
-    /// Configures the active spawn entity, as a spawn egg does in vanilla.
+    /// Configures the active spawn entity.
     pub fn set_entity_id(&self, entity_type: EntityTypeRef) {
         let mut random = rng();
         let mut state = self.state.lock();
@@ -211,7 +211,7 @@ impl BaseSpawner {
         }
     }
 
-    /// Handles vanilla block event `1`.
+    /// Returns whether this spawner handles the given block event.
     #[must_use]
     #[expect(
         clippy::unused_self,
@@ -219,17 +219,6 @@ impl BaseSpawner {
     )]
     pub const fn on_event_triggered(&self, event: i32) -> bool {
         event == EVENT_SPAWN
-    }
-
-    /// Applies the client-side portion of vanilla block event `1`.
-    pub fn on_client_event_triggered(&self, event: i32) -> bool {
-        if event != EVENT_SPAWN {
-            return false;
-        }
-
-        let mut state = self.state.lock();
-        state.spawn_delay = state.min_spawn_delay;
-        true
     }
 
     /// Returns the configured delay for diagnostics and focused tests.

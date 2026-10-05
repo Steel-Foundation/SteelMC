@@ -21,15 +21,15 @@ pub trait NbtNumeric {
     /// Decodes `Codec.DOUBLE` from any numeric NBT tag.
     fn codec_f64(&self) -> Option<f64>;
 
-    /// Mirrors `NumericTag.intValue`.
+    /// Converts to an integer, flooring floating values.
     fn int_value(&self) -> Option<i32>;
 
-    /// Mirrors `NumericTag.shortValue`, the low 16 bits of `intValue`.
+    /// Returns the low 16 bits of `int_value`.
     fn short_value(&self) -> Option<i16> {
         self.int_value().map(|value| value as i16)
     }
 
-    /// Mirrors `NumericTag.byteValue`, the low 8 bits of `intValue`.
+    /// Returns the low 8 bits of `int_value`.
     fn byte_value(&self) -> Option<i8> {
         self.int_value().map(|value| value as i8)
     }

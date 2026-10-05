@@ -45,12 +45,6 @@ impl SpawnerBlockEntity {
             spawner: BaseSpawner::new(),
         }
     }
-
-    /// Returns the spawner state owner.
-    #[must_use]
-    pub const fn spawner(&self) -> &BaseSpawner {
-        &self.spawner
-    }
 }
 
 impl Spawner for SpawnerBlockEntity {

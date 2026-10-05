@@ -271,16 +271,3 @@ fn set_entity_id_normalizes_the_active_spawn_data() {
         Some(&spawn_data("minecraft:blaze").to_nbt())
     );
 }
-
-#[test]
-fn client_spawn_event_resets_to_minimum_delay_only_for_event_one() {
-    let mut root = NbtCompound::new();
-    root.insert("Delay", 100_i16);
-    root.insert("MinSpawnDelay", 33_i32);
-    let spawner = load_spawner(&root);
-
-    assert!(!spawner.on_client_event_triggered(2));
-    assert_eq!(spawner.spawn_delay(), 100);
-    assert!(spawner.on_client_event_triggered(1));
-    assert_eq!(spawner.spawn_delay(), 33);
-}

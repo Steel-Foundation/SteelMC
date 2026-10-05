@@ -402,7 +402,7 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         false
     }
 
-    /// Returns this block entity as a spawner, mirroring Vanilla `instanceof Spawner`.
+    /// Returns this block entity as a spawner.
     fn as_spawner(&self) -> Option<&dyn Spawner> {
         None
     }

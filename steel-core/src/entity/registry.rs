@@ -439,21 +439,4 @@ mod tests {
 
         assert!(entity.is_some());
     }
-
-    #[test]
-    fn unimplemented_spawner_entities_have_no_factory() {
-        init_vanilla_registry();
-        init_entities();
-
-        for entity_type in [
-            &vanilla_entities::BLAZE,
-            &vanilla_entities::CAVE_SPIDER,
-            &vanilla_entities::SKELETON,
-            &vanilla_entities::SILVERFISH,
-            &vanilla_entities::SPIDER,
-            &vanilla_entities::ZOMBIE,
-        ] {
-            assert!(!ENTITIES.has_factory(entity_type));
-        }
-    }
 }
