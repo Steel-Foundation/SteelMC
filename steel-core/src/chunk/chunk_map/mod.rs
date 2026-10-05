@@ -976,13 +976,21 @@ impl ChunkMap {
     /// This startup, pregeneration, and test helper must not overlap
     /// [`Self::tick_game`]. Live worlds run the same work from `tick_game`.
     #[instrument(level = "trace", skip(self), name = "advance_chunk_scheduling")]
-    pub fn advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+    pub(crate) fn advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
         let _source_phase_guard = self.source_phase_guard.lock();
         let mut timings = self.run_chunk_source_updates();
         let start = Instant::now();
         self.process_unloads();
         timings.process_unloads = start.elapsed();
         timings
+    }
+
+    /// Flint entry point for [`Self::advance_scheduling`].
+    ///
+    /// Exposed only with the `flint` feature; the same calling constraint applies.
+    #[cfg(feature = "flint")]
+    pub fn flint_advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+        self.advance_scheduling()
     }
 
     fn apply_simulation_changes(&self, changes: &[SimulationLevelChange]) -> bool {
