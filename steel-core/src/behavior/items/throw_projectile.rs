@@ -1,10 +1,4 @@
-//! The `use` body shared by items that throw a `ThrowableItemProjectile`
-//! (`EggItem`, `SnowballItem`, `EnderpearlItem`, `ThrowablePotionItem`, and
-//! `ExperienceBottleItem` once it exists).
-//!
-//! Vanilla has no common superclass for these, each `use` is copy-pasted, but
-//! they are the same steps with different constants, so Steel factors them
-//! into [`throw_item_projectile`].
+//! Shared item use logic for throwing projectiles
 
 use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
