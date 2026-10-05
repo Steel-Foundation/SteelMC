@@ -238,8 +238,6 @@ impl AbstractThrownPotion for SplashPotionEntity {
         }
 
         let margin = compute_margin(self.tick_count());
-        // Vanilla hoists `getEffectSource()` out of the loop; Steel resolves the
-        // owner once here and derives the source per application.
         let owner = self.get_owner();
 
         for entity in entities {
