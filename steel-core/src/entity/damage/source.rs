@@ -72,14 +72,16 @@ impl DamageSource {
         self.direct_entity.as_ref()
     }
 
-    /// Vanilla `getSourcePosition`, distinct from the raw position sent in packets.
+    /// The explicit source position, or the direct entity's position when none was set.
+    /// Distinct from the raw position sent in packets.
     #[must_use]
     pub fn source_position(&self) -> Option<DVec3> {
         self.source_position
             .or_else(|| self.direct_entity().map(|entity| entity.position()))
     }
 
-    /// Vanilla `sourcePositionRaw`, used by the damage-event packet.
+    /// The explicit source position without the direct-entity fallback, used by the
+    /// damage-event packet.
     #[must_use]
     pub const fn source_position_raw(&self) -> Option<DVec3> {
         self.source_position
@@ -112,7 +114,8 @@ impl DamageSource {
         REGISTRY.damage_types.is_in_tag(self.damage_type, tag)
     }
 
-    /// Returns vanilla `DamageSource.isDirect`.
+    /// Whether the damage was dealt directly by the causing entity rather than
+    /// indirectly, e.g. by a thrown projectile.
     #[must_use]
     pub fn is_direct(&self) -> bool {
         match (self.causing_entity(), self.direct_entity()) {

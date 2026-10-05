@@ -21,7 +21,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
 const WIRE_DISTANCE_MAX: usize = 42;
 const RECHECK_PERIOD: i32 = 10;
 
-/// Vanilla `TripWireHookBlock` behavior.
+/// Tripwire hook block behavior.
 #[block_behavior]
 pub struct TripWireHookBlock {
     block: BlockRef,

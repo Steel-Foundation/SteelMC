@@ -48,13 +48,12 @@ pub use throwable_item::ThrowableItemProjectile;
 /// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
 
-/// Vanilla `ProjectileUtil.DEFAULT_ENTITY_HIT_RESULT_MARGIN`.
 const MAX_ENTITY_HIT_MARGIN: f64 = 0.3;
 
 /// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
 
-/// Mirrors vanilla `RandomSource.triangle(mode, deviation)`.
+/// Returns a triangle-distributed random value.
 #[must_use]
 pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
@@ -282,7 +281,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         Some(owner)
     }
 
-    /// Returns vanilla `Projectile.mayInteract` for a block position.
+    /// Returns whether this projectile may interact with the block at `pos`:
+    /// defers to the owning player's build permission, or the mobGriefing
+    /// rule for a non-player owner.
     fn projectile_may_interact(&self, world: &World, pos: steel_utils::BlockPos) -> bool {
         let Some(owner) = self.get_owner() else {
             return true;
@@ -293,7 +294,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         world.get_game_rule(&MOB_GRIEFING)
     }
 
-    /// Returns vanilla `Projectile.mayBreak`.
+    /// Returns whether this projectile type is allowed to break the blocks
+    /// it hits, per the mobGriefing-gated `projectilesCanBreakBlocks` game rule.
     fn may_break(&self, world: &World) -> bool {
         REGISTRY
             .entity_types
@@ -301,27 +303,28 @@ pub trait Projectile: Entity + ProjectileEventSource {
             && world.get_game_rule(&PROJECTILES_CAN_BREAK_BLOCKS)
     }
 
-    /// Returns vanilla `Projectile.ownedBy`.
+    /// Returns whether `entity` is this projectile's owner.
     fn owned_by(&self, entity: &dyn Entity) -> bool {
         self.owner_uuid() == Some(entity.uuid())
     }
 
-    /// Returns vanilla `Projectile.hasBeenShot`.
+    /// Returns whether this projectile has been shot, as opposed to just spawned.
     fn has_been_shot(&self) -> bool {
         self.projectile_base().state.lock().has_been_shot
     }
 
-    /// Sets vanilla `Projectile.hasBeenShot`.
+    /// Marks whether this projectile has been shot.
     fn set_has_been_shot(&self, value: bool) {
         self.projectile_base().state.lock().has_been_shot = value;
     }
 
-    /// Returns vanilla `Projectile.leftOwner`.
+    /// Returns whether this projectile has moved outside its owner's collision range.
     fn left_owner(&self) -> bool {
         self.projectile_base().state.lock().left_owner
     }
 
-    /// Runs vanilla `Projectile.checkLeftOwner`.
+    /// Updates whether this projectile has left its owner's collision range,
+    /// but only the first time it's called each tick.
     fn check_left_owner(&self) {
         let mut state = self.projectile_base().state.lock();
         if state.left_owner || state.left_owner_checked {
@@ -339,7 +342,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.projectile_base().state.lock().left_owner_checked = false;
     }
 
-    /// Returns vanilla `Projectile.isOutsideOwnerCollisionRange`.
+    /// Returns whether this projectile's expanded bounding box no longer
+    /// overlaps its owner or any entity riding the same vehicle tree.
     fn is_outside_owner_collision_range(&self) -> bool {
         let Some(owner) = self.get_owner() else {
             return true;
@@ -386,7 +390,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.left_owner() || !owner.is_passenger_of_same_vehicle(entity)
     }
 
-    /// Returns vanilla `Projectile.getMovementToShoot`.
+    /// Returns the velocity vector for shooting toward `direction` at `power`,
+    /// with random spread scaled by `uncertainty`.
     fn get_movement_to_shoot(&self, direction: DVec3, power: f32, uncertainty: f32) -> DVec3 {
         let deviation = SHOOT_INACCURACY_SCALE * f64::from(uncertainty);
         let jitter = DVec3::new(
@@ -397,7 +402,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         (direction.normalize_or_zero() + jitter) * f64::from(power)
     }
 
-    /// Runs vanilla `Projectile.shoot`.
+    /// Sets this projectile's velocity and facing rotation toward `direction`
+    /// at `power`, with random spread scaled by `uncertainty`.
     fn shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
         let movement = self.get_movement_to_shoot(direction, power, uncertainty);
         self.set_velocity(movement);
@@ -410,7 +416,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.base().set_old_rotation_to_current();
     }
 
-    /// Runs vanilla `Projectile.shootFromRotation`.
+    /// Shoots this projectile from `source`'s rotation (offset by `y_offset`),
+    /// adding the source's own movement on top.
     fn shoot_from_rotation(
         &self,
         source: &dyn Entity,
@@ -517,7 +524,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         None
     }
 
-    /// Vanilla `Projectile.hitTargetOrDeflectSelf`.
+    /// Handles a projectile hit, deflecting it off an entity or the world
+    /// border instead of resolving the hit when deflection applies.
     fn hit_target_or_deflect_self(self: Arc<Self>, hit: &ProjectileHit) -> ProjectileDeflection {
         if let ProjectileHit::Entity(entity_hit) = hit {
             let deflection = entity_hit
@@ -618,7 +626,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Vanilla `Projectile.onHitEntity` (no-op by default).
     fn on_hit_entity(self: Arc<Self>, _entity: &SharedEntity, _location: DVec3) {}
 
-    /// Vanilla `Projectile.onHitBlock`.
+    /// Default block-hit hook; concrete projectiles override this and call
+    /// [`Projectile::projectile_on_hit_block`] to preserve the base dispatch.
     fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         self.projectile_on_hit_block(hit);
     }
@@ -674,7 +683,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
     }
 
-    /// Loads vanilla `Projectile` fields.
+    /// Loads vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
     fn load_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.projectile_base().state.lock();
         if let Some(owner_arr) = nbt.int_array("Owner")
@@ -740,7 +749,7 @@ pub fn compute_margin(tick_count: i32) -> f64 {
     (f64::from(tick_count - 2) / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN)
 }
 
-/// Result of vanilla `ProjectileUtil.getHitResultOnViewVector`.
+/// Outcome of casting a projectile-style ray along an entity's view vector.
 pub enum ViewVectorHitResult {
     /// No block or matching entity was hit within range.
     Miss,
@@ -750,8 +759,6 @@ pub enum ViewVectorHitResult {
     Entity(EntityHitResult),
 }
 
-/// Vanilla `ProjectileUtil.getHitResultOnViewVector`.
-///
 /// Casts from the source eye along the look vector for `distance` blocks using
 /// collider shapes, then prefers a matching entity hit over the block hit.
 #[must_use]

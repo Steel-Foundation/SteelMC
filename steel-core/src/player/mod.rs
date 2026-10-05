@@ -1250,13 +1250,11 @@ impl Player {
         self.tick_state.lock().tick_count()
     }
 
-    /// Returns vanilla `Player.takeXpDelay`.
     #[must_use]
     pub(crate) fn take_xp_delay(&self) -> i32 {
         self.tick_state.lock().take_xp_delay()
     }
 
-    /// Sets vanilla `Player.takeXpDelay`.
     pub(crate) fn set_take_xp_delay(&self, delay: i32) {
         self.tick_state.lock().set_take_xp_delay(delay);
     }
@@ -1749,7 +1747,6 @@ impl LivingEntity for Player {
 
         let tick_position = self.position();
 
-        // Vanilla: ServerGamePacketListenerImpl.resetPosition().
         self.movement.lock().reset_for_tick(tick_position);
         self.set_old_position_to_current();
         self.reset_vehicle_movement_for_tick();

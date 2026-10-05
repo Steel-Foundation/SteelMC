@@ -9,7 +9,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity};
 use crate::world::World;
 
-/// Mirrors vanilla `HealOrHarmMobEffect`
+/// Heal or harm mob effect behavior.
 pub struct HealOrHarmBehavior {
     /// `false` for Instant Health, `true` for Instant Damage.
     pub is_harm: bool,

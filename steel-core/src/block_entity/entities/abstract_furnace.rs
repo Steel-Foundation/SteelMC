@@ -442,7 +442,11 @@ pub(crate) fn pop_furnace_experience(
 
 macro_rules! furnace_block_entity {
     ($name:ident, $key:literal, $type:ident, $kind:ident) => {
-        #[doc = concat!("Concrete Vanilla `", stringify!($name), "` implementation.")]
+        #[doc = concat!(
+                                            "`",
+                                            stringify!($name),
+                                            "` block entity backed by the shared smelting logic."
+                                        )]
         pub struct $name {
             common: AbstractFurnaceBlockEntity,
         }
