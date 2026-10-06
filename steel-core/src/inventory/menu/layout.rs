@@ -1,4 +1,6 @@
-use std::{mem, range::Range, sync::Arc};
+use std::sync::Arc;
+
+use std::{mem, range::Range};
 
 use steel_registry::item_stack::ItemStack;
 

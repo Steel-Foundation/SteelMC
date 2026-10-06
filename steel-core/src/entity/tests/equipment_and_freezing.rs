@@ -7,6 +7,7 @@ use crate::inventory::equipment::EntityEquipment;
 use crate::player::player_inventory::PlayerInventory;
 use crate::test_support::TestPlayerBuilder;
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 use steel_protocol::packets::game::{ClickType, HashedStack, SContainerClick};
 use steel_utils::locks::Shared;
 
@@ -202,14 +203,20 @@ fn living_freezing_damages_fully_frozen_entities_on_frequency() {
 fn default_ai_step_ticks_freezing_after_travel() {
     init_vanilla_registry();
     init_behaviors();
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(
+        0.0,
+        0.0,
+        true,
+        test_world(),
+    ));
+    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
     for _ in 0..40 {
         entity.advance_tick_count();
     }
 
-    entity.default_ai_step();
+    entity.default_ai_step(&shared_entity);
 
     assert_eq!(
         entity.damage_type_keys(),
@@ -230,8 +237,8 @@ fn entity_cramming_damage_threshold_matches_vanilla_push_entities() {
 #[test]
 fn freezing_damage_hurts_extra_tagged_entity_types() {
     init_vanilla_registry();
-    let entity =
-        LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::BLAZE);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
+        .with_entity_type(&vanilla_entities::BLAZE);
 
     assert!(entity.hurt(
         test_world(),
@@ -365,18 +372,19 @@ fn equip_game_events(
 ) -> Vec<GameEventRef> {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(name);
+    let test_world = fresh_test_world(name);
+    let world = &test_world.world;
     let position = DVec3::new(0.5, 64.0, 0.5);
     let section = SectionPos::from_block_pos(BlockPos::from(position));
-    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+    insert_ready_full_chunk(world, ChunkPos::new(section.x(), section.z()));
     let listener = Arc::new(RecordingGameEventListener::new(position));
     let _registration = RegisteredGameEventListener::new(
-        &world,
+        world,
         section,
         Arc::<RecordingGameEventListener>::clone(&listener),
     );
 
-    entity.base().set_world(Arc::downgrade(&world));
+    entity.base().set_world(Arc::downgrade(world));
     entity.base().set_position_local(position);
     for (slot, stack) in changes {
         entity.set_item_slot(*slot, stack.clone());
@@ -478,18 +486,19 @@ fn set_item_slot_stays_quiet_for_a_spectator() {
 fn equipping_armor_from_the_hand_runs_the_equip_hook() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("use_item_equips_armor");
+    let test_world = fresh_test_world("use_item_equips_armor");
+    let world = &test_world.world;
     let position = DVec3::new(0.5, 64.0, 0.5);
     let section = SectionPos::from_block_pos(BlockPos::from(position));
-    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+    insert_ready_full_chunk(world, ChunkPos::new(section.x(), section.z()));
     let listener = Arc::new(RecordingGameEventListener::new(position));
     let _registration = RegisteredGameEventListener::new(
-        &world,
+        world,
         section,
         Arc::<RecordingGameEventListener>::clone(&listener),
     );
 
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "Equipper", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Equipper", next_entity_id()).build();
     assert!(player.try_set_position(position).is_ok());
     player.base().set_first_tick(false);
     player.inventory.lock().set_item_in_hand(
@@ -501,7 +510,7 @@ fn equipping_armor_from_the_hand_runs_the_equip_hook() {
     let mut context = UseItemContext::new(
         &player,
         InteractionHand::MainHand,
-        &world,
+        world,
         Arc::clone(&player.inventory),
     );
 
@@ -553,13 +562,14 @@ fn shift_clicking_armor_announces_the_equip_once_the_inventory_is_settled() {
 
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("quick_move_armor_equip_event");
+    let test_world = fresh_test_world("quick_move_armor_equip_event");
+    let world = &test_world.world;
     let position = DVec3::new(0.5, 64.0, 0.5);
     let section = SectionPos::from_block_pos(BlockPos::from(position));
-    insert_ready_full_chunk(&world, ChunkPos::new(section.x(), section.z()));
+    insert_ready_full_chunk(world, ChunkPos::new(section.x(), section.z()));
 
     let player =
-        TestPlayerBuilder::new(Arc::clone(&world), "QuickEquipper", next_entity_id()).build();
+        TestPlayerBuilder::new(Arc::clone(world), "QuickEquipper", next_entity_id()).build();
     assert!(player.try_set_position(position).is_ok());
     player.base().set_first_tick(false);
     player
@@ -573,7 +583,7 @@ fn shift_clicking_armor_announces_the_equip_once_the_inventory_is_settled() {
         seen: SyncMutex::new(Vec::new()),
     });
     let _registration =
-        RegisteredGameEventListener::new(&world, section, Arc::<InventoryProbe>::clone(&probe));
+        RegisteredGameEventListener::new(world, section, Arc::<InventoryProbe>::clone(&probe));
 
     player.handle_container_click(SContainerClick {
         container_id: 0,

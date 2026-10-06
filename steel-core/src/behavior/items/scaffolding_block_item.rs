@@ -112,7 +112,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BlockHitResult, PlacementOrientation, PlacementSource, init_behaviors};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use crate::world::{LevelReader, World};
 
     const BOTTOM: &BoolProperty = &BlockStateProperties::BOTTOM;
@@ -121,12 +121,13 @@ mod tests {
     const VANILLA_STABILITY_MAX_DISTANCE: u8 = 7;
     const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
-    fn test_world(key: &'static str) -> Arc<World> {
+    fn test_world(key: &'static str) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(key);
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        world
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        world_fixture
     }
 
     fn set_block(world: &Arc<World>, pos: BlockPos, state: steel_utils::BlockStateId) {
@@ -202,15 +203,16 @@ mod tests {
 
     #[test]
     fn routing_matches_normal_secondary_and_inside_direction_rules() {
-        let world = test_world("scaffolding_item_directions");
+        let world_fixture = test_world("scaffolding_item_directions");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        set_block(&world, pos, scaffolding_state(0));
+        set_block(world, pos, scaffolding_state(0));
         let item = ScaffoldingBlockItem::new(&vanilla_blocks::SCAFFOLDING);
 
         assert_eq!(
             routed_pos(
                 &item,
-                &world,
+                world,
                 pos,
                 Direction::Up,
                 false,
@@ -222,7 +224,7 @@ mod tests {
         assert_eq!(
             routed_pos(
                 &item,
-                &world,
+                world,
                 pos,
                 Direction::North,
                 false,
@@ -234,7 +236,7 @@ mod tests {
         assert_eq!(
             routed_pos(
                 &item,
-                &world,
+                world,
                 pos,
                 Direction::North,
                 false,
@@ -246,7 +248,7 @@ mod tests {
         assert_eq!(
             routed_pos(
                 &item,
-                &world,
+                world,
                 pos,
                 Direction::North,
                 true,
@@ -259,13 +261,14 @@ mod tests {
 
     #[test]
     fn horizontal_routing_allows_seventh_position_but_not_eighth() {
-        let world = test_world("scaffolding_item_horizontal_limit");
+        let world_fixture = test_world("scaffolding_item_horizontal_limit");
+        let world = &world_fixture.world;
         let start = BlockPos::new(4, 64, 8);
         let item = ScaffoldingBlockItem::new(&vanilla_blocks::SCAFFOLDING);
         let max_distance = i32::from(VANILLA_STABILITY_MAX_DISTANCE);
         for offset in 0..max_distance {
             set_block(
-                &world,
+                world,
                 BlockPos::new(start.x() + offset, start.y(), start.z()),
                 scaffolding_state(offset as u8),
             );
@@ -275,7 +278,7 @@ mod tests {
         assert_eq!(
             routed_pos(
                 &item,
-                &world,
+                world,
                 start,
                 Direction::Up,
                 false,
@@ -286,14 +289,14 @@ mod tests {
         );
 
         set_block(
-            &world,
+            world,
             seventh,
             scaffolding_state(VANILLA_STABILITY_MAX_DISTANCE),
         );
         assert_eq!(
             routed_pos(
                 &item,
-                &world,
+                world,
                 start,
                 Direction::Up,
                 false,
@@ -306,13 +309,14 @@ mod tests {
 
     #[test]
     fn distance_seven_extension_places_then_waits_for_stability_tick() {
-        let world = test_world("scaffolding_item_unstable_extension");
+        let world_fixture = test_world("scaffolding_item_unstable_extension");
+        let world = &world_fixture.world;
         let start = BlockPos::new(4, 64, 8);
-        set_block(&world, start.below(), vanilla_blocks::STONE.default_state());
+        set_block(world, start.below(), vanilla_blocks::STONE.default_state());
         let last_stable_offset = i32::from(VANILLA_STABILITY_MAX_DISTANCE) - 1;
         for offset in 0..=last_stable_offset {
             set_block(
-                &world,
+                world,
                 BlockPos::new(start.x() + offset, start.y(), start.z()),
                 scaffolding_state(offset as u8),
             );
@@ -323,7 +327,7 @@ mod tests {
         let placed = end.east();
         let mut stack = ItemStack::with_count(&vanilla_items::SCAFFOLDING, 2);
         let context = place_context(
-            &world,
+            world,
             &mut stack,
             end,
             Direction::Up,
@@ -342,11 +346,12 @@ mod tests {
 
     #[test]
     fn unsupported_direct_target_is_rejected_without_consuming_item() {
-        let world = test_world("scaffolding_item_unsupported_direct");
+        let world_fixture = test_world("scaffolding_item_unsupported_direct");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let item = ScaffoldingBlockItem::new(&vanilla_blocks::SCAFFOLDING);
         let mut stack = ItemStack::with_count(&vanilla_items::SCAFFOLDING, 2);
-        let context = place_context(&world, &mut stack, pos, Direction::Up, false, false, 0.0);
+        let context = place_context(world, &mut stack, pos, Direction::Up, false, false, 0.0);
 
         assert_eq!(item.place(context), InteractionResult::Fail);
         assert!(world.get_block_state(pos).is_air());
@@ -355,13 +360,14 @@ mod tests {
 
     #[test]
     fn supported_source_water_placement_is_waterlogged() {
-        let world = test_world("scaffolding_item_waterlogged");
+        let world_fixture = test_world("scaffolding_item_waterlogged");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        set_block(&world, pos.below(), vanilla_blocks::STONE.default_state());
-        set_block(&world, pos, vanilla_blocks::WATER.default_state());
+        set_block(world, pos.below(), vanilla_blocks::STONE.default_state());
+        set_block(world, pos, vanilla_blocks::WATER.default_state());
         let item = ScaffoldingBlockItem::new(&vanilla_blocks::SCAFFOLDING);
         let mut stack = ItemStack::new(&vanilla_items::SCAFFOLDING);
-        let context = place_context(&world, &mut stack, pos, Direction::Up, false, false, 0.0);
+        let context = place_context(world, &mut stack, pos, Direction::Up, false, false, 0.0);
 
         assert_eq!(item.place(context), InteractionResult::Success);
         let state = world.get_block_state(pos);
