@@ -567,35 +567,34 @@ mod tests {
     fn recursive_spawner_load_rejects_unknown_and_unimplemented_entities() {
         init_vanilla_registry();
         init_entities();
-        let world = fresh_test_world("spawner_recursive_load_rejects_unsupported");
+        let world_fixture = fresh_test_world("spawner_recursive_load_rejects_unsupported");
+        let world = &world_fixture.world;
 
         let unknown = entity_nbt("minecraft:not_an_entity");
         assert!(
-            load_entity_recursive_owned(&world, &unknown, EntitySpawnReason::Spawner, |_| {},)
+            load_entity_recursive_owned(world, &unknown, EntitySpawnReason::Spawner, |_| {},)
                 .is_none()
         );
 
         let malformed = entity_nbt("not an entity identifier");
         assert!(
-            load_entity_recursive_owned(&world, &malformed, EntitySpawnReason::Spawner, |_| {},)
+            load_entity_recursive_owned(world, &malformed, EntitySpawnReason::Spawner, |_| {},)
                 .is_none()
         );
 
         let unimplemented = entity_nbt("minecraft:blaze");
-        assert!(load_entity_recursive_owned(
-            &world,
-            &unimplemented,
-            EntitySpawnReason::Spawner,
-            |_| {},
-        )
-        .is_none());
+        assert!(
+            load_entity_recursive_owned(world, &unimplemented, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
     }
 
     #[test]
     fn recursive_spawner_load_skips_failed_passengers_and_keeps_valid_siblings() {
         init_vanilla_registry();
         init_entities();
-        let world = fresh_test_world("spawner_recursive_load_rejects_passenger");
+        let world_fixture = fresh_test_world("spawner_recursive_load_rejects_passenger");
+        let world = &world_fixture.world;
 
         let mut root = entity_nbt("minecraft:pig");
         root.insert(
@@ -608,7 +607,7 @@ mod tests {
             ]),
         );
 
-        let loaded = load_entity_recursive_owned(&world, &root, EntitySpawnReason::Spawner, |_| {})
+        let loaded = load_entity_recursive_owned(world, &root, EntitySpawnReason::Spawner, |_| {})
             .expect("failed passengers must not discard the root");
         let root = Arc::clone(&loaded.root);
         assert_eq!(root.entity_type(), &vanilla_entities::PIG);
@@ -620,7 +619,7 @@ mod tests {
             Some(root.id())
         );
         drop(passengers);
-        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+        insert_ready_full_chunk(world, steel_utils::ChunkPos::new(0, 0));
         world
             .try_add_fresh_entity_with_passengers(Arc::clone(&root))
             .expect("loaded passengers should be inserted with the root");
@@ -632,12 +631,13 @@ mod tests {
     fn recursive_spawner_load_rejects_hostile_entities_in_peaceful() {
         init_vanilla_registry();
         init_entities();
-        let world = fresh_test_world("spawner_recursive_load_peaceful");
+        let world_fixture = fresh_test_world("spawner_recursive_load_peaceful");
+        let world = &world_fixture.world;
         world.set_difficulty(Difficulty::Peaceful);
 
         assert!(
             load_entity_recursive_owned(
-                &world,
+                world,
                 &entity_nbt("minecraft:endermite"),
                 EntitySpawnReason::Spawner,
                 |_| {},
@@ -653,7 +653,7 @@ mod tests {
                 entity_nbt("minecraft:chicken"),
             ]),
         );
-        let loaded = load_entity_recursive_owned(&world, &root, EntitySpawnReason::Spawner, |_| {})
+        let loaded = load_entity_recursive_owned(world, &root, EntitySpawnReason::Spawner, |_| {})
             .expect("a peaceful-safe root should still load");
         let passengers = loaded.root.passengers();
         assert_eq!(passengers.len(), 1);

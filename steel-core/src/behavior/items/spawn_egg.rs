@@ -169,7 +169,7 @@ impl ItemBehavior for SpawnEggItem {
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 clicked_pos,
-                &GameEventContext::new(Some(context.player), None),
+                &GameEventContext::new(Some(context.player.as_ref()), None),
             );
             return InteractionResult::Success;
         }
