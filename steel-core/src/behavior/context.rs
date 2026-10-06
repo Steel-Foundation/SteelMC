@@ -617,7 +617,7 @@ impl InventoryAccess {
 /// disjoint fields.
 pub struct UseOnContext<'a> {
     /// The player using the item.
-    pub player: &'a Player,
+    pub player: &'a Arc<Player>,
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// Information about where the block was hit.
@@ -632,7 +632,7 @@ impl<'a> UseOnContext<'a> {
     /// Creates a new `UseOnContext`.
     #[must_use]
     pub const fn new(
-        player: &'a Player,
+        player: &'a Arc<Player>,
         hand: InteractionHand,
         hit_result: BlockHitResult,
         world: &'a Arc<World>,
@@ -664,7 +664,7 @@ impl<'a> UseOnContext<'a> {
 /// `inv` is mutably borrowed.
 pub struct UseItemContext<'a> {
     /// The player using the item.
-    pub player: &'a Player,
+    pub player: &'a Arc<Player>,
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
@@ -677,7 +677,7 @@ impl<'a> UseItemContext<'a> {
     /// Creates a new `UseItemContext`.
     #[must_use]
     pub const fn new(
-        player: &'a Player,
+        player: &'a Arc<Player>,
         hand: InteractionHand,
         world: &'a Arc<World>,
         inventory: Shared<PlayerInventory>,

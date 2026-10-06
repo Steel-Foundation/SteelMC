@@ -10,7 +10,7 @@ use crate::{
         menu::Menu,
     },
     player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
     world::World,
 };
 use glam::DVec3;
@@ -34,26 +34,28 @@ fn test_player(world: Arc<World>) -> Arc<Player> {
     TestPlayerBuilder::new(world, "AnvilTester", 1).build()
 }
 
-fn test_anvil(key: &'static str) -> (Arc<World>, Arc<Player>, BlockPos, Menu) {
+fn test_anvil(key: &'static str) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(key);
+    let world_fixture = fresh_test_world(key);
+    let world = &world_fixture.world;
     let pos = BlockPos::new(0, 64, 0);
-    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     assert!(world.set_block(
         pos,
         vanilla_blocks::ANVIL.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player(Arc::clone(world));
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
-    let menu = anvil(Arc::clone(&player.inventory), 1, pos, &world);
-    (world, player, pos, menu)
+    let menu = anvil(Arc::clone(&player.inventory), 1, pos, world);
+    (world_fixture, player, pos, menu)
 }
 
 #[test]
 fn validity_requires_anvil_tag_and_interaction_range() {
-    let (world, player, pos, menu) = test_anvil("anvil_menu_validity");
+    let (world_fixture, player, pos, menu) = test_anvil("anvil_menu_validity");
+    let world = &world_fixture.world;
     assert!(menu.still_valid(&player));
 
     assert!(world.set_block(
@@ -63,9 +65,10 @@ fn validity_requires_anvil_tag_and_interaction_range() {
     ));
     assert!(menu.still_valid(&player));
 
-    let current_world = fresh_test_world("anvil_menu_validity_current_world");
-    insert_ready_full_chunk(&current_world, ChunkPos::from_block_pos(pos));
-    player.set_world(Arc::clone(&current_world));
+    let current_world_fixture = fresh_test_world("anvil_menu_validity_current_world");
+    let current_world = &current_world_fixture.world;
+    insert_ready_full_chunk(current_world, ChunkPos::from_block_pos(pos));
+    player.set_world(Arc::clone(current_world));
     assert!(menu.still_valid(&player));
 
     assert!(world.set_block(
@@ -292,7 +295,8 @@ fn client_level_cost_uses_protocol_short_wrapping() {
 
 #[test]
 fn partial_result_overflow_is_discarded() {
-    let (world, player, _pos, mut menu) = test_anvil("anvil_menu_partial_result_overflow");
+    let (world_fixture, player, _pos, mut menu) = test_anvil("anvil_menu_partial_result_overflow");
+    let world = &world_fixture.world;
     player.restore_game_modes(GameType::Creative, None);
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
