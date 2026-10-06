@@ -27,7 +27,7 @@ pub const fn is_space_char(character: char) -> bool {
     )
 }
 
-/// Returns whether a string is blank (all whitespace characters).
+/// Mirrors vanilla `StringUtil.isBlank`.
 #[must_use]
 pub fn is_blank(value: &str) -> bool {
     value

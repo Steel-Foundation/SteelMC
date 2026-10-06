@@ -173,7 +173,7 @@ impl ChunkRequestHandle {
                 .lease
                 .chunk_map
                 .chunks
-                .read_sync(&pos, |_, holder| Arc::clone(holder))
+                .read_sync(&pos, |_, holder| holder.clone())
             else {
                 continue;
             };
@@ -211,7 +211,7 @@ impl ChunkRequestHandle {
                 .lease
                 .chunk_map
                 .chunks
-                .read_sync(&pos, |_, holder| Arc::clone(holder))?;
+                .read_sync(&pos, |_, holder| holder.clone())?;
             {
                 let _chunk = holder.try_chunk(inner.status)?;
             }
@@ -237,7 +237,7 @@ impl ChunkMap {
     /// holder creation and generation scheduling.
     #[must_use]
     pub fn request_chunks(self: &Arc<Self>, request: ChunkRequest) -> ChunkRequestHandle {
-        ChunkRequestHandle::new(Arc::clone(self), request)
+        ChunkRequestHandle::new(self.clone(), request)
     }
 
     /// Requests one chunk at `status`.

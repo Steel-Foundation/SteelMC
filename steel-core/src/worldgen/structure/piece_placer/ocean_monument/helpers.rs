@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::Entity;
 
 pub(super) fn generate_water_box(
     placer: &mut ScatteredFeaturePlacer<'_, '_>,
@@ -176,18 +177,26 @@ pub(super) fn spawn_elder(placer: &mut ScatteredFeaturePlacer<'_, '_>, x: i32, y
         return;
     }
 
-    let Some(entity) = StructurePiecePlacer::create_mob(
-        &vanilla_entities::ELDER_GUARDIAN,
+    let entity = Arc::new(RawEntity::new(
+        next_entity_id(),
         DVec3::new(
             f64::from(pos.x()) + 0.5,
             f64::from(pos.y()),
             f64::from(pos.z()) + 0.5,
         ),
         placer.weak_world(),
-        true,
-    ) else {
-        return;
-    };
+        &vanilla_entities::ELDER_GUARDIAN,
+    ));
+    entity.set_persistence_required();
+    entity.snap_to(
+        DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + 0.5,
+        ),
+        0.0,
+        0.0,
+    );
     let _ = placer.add_fresh_entity(entity);
 }
 

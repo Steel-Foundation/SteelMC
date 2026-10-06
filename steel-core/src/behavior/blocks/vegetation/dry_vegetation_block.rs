@@ -10,7 +10,7 @@ use super::{
     BlockRef, default_surviving_state, survives_on_tag, vegetation_block::survival_update_shape,
 };
 
-/// Dry vegetation block behavior.
+/// Vanilla `DryVegetationBlock` behavior
 #[block_behavior]
 pub struct DryVegetationBlock {
     block: BlockRef,

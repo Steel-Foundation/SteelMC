@@ -307,22 +307,19 @@ impl EntityMovementProgress {
         self.fly_dist += moved_distance;
     }
 
-    /// Returns accumulated movement distance since the last step (horizontal,
-    /// or full distance while climbing).
+    /// Returns vanilla `moveDist`.
     #[must_use]
     pub const fn move_dist(self) -> f32 {
         self.move_dist
     }
 
-    /// Returns accumulated total movement distance since the last step,
-    /// including vertical motion.
+    /// Returns vanilla `flyDist`.
     #[must_use]
     pub const fn fly_dist(self) -> f32 {
         self.fly_dist
     }
 
-    /// Returns the move-distance threshold that must be crossed to trigger
-    /// the next footstep effect.
+    /// Returns vanilla `nextStep`.
     #[must_use]
     pub const fn next_step(self) -> f32 {
         self.next_step

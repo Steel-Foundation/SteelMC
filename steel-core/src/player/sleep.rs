@@ -236,7 +236,7 @@ impl Player {
         *current = respawn_config;
     }
 
-    /// Returns how many ticks this player has been sleeping for.
+    /// Returns vanilla `Player.sleepCounter`.
     #[must_use]
     pub fn sleep_counter(&self) -> i32 {
         self.sleep_state.lock().sleep_counter()

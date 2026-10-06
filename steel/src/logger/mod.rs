@@ -74,10 +74,10 @@ impl CommandLogger {
             start_time: Instant::now(),
             log_config,
         });
-        task::spawn(Arc::clone(&log).log_loop(receiver));
-        task::spawn(Arc::clone(&log).input_main());
+        task::spawn(log.clone().log_loop(receiver));
+        task::spawn(log.clone().input_main());
         STEEL_LOGGER
-            .set(Arc::<CommandLogger>::clone(&log))
+            .set(log.clone())
             .map_err(|_| "Steel logger is already initialized".to_string())?;
         Ok(log)
     }

@@ -19,8 +19,7 @@ struct IntBounds {
     max: i32,
 }
 
-/// Finds the largest axis-aligned rectangle of positions matching `test`
-/// that contains `center`, scanning outward up to the given limits.
+/// Returns vanilla `BlockUtil.getLargestRectangleAround`.
 ///
 /// # Panics
 ///

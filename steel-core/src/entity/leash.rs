@@ -73,6 +73,7 @@ pub trait Leashable: Entity {
     ///
     /// See also: [`Leashable::may_be_leashed`]
     fn can_be_leashed(&self) -> bool {
+        // TODO: Return false for enemy mobs once hostile mob foundations exist.
         true
     }
 
@@ -195,7 +196,7 @@ pub trait Leashable: Entity {
         BASE_HORIZONTAL_FRICTION
     }
 
-    /// Returns whether this entity can have a leash attached to another.
+    /// Returns whether this entity can have a leash attached to another. Mirrors Vanilla's `Leashable.canHaveALeashAttachedTo`.
     fn can_have_a_leash_attached_to(&self, holder: &dyn Entity) -> bool {
         self.id() != holder.id()
             && self.leash_distance_to(holder) <= self.leash_snap_distance()
@@ -257,7 +258,7 @@ pub trait Leashable: Entity {
         }
     }
 
-    /// Ticks the leash *holding* this entity.
+    /// Ticks the leash *holding* this entity. Mirrors Vanilla's `Leashable.tickLeash`.
     fn tick_leash(&self) {
         self.restore_leash_from_save();
 
@@ -310,7 +311,7 @@ pub trait Leashable: Entity {
         }
     }
 
-    /// Breaks the leash and drops a lead item.
+    /// Breaks the leash and drops a lead item. Mirrors Vanilla's `Leashable.dropLeash`.
     fn drop_leash(&self) {
         if self.leash_holder().is_none() {
             return;
@@ -323,7 +324,7 @@ pub trait Leashable: Entity {
         }
     }
 
-    /// Removes the leash without dropping a lead item.
+    /// Removes the leash without dropping a lead item. Mirrors Vanilla's `Leashable.removeLeash`.
     fn remove_leash(&self) {
         if self.leash_holder().is_some()
             && let Some(holder) = self.remove_leash_state()

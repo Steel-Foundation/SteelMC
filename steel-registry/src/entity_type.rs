@@ -73,6 +73,7 @@ impl EntityAttachmentPoint {
     }
 }
 
+/// Vanilla `EntityAttachments`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityAttachments {
     pub passenger: &'static [EntityAttachmentPoint],

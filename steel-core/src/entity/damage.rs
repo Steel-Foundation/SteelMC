@@ -66,8 +66,7 @@ impl DamageSource {
         REGISTRY.damage_types.is_in_tag(self.damage_type, tag)
     }
 
-    /// Whether the damage was dealt directly by the causing entity rather than
-    /// indirectly, e.g. by a thrown projectile.
+    /// Returns vanilla `DamageSource.isDirect`.
     #[must_use]
     pub fn is_direct(&self) -> bool {
         self.causing_entity_id == self.direct_entity_id

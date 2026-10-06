@@ -51,7 +51,7 @@ pub fn use_item_on(
         };
         let behavior = block_behaviors.get_behavior(block);
 
-        let mut inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
+        let mut inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
 
         let block_result = behavior.use_item_on(
             state,
@@ -85,7 +85,7 @@ pub fn use_item_on(
         }
     }
 
-    let inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
+    let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
     let (is_empty, original_count, item_ref, stack_before_use) =
         inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
@@ -99,7 +99,7 @@ pub fn use_item_on(
             hand,
             hit_result.clone(),
             world,
-            Arc::clone(&player.inventory),
+            player.inventory.clone(),
         );
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
@@ -125,7 +125,7 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         return InteractionResult::Pass;
     }
 
-    let inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
+    let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
     let (is_empty, item_ref, stack_before_use) =
         inventory_access.with_item(|item| (item.is_empty(), item.item, item.clone()));
 
@@ -134,16 +134,13 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
             return InteractionResult::Pass;
         }
 
-        let mut context = crate::behavior::UseItemContext::new(
-            player,
-            hand,
-            world,
-            Arc::clone(&player.inventory),
-        );
+        let mut context =
+            crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
 
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
+
         let is_instantly_used = item_behavior.get_use_duration(&stack_before_use, player) <= 0;
 
         let result = item_behavior.use_item(&mut context);
@@ -216,8 +213,6 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::use_item;
     use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
@@ -262,7 +257,7 @@ mod tests {
     fn use_item_refuses_normal_food_at_full_hunger() {
         let world = fresh_test_world("use_item_full_hunger_normal_food");
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -281,7 +276,7 @@ mod tests {
     fn use_item_allows_always_edible_food_at_full_hunger() {
         let world = fresh_test_world("use_item_full_hunger_always_edible_food");
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

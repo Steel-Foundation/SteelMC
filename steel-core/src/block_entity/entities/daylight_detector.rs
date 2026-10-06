@@ -14,8 +14,7 @@ use crate::behavior::blocks::DaylightDetectorBlock;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
 
-/// Ticking storage for a daylight detector; recomputes its redstone signal
-/// from sky light every 20 ticks.
+/// Vanilla `DaylightDetectorBlockEntity`.
 pub struct DaylightDetectorBlockEntity {
     base: BlockEntityBase,
 }
@@ -72,7 +71,6 @@ impl BlockEntity for DaylightDetectorBlockEntity {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::advance_test_game_time_to;
     use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_world_clocks};
     use steel_utils::ChunkPos;
@@ -106,7 +104,7 @@ mod tests {
             11
         );
 
-        advance_test_game_time_to(&world, 1);
+        world.level_data.write().set_game_time(1);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
         detector.tick(&world);
         assert_eq!(

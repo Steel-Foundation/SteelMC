@@ -100,7 +100,7 @@ impl Experience {
         (self.progress * Self::points_for_level(self.level) as f32).floor() as i32
     }
 
-    /// Total experience points earned, independent of the current level or progress.
+    /// Vanilla `totalExperience`.
     #[must_use]
     pub const fn total_points(&self) -> i32 {
         self.total_points
@@ -112,8 +112,7 @@ impl Experience {
         self.progress
     }
 
-    /// Adds (or removes, if negative) experience levels, resetting progress
-    /// and total points to zero if the level would drop below zero.
+    /// Adds levels like vanilla `Player.giveExperienceLevels`.
     pub const fn add_levels(&mut self, additional_levels: i32) {
         if additional_levels == 0 {
             return;
@@ -128,8 +127,7 @@ impl Experience {
         self.dirty = true;
     }
 
-    /// Adds raw experience points, rolling progress over into level changes
-    /// as it crosses 0.0 or 1.0.
+    /// Adds raw points like vanilla `Player.giveExperiencePoints`.
     #[expect(
         clippy::cast_precision_loss,
         reason = "vanilla performs these calculations with Java float precision"

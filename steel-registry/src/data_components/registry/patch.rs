@@ -2,11 +2,6 @@ use super::{
     Component, ComponentData, DataComponentMap, DataComponentType, Debug, DowncastType, FxHashMap,
     Identifier,
 };
-use rustc_hash::FxBuildHasher;
-
-static EMPTY: DataComponentPatch = DataComponentPatch {
-    entries: FxHashMap::with_hasher(FxBuildHasher),
-};
 
 /// Entry in a component patch.
 #[derive(Debug, Clone)]
@@ -38,12 +33,6 @@ pub struct DataComponentPatch {
 }
 
 impl DataComponentPatch {
-    /// Returns a shared patch with no entries.
-    #[must_use]
-    pub fn empty() -> &'static Self {
-        &EMPTY
-    }
-
     #[must_use]
     pub fn new() -> Self {
         Self {

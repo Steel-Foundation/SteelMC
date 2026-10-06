@@ -24,6 +24,7 @@ pub struct StainedGlassPaneBlock {
         json = "color",
         module = "steel_registry::dye_color"
     )]
+    #[expect(unused, reason = "Is needed for beacon beam")]
     color: DyeColor,
 }
 
@@ -66,9 +67,5 @@ impl BlockBehavior for StainedGlassPaneBlock {
         _computation_type: PathComputationType,
     ) -> bool {
         false
-    }
-
-    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
-        Some(self.color)
     }
 }

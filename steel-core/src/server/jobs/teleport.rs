@@ -44,24 +44,12 @@ impl RootVehicleRestoreJob {
 
 impl ServerJob for RootVehicleRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        let Some(player) = self.player.session.current_player() else {
-            return JobPoll::Finished;
-        };
-        if player.connection.closed() || !player.is_domain_residence_current(self.residence_token) {
-            return JobPoll::Finished;
-        }
-        let Some(server) = player.server.upgrade() else {
-            return JobPoll::Finished;
-        };
-        if !server.owns_online_player(&player) {
-            return JobPoll::Finished;
-        }
-        let Some(player_world) = server.live_world_for_player(&player) else {
-            // End credits temporarily detaches a connected player without ending
-            // their domain residence. Retain the payload and resume after respawn.
-            return JobPoll::Pending;
-        };
-        if !Arc::ptr_eq(&player_world, &self.world) {
+        if self.player.connection.closed()
+            || !self
+                .player
+                .is_domain_residence_current(self.residence_token)
+            || !self.world.contains_player(&self.player)
+        {
             return JobPoll::Finished;
         }
 
@@ -72,13 +60,13 @@ impl ServerJob for RootVehicleRestoreJob {
                 let Some(_ready) = self.request.ready_chunks() else {
                     return JobPoll::Pending;
                 };
-                if let Some(root_vehicle) = player.take_matching_pending_root_vehicle(
+                if let Some(root_vehicle) = self.player.take_matching_pending_root_vehicle(
                     self.residence_token,
                     &self.world,
                     self.attach,
                     self.root_uuid,
                 ) {
-                    restore_root_vehicle_for_player(&player, &self.world, root_vehicle);
+                    restore_root_vehicle_for_player(&self.player, &self.world, root_vehicle);
                 }
                 JobPoll::Finished
             }
@@ -606,7 +594,7 @@ impl ServerJob for EndPortalTeleportJob {
                         };
                         let request = target_world.request_player_spawn_chunks(position);
                         self.phase = EndPortalTeleportPhase::LoadingPlayerRespawn {
-                            target_world: Arc::clone(target_world),
+                            target_world: target_world.clone(),
                             spawn,
                             request,
                         };
@@ -843,7 +831,7 @@ fn restore_root_vehicle_for_player(
         return;
     }
 
-    let player_entity: SharedEntity = Arc::<Player>::clone(player);
+    let player_entity: SharedEntity = player.clone();
     EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
     attach_entity.position_rider(player.as_ref());
     player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
@@ -896,33 +884,35 @@ impl EnderPearlRestoreJob {
 
 impl ServerJob for EnderPearlRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        let Some(player) = self.player.session.current_player() else {
-            return JobPoll::Finished;
-        };
         // The pearl may live in another world in the same domain, so require a
         // live same-domain owner rather than membership in the pearl's exact world.
-        if player.connection.closed() || !player.is_domain_residence_current(self.residence_token) {
+        if self.player.connection.closed()
+            || !self
+                .player
+                .is_domain_residence_current(self.residence_token)
+        {
             return JobPoll::Finished;
         }
-        let Some(server) = player.server.upgrade() else {
+        let Some(server) = self.player.server.upgrade() else {
             return JobPoll::Finished;
         };
-        if !server.owns_online_player(&player) {
+        if !server.owns_online_player(&self.player) {
             return JobPoll::Finished;
         }
-        let Some(player_world) = server.live_world_for_player(&player) else {
+        let Some(player_world) = server.live_world_for_player(&self.player) else {
             // End credits temporarily detaches a connected player without ending
             // their domain residence. Retain the payload and resume after respawn.
             return JobPoll::Pending;
         };
         if player_world.domain() != self.world.domain() {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %self.player.gameprofile.name,
                 player_domain = player_world.domain(),
                 pearl_domain = self.world.domain(),
                 "Discarding a pending ender pearl whose owner changed domains without a new residence"
             );
-            player.discard_pending_ender_pearl(self.residence_token, self.uuid);
+            self.player
+                .discard_pending_ender_pearl(self.residence_token, self.uuid);
             return JobPoll::Finished;
         }
 
@@ -933,14 +923,14 @@ impl ServerJob for EnderPearlRestoreJob {
                 if self.request.ready_chunks().is_none() {
                     return JobPoll::Pending;
                 }
-                let Some(pearl) = player.take_matching_pending_ender_pearl(
+                let Some(pearl) = self.player.take_matching_pending_ender_pearl(
                     self.residence_token,
                     &self.world,
                     self.uuid,
                 ) else {
                     return JobPoll::Finished;
                 };
-                restore_ender_pearl_for_player(&player, &self.world, &pearl.entity);
+                restore_ender_pearl_for_player(&self.player, &self.world, &pearl.entity);
                 JobPoll::Finished
             }
         }
@@ -977,7 +967,7 @@ fn restore_ender_pearl_for_player(
         return false;
     }
 
-    let owner: SharedEntity = Arc::<Player>::clone(player);
+    let owner: SharedEntity = player.clone();
     for entity in &entities {
         entity.restore_owner_reference(&owner);
     }

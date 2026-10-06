@@ -12,18 +12,18 @@ use steel_utils::{
     translations,
 };
 use text_components::TextComponent;
-use tokio::{runtime::Builder, sync::mpsc};
+use tokio::{fs, runtime::Builder, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
-    player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession},
+    player::{ClientInformation, GameProfile, Player, PlayerConnection},
     server::DuplicatePlayerWaitError,
     world::World,
 };
 
-use super::{PlayerAdmissionState, Server, fresh_test_world, test_server};
+use super::{PlayerAdmissionState, Server, fresh_test_world, test_server, test_storage_root};
 
 fn java_test_player(
     server: &Arc<Server>,
@@ -37,31 +37,30 @@ fn java_test_player(
     let (outgoing_packets, receiver) = mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
     let network_writer = Arc::new(AsyncMutex::new(None));
-    let session = Arc::new(PlayerSession::new(10, 10));
-    let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
-        outgoing_packets,
-        cancel_token,
-        None,
-        Arc::clone(&network_writer),
-        1,
-        Arc::clone(&session),
-    )));
-    let player = Arc::new(Player::new(
-        GameProfile {
-            id: uuid,
-            name: "TestPlayer".to_owned(),
-            properties: Vec::new(),
-            profile_actions: None,
-        },
-        connection,
-        Arc::clone(&session),
-        world,
-        Arc::downgrade(server),
-        Arc::clone(&server.config),
-        1,
-        ClientInformation::default(),
-    ));
-    assert!(session.bind_initial_player(&player));
+    let player = Arc::new_cyclic(|player_weak| {
+        let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
+            outgoing_packets,
+            cancel_token,
+            None,
+            Arc::clone(&network_writer),
+            1,
+            player_weak.clone(),
+        )));
+        Player::new(
+            GameProfile {
+                id: uuid,
+                name: "TestPlayer".to_owned(),
+                properties: Vec::new(),
+                profile_actions: None,
+            },
+            connection,
+            world,
+            Arc::downgrade(server),
+            Arc::clone(&server.config),
+            1,
+            ClientInformation::default(),
+        )
+    });
     (player, receiver, network_writer)
 }
 
@@ -74,7 +73,13 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&world), super::PermissionSubjectIndex::new()).await;
+        let storage_root = test_storage_root("blocked-disconnect-write");
+        let server = test_server(
+            Arc::clone(&world),
+            super::PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -116,6 +121,9 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         drop(player);
         drop(network_writer);
         drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
     });
 }
 
@@ -162,7 +170,13 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&world), super::PermissionSubjectIndex::new()).await;
+        let storage_root = test_storage_root("duplicate-relocation-wait");
+        let server = test_server(
+            Arc::clone(&world),
+            super::PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -174,7 +188,6 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 closed: AtomicBool::new(false),
             },
         )));
-        let session = Arc::new(PlayerSession::new(10, 10));
         let player = Arc::new(Player::new(
             GameProfile {
                 id: uuid,
@@ -183,14 +196,12 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 profile_actions: None,
             },
             connection,
-            Arc::clone(&session),
             Arc::clone(&world),
             Arc::downgrade(&server),
             Arc::clone(&server.config),
             1,
             ClientInformation::default(),
         ));
-        assert!(session.bind_initial_player(&player));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
@@ -248,6 +259,9 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         drop(pending);
         drop(player);
         drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
     });
 }
 
@@ -260,7 +274,13 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
     };
 
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&world), super::PermissionSubjectIndex::new()).await;
+        let storage_root = test_storage_root("duplicate-login-deadline");
+        let server = test_server(
+            Arc::clone(&world),
+            super::PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -322,5 +342,8 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
         }
 
         drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
     });
 }

@@ -384,10 +384,6 @@ impl BlockBreakingManager {
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
-        if player.get_abilities().instabuild && !held_item_can_destroy_in_creative(player) {
-            return false;
-        }
-
         // Check if player's tool can destroy this block
         // TODO: Implement canDestroyBlock check for adventure mode
 
@@ -529,12 +525,6 @@ pub enum BlockBreakAction {
     Stop,
     /// Player aborted breaking a block.
     Abort,
-}
-
-fn held_item_can_destroy_in_creative(player: &Player) -> bool {
-    let inventory = player.inventory.lock();
-    let main_hand = inventory.get_item_in_hand(InteractionHand::MainHand);
-    main_hand.can_destroy_blocks_in_creative()
 }
 
 /// Checks if a block state is air.

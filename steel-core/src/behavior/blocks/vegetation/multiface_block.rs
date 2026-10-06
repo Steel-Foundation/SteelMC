@@ -70,6 +70,8 @@ impl MultifaceBlock {
         Self { block }
     }
 
+    /// Vanilla `MultifaceBlock.canAttachTo(level, pos, direction)`.
+    ///
     /// Returns whether a face of the multiface block at `pos` can attach to the
     /// neighbour in `direction_to_neighbor`. The neighbour position is derived
     /// here, so callers that already have it should use
@@ -84,6 +86,8 @@ impl MultifaceBlock {
         Self::can_attach_to_state(world, direction_to_neighbor, neighbor_pos, block_state)
     }
 
+    /// Vanilla `MultifaceBlock.canAttachTo(level, directionTowardsNeighbor, neighborPos, neighborState)`.
+    ///
     /// Returns whether `neighbor_state` has a full face pointing back at the
     /// attaching block, checking the support shape before the collision shape.
     pub(super) fn can_attach_to_state(
@@ -345,6 +349,7 @@ impl MultifaceSpreader {
 }
 
 impl BlockBehavior for MultifaceBlock {
+    /// Vanilla `MultifaceBlock.canSurvive`.
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let mut has_at_least_one_face = false;
         for direction in Direction::ALL {
@@ -358,6 +363,7 @@ impl BlockBehavior for MultifaceBlock {
         has_at_least_one_face
     }
 
+    /// Vanilla `MultifaceBlock.getStateForPlacement`
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let level = context.world;
         let old_state = level.get_block_state(context.place_pos());
@@ -376,6 +382,7 @@ impl BlockBehavior for MultifaceBlock {
             })
     }
 
+    /// Vanilla `MultifaceBlock.updateShape`
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -399,6 +406,7 @@ impl BlockBehavior for MultifaceBlock {
         state
     }
 
+    /// Vanilla `MultifaceBlock.canBeReplaced`
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
             || Self::has_any_vacant_face(state)

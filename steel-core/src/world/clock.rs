@@ -4,9 +4,6 @@ use steel_registry::{REGISTRY, world_clock::WorldClockRef};
 use steel_utils::Identifier;
 use thiserror::Error;
 
-/// Game-time synchronization interval, measured in simulation ticks.
-const GAME_TIME_SYNC_INTERVAL_TICKS: i64 = 20;
-
 /// One persisted instance of a registered world clock.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -220,7 +217,7 @@ use super::{CSetTime, RegistryExt, World, clock};
 impl World {
     /// Returns vanilla level game time.
     pub fn game_time(&self) -> i64 {
-        self.game_time.ticks()
+        self.level_data.read().game_time()
     }
 
     /// Returns the total ticks of one clock in this world.
@@ -233,7 +230,7 @@ impl World {
         let level_data = self.level_data.read();
         let advance_time = self.advance_time_with_guard(&level_data);
         CSetTime::new(
-            self.game_time(),
+            level_data.game_time(),
             level_data.world_clocks().network_updates(advance_time),
         )
     }
@@ -283,22 +280,24 @@ impl World {
             let update = level_data
                 .world_clocks()
                 .network_update(clock, advance_time)?;
-            (result, CSetTime::new(self.game_time(), vec![update]))
+            (result, CSetTime::new(level_data.game_time(), vec![update]))
         };
         self.broadcast_to_all(packet);
         Some(result)
     }
 
-    /// Advances this world's clocks and periodically synchronizes the shared game time.
+    /// Advances game time and this world's clock instances, then periodically synchronizes game time.
     pub(super) fn tick_time(&self) {
         let game_time = {
             let mut lock = self.level_data.write();
+            let updated_game_time = lock.game_time().wrapping_add(1);
+            lock.set_game_time(updated_game_time);
             let advance_time = self.advance_time_with_guard(&lock);
             lock.world_clocks_mut().tick(advance_time);
-            self.game_time()
+            updated_game_time
         };
 
-        if game_time % GAME_TIME_SYNC_INTERVAL_TICKS == 0 {
+        if game_time % 20 == 0 {
             self.broadcast_to_all(CSetTime::new(game_time, Vec::new()));
         }
     }

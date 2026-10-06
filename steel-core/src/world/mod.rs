@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_ticket_storage::ChunkTicketStorage;
+use crate::chunk::chunk_ticket_storage::{ChunkTicketStorage, PersistentChunkTickets};
 use crate::chunk::full_chunk::{FullChunkBlockSetResult, FullChunkRef};
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
 use crate::chunk::light::{
@@ -98,9 +98,7 @@ use crate::{
         entity_loot_ref,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
-    level_data::{
-        GameTime, GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings,
-    },
+    level_data::{LevelDataManager, RespawnData, WorldGenerationSettings},
     player::{LastSeen, Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
@@ -205,8 +203,6 @@ pub enum ConditionalBlockSetResult {
 /// Configuration for creating a new world.
 #[derive(Clone)]
 pub struct WorldConfig {
-    /// Domain game-time authority, bound during construction.
-    pub game_time_source: GameTimeSource,
     /// Storage configuration for chunk persistence.
     pub storage: WorldStorageConfig,
     /// Directory for level data. `None` means level data is ephemeral.
@@ -251,7 +247,6 @@ pub struct World {
     pub dimension_type: DimensionTypeRef,
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
-    pub(crate) game_time: Arc<GameTime>,
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
@@ -370,18 +365,17 @@ impl World {
 
         let path = config.level_data_path.as_deref().map(Path::new);
         let saved_data = SavedDataManager::new(path);
-        let mut level_data = LevelDataManager::new(
-            path,
-            seed,
-            config.difficulty,
-            config.generation_settings,
-            config.game_time_source,
-        )
-        .await?;
+        let mut level_data =
+            LevelDataManager::new(path, seed, config.difficulty, config.generation_settings)
+                .await?;
         if level_data.is_dirty() {
             level_data.save().await?;
         }
-        let ticket_storage = ChunkTicketStorage::load(&saved_data, &key).await;
+        let persistent_chunk_tickets: PersistentChunkTickets = saved_data
+            .load_or_default(saved_data_names::CHUNK_TICKETS)
+            .await?;
+        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -405,7 +399,7 @@ impl World {
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
             let chunk_map = Arc::new(ChunkMap::new_with_storage_and_ticket_storage(
                 chunk_runtime,
-                Weak::clone(weak_self),
+                weak_self.clone(),
                 dimension_type,
                 sea_level,
                 storage,
@@ -424,7 +418,6 @@ impl World {
                 player_area_map: PlayerAreaMap::new(),
                 key,
                 dimension_type,
-                game_time: level_data.game_time_handle(),
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 world_border: SyncMutex::new(world_border),

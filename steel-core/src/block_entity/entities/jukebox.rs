@@ -50,8 +50,7 @@ struct JukeboxState {
     playback: Option<JukeboxPlayback>,
 }
 
-/// Block entity for jukeboxes, storing the inserted record and song
-/// playback progress.
+/// Vanilla `JukeboxBlockEntity`.
 pub struct JukeboxBlockEntity {
     base: BlockEntityBase,
     state: SyncMutex<JukeboxState>,

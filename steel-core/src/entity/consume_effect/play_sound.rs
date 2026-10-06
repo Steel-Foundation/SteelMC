@@ -10,7 +10,7 @@ use super::ConsumeEffectBehavior;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
-/// Play sound consume effect behavior.
+/// Mirrors vanilla `PlaySoundConsumeEffect.apply`.
 pub struct PlaySoundBehavior;
 
 impl ConsumeEffectBehavior for PlaySoundBehavior {

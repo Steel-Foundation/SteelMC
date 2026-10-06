@@ -339,7 +339,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn set_mob_flags(&self, flags: i8);
 
-    /// Returns whether this mob has a saddle equipped.
+    /// Returns vanilla `Mob.isSaddled`.
     fn is_saddled(&self) -> bool {
         let mut is_saddled = false;
         self.with_equipment_slot(EquipmentSlot::Saddle, &mut |item_stack| {
@@ -363,7 +363,7 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_base().set_xp_reward(xp_reward);
     }
 
-    /// Returns this mob's current attack target, if it's still a valid one.
+    /// Returns vanilla `Mob.getTarget`.
     fn target(&self) -> Option<SharedEntity> {
         self.mob_base()
             .target(|target| self.is_valid_target(target))
@@ -388,8 +388,7 @@ pub trait Mob: LivingEntity + Leashable {
         Mob::can_attack(self, target)
     }
 
-    /// Returns whether this mob may attack the target; excludes ghasts, which
-    /// mobs never target directly.
+    /// Returns vanilla `Mob.canAttack`.
     fn can_attack(&self, target: &dyn LivingEntity) -> bool {
         target.entity_type() != &vanilla_entities::GHAST && LivingEntity::can_attack(self, target)
     }
@@ -438,7 +437,7 @@ pub trait Mob: LivingEntity + Leashable {
             .set_ambient_sound_time(-self.ambient_sound_interval());
     }
 
-    /// Runs the shared living-entity base tick, then mob-specific per-tick behavior.
+    /// Runs vanilla `Mob.baseTick`.
     fn base_tick_mob(&self) {
         self.base_tick_living_entity();
         self.mob_base_tick();
@@ -495,9 +494,7 @@ pub trait Mob: LivingEntity + Leashable {
         group_data
     }
 
-    /// Dispatches a right-click interaction with this mob: important
-    /// interactions (name tag, spawn egg) first, then entity interaction,
-    /// then mob-specific interaction.
+    /// Handles vanilla `Mob.interact`.
     fn interact_mob(
         &self,
         player: &Player,
@@ -533,8 +530,7 @@ pub trait Mob: LivingEntity + Leashable {
         interaction_result
     }
 
-    /// Handles interactions that take priority over normal behavior: renaming
-    /// with a name tag and spawning with a spawn egg.
+    /// Handles vanilla `Mob.checkAndHandleImportantInteractions`.
     fn check_and_handle_important_interactions(
         &self,
         player: &Player,
@@ -579,19 +575,17 @@ pub trait Mob: LivingEntity + Leashable {
         InteractionResult::Pass
     }
 
-    /// Mob-specific interaction hook for concrete mobs to override; does
-    /// nothing by default.
+    /// Handles vanilla `Mob.mobInteract`.
     fn mob_interact(&self, _player: &Player, _hand: InteractionHand) -> InteractionResult {
         InteractionResult::Pass
     }
 
-    /// Returns whether this mob's equipment can be sheared; false while
-    /// something is riding it.
+    /// Returns vanilla `Mob.canShearEquipment`.
     fn can_shear_equipment(&self, _player: &Player) -> bool {
         !self.is_vehicle()
     }
 
-    /// Consumes one of the player's held item after this mob uses it in an interaction.
+    /// Applies vanilla `Mob.usePlayerItem`.
     fn use_player_item(&self, player: &Player, hand: InteractionHand) {
         player.inventory.lock().shrink_item_in_hand(hand, 1);
         // TODO: Apply USE_REMAINDER components once item use-remainder support exists.
@@ -614,13 +608,7 @@ pub trait Mob: LivingEntity + Leashable {
         *self.mob_base().persistence_required().lock() = true;
     }
 
-    /// Returns whether this mob can be leashed, before its leash state is considered.
-    fn mob_can_be_leashed(&self) -> bool {
-        // TODO(enemy): return false for enemy mobs once hostile mob foundations exist.
-        true
-    }
-
-    /// Returns whether this mob is allowed to pick up dropped items.
+    /// Returns vanilla `Mob.canPickUpLoot`.
     fn can_pick_up_loot(&self) -> bool {
         *self.mob_base().can_pick_up_loot().lock()
     }
@@ -1193,7 +1181,7 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_base().pathfinding_malus().lock().get(path_type)
     }
 
-    /// Blocks a mob can fall before taking fall damage; concrete mobs may raise this.
+    /// Vanilla `Entity.getMaxFallDistance` baseline.
     fn max_fall_distance(&self) -> i32 {
         3
     }
@@ -1225,27 +1213,17 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
     }
 
-    /// Whether this mob can see `target`.
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
-    }
-
-    /// Maximum degrees the head may pitch up or down independently of the body.
+    /// Returns vanilla `Mob.getMaxHeadXRot`.
     fn max_head_x_rot(&self) -> f32 {
         40.0
     }
 
-    /// Maximum degrees the head may yaw left or right independently of the body.
+    /// Returns vanilla `Mob.getMaxHeadYRot`.
     fn max_head_y_rot(&self) -> f32 {
         75.0
     }
 
-    /// Performs this mob's melee attack against `target`: computes weapon
-    /// damage and knockback, applies enchantment effects, and returns whether
-    /// the target was hurt.
+    /// Handles vanilla `Mob.doHurtTarget`.
     #[must_use]
     fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
@@ -1316,9 +1294,7 @@ pub trait Mob: LivingEntity + Leashable {
         was_hurt
     }
 
-    /// Builds the damage source for this mob's melee attack: the weapon's
-    /// custom damage type if set, else its behavior's item damage source,
-    /// else the default mob-attack type.
+    /// Returns the damage source used by vanilla `ItemStack.getDamageSource`.
     fn mob_attack_damage_source(
         &self,
         weapon_item: &ItemStack,
@@ -1339,8 +1315,7 @@ pub trait Mob: LivingEntity + Leashable {
             .with_source_position(self.position())
     }
 
-    /// Computes attack knockback strength from the attack-knockback attribute
-    /// and the weapon's knockback enchantments.
+    /// Returns vanilla `LivingEntity.getKnockback` for mob attacks.
     fn get_attack_knockback(
         &self,
         target: &dyn Entity,
@@ -1365,8 +1340,7 @@ pub trait Mob: LivingEntity + Leashable {
         f64::from(modified) / 2.0
     }
 
-    /// Knocks the target back in this mob's facing direction and dampens
-    /// this mob's own horizontal velocity.
+    /// Applies vanilla `LivingEntity.causeExtraKnockback`.
     fn cause_extra_knockback(
         &self,
         target: &dyn Entity,
@@ -1389,10 +1363,10 @@ pub trait Mob: LivingEntity + Leashable {
         self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
     }
 
-    /// Plays this mob's attack sound; does nothing by default.
+    /// Plays vanilla `LivingEntity.playAttackSound`.
     fn play_attack_sound(&self) {}
 
-    /// Returns whether `target` is within this mob's melee attack range.
+    /// Returns vanilla `Mob.isWithinMeleeAttackRange`.
     fn is_within_melee_attack_range(&self, target: &dyn LivingEntity) -> bool {
         // TODO: Use the held item's ATTACK_RANGE component once it has typed component data.
         let max_range = default_attack_reach();
@@ -1406,8 +1380,7 @@ pub trait Mob: LivingEntity + Leashable {
                     .intersects(target_hitbox))
     }
 
-    /// Returns the bounding box used for melee range checks, expanded
-    /// horizontally and extended to cover a ridden vehicle.
+    /// Returns vanilla `Mob.getAttackBoundingBox`.
     fn attack_bounding_box(&self, horizontal_expansion: f64) -> WorldAabb {
         let own_aabb = self.bounding_box();
         let base = if let Some(vehicle) = self.vehicle() {
@@ -1744,10 +1717,6 @@ pub trait Mob: LivingEntity + Leashable {
 impl<T: Mob> Leashable for T {
     fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
         self.mob_base().leash_data()
-    }
-
-    fn can_be_leashed(&self) -> bool {
-        self.mob_can_be_leashed()
     }
 }
 

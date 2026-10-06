@@ -21,8 +21,7 @@ use crate::behavior::CONSUME_EFFECT_BEHAVIORS;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
-/// Behavior for one kind of item consume effect, such as applying, clearing,
-/// or removing status effects, playing a sound, or randomly teleporting the consumer.
+/// Mirrors vanilla's `ConsumeEffect.apply(Level, ItemStack, LivingEntity)`
 pub trait ConsumeEffectBehavior: Send + Sync {
     /// Applies this effect's behavior to `user`, downcasting `effect` to the
     /// concrete `ConsumeEffectData` payload this behavior expects.

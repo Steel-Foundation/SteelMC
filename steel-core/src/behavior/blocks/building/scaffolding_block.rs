@@ -59,7 +59,7 @@ impl ScaffoldingBlock {
         distance > 0 && world.get_block_state(pos.below()).get_block() != self.block
     }
 
-    /// Calculates the stability distance from the scaffolding block to its support.
+    /// Vanilla `ScaffoldingBlock.getDistance`.
     pub(crate) fn get_distance(world: &dyn LevelReader, pos: BlockPos) -> u8 {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);

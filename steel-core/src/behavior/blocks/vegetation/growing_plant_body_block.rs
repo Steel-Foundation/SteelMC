@@ -50,8 +50,7 @@ impl GrowingPlantBodyBlock {
         }
     }
 
-    /// Sets the per-block callback that computes the new head state when a
-    /// body segment converts into the head (default: leave it unchanged).
+    /// Configures the vanilla `updateHeadAfterConvertedFromBody` specialization.
     #[must_use]
     pub const fn with_update_head_after_converted_from_body(
         mut self,

@@ -11,17 +11,17 @@ use crate::world::World;
 /// Shared vanilla entity save data that is not part of the movement snapshot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EntityBaseSaveData {
-    /// Air supply in ticks.
+    /// Synchronized vanilla `Air`/air supply value.
     pub air_supply: i32,
     /// Vanilla dimension-change portal cooldown.
     pub portal_cooldown: i32,
-    /// Whether this entity ignores gravity.
+    /// Shared vanilla `NoGravity` flag.
     pub no_gravity: bool,
-    /// Whether this entity is invulnerable to non-bypassing damage.
+    /// Shared vanilla `Invulnerable` flag.
     pub invulnerable: bool,
-    /// This entity's custom name, if set.
+    /// Optional synchronized vanilla custom name.
     pub custom_name: Option<TextComponent>,
-    /// Whether the custom name renders above the entity at all times.
+    /// Synchronized vanilla custom-name visibility flag.
     pub custom_name_visible: bool,
     /// Synchronized vanilla silent flag.
     pub silent: bool,

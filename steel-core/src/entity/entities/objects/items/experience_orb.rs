@@ -133,8 +133,7 @@ impl ExperienceOrbEntity {
         }
     }
 
-    /// Splits a total XP amount into the largest single orb value at most
-    /// `max_value`, from a fixed tier table capped at 2477.
+    /// Vanilla `ExperienceOrb.getExperienceValue`.
     #[must_use]
     pub const fn get_experience_value(max_value: i32) -> i32 {
         if max_value >= 2477 {

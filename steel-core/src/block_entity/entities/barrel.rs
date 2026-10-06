@@ -60,8 +60,7 @@ impl BarrelBlockEntity {
         let container = Arc::new(SyncMutex::new(BarrelContainer {
             items: vec![ItemStack::empty(); BARREL_SLOTS],
         }));
-        let shared_container: SharedContainer =
-            Arc::<SyncMutex<BarrelContainer>>::clone(&container);
+        let shared_container: SharedContainer = container.clone();
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
             base,

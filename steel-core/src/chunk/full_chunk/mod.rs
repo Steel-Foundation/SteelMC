@@ -386,7 +386,7 @@ impl Chunk {
             postprocessing,
             block_ticks,
             fluid_ticks,
-            Weak::clone(&level),
+            level.clone(),
             light,
         );
 
@@ -1823,7 +1823,7 @@ impl FullChunkRef<'_> {
         section_guard.states.get(local_x, local_y, local_z)
     }
 
-    /// Returns the index of the highest filled section in this chunk, if any.
+    /// Mirrors vanilla `ChunkAccess.getHighestFilledSectionIndex`.
     #[must_use]
     pub fn highest_filled_section_index(&self) -> Option<usize> {
         self.chunk
@@ -1833,7 +1833,7 @@ impl FullChunkRef<'_> {
             .rposition(|section| !section.read().is_empty())
     }
 
-    /// Returns the Y coordinate of the highest filled section in this chunk.
+    /// Mirrors vanilla `ChunkAccess.getHighestSectionPosition`.
     #[must_use]
     pub fn highest_section_position(&self) -> i32 {
         self.highest_filled_section_index()

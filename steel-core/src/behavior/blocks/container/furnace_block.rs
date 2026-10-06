@@ -66,7 +66,7 @@ fn open_furnace(
     let Some(container) = ContainerRef::from_block_entity(block_entity) else {
         return InteractionResult::Success;
     };
-    let inventory = Arc::clone(&player.inventory);
+    let inventory = player.inventory.clone();
     player.open_menu(title, move |context| {
         furnace_menu(inventory, context.container_id, container, kind)
     });

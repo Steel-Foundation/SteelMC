@@ -4,7 +4,8 @@ use super::MobEffectBehavior;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
-/// Raid omen mob effect behavior.
+/// Mirrors vanilla `RaidOmenMobEffect`.
+///
 // TODO: `applyEffectTick` checks the mob is a non-spectator `ServerPlayer`
 // with a pending raid-omen position, then calls `level.getRaids()
 // .createOrExtendRaid(player, pos)` and clears the position, removing this

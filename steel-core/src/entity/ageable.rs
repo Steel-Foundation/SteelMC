@@ -7,15 +7,11 @@ use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
-use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
-use crate::entity::{
-    AgeableMobGroupData, ENTITIES, Entity, EntitySpawnReason, Mob, SharedEntity, SpawnGroupData,
-    next_entity_id,
-};
+use crate::entity::{AgeableMobGroupData, Entity, EntitySpawnReason, Mob, SpawnGroupData};
 use crate::player::Player;
 use crate::world::World;
 
@@ -57,7 +53,7 @@ impl AgeableMobBase {
         }
     }
 
-    /// Age in ticks: negative while a baby, reaching zero at adulthood.
+    /// Returns vanilla `AgeableMob.age`.
     #[must_use]
     pub fn age(&self) -> i32 {
         self.state.lock().age
@@ -71,45 +67,45 @@ impl AgeableMobBase {
         old_age < 0 && age >= 0 || old_age >= 0 && age < 0
     }
 
-    /// Extra age credited by forced growth, reapplied once natural age reaches zero.
+    /// Returns vanilla `AgeableMob.forcedAge`.
     #[must_use]
     pub fn forced_age(&self) -> i32 {
         self.state.lock().forced_age
     }
 
-    /// Sets the extra age credited by forced growth.
+    /// Sets vanilla `AgeableMob.forcedAge`.
     pub fn set_forced_age(&self, forced_age: i32) {
         self.state.lock().forced_age = forced_age;
     }
 
-    /// Ticks remaining in the forced-growth particle effect.
+    /// Returns vanilla `AgeableMob.forcedAgeTimer`.
     #[must_use]
     pub fn forced_age_timer(&self) -> i32 {
         self.state.lock().forced_age_timer
     }
 
-    /// Sets the ticks remaining in the forced-growth particle effect.
+    /// Sets vanilla `AgeableMob.forcedAgeTimer`.
     pub fn set_forced_age_timer(&self, forced_age_timer: i32) {
         self.state.lock().forced_age_timer = forced_age_timer;
     }
 
-    /// Ticks remaining before this mob's age-lock state can be toggled again.
+    /// Returns vanilla `AgeableMob.ageLockParticleTimer`.
     #[must_use]
     pub fn age_lock_particle_timer(&self) -> i32 {
         self.state.lock().age_lock_particle_timer
     }
 
-    /// Sets the cooldown before this mob's age-lock state can be toggled again.
+    /// Sets vanilla `AgeableMob.ageLockParticleTimer`.
     pub fn set_age_lock_particle_timer(&self, timer: i32) {
         self.state.lock().age_lock_particle_timer = timer;
     }
 
-    /// Adds delta to the extra age credited by forced growth.
+    /// Adds to vanilla `AgeableMob.forcedAge`.
     pub fn add_forced_age(&self, delta: i32) {
         self.state.lock().forced_age += delta;
     }
 
-    /// Seconds to reduce the remaining growth time by when fed, roughly a tenth of the time left in seconds.
+    /// Returns vanilla `AgeableMob.getSpeedUpSecondsWhenFeeding`.
     #[must_use]
     pub fn get_speed_up_seconds_when_feeding(ticks_until_adult: i32) -> i32 {
         ((ticks_until_adult / 20) as f32 * 0.1) as i32
@@ -141,12 +137,12 @@ pub trait AgeableMob: Mob {
         self.refresh_dimensions();
     }
 
-    /// Starting age assigned to a newly spawned baby.
+    /// Returns vanilla `AgeableMob.getBabyStartAge`.
     fn get_baby_start_age(&self) -> i32 {
         BABY_START_AGE
     }
 
-    /// Age in ticks: negative while a baby, reaching zero at adulthood.
+    /// Returns vanilla `AgeableMob.age`.
     fn get_age(&self) -> i32 {
         self.ageable_base().age()
     }
@@ -170,32 +166,32 @@ pub trait AgeableMob: Mob {
         self.set_age(if baby { self.get_baby_start_age() } else { 0 });
     }
 
-    /// Extra age credited by forced growth, reapplied once natural age reaches zero.
+    /// Returns vanilla `AgeableMob.forcedAge`.
     fn forced_age(&self) -> i32 {
         self.ageable_base().forced_age()
     }
 
-    /// Sets the extra age credited by forced growth.
+    /// Sets vanilla `AgeableMob.forcedAge`.
     fn set_forced_age(&self, forced_age: i32) {
         self.ageable_base().set_forced_age(forced_age);
     }
 
-    /// Ticks remaining in the forced-growth particle effect.
+    /// Returns vanilla `AgeableMob.forcedAgeTimer`.
     fn forced_age_timer(&self) -> i32 {
         self.ageable_base().forced_age_timer()
     }
 
-    /// Sets the ticks remaining in the forced-growth particle effect.
+    /// Sets vanilla `AgeableMob.forcedAgeTimer`.
     fn set_forced_age_timer(&self, forced_age_timer: i32) {
         self.ageable_base().set_forced_age_timer(forced_age_timer);
     }
 
-    /// Ticks remaining before this mob's age-lock state can be toggled again.
+    /// Returns vanilla `AgeableMob.ageLockParticleTimer`.
     fn age_lock_particle_timer(&self) -> i32 {
         self.ageable_base().age_lock_particle_timer()
     }
 
-    /// Sets the cooldown before this mob's age-lock state can be toggled again.
+    /// Sets vanilla `AgeableMob.ageLockParticleTimer`.
     fn set_age_lock_particle_timer(&self, timer: i32) {
         self.ageable_base().set_age_lock_particle_timer(timer);
     }
@@ -205,7 +201,7 @@ pub trait AgeableMob: Mob {
         AgeableMob::is_baby(self) && !self.is_age_locked()
     }
 
-    /// Seconds to reduce the remaining growth time by when fed, roughly a tenth of the time left in seconds.
+    /// Returns vanilla `AgeableMob.getSpeedUpSecondsWhenFeeding`.
     fn get_speed_up_seconds_when_feeding(ticks_until_adult: i32) -> i32
     where
         Self: Sized,
@@ -213,8 +209,7 @@ pub trait AgeableMob: Mob {
         AgeableMobBase::get_speed_up_seconds_when_feeding(ticks_until_adult)
     }
 
-    /// Advances age toward adulthood by the given seconds; when forced, also credits
-    /// forced-growth bookkeeping and restarts its particle timer.
+    /// Applies vanilla `AgeableMob.ageUp`.
     fn age_up(&self, seconds: i32, forced: bool) {
         let old_age = self.get_age();
         let mut age = old_age + seconds * 20;
@@ -258,7 +253,7 @@ pub trait AgeableMob: Mob {
         )
     }
 
-    /// Toggles this baby mob's age lock when fed a golden dandelion, preventing further growth while locked.
+    /// Handles vanilla `AgeableMob.mobInteract`.
     fn mob_interact_ageable(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
         let item_stack = {
             let inventory = player.inventory.lock();
@@ -303,48 +298,6 @@ pub trait AgeableMob: Mob {
 
         InteractionResult::Success
     }
-
-    /// Creates a same-type offspring using the registered entity factory.
-    fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        ENTITIES.create(
-            self.entity_type(),
-            next_entity_id(),
-            self.position(),
-            Arc::downgrade(world),
-        )
-    }
-
-    /// Creates this animal's vanilla breeding offspring.
-    fn get_breed_offspring(
-        &self,
-        world: &Arc<World>,
-        partner: &dyn AgeableMob,
-    ) -> Option<SharedEntity> {
-        let offspring = self.create_breed_offspring(world)?;
-        let Some(offspring_animal) = offspring.as_ageable_mob() else {
-            log::error!(
-                "breeding entity type {} created non-ageable offspring",
-                self.entity_type().key
-            );
-            return None;
-        };
-
-        self.initialize_breed_offspring(partner, offspring_animal);
-        Some(offspring)
-    }
-
-    /// Returns this animal's breedable variant key when offspring inherit it.
-    fn breed_variant_key(&self) -> Option<&Identifier> {
-        None
-    }
-
-    /// Applies a breedable variant key to offspring that inherit one.
-    fn set_breed_variant_key(&self, _key: &Identifier) -> bool {
-        false
-    }
-
-    /// Applies entity-specific state to freshly created breeding offspring.
-    fn initialize_breed_offspring(&self, _partner: &dyn AgeableMob, _offspring: &dyn AgeableMob) {}
 
     /// Ticks vanilla age progression.
     fn tick_ageable_mob(&self) {

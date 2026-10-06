@@ -27,15 +27,13 @@ impl ItemBasedSteering {
         }
     }
 
-    /// Marks a boost as active without rolling a new duration, used when
-    /// boost state arrives from synced or loaded data.
+    /// Mirrors vanilla `ItemBasedSteering.onSynced`.
     pub const fn on_synced(&mut self) {
         self.boosting = true;
         self.boost_time = 0;
     }
 
-    /// Starts a boost if one isn't already active, returning a random total
-    /// duration in ticks.
+    /// Mirrors vanilla `ItemBasedSteering.boost`.
     pub fn boost(&mut self) -> Option<i32> {
         if self.boosting {
             return None;
@@ -46,7 +44,7 @@ impl ItemBasedSteering {
         Some(rand::random_range(0..BOOST_TIME_BOUND) + MIN_BOOST_TIME)
     }
 
-    /// Advances the active boost by one tick, ending it once past `boost_time_total`.
+    /// Mirrors vanilla `ItemBasedSteering.tickBoost`.
     pub const fn tick_boost(&mut self, boost_time_total: i32) {
         if !self.boosting {
             return;
@@ -59,8 +57,7 @@ impl ItemBasedSteering {
         }
     }
 
-    /// Returns the current speed multiplier while boosting, ramping via a
-    /// sine curve over the boost duration; 1.0 when not boosting.
+    /// Mirrors vanilla `ItemBasedSteering.boostFactor`.
     #[must_use]
     pub fn boost_factor(&self, boost_time_total: i32) -> f32 {
         if !self.boosting || boost_time_total <= 0 {
@@ -76,23 +73,22 @@ impl ItemBasedSteering {
         self.boosting
     }
 
-    /// Returns ticks elapsed since the current boost started.
+    /// Returns vanilla `ItemBasedSteering.boostTime`.
     #[must_use]
     pub const fn boost_time(&self) -> i32 {
         self.boost_time
     }
 }
 
-/// Entity behavior for vehicles that gain a temporary speed boost from an
-/// item, such as a saddled pig steered with a carrot on a stick.
+/// Entity behavior for vanilla `ItemSteerable`.
 pub trait ItemSteerable: Entity {
     /// Returns the shared runtime steering state.
     fn item_based_steering(&self) -> &SyncMutex<ItemBasedSteering>;
 
-    /// Returns the synced total boost duration in ticks for the currently active boost.
+    /// Returns the synced vanilla `boostTimeTotal`.
     fn boost_time_total(&self) -> i32;
 
-    /// Sets the synced total boost duration in ticks for the currently active boost.
+    /// Sets the synced vanilla `boostTimeTotal`.
     fn set_boost_time_total(&self, boost_time_total: i32);
 
     /// Attempts to start an item-steering boost.
@@ -117,7 +113,7 @@ pub trait ItemSteerable: Entity {
             .tick_boost(boost_time_total);
     }
 
-    /// Returns the current speed multiplier while boosting; 1.0 when not boosting.
+    /// Returns vanilla `ItemBasedSteering.boostFactor`.
     fn boost_factor(&self) -> f32 {
         let boost_time_total = self.boost_time_total();
         self.item_based_steering()

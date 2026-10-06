@@ -270,6 +270,8 @@ impl<I> Aabb<DVec3, I> {
     }
 
     /// Returns the squared distance from `point` to this box.
+    ///
+    /// Mirrors vanilla `AABB.distanceToSqr`.
     #[must_use]
     pub fn distance_to_sqr(self, point: DVec3) -> f64 {
         let dx = f64::max(f64::max(self.min.x - point.x, point.x - self.max.x), 0.0);
@@ -544,6 +546,8 @@ impl<I: Space> Aabb<DVec3, I> {
     ///
     /// Positive components move the maximum edge inward, while negative
     /// components move the minimum edge inward.
+    ///
+    /// Mirrors vanilla `AABB.contract`.
     #[must_use]
     pub fn contract(self, delta: DVec3) -> Self {
         let mut min = self.min;
@@ -632,6 +636,8 @@ impl Aabb<IVec3, Structure> {
     }
 
     /// Returns the squared distance from `point` to this box.
+    ///
+    /// Mirrors vanilla `AABB.distanceToSqr`.
     #[must_use]
     pub fn distance_to_sqr(self, point: DVec3) -> f64 {
         let min_x = f64::from(self.min_x());

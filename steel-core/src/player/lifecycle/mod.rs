@@ -1,5 +1,4 @@
 mod respawn;
-mod respawn_restore;
 mod spawn_sync;
 mod world_transition;
 

@@ -69,7 +69,7 @@ impl BlockBehavior for BarrelBlock {
         };
 
         // Open the chest menu (3 rows for barrel)
-        let inventory = Arc::clone(&player.inventory);
+        let inventory = player.inventory.clone();
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_BARREL.msg()),
             move |context| chest(inventory, context.container_id, container_ref, 3),

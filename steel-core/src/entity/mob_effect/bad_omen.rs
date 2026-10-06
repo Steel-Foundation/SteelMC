@@ -4,7 +4,8 @@ use super::MobEffectBehavior;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
-/// Bad omen mob effect behavior.
+/// Mirrors vanilla `BadOmenMobEffect`.
+///
 // TODO: `applyEffectTick` checks the mob is a non-spectator `ServerPlayer`
 // standing in a village (`ServerLevel.isVillage`) with no raid already at its
 // max omen level, then starts/extends a `Raid`

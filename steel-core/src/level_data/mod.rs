@@ -2,14 +2,11 @@
 //!
 //! This module handles saving and loading world-level data like game rules,
 //! time, weather, spawn point, and seed. This data is stored in `level.toml`
-//! in each world's directory. Only the configured domain default world persists
-//! game time. Promoting a derived save requires explicit authority transfer because
-//! its `level.toml` omits `game_time`.
+//! in each world's directory.
 
 use std::{
     io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use rustc_hash::FxHashMap;
@@ -22,9 +19,6 @@ use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
 
 use crate::world::{MAX_SIZE, clock::WorldClockManager};
-
-mod game_time;
-pub use game_time::{GameTime, GameTimeSource};
 
 /// Persistent world border data stored with Steel level data.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -71,9 +65,8 @@ impl Default for WorldBorderData {
 pub struct LevelData {
     /// World seed for terrain generation.
     pub seed: i64,
-    /// Primary-only serialization snapshot; runtime readers use the shared clock.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    game_time: Option<i64>,
+    /// Total game time in ticks.
+    pub game_time: i64,
     /// Independently advancing world-clock instances for this loaded world.
     #[serde(default)]
     pub(crate) world_clocks: WorldClockManager,
@@ -303,7 +296,7 @@ impl LevelData {
     pub fn new_with_seed_and_difficulty(seed: i64, difficulty: Difficulty) -> Self {
         Self {
             seed,
-            game_time: Some(0),
+            game_time: 0,
             world_clocks: WorldClockManager::new(),
             spawn: SpawnPoint::default(),
             respawn: None,
@@ -403,8 +396,6 @@ pub struct LevelDataManager {
     data: LevelData,
     /// Whether data has been modified since last save.
     dirty: bool,
-    primary_game_time: Option<Arc<GameTime>>,
-    game_time: Arc<GameTime>,
 }
 
 impl LevelDataManager {
@@ -417,37 +408,19 @@ impl LevelDataManager {
         seed: i64,
         difficulty: Difficulty,
         generation: WorldGenerationSettings,
-        source: GameTimeSource,
     ) -> io::Result<Self> {
-        let (mut data, path, dirty) = if let Some(dir) = &world_dir {
+        let (data, path, dirty) = if let Some(dir) = &world_dir {
             let path = dir.as_ref().join("level.toml");
 
             let (data, dirty) = if path.exists() {
                 // Load existing level data (seed from file takes precedence)
                 let content = fs::read_to_string(&path).await?;
-                let mut table: toml::Table = toml::from_str(&content).map_err(|e| {
+                let mut loaded: LevelData = toml::from_str(&content).map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Invalid {}: {e}", path.display()),
+                        format!("Invalid level.toml: {e}"),
                     )
                 })?;
-                let removed_legacy_time = matches!(&source, GameTimeSource::Derived(_))
-                    && table.remove("game_time").is_some();
-                let mut loaded: LevelData = table.try_into().map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("Invalid {}: {e}", path.display()),
-                    )
-                })?;
-                if matches!(&source, GameTimeSource::Primary) && loaded.game_time.is_none() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!(
-                            "Domain default world's {} is missing game_time. If you changed the domain default world, stop the server and copy game_time from the previous default world's level.toml into this file before restarting.",
-                            path.display()
-                        ),
-                    ));
-                }
                 // Initialize runtime game rules from serialized values
                 loaded.load_game_rules();
                 let initialized_clocks = loaded
@@ -455,10 +428,7 @@ impl LevelDataManager {
                     .initialize_registered_clocks()
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
                 let adopted_generation = loaded.validate_generation_settings(generation)?;
-                (
-                    loaded,
-                    adopted_generation || initialized_clocks || removed_legacy_time,
-                )
+                (loaded, adopted_generation || initialized_clocks)
             } else {
                 // Create new level data with the provided defaults.
                 let mut data = LevelData::new_with_seed_and_difficulty(seed, difficulty);
@@ -472,29 +442,7 @@ impl LevelDataManager {
             (data, None, false)
         };
 
-        let (game_time, primary_game_time) = match source {
-            GameTimeSource::Primary => {
-                let ticks = data.game_time.take().ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Primary level data is missing game_time",
-                    )
-                })?;
-                let clock = Arc::new(GameTime::new(ticks));
-                (Arc::clone(&clock), Some(clock))
-            }
-            GameTimeSource::Derived(clock) => {
-                data.game_time = None;
-                (clock, None)
-            }
-        };
-        Ok(Self {
-            path,
-            data,
-            dirty,
-            primary_game_time,
-            game_time,
-        })
+        Ok(Self { path, data, dirty })
     }
 
     /// Loads the saved world seed from `level.toml`, or returns the provided default.
@@ -558,8 +506,6 @@ impl LevelDataManager {
             fs::create_dir_all(parent).await?;
         }
 
-        self.data.game_time = self.primary_game_time.as_ref().map(|clock| clock.ticks());
-
         // Export runtime game rules to serializable format before saving
         self.data.save_game_rules();
 
@@ -578,23 +524,16 @@ impl LevelDataManager {
         self.data.seed
     }
 
-    /// Shared runtime clock, bound before world initialization.
+    /// Gets the game time.
     #[must_use]
-    pub fn game_time_handle(&self) -> Arc<GameTime> {
-        Arc::clone(&self.game_time)
+    pub const fn game_time(&self) -> i64 {
+        self.data.game_time
     }
 
-    /// Advances the domain primary and records the persistence change together.
-    pub(crate) fn advance_game_time(&mut self) {
-        let Some(clock) = &self.primary_game_time else {
-            panic!("only a domain primary can advance game time");
-        };
-        clock.advance();
+    /// Sets the game time.
+    pub const fn set_game_time(&mut self, time: i64) {
+        self.data.game_time = time;
         self.dirty = true;
-    }
-
-    pub(crate) const fn owns_game_time(&self) -> bool {
-        self.primary_game_time.is_some()
     }
 
     /// Returns this world's clock manager.
@@ -689,7 +628,7 @@ mod tests {
     };
     use toml::map::Map;
 
-    pub(super) fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
+    fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
         let mut config = Map::new();
         config.insert(
             "dimension_type".to_owned(),
@@ -706,7 +645,7 @@ mod tests {
         }
     }
 
-    pub(super) fn temp_level_data_dir(test_name: &str) -> PathBuf {
+    fn temp_level_data_dir(test_name: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after unix epoch")
@@ -907,6 +846,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(test)]
-mod game_time_tests;

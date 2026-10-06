@@ -1,10 +1,11 @@
 use super::{
     Arc, ChunkGenerationTask, ChunkHolder, ChunkMap, ChunkPos, ChunkStatus, ChunkTicketLevel,
-    FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex, FullPublication,
-    FxHashMap, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority, Instant, LoadLevelChange,
-    Ordering, PackedChunkPos, PostProcessGenerationError, ReadinessReconcileResult,
-    RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot, TickingReadiness,
-    TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking, is_full,
+    DeferredChunkRevival, FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex,
+    FullPublication, FxHashMap, FxHashSet, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority,
+    Instant, LoadLevelChange, Ordering, PackedChunkPos, PostProcessGenerationError,
+    ReadinessReconcileResult, RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot,
+    TickingReadiness, TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking,
+    is_full,
 };
 
 impl ChunkMap {
@@ -19,8 +20,8 @@ impl ChunkMap {
         let task = Arc::new(ChunkGenerationTask::new(
             pos,
             target_status,
-            Arc::clone(self),
-            Arc::clone(&self.generation_pool),
+            self.clone(),
+            self.generation_pool.clone(),
             self.cancel_token.child_token(),
         ));
         self.pending_generation_tasks.lock().push(Arc::clone(&task));
@@ -76,7 +77,7 @@ impl ChunkMap {
 
         for task in tasks {
             let permit = RunningGenerationTaskPermit {
-                chunk_map: Arc::clone(&task.chunk_map),
+                chunk_map: task.chunk_map.clone(),
                 task: Arc::clone(&task),
             };
             self.task_tracker.spawn_on(
@@ -99,25 +100,33 @@ impl ChunkMap {
     }
 
     /// Updates scheduling for a chunk based on its new level.
-    ///
-    /// Returns the holder for every loaded level and `None` only when unloading, so every
-    /// position granted a level owns a live holder before `ChunkGenerationTask::new` reads it.
+    /// Returns the chunk holder if it is active.
     #[inline]
     pub(super) fn update_chunk_level(
         self: &Arc<Self>,
         pos: ChunkPos,
         new_level: Option<ChunkTicketLevel>,
     ) -> Option<Arc<ChunkHolder>> {
+        if new_level.is_none() {
+            self.deferred_revivals.lock().remove(&pos);
+        }
+
         // Recover from unloading if possible, else create new holder.
         let (chunk_holder, initialize_simulation) =
-            if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) {
+            if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
                 (holder, false)
             } else {
                 let level = new_level?;
 
                 if let Some(entry) = self.unloading_chunks.remove_sync(&pos) {
                     let holder = entry.1;
-                    holder.revive_from_unloading();
+                    if !holder.try_revive_from_unloading() {
+                        let _ = self.unloading_chunks.insert_sync(pos, Arc::clone(&holder));
+                        self.deferred_revivals
+                            .lock()
+                            .insert(pos, DeferredChunkRevival { load_level: level });
+                        return None;
+                    }
                     let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
                     (holder, true)
                 } else {
@@ -129,62 +138,74 @@ impl ChunkMap {
                         self.world_gen_context.height(),
                         Arc::downgrade(&self.full_publications),
                     ));
-                    let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
+                    let _ = self.chunks.insert_sync(pos, holder.clone());
                     (holder, true)
                 }
             };
 
-        let Some(level) = new_level else {
-            self.begin_chunk_unload(pos, &chunk_holder);
-            return None;
-        };
+        if let Some(level) = new_level {
+            let old = chunk_holder.swap_load_level(level);
+            if initialize_simulation {
+                chunk_holder.set_simulation_level(self.scheduling.simulation_level(pos));
+            }
+            if old != Some(level) {
+                chunk_holder.update_highest_allowed_status(Some(level));
+            }
+            if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
+                let world = self.world_gen_context.world();
+                world.on_entity_chunk_loaded(pos);
+                world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
+            }
+            if is_full(level)
+                && !old.is_some_and(is_full)
+                && chunk_holder.is_full_status_initialized()
+                && chunk_holder.published_status() == Some(ChunkStatus::Full)
+                && chunk_holder.try_chunk(ChunkStatus::Full).is_some()
+            {
+                self.full_publications.publish(&chunk_holder);
+            }
+            Some(chunk_holder)
+        } else {
+            //log::info!("Unloading chunk at {pos:?}");
+            chunk_holder.begin_unloading();
+            chunk_holder.cancel_generation_task();
+            chunk_holder.clear_load_level();
+            chunk_holder.set_simulation_level(None);
+            chunk_holder.update_highest_allowed_status(None);
+            // Wake any await_chunk futures so generation tasks holding refs to
+            // this chunk can detect the status is disallowed and exit.
+            chunk_holder.wake_all_watchers();
 
-        let old = chunk_holder.swap_load_level(level);
-        if initialize_simulation {
-            chunk_holder.set_simulation_level(self.scheduling.simulation_level(pos));
-        }
-        if old != Some(level) {
-            chunk_holder.update_highest_allowed_status(Some(level));
-        }
-        if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
+            // Clean up POI data for this chunk column
             let world = self.world_gen_context.world();
-            world.on_entity_chunk_loaded(pos);
-            world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
+            world.on_entity_chunk_unload_start(pos);
+            world.poi_storage.lock().remove_chunk(pos);
+
+            if let Some(chunk) = chunk_holder.try_full_chunk() {
+                chunk.suspend_block_entities(&chunk_holder);
+            }
+
+            // Move to unloading_chunks for deferred unload
+            if let Some((_, holder)) = self.chunks.remove_sync(&pos) {
+                let _ = self.unloading_chunks.insert_sync(pos, holder);
+            }
+            None
         }
-        if is_full(level)
-            && !old.is_some_and(is_full)
-            && chunk_holder.is_full_status_initialized()
-            && chunk_holder.published_status() == Some(ChunkStatus::Full)
-            && chunk_holder.try_chunk(ChunkStatus::Full).is_some()
-        {
-            self.full_publications.publish(&chunk_holder);
-        }
-        Some(chunk_holder)
     }
 
-    /// Tears an active holder down and moves it to `unloading_chunks` for deferred unload.
-    fn begin_chunk_unload(&self, pos: ChunkPos, chunk_holder: &Arc<ChunkHolder>) {
-        chunk_holder.begin_unloading();
-        chunk_holder.cancel_generation_task();
-        chunk_holder.clear_load_level();
-        chunk_holder.set_simulation_level(None);
-        chunk_holder.update_highest_allowed_status(None);
-        // Wake any await_chunk futures so generation tasks holding refs to
-        // this chunk can detect the status is disallowed and exit.
-        chunk_holder.wake_all_watchers();
-
-        // Clean up POI data for this chunk column
-        let world = self.world_gen_context.world();
-        world.on_entity_chunk_unload_start(pos);
-        world.poi_storage.lock().remove_chunk(pos);
-
-        if let Some(chunk) = chunk_holder.try_full_chunk() {
-            chunk.suspend_block_entities(chunk_holder);
+    pub(super) fn merge_deferred_revivals(&self, changes: &mut Vec<LoadLevelChange>) {
+        let changed_positions = changes
+            .iter()
+            .map(|change| change.pos)
+            .collect::<FxHashSet<_>>();
+        let mut deferred = self.deferred_revivals.lock();
+        for pos in &changed_positions {
+            deferred.remove(pos);
         }
-
-        if let Some((_, holder)) = self.chunks.remove_sync(&pos) {
-            let _ = self.unloading_chunks.insert_sync(pos, holder);
-        }
+        changes.extend(deferred.drain().map(|(pos, revival)| LoadLevelChange {
+            pos,
+            new_level: Some(revival.load_level),
+        }));
     }
 
     pub(super) fn prepare_ticking_readiness_demotions(

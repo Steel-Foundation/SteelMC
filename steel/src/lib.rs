@@ -139,7 +139,7 @@ impl SteelServer {
     pub async fn start(&mut self, task_tracker: TaskTracker) {
         log::info!("Started Steel Server");
 
-        let server = Arc::clone(&self.server);
+        let server = self.server.clone();
         let token = self.cancel_token.clone();
         let server_handle = tokio::spawn(async move {
             server.run(token).await;
@@ -162,8 +162,8 @@ impl SteelServer {
                         address,
                         self.client_id,
                         self.cancel_token.child_token(),
-                        Arc::clone(&self.server),
-                        Arc::clone(&self.connection_session),
+                        self.server.clone(),
+                        self.connection_session.clone(),
                         task_tracker.clone(),
                     );
                     self.client_id = self.client_id.wrapping_add(1);

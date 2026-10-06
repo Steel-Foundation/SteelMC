@@ -63,6 +63,8 @@ impl FenceGateBlock {
         }
     }
 
+    /// Vanilla `FenceGateBlock.connectsToDirection`.
+    ///
     /// A gate connects perpendicular to its facing, i.e. to a wall/fence whose
     /// connecting axis matches the gate's clockwise-rotated facing axis.
     #[must_use]
@@ -70,6 +72,7 @@ impl FenceGateBlock {
         state.get_value(FACING).axis() == direction.rotate_y_clockwise().axis()
     }
 
+    /// Vanilla `FenceGateBlock.isWall`.
     fn is_wall(state: BlockStateId) -> bool {
         state.get_block().has_tag(&BlockTag::WALLS)
     }

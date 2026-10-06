@@ -208,7 +208,7 @@ fn create_dimension_transition(
         PortalShape::find_collision_free_position(target_pos, target_world, entity, dimensions);
 
     TeleportTransition {
-        target_world: Arc::clone(target_world),
+        target_world: target_world.clone(),
         position: collision_free_pos,
         rotation: (output_rotation, 0.0),
         velocity: DVec3::ZERO,

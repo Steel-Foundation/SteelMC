@@ -389,6 +389,16 @@ impl AgeableMob for CowEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
+}
+
+impl Animal for CowEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        CowEntity::is_food(item_stack)
+    }
 
     fn breed_variant_key(&self) -> Option<&Identifier> {
         Some(&self.variant().key)
@@ -398,7 +408,7 @@ impl AgeableMob for CowEntity {
         self.set_variant_by_key(key)
     }
 
-    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
+    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
         let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
@@ -412,16 +422,6 @@ impl AgeableMob for CowEntity {
         if !offspring.set_breed_variant_key(variant_key) {
             log::error!("cow offspring could not inherit breeding variant {variant_key}");
         }
-    }
-}
-
-impl Animal for CowEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        CowEntity::is_food(item_stack)
     }
 }
 

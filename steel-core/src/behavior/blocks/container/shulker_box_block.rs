@@ -104,7 +104,7 @@ impl BlockBehavior for ShulkerBoxBlock {
             && let Some(container_ref) = block_entity.container_ref()
             && block_entity.can_open(state, world, pos)
         {
-            let inventory = Arc::clone(&player.inventory);
+            let inventory = player.inventory.clone();
             player.open_menu(
                 TextComponent::translated(translations::CONTAINER_SHULKER_BOX.msg()),
                 move |context| shulker_box(inventory, context.container_id, container_ref),

@@ -43,7 +43,7 @@ impl MossyCarpetBlock {
         Self { block }
     }
 
-    /// Gets the wall property for the given direction.
+    /// Vanilla `MossyCarpetBlock.getPropertyForFace`.
     pub(crate) const fn wall_property(direction: Direction) -> &'static EnumProperty<WallSide> {
         match direction {
             Direction::North => NORTH_WALL,
@@ -56,7 +56,7 @@ impl MossyCarpetBlock {
         }
     }
 
-    /// Returns whether the block has any faces connected.
+    /// Vanilla `MossyCarpetBlock.hasFaces`.
     pub(crate) fn has_faces(state: BlockStateId) -> bool {
         if state.get_value(BASE) {
             return true;
@@ -72,7 +72,7 @@ impl MossyCarpetBlock {
         false
     }
 
-    /// Returns whether the mossy carpet can support at the given face.
+    /// Vanilla `MossyCarpetBlock.canSupportAtFace`.
     pub(crate) fn can_support_at_face(
         world: &dyn LevelReader,
         pos: BlockPos,
@@ -81,7 +81,7 @@ impl MossyCarpetBlock {
         direction != Direction::Up && MultifaceBlock::can_attach_to(world, pos, direction)
     }
 
-    /// Calculates the updated block state based on neighboring blocks.
+    /// Vanilla `MossyCarpetBlock.getUpdatedState`.
     pub(crate) fn updated_state(
         mut state: BlockStateId,
         world: &dyn LevelReader,

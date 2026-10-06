@@ -39,13 +39,13 @@ impl EntityFireFreezeState {
         }
     }
 
-    /// Returns the ticks remaining before this entity stops burning.
+    /// Returns vanilla `remainingFireTicks`.
     #[must_use]
     pub const fn remaining_fire_ticks(self) -> i32 {
         self.remaining_fire_ticks
     }
 
-    /// Returns ticks this entity has spent freezing in powder snow.
+    /// Returns synchronized vanilla `TicksFrozen`.
     #[must_use]
     pub const fn ticks_frozen(self) -> i32 {
         self.ticks_frozen
@@ -63,7 +63,7 @@ impl EntityFireFreezeState {
         self.was_in_powder_snow
     }
 
-    /// Returns whether this entity currently renders as visually on fire.
+    /// Returns vanilla `hasVisualFire`.
     #[must_use]
     pub const fn has_visual_fire(self) -> bool {
         self.has_visual_fire

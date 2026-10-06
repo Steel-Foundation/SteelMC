@@ -408,30 +408,6 @@ impl AgeableMob for PigEntity {
     fn set_synced_baby(&self, baby: bool) {
         self.entity_data.lock().ageable_mob_mut().baby.set(baby);
     }
-
-    fn breed_variant_key(&self) -> Option<&Identifier> {
-        Some(&self.variant().key)
-    }
-
-    fn set_breed_variant_key(&self, key: &Identifier) -> bool {
-        self.set_variant_by_key(key)
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
-        let use_self_variant = rand::random::<bool>();
-        let variant_key = if use_self_variant {
-            self.breed_variant_key()
-        } else {
-            partner.breed_variant_key()
-        };
-        let Some(variant_key) = variant_key else {
-            return;
-        };
-
-        if !offspring.set_breed_variant_key(variant_key) {
-            log::error!("pig offspring could not inherit breeding variant {variant_key}");
-        }
-    }
 }
 
 impl Animal for PigEntity {
@@ -445,6 +421,30 @@ impl Animal for PigEntity {
 
     fn play_eating_sound(&self) {
         self.play_sound(self.current_sound_set().eat_sound, 1.0, 1.0);
+    }
+
+    fn breed_variant_key(&self) -> Option<&Identifier> {
+        Some(&self.variant().key)
+    }
+
+    fn set_breed_variant_key(&self, key: &Identifier) -> bool {
+        self.set_variant_by_key(key)
+    }
+
+    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+        let use_self_variant = rand::random::<bool>();
+        let variant_key = if use_self_variant {
+            self.breed_variant_key()
+        } else {
+            partner.breed_variant_key()
+        };
+        let Some(variant_key) = variant_key else {
+            return;
+        };
+
+        if !offspring.set_breed_variant_key(variant_key) {
+            log::error!("pig offspring could not inherit breeding variant {variant_key}");
+        }
     }
 }
 

@@ -78,13 +78,13 @@ impl BlockEntityRegistry {
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
-    /// Creates a block entity, falling back to an NBT-preserving unimplemented entity.
+    /// Creates a block entity, falling back to an NBT-preserving raw entity.
     ///
     /// Use this for disk/worldgen paths where an unimplemented block entity type must still
     /// survive save/load. Gameplay paths that require concrete behavior should call
     /// [`Self::create`] and handle `None`.
     #[must_use]
-    pub fn create_or_unimplemented(
+    pub fn create_or_raw(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -95,18 +95,13 @@ impl BlockEntityRegistry {
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             factory(level, pos, state)
         } else {
-            Arc::new(UnimplementedBlockEntity::new(
-                block_entity_type,
-                level,
-                pos,
-                state,
-            ))
+            Arc::new(RawBlockEntity::new(block_entity_type, level, pos, state))
         }
     }
 
-    /// Creates and loads a block entity, falling back to an unimplemented entity.
+    /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
     #[must_use]
-    pub fn create_and_load_or_unimplemented(
+    pub fn create_and_load_or_raw(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -121,7 +116,7 @@ impl BlockEntityRegistry {
             entity
         } else {
             let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
-            Arc::new(UnimplementedBlockEntity::with_data(
+            Arc::new(RawBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
@@ -131,9 +126,9 @@ impl BlockEntityRegistry {
         }
     }
 
-    /// Creates and loads owned block entity NBT, falling back to an unimplemented entity.
+    /// Creates a block entity and loads owned NBT, falling back to raw preservation.
     #[must_use]
-    pub fn create_and_load_owned_or_unimplemented(
+    pub fn create_and_load_owned_or_raw(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -156,7 +151,7 @@ impl BlockEntityRegistry {
             }
             entity
         } else {
-            Arc::new(UnimplementedBlockEntity::with_data(
+            Arc::new(RawBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
@@ -228,10 +223,6 @@ pub fn init_block_entities() {
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
-        });
-
-        registry.register(&vanilla_block_entity_types::BEACON, |level, pos, state| {
-            Arc::new(BeaconBlockEntity::new(level, pos, state))
         });
 
         registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {

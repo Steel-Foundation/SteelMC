@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::Shared;
 
@@ -45,7 +43,7 @@ impl CraftingHandler {
     /// A shared handle to the crafting container.
     #[must_use]
     pub fn crafting_container(&self) -> Shared<CraftingContainer> {
-        Arc::clone(&self.crafting_container)
+        self.crafting_container.clone()
     }
 
     /// The `ContainerId` of the result container
@@ -57,11 +55,11 @@ impl CraftingHandler {
 
 impl ResultHandler for CraftingHandler {
     fn result_container(&self) -> ContainerRef {
-        ContainerRef::from(Arc::clone(&self.result_container))
+        ContainerRef::from(self.result_container.clone())
     }
 
     fn dependencies(&self) -> Vec<ContainerRef> {
-        vec![ContainerRef::from(Arc::clone(&self.crafting_container))]
+        vec![ContainerRef::from(self.crafting_container.clone())]
     }
 
     fn update_result(&self, guard: &mut ContainerLockGuard) {

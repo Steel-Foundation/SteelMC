@@ -909,7 +909,7 @@ mod tests {
         });
         let listener = Arc::new_cyclic(|self_listener| ReentrantDropListener {
             storage: Arc::downgrade(&storage),
-            self_listener: Weak::clone(self_listener),
+            self_listener: self_listener.clone(),
             replacement: Arc::clone(&replacement),
             section_y,
         });

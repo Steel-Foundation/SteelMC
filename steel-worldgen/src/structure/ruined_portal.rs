@@ -111,8 +111,7 @@ pub struct PortalResult {
     pub can_be_cold: bool,
 }
 
-/// Picks a ruined portal setup, size, rotation, mirror, and placement
-/// position near the target chunk, consuming RNG in vanilla's exact order.
+/// Matches vanilla's `RuinedPortalStructure.findGenerationPoint`.
 #[expect(
     clippy::too_many_lines,
     reason = "inlines vanilla's setup → size → rotation → mirror → placement pipeline"

@@ -13,8 +13,7 @@ use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
 use crate::world::World;
 
-/// Reason an entity is being spawned, affecting spawn-time initialization
-/// such as equipment and group data.
+/// Vanilla `EntitySpawnReason`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntitySpawnReason {
     Natural,
@@ -402,7 +401,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
+        let entity: SharedEntity = pig.clone();
         pig.set_custom_name(Some(TextComponent::plain("Existing")));
 
         let mut payload = NbtCompound::new();
@@ -435,7 +434,7 @@ mod tests {
             Weak::new(),
         ));
         pig.set_variant(&vanilla_pig_variants::WARM);
-        let entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
+        let entity: SharedEntity = pig.clone();
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
         spawn_egg.set(
@@ -459,7 +458,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = Arc::<CowEntity>::clone(&cow);
+        let entity: SharedEntity = cow.clone();
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::COW_SPAWN_EGG);
         spawn_egg.set(
@@ -491,7 +490,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
+        let entity: SharedEntity = chicken.clone();
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
         spawn_egg.set(
@@ -523,7 +522,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = Arc::<SheepEntity>::clone(&sheep);
+        let entity: SharedEntity = sheep.clone();
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::SHEEP_SPAWN_EGG);
         spawn_egg.set(SHEEP_COLOR, DyeColor::Pink);

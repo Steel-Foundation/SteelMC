@@ -143,6 +143,8 @@ impl EyeOfEnderEntity {
 
     /// Sets the point this eye flies toward, resets its lifespan, and rerolls
     /// whether it will drop itself when it expires.
+    ///
+    /// Mirrors vanilla `EyeOfEnderEntity.initTargetPos`.
     pub fn init_target_pos(&self, pos: DVec3) {
         let diff = pos - self.position();
         let horizontal_dist = DVec3::new(diff.x, 0.0, diff.z).length();
@@ -275,13 +277,13 @@ impl Entity for EyeOfEnderEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        // Only the displayed item persists.
+        // Mirrors vanilla `EyeOfEnderEntity.writeCustomData`: only the displayed item persists.
         nbt.insert("Item", self.get_item().to_nbt_tag());
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        // Falls back to the current item (a plain ender eye by default) if
-        // the tag is absent or unreadable.
+        // Mirrors vanilla `EyeOfEnderEntity.readCustomData`: falls back to the
+        // current item (a plain ender eye by default) if absent/unreadable.
         if let Some(item_tag) = nbt.compound("Item")
             && let Some(item) = ItemStack::from_borrowed_compound(&item_tag)
         {

@@ -1,6 +1,6 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_protocol::packet_reader::TCPNetworkDecoder;
@@ -17,8 +17,8 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem, SSetBeacon,
-    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -29,26 +29,20 @@ use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
 use text_components::{Modifier, TextComponent, format::Color};
-use tokio::io::{AsyncRead, AsyncWrite, BufReader, BufWriter};
+use tokio::io::{BufReader, BufWriter};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
+use crate::player::Player;
 use crate::player::connection::NetworkConnection;
-use crate::player::{Player, PlayerSession};
 use crate::server::Server;
 
-/// Boxed read half of a Java client transport (a TCP socket or an in-memory pipe).
-pub type JavaTransportRead = Box<dyn AsyncRead + Send + Unpin>;
-/// Boxed write half of a Java client transport.
-pub type JavaTransportWrite = Box<dyn AsyncWrite + Send + Unpin>;
-/// Packet decoder over the read half of a Java client transport.
-pub type JavaNetworkReader = TCPNetworkDecoder<BufReader<JavaTransportRead>>;
 /// Shared Java socket writer.
-pub type JavaNetworkWriter =
-    Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<JavaTransportWrite>>>>>;
+pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
 
 const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -104,7 +98,6 @@ enum ScheduledPlayPacketKind {
     RenameItem(SRenameItem),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
-    SetBeacon(SSetBeacon),
     SetCarriedItem(SSetCarriedItem),
     Punch(SPunch),
     PlayerAction(SPlayerAction),
@@ -223,7 +216,6 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::Interact(_)
             | ScheduledPlayPacketKind::CustomPayload(_)
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
-            | ScheduledPlayPacketKind::SetBeacon(_)
             | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
                 ScheduledPacketExecution::Exclusive
             }
@@ -243,10 +235,6 @@ impl ScheduledPlayPacket {
         )
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "flat dispatch over every scheduled packet kind"
-    )]
     pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;
@@ -301,9 +289,6 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ContainerButtonClick(packet) => {
                 player.handle_container_button_click(packet);
-            }
-            ScheduledPlayPacketKind::SetBeacon(packet) => {
-                player.handle_set_beacon_packet(packet);
             }
             ScheduledPlayPacketKind::ContainerClick(packet) => {
                 player.handle_container_click(packet);
@@ -407,7 +392,7 @@ pub struct JavaConnection {
     network_writer: JavaNetworkWriter,
     id: u64,
 
-    session: Arc<PlayerSession>,
+    player: Weak<Player>,
     keep_alive_tracker: SyncMutex<KeepAliveTracker>,
     latency: SyncMutex<u32>,
 }
@@ -420,7 +405,7 @@ impl JavaConnection {
         compression: Option<CompressionInfo>,
         network_writer: JavaNetworkWriter,
         id: u64,
-        session: Arc<PlayerSession>,
+        player: Weak<Player>,
     ) -> Self {
         Self {
             outgoing_packets,
@@ -428,7 +413,7 @@ impl JavaConnection {
             compression,
             network_writer,
             id,
-            session,
+            player,
             keep_alive_tracker: SyncMutex::new(KeepAliveTracker {
                 alive_time: 0,
                 alive_pending: false,
@@ -643,7 +628,7 @@ impl JavaConnection {
                 server.schedule_play_packet(player, packet, payload_bytes);
             }
             DecodedPlayPacket::Immediate(packet) => {
-                self.handle_immediate_packet(packet);
+                self.handle_immediate_packet(packet, &player);
             }
         }
         Ok(())
@@ -765,9 +750,6 @@ impl JavaConnection {
                     SSetCreativeModeSlot::read_packet(data)?,
                 ))
             }
-            play::S_SET_BEACON => scheduled(ScheduledPlayPacketKind::SetBeacon(
-                SSetBeacon::read_packet(data)?,
-            )),
             play::S_PLAYER_INPUT => scheduled(ScheduledPlayPacketKind::PlayerInput(
                 SPlayerInput::read_packet(data)?,
             )),
@@ -818,15 +800,15 @@ impl JavaConnection {
         })
     }
 
-    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket) {
+    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket, player: &Player) {
         match packet {
             ImmediatePlayPacket::KeepAlive(packet) => self.handle_keep_alive(packet),
             ImmediatePlayPacket::PingRequest(packet) => {
-                self.send_packet(CPongResponse::new(packet.time));
+                player.send_packet(CPongResponse::new(packet.time));
             }
             ImmediatePlayPacket::ChunkBatchReceived(packet) => {
-                self.session
-                    .chunk_sender()
+                player
+                    .chunk_sender
                     .lock()
                     .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
             }
@@ -835,7 +817,11 @@ impl JavaConnection {
     }
 
     /// Listens for packets from the client.
-    pub async fn listener(&self, mut reader: JavaNetworkReader, server: Arc<Server>) {
+    pub async fn listener(
+        &self,
+        mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
+        server: Arc<Server>,
+    ) {
         loop {
             select! {
                 () = self.wait_for_close() => {
@@ -844,7 +830,7 @@ impl JavaConnection {
                 packet = reader.get_raw_packet() => {
                     match packet {
                         Ok(packet) => {
-                            if let Some(player) = self.session.current_player()
+                            if let Some(player) = self.player.upgrade()
                                 && let Err(err) = self.process_packet(packet, player, &server) {
                                 log::warn!(
                                     "Failed to get packet from client {}: {err}",
@@ -992,11 +978,6 @@ mod tests {
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
     use steel_utils::{BlockPos, codec::VarInt, types::SignTextSlot};
-    use tokio::{
-        io::{AsyncReadExt as _, duplex},
-        sync::mpsc,
-        task,
-    };
     use uuid::Uuid;
 
     use super::*;
@@ -1393,47 +1374,5 @@ mod tests {
                 }
             ))
         ));
-    }
-
-    #[tokio::test]
-    async fn sender_writes_packets_through_a_boxed_transport() {
-        let (server_end, mut client_end) = duplex(1024);
-        let transport: JavaTransportWrite = Box::new(server_end);
-        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(Some(
-            TCPNetworkEncoder::new(BufWriter::new(transport)),
-        )));
-        let (outgoing_packets, outgoing_receiver) = mpsc::unbounded_channel();
-        let cancel_token = CancellationToken::new();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing_packets,
-            cancel_token.clone(),
-            None,
-            network_writer,
-            1,
-            Arc::new(PlayerSession::new(10, 10)),
-        ));
-        let sender = task::spawn({
-            let connection = Arc::clone(&connection);
-            async move { connection.sender(outgoing_receiver).await }
-        });
-
-        let Ok(packet) =
-            EncodedPacket::from_bare(CKeepAlive { id: 7 }, None, ConnectionProtocol::Play)
-        else {
-            panic!("keep alive should encode");
-        };
-        let expected = packet.encoded_data.as_slice().to_vec();
-        connection.send_encoded(packet);
-
-        let mut received = vec![0; expected.len()];
-        let Ok(_) = client_end.read_exact(&mut received).await else {
-            panic!("client end should receive the framed packet");
-        };
-        assert_eq!(received, expected);
-
-        cancel_token.cancel();
-        let Ok(()) = sender.await else {
-            panic!("sender task should finish after cancellation");
-        };
     }
 }

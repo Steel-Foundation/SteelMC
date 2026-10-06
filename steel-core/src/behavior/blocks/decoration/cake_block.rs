@@ -26,6 +26,10 @@ use crate::{
 };
 
 /// Behavior for Cakes
+/// TODO:
+/// - [ ] animation ticks
+/// - [ ] onProjectile
+/// - [ ] onExplosion
 #[block_behavior]
 pub struct CakeBlock {
     block: BlockRef,

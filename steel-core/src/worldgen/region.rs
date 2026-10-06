@@ -565,7 +565,8 @@ impl<'a> WorldGenRegion<'a> {
     /// Attaches block entity data at a writable worldgen position.
     ///
     /// This mirrors vanilla's feature paths that place a block first, then configure its block
-    /// entity. For unimplemented types, the fallback keeps the NBT intact for later save/load.
+    /// entity. If Steel does not have concrete behavior for the type yet, the raw fallback keeps
+    /// the NBT intact for later save/load.
     #[must_use]
     pub fn set_block_entity_data(
         &self,
@@ -592,7 +593,7 @@ impl<'a> WorldGenRegion<'a> {
             if !chunk.access_mode.allows_writes() {
                 return false;
             }
-            let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
+            let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
                 block_entity_type,
                 chunk.chunk.level_weak(),
                 pos,

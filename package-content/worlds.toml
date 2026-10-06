@@ -11,7 +11,7 @@ difficulty = "normal"
 type = "steel:disk"
 
 [player_storage]
-type = "steel:disk"
+type = "steel:file"
 
 [domains.minecraft]
 default = true

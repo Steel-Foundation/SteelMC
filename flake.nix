@@ -46,20 +46,14 @@
         let
           toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-          # rust-analyzer needs rust-src; rust-toolchain.toml only pins the channel.
-          devToolchain = toolchain.override {
-            extensions = [
-              "rust-src"
-              "rust-analyzer"
-            ];
-          };
-
           rustPlatform = pkgs.makeRustPlatform {
             cargo = toolchain;
             rustc = toolchain;
           };
 
-          # Fetched here since Nix builds have no network access. Mojang's file — never upload to a public cache.
+          # The build script normally downloads this jar, but Nix builds have no
+          # internet access, so it is fetched here instead.
+          # Careful: this is Mojang's file. Never upload it to a public Nix cache.
           serverJar = pkgs.fetchurl { inherit (assets.serverJar) url hash; };
 
           buildAssets =
@@ -91,7 +85,6 @@
                 mkdir -p "$out/builtin_datapacks"
                 cp -r inner/data/minecraft "$out/builtin_datapacks/minecraft"
                 cp inner/assets/minecraft/lang/en_us.json "$out/en_us.json"
-                cp inner/assets/minecraft/lang/deprecated.json "$out/deprecated.json"
 
                 chmod -R u+w "$out"
                 printf '%s' "${assets.minecraftVersion}" > "$out/builtin_datapacks/minecraft/.version"
@@ -124,7 +117,6 @@
               "steel"
             ];
 
-            # Suite has known flakiness under constrained parallelism; run tests via `cargo test` instead.
             doCheck = false;
 
             meta = {
@@ -137,12 +129,7 @@
           };
         in
         {
-          inherit
-            pkgs
-            toolchain
-            devToolchain
-            steel
-            ;
+          inherit pkgs toolchain steel;
         }
       );
     in
@@ -150,7 +137,7 @@
       devShells = lib.mapAttrs (_: system: {
         default = system.pkgs.mkShell {
           packages = [
-            system.devToolchain
+            system.toolchain
 
             system.pkgs.lld
 
@@ -163,10 +150,7 @@
         };
       }) perSystem;
 
-      # Scoped to linuxSystems: steel's meta.platforms excludes aarch64-darwin, and offering it anyway breaks `nix flake check`.
-      packages = lib.genAttrs linuxSystems (system: {
-        default = perSystem.${system}.steel;
-      });
+      packages = lib.mapAttrs (_: system: { default = system.steel; }) perSystem;
 
       checks = lib.genAttrs linuxSystems (system: {
         package = perSystem.${system}.steel;

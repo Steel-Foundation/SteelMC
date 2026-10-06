@@ -65,7 +65,7 @@ impl FallingBlock {
         Some(FallingBlockEntity::fall(world, pos, state))
     }
 
-    /// Returns whether a falling block can pass through the given block state.
+    /// Vanilla `FallingBlock.isFree`.
     #[must_use]
     pub fn is_free(state: BlockStateId) -> bool {
         let block = state.get_block();

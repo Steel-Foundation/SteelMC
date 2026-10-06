@@ -10,8 +10,7 @@ pub use biome_source::{
 pub use climate_sampler::OverworldClimateSampler;
 pub use nether_climate_sampler::NetherClimateSampler;
 
-/// Hashes the world seed into the value biome sampling actually uses, so
-/// nearby seeds don't produce visibly correlated biome layouts.
+/// Matches vanilla `BiomeManager.obfuscateSeed(long)`.
 #[must_use]
 pub fn obfuscate_biome_seed(seed: i64) -> i64 {
     let mut hasher = Sha256::new();

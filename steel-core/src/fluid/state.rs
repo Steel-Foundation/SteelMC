@@ -160,8 +160,7 @@ where
     }
 }
 
-/// Computes the horizontal flow direction of a fluid, weighted by the height
-/// difference to same-fluid neighbors.
+/// Returns vanilla `FlowingFluid.getFlow` for this fluid state.
 #[must_use]
 pub fn get_flow(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
     if fluid_state.is_empty() {

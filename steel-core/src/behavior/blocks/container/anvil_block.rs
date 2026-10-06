@@ -75,7 +75,7 @@ impl BlockBehavior for AnvilBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let inventory = Arc::clone(&player.inventory);
+        let inventory = player.inventory.clone();
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_REPAIR.msg()),
             move |context| anvil(inventory, context.container_id, pos, context.world),

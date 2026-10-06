@@ -181,13 +181,14 @@ mod tests {
     };
 
     use super::*;
-    use crate::test_support::{TestEntity, TestLevel};
+    use crate::entity::entities::RawEntity;
+    use crate::test_support::TestLevel;
 
     #[test]
     fn redstone_transition_side_effects_match_vanilla_for_pressure_plates() {
         init_vanilla_registry();
         let level = TestLevel::default();
-        let source = TestEntity::new(42, DVec3::ZERO, Weak::new(), &vanilla_entities::ARMOR_STAND);
+        let source = RawEntity::new(42, DVec3::ZERO, Weak::new(), &vanilla_entities::ARMOR_STAND);
         let pos = BlockPos::new(3, 64, -2);
 
         BasePressurePlateBlock::emit_transition_effects(

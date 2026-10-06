@@ -97,7 +97,7 @@ impl WorldGenContext {
     /// This is useful for passing to chunks without creating a strong reference cycle.
     #[must_use]
     pub fn weak_world(&self) -> Weak<World> {
-        Weak::clone(&self.world)
+        self.world.clone()
     }
 
     /// Returns the minimum Y coordinate of the world.

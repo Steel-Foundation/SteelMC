@@ -2,18 +2,15 @@ use reqwest::Url;
 use serde::Deserialize;
 use steel_core::{
     chunk::chunk_ticket_manager::MAX_SUPPORTED_VIEW_DISTANCE,
-    config::{
-        CompressionInfo, DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES, DEFAULT_SPAM_THRESHOLD_SECONDS,
-        RuntimeConfig, ServerLinks, validate_login_security,
-    },
+    config::{CompressionInfo, RuntimeConfig, ServerLinks, validate_login_security},
 };
 
 const fn default_spam_threshold_seconds() -> i32 {
-    DEFAULT_SPAM_THRESHOLD_SECONDS
+    10
 }
 
 const fn default_max_chained_neighbor_updates() -> i32 {
-    DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES
+    1_000_000
 }
 
 /// Steel config minimum for packet compression threshold, in bytes.

@@ -26,7 +26,10 @@ pub struct CarverConfiguration {
     pub y: HeightProvider,
 }
 
-/// Cave/nether-cave configuration.
+/// Cave carver configuration (also used for `nether_cave` — vanilla merged
+/// `NetherWorldCarver` into `CaveWorldCarver`, so only values differ now).
+///
+/// Mirrors vanilla's `CaveWorldCarver` record.
 #[derive(Debug, Clone)]
 pub struct CaveCarverConfiguration {
     /// Base configuration.
@@ -51,6 +54,8 @@ pub struct CaveCarverConfiguration {
 
 /// Canyon shape parameters — controls tunnel shape and width-per-height
 /// variation.
+///
+/// Mirrors vanilla's `CanyonCarverConfiguration.CanyonShapeConfiguration`.
 #[derive(Debug, Clone)]
 pub struct CanyonShapeConfiguration {
     /// Fraction of the max carving distance used as the actual tunnel length.
@@ -109,6 +114,8 @@ impl CanyonShapeConfiguration {
 }
 
 /// Canyon (ravine) configuration.
+///
+/// Mirrors vanilla's `CanyonCarverConfiguration`.
 #[derive(Debug, Clone)]
 pub struct CanyonCarverConfiguration {
     /// Base configuration.

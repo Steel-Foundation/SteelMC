@@ -6,7 +6,7 @@
   "properties": {
     "save_path": {
       "type": "string",
-      "description": "Root directory for saves. May be absolute; . and .. components are rejected.",
+      "description": "Root directory for saves",
       "default": "saves"
     },
     "seed": {
@@ -77,8 +77,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "steel:disk persists player data under save_path; steel:ram keeps it in memory and discards it on shutdown.",
-          "enum": ["steel:disk", "steel:ram"]
+          "enum": ["steel:file"]
         }
       },
       "required": ["type"],

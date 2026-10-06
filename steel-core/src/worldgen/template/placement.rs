@@ -366,7 +366,7 @@ impl StructureTemplate {
                 continue;
             };
 
-            let Some(runtime_entity) = ENTITIES.create_and_load(
+            let runtime_entity = ENTITIES.create_and_load_or_raw(
                 EntityLoadRequest {
                     entity_type: entity.entity_type,
                     position: pos,
@@ -380,9 +380,7 @@ impl StructureTemplate {
                     world: region.weak_world(),
                 },
                 &nbt,
-            ) else {
-                continue;
-            };
+            );
             let _ = region.add_fresh_entity(runtime_entity);
         }
     }

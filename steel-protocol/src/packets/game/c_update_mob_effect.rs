@@ -10,6 +10,8 @@ const FLAG_SHOW_ICON: u8 = 0x04;
 const FLAG_BLEND: u8 = 0x08;
 
 /// Sent when the client should add or update an entity mob effect.
+///
+/// Vanilla: `ClientboundUpdateMobEffectPacket`.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_UPDATE_MOB_EFFECT)]
 pub struct CUpdateMobEffect {

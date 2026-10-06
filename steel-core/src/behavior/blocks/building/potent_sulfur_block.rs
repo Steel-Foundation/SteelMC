@@ -19,7 +19,7 @@ use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::fluid::FluidStateExt as _;
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEventContext};
 
-/// Potent sulfur block behavior.
+/// Vanilla `PotentSulfurBlock` behavior
 #[block_behavior]
 pub struct PotentSulfurBlock {
     block: BlockRef,
