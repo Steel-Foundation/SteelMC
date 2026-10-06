@@ -5,7 +5,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
-        properties::{BedPart, BlockStateProperties},
+        properties::{BedPart, BlockStateProperties, BoolProperty, EnumProperty},
     },
     sound_events, vanilla_blocks, vanilla_custom_stats,
 };
@@ -24,6 +24,10 @@ use crate::{
 };
 
 use super::BedBlock;
+
+const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 
 /// straw bed
 #[block_behavior]
@@ -75,15 +79,12 @@ impl BlockBehavior for StrawBedBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> Option<f64> {
-        let foot_state = if state.get_value(&BlockStateProperties::BED_PART) == BedPart::Head {
-            let foot_pos = state
-                .get_value(&BlockStateProperties::HORIZONTAL_FACING)
-                .opposite()
-                .relative(pos);
+        let foot_state = if state.get_value(BED_PART) == BedPart::Head {
+            let foot_pos = state.get_value(FACING).opposite().relative(pos);
 
             let foot_state = world.get_block_state(foot_pos);
             (foot_state.get_block() == self.base.block
-                && foot_state.get_value(&BlockStateProperties::BED_PART) == BedPart::Foot)
+                && foot_state.get_value(BED_PART) == BedPart::Foot)
                 .then_some(foot_state)?
         } else {
             state
@@ -151,7 +152,7 @@ impl BlockBehavior for StrawBedBlock {
             return InteractionResult::SuccessServer;
         }
 
-        if head_state.get_value(&BlockStateProperties::OCCUPIED) {
+        if head_state.get_value(OCCUPIED) {
             player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
                 key: "block.minecraft.bed.occupied".into(),
                 fallback: None,
