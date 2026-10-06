@@ -36,7 +36,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -352,12 +352,12 @@ impl LivingEntity for CowEntity {
         Some(self.sound_variant().death_sound)
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -430,8 +430,8 @@ impl Mob for CowEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {

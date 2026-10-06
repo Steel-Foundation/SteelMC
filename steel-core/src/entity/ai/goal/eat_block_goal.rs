@@ -11,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{AgeableMob, Mob, PathfinderMob};
+use crate::entity::{AgeableMob, Mob, PathfinderMob, SharedEntity};
 use crate::world::LevelAccessor;
 
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
@@ -89,7 +89,7 @@ impl Goal for EatBlockGoal {
         self.eat_animation_tick = 0;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         self.eat_animation_tick = (self.eat_animation_tick - 1).max(0);
         if self.eat_animation_tick != reduced_tick_delay(EAT_BLOCK_TICK) {
             return;
@@ -139,8 +139,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::SharedEntity;
     use crate::entity::entities::{PigEntity, SheepEntity};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-    use crate::world::World;
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use steel_utils::Downcast as _;
 
     #[test]
@@ -155,19 +154,20 @@ mod tests {
         assert_eq!(goal.get_eat_animation_tick(), 20);
     }
 
-    fn sheep_on_grass_world(name: &'static str) -> (Arc<World>, SharedEntity) {
+    fn sheep_on_grass_world(name: &'static str) -> (TestWorld, SharedEntity) {
         use steel_registry::vanilla_blocks;
         use steel_registry::vanilla_entities;
         use steel_utils::ChunkPos;
 
         init_behaviors();
-        let world = fresh_test_world(name);
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world(name);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let sheep = SheepEntity::new(
             &vanilla_entities::SHEEP,
             1,
             DVec3::new(8.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         sheep.set_sheared(true);
         let shared: SharedEntity = Arc::new(sheep);
@@ -179,7 +179,7 @@ mod tests {
             vanilla_blocks::GRASS_BLOCK.default_state(),
             UpdateFlags::UPDATE_CLIENTS,
         );
-        (world, shared)
+        (world_fixture, shared)
     }
 
     #[test]
@@ -187,7 +187,8 @@ mod tests {
         use steel_registry::vanilla_blocks;
 
         init_vanilla_registry();
-        let (world, shared) = sheep_on_grass_world("eat_grass");
+        let (world_fixture, shared) = sheep_on_grass_world("eat_grass");
+        let world = &world_fixture.world;
         let mob = shared
             .as_pathfinder_mob()
             .expect("sheep should be a pathfinder mob");
@@ -195,7 +196,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(mob);
         for _ in 0..18 {
-            goal.tick(mob);
+            goal.tick(mob, &shared);
         }
 
         let sheep = shared
@@ -216,7 +217,8 @@ mod tests {
         use steel_registry::vanilla_blocks;
 
         init_vanilla_registry();
-        let (world, shared) = sheep_on_grass_world("eat_grass_no_grief");
+        let (world_fixture, shared) = sheep_on_grass_world("eat_grass_no_grief");
+        let world = &world_fixture.world;
         world.set_game_rule(&MOB_GRIEFING, false);
         let mob = shared
             .as_pathfinder_mob()
@@ -225,7 +227,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(mob);
         for _ in 0..18 {
-            goal.tick(mob);
+            goal.tick(mob, &shared);
         }
 
         let sheep = shared

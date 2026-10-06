@@ -293,8 +293,18 @@ pub trait Animal: AgeableMob {
         }
     }
 
-    /// Applies vanilla breeding side effects after offspring creation.
+    /// Applies breeding side effects after offspring creation.
     fn finalize_spawn_child_from_breeding(
+        &self,
+        world: &Arc<World>,
+        partner: &dyn Animal,
+        offspring: Option<&dyn Animal>,
+    ) {
+        self.finalize_spawn_child_from_breeding_animal(world, partner, offspring);
+    }
+
+    /// The shared parent ages, love reset, hearts and experience orb after breeding.
+    fn finalize_spawn_child_from_breeding_animal(
         &self,
         world: &Arc<World>,
         partner: &dyn Animal,

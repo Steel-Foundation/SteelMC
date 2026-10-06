@@ -233,9 +233,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.reset_fall_distance();
     }
 
-    /// Sets the owner UUID. Vanilla stores an `EntityReference`; Steel stores the
-    /// UUID and resolves lazily.
-    // TODO: introduce an `EntityReference` type to cache the resolved owner.
+    /// Sets the persisted owner UUID and clears the live owner cache.
     fn set_owner_uuid(&self, owner: Option<Uuid>) {
         let mut state = self.projectile_base().state.lock();
         state.owner = owner;
@@ -262,7 +260,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.projectile_base().state.lock().owner
     }
 
-    /// Resolves the owning entity in the current world (vanilla `Projectile.getOwner`).
+    /// Resolves the cached owner, then looks up its UUID in the current world.
     fn get_owner(&self) -> Option<SharedEntity> {
         let uuid = self.owner_uuid()?;
         if let Some(owner) = self
@@ -528,7 +526,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
 
     /// Handles a projectile hit, deflecting it off an entity or the world
     /// border instead of resolving the hit when deflection applies.
-    fn hit_target_or_deflect_self(&self, hit: &ProjectileHit) -> ProjectileDeflection {
+    fn hit_target_or_deflect_self(self: Arc<Self>, hit: &ProjectileHit) -> ProjectileDeflection {
         if let ProjectileHit::Entity(entity_hit) = hit {
             let deflection = entity_hit
                 .entity
@@ -577,13 +575,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
 
     /// Vanilla `Projectile.onHit`. Subclasses override this and call
     /// [`Projectile::projectile_on_hit`] for the base dispatch (`super.onHit()`).
-    fn on_hit(&self, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         self.projectile_on_hit(hit);
     }
 
     /// The base `Projectile.onHit` dispatch to block/entity handlers. Not meant to
     /// be overridden — override [`Projectile::on_hit`] and delegate here instead.
-    fn projectile_on_hit(&self, hit: &ProjectileHit) {
+    fn projectile_on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
@@ -602,7 +600,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         true,
                     );
                 }
-                self.on_hit_entity(&entity_hit.entity, entity_hit.location);
+                Arc::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
                 if let Some(world) = world {
                     world.game_event_at(
                         &vanilla_game_events::PROJECTILE_LAND,
@@ -612,7 +610,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                 }
             }
             ProjectileHit::Block { hit, .. } => {
-                self.on_hit_block(hit);
+                Arc::clone(&self).on_hit_block(hit);
                 if let Some(world) = world {
                     let state = world.get_block_state(hit.block_pos);
                     world.game_event(
@@ -626,11 +624,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Vanilla `Projectile.onHitEntity` (no-op by default).
-    fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {}
+    fn on_hit_entity(self: Arc<Self>, _entity: &SharedEntity, _location: DVec3) {}
 
     /// Default block-hit hook; concrete projectiles override this and call
     /// [`Projectile::projectile_on_hit_block`] to preserve the base dispatch.
-    fn on_hit_block(&self, hit: &ClipHitResult) {
+    fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         self.projectile_on_hit_block(hit);
     }
 
@@ -710,7 +708,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
 #[must_use]
 pub fn spawn_throwable_item_projectile<E>(
     world: &Arc<World>,
-    player: &Player,
+    player: &Arc<Player>,
     item_stack: &mut ItemStack,
     power: f32,
     uncertainty: f32,
@@ -727,23 +725,19 @@ where
     );
 
     let entity = create(spawn_pos);
-    if let Some(owner) = world.players.get_by_uuid(&player.gameprofile.id) {
-        let owner: SharedEntity = owner;
-        entity.set_owner_entity(Some(&owner));
-    } else {
-        entity.set_owner_uuid(Some(player.gameprofile.id));
-    }
+    let owner: SharedEntity = Arc::<Player>::clone(player);
+    entity.set_owner_entity(Some(&owner));
     entity.set_item_clamped(item_stack.clone());
 
     let (yaw, player_pitch) = player.rotation();
-    entity.shoot_from_rotation(player, player_pitch, yaw, 0.0, power, uncertainty);
+    entity.shoot_from_rotation(player.as_ref(), player_pitch, yaw, 0.0, power, uncertainty);
 
     let entity: SharedEntity = Arc::new(entity);
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
         log::debug!("failed to spawn throwable item projectile: {error}");
         return None;
     }
-    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(player));
+    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(&owner));
 
     Some(entity)
 }
@@ -1059,12 +1053,12 @@ mod tests {
         init_vanilla_registry();
 
         let world = Arc::clone(test_world());
-        let firework = FireworkRocketEntity::new(
+        let firework = Arc::new(FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             4,
             DVec3::ZERO,
             Arc::downgrade(&world),
-        );
+        ));
         firework.set_velocity(DVec3::X);
         let deflector = OwnerCollisionTestEntity::shared_with_type(
             5,
@@ -1073,11 +1067,12 @@ mod tests {
             &vanilla_entities::BREEZE,
         );
 
-        let deflection =
-            firework.hit_target_or_deflect_self(&ProjectileHit::Entity(EntityHitResult {
+        let deflection = Arc::clone(&firework).hit_target_or_deflect_self(&ProjectileHit::Entity(
+            EntityHitResult {
                 entity: deflector,
                 location: DVec3::X,
-            }));
+            },
+        ));
 
         assert_eq!(deflection, ProjectileDeflection::Reverse);
         assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
