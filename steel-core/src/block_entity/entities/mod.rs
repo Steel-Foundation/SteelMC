@@ -18,6 +18,7 @@ mod piston_moving;
 mod potent_sulfur;
 mod shulker_box;
 mod sign;
+mod spawner;
 mod unimplemented;
 
 pub use abstract_furnace::{
@@ -43,4 +44,8 @@ pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use shulker_box::{AnimationStatus, SHULKER_BOX_SLOTS, ShulkerBoxBlockEntity};
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
+pub use spawner::{
+    BaseSpawner, CustomSpawnRules, EquipmentTable, LightRange, SpawnData, Spawner,
+    SpawnerBlockEntity, WeightedSpawnData,
+};
 pub use unimplemented::UnimplementedBlockEntity;

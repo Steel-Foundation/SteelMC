@@ -1,15 +1,22 @@
-use std::{io::Cursor, sync::Arc};
+use std::{collections::BTreeSet, io::Cursor, sync::Arc};
 
 use glam::DVec3;
-use simdnbt::borrow::read_compound;
+use simdnbt::borrow::{BaseNbtCompound, NbtCompound as BorrowedNbtCompoundView, read_compound};
+use simdnbt::owned::NbtCompound;
 use steel_math::{DEGREE_360, wrap_degrees};
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
+use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_utils::nbt::merge_nbt_compounds;
-use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty};
+use steel_registry::{REGISTRY, RegistryExt};
+use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds, nbt_collection_values};
+use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty};
+use text_components::TextComponent;
+use uuid::Uuid;
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
+use crate::entity::entity::{read_nbt_dvec3, read_nbt_rotation, sanitize_nbt_motion};
+use crate::entity::{EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
 use crate::world::World;
 
@@ -138,6 +145,187 @@ pub(crate) fn add_spawned_entity(
     entity: SharedEntity,
 ) -> Result<(), AddEntityError> {
     world.try_add_entity(entity)
+}
+
+/// Keeps freshly loaded passengers alive until the world takes ownership.
+pub(crate) struct LoadedEntity {
+    pub(crate) root: SharedEntity,
+    passengers: Vec<Self>,
+}
+
+/// Loads a complete entity tree from vanilla entity NBT without publishing it
+/// to the world. The caller owns the atomic insertion boundary.
+pub(crate) fn load_entity_recursive(
+    world: &Arc<World>,
+    nbt: &BaseNbtCompound<'_>,
+    reason: EntitySpawnReason,
+    post_load: impl Fn(&SharedEntity),
+) -> Option<LoadedEntity> {
+    let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+    load_entity_recursive_inner(world, &nbt, reason, &post_load)
+}
+
+/// Reborrows an owned compound and loads it through the recursive entity path.
+pub(crate) fn load_entity_recursive_owned(
+    world: &Arc<World>,
+    nbt: &NbtCompound,
+    reason: EntitySpawnReason,
+    post_load: impl Fn(&SharedEntity),
+) -> Option<LoadedEntity> {
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(bytes.as_slice())).ok()?;
+    load_entity_recursive(world, &borrowed, reason, post_load)
+}
+
+#[expect(
+    clippy::only_used_in_recursion,
+    reason = "The spawn reason must be propagated to every nested passenger load."
+)]
+fn load_entity_recursive_inner(
+    world: &Arc<World>,
+    nbt: &BorrowedNbtCompoundView<'_, '_>,
+    reason: EntitySpawnReason,
+    post_load: &impl Fn(&SharedEntity),
+) -> Option<LoadedEntity> {
+    let entity_type = entity_type_from_nbt(nbt)?;
+    if world.difficulty() == Difficulty::Peaceful && !entity_type.allowed_in_peaceful {
+        return None;
+    }
+    let position = read_nbt_dvec3(nbt, "Pos").unwrap_or(DVec3::ZERO);
+    if !position.is_finite() {
+        return None;
+    }
+
+    let motion = read_nbt_dvec3(nbt, "Motion").unwrap_or(DVec3::ZERO);
+    let rotation = read_nbt_rotation(nbt, "Rotation").unwrap_or((0.0, 0.0));
+    if !rotation.0.is_finite() || !rotation.1.is_finite() {
+        return None;
+    }
+
+    let uuid = nbt
+        .get("UUID")
+        .and_then(|tag| nbt_collection_values(&tag.to_owned()))
+        .and_then(|values| {
+            values
+                .iter()
+                .map(NbtNumeric::codec_i32)
+                .collect::<Option<Vec<_>>>()
+        })
+        .and_then(|values| Uuid::from_int_array(values.get(..4)?))
+        .unwrap_or_else(Uuid::new_v4);
+    let save_data = load_entity_save_data(nbt);
+    let request = EntityLoadRequest {
+        entity_type,
+        position: super::clamp_loaded_entity_position(position),
+        uuid,
+        velocity: sanitize_nbt_motion(motion),
+        rotation,
+        fall_distance: nbt
+            .get("fall_distance")
+            .and_then(|tag| tag.codec_f64())
+            .or_else(|| nbt.double("FallDistance"))
+            .unwrap_or(0.0),
+        fire_freeze: EntityFireFreezeState::from_parts(
+            nbt.get("Fire")
+                .and_then(|tag| tag.short_value())
+                .map_or(0, i32::from),
+            nbt.get("TicksFrozen")
+                .and_then(|tag| tag.int_value())
+                .unwrap_or(0),
+            false,
+            false,
+            nbt.get("HasVisualFire")
+                .and_then(|tag| tag.byte_value())
+                .is_some_and(|value| value != 0),
+        ),
+        on_ground: nbt
+            .get("OnGround")
+            .and_then(|tag| tag.byte_value())
+            .is_some_and(|value| value != 0),
+        save_data,
+        world: Arc::downgrade(world),
+    };
+
+    let entity = ENTITIES.create_and_load_for_spawn_view(request, nbt)?;
+    post_load(&entity);
+    let mut loaded = LoadedEntity {
+        root: entity,
+        passengers: Vec::new(),
+    };
+
+    let Some(passengers) = nbt.list("Passengers") else {
+        return Some(loaded);
+    };
+    let Some(passengers) = passengers.compounds() else {
+        return Some(loaded);
+    };
+    for passenger_nbt in passengers {
+        let Some(passenger) = load_entity_recursive_inner(world, &passenger_nbt, reason, post_load)
+        else {
+            continue;
+        };
+        if loaded.root.could_accept_passenger() && loaded.root.entity_type().can_serialize {
+            // Freshly created trees cannot cycle. NBT loading forces boarding in vanilla.
+            passenger.root.set_pose(EntityPose::Standing);
+            super::EntityBase::restore_passenger_relationship(&loaded.root, &passenger.root);
+            loaded.passengers.push(passenger);
+        }
+    }
+
+    Some(loaded)
+}
+
+fn entity_type_from_nbt(nbt: &BorrowedNbtCompoundView<'_, '_>) -> Option<EntityTypeRef> {
+    let id = nbt.string("id")?.to_str().parse::<Identifier>().ok()?;
+    REGISTRY.entity_types.by_key(&id)
+}
+
+fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSaveData {
+    let mut save_data = EntityBaseSaveData::new();
+    save_data.air_supply = nbt
+        .get("Air")
+        .and_then(|tag| tag.int_value())
+        .unwrap_or(save_data.air_supply);
+    save_data.portal_cooldown = nbt
+        .get("PortalCooldown")
+        .and_then(|tag| tag.int_value())
+        .unwrap_or(0);
+    save_data.no_gravity = nbt
+        .get("NoGravity")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    save_data.invulnerable = nbt
+        .get("Invulnerable")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    save_data.custom_name = nbt
+        .get("CustomName")
+        .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()));
+    save_data.custom_name_visible = nbt
+        .get("CustomNameVisible")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    save_data.silent = nbt
+        .get("Silent")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    save_data.glowing = nbt
+        .get("Glowing")
+        .and_then(|tag| tag.byte_value())
+        .is_some_and(|value| value != 0);
+    if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
+        save_data.tags = tags
+            .iter()
+            .take(super::MAX_ENTITY_TAGS)
+            .map(|tag| tag.to_str().into_owned())
+            .collect::<BTreeSet<_>>();
+    }
+    save_data.custom_data = nbt
+        .compound("data")
+        .map(|data| data.to_owned())
+        .unwrap_or_default();
+    save_data
 }
 
 /// Applies the implicit entity data carried by an item stack.
@@ -343,7 +531,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use simdnbt::owned::NbtCompound;
+    use simdnbt::owned::{NbtCompound, NbtList};
     use steel_registry::data_components::CustomData;
     use steel_registry::data_components::components::EntityData;
     use steel_registry::data_components::vanilla_components::{
@@ -357,12 +545,120 @@ mod tests {
         vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_entities, vanilla_items,
         vanilla_pig_variants,
     };
+    use steel_utils::types::Difficulty;
     use text_components::TextComponent;
 
     use crate::entity::entities::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
-    use crate::entity::{AgeableMob, Entity, SharedEntity};
+    use crate::entity::{
+        AgeableMob, Entity, EntitySpawnReason, SharedEntity, init_entities,
+        load_entity_recursive_owned,
+    };
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     use super::{AgeableMobGroupData, apply_item_stack_components};
+
+    fn entity_nbt(id: &str) -> NbtCompound {
+        let mut entity = NbtCompound::new();
+        entity.insert("id", id);
+        entity
+    }
+
+    #[test]
+    fn recursive_spawner_load_rejects_unknown_and_unimplemented_entities() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = fresh_test_world("spawner_recursive_load_rejects_unsupported");
+        let world = &world_fixture.world;
+
+        let unknown = entity_nbt("minecraft:not_an_entity");
+        assert!(
+            load_entity_recursive_owned(world, &unknown, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
+
+        let malformed = entity_nbt("not an entity identifier");
+        assert!(
+            load_entity_recursive_owned(world, &malformed, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
+
+        let unimplemented = entity_nbt("minecraft:blaze");
+        assert!(
+            load_entity_recursive_owned(world, &unimplemented, EntitySpawnReason::Spawner, |_| {},)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn recursive_spawner_load_skips_failed_passengers_and_keeps_valid_siblings() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = fresh_test_world("spawner_recursive_load_rejects_passenger");
+        let world = &world_fixture.world;
+
+        let mut root = entity_nbt("minecraft:pig");
+        root.insert(
+            "Passengers",
+            NbtList::Compound(vec![
+                entity_nbt("minecraft:not_an_entity"),
+                entity_nbt("minecraft:blaze"),
+                entity_nbt("minecraft:chicken"),
+                entity_nbt("minecraft:pig"),
+            ]),
+        );
+
+        let loaded = load_entity_recursive_owned(world, &root, EntitySpawnReason::Spawner, |_| {})
+            .expect("failed passengers must not discard the root");
+        let root = Arc::clone(&loaded.root);
+        assert_eq!(root.entity_type(), &vanilla_entities::PIG);
+        let passengers = root.passengers();
+        assert_eq!(passengers.len(), 2);
+        assert_eq!(passengers[0].entity_type(), &vanilla_entities::CHICKEN);
+        assert_eq!(
+            passengers[0].vehicle().map(|vehicle| vehicle.id()),
+            Some(root.id())
+        );
+        drop(passengers);
+        insert_ready_full_chunk(world, steel_utils::ChunkPos::new(0, 0));
+        world
+            .try_add_fresh_entity_with_passengers(Arc::clone(&root))
+            .expect("loaded passengers should be inserted with the root");
+        drop(loaded);
+        assert_eq!(root.passengers().len(), 2);
+    }
+
+    #[test]
+    fn recursive_spawner_load_rejects_hostile_entities_in_peaceful() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = fresh_test_world("spawner_recursive_load_peaceful");
+        let world = &world_fixture.world;
+        world.set_difficulty(Difficulty::Peaceful);
+
+        assert!(
+            load_entity_recursive_owned(
+                world,
+                &entity_nbt("minecraft:endermite"),
+                EntitySpawnReason::Spawner,
+                |_| {},
+            )
+            .is_none()
+        );
+
+        let mut root = entity_nbt("minecraft:pig");
+        root.insert(
+            "Passengers",
+            NbtList::Compound(vec![
+                entity_nbt("minecraft:endermite"),
+                entity_nbt("minecraft:chicken"),
+            ]),
+        );
+        let loaded = load_entity_recursive_owned(world, &root, EntitySpawnReason::Spawner, |_| {})
+            .expect("a peaceful-safe root should still load");
+        let passengers = loaded.root.passengers();
+        assert_eq!(passengers.len(), 1);
+        assert_eq!(passengers[0].entity_type(), &vanilla_entities::CHICKEN);
+    }
 
     #[test]
     fn ageable_group_data_increments_before_later_baby_rolls_can_apply() {

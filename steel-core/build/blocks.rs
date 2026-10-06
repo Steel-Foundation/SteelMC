@@ -6,10 +6,10 @@
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::{
-    common::{self, JsonArgKind, scan_object_behaviors},
+    common::{self, GeneratedImports, scan_object_behaviors},
     to_block_ident,
 };
 
@@ -24,8 +24,7 @@ pub struct BlockClass {
 pub fn build(blocks: &[BlockClass]) -> String {
     let discovered = scan_object_behaviors("blocks", "block_behavior");
 
-    let mut explicit_enum_imports: BTreeMap<String, String> = BTreeMap::new();
-    let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
+    let mut imports = GeneratedImports::default();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
 
@@ -38,22 +37,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let const_ident = to_block_ident(&block.name);
 
-        for field in &info.fields {
-            match &field.kind {
-                JsonArgKind::Enum {
-                    type_name,
-                    module_path,
-                } => {
-                    if let Some(path) = module_path {
-                        explicit_enum_imports.insert(type_name.clone(), path.clone());
-                    }
-                }
-                JsonArgKind::Registry(module) => {
-                    registry_modules_used.insert(module.clone());
-                }
-                JsonArgKind::Value | JsonArgKind::IntProvider => {}
-            }
-        }
+        imports.add_fields(&info.fields);
 
         let mut args = Vec::new();
         for field in &info.fields {
@@ -80,24 +64,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
         );
     }
 
-    let enum_import_tokens: Vec<_> = explicit_enum_imports
-        .iter()
-        .map(|(type_name, path)| {
-            let type_ident = Ident::new(type_name, Span::call_site());
-            let path: syn::Path = syn::parse_str(path)
-                .unwrap_or_else(|_| panic!("Invalid module path '{path}' for enum '{type_name}'"));
-            quote! { use #path::#type_ident; }
-        })
-        .collect();
-
-    let registry_import_tokens: Vec<_> = registry_modules_used
-        .iter()
-        .filter(|module| module.as_str() != "vanilla_blocks")
-        .map(|module| {
-            let module_ident = Ident::new(module, Span::call_site());
-            quote! { , #module_ident }
-        })
-        .collect();
+    let enum_import_tokens = imports.enum_import_tokens();
+    let registry_import_tokens = imports.registry_import_tokens("vanilla_blocks");
 
     let output = quote! {
         //! Generated block behavior assignments.
