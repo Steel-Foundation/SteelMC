@@ -38,7 +38,9 @@ use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity as _, SharedEntity, next_entity_id};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection, ResetReason};
-use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{
+    TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+};
 use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 use crate::world::{SignalGetter as _, World};
 
@@ -113,11 +115,12 @@ impl GameEventListener for RecordingGameEventListener {
     }
 }
 
-fn jukebox_world(key: &'static str) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
+fn jukebox_world(key: &'static str) -> (TestWorld, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
     init_globals();
-    let world = fresh_test_world(key);
+    let world_fixture = fresh_test_world(key);
+    let world = &world_fixture.world;
     let pos = BlockPos::new(8, 64, 8);
-    let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     assert!(world.set_block(
         pos,
         vanilla_blocks::JUKEBOX.default_state(),
@@ -125,7 +128,7 @@ fn jukebox_world(key: &'static str) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, 
     ));
     assert!(world.get_block_entity(pos).is_some());
     (
-        world,
+        world_fixture,
         holder,
         pos,
         JukeboxBlock::new(&vanilla_blocks::JUKEBOX),
@@ -282,8 +285,9 @@ fn recorded_game_event_count(
     reason = "the end-to-end insertion lifecycle is clearest as one sequential test"
 )]
 fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
-    let (world, _holder, pos, behavior) = jukebox_world("jukebox_insert_eject");
-    let player = test_player(&world, 1);
+    let (world_fixture, _holder, pos, behavior) = jukebox_world("jukebox_insert_eject");
+    let world = &world_fixture.world;
+    let player = test_player(world, 1);
     let mut access = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
     let hit = hit_result(pos);
 
@@ -295,7 +299,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert_eq!(
         behavior.use_item_on(
             empty_state,
-            &world,
+            world,
             pos,
             &player,
             InteractionHand::MainHand,
@@ -318,7 +322,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
             .get_value(&BlockStateProperties::HAS_RECORD)
     );
     assert_eq!(
-        behavior.use_without_item(empty_state, &world, pos, &player, &hit, &mut access),
+        behavior.use_without_item(empty_state, world, pos, &player, &hit, &mut access),
         InteractionResult::Pass,
     );
 
@@ -331,7 +335,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert_eq!(
         behavior.use_item_on(
             empty_state,
-            &world,
+            world,
             pos,
             &player,
             InteractionHand::MainHand,
@@ -347,7 +351,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
             .get_item_in_hand(InteractionHand::MainHand)
             .is_empty()
     );
-    let block_entity = jukebox_entity(&world, pos);
+    let block_entity = jukebox_entity(world, pos);
     let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
         panic!("jukebox should retain its concrete entity");
     };
@@ -375,7 +379,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert_eq!(
         behavior.use_without_item(
             world.get_block_state(pos),
-            &world,
+            world,
             pos,
             &player,
             &hit,
@@ -392,7 +396,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert!(!jukebox.is_record_playing());
     assert_eq!(world.get_signal(pos, Direction::North), MIN_REDSTONE_SIGNAL);
 
-    let dropped = dropped_items(&world, pos);
+    let dropped = dropped_items(world, pos);
     assert_eq!(dropped.len(), 1);
     let Some(item_entity) = dropped[0].downcast_ref::<ItemEntity>() else {
         panic!("ejected record should be an item entity");
@@ -424,7 +428,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert!((velocity.y - ITEM_EJECTION_UPWARD_SPEED).abs() < f64::EPSILON);
     assert_within_radius(velocity.z, 0.0, ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT);
     jukebox.pop_out_the_item();
-    assert_eq!(dropped_items(&world, pos).len(), 1);
+    assert_eq!(dropped_items(world, pos).len(), 1);
 
     player.restore_game_modes(GameType::Creative, Some(GameType::Survival));
     let pigstep = ItemStack::new(&vanilla_items::MUSIC_DISC_PIGSTEP);
@@ -437,7 +441,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert_eq!(
         behavior.use_item_on(
             world.get_block_state(pos),
-            &world,
+            world,
             pos,
             &player,
             InteractionHand::MainHand,
@@ -472,8 +476,9 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
 
 #[test]
 fn stackable_component_backed_record_consumes_one_item() {
-    let (world, _holder, pos, behavior) = jukebox_world("jukebox_component_insertion");
-    let player = test_player(&world, 2);
+    let (world_fixture, _holder, pos, behavior) = jukebox_world("jukebox_component_insertion");
+    let world = &world_fixture.world;
+    let player = test_player(world, 2);
     let mut access = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
     let mut stacked_record = ItemStack::with_count(&vanilla_items::STONE, 2);
     stacked_record.set(
@@ -488,7 +493,7 @@ fn stackable_component_backed_record_consumes_one_item() {
     assert_eq!(
         behavior.use_item_on(
             world.get_block_state(pos),
-            &world,
+            world,
             pos,
             &player,
             InteractionHand::MainHand,
@@ -505,7 +510,7 @@ fn stackable_component_backed_record_consumes_one_item() {
             .count(),
         1,
     );
-    let block_entity = jukebox_entity(&world, pos);
+    let block_entity = jukebox_entity(world, pos);
     let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
         panic!("jukebox should retain its concrete entity");
     };
@@ -520,8 +525,9 @@ fn stackable_component_backed_record_consumes_one_item() {
 
 #[test]
 fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
-    let (world, _holder, pos, behavior) = jukebox_world("jukebox_song_timing");
-    let (_observer, packets) = recording_player(&world, pos);
+    let (world_fixture, _holder, pos, behavior) = jukebox_world("jukebox_song_timing");
+    let world = &world_fixture.world;
+    let (_observer, packets) = recording_player(world, pos);
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let listener: SharedGameEventListener = Arc::new(RecordingGameEventListener {
         pos: block_center(pos),
@@ -537,7 +543,7 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
     let Some(song) = playable.song().as_reference() else {
         panic!("vanilla record should reference the typed registry");
     };
-    let block_entity = jukebox_entity(&world, pos);
+    let block_entity = jukebox_entity(world, pos);
     let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
         panic!("jukebox should retain its concrete entity");
     };
@@ -551,7 +557,7 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
     packets.lock().clear();
     events.lock().clear();
 
-    tick_block_entities(&world, 1);
+    tick_block_entities(world, 1);
     assert_eq!(
         recorded_game_event_count(&events, &vanilla_game_events::JUKEBOX_PLAY),
         1,
@@ -562,12 +568,12 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
             .iter()
             .any(|packet| packet_id(packet) == Some(C_LEVEL_PARTICLES))
     );
-    tick_block_entities(&world, PLAY_EVENT_INTERVAL_TICKS - 1);
+    tick_block_entities(world, PLAY_EVENT_INTERVAL_TICKS - 1);
     assert_eq!(
         recorded_game_event_count(&events, &vanilla_game_events::JUKEBOX_PLAY),
         1,
     );
-    tick_block_entities(&world, 1);
+    tick_block_entities(world, 1);
     assert_eq!(
         recorded_game_event_count(&events, &vanilla_game_events::JUKEBOX_PLAY),
         2,
@@ -575,9 +581,9 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
 
     let finish_ticks =
         (song.value().length_in_seconds * TICKS_PER_SECOND).ceil() as i64 + SONG_END_PADDING_TICKS;
-    tick_block_entities(&world, finish_ticks - (PLAY_EVENT_INTERVAL_TICKS + 1));
+    tick_block_entities(world, finish_ticks - (PLAY_EVENT_INTERVAL_TICKS + 1));
     assert!(jukebox.is_record_playing());
-    tick_block_entities(&world, 1);
+    tick_block_entities(world, 1);
     assert!(!jukebox.is_record_playing());
     assert!(
         world
@@ -617,16 +623,17 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
 #[test]
 fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
     init_globals();
-    let world = fresh_test_world("jukebox_placement_data");
+    let world_fixture = fresh_test_world("jukebox_placement_data");
+    let world = &world_fixture.world;
     let support = BlockPos::new(8, 63, 8);
     let pos = support.above();
-    let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     assert!(world.set_block(
         support,
         vanilla_blocks::STONE.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
-    let (_observer, packets) = recording_player(&world, pos);
+    let (_observer, packets) = recording_player(world, pos);
 
     let record = ItemStack::new(&vanilla_items::MUSIC_DISC_CAT);
     let mut payload = NbtCompound::new();
@@ -651,7 +658,7 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
         false,
     );
     let context = BlockPlaceContext::new(
-        &world,
+        world,
         source,
         &BlockHitResult {
             location: block_bottom_center(pos),
@@ -672,7 +679,7 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
             .get_block_state(pos)
             .get_value(&BlockStateProperties::HAS_RECORD)
     );
-    let block_entity = jukebox_entity(&world, pos);
+    let block_entity = jukebox_entity(world, pos);
     let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
         panic!("placed jukebox should retain its concrete entity");
     };
@@ -688,7 +695,7 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
             .any(|event| { event.0 == SOUND_PLAY_JUKEBOX_SONG && event.1 == pos })
     );
 
-    tick_block_entities(&world, 1);
+    tick_block_entities(world, 1);
     assert_eq!(
         saved_ticks(jukebox),
         Some(i64::from(SAVED_PLAYBACK_TICKS + 1))
@@ -721,9 +728,10 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
 
 #[test]
 fn breaking_a_playing_jukebox_drops_one_record_and_runs_vanilla_cleanup() {
-    let (world, _holder, pos, _behavior) = jukebox_world("jukebox_break_cleanup");
-    let (_observer, packets) = recording_player(&world, pos);
-    let block_entity = jukebox_entity(&world, pos);
+    let (world_fixture, _holder, pos, _behavior) = jukebox_world("jukebox_break_cleanup");
+    let world = &world_fixture.world;
+    let (_observer, packets) = recording_player(world, pos);
+    let block_entity = jukebox_entity(world, pos);
     let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
         panic!("jukebox should retain its concrete entity");
     };
@@ -737,7 +745,7 @@ fn breaking_a_playing_jukebox_drops_one_record_and_runs_vanilla_cleanup() {
     ));
     assert_eq!(world.get_block_state(pos).get_block(), &vanilla_blocks::AIR);
     assert!(world.get_block_entity(pos).is_none());
-    let dropped = dropped_items(&world, pos);
+    let dropped = dropped_items(world, pos);
     assert_eq!(dropped.len(), 1);
     let Some(item_entity) = dropped[0].downcast_ref::<ItemEntity>() else {
         panic!("broken jukebox record should be an item entity");
@@ -755,5 +763,5 @@ fn breaking_a_playing_jukebox_drops_one_record_and_runs_vanilla_cleanup() {
         vanilla_blocks::AIR.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    assert_eq!(dropped_items(&world, pos).len(), 1);
+    assert_eq!(dropped_items(world, pos).len(), 1);
 }

@@ -21,7 +21,7 @@ use crate::entity::ai::goal::{
     PanicGoal, reduced_tick_delay,
 };
 use crate::entity::entities::objects::items::ItemEntity;
-use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob};
+use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader as _, World};
@@ -102,7 +102,7 @@ impl Goal for FoxSearchForItemsGoal {
         }
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         if mob.has_item_in_slot(EquipmentSlot::MainHand) {
             return;
         }
@@ -177,7 +177,7 @@ impl Goal for PerchAndSearchGoal {
         }
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         self.look_time -= 1;
         if self.look_time <= 0 {
             self.looks_remaining -= 1;
@@ -307,8 +307,8 @@ impl Goal for FoxFloatGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -350,8 +350,8 @@ impl Goal for FoxPanicGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -399,8 +399,8 @@ impl Goal for FoxBreedGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -445,8 +445,8 @@ impl Goal for FoxFollowParentGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -492,8 +492,8 @@ impl Goal for FoxLookAtPlayerGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -600,7 +600,7 @@ impl Goal for FoxEatBerriesGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
         if self.inner.is_reached_target() {
             if self.ticks_waited >= BERRY_WAIT_TICKS {
                 self.on_reached_target(mob);
@@ -613,6 +613,6 @@ impl Goal for FoxEatBerriesGoal {
             fox.play_sound(&sound_events::ENTITY_FOX_SNIFF, 1.0, 1.0);
         }
 
-        self.inner.tick(mob);
+        self.inner.tick(mob, entity);
     }
 }

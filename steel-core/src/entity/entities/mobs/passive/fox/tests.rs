@@ -16,7 +16,9 @@ use crate::entity::entities::PigEntity;
 use crate::entity::entities::mobs::passive::fox::goals::{BERRY_WAIT_TICKS, FOX_FLOAT_WATER_DEPTH};
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{EntityFluidContact, SharedEntity};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{
+    TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+};
 
 use super::*;
 
@@ -24,21 +26,22 @@ fn new_fox() -> FoxEntity {
     FoxEntity::new(&vanilla_entities::FOX, 1, DVec3::ZERO, Weak::new())
 }
 
-fn world_with_fox(name: &'static str) -> (Arc<World>, Arc<FoxEntity>) {
+fn world_with_fox(name: &'static str) -> (TestWorld, Arc<FoxEntity>) {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(name);
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let test_world = fresh_test_world(name);
+    let world = &test_world.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let fox = Arc::new(FoxEntity::new(
         &vanilla_entities::FOX,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     world
         .try_add_entity(Arc::clone(&fox) as SharedEntity)
         .expect("fox should attach to the loaded chunk");
-    (world, fox)
+    (test_world, fox)
 }
 
 fn add_item(world: &Arc<World>, item: ItemStack) -> Arc<ItemEntity> {
@@ -180,8 +183,9 @@ fn fox_can_hold_item_follows_vanilla_swap_rules() {
 
 #[test]
 fn fox_takes_a_nearby_item_into_its_mouth() {
-    let (world, fox) = world_with_fox("fox_pickup");
-    let item = add_item(&world, ItemStack::new(&vanilla_items::EMERALD));
+    let (test_world, fox) = world_with_fox("fox_pickup");
+    let world = &test_world.world;
+    let item = add_item(world, ItemStack::new(&vanilla_items::EMERALD));
 
     Mob::tick_looting(fox.as_ref());
 
@@ -197,15 +201,16 @@ fn fox_takes_a_nearby_item_into_its_mouth() {
 
 #[test]
 fn fox_spits_out_its_current_item_when_grabbing_another() {
-    let (world, fox) = world_with_fox("fox_spit");
+    let (test_world, fox) = world_with_fox("fox_spit");
+    let world = &test_world.world;
     fox.living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::STONE),
     );
     *fox.ticks_since_eaten.lock() = 5;
-    let item = add_item(&world, ItemStack::new(&vanilla_items::SWEET_BERRIES));
+    let item = add_item(world, ItemStack::new(&vanilla_items::SWEET_BERRIES));
 
-    Mob::pick_up_item(fox.as_ref(), &world, &item);
+    Mob::pick_up_item(fox.as_ref(), world, &item);
 
     let mut holds_berries = false;
     fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |held| {
@@ -285,12 +290,13 @@ fn fox_spawn_held_item_is_always_a_vanilla_candidate() {
 
 #[test]
 fn fox_does_not_search_for_items_with_a_full_mouth() {
-    let (world, fox) = world_with_fox("fox_search_full");
+    let (test_world, fox) = world_with_fox("fox_search_full");
+    let world = &test_world.world;
     fox.living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::EMERALD),
     );
-    let _item = add_item(&world, ItemStack::new(&vanilla_items::WHEAT));
+    let _item = add_item(world, ItemStack::new(&vanilla_items::WHEAT));
 
     let mut goal = FoxSearchForItemsGoal;
     assert!(
@@ -312,7 +318,7 @@ const SEARCH_ATTEMPTS: u32 = 100;
 
 #[test]
 fn fox_sleep_goal_stays_usable_while_sleeping() {
-    let (_world, fox) = world_with_fox("fox_sleep");
+    let (_test_world, fox) = world_with_fox("fox_sleep");
     fox.set_sleeping(true);
 
     let mut goal = FoxSleepGoal::new();
@@ -324,7 +330,8 @@ fn fox_sleep_goal_stays_usable_while_sleeping() {
 
 #[test]
 fn fox_is_alertable_to_a_nearby_untrusted_entity() {
-    let (world, fox) = world_with_fox("fox_alertable");
+    let (test_world, fox) = world_with_fox("fox_alertable");
+    let world = &test_world.world;
 
     assert!(!fox.is_alertable(), "a fox alone is not alertable");
 
@@ -332,7 +339,7 @@ fn fox_is_alertable_to_a_nearby_untrusted_entity() {
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(9.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     world
         .try_add_entity(Arc::clone(&pig) as SharedEntity)
@@ -371,41 +378,44 @@ fn fox_kit_inherits_a_parent_variant() {
 }
 
 #[test]
-fn fox_kit_trusts_both_parents_love_cause_players() {
-    init_vanilla_registry();
-
-    let parent = new_fox();
+fn a_bred_kit_trusts_only_the_feeders_still_online() {
+    let (test_world, parent) = world_with_fox("fox_bred_kit_trust");
+    let world = &test_world.world;
     let partner = new_fox();
-    let fed_parent = Uuid::from_u128(0xa11ce);
-    let fed_partner = Uuid::from_u128(0xb0b);
-    parent.set_love_cause_uuid(Some(fed_parent));
-    partner.set_love_cause_uuid(Some(fed_partner));
+    let online = TestPlayerBuilder::new(Arc::clone(world), "Feeder", next_entity_id()).build();
+    assert!(world.players.insert(Arc::clone(&online)));
+    let offline = Uuid::from_u128(0xb0b);
+    parent.set_love_cause_uuid(Some(online.uuid()));
+    partner.set_love_cause_uuid(Some(offline));
 
-    let offspring = new_fox();
-    parent.initialize_breed_offspring(&partner, &offspring);
+    let kit = new_fox();
+    parent.finalize_spawn_child_from_breeding(world, &partner, Some(&kit));
 
-    assert!(offspring.trusts(fed_parent));
-    assert!(offspring.trusts(fed_partner));
+    assert!(kit.trusts(online.uuid()));
+    assert!(!kit.trusts(offline));
 }
 
 #[test]
-fn fox_kit_trusts_the_only_feeding_player() {
-    init_vanilla_registry();
-
-    let parent = new_fox();
+fn a_spawn_egg_kit_trusts_the_egg_user_not_the_feeder() {
+    let (test_world, parent) = world_with_fox("fox_spawn_egg_kit_trust");
+    let world = &test_world.world;
     let partner = new_fox();
     let feeder = Uuid::from_u128(0xfeed);
-    partner.set_love_cause_uuid(Some(feeder));
+    parent.set_love_cause_uuid(Some(feeder));
+    let egg_user = TestPlayerBuilder::new(Arc::clone(world), "EggUser", next_entity_id()).build();
 
-    let offspring = new_fox();
-    parent.initialize_breed_offspring(&partner, &offspring);
+    let kit = new_fox();
+    parent.initialize_breed_offspring(&partner, &kit);
+    parent.on_offspring_spawned_from_egg(&egg_user, &kit);
 
-    assert!(offspring.trusts(feeder));
+    assert!(kit.trusts(egg_user.uuid()));
+    assert!(!kit.trusts(feeder));
 }
 
 #[test]
 fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
-    let (world, fox) = world_with_fox("fox_death_drop");
+    let (test_world, fox) = world_with_fox("fox_death_drop");
+    let world = &test_world.world;
     assert!(world.set_game_rule(&vanilla_game_rules::MOB_DROPS, false));
     fox.set_baby(true);
     fox.living_base().equipment().lock().set(
@@ -451,7 +461,7 @@ fn a_dispenser_only_puts_things_in_a_foxs_mouth() {
 
 #[test]
 fn a_fox_waking_up_drops_every_pose() {
-    let (_world, fox) = world_with_fox("fox_wake_clears_states");
+    let (_test_world, fox) = world_with_fox("fox_wake_clears_states");
     fox.set_sleeping(true);
     fox.set_sitting(true);
     fox.set_crouching(true);
@@ -465,14 +475,18 @@ fn a_fox_waking_up_drops_every_pose() {
     assert!(!fox.is_interested());
 }
 
-fn fox_holding(name: &'static str, item: ItemStack) -> (Arc<World>, Arc<FoxEntity>) {
-    let (world, fox) = world_with_fox(name);
+fn fox_holding(name: &'static str, item: ItemStack) -> (TestWorld, Arc<FoxEntity>) {
+    let (test_world, fox) = world_with_fox(name);
     fox.set_on_ground(true);
     fox.living_base()
         .equipment()
         .lock()
         .set(EquipmentSlot::MainHand, item);
-    (world, fox)
+    (test_world, fox)
+}
+
+fn shared(fox: &Arc<FoxEntity>) -> SharedEntity {
+    Arc::<FoxEntity>::clone(fox)
 }
 
 fn mouth_item(fox: &FoxEntity) -> ItemStack {
@@ -485,16 +499,16 @@ fn mouth_item(fox: &FoxEntity) -> ItemStack {
 
 #[test]
 fn fox_swallows_the_food_in_its_mouth_once_the_timer_runs_out() {
-    let (_world, fox) = fox_holding("fox_eat", ItemStack::new(&vanilla_items::SWEET_BERRIES));
+    let (_test_world, fox) = fox_holding("fox_eat", ItemStack::new(&vanilla_items::SWEET_BERRIES));
     *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS - 1;
 
-    fox.tick_eating();
+    fox.tick_eating(&shared(&fox));
     assert!(
         mouth_item(&fox).is(&vanilla_items::SWEET_BERRIES),
         "the fox holds its food until the timer passes the threshold"
     );
 
-    fox.tick_eating();
+    fox.tick_eating(&shared(&fox));
     assert!(mouth_item(&fox).is_empty(), "the fox swallows the berries");
     assert_eq!(
         *fox.ticks_since_eaten.lock(),
@@ -505,13 +519,13 @@ fn fox_swallows_the_food_in_its_mouth_once_the_timer_runs_out() {
 
 #[test]
 fn fox_is_left_holding_the_empty_bottle() {
-    let (_world, fox) = fox_holding(
+    let (_test_world, fox) = fox_holding(
         "fox_eat_remainder",
         ItemStack::new(&vanilla_items::HONEY_BOTTLE),
     );
     *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS;
 
-    fox.tick_eating();
+    fox.tick_eating(&shared(&fox));
 
     assert!(
         mouth_item(&fox).is(&vanilla_items::GLASS_BOTTLE),
@@ -521,10 +535,11 @@ fn fox_is_left_holding_the_empty_bottle() {
 
 #[test]
 fn fox_holds_an_item_that_is_not_food_forever() {
-    let (_world, fox) = fox_holding("fox_eat_non_food", ItemStack::new(&vanilla_items::EMERALD));
+    let (_test_world, fox) =
+        fox_holding("fox_eat_non_food", ItemStack::new(&vanilla_items::EMERALD));
     *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS;
 
-    fox.tick_eating();
+    fox.tick_eating(&shared(&fox));
 
     assert!(
         mouth_item(&fox).is(&vanilla_items::EMERALD),
@@ -538,14 +553,15 @@ fn fox_holds_an_item_that_is_not_food_forever() {
 
 #[test]
 fn fox_does_not_eat_while_asleep_in_the_air_or_chasing_something() {
-    let (world, fox) = fox_holding(
+    let (test_world, fox) = fox_holding(
         "fox_eat_gated",
         ItemStack::new(&vanilla_items::SWEET_BERRIES),
     );
+    let world = &test_world.world;
 
     let assert_still_holding_berries = |reason: &str| {
         *fox.ticks_since_eaten.lock() = FOX_EAT_TICKS;
-        fox.tick_eating();
+        fox.tick_eating(&shared(&fox));
         assert!(
             mouth_item(&fox).is(&vanilla_items::SWEET_BERRIES),
             "{reason}"
@@ -564,7 +580,7 @@ fn fox_does_not_eat_while_asleep_in_the_air_or_chasing_something() {
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(9.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     world
         .try_add_entity(Arc::clone(&pig) as SharedEntity)
@@ -633,7 +649,8 @@ fn foxes_only_spawn_on_their_own_ground() {
 
 #[test]
 fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
-    let (world, fox) = world_with_fox("fox_wake");
+    let (test_world, fox) = world_with_fox("fox_wake");
+    let world = &test_world.world;
     assert!(world.set_block(
         fox.block_position(),
         vanilla_blocks::SAND.default_state(),
@@ -654,7 +671,7 @@ fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(9.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     world
         .try_add_entity(Arc::clone(&prey) as SharedEntity)
@@ -688,7 +705,7 @@ fn clearing_a_foxs_states_drops_everything_it_was_in_the_middle_of() {
 
 #[test]
 fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
-    let (_world, fox) = world_with_fox("fox_float_depth");
+    let (_test_world, fox) = world_with_fox("fox_float_depth");
     let depth = f64::midpoint(FOX_FLOAT_WATER_DEPTH, fox.get_fluid_jump_threshold());
     fox.base()
         .set_fluid_contact(EntityFluidContact::from_parts(depth, 0.0, false, false));
@@ -711,7 +728,7 @@ fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
 
 #[test]
 fn a_defending_fox_neither_panics_nor_follows_its_parent() {
-    let (_world, fox) = world_with_fox("fox_defending_gates");
+    let (_test_world, fox) = world_with_fox("fox_defending_gates");
     fox.set_defending(true);
 
     assert!(!FoxPanicGoal::new(2.2).can_use(fox.as_ref()));
@@ -726,7 +743,7 @@ fn a_defending_fox_neither_panics_nor_follows_its_parent() {
 
 #[test]
 fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
-    let (_world, fox) = world_with_fox("fox_look_gates");
+    let (_test_world, fox) = world_with_fox("fox_look_gates");
 
     fox.set_interested(true);
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
@@ -739,7 +756,8 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
 
 #[test]
 fn a_fox_only_walks_over_to_a_bush_worth_picking() {
-    let (world, fox) = berry_world("fox_berry_targets");
+    let (test_world, fox) = berry_world("fox_berry_targets");
+    let world = &test_world.world;
     let bush = vanilla_blocks::SWEET_BERRY_BUSH.default_state();
     let vine = vanilla_blocks::CAVE_VINES.default_state();
 
@@ -762,8 +780,9 @@ fn a_fox_only_walks_over_to_a_bush_worth_picking() {
     assert!(!notices(vanilla_blocks::STONE.default_state()));
 }
 
-fn berry_world(name: &'static str) -> (Arc<World>, Arc<FoxEntity>) {
-    let (world, fox) = world_with_fox(name);
+fn berry_world(name: &'static str) -> (TestWorld, Arc<FoxEntity>) {
+    let (test_world, fox) = world_with_fox(name);
+    let world = &test_world.world;
     for x in 0..16 {
         for z in 0..16 {
             let floor = BlockPos::new(x, BERRY_BLOCK_POS.y() - 1, z);
@@ -774,7 +793,7 @@ fn berry_world(name: &'static str) -> (Arc<World>, Arc<FoxEntity>) {
             ));
         }
     }
-    (world, fox)
+    (test_world, fox)
 }
 
 fn run_berry_goal(fox: &Arc<FoxEntity>) -> Option<u32> {
@@ -789,10 +808,10 @@ fn run_berry_goal(fox: &Arc<FoxEntity>) -> Option<u32> {
         if !goal.can_continue_to_use(fox.as_ref()) {
             return Some(tick);
         }
-        goal.tick(fox.as_ref());
+        goal.tick(fox.as_ref(), &shared(fox));
         fox.tick_path_navigation();
         fox.tick_move_control();
-        fox.default_ai_step();
+        fox.default_ai_step(&shared(fox));
     }
     None
 }
@@ -830,7 +849,8 @@ fn berries_dropped_near(world: &Arc<World>, pos: BlockPos) -> i32 {
 
 #[test]
 fn a_fox_waits_at_a_bush_then_pockets_one_berry_and_leaves_it_standing() {
-    let (world, fox) = berry_world("fox_pick_berries");
+    let (test_world, fox) = berry_world("fox_pick_berries");
+    let world = &test_world.world;
     let pos = BERRY_BLOCK_POS;
     assert!(world.set_block(pos, ripe_bush(), UpdateFlags::UPDATE_NONE));
     let start = fox.position();
@@ -864,14 +884,15 @@ fn a_fox_waits_at_a_bush_then_pockets_one_berry_and_leaves_it_standing() {
         "an empty mouth takes one berry"
     );
     assert!(
-        berries_dropped_near(&world, pos) > 0,
+        berries_dropped_near(world, pos) > 0,
         "a fully grown bush gives more than the fox can carry, so the rest drop"
     );
 }
 
 #[test]
 fn a_fox_with_a_full_mouth_drops_everything_it_picks() {
-    let (world, fox) = berry_world("fox_pick_berries_full_mouth");
+    let (test_world, fox) = berry_world("fox_pick_berries_full_mouth");
+    let world = &test_world.world;
     fox.living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::EMERALD),
@@ -886,14 +907,15 @@ fn a_fox_with_a_full_mouth_drops_everything_it_picks() {
         "the fox keeps what it was already holding"
     );
     assert!(
-        berries_dropped_near(&world, pos) > 0,
+        berries_dropped_near(world, pos) > 0,
         "so the whole picking drops instead"
     );
 }
 
 #[test]
 fn a_fox_leaves_the_bush_alone_when_mob_griefing_is_off() {
-    let (world, fox) = berry_world("fox_pick_berries_no_griefing");
+    let (test_world, fox) = berry_world("fox_pick_berries_no_griefing");
+    let world = &test_world.world;
     assert!(world.set_game_rule(&vanilla_game_rules::MOB_GRIEFING, false));
     let pos = BERRY_BLOCK_POS;
     assert!(world.set_block(pos, ripe_bush(), UpdateFlags::UPDATE_NONE));
@@ -911,12 +933,13 @@ fn a_fox_leaves_the_bush_alone_when_mob_griefing_is_off() {
         "the bush is untouched"
     );
     assert!(mouth_item(&fox).is_empty(), "and the fox takes nothing");
-    assert_eq!(berries_dropped_near(&world, pos), 0, "and nothing drops");
+    assert_eq!(berries_dropped_near(world, pos), 0, "and nothing drops");
 }
 
 #[test]
 fn a_fox_strips_a_vine_of_its_glow_berries() {
-    let (world, fox) = berry_world("fox_pick_glow_berries");
+    let (test_world, fox) = berry_world("fox_pick_glow_berries");
+    let world = &test_world.world;
     let pos = BERRY_BLOCK_POS;
     assert!(
         world.set_block(

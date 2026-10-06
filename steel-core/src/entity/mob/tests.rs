@@ -324,10 +324,11 @@ fn pathfinder_mob_reads_below_surface_capability_from_navigation() {
 
 #[test]
 fn mob_server_ai_step_increments_no_action_time() {
-    let mob = DespawnTestMob::new(None, false);
+    let mob = Arc::new(DespawnTestMob::new(None, false));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
 
     mob.set_no_action_time(12);
-    mob.mob_server_ai_step();
+    mob.mob_server_ai_step(&mob_entity);
 
     assert_eq!(mob.no_action_time(), 13);
 }
@@ -382,14 +383,21 @@ fn mob_control_flags_disable_jump_when_riding_boat() {
 
 #[test]
 fn mob_attack_damage_source_uses_item_damage_type_component() {
-    let mob = DespawnTestMob::new(None, false);
+    let mob = Arc::new(DespawnTestMob::new(None, false));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let spear = ItemStack::new(&vanilla_items::WOODEN_SPEAR);
 
-    let source = mob.mob_attack_damage_source(&spear, &mob);
+    let source = mob.mob_attack_damage_source(&spear, &mob_entity);
 
     assert_eq!(source.damage_type.key, vanilla_damage_types::SPEAR.key);
-    assert_eq!(source.causing_entity_id, Some(mob.id()));
-    assert_eq!(source.direct_entity_id, Some(mob.id()));
+    assert_eq!(
+        source.causing_entity().map(|entity| entity.id()),
+        Some(mob.id())
+    );
+    assert_eq!(
+        source.direct_entity().map(|entity| entity.id()),
+        Some(mob.id())
+    );
 }
 
 #[test]
@@ -571,8 +579,14 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
     init_vanilla_registry();
     init_behaviors();
 
-    let mob =
-        DespawnTestMob::with_entity_type(1, DVec3::ZERO, &vanilla_entities::ZOMBIE, None, false);
+    let mob = Arc::new(DespawnTestMob::with_entity_type(
+        1,
+        DVec3::ZERO,
+        &vanilla_entities::ZOMBIE,
+        None,
+        false,
+    ));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     mob.attributes()
         .lock()
         .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
@@ -582,9 +596,10 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         None,
         false,
     ));
+    target.base().set_world(Arc::downgrade(test_world()));
     let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
-    assert!(mob.do_hurt_target(test_world(), &target_entity));
+    assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
 
     assert_eq!(target.get_health().to_bits(), 6.0_f32.to_bits());
     let stored_target = mob
@@ -598,8 +613,14 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
     init_vanilla_registry();
     init_behaviors();
 
-    let mob =
-        DespawnTestMob::with_entity_type(1, DVec3::ZERO, &vanilla_entities::ZOMBIE, None, false);
+    let mob = Arc::new(DespawnTestMob::with_entity_type(
+        1,
+        DVec3::ZERO,
+        &vanilla_entities::ZOMBIE,
+        None,
+        false,
+    ));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     {
         let mut attributes = mob.attributes().lock();
         attributes.set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
@@ -612,9 +633,10 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         None,
         false,
     ));
+    target.base().set_world(Arc::downgrade(test_world()));
     let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
-    assert!(mob.do_hurt_target(test_world(), &target_entity));
+    assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
 
     assert_eq!(mob.velocity().x.to_bits(), 0.6_f64.to_bits());
     assert_eq!(mob.velocity().z.to_bits(), 0.6_f64.to_bits());
@@ -755,14 +777,15 @@ fn mob_home_restriction_uses_vanilla_radius() {
 fn looting_collects_nearby_item_into_main_hand() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_looting_pickup");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_looting_pickup");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     mob.set_can_pick_up_loot(true);
 
@@ -771,7 +794,7 @@ fn looting_collects_nearby_item_into_main_hand() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::STONE),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -812,15 +835,17 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
     // regressing behind the `isEffectiveAi` gate that skips the goal ticks.
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_looting_no_ai");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_looting_no_ai");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
+    let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
     mob.set_can_pick_up_loot(true);
     mob.set_no_ai(true);
     assert!(
@@ -833,7 +858,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::STONE),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -846,7 +871,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::mob_ai_step(mob.as_ref());
+    Mob::mob_ai_step(mob.as_ref(), &mob_entity);
 
     assert!(
         item.is_removed(),
@@ -866,15 +891,16 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
 fn looting_skips_when_mob_cannot_pick_up_loot() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_looting_disabled");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_looting_disabled");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     // A mob leaves `canPickUpLoot` off by default, so it should ignore the item.
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
 
     let item = Arc::new(ItemEntity::with_item(
@@ -882,7 +908,7 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::STONE),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -970,17 +996,18 @@ fn equip_routes_armor_to_its_armor_slot() {
 fn equip_replaces_worse_armor_and_drops_the_old_piece() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_equip_upgrade");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_equip_upgrade");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     world
-        .try_add_entity(Arc::clone(&mob) as SharedEntity)
+        .try_add_entity(Arc::<PigEntity>::clone(&mob))
         .expect("test mob should attach to the loaded chunk");
 
     // Wear a leather helmet and force it to always drop, so the swap is
@@ -1121,14 +1148,15 @@ fn equip_respects_prevent_armor_change_on_worn_gear() {
 fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_equip_partial");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_equip_partial");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     mob.set_can_pick_up_loot(true);
 
@@ -1139,7 +1167,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::IRON_HELMET).copy_with_count(3),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -1152,7 +1180,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::pick_up_item(mob.as_ref(), &world, &item);
+    Mob::pick_up_item(mob.as_ref(), world, &item);
 
     assert!(
         !item.is_removed(),
