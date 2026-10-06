@@ -162,61 +162,63 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::entities::{CowEntity, PigEntity};
     use crate::entity::{Entity, Mob};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (Arc<World>, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
+    ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(name);
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world(name);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        let hunter = Arc::new(PigEntity::new(
+        let pig_hunter = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         let nearer_pig = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         let farther_cow = Arc::new(CowEntity::new(
             &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
 
-        for entity in [
-            Arc::clone(&hunter) as SharedEntity,
-            Arc::clone(&nearer_pig) as SharedEntity,
-            Arc::clone(&farther_cow) as SharedEntity,
-        ] {
+        let entities: [SharedEntity; 3] = [
+            Arc::<PigEntity>::clone(&pig_hunter),
+            Arc::<PigEntity>::clone(&nearer_pig),
+            Arc::<CowEntity>::clone(&farther_cow),
+        ];
+        for entity in entities {
             world
                 .try_add_entity(entity)
                 .expect("test entity should attach to the loaded chunk");
         }
 
-        (world, hunter, nearer_pig, farther_cow)
+        (world_fixture, pig_hunter, nearer_pig, farther_cow)
     }
 
     #[test]
     fn selects_nearest_living_entity_matching_selector() {
-        let (_world, hunter, nearer_pig, _farther_cow) =
+        let (_world, pig_hunter, nearer_pig, _farther_cow) =
             animal_fixture("nearest_attackable_selector");
         let mut goal =
             NearestAttackableTargetGoal::new_with_interval(0, false, false, |target, _| {
                 target.as_animal().is_some()
             });
 
-        assert!(goal.can_use(hunter.as_ref()));
-        goal.start(hunter.as_ref());
+        assert!(goal.can_use(pig_hunter.as_ref()));
+        goal.start(pig_hunter.as_ref());
 
-        let Some(target) = hunter.target() else {
+        let Some(target) = pig_hunter.target() else {
             panic!("selector goal should assign a target");
         };
         assert_eq!(target.uuid(), nearer_pig.uuid());
@@ -224,10 +226,10 @@ mod tests {
 
     #[test]
     fn selector_can_reject_all_candidates() {
-        let (_world, hunter, _nearer_pig, _farther_cow) =
+        let (_world, pig_hunter, _nearer_pig, _farther_cow) =
             animal_fixture("nearest_attackable_selector_rejects");
         let mut goal = NearestAttackableTargetGoal::new(false, |_, _| false);
 
-        assert!(!goal.can_use(hunter.as_ref()));
+        assert!(!goal.can_use(pig_hunter.as_ref()));
     }
 }
