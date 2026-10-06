@@ -286,13 +286,13 @@ impl ChickenEntity {
             .is_in_tag(item_stack.item(), &ItemTag::CHICKEN_FOOD)
     }
 
-    /// Returns vanilla `Chicken.isChickenJockey`.
+    /// Returns whether this chicken is currently ridden by a chicken jockey mob.
     #[must_use]
     pub fn is_chicken_jockey(&self) -> bool {
         self.chicken_state.lock().is_chicken_jockey
     }
 
-    /// Sets vanilla `Chicken.isChickenJockey`.
+    /// Sets whether this chicken is a chicken jockey mount.
     pub fn set_chicken_jockey(&self, is_chicken_jockey: bool) {
         self.chicken_state.lock().is_chicken_jockey = is_chicken_jockey;
     }
@@ -569,16 +569,6 @@ impl AgeableMob for ChickenEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
-}
-
-impl Animal for ChickenEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        ChickenEntity::is_food(item_stack)
-    }
 
     fn breed_variant_key(&self) -> Option<&Identifier> {
         Some(&self.variant().key)
@@ -588,7 +578,7 @@ impl Animal for ChickenEntity {
         self.set_variant_by_key(key)
     }
 
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
         let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
@@ -602,6 +592,16 @@ impl Animal for ChickenEntity {
         if !offspring.set_breed_variant_key(variant_key) {
             log::error!("chicken offspring could not inherit breeding variant {variant_key}");
         }
+    }
+}
+
+impl Animal for ChickenEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        ChickenEntity::is_food(item_stack)
     }
 }
 

@@ -38,7 +38,8 @@ pub enum PortalKind {
 }
 
 impl PortalKind {
-    /// Returns vanilla `Portal.getPortalTransitionTime`.
+    /// Returns the number of ticks an entity must stand in this portal before
+    /// it triggers, accounting for whether the entity is invulnerable.
     #[must_use]
     pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
         let player_invulnerable = entity
@@ -296,7 +297,7 @@ impl TeleportTransition {
     #[must_use]
     pub fn with_position(&self, position: DVec3) -> Self {
         Self {
-            target_world: self.target_world.clone(),
+            target_world: Arc::clone(&self.target_world),
             position,
             rotation: self.rotation,
             velocity: self.velocity,

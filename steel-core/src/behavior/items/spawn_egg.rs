@@ -101,8 +101,8 @@ impl SpawnEggItem {
         }
 
         let world = parent.level()?;
-        let offspring = if let Some(animal) = parent.as_animal() {
-            animal.get_breed_offspring(&world, animal)?
+        let offspring = if let Some(ageable) = parent.as_ageable_mob() {
+            ageable.get_breed_offspring(&world, ageable)?
         } else {
             match create_entity_instance(&world, entity_type, parent.position()) {
                 Ok(offspring) => offspring,
@@ -128,7 +128,7 @@ impl SpawnEggItem {
         offspring.set_old_position_to_current();
         offspring.base().set_old_rotation_to_current();
         apply_implicit_item_stack_components(&offspring, stack);
-        add_spawned_entity(&world, offspring.clone()).ok()?;
+        add_spawned_entity(&world, Arc::clone(&offspring)).ok()?;
         Some(offspring)
     }
 }

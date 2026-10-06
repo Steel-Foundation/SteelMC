@@ -5,6 +5,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
+use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -47,7 +48,6 @@ use crate::world::{
 };
 use steel_registry::vanilla_fluids;
 
-/// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
     context: &BlockPlaceContext<'_>,
@@ -331,8 +331,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Called after a player successfully removes this block.
-    ///
-    /// Mirrors vanilla `Block.destroy(LevelAccessor, BlockPos, BlockState)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -1031,6 +1029,17 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
     ) -> BlockEntityCreation {
         BlockEntityCreation::Unimplemented
+    }
+
+    /// Returns the beam tint this block contributes to a beacon beam passing through it.
+    ///
+    /// Steel models Vanilla's `BeaconBeamBlock` marker interface as a trait method so third
+    /// party blocks can join a beacon beam without a new interface: `None` means the block is
+    /// not a beam block, matching a Vanilla class that does not implement `BeaconBeamBlock`.
+    ///
+    /// Vanilla parity: `BeaconBeamBlock.getColor()`.
+    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        None
     }
 
     /// Returns the server ticker selected by this live block state and entity type.

@@ -1,7 +1,11 @@
 use glam::DVec3;
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items, vanilla_mob_effects,
+    data_components::vanilla_components::{SwingAnimation, SwingAnimationType},
+    init_vanilla_registry,
+    item_stack::ItemStack,
+    vanilla_attributes, vanilla_damage_types, vanilla_entities,
+    vanilla_entity_data::PlayerEntityData,
+    vanilla_items, vanilla_mob_effects,
 };
 use steel_utils::{BlockPos, types::InteractionHand};
 
@@ -10,8 +14,8 @@ use crate::entity::damage::DamageSource;
 use crate::inventory::equipment::EquipmentSlot;
 
 use super::{
-    ActiveMobEffect, DEFAULT_SWING_DURATION, LivingEntityBase, LivingTravelInput,
-    MobEffectInstance, MobEffectSyncChange, POST_IMPULSE_GRACE_TICKS,
+    ActiveMobEffect, LivingEntityBase, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
+    POST_IMPULSE_GRACE_TICKS,
 };
 
 #[test]
@@ -235,58 +239,122 @@ fn living_rotation_is_base_tick_snapshot_state() {
 fn living_swing_uses_vanilla_restart_gate() {
     init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let animation = SwingAnimation::DEFAULT;
 
-    assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
-    let state = base.swing_state();
-    assert!(state.swinging());
-    assert_eq!(state.swinging_arm(), Some(InteractionHand::MainHand));
-    assert_eq!(state.swing_time(), -1);
-
-    base.update_swing_time();
-    assert!(!base.start_swing(InteractionHand::OffHand, DEFAULT_SWING_DURATION));
+    assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+    // A swing can be replaced before its first tick.
+    assert!(base.start_swing(InteractionHand::OffHand, animation, animation.duration));
+    for _ in 0..animation.duration / 2 {
+        base.tick_swing_state();
+        assert!(!base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+    }
+    base.tick_swing_state();
+    assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+    assert_eq!(base.swing_state().swing_time(), 0);
     assert_eq!(
         base.swing_state().swinging_arm(),
         Some(InteractionHand::MainHand)
     );
-
-    for _ in 0..3 {
-        base.update_swing_time();
-    }
-    assert!(base.start_swing(InteractionHand::OffHand, DEFAULT_SWING_DURATION));
-    let state = base.swing_state();
-    assert_eq!(state.swinging_arm(), Some(InteractionHand::OffHand));
-    assert_eq!(state.swing_time(), -1);
 }
 
 #[test]
-fn living_swing_time_updates_attack_animation() {
+fn living_swing_tick_keeps_full_progress_until_after_duration() {
     init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let animation = SwingAnimation::DEFAULT;
+    assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
 
-    assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
-    base.update_swing_time();
-    base.update_swing_time();
-    let state = base.swing_state();
-    assert!(state.swinging());
-    assert_eq!(state.swing_time(), 1);
+    base.tick_swing_state();
+    assert_eq!(base.swing_state().attack_anim(), 0.0);
+    base.tick_swing_state();
     assert_eq!(
-        state.attack_anim().to_bits(),
-        (1.0_f32 / DEFAULT_SWING_DURATION as f32).to_bits()
+        base.swing_state().attack_anim(),
+        1.0 / animation.duration as f32
     );
+    assert_eq!(base.swing_state().old_attack_anim(), 0.0);
 
-    base.advance_attack_animation_for_base_tick();
-    assert_eq!(
-        base.swing_state().old_attack_anim().to_bits(),
-        (1.0_f32 / DEFAULT_SWING_DURATION as f32).to_bits()
-    );
-
-    for _ in 0..5 {
-        base.update_swing_time();
+    for _ in 0..animation.duration - 1 {
+        base.tick_swing_state();
     }
-    let state = base.swing_state();
-    assert!(!state.swinging());
-    assert_eq!(state.swing_time(), 0);
-    assert_eq!(state.attack_anim().to_bits(), 0.0_f32.to_bits());
+    assert!(base.swing_state().swinging());
+    assert_eq!(base.swing_state().attack_anim(), 1.0);
+    base.tick_swing_state();
+    assert!(!base.swing_state().swinging());
+    assert_eq!(base.swing_state().swinging_arm(), None);
+    assert_eq!(base.swing_state().attack_anim(), 0.0);
+    assert_eq!(base.swing_state().old_attack_anim(), 1.0);
+    base.tick_swing_state();
+    assert_eq!(base.swing_state().old_attack_anim(), 0.0);
+}
+
+#[test]
+fn living_swing_restart_preserves_progress_only_for_same_description() {
+    init_vanilla_registry();
+    let animation = SwingAnimation::DEFAULT;
+    let changed_animation = SwingAnimation::new(SwingAnimationType::Stab, animation.duration);
+    for (hand, next_animation, next_duration, resets) in [
+        (
+            InteractionHand::MainHand,
+            animation,
+            animation.duration,
+            false,
+        ),
+        (
+            InteractionHand::OffHand,
+            animation,
+            animation.duration,
+            true,
+        ),
+        (
+            InteractionHand::MainHand,
+            changed_animation,
+            animation.duration,
+            true,
+        ),
+        (
+            InteractionHand::MainHand,
+            animation,
+            animation.duration + 1,
+            true,
+        ),
+    ] {
+        let base = LivingEntityBase::new(&vanilla_entities::PIG);
+        assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+        for _ in 0..4 {
+            base.tick_swing_state();
+        }
+        let previous = base.swing_state();
+        assert!(base.start_swing(hand, next_animation, next_duration));
+        let restarted = base.swing_state();
+        assert_eq!(restarted.swing_time(), 0);
+        assert_eq!(
+            restarted.attack_anim(),
+            if resets { 0.0 } else { previous.attack_anim() }
+        );
+        assert_eq!(
+            restarted.old_attack_anim(),
+            if resets {
+                0.0
+            } else {
+                previous.old_attack_anim()
+            }
+        );
+    }
+}
+
+#[test]
+fn living_swing_nonpositive_duration_never_divides_by_zero() {
+    init_vanilla_registry();
+    for duration in [0, -1] {
+        let base = LivingEntityBase::new(&vanilla_entities::PIG);
+        assert!(base.start_swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, duration));
+        base.tick_swing_state();
+        assert_eq!(base.swing_state().attack_anim(), 0.0);
+        assert_eq!(base.swing_state().swinging(), duration == 0);
+        base.tick_swing_state();
+        assert!(!base.swing_state().swinging());
+        assert_eq!(base.swing_state().attack_anim(), 0.0);
+    }
 }
 
 #[test]
@@ -407,77 +475,6 @@ fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
             .to_bits(),
         base_speed.to_bits()
     );
-}
-
-#[test]
-fn player_respawn_reset_clears_living_runtime_and_effect_state() {
-    init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
-    let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
-    let base_speed = base
-        .attributes()
-        .lock()
-        .get_value(movement_speed)
-        .expect("player should have movement speed");
-
-    base.set_sprinting(true);
-    base.set_sleeping_pos(BlockPos::new(1, 64, 1));
-    base.set_fall_flying(true);
-    base.tick_fall_flying_state(true);
-    base.attributes()
-        .lock()
-        .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
-    base.set_absorption_amount(4.0);
-    base.skip_drop_experience();
-    base.set_no_action_time(80);
-    base.set_last_hurt_by_player(uuid::Uuid::from_u128(9), 100);
-    base.record_last_damage_source(
-        &DamageSource::environment(&vanilla_damage_types::GENERIC),
-        7,
-    );
-    assert!(base.apply_damage_cooldown(4.0, false).is_some());
-    assert!(base.mark_death_processed());
-    assert_eq!(base.increment_death_time(), 1);
-    base.set_mob_effect(vanilla_mob_effects::SPEED, 1);
-    base.set_mob_effect(vanilla_mob_effects::INVISIBILITY, 0);
-    base.drain_dirty_mob_effects();
-
-    base.reset_for_player_respawn();
-
-    assert!(!base.is_sprinting());
-    assert_eq!(base.sleeping_pos(), None);
-    assert!(!base.is_fall_flying());
-    assert_eq!(base.fall_flying_ticks(), 0);
-    assert_eq!(base.absorption_amount().to_bits(), 0.0_f32.to_bits());
-    assert!(!base.was_experience_consumed());
-    assert_eq!(base.no_action_time(), 0);
-    assert!(base.last_hurt_by_player_uuid().is_none());
-    assert!(base.last_damage_source(7).is_none());
-    assert!(!base.has_mob_effect(vanilla_mob_effects::SPEED));
-    assert!(!base.has_mob_effect(vanilla_mob_effects::INVISIBILITY));
-    assert_eq!(
-        base.attributes()
-            .lock()
-            .get_value(movement_speed)
-            .expect("player should have movement speed")
-            .to_bits(),
-        base_speed.to_bits()
-    );
-
-    let state = base.state.lock();
-    assert!(!state.death_processed);
-    assert_eq!(state.death_time, 0);
-    assert_eq!(state.last_hurt.to_bits(), 0.0_f32.to_bits());
-    drop(state);
-
-    let changes = base.drain_dirty_mob_effects();
-    assert!(changes.contains(&MobEffectSyncChange::Remove {
-        effect: vanilla_mob_effects::SPEED
-    }));
-    assert!(changes.contains(&MobEffectSyncChange::Remove {
-        effect: vanilla_mob_effects::INVISIBILITY
-    }));
-    assert!(base.take_effects_dirty());
 }
 
 #[test]

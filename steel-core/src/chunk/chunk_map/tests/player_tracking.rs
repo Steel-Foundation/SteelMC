@@ -1,5 +1,6 @@
 use super::*;
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
+use crate::test_support::tick_test_world;
 use uuid::Uuid;
 
 #[test]
@@ -163,7 +164,10 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     world.chunk_map.stop_generation_refill_loop();
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
-    player.chunk_sender.lock().mark_chunk_sent_for_test(center);
+    player
+        .chunk_sender()
+        .lock()
+        .mark_chunk_sent_for_test(center);
     packets.lock().clear();
 
     let Some(reservation) = world
@@ -183,7 +187,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(world.chunk_map.light_update_touches_chunk(center));
     player.ack_block_changes_up_to(1);
 
-    world.tick_game(1, true);
+    tick_test_world(&world, 1, true);
 
     assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
     assert!(!holder.has_changes_to_broadcast());
@@ -226,7 +230,7 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
     player
-        .chunk_sender
+        .chunk_sender()
         .lock()
         .mark_chunk_sent_for_test(chunk_pos);
     packets.lock().clear();
@@ -251,4 +255,60 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
     assert_eq!(relevant_packet_ids, [C_BLOCK_UPDATE, C_BLOCK_CHANGED_ACK]);
     world.remove_player_for_world_change(&player);
     stop_chunk_tasks(&world);
+}
+
+#[test]
+fn removing_player_invalidates_old_world_chunks_without_resetting_connection_pacing() {
+    use crate::player::chunk_sender::ChunkSender;
+
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("remove_player_chunk_sender_lifecycle");
+    let sent = ChunkPos::new(0, 0);
+    insert_ready_full_chunk(&world, sent);
+    let (player, _) = recording_player(&world);
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+    let pending = ChunkPos::new(20, -30);
+    let batch = player
+        .chunk_sender()
+        .lock()
+        .prepare_batch(&world, sent, &player.chunk_send_epoch)
+        .expect("ready chunk should prepare");
+    let encoding_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .expect("test encoding pool should initialize");
+    let encoded =
+        ChunkSender::encode_batch(&batch, &mut FxHashMap::default(), None, &encoding_pool);
+    {
+        let mut sender = player.chunk_sender().lock();
+        assert_eq!(
+            sender.commit_batch(
+                &batch,
+                encoded,
+                &player.connection,
+                &player.chunk_send_epoch
+            ),
+            [sent]
+        );
+        sender.mark_chunk_pending_to_send(pending);
+        assert!(sender.on_chunk_batch_received_by_client(12.5));
+    }
+    let old_epoch = *player.chunk_send_epoch.lock();
+
+    world.remove_player_for_world_change(&player);
+
+    assert_eq!(*player.chunk_send_epoch.lock(), old_epoch.wrapping_add(1));
+    assert!(player.last_tracking_view.lock().is_none());
+    let mut sender = player.chunk_sender().lock();
+    assert!(sender.pending_chunks.is_empty());
+    assert!(!sender.is_chunk_sent(sent));
+    assert_eq!(sender.unacknowledged_batch_count_for_test(), 1);
+    assert!(
+        sender
+            .prepare_batch(&world, sent, &player.chunk_send_epoch)
+            .is_none()
+    );
+    assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
 }

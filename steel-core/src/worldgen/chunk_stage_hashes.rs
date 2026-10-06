@@ -26,7 +26,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
-use crate::level_data::WorldGenerationSettings;
+use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::{World, WorldConfig, WorldStorageConfig};
 use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
@@ -246,11 +246,12 @@ fn create_test_world(
 
     runtime
         .block_on(World::new_with_config(
-            runtime.clone(),
+            Arc::clone(&runtime),
             Identifier::new(Identifier::VANILLA_NAMESPACE, dim_short.to_owned()),
             dim_type,
             seed as i64,
             WorldConfig {
+                game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,
                 generator,
@@ -976,13 +977,13 @@ fn generate_features_for_positions(
             };
             chunk.prime_final_heightmaps();
         }
-        let cache_holders = inputs.holders.clone();
+        let cache_holders = Arc::clone(inputs.holders);
         let cache = Arc::new(StaticCache2D::create(
             chunk_x,
             chunk_z,
             inputs.feature_cache_radius,
             move |x, z| match cache_holders.get(&(x, z)) {
-                Some(holder) => holder.clone(),
+                Some(holder) => Arc::clone(holder),
                 None => panic!("Missing feature dependency chunk ({x}, {z})"),
             },
         ));
@@ -1027,7 +1028,7 @@ fn propagate_light_for_positions(
     for &(chunk_x, chunk_z) in positions {
         let center = ChunkPos::new(chunk_x, chunk_z);
         let layout = LightCacheLayout::new(center, range);
-        let holder_map = holders.clone();
+        let holder_map = Arc::clone(holders);
         let Ok(workset) = LightWorkset::setup_with_scopes(
             layout,
             LightCacheSetupRadius::Full,
@@ -1066,11 +1067,11 @@ fn propagate_light_for_positions(
     reason = "large test with many hash assertions"
 )]
 fn chunk_stage_hashes_inner() {
-    use crate::bootstrap::init_globals_once;
+    use crate::bootstrap::init_globals;
     use crate::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_worldgen::biomes::BiomeSourceKind;
 
-    init_globals_once();
+    init_globals();
 
     let expected = load_expected_hashes();
     let seed = expected.seed;
@@ -1191,11 +1192,12 @@ fn chunk_stage_hashes_inner() {
             }
             _ => unreachable!(),
         });
-        let feature_world = includes_features
-            .then(|| create_test_world(dim_key, dim_type, seed, generator.clone(), thread_pool));
+        let feature_world = includes_features.then(|| {
+            create_test_world(dim_key, dim_type, seed, Arc::clone(&generator), thread_pool)
+        });
         let feature_context = feature_world
             .as_ref()
-            .map(|world| world.chunk_map.world_gen_context.clone());
+            .map(|world| Arc::clone(&world.chunk_map.world_gen_context));
 
         eprintln!("{dim_key}");
 

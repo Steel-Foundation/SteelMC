@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
 use steel_core::player::connection::JavaConnection;
-use steel_core::player::{ClientInformation, Player};
+use steel_core::player::{ClientInformation, Player, PlayerSession};
 use steel_protocol::packets::common::CCustomPayload;
 use steel_protocol::packets::common::{SClientInformation, SCustomPayload};
 use steel_protocol::packets::config::CFinishConfiguration;
@@ -81,7 +81,7 @@ impl JavaTcpClient {
         }
         log::debug!("Select known packs packet: {packet:?}");
 
-        let registry_cache = self.server.registry_cache.registry_packets.clone();
+        let registry_cache = Arc::clone(&self.server.registry_cache.registry_packets);
         for encoded_packet in registry_cache.iter() {
             self.send_packet_now(encoded_packet).await;
         }
@@ -101,6 +101,8 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
+        // Admission can reject the join; the client already expects Play disconnect packets.
+        self.protocol.store(ConnectionProtocol::Play);
         let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
             self.kick(TextComponent::translated(
                 translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
@@ -108,34 +110,39 @@ impl JavaTcpClient {
             .await;
             return ConnectionAction::none();
         };
-        self.protocol.store(ConnectionProtocol::Play);
 
         let client_info = self.client_information.lock().await.clone();
 
-        let world = self.server.overworld().clone();
+        let world = Arc::clone(self.server.overworld());
         let entity_id = next_entity_id();
 
-        let player = Arc::new_cyclic(|player_weak| {
-            let java_connection = JavaConnection::new(
-                self.outgoing_queue.clone(),
-                self.cancel_token.clone(),
-                self.compression.load(),
-                self.network_writer.clone(),
-                self.id,
-                player_weak.clone(),
-            );
-            let connection = Arc::new(PlayerConnection::Java(java_connection));
-
-            Player::new(
-                gameprofile,
-                connection,
-                world,
-                Arc::downgrade(&self.server),
-                self.server.config.clone(),
-                entity_id,
-                client_info,
-            )
-        });
+        let session = Arc::new(PlayerSession::new(
+            self.server.config.chat_spam_threshold_seconds,
+            self.server.config.command_spam_threshold_seconds,
+        ));
+        let java_connection = JavaConnection::new(
+            self.outgoing_queue.clone(),
+            self.cancel_token.clone(),
+            self.compression.load(),
+            Arc::clone(&self.network_writer),
+            self.id,
+            Arc::clone(&session),
+        );
+        let connection = Arc::new(PlayerConnection::Java(java_connection));
+        let player = Arc::new(Player::new(
+            gameprofile,
+            connection,
+            Arc::clone(&session),
+            world,
+            Arc::downgrade(&self.server),
+            Arc::clone(&self.server.config),
+            entity_id,
+            client_info,
+        ));
+        assert!(
+            session.bind_initial_player(&player),
+            "new client session was already bound to a player"
+        );
 
         let connection = Arc::clone(&player.connection);
         if self

@@ -1,6 +1,5 @@
 use super::{CSetChunkCenter, ChunkMap, ChunkPos, Entity, Player, PlayerChunkView};
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
-use crate::player::chunk_sender::ChunkSender;
 
 impl ChunkMap {
     /// Updates the player's status in the chunk map.
@@ -39,7 +38,7 @@ impl ChunkMap {
                 let mut removed_chunks = Vec::new();
 
                 // We lock here to ensure we have unique access for the duration of the diff
-                let mut chunk_sender = player.chunk_sender.lock();
+                let mut chunk_sender = player.chunk_sender().lock();
                 let connection = &*player.connection;
                 PlayerChunkView::difference(
                     last_view,
@@ -75,7 +74,7 @@ impl ChunkMap {
                     y: new_view.center.0.y,
                 });
 
-                let mut chunk_sender = player.chunk_sender.lock();
+                let mut chunk_sender = player.chunk_sender().lock();
                 new_view.for_each(|pos| {
                     chunk_sender.mark_chunk_pending_to_send(pos);
                 });
@@ -92,7 +91,7 @@ impl ChunkMap {
         // Entity visibility also depends on exact player position, not only
         // chunk-view changes. Vanilla refreshes tracked entities for accepted
         // movement within the same chunk as well.
-        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
         world
             .entity_tracker()
             .update_player(player, &new_view, |chunk| sent_chunks.contains(&chunk));
@@ -102,13 +101,14 @@ impl ChunkMap {
     pub fn remove_player(&self, player: &Player) {
         // Keep the view guard through ticket submission so a concurrent tracking
         // update cannot re-add the player before this removal is ordered.
+        // Keep the same view -> sender lock order as `update_player_status`.
         let mut last_view = player.last_tracking_view.lock();
         let removed_view = last_view.take();
         {
-            let mut chunk_sender = player.chunk_sender.lock();
+            let mut chunk_sender = player.chunk_sender().lock();
             let mut chunk_send_epoch = player.chunk_send_epoch.lock();
             *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
-            *chunk_sender = ChunkSender::default();
+            chunk_sender.clear_world_chunks();
             *player.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
         }
 

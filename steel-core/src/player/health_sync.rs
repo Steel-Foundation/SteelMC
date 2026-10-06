@@ -2,8 +2,6 @@
 //!
 //! Tracks the last health/food/saturation values sent to the client so we only
 //! send `CSetHealth` when something actually changes.
-//!
-//! Vanilla: `ServerPlayer.lastSentHealth`, `lastSentFood`, `lastFoodSaturationZero`.
 
 use crate::player::Player;
 
@@ -48,16 +46,8 @@ impl HealthSyncState {
     }
 
     /// Invalidates the state so the next tick will re-send.
-    ///
-    /// Vanilla: `resetSentInfo`.
     pub const fn invalidate(&mut self) {
         self.last_health = -1.0e8;
-    }
-
-    /// Resets to respawn defaults (forces re-send on next tick).
-    pub const fn reset_for_respawn(&mut self) {
-        self.last_health = -1.0;
-        self.last_food = -1;
     }
 }
 

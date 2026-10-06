@@ -36,24 +36,26 @@ fn living_tick_state_decrements_last_hurt_by_player_memory() {
 }
 
 #[test]
-fn living_tick_state_updates_swing_time() {
+fn living_base_tick_advances_swing_before_living_state() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.swing_for_attack(InteractionHand::MainHand);
-    assert_eq!(entity.living_swing_state().swing_time(), -1);
+    assert_eq!(entity.living_swing_state().swing_time(), 0);
 
+    entity.base_tick_living_entity();
     entity.tick_living_state();
 
     let swing = entity.living_swing_state();
     assert!(swing.swinging());
-    assert_eq!(swing.swing_time(), 0);
+    assert_eq!(swing.swing_time(), 1);
     assert_eq!(swing.attack_anim().to_bits(), 0.0_f32.to_bits());
 }
 
 #[test]
 fn modified_swing_duration_uses_vanilla_dig_effects() {
     init_vanilla_registry();
+    init_behaviors();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let default = SwingAnimation::DEFAULT;
@@ -125,7 +127,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let target_entity: SharedEntity = target.clone();
+    let target_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&target);
 
     entity.set_last_hurt_mob(Some(&target_entity));
     assert!(entity.last_hurt_mob().is_some());

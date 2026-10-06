@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -94,7 +96,8 @@ impl Player {
         (1.0 / attack_speed * 20.0) as f32
     }
 
-    /// Returns vanilla `Player.getAttackStrengthScale`.
+    /// Returns how much of the current weapon's attack cooldown has
+    /// recovered, in [0.0, 1.0], for scaling attack damage.
     #[must_use]
     pub fn attack_strength_scale(&self, partial_tick: f32) -> f32 {
         let attack_strength_delay = self.current_item_attack_strength_delay();
@@ -523,7 +526,7 @@ impl Player {
             return InteractionResult::Pass;
         }
 
-        let inventory_access = InventoryAccess::new(self.inventory.clone(), hand);
+        let inventory_access = InventoryAccess::new(Arc::clone(&self.inventory), hand);
         let original_count = inventory_access.with_item(|item| item.count);
         let result = entity.interact(self, hand, location);
 

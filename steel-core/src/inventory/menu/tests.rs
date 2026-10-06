@@ -121,7 +121,7 @@ fn swap_locks_player_inventory_when_menu_has_no_inventory_slots() {
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, 1);
-    let menu_slots = builder.section(container.clone(), 45);
+    let menu_slots = builder.section(Arc::clone(&container), 45);
     let mut menu = builder.build(BasicKind {});
 
     menu.clicked(

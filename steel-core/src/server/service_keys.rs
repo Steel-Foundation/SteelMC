@@ -9,7 +9,7 @@ use tokio::{sync::oneshot, time::sleep};
 use tokio_util::sync::CancellationToken;
 
 const DEFAULT_SERVICES_SERVER: &str = "https://api.minecraftservices.com/publickeys";
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 const DAILY_REFRESH_INTERVAL: Duration = Duration::from_hours(24);
 const BASE_FAILURE_INTERVAL: Duration = Duration::from_mins(5);

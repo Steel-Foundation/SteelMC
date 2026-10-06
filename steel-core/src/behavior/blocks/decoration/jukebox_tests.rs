@@ -32,7 +32,7 @@ use crate::behavior::{
 };
 use crate::block_entity::entities::JukeboxBlockEntity;
 use crate::block_entity::{BlockEntity, SharedBlockEntity};
-use crate::bootstrap::init_globals_once;
+use crate::bootstrap::init_globals;
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity as _, SharedEntity, next_entity_id};
@@ -114,7 +114,7 @@ impl GameEventListener for RecordingGameEventListener {
 }
 
 fn jukebox_world(key: &'static str) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, JukeboxBlock) {
-    init_globals_once();
+    init_globals();
     let world = fresh_test_world(key);
     let pos = BlockPos::new(8, 64, 8);
     let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
@@ -616,7 +616,7 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
 
 #[test]
 fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
-    init_globals_once();
+    init_globals();
     let world = fresh_test_world("jukebox_placement_data");
     let support = BlockPos::new(8, 63, 8);
     let pos = support.above();
