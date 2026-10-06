@@ -1047,15 +1047,16 @@ mod tests {
     fn stalactite_drip_converts_mud_to_clay() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("mud_to_clay");
+        let world_fixture = fresh_test_world("mud_to_clay");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let mud = vanilla_blocks::MUD.default_state();
         assert!(world.set_block(pos.above_n(2), mud, UpdateFlags::UPDATE_NONE));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
+        behavior.maybe_transfer_fluid(dripstone, world, pos, 0.0);
 
         assert_eq!(
             world.get_block_state(pos.above_n(2)).get_block(),
@@ -1067,9 +1068,10 @@ mod tests {
     fn stalactite_drip_fills_empty_cauldron_with_water() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("water_cauldron_fill");
+        let world_fixture = fresh_test_world("water_cauldron_fill");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_water = vanilla_blocks::WATER.default_state();
         assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
@@ -1079,11 +1081,11 @@ mod tests {
             UpdateFlags::UPDATE_NONE,
         ));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
+        behavior.maybe_transfer_fluid(dripstone, world, pos, 0.0);
 
-        advance_test_game_time_to(&world, 51);
-        world.chunk_map.tick_game(&world, 51, 0, true);
+        advance_test_game_time_to(world, 51);
+        world.chunk_map.tick_game(world, 51, 0, true);
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
@@ -1094,9 +1096,10 @@ mod tests {
     fn stalactite_drip_increments_layered_water_cauldron() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("water_cauldron_inc");
+        let world_fixture = fresh_test_world("water_cauldron_inc");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_water = vanilla_blocks::WATER.default_state();
         assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
@@ -1105,11 +1108,11 @@ mod tests {
             .set_value(LEVEL_CAULDRON, 1);
         assert!(world.set_block(pos.below(), water_cauldron, UpdateFlags::UPDATE_NONE));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
+        behavior.maybe_transfer_fluid(dripstone, world, pos, 0.0);
 
-        advance_test_game_time_to(&world, 51);
-        world.chunk_map.tick_game(&world, 51, 0, true);
+        advance_test_game_time_to(world, 51);
+        world.chunk_map.tick_game(world, 51, 0, true);
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
@@ -1120,9 +1123,10 @@ mod tests {
     fn stalactite_drip_does_not_overflow_full_water_cauldron() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("water_cauldron_full");
+        let world_fixture = fresh_test_world("water_cauldron_full");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_water = vanilla_blocks::WATER.default_state();
         assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
@@ -1131,8 +1135,8 @@ mod tests {
             .set_value(LEVEL_CAULDRON, 3);
         assert!(world.set_block(pos.below(), full_cauldron, UpdateFlags::UPDATE_NONE));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
+        behavior.maybe_transfer_fluid(dripstone, world, pos, 0.0);
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
@@ -1143,9 +1147,10 @@ mod tests {
     fn stalactite_drip_fills_empty_cauldron_with_lava() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("lava_cauldron_fill");
+        let world_fixture = fresh_test_world("lava_cauldron_fill");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_lava = vanilla_blocks::LAVA.default_state();
         assert!(world.set_block(pos.above_n(2), source_lava, UpdateFlags::UPDATE_NONE));
@@ -1155,11 +1160,11 @@ mod tests {
             UpdateFlags::UPDATE_NONE,
         ));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
+        behavior.maybe_transfer_fluid(dripstone, world, pos, 0.0);
 
-        advance_test_game_time_to(&world, 51);
-        world.chunk_map.tick_game(&world, 51, 0, true);
+        advance_test_game_time_to(world, 51);
+        world.chunk_map.tick_game(world, 51, 0, true);
 
         assert_eq!(
             world.get_block_state(pos.below()).get_block(),
@@ -1171,9 +1176,10 @@ mod tests {
     fn stalactite_drip_does_not_fill_lava_cauldron() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("lava_cauldron_skip");
+        let world_fixture = fresh_test_world("lava_cauldron_skip");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_lava = vanilla_blocks::LAVA.default_state();
         assert!(world.set_block(pos.above_n(2), source_lava, UpdateFlags::UPDATE_NONE));
@@ -1183,8 +1189,8 @@ mod tests {
             UpdateFlags::UPDATE_NONE,
         ));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
+        behavior.maybe_transfer_fluid(dripstone, world, pos, 0.0);
 
         assert_eq!(
             world.get_block_state(pos.below()).get_block(),
@@ -1196,9 +1202,10 @@ mod tests {
     fn stalactite_drip_skips_drip_when_random_value_exceeds_water_probability() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("high_random_water");
+        let world_fixture = fresh_test_world("high_random_water");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_water = vanilla_blocks::WATER.default_state();
         assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
@@ -1208,10 +1215,10 @@ mod tests {
             UpdateFlags::UPDATE_NONE,
         ));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
         behavior.maybe_transfer_fluid(
             dripstone,
-            &world,
+            world,
             pos,
             WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK + 0.01,
         );
@@ -1226,9 +1233,10 @@ mod tests {
     fn stalactite_drip_skips_drip_when_random_value_exceeds_lava_probability() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("high_random_lava");
+        let world_fixture = fresh_test_world("high_random_lava");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let source_lava = vanilla_blocks::LAVA.default_state();
         assert!(world.set_block(pos.above_n(2), source_lava, UpdateFlags::UPDATE_NONE));
@@ -1238,10 +1246,10 @@ mod tests {
             UpdateFlags::UPDATE_NONE,
         ));
 
-        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        let (behavior, dripstone) = stalactite_setup(world, pos);
         behavior.maybe_transfer_fluid(
             dripstone,
-            &world,
+            world,
             pos,
             LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK + 0.01,
         );

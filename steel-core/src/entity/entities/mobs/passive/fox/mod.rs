@@ -11,7 +11,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD};
+use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD, FOX_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef, MobCategory,
 };
@@ -42,8 +42,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
-    MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData, next_entity_id,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntityRef,
+    LivingTravelInput, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData,
+    next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -61,15 +62,11 @@ const DEFEND_GROWL_CHANCE: f32 = 0.05;
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
 const FOX_BABY_HEIGHT: f32 = 0.7 * BABY_SCALE;
-const FOX_BABY_EYE_HEIGHT: f32 = 0.2975;
-const FOX_BABY_PASSENGER_Y: f64 = 0.6375 * BABY_SCALE as f64;
-const FOX_BABY_PASSENGER_Z: f64 = -0.25 * BABY_SCALE as f64;
+const FOX_BABY_EYE_HEIGHT: f32 = 0.343_75;
+const FOX_BABY_PASSENGER_Y: f64 = 0.375;
 
-const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] = [EntityAttachmentPoint::new(
-    0.0,
-    FOX_BABY_PASSENGER_Y,
-    FOX_BABY_PASSENGER_Z,
-)];
+const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
+    [EntityAttachmentPoint::new(0.0, FOX_BABY_PASSENGER_Y, 0.0)];
 const FOX_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
     FOX_BABY_WIDTH,
     FOX_BABY_HEIGHT,
@@ -545,7 +542,7 @@ impl FoxEntity {
         }
     }
 
-    fn tick_eating(&self) {
+    fn tick_eating(&self, entity: &SharedEntity) {
         if !Entity::is_alive(self) || !self.is_effective_ai() {
             return;
         }
@@ -560,7 +557,7 @@ impl FoxEntity {
         }
 
         if ticks_since_eaten > FOX_EAT_TICKS {
-            self.swallow_mouth_item();
+            self.swallow_mouth_item(entity);
         } else if ticks_since_eaten > FOX_CHEW_TICKS
             && rand::random::<f32>() < FOX_CHEW_SOUND_CHANCE
         {
@@ -580,8 +577,8 @@ impl FoxEntity {
     }
 
     /// Finishes the mouth item, leaving any container behind.
-    fn swallow_mouth_item(&self) {
-        let Some(world) = self.level() else {
+    fn swallow_mouth_item(&self, entity: &SharedEntity) {
+        let (Some(world), Some(user)) = (self.level(), LivingEntityRef::new(entity)) else {
             return;
         };
 
@@ -592,7 +589,7 @@ impl FoxEntity {
             .take(EquipmentSlot::MainHand);
         let remainder = ITEM_BEHAVIORS
             .get_behavior(item_in_mouth.item())
-            .finish_using(&mut item_in_mouth, &world, self);
+            .finish_using(&mut item_in_mouth, &world, user);
         self.living_base()
             .equipment()
             .lock()
@@ -644,12 +641,19 @@ impl Entity for FoxEntity {
         self.entity_type
     }
 
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(FOX_VARIANT) {
+            self.set_variant(*variant);
+        }
+    }
+
     fn base_tick(&self) {
         Mob::base_tick_mob(self);
     }
 
-    fn tick(&self) {
-        LivingEntity::tick_living_entity(self);
+    fn tick(self: Arc<Self>) {
+        let entity: SharedEntity = Arc::<Self>::clone(&self);
+        self.tick_living_entity(&entity);
         self.tick_fox_posture();
         self.tick_crouch_amount();
     }
@@ -737,6 +741,10 @@ impl LivingEntity for FoxEntity {
         &self.living_base
     }
 
+    fn is_sleeping(&self) -> bool {
+        FoxEntity::is_sleeping(self)
+    }
+
     fn get_health(&self) -> f32 {
         *self.entity_data.lock().living_entity().health.get()
     }
@@ -772,19 +780,19 @@ impl LivingEntity for FoxEntity {
         self.spawn_at_location(held, 0.0);
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        self.tick_eating();
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.tick_eating(entity);
         self.drop_hunt_without_target();
         if self.is_sleeping() || self.is_immobile() {
             self.set_jumping(false);
             let input = self.travel_input();
             self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
         }
-        let result = Mob::mob_ai_step(self);
+        let result = Mob::mob_ai_step(self, entity);
         if self.is_defending() && rand::random::<f32>() < DEFEND_GROWL_CHANCE {
             self.play_sound(&sound_events::ENTITY_FOX_AGGRO, 1.0, 1.0);
         }
@@ -831,22 +839,36 @@ impl AgeableMob for FoxEntity {
             partner.map_or_else(|| self.variant(), FoxEntity::variant)
         };
         offspring.set_variant(variant);
-
-        let own_cause = self.love_cause_uuid();
-        if let Some(own_cause) = own_cause {
-            offspring.add_trusted(own_cause);
-        }
-        if let Some(partner_cause) = partner.and_then(Animal::love_cause_uuid)
-            && own_cause != Some(partner_cause)
-        {
-            offspring.add_trusted(partner_cause);
-        }
     }
 }
 
 impl Animal for FoxEntity {
     fn animal_base(&self) -> &AnimalBase {
         &self.animal_base
+    }
+
+    fn finalize_spawn_child_from_breeding(
+        &self,
+        world: &Arc<World>,
+        partner: &dyn Animal,
+        offspring: Option<&dyn Animal>,
+    ) {
+        if let Some(offspring) =
+            offspring.and_then(|offspring| offspring.downcast_ref::<FoxEntity>())
+        {
+            let online = |uuid: Uuid| world.players.get_by_uuid(&uuid).map(|player| player.uuid());
+            let own_cause = self.love_cause_uuid().and_then(online);
+            let partner_cause = partner.love_cause_uuid().and_then(online);
+            if let Some(own_cause) = own_cause {
+                offspring.add_trusted(own_cause);
+            }
+            if let Some(partner_cause) = partner_cause
+                && own_cause != Some(partner_cause)
+            {
+                offspring.add_trusted(partner_cause);
+            }
+        }
+        self.finalize_spawn_child_from_breeding_animal(world, partner, offspring);
     }
 
     fn is_food(&self, item_stack: &ItemStack) -> bool {
@@ -875,8 +897,8 @@ impl Mob for FoxEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {
@@ -948,6 +970,12 @@ impl Mob for FoxEntity {
         }
 
         self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+    }
+
+    fn on_offspring_spawned_from_egg(&self, spawner: &Player, offspring: &dyn Mob) {
+        if let Some(offspring) = offspring.downcast_ref::<FoxEntity>() {
+            offspring.add_trusted(spawner.uuid());
+        }
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

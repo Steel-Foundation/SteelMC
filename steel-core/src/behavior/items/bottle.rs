@@ -58,7 +58,7 @@ impl ItemBehavior for BottleItem {
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         context.inv.with_item(|item| {
@@ -126,7 +126,7 @@ mod tests {
         player
     }
 
-    fn use_bottle(player: &Player, world: &Arc<World>, count: i32) -> InteractionResult {
+    fn use_bottle(player: &Arc<Player>, world: &Arc<World>, count: i32) -> InteractionResult {
         player.inventory.lock().set_item_in_hand(
             InteractionHand::MainHand,
             ItemStack::with_count(&vanilla_items::GLASS_BOTTLE, count),
@@ -153,16 +153,17 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("bottle_fill_water");
+        let world_fixture = fresh_test_world("bottle_fill_water");
+        let world = &world_fixture.world;
         let water_pos = BlockPos::new(0, 80, 0);
         let player = looking_down_at(
-            &world,
+            world,
             DVec3::new(0.5, 81.0, 0.5),
             water_pos,
             vanilla_blocks::WATER.default_state(),
         );
 
-        assert_eq!(use_bottle(&player, &world, 1), InteractionResult::Success);
+        assert_eq!(use_bottle(&player, world, 1), InteractionResult::Success);
 
         let filled = hand_item(&player);
         assert_eq!(filled.item.key, vanilla_items::POTION.key);
@@ -182,26 +183,28 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("bottle_fill_stone");
+        let world_fixture = fresh_test_world("bottle_fill_stone");
+        let world = &world_fixture.world;
         let player = looking_down_at(
-            &world,
+            world,
             DVec3::new(0.5, 81.0, 0.5),
             BlockPos::new(0, 80, 0),
             vanilla_blocks::STONE.default_state(),
         );
 
-        assert_eq!(use_bottle(&player, &world, 1), InteractionResult::Pass);
+        assert_eq!(use_bottle(&player, world, 1), InteractionResult::Pass);
         assert_eq!(hand_item(&player).item.key, vanilla_items::GLASS_BOTTLE.key);
 
-        let air_world = fresh_test_world("bottle_fill_air");
+        let air_world_fixture = fresh_test_world("bottle_fill_air");
+        let air_world = &air_world_fixture.world;
         let air_player = looking_down_at(
-            &air_world,
+            air_world,
             DVec3::new(0.5, 81.0, 0.5),
             BlockPos::new(0, 80, 0),
             vanilla_blocks::AIR.default_state(),
         );
         assert_eq!(
-            use_bottle(&air_player, &air_world, 1),
+            use_bottle(&air_player, air_world, 1),
             InteractionResult::Pass
         );
     }

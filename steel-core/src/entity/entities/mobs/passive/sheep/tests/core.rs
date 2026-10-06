@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 /// Trials for the random breeding-color fallback assertion.
 const COLOR_FALLBACK_TRIALS: u32 = 32;
@@ -103,13 +104,14 @@ fn sheep_sound_methods_follow_vanilla_sheep_sounds() {
 fn sheep_shear_drops_wool_and_damages_shears() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("sheep_shearing");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("sheep_shearing");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
@@ -119,7 +121,7 @@ fn sheep_shear_drops_wool_and_damages_shears() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new(world, "Shearer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Shearer", next_entity_id()).build();
     player
         .inventory
         .lock()
@@ -144,13 +146,14 @@ fn sheep_shear_drops_wool_and_damages_shears() {
 fn sheep_shear_interaction_is_consumed_when_not_ready() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("sheep_shear_consumed");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("sheep_shear_consumed");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
@@ -160,7 +163,7 @@ fn sheep_shear_interaction_is_consumed_when_not_ready() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new(world, "Shearer", 11).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Shearer", 11).build();
     player
         .inventory
         .lock()
@@ -185,7 +188,8 @@ fn sheep_breeding_mixes_parent_colors_through_dye_recipes() {
     init_vanilla_registry();
     init_entities();
 
-    let world = fresh_test_world("sheep_breeding");
+    let world_fixture = fresh_test_world("sheep_breeding");
+    let world = &world_fixture.world;
 
     for (parent_color, partner_color, expected) in [
         (DyeColor::White, DyeColor::Red, DyeColor::Pink),
@@ -210,7 +214,7 @@ fn sheep_breeding_mixes_parent_colors_through_dye_recipes() {
             .expect("shared entity should be a sheep");
         sheep.set_color(parent_color);
 
-        let offspring = AgeableMob::get_breed_offspring(sheep, &world, partner)
+        let offspring = AgeableMob::get_breed_offspring(sheep, world, partner)
             .expect("sheep breeding should create an offspring");
         let offspring = offspring
             .downcast_ref::<SheepEntity>()
@@ -224,7 +228,8 @@ fn sheep_breeding_falls_back_to_a_parent_color_without_a_mix_recipe() {
     init_vanilla_registry();
     init_entities();
 
-    let world = fresh_test_world("sheep_breeding_fallback");
+    let world_fixture = fresh_test_world("sheep_breeding_fallback");
+    let world = &world_fixture.world;
     let partner = SheepEntity::new(&vanilla_entities::SHEEP, 2, DVec3::ZERO, Weak::new());
     partner.set_color(DyeColor::Black);
     let partner_shared: SharedEntity = Arc::new(partner);
@@ -240,7 +245,7 @@ fn sheep_breeding_falls_back_to_a_parent_color_without_a_mix_recipe() {
     sheep.set_color(DyeColor::Green);
 
     for _ in 0..COLOR_FALLBACK_TRIALS {
-        let offspring = AgeableMob::get_breed_offspring(sheep, &world, partner)
+        let offspring = AgeableMob::get_breed_offspring(sheep, world, partner)
             .expect("sheep breeding should create an offspring");
         let offspring = offspring
             .downcast_ref::<SheepEntity>()
@@ -259,13 +264,14 @@ fn sheep_shearing_drop_spawns_one_item_entity_per_count_unit() {
 
     init_vanilla_registry();
 
-    let world = fresh_test_world("sheep_drop_count");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("sheep_drop_count");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
@@ -296,13 +302,14 @@ fn dye_item_dyes_an_unsheared_sheep_and_consumes_the_dye() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = fresh_test_world("sheep_dye");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("sheep_dye");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
@@ -312,7 +319,7 @@ fn dye_item_dyes_an_unsheared_sheep_and_consumes_the_dye() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new(world, "Dyer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::with_count(&vanilla_items::RED_DYE, 2);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -335,13 +342,14 @@ fn dye_item_passes_for_sheared_or_matching_color_sheep() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = fresh_test_world("sheep_dye_pass");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("sheep_dye_pass");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let shared: SharedEntity = Arc::new(sheep);
     world
@@ -350,7 +358,7 @@ fn dye_item_passes_for_sheared_or_matching_color_sheep() {
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
-    let player = TestPlayerBuilder::new(world, "Dyer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::new(&vanilla_items::RED_DYE);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -450,13 +458,14 @@ fn sheep_spawn_color_uses_vanilla_biome_configurations() {
 fn sheep_shear_loot_resolves_the_matching_color_table() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("sheep_shear_loot");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("sheep_shear_loot");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     sheep.set_color(DyeColor::Red);
     let shared: SharedEntity = Arc::new(sheep);
