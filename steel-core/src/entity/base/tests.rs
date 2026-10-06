@@ -16,12 +16,12 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
-use crate::entity::damage::DamageSource;
+use crate::entity::damage::{DamageHistory, DamageSource};
 use crate::entity::{
     Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
 };
 use crate::portal::PortalKind;
-use crate::test_support::TestEntity;
+use crate::test_support::{TestEntity, fresh_test_world};
 use crate::world::World;
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -99,7 +99,7 @@ impl Entity for FallDamageTestEntity {
     }
 
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         _source: &DamageSource,
@@ -299,6 +299,54 @@ fn lifecycle_state_tracks_removal() {
     assert!(!base.clear_removed());
     assert!(!base.is_removed());
     assert_eq!(base.removal_reason(), None);
+}
+
+#[test]
+fn removal_unlocks_lifecycle_before_destroying_retained_sources() {
+    struct RemovalSourceEntity {
+        entity: TestEntity,
+        victim: Weak<dyn Entity>,
+    }
+
+    crate::entity::impl_test_downcast_type!(RemovalSourceEntity);
+
+    impl Entity for RemovalSourceEntity {
+        fn base(&self) -> &EntityBase {
+            self.entity.base()
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity.entity_type()
+        }
+    }
+
+    impl Drop for RemovalSourceEntity {
+        fn drop(&mut self) {
+            let victim = self.victim.upgrade().expect("victim outlives source");
+            assert!(
+                victim.base().lifecycle.try_lock().is_some(),
+                "release the lifecycle mutex before destroying a retained source"
+            );
+        }
+    }
+
+    let world_fixture = fresh_test_world("removal_source_drop_order");
+    let history = Arc::new(DamageHistory::default());
+    let victim = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+    let _owner = victim.base().damage_history().retain_owner();
+    let source = Arc::new(RemovalSourceEntity {
+        entity: TestEntity::new(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM),
+        victim: Arc::downgrade(&victim),
+    });
+    let weak_source = Arc::downgrade(&source);
+    history.record(
+        victim.base(),
+        &DamageSource::direct(&vanilla_damage_types::GENERIC, source),
+        &world_fixture.world.game_time,
+    );
+    assert!(weak_source.upgrade().is_some());
+    victim.set_removed(RemovalReason::Discarded);
+    assert!(weak_source.upgrade().is_none());
 }
 
 #[test]

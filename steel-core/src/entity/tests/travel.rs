@@ -4,6 +4,7 @@ use steel_utils::types::UpdateFlags;
 use super::*;
 use crate::entity::living_entity::BASE_HORIZONTAL_AIR_DRAG;
 use crate::entity::{ENTITIES, init_entities, next_entity_id};
+use std::sync::Arc;
 
 #[test]
 fn jump_from_ground_uses_jump_strength_and_marks_velocity_sync() {
@@ -82,11 +83,12 @@ fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
 #[test]
 fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     entity.set_no_jump_delay(2);
     entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
 
-    assert!(entity.default_ai_step().is_none());
+    assert!(entity.default_ai_step(&shared_entity).is_none());
 
     assert_eq!(entity.no_jump_delay(), 0);
     assert_eq!(
@@ -100,17 +102,19 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     init_vanilla_registry();
     init_behaviors();
 
-    let slow_falling = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let slow_falling = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let slow_falling_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&slow_falling);
     slow_falling.set_fall_distance(7.0);
     slow_falling.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
-    slow_falling.default_ai_step();
+    slow_falling.default_ai_step(&slow_falling_entity);
 
     assert_f64_close(slow_falling.fall_distance(), 0.0);
 
-    let levitating = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let levitating = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let levitating_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&levitating);
     levitating.set_fall_distance(7.0);
     levitating.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
-    levitating.default_ai_step();
+    levitating.default_ai_step(&levitating_entity);
 
     assert_f64_close(levitating.fall_distance(), 0.0);
 }
@@ -118,12 +122,13 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
 #[test]
 fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_on_ground(true);
     entity.set_jumping(true);
 
-    assert!(entity.default_ai_step().is_none());
+    assert!(entity.default_ai_step(&shared_entity).is_none());
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
     assert_eq!(entity.no_jump_delay(), 10);
@@ -238,8 +243,9 @@ fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
     init_behaviors();
     init_entities();
 
-    let world = fresh_test_world(key);
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let test_world = fresh_test_world(key);
+    let world = &test_world.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let floor_state = floor.default_state();
     for z in 0..16 {
         for x in 6..11 {
@@ -256,7 +262,7 @@ fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
             &vanilla_entities::PIG,
             next_entity_id(),
             DVec3::new(8.5, 64.0, 2.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         )
         .expect("pig factory should produce an entity");
     pig.set_old_position_to_current();
@@ -270,11 +276,14 @@ fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
                 .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32,
         );
         let input = mob.travel_input();
-        mob.travel(DVec3::new(
-            f64::from(input.sideways()),
-            f64::from(input.vertical()),
-            f64::from(input.forward()),
-        ));
+        mob.travel(
+            &pig,
+            DVec3::new(
+                f64::from(input.sideways()),
+                f64::from(input.vertical()),
+                f64::from(input.forward()),
+            ),
+        );
     };
 
     for _ in 0..WARMUP_TICKS {
@@ -290,7 +299,7 @@ fn walking_speed_on(key: &'static str, floor: BlockRef) -> WalkMeasurement {
     let coast_start = pig.position();
     for _ in 0..MEASURED_TICKS {
         mob.set_mob_speed(0.0);
-        mob.travel(DVec3::ZERO);
+        mob.travel(&pig, DVec3::ZERO);
     }
     let coasted = (pig.position() - coast_start).with_y(0.0).length();
 
