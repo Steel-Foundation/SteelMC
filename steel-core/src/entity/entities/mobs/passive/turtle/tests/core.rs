@@ -28,7 +28,8 @@ fn lay_egg_goal_places_eggs_on_home_sand() {
 
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("turtle_lay_egg");
+    let test_world = fresh_test_world("turtle_lay_egg");
+    let world = Arc::clone(&test_world.world);
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
     let sand_pos = BlockPos::new(8, 64, 8);
@@ -61,7 +62,7 @@ fn lay_egg_goal_places_eggs_on_home_sand() {
     goal.start(mob);
 
     for _ in 0..MAX_LAY_TICKS {
-        goal.tick(mob);
+        goal.tick(mob, &shared);
         if !turtle_from(&shared).has_egg() {
             break;
         }
@@ -85,7 +86,8 @@ fn lay_egg_goal_places_eggs_on_home_sand() {
 fn growing_up_drops_a_scute() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("turtle_grow_scute");
+    let test_world = fresh_test_world("turtle_grow_scute");
+    let world = Arc::clone(&test_world.world);
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
     let turtle = TurtleEntity::new(
@@ -150,10 +152,11 @@ fn turtle_from(shared: &SharedEntity) -> &TurtleEntity {
         .expect("shared entity should be a turtle")
 }
 
-fn turtle_in_world(key: &'static str, position: DVec3) -> (Arc<World>, Arc<TurtleEntity>) {
+fn turtle_in_world(key: &'static str, position: DVec3) -> (TestWorld, Arc<TurtleEntity>) {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(key);
+    let test_world = fresh_test_world(key);
+    let world = Arc::clone(&test_world.world);
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
     let turtle = Arc::new(TurtleEntity::new(
@@ -166,16 +169,22 @@ fn turtle_in_world(key: &'static str, position: DVec3) -> (Arc<World>, Arc<Turtl
     world
         .try_add_entity(Arc::clone(&turtle) as SharedEntity)
         .expect("turtle should attach to the loaded test chunk");
-    (world, turtle)
+    (test_world, turtle)
 }
 
 #[test]
 fn a_turtle_heading_home_holds_its_depth() {
-    let (_world, turtle) = turtle_in_world("turtle_swim_homing", DVec3::new(8.5, 64.0, 8.5));
+    let (_test_world, turtle) = turtle_in_world("turtle_swim_homing", DVec3::new(8.5, 64.0, 8.5));
     turtle.set_home_pos(BlockPos::new(8, 64, 8));
     turtle.set_going_home(true);
 
-    turtle.travel_in_water(DVec3::ZERO, 0.0, false, 64.0);
+    turtle.travel_in_water(
+        &(Arc::clone(&turtle) as SharedEntity),
+        DVec3::ZERO,
+        0.0,
+        false,
+        64.0,
+    );
 
     assert!(
         turtle.velocity().y.abs() < VELOCITY_EPSILON,
@@ -188,13 +197,14 @@ fn a_turtle_heading_home_holds_its_depth() {
 fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
     const SETTLE_TICKS: u32 = 20;
 
-    let (world, turtle) = turtle_in_world("turtle_land_trim", DVec3::new(8.5, 65.0, 8.5));
+    let (test_world, turtle) = turtle_in_world("turtle_land_trim", DVec3::new(8.5, 65.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     assert!(world.set_block(
         BlockPos::new(8, 63, 8),
         vanilla_blocks::SAND.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
-    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
+    Arc::clone(&turtle).move_entity(MoverType::SelfMovement, LANDING_DROP);
     assert!(turtle.on_ground(), "the turtle should have landed");
 
     turtle.set_mob_speed(1.0);
@@ -220,14 +230,16 @@ fn a_turtle_walking_on_land_is_slowed_to_a_crawl() {
 fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
     const ACCEPT_ATTEMPTS: u32 = 20;
 
-    let (world, turtle) = turtle_in_world("turtle_travel_unloaded", DVec3::new(8.5, 64.0, 8.5));
+    let (test_world, turtle) =
+        turtle_in_world("turtle_travel_unloaded", DVec3::new(8.5, 64.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     lay_sand_floor(&world, 0..=15);
     flood(&world, 0..=15);
-    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
+    Arc::clone(&turtle).move_entity(MoverType::SelfMovement, LANDING_DROP);
     turtle.set_travel_pos(Some(BlockPos::new(8, 64, 24)));
 
     let mut goal = TurtleTravelGoal::new(1.0);
-    goal.tick(turtle.as_ref());
+    goal.tick(turtle.as_ref(), &(Arc::clone(&turtle) as SharedEntity));
     assert!(
         goal.is_stuck(),
         "only the turtle's own chunk exists, so nothing near it is safe to head for"
@@ -245,7 +257,7 @@ fn a_traveling_turtle_gives_up_on_a_target_the_world_has_not_reached() {
 
     let accepted = (0..ACCEPT_ATTEMPTS).any(|_| {
         let mut goal = TurtleTravelGoal::new(1.0);
-        goal.tick(turtle.as_ref());
+        goal.tick(turtle.as_ref(), &(Arc::clone(&turtle) as SharedEntity));
         !goal.is_stuck()
     });
     assert!(
@@ -266,9 +278,10 @@ fn a_turtle_holds_its_course_against_a_current() {
 
 #[test]
 fn a_steering_turtle_turns_its_whole_body() {
-    let (world, turtle) = turtle_in_world("turtle_body_turn", DVec3::new(8.5, 65.0, 8.5));
+    let (test_world, turtle) = turtle_in_world("turtle_body_turn", DVec3::new(8.5, 65.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     lay_sand_floor(&world, 0..=15);
-    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
+    Arc::clone(&turtle).move_entity(MoverType::SelfMovement, LANDING_DROP);
     assert!(turtle.on_ground(), "the turtle should have landed");
 
     turtle.set_rotation((0.0, 0.0));
@@ -423,7 +436,8 @@ fn a_turtle_shuffles_rather_than_plods() {
 
 #[test]
 fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
-    let (world, turtle) = turtle_in_world("turtle_walk_target", DVec3::new(8.5, 65.0, 8.5));
+    let (test_world, turtle) = turtle_in_world("turtle_walk_target", DVec3::new(8.5, 65.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     let water_pos = BlockPos::new(4, 64, 4);
     let sand_pos = BlockPos::new(6, 64, 6);
     let plain_pos = BlockPos::new(10, 64, 10);
@@ -458,7 +472,9 @@ fn a_turtle_prefers_water_and_sand_when_choosing_where_to_walk() {
 
 #[test]
 fn a_traveling_turtle_can_aim_for_open_water() {
-    let (world, turtle) = turtle_in_world("turtle_stable_destination", DVec3::new(8.5, 65.0, 8.5));
+    let (test_world, turtle) =
+        turtle_in_world("turtle_stable_destination", DVec3::new(8.5, 65.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     let open_water = BlockPos::new(4, 70, 4);
     assert!(world.set_block(
         open_water,
@@ -476,8 +492,9 @@ const BREED_MAX_TICKS: i32 = 100;
 const FAR_HOME: BlockPos = BlockPos::new(100, 64, 8);
 const NEAR_HOME: BlockPos = BlockPos::new(10, 64, 8);
 
-fn turtles_in_love(key: &'static str) -> (Arc<World>, Arc<TurtleEntity>, Arc<TurtleEntity>) {
-    let (world, mother) = turtle_in_world(key, DVec3::new(8.0, 64.0, 8.0));
+fn turtles_in_love(key: &'static str) -> (TestWorld, Arc<TurtleEntity>, Arc<TurtleEntity>) {
+    let (test_world, mother) = turtle_in_world(key, DVec3::new(8.0, 64.0, 8.0));
+    let world = Arc::clone(&test_world.world);
     lay_sand_floor(&world, 0..=15);
     let father = Arc::new(TurtleEntity::new(
         &vanilla_entities::TURTLE,
@@ -490,17 +507,18 @@ fn turtles_in_love(key: &'static str) -> (Arc<World>, Arc<TurtleEntity>, Arc<Tur
         .expect("turtle should attach to the loaded test chunk");
     mother.set_in_love_time(BREED_LOVE_TIME);
     father.set_in_love_time(BREED_LOVE_TIME);
-    (world, mother, father)
+    (test_world, mother, father)
 }
 
 #[test]
 fn breeding_turtles_give_the_mother_an_egg_instead_of_a_baby() {
-    let (world, mother, father) = turtles_in_love("turtle_breed_egg");
+    let (test_world, mother, father) = turtles_in_love("turtle_breed_egg");
+    let world = Arc::clone(&test_world.world);
     let mut goal = TurtleBreedGoal::new(1.0);
 
     assert!(goal.can_use(mother.as_ref()));
     for _ in 0..BREED_MAX_TICKS {
-        goal.tick(mother.as_ref());
+        goal.tick(mother.as_ref(), &(Arc::clone(&mother) as SharedEntity));
         if mother.has_egg() {
             break;
         }
@@ -529,7 +547,7 @@ fn breeding_turtles_give_the_mother_an_egg_instead_of_a_baby() {
 
 #[test]
 fn a_turtle_already_carrying_an_egg_does_not_breed_again() {
-    let (_world, mother, _father) = turtles_in_love("turtle_breed_has_egg");
+    let (_test_world, mother, _father) = turtles_in_love("turtle_breed_has_egg");
     let mut goal = TurtleBreedGoal::new(1.0);
     assert!(goal.can_use(mother.as_ref()));
 
@@ -540,7 +558,7 @@ fn a_turtle_already_carrying_an_egg_does_not_breed_again() {
 
 #[test]
 fn a_turtle_carrying_an_egg_heads_home_until_it_is_close() {
-    let (_world, turtle) = turtle_in_world("turtle_go_home", DVec3::new(8.0, 64.0, 8.0));
+    let (_test_world, turtle) = turtle_in_world("turtle_go_home", DVec3::new(8.0, 64.0, 8.0));
     turtle.set_home_pos(FAR_HOME);
     let mut goal = TurtleGoHomeGoal::new(1.0);
     assert!(!goal.can_use(turtle.as_ref()));
@@ -559,7 +577,7 @@ fn a_turtle_carrying_an_egg_heads_home_until_it_is_close() {
 
 #[test]
 fn a_baby_turtle_never_heads_home() {
-    let (_world, turtle) = turtle_in_world("turtle_baby_go_home", DVec3::new(8.0, 64.0, 8.0));
+    let (_test_world, turtle) = turtle_in_world("turtle_baby_go_home", DVec3::new(8.0, 64.0, 8.0));
     turtle.set_home_pos(FAR_HOME);
     turtle.set_has_egg(true);
     turtle.set_baby(true);
@@ -572,22 +590,23 @@ fn a_baby_turtle_never_heads_home() {
 const WATER_NEARBY: BlockPos = BlockPos::new(10, 62, 8);
 const SEA_LEVEL_FALLBACK_CLEARANCE: f64 = 20.0;
 
-fn turtle_on_a_beach(key: &'static str) -> (Arc<World>, Arc<TurtleEntity>) {
-    let (world, turtle) = turtle_in_world(key, DVec3::new(8.5, 65.0, 8.5));
+fn turtle_on_a_beach(key: &'static str) -> (TestWorld, Arc<TurtleEntity>) {
+    let (test_world, turtle) = turtle_in_world(key, DVec3::new(8.5, 65.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     lay_sand_floor(&world, 0..=15);
     assert!(world.set_block(
         WATER_NEARBY,
         vanilla_blocks::WATER.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
-    turtle.move_entity(MoverType::SelfMovement, LANDING_DROP);
+    Arc::clone(&turtle).move_entity(MoverType::SelfMovement, LANDING_DROP);
     assert!(turtle.on_ground(), "the turtle should have landed");
-    (world, turtle)
+    (test_world, turtle)
 }
 
 #[test]
 fn an_adult_turtle_on_land_heads_for_water_unless_it_carries_an_egg() {
-    let (_world, turtle) = turtle_on_a_beach("turtle_go_to_water_adult");
+    let (_test_world, turtle) = turtle_on_a_beach("turtle_go_to_water_adult");
     assert!(TurtleGoToWaterGoal::new(1.0).can_use(turtle.as_ref()));
 
     turtle.set_has_egg(true);
@@ -600,7 +619,7 @@ fn an_adult_turtle_on_land_heads_for_water_unless_it_carries_an_egg() {
 
 #[test]
 fn a_baby_turtle_on_land_always_heads_for_water() {
-    let (_world, turtle) = turtle_on_a_beach("turtle_go_to_water_baby");
+    let (_test_world, turtle) = turtle_on_a_beach("turtle_go_to_water_baby");
     turtle.set_baby(true);
     turtle.set_has_egg(true);
     turtle.set_going_home(true);
@@ -612,7 +631,7 @@ fn a_baby_turtle_on_land_always_heads_for_water() {
 fn going_to_water_does_not_give_up_while_waiting_at_the_edge() {
     const WAIT_TICKS: i32 = 6000;
 
-    let (_world, turtle) = turtle_on_a_beach("turtle_go_to_water_wait");
+    let (_test_world, turtle) = turtle_on_a_beach("turtle_go_to_water_wait");
     let mut goal = TurtleGoToWaterGoal::new(1.0);
     assert!(goal.can_use(turtle.as_ref()));
     goal.start(turtle.as_ref());
@@ -621,7 +640,7 @@ fn going_to_water_does_not_give_up_while_waiting_at_the_edge() {
         .expect("the turtle should move to the water edge");
 
     for _ in 0..WAIT_TICKS {
-        goal.tick(turtle.as_ref());
+        goal.tick(turtle.as_ref(), &(Arc::clone(&turtle) as SharedEntity));
     }
 
     assert!(goal.can_continue_to_use(turtle.as_ref()));
@@ -637,7 +656,7 @@ fn a_turtle_strolls_on_land_only_when_it_has_nothing_else_to_do() {
     const EVERY_TICK: i32 = 1;
     const STROLL_ATTEMPTS: u32 = 50;
 
-    let (_world, turtle) = turtle_on_a_beach("turtle_stroll_gate");
+    let (_test_world, turtle) = turtle_on_a_beach("turtle_stroll_gate");
     assert!(
         (0..STROLL_ATTEMPTS)
             .any(|_| TurtleRandomStrollGoal::new(1.0, EVERY_TICK).can_use(turtle.as_ref()))
@@ -653,7 +672,8 @@ fn a_turtle_strolls_on_land_only_when_it_has_nothing_else_to_do() {
 
 #[test]
 fn a_turtle_above_sea_level_travels_at_its_own_height() {
-    let (world, turtle) = turtle_in_world("turtle_travel_height", DVec3::new(8.5, 64.0, 8.5));
+    let (test_world, turtle) = turtle_in_world("turtle_travel_height", DVec3::new(8.5, 64.0, 8.5));
+    let world = Arc::clone(&test_world.world);
     let above_sea = f64::from(LevelReader::sea_level(&world)) + SEA_LEVEL_FALLBACK_CLEARANCE;
     turtle
         .teleport_to(DVec3::new(8.5, above_sea, 8.5))

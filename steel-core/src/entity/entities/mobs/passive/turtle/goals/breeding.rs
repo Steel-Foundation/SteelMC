@@ -97,8 +97,8 @@ impl Goal for TurtleBreedGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -182,8 +182,8 @@ impl Goal for TurtleLayEggGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
 
         let Some(turtle) = as_turtle(mob) else {
             return;

@@ -132,8 +132,6 @@ fn block_pos_corner(pos: BlockPos) -> DVec3 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
-
     use std::sync::Arc;
 
     use steel_registry::{
@@ -160,7 +158,12 @@ mod tests {
     #[test]
     fn panic_goal_uses_vanilla_panic_damage_tag() {
         init_vanilla_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Arc::downgrade(test_world()),
+        );
 
         assert!(!PanicGoal::should_panic(&pig));
 
@@ -185,7 +188,8 @@ mod tests {
 
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("panic_goal_always_seeks_water");
+        let test_world = fresh_test_world("panic_goal_always_seeks_water");
+        let world = Arc::clone(&test_world.world);
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let water = BlockPos::new(8, 64, 14);
         world.set_block(

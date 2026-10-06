@@ -26,7 +26,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, MOVE_CONTROL_MAX_TURN,
-    Mob, MobBase, PathfinderMob, SpawnGroupData, rotlerp,
+    Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, rotlerp,
 };
 use crate::fluid::FluidStateExt as _;
 use crate::physics::{MoveResult, MoverType};
@@ -174,12 +174,12 @@ impl LivingEntity for TurtleEntity {
         })
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -189,13 +189,14 @@ impl LivingEntity for TurtleEntity {
 
     fn travel_in_water(
         &self,
+        entity: &SharedEntity,
         input: DVec3,
         _base_gravity: f64,
         _is_falling: bool,
         _old_y: f64,
     ) -> Option<MoveResult> {
         self.move_relative(SWIM_PUSH, input);
-        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut velocity = self.velocity() * SWIM_DRAG;
 
         let drifting = Mob::target(self).is_none()
@@ -276,8 +277,8 @@ impl Mob for TurtleEntity {
         false
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {

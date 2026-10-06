@@ -1571,7 +1571,8 @@ mod tests {
     #[test]
     fn full_registration_transfers_prepublication_block_and_fluid_ticks() {
         init_chunk_test_registry();
-        let world = fresh_test_world("prepublication_tick_transfer");
+        let world_fixture = fresh_test_world("prepublication_tick_transfer");
+        let world = &world_fixture.world;
         let chunk_pos = ChunkPos::new(0, 0);
         let min_y = world.get_min_y();
         let height = world.get_height();
@@ -1584,7 +1585,7 @@ mod tests {
             chunk_pos,
             min_y,
             height,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         let block_pos = BlockPos::new(1, min_y + 1, 1);
         let fluid_pos = BlockPos::new(2, min_y + 1, 2);

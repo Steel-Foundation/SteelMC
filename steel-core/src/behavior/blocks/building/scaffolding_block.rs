@@ -312,13 +312,14 @@ mod tests {
     fn newly_unsupported_scaffolding_breaks_and_drops_an_item() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("scaffolding_destroy_tick");
+        let world_fixture = fresh_test_world("scaffolding_destroy_tick");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = scaffolding_state(ScaffoldingBlock::STABILITY_MAX_DISTANCE - 1, true);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING).tick(state, &world, pos);
+        ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING).tick(state, world, pos);
 
         assert!(world.get_block_state(pos).is_air());
         let entities =
@@ -334,14 +335,15 @@ mod tests {
     fn max_distance_waterlogged_scaffolding_falls_and_leaves_water() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("scaffolding_fall_tick");
+        let world_fixture = fresh_test_world("scaffolding_fall_tick");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = scaffolding_state(ScaffoldingBlock::STABILITY_MAX_DISTANCE, true)
             .set_value(WATERLOGGED, true);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING).tick(state, &world, pos);
+        ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING).tick(state, world, pos);
 
         assert_eq!(
             world.get_block_state(pos),
