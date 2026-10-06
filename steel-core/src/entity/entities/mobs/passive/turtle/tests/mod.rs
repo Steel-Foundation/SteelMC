@@ -10,7 +10,7 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _};
 
 use super::*;
 use crate::entity::{Animal, Entity, Mob, SharedEntity};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
 mod core;
 mod persistence;

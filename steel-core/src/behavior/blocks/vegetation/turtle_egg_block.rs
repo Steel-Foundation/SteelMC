@@ -370,7 +370,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::entity::{SharedEntity, init_entities};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     /// A day-time tick inside the pre-dawn window where eggs always advance, so
     /// random ticks are deterministic in tests.
@@ -394,20 +394,22 @@ mod tests {
             .collect()
     }
 
-    fn prepare(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn prepare(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
         init_entities();
-        let world = fresh_test_world(key);
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         world.set_clock_total_ticks(&vanilla_world_clocks::OVERWORLD, ALWAYS_HATCH_DAY_TIME);
-        (world, pos)
+        (world_fixture, pos)
     }
 
     #[test]
     fn eggs_crack_twice_then_hatch_on_sand() {
-        let (world, pos) = prepare("turtle_egg_hatch");
+        let (world_fixture, pos) = prepare("turtle_egg_hatch");
+        let world = &world_fixture.world;
         assert!(world.set_block(
             pos.below(),
             vanilla_blocks::SAND.default_state(),
@@ -420,16 +422,16 @@ mod tests {
         ));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TURTLE_EGG);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 1);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 2);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert!(world.get_block_state(pos).is_air());
 
-        let babies = hatched_turtles(&world, pos);
+        let babies = hatched_turtles(world, pos);
         assert_eq!(babies.len(), 1, "one egg hatches into one baby turtle");
         let baby = babies[0]
             .downcast_ref::<TurtleEntity>()
@@ -447,7 +449,8 @@ mod tests {
         const CLUSTER_EGGS: u8 = 3;
         const POSITION_TOLERANCE: f64 = 1e-9;
 
-        let (world, pos) = prepare("turtle_egg_cluster_hatch");
+        let (world_fixture, pos) = prepare("turtle_egg_cluster_hatch");
+        let world = &world_fixture.world;
         assert!(world.set_block(
             pos.below(),
             vanilla_blocks::SAND.default_state(),
@@ -460,10 +463,10 @@ mod tests {
         assert!(world.set_block(pos, ready_to_hatch, UpdateFlags::UPDATE_NONE));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TURTLE_EGG);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
 
         assert!(world.get_block_state(pos).is_air());
-        let babies = hatched_turtles(&world, pos);
+        let babies = hatched_turtles(world, pos);
         assert_eq!(
             babies.len(),
             usize::from(CLUSTER_EGGS),
@@ -482,7 +485,8 @@ mod tests {
 
     #[test]
     fn eggs_do_not_advance_off_sand() {
-        let (world, pos) = prepare("turtle_egg_off_sand");
+        let (world_fixture, pos) = prepare("turtle_egg_off_sand");
+        let world = &world_fixture.world;
         assert!(world.set_block(
             pos.below(),
             vanilla_blocks::STONE.default_state(),
@@ -495,7 +499,7 @@ mod tests {
         ));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TURTLE_EGG);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 0);
     }
 }

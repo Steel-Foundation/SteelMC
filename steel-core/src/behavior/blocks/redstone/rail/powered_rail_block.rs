@@ -260,21 +260,22 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn raw_flags() -> UpdateFlags {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE
     }
 
-    fn powered_chain_world(key: &'static str, last_x: i32) -> (Arc<World>, BlockPos) {
+    fn powered_chain_world(key: &'static str, last_x: i32) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(key);
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
         let start = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(start));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(start));
         let end_chunk = ChunkPos::from_block_pos(start.offset(last_x, 0, 0));
         if end_chunk != ChunkPos::from_block_pos(start) {
-            insert_ready_full_chunk(&world, end_chunk);
+            insert_ready_full_chunk(world, end_chunk);
         }
         for x in 0..=last_x {
             let pos = start.offset(x, 0, 0);
@@ -294,29 +295,32 @@ mod tests {
             vanilla_blocks::REDSTONE_BLOCK.default_state(),
             raw_flags(),
         );
-        (world, start)
+        (world_fixture, start)
     }
 
     #[test]
     fn powered_signal_reaches_exact_vanilla_depth_limit() {
         let behavior = PoweredRailBlock::new(&vanilla_blocks::POWERED_RAIL);
 
-        let (within_world, start) = powered_chain_world("powered_rail_depth_eight", 8);
+        let (within_world_fixture, start) = powered_chain_world("powered_rail_depth_eight", 8);
+        let within_world = &within_world_fixture.world;
         let start_state = within_world.get_block_state(start);
-        assert!(behavior.find_powered_rail_signal(&within_world, start, start_state, false, 0,));
+        assert!(behavior.find_powered_rail_signal(within_world, start, start_state, false, 0,));
 
-        let (outside_world, start) = powered_chain_world("powered_rail_depth_nine", 9);
+        let (outside_world_fixture, start) = powered_chain_world("powered_rail_depth_nine", 9);
+        let outside_world = &outside_world_fixture.world;
         let start_state = outside_world.get_block_state(start);
-        assert!(!behavior.find_powered_rail_signal(&outside_world, start, start_state, false, 0,));
+        assert!(!behavior.find_powered_rail_signal(outside_world, start, start_state, false, 0,));
     }
 
     #[test]
     fn powered_propagation_requires_exact_block_identity() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("powered_rail_activator_isolation");
+        let world_fixture = fresh_test_world("powered_rail_activator_isolation");
+        let world = &world_fixture.world;
         let start = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(start));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(start));
         for pos in [start, start.east()] {
             world.set_block(
                 pos.below(),
@@ -343,6 +347,6 @@ mod tests {
         );
 
         let behavior = PoweredRailBlock::new(&vanilla_blocks::POWERED_RAIL);
-        assert!(!behavior.find_powered_rail_signal(&world, start, start_state, false, 0,));
+        assert!(!behavior.find_powered_rail_signal(world, start, start_state, false, 0,));
     }
 }

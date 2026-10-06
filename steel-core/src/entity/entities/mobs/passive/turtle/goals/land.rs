@@ -11,7 +11,7 @@ use super::{
 use crate::entity::ai::goal::{
     Goal, GoalControls, RandomStrollGoal, default_random_pos_towards, reduced_tick_delay,
 };
-use crate::entity::{AgeableMob, PathfinderMob};
+use crate::entity::{AgeableMob, PathfinderMob, SharedEntity};
 
 const GO_HOME_CHECK_INTERVAL: i32 = 700;
 const GO_HOME_MIN_DISTANCE: f64 = 64.0;
@@ -79,7 +79,7 @@ impl Goal for TurtleGoHomeGoal {
         }
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(turtle) = as_turtle(mob) else {
             return;
         };

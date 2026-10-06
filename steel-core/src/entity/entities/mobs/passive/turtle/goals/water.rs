@@ -9,7 +9,7 @@ use super::{
     as_turtle, bottom_center,
 };
 use crate::entity::ai::goal::{Goal, GoalControls, MoveToBlockGoal, default_random_pos_towards};
-use crate::entity::{AgeableMob, Animal, PathfinderMob};
+use crate::entity::{AgeableMob, Animal, PathfinderMob, SharedEntity};
 use crate::world::LevelReader;
 
 const GO_TO_WATER_SEARCH_RANGE: i32 = 24;
@@ -69,8 +69,8 @@ impl Goal for TurtleGoToWaterGoal {
         self.inner.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.inner.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
     }
 }
 
@@ -146,7 +146,7 @@ impl Goal for TurtleTravelGoal {
         }
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(turtle) = as_turtle(mob) else {
             return;
         };
