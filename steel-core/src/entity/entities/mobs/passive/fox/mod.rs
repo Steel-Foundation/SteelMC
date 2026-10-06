@@ -40,8 +40,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
-    MobBase, PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntityRef,
+    LivingTravelInput, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData,
+    next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -507,7 +508,7 @@ impl FoxEntity {
         }
     }
 
-    fn tick_eating(&self) {
+    fn tick_eating(&self, entity: &SharedEntity) {
         if !Entity::is_alive(self) || !self.is_effective_ai() {
             return;
         }
@@ -522,7 +523,7 @@ impl FoxEntity {
         }
 
         if ticks_since_eaten > FOX_EAT_TICKS {
-            self.swallow_mouth_item();
+            self.swallow_mouth_item(entity);
         } else if ticks_since_eaten > FOX_CHEW_TICKS
             && rand::random::<f32>() < FOX_CHEW_SOUND_CHANCE
         {
@@ -542,8 +543,8 @@ impl FoxEntity {
     }
 
     /// Finishes the mouth item, leaving any container behind.
-    fn swallow_mouth_item(&self) {
-        let Some(world) = self.level() else {
+    fn swallow_mouth_item(&self, entity: &SharedEntity) {
+        let (Some(world), Some(user)) = (self.level(), LivingEntityRef::new(entity)) else {
             return;
         };
 
@@ -554,7 +555,7 @@ impl FoxEntity {
             .take(EquipmentSlot::MainHand);
         let remainder = ITEM_BEHAVIORS
             .get_behavior(item_in_mouth.item())
-            .finish_using(&mut item_in_mouth, &world, self);
+            .finish_using(&mut item_in_mouth, &world, user);
         self.living_base()
             .equipment()
             .lock()
@@ -620,8 +621,9 @@ impl Entity for FoxEntity {
         Mob::base_tick_mob(self);
     }
 
-    fn tick(&self) {
-        LivingEntity::tick_living_entity(self);
+    fn tick(self: Arc<Self>) {
+        let entity: SharedEntity = Arc::<Self>::clone(&self);
+        self.tick_living_entity(&entity);
         self.tick_fox_posture();
     }
 
@@ -746,19 +748,19 @@ impl LivingEntity for FoxEntity {
         self.spawn_at_location(held, 0.0);
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        self.tick_eating();
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.tick_eating(entity);
         self.drop_hunt_without_target();
         if self.is_sleeping() || self.is_immobile() {
             self.set_jumping(false);
             let input = self.travel_input();
             self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
         }
-        let result = Mob::mob_ai_step(self);
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -860,8 +862,8 @@ impl Mob for FoxEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {
