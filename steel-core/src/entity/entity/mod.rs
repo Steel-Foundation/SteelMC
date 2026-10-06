@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use super::*;
 use crate::entity::leash::Leashable;
 use steel_math::DEGREE_90;
+use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -12,19 +13,31 @@ const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
-pub(crate) fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
-    let values = nbt.list(key)?.doubles()?;
+pub(crate) fn nbt_dvec3(tag: &NbtTag) -> Option<DVec3> {
+    let values = nbt_collection_values(tag)?;
+    let values = values
+        .iter()
+        .filter_map(NbtNumeric::codec_f64)
+        .collect::<Vec<_>>();
     let &[x, y, z, ..] = values.as_slice() else {
         return None;
     };
     Some(DVec3::new(x, y, z))
 }
 
+pub(crate) fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
+    nbt_dvec3(&nbt.get(key)?.to_owned())
+}
+
 pub(crate) fn read_nbt_rotation(
     nbt: &BorrowedNbtCompoundView<'_, '_>,
     key: &str,
 ) -> Option<(f32, f32)> {
-    let values = nbt.list(key)?.floats()?;
+    let values = nbt_collection_values(&nbt.get(key)?.to_owned())?;
+    let values = values
+        .iter()
+        .filter_map(NbtNumeric::codec_f32)
+        .collect::<Vec<_>>();
     let &[yaw, pitch, ..] = values.as_slice() else {
         return None;
     };

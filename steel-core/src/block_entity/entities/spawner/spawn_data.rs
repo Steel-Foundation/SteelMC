@@ -136,8 +136,13 @@ impl EquipmentTable {
                 let chances = tag.compound()?;
                 for (name, value) in chances.iter() {
                     let name = name.to_str();
-                    let slot = EquipmentSlot::by_name(name.as_ref())?;
-                    slot_drop_chances.push((slot, value.codec_f32()?));
+                    let Some(slot) = EquipmentSlot::by_name(name.as_ref()) else {
+                        continue;
+                    };
+                    let Some(chance) = value.codec_f32() else {
+                        continue;
+                    };
+                    slot_drop_chances.push((slot, chance));
                 }
             }
             None => {}

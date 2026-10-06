@@ -9,7 +9,7 @@ use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt};
-use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds};
+use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds, nbt_collection_values};
 use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -204,9 +204,15 @@ fn load_entity_recursive_inner(
     }
 
     let uuid = nbt
-        .int_array("UUID")
-        .as_deref()
-        .and_then(Uuid::from_int_array)
+        .get("UUID")
+        .and_then(|tag| nbt_collection_values(&tag.to_owned()))
+        .and_then(|values| {
+            values
+                .iter()
+                .map(NbtNumeric::codec_i32)
+                .collect::<Option<Vec<_>>>()
+        })
+        .and_then(|values| Uuid::from_int_array(values.get(..4)?))
         .unwrap_or_else(Uuid::new_v4);
     let save_data = load_entity_save_data(nbt);
     let request = EntityLoadRequest {

@@ -20,6 +20,7 @@ use steel_utils::{BlockPos, Identifier, WorldAabb};
 use super::spawn_data::{EquipmentTable, SpawnData, WeightedSpawnData};
 use crate::entity::{
     Entity, EntitySpawnReason, Mob, SpawnPlacements, entity_loot_ref, load_entity_recursive_owned,
+    nbt_dvec3,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{WorldCollisionProvider, has_collision};
@@ -487,18 +488,11 @@ fn configured_or_random_position<R: Rng + ?Sized>(
     spawn_range: i32,
     random: &mut R,
 ) -> DVec3 {
-    let Some(values) = entity.list("Pos").and_then(NbtList::doubles) else {
-        return random_spawn_position(spawner_pos, spawn_range, random);
-    };
-    let &[x, y, z, ..] = values.as_slice() else {
-        return random_spawn_position(spawner_pos, spawn_range, random);
-    };
-    let position = DVec3::new(x, y, z);
-    if position.is_finite() {
-        position
-    } else {
-        random_spawn_position(spawner_pos, spawn_range, random)
-    }
+    entity
+        .get("Pos")
+        .and_then(nbt_dvec3)
+        .filter(|position| position.is_finite())
+        .unwrap_or_else(|| random_spawn_position(spawner_pos, spawn_range, random))
 }
 
 fn random_spawn_position<R: Rng + ?Sized>(
