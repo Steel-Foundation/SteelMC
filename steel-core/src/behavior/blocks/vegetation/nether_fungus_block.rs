@@ -184,12 +184,13 @@ mod tests {
     fn bonemeal_uses_vanilla_success_probability() {
         init_vanilla_registry();
         let behavior = warped_fungus();
-        let world = fresh_test_world("nether_fungus_probability");
+        let world_fixture = fresh_test_world("nether_fungus_probability");
+        let world = &world_fixture.world;
         let state = vanilla_blocks::WARPED_FUNGUS.default_state();
         let pos = BlockPos::new(8, 64, 8);
 
-        assert!(behavior.is_bonemeal_success(state, &world, &mut FixedRng(0), pos));
-        assert!(!behavior.is_bonemeal_success(state, &world, &mut FixedRng(u64::MAX), pos));
+        assert!(behavior.is_bonemeal_success(state, world, &mut FixedRng(0), pos));
+        assert!(!behavior.is_bonemeal_success(state, world, &mut FixedRng(u64::MAX), pos));
     }
 
     #[test]
@@ -213,9 +214,10 @@ mod tests {
                 &vanilla_blocks::CRIMSON_STEM,
             ),
         ] {
-            let world = fresh_test_world(name);
+            let world_fixture = fresh_test_world(name);
+            let world = &world_fixture.world;
             let pos = BlockPos::new(8, 64, 8);
-            insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+            insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
             assert!(world.set_block(
                 pos.below(),
                 nylium.default_state(),
@@ -224,7 +226,7 @@ mod tests {
             let state = fungus.default_state();
             assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-            behavior.perform_bonemeal(state, &world, &mut StdRng::seed_from_u64(1), pos);
+            behavior.perform_bonemeal(state, world, &mut StdRng::seed_from_u64(1), pos);
 
             assert_eq!(world.get_block_state(pos).get_block(), stem);
             assert_eq!(world.get_block_state(pos.above_n(3)).get_block(), stem);

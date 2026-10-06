@@ -5,6 +5,7 @@ use super::{
     ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_damage_types,
     vanilla_entities,
 };
+
 use crate::entity::entities::FallingBlockEntity;
 
 pub struct PickupResult {
@@ -79,10 +80,11 @@ pub trait Fallable: Send + Sync {
     }
 
     /// Returns the damage source used when this falling block hurts entities.
-    fn get_fall_damage_source(&self, entity: &FallingBlockEntity) -> DamageSource {
-        DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
-            .with_direct_entity(entity.id())
-            .with_causing_entity(entity.id())
+    fn get_fall_damage_source(&self, entity: &Arc<FallingBlockEntity>) -> DamageSource {
+        DamageSource::direct(
+            &vanilla_damage_types::FALLING_BLOCK,
+            Arc::<FallingBlockEntity>::clone(entity),
+        )
     }
 
     /// Returns whether this behavior is in vanilla's `ConcretePowderBlock` hierarchy.
@@ -253,7 +255,8 @@ impl BlockCollisionContext {
         Self::with_position(f64::MIN, false)
     }
 
-    /// Collision context for vanilla `CollisionContext.positionContext(y)`.
+    /// Non-placement collision context anchored at a fixed Y position, with
+    /// no descent or fall distance.
     #[must_use]
     pub const fn position_context(y: f64) -> Self {
         Self {
@@ -317,7 +320,7 @@ impl BlockCollisionContext {
         self.placement
     }
 
-    /// Vanilla `EntityCollisionContext.isAbove`.
+    /// Returns whether the entity is above the given shape at the position.
     #[must_use]
     pub fn is_above(self, shape: VoxelShape, pos: BlockPos, default_value: bool) -> bool {
         let Some(entity_bottom) = self.entity_bottom else {

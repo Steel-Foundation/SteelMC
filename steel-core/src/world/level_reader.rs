@@ -57,7 +57,8 @@ pub trait LevelReader {
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;
 
-    /// Returns vanilla `BlockAndLightGetter.canSeeSky`.
+    /// Returns whether sky light reaches full brightness here, i.e. nothing
+    /// between this position and the sky blocks it.
     fn can_see_sky(&self, pos: BlockPos) -> bool {
         self.raw_brightness(pos, 0) >= MAX_LIGHT_LEVEL
     }
@@ -88,7 +89,8 @@ pub trait LevelReader {
         y < self.min_y() || y >= self.max_y_exclusive()
     }
 
-    /// Returns vanilla `LevelReader.getMaxLocalRawBrightness`.
+    /// Returns raw brightness at a position, treating positions outside the
+    /// world's horizontal bounds as fully lit.
     fn max_local_raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         if !World::is_in_world_bounds_horizontal(pos) {
             return MAX_LIGHT_LEVEL;
@@ -97,14 +99,16 @@ pub trait LevelReader {
         self.raw_brightness(pos, sky_darkening)
     }
 
-    /// Returns vanilla `LevelReader.getLightLevelDependentMagicValue`.
+    /// Converts local light level into the non-linear brightness value vanilla
+    /// uses for mob spawning and AI light checks, blended with ambient light.
     fn light_level_dependent_magic_value(&self, pos: BlockPos) -> f32 {
         let value = f32::from(self.max_local_raw_brightness(pos, 0)) / f32::from(MAX_LIGHT_LEVEL);
         let curved_value = value / value.mul_add(-3.0, 4.0);
         curved_value + self.ambient_light() * (1.0 - curved_value)
     }
 
-    /// Returns vanilla `LevelReader.getPathfindingCostFromLightLevels`.
+    /// Returns the light-based cost modifier used by mob pathfinding, derived
+    /// from the light-curved brightness at a position.
     fn pathfinding_cost_from_light_levels(&self, pos: BlockPos) -> f32 {
         self.light_level_dependent_magic_value(pos) - 0.5
     }

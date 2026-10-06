@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::{BlockBehavior, BlockPlaceContext, try_drop_experience};
 use crate::world::World;
 
-/// Vanilla `DropExperienceBlock` behavior.
+/// Experience-dropping block behavior.
 #[block_behavior]
 pub struct DropExperienceBlock {
     block: BlockRef,
@@ -70,39 +70,41 @@ mod tests {
     fn generated_constant_and_uniform_providers_control_ore_experience() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("drop_experience_provider_shapes");
+        let world_fixture = fresh_test_world("drop_experience_provider_shapes");
+        let world = &world_fixture.world;
         let zero_pos = BlockPos::new(8, 64, 8);
         let ranged_pos = BlockPos::new(12, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(zero_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(zero_pos));
 
         world.drop_resources(vanilla_blocks::IRON_ORE.default_state(), zero_pos);
         let zero_bounds = WorldAabb::new(7.0, 63.0, 7.0, 10.0, 67.0, 10.0);
-        assert_eq!(experience_in(&world, &zero_bounds), 0);
+        assert_eq!(experience_in(world, &zero_bounds), 0);
 
         world.drop_resources(vanilla_blocks::DIAMOND_ORE.default_state(), ranged_pos);
         let ranged_bounds = WorldAabb::new(11.0, 63.0, 7.0, 14.0, 67.0, 10.0);
-        assert!((3..=7).contains(&experience_in(&world, &ranged_bounds)));
+        assert!((3..=7).contains(&experience_in(world, &ranged_bounds)));
     }
 
     #[test]
     fn silk_touch_and_disabled_experience_suppress_ore_experience() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("drop_experience_suppression");
+        let world_fixture = fresh_test_world("drop_experience_suppression");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::DIAMOND_ORE.default_state();
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::DIAMOND_ORE);
 
         let mut silk_touch_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         silk_touch_tool.set_enchantments(&[(Identifier::vanilla_static("silk_touch"), 1)], false);
-        behavior.spawn_after_break(state, &world, pos, &silk_touch_tool, true);
+        behavior.spawn_after_break(state, world, pos, &silk_touch_tool, true);
 
         let plain_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         assert!(plain_tool.is_correct_tool_for_drops(state));
-        behavior.spawn_after_break(state, &world, pos.offset(1, 0, 0), &plain_tool, false);
+        behavior.spawn_after_break(state, world, pos.offset(1, 0, 0), &plain_tool, false);
 
         let bounds = WorldAabb::new(7.0, 63.0, 7.0, 11.0, 67.0, 10.0);
-        assert_eq!(experience_in(&world, &bounds), 0);
+        assert_eq!(experience_in(world, &bounds), 0);
     }
 }

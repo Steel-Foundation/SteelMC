@@ -352,17 +352,18 @@ mod tests {
     fn redundant_redstone_notification_does_not_schedule_water_tick() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("trapdoor_redundant_redstone");
+        let world_fixture = fresh_test_world("trapdoor_redundant_redstone");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let power_pos = pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::OAK_TRAPDOOR
             .default_state()
             .set_value(WATERLOGGED, true);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::OAK_TRAPDOOR);
 
-        behavior.handle_neighbor_changed(state, &world, pos, &vanilla_blocks::STONE, false);
+        behavior.handle_neighbor_changed(state, world, pos, &vanilla_blocks::STONE, false);
         assert!(!world.has_scheduled_fluid_tick(pos, &vanilla_fluids::WATER));
 
         assert!(world.set_block(
@@ -370,13 +371,7 @@ mod tests {
             vanilla_blocks::REDSTONE_BLOCK.default_state(),
             UpdateFlags::UPDATE_NONE,
         ));
-        behavior.handle_neighbor_changed(
-            state,
-            &world,
-            pos,
-            &vanilla_blocks::REDSTONE_BLOCK,
-            false,
-        );
+        behavior.handle_neighbor_changed(state, world, pos, &vanilla_blocks::REDSTONE_BLOCK, false);
         let powered = world.get_block_state(pos);
         assert!(powered.get_value(POWERED));
         assert!(powered.get_value(OPEN));

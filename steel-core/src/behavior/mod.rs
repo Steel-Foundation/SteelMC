@@ -134,7 +134,8 @@ impl Deref for ItemBehaviorLock {
 /// This is separate from `BlockStateExt` (in steel-registry) because these methods
 /// require access to the behavior registry which lives in steel-core.
 pub trait BlockStateBehaviorExt {
-    /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
+    /// Returns whether this block state can hold a fluid inside it, such as
+    /// a waterlogged block, cauldron, or seagrass.
     fn is_liquid_container(&self) -> bool;
 
     /// Returns whether this block state can be replaced by the given fluid block.

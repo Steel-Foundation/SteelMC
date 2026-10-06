@@ -10,9 +10,10 @@ use steel_protocol::packets::game::{
 pub const POSITION_SYNC_THRESHOLD: f64 = 7.629_394_5e-6;
 /// Squared velocity delta needed before vanilla sends an entity motion packet.
 pub const VELOCITY_SYNC_THRESHOLD: f64 = 1.0e-7;
-/// Vanilla `ServerEntity.FORCED_POS_UPDATE_PERIOD`.
+/// Ticks between forced position updates even when the entity hasn't moved
+/// enough to need one.
 pub const FORCED_POS_UPDATE_PERIOD: i32 = 60;
-/// Vanilla `ServerEntity.FORCED_TELEPORT_PERIOD`.
+/// Ticks between forced full teleport packets to resync drifted clients.
 pub const FORCED_TELEPORT_PERIOD: i32 = 400;
 
 /// Packed body rotation used by entity movement packets.
@@ -502,7 +503,7 @@ pub struct ServerEntityMovementSyncUpdate {
     pub head_yaw: f32,
     /// Current on-ground flag.
     pub on_ground: bool,
-    /// Vanilla `Entity.needsSync`.
+    /// Whether this entity's velocity changed enough to need syncing this tick.
     pub needs_velocity_sync: bool,
     /// Whether synced entity data is dirty this tick.
     pub has_dirty_entity_data: bool,

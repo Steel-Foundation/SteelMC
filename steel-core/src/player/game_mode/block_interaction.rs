@@ -28,7 +28,7 @@ impl Player {
     /// Handles the use of an item on a block.
     ///
     /// Implements the logic from Java's `ServerGamePacketListenerImpl.handleUseItemOn()`.
-    pub fn handle_use_item_on(&self, packet: SUseItemOn) {
+    pub fn handle_use_item_on(self: &Arc<Self>, packet: SUseItemOn) {
         if !self.has_client_loaded() {
             return;
         }
@@ -93,7 +93,7 @@ impl Player {
     }
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
-    pub fn handle_player_action(&self, packet: SPlayerAction) {
+    pub fn handle_player_action(self: &Arc<Self>, packet: SPlayerAction) {
         if !self.has_client_loaded() {
             return;
         }
@@ -139,7 +139,8 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                self.release_using_item();
+                let player: SharedEntity = Arc::<Player>::clone(self);
+                self.release_using_item(&player);
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {
@@ -343,10 +344,11 @@ mod tests {
 
     #[test]
     fn use_item_on_rejects_non_finite_hit_locations() {
-        let world = fresh_test_world("use_item_on_non_finite_hit_location");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("use_item_on_non_finite_hit_location");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         init_behaviors();
-        let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

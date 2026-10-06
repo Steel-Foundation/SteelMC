@@ -1,9 +1,10 @@
 //! This module contains entity-related traits and types.
 
+use std::sync::Weak;
 use std::{
     any::try_as_dyn,
     borrow::Cow,
-    sync::{Arc, LazyLock, Weak},
+    sync::{Arc, LazyLock},
 };
 
 use glam::DVec3;
@@ -128,8 +129,8 @@ fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
 
 /// Global counter for allocating unique entity IDs.
 ///
-/// Mirrors vanilla's `Entity.ENTITY_COUNTER`. Each new entity increments this
-/// counter to get a unique network ID. Starts at 1 (0 is reserved).
+/// Each new entity increments this counter to get a unique network ID. Starts
+/// at 1 (0 is reserved).
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -593,7 +594,6 @@ fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
     }
 }
 
-/// Matches vanilla `LivingEntity.resetForwardDirectionOfRelativePortalPosition`.
 #[must_use]
 pub(crate) const fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
     DVec3::new(offsets.x, offsets.y, 0.0)
@@ -776,6 +776,7 @@ mod item_frame;
 mod leash;
 mod living_base;
 mod living_entity;
+mod living_reference;
 mod manager;
 mod mob;
 pub mod mob_effect;
@@ -871,7 +872,9 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-/// Type alias for a shared entity reference.
+pub use living_reference::LivingEntityRef;
+
+/// Shared ownership of an entity through its gameplay interface.
 pub type SharedEntity = Arc<dyn Entity>;
 
 /// Type alias for a weak entity reference.
@@ -1393,11 +1396,8 @@ pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
     entity: &E,
     world: &World,
 ) -> Option<SharedEntity> {
-    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
-        world
-            .players
-            .get_by_uuid(&uuid)
-            .and_then(|player| world.get_entity_by_id(player.id()))
+    if entity.last_hurt_by_player_uuid().is_some() {
+        entity.living_base().last_hurt_by_player(world)
     } else {
         entity.last_hurt_by_mob()
     }

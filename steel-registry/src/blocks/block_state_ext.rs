@@ -54,7 +54,6 @@ pub trait BlockStateExt {
     fn get_light_dampening(&self) -> u8;
     /// Returns true if vanilla uses face shapes for light occlusion on this state.
     fn use_shape_for_light_occlusion(&self) -> bool;
-    /// Mirrors vanilla `BlockState.getOffset(BlockPos)`.
     fn get_offset(&self, pos: BlockPos) -> DVec3;
     /// Checks if this block face is sturdy enough to support other blocks.
     /// Uses `SupportType::Full` by default.
@@ -80,7 +79,6 @@ pub trait BlockStateExt {
     /// This matches vanilla's cached `BlockState.isSolidRender()`, based on the
     /// occlusion shape rather than collision shape.
     fn is_solid_render(&self) -> bool;
-    /// Returns vanilla `BlockState.isSuffocating`.
     fn is_suffocating(&self) -> bool;
     /// Returns the extracted static `BlockState.isRedstoneConductor` value.
     /// Dynamic behavior queries must also receive the live level and position.
