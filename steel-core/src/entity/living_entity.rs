@@ -10,6 +10,8 @@ use crate::entity::consume_effect::apply_consume_effect;
 /// The scale that cancels default ground friction, kept as the inlined literal
 /// so the arithmetic matches.
 const DEFAULT_FRICTION_SPEED_SCALE: f32 = 0.216_000_02;
+/// Ground friction above which walking speed is boosted to offset the slide.
+const FRICTION_SPEED_BOOST_THRESHOLD: f64 = 0.6;
 /// Horizontal air drag out of fluid.
 pub(super) const BASE_HORIZONTAL_AIR_DRAG: f32 = 0.91;
 /// Vertical air drag out of fluid (flying animals use the horizontal one).
@@ -19,7 +21,7 @@ const NO_FRICTION_MODIFIER: f64 = 1.0;
 
 /// Applies a friction modifier: 1 leaves the value alone, larger is slipperier,
 /// 0 removes the slipperiness.
-pub(super) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
+fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
@@ -2492,8 +2494,13 @@ pub trait LivingEntity: Entity {
             return self.get_flying_speed();
         }
 
-        let cubed = block_friction * block_friction * block_friction;
-        self.get_speed() * (DEFAULT_FRICTION_SPEED_SCALE / cubed)
+        // Widened like vanilla's float-to-double compare, so default 0.6 ground still boosts.
+        if f64::from(block_friction) > FRICTION_SPEED_BOOST_THRESHOLD {
+            let cubed = block_friction * block_friction * block_friction;
+            return self.get_speed() * (DEFAULT_FRICTION_SPEED_SCALE / cubed);
+        }
+
+        self.get_speed()
     }
 
     /// The entity's air-drag modifier attribute.
@@ -2513,12 +2520,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the vertical friction used by `travelInAir`.
-    fn air_travel_vertical_friction(
-        &self,
-        _horizontal_friction: f32,
-        air_drag_modifier: f32,
-    ) -> f32 {
-        // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
+    fn air_travel_vertical_friction(&self, _air_drag: f32, air_drag_modifier: f32) -> f32 {
+        // TODO: FlyingAnimal uses the horizontal air drag here once animal types exist.
         compute_modified_friction(BASE_VERTICAL_AIR_DRAG, air_drag_modifier)
     }
 
@@ -2606,10 +2609,9 @@ pub trait LivingEntity: Entity {
             self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
         } else {
             let air_drag_modifier = self.air_drag_modifier();
-            let horizontal_friction = block_friction
-                * compute_modified_friction(BASE_HORIZONTAL_AIR_DRAG, air_drag_modifier);
-            let vertical_friction =
-                self.air_travel_vertical_friction(horizontal_friction, air_drag_modifier);
+            let air_drag = compute_modified_friction(BASE_HORIZONTAL_AIR_DRAG, air_drag_modifier);
+            let horizontal_friction = block_friction * air_drag;
+            let vertical_friction = self.air_travel_vertical_friction(air_drag, air_drag_modifier);
             self.set_velocity(DVec3::new(
                 movement.x * f64::from(horizontal_friction),
                 movement_y * f64::from(vertical_friction),
