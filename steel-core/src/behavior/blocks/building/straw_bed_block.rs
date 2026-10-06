@@ -15,8 +15,8 @@ use text_components::translation::TranslatedMessage;
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockHitResult, BlockPlaceContext, EntityFallDamage, EntityFallOnContext,
-        EntityLandingContext, InteractionResult, InventoryAccess, PlacementSource,
+        BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
+        PlacementSource,
     },
     entity::ai::path::PathComputationType,
     player::Player,
@@ -59,27 +59,6 @@ impl StrawBedBlock {
 impl BlockBehavior for StrawBedBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         self.base.get_state_for_placement(context)
-    }
-
-    fn fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityFallOnContext<'_>,
-    ) -> Option<EntityFallDamage> {
-        self.base.fall_on(state, world, pos, context)
-    }
-
-    fn update_entity_movement_after_fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityLandingContext,
-    ) -> glam::DVec3 {
-        self.base
-            .update_entity_movement_after_fall_on(state, world, pos, context)
     }
 
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
