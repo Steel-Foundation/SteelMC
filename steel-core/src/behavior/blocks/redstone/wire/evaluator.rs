@@ -490,9 +490,10 @@ mod tests {
     fn live_world_wire_line_settles_after_source_toggle() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("wire_evaluator_source_toggle");
+        let world_fixture = fresh_test_world("wire_evaluator_source_toggle");
+        let world = &world_fixture.world;
         let wire_start = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wire_start));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(wire_start));
 
         let source_pos = wire_start.west();
         assert!(world.set_block(

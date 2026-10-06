@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 use crate::entity::clamp_loaded_entity_position;
 

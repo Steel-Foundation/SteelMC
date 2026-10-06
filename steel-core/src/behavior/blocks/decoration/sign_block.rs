@@ -822,13 +822,14 @@ mod tests {
     #[test]
     fn sign_variants_select_their_matching_vanilla_tickers() {
         init_vanilla_registry();
-        let world = fresh_test_world("sign_ticker_selection");
+        let world_fixture = fresh_test_world("sign_ticker_selection");
+        let world = &world_fixture.world;
 
         let standing = StandingSignBlock::new(&vanilla_blocks::OAK_SIGN);
         assert!(
             standing
                 .get_block_entity_ticker(
-                    &world,
+                    world,
                     vanilla_blocks::OAK_SIGN.default_state(),
                     &vanilla_block_entity_types::SIGN,
                 )
@@ -838,7 +839,7 @@ mod tests {
         let wall = WallSignBlock::new(&vanilla_blocks::OAK_WALL_SIGN);
         assert!(
             wall.get_block_entity_ticker(
-                &world,
+                world,
                 vanilla_blocks::OAK_WALL_SIGN.default_state(),
                 &vanilla_block_entity_types::SIGN,
             )
@@ -849,7 +850,7 @@ mod tests {
         assert!(
             ceiling_hanging
                 .get_block_entity_ticker(
-                    &world,
+                    world,
                     vanilla_blocks::OAK_HANGING_SIGN.default_state(),
                     &vanilla_block_entity_types::HANGING_SIGN,
                 )
@@ -860,7 +861,7 @@ mod tests {
         assert!(
             wall_hanging
                 .get_block_entity_ticker(
-                    &world,
+                    world,
                     vanilla_blocks::OAK_WALL_HANGING_SIGN.default_state(),
                     &vanilla_block_entity_types::HANGING_SIGN,
                 )
@@ -869,7 +870,7 @@ mod tests {
         assert!(
             wall_hanging
                 .get_block_entity_ticker(
-                    &world,
+                    world,
                     vanilla_blocks::OAK_WALL_HANGING_SIGN.default_state(),
                     &vanilla_block_entity_types::SIGN,
                 )

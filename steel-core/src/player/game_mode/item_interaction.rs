@@ -16,7 +16,7 @@ use super::{
 /// 5. If item not empty: Call item behavior's `use_on` for placement
 /// 6. Handle creative mode infinite materials
 pub fn use_item_on(
-    player: &Player,
+    player: &Arc<Player>,
     world: &Arc<World>,
     hand: InteractionHand,
     hit_result: &BlockHitResult,
@@ -119,7 +119,11 @@ pub fn use_item_on(
 /// Handles using an item (general usage like right-clicking air).
 ///
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
-pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> InteractionResult {
+pub fn use_item(
+    player: &Arc<Player>,
+    world: &Arc<World>,
+    hand: InteractionHand,
+) -> InteractionResult {
     // Spectator mode: can only open menus
     if player.game_mode() == GameType::Spectator {
         return InteractionResult::Pass;
@@ -144,7 +148,8 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
-        let is_instantly_used = item_behavior.get_use_duration(&stack_before_use, player) <= 0;
+        let is_instantly_used =
+            item_behavior.get_use_duration(&stack_before_use, player.as_ref()) <= 0;
 
         let result = item_behavior.use_item(&mut context);
 
@@ -160,7 +165,7 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
 
 impl Player {
     /// Handles the use of an item.
-    pub fn handle_use_item(&self, packet: SUseItem) {
+    pub fn handle_use_item(self: &Arc<Self>, packet: SUseItem) {
         if !self.has_client_loaded() {
             return;
         }
@@ -229,9 +234,10 @@ mod tests {
 
     #[test]
     fn use_item_discards_non_finite_rotation_components() {
-        let world = fresh_test_world("use_item_non_finite_rotation");
+        let world_fixture = fresh_test_world("use_item_non_finite_rotation");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -260,16 +266,17 @@ mod tests {
     /// starting active use.
     #[test]
     fn use_item_refuses_normal_food_at_full_hunger() {
-        let world = fresh_test_world("use_item_full_hunger_normal_food");
+        let world_fixture = fresh_test_world("use_item_full_hunger_normal_food");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::APPLE));
 
-        let result = use_item(&player, &world, InteractionHand::MainHand);
+        let result = use_item(&player, world, InteractionHand::MainHand);
 
         assert_eq!(result, InteractionResult::Fail);
         assert_eq!(player.active_item_use_hand(), None);
@@ -279,16 +286,17 @@ mod tests {
     /// full hunger, matching vanilla `FoodProperties.canAlwaysEat`.
     #[test]
     fn use_item_allows_always_edible_food_at_full_hunger() {
-        let world = fresh_test_world("use_item_full_hunger_always_edible_food");
+        let world_fixture = fresh_test_world("use_item_full_hunger_always_edible_food");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::GOLDEN_APPLE));
 
-        let result = use_item(&player, &world, InteractionHand::MainHand);
+        let result = use_item(&player, world, InteractionHand::MainHand);
 
         assert_eq!(result, InteractionResult::Consume);
         assert_eq!(

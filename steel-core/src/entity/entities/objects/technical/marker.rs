@@ -2,6 +2,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
 use glam::DVec3;
+use std::sync::Arc;
 use std::sync::Weak;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
@@ -83,7 +84,7 @@ impl Entity for MarkerEntity {
         false
     }
 
-    fn tick(&self) {}
+    fn tick(self: Arc<Self>) {}
 
     fn no_physics(&self) -> bool {
         true
@@ -125,14 +126,14 @@ mod tests {
     #[test]
     fn markers_cannot_fall() {
         let world = test_world();
-        let marker = MarkerEntity::new(
+        let marker = Arc::new(MarkerEntity::new(
             &vanilla_entities::MARKER,
             0,
             TEST_POSITION,
             Arc::downgrade(world),
-        );
+        ));
         for _ in 0..100 {
-            marker.tick();
+            Arc::clone(&marker).tick();
         }
         assert_eq!(marker.position(), TEST_POSITION);
     }

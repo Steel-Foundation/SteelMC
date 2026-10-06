@@ -406,15 +406,16 @@ mod tests {
     #[test]
     fn sign_tick_releases_state_before_player_lookup_and_editor_clear() {
         init_vanilla_registry();
-        let world = fresh_test_world("sign_editor_clear");
+        let world_fixture = fresh_test_world("sign_editor_clear");
+        let world = &world_fixture.world;
         let sign = SignBlockEntity::new(
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             BlockPos::new(8, 64, 8),
             vanilla_blocks::OAK_SIGN.default_state(),
         );
         sign.set_player_who_may_edit(Some(Uuid::from_u128(1)));
 
-        sign.tick(&world);
+        sign.tick(world);
         assert_eq!(sign.get_player_who_may_edit(), None);
     }
 }
