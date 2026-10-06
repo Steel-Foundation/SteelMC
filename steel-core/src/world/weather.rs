@@ -227,7 +227,8 @@ impl World {
         guard.rain_level * guard.thunder_level > 0.9 && self.can_have_weather()
     }
 
-    /// Returns the current vanilla `SKY_LIGHT_LEVEL` environment attribute.
+    /// Returns this dimension's current sky light level, dimmed by rain and
+    /// thunder when the dimension has weather.
     pub fn sky_light_level(&self) -> f32 {
         let (rain_level, thunder_level) = if self.can_have_weather() {
             let weather = self.weather.lock();
@@ -246,7 +247,8 @@ impl World {
         )
     }
 
-    /// Returns vanilla `Level.skyDarken`.
+    /// Returns how much the sky light level is currently dimmed, rising as
+    /// the sky light level drops from its daytime maximum.
     pub fn sky_darkening(&self) -> u8 {
         environment::sky_darkening(self.sky_light_level())
     }
@@ -269,12 +271,14 @@ impl World {
             .saturating_sub(self.sky_darkening())
     }
 
-    /// Returns vanilla `Level.isBrightOutside`.
+    /// Returns whether it is currently bright enough outside for daytime
+    /// mob behavior (dimensions with a fixed time are never "bright").
     pub fn is_bright_outside(&self) -> bool {
         self.dimension_type.fixed_time.is_none() && self.sky_darkening() < 4
     }
 
-    /// Returns vanilla `Level.isDarkOutside`.
+    /// Returns whether it is currently dark enough outside for hostile mobs
+    /// to spawn in daylight (dimensions with a fixed time are never "dark").
     pub fn is_dark_outside(&self) -> bool {
         self.dimension_type.fixed_time.is_none() && !self.is_bright_outside()
     }

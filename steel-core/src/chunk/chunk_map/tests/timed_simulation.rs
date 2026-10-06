@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::tick_test_world;
 use std::time::Duration;
 use tokio::{task::yield_now, time::timeout};
 
@@ -68,7 +69,7 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
     );
     assert!(world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
 
-    world.tick_game(2, true);
+    tick_test_world(&world, 2, true);
 
     assert_eq!(holder.simulation_level(), None);
     assert!(

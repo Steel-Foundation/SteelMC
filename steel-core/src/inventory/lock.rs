@@ -79,7 +79,7 @@ where
     T: Container + 'static,
 {
     fn from(container: &Shared<T>) -> Self {
-        container.clone().into()
+        Arc::clone(container).into()
     }
 }
 
@@ -91,7 +91,7 @@ impl From<&ContainerRef> for ContainerRef {
 
 impl From<&SharedContainer> for ContainerRef {
     fn from(container: &SharedContainer) -> Self {
-        container.clone().into()
+        Arc::clone(container).into()
     }
 }
 
@@ -458,7 +458,7 @@ mod tests {
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::block_entity::{
         SharedBlockEntity,
-        entities::{BarrelBlockEntity, RawBlockEntity},
+        entities::{BarrelBlockEntity, UnimplementedBlockEntity},
         init_block_entities,
     };
     use crate::inventory::container::{Container, CraftingContainer, ResultContainer};
@@ -490,7 +490,7 @@ mod tests {
             BlockPos::new(1, 2, 3),
             vanilla_blocks::BARREL.default_state(),
         ));
-        let block_entity: SharedBlockEntity = barrel.clone();
+        let block_entity: SharedBlockEntity = Arc::<BarrelBlockEntity>::clone(&barrel);
         let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
             panic!("barrel block entity should expose Container");
         };
@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn non_container_block_entity_ref_is_rejected() {
         init_vanilla_registry();
-        let block_entity: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+        let block_entity: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
             &vanilla_block_entity_types::END_PORTAL,
             Weak::new(),
             BlockPos::new(1, 2, 3),

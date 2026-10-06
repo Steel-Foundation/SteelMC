@@ -27,8 +27,8 @@ use steel_protocol::{
     packets::game::{ClickType, HashedStack, SContainerClick, SSetCreativeModeSlot},
 };
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
-    vanilla_menu_types,
+    RegistryEntry, init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
+    vanilla_menu_types, vanilla_mob_effects,
 };
 use steel_utils::{
     ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, WorldAabb,
@@ -76,6 +76,63 @@ fn vanilla_inventory_nbt_contains_main_slots_only() {
         items[0].string("id").map(ToString::to_string),
         Some("minecraft:stone".to_owned())
     );
+}
+
+#[test]
+fn replacement_copy_preserves_all_logical_slots_and_selection() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        source.set_item(
+            slot,
+            ItemStack::with_count(&vanilla_items::OAK_LOG, slot as i32 + 1),
+        );
+    }
+    source.set_selected_slot(8);
+
+    let replacement = source.replacement_copy();
+
+    assert_eq!(replacement.get_selected_slot(), 8);
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        assert_eq!(replacement.get_item(slot), source.get_item(slot));
+    }
+}
+
+#[test]
+fn replacement_copy_does_not_drain_or_share_storage_with_source() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    sword.set_damage_value(3);
+    source.set_item(0, sword);
+    source.set_item(
+        PlayerInventory::SLOT_OFFHAND,
+        ItemStack::with_count(&vanilla_items::OAK_LOG, 4),
+    );
+    source.set_selected_slot(1);
+
+    let mut replacement = source.replacement_copy();
+
+    assert_eq!(source.get_item(0).get_damage_value(), 3);
+    assert_eq!(source.get_item(PlayerInventory::SLOT_OFFHAND).count(), 4);
+
+    source.get_item_mut(0).set_damage_value(7);
+    source
+        .get_item_mut(PlayerInventory::SLOT_OFFHAND)
+        .set_count(2);
+    source.set_selected_slot(2);
+
+    assert_eq!(replacement.get_item(0).get_damage_value(), 3);
+    assert_eq!(
+        replacement.get_item(PlayerInventory::SLOT_OFFHAND).count(),
+        4
+    );
+    assert_eq!(replacement.get_selected_slot(), 1);
+
+    replacement.get_item_mut(0).set_damage_value(11);
+    assert_eq!(source.get_item(0).get_damage_value(), 7);
 }
 
 #[test]
@@ -1136,7 +1193,7 @@ fn disconnected_menu_removal_drops_transient_items() {
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
     observer
-        .chunk_sender
+        .chunk_sender()
         .lock()
         .mark_chunk_sent_for_test(ChunkPos::new(0, 0));
 
@@ -1895,4 +1952,25 @@ fn creative_crafting_grid_updates_the_result_slot() {
             .expect("result container is registered with the menu");
         assert!(result.get_item(0).is_empty());
     }
+}
+
+/// Vanilla decodes the set-beacon effect ids with `byIdOrThrow`, so "absent" and "unknown" must
+/// stay distinguishable. Collapsing an unknown id to `None` would let a crafted packet pass
+/// effect validation, consume the payment, and silently clear the configured effects.
+#[test]
+fn resolve_beacon_effect_separates_absent_from_unknown_ids() {
+    init_vanilla_registry();
+
+    assert_eq!(Player::resolve_beacon_effect(None), Ok(None));
+
+    let speed_id = vanilla_mob_effects::SPEED.id() as i32;
+    assert_eq!(
+        Player::resolve_beacon_effect(Some(speed_id))
+            .expect("known id resolves")
+            .map(|effect| effect.key.clone()),
+        Some(vanilla_mob_effects::SPEED.key.clone())
+    );
+
+    assert_eq!(Player::resolve_beacon_effect(Some(9999)), Err(()));
+    assert_eq!(Player::resolve_beacon_effect(Some(-1)), Err(()));
 }

@@ -75,6 +75,19 @@ impl PlayerInventory {
         }
     }
 
+    /// Copies this inventory into a fresh player inventory for player replacement.
+    #[must_use]
+    pub(crate) fn replacement_copy(&self) -> Self {
+        Self {
+            items: array::from_fn(|slot| {
+                let item = &self.items[slot];
+                item.copy_with_count(item.count())
+            }),
+            selected: self.selected,
+            times_changed: 0,
+        }
+    }
+
     /// Returns true if the given slot index is a hotbar slot (0-8).
     #[must_use]
     pub const fn is_hotbar_slot(slot: u8) -> bool {
@@ -188,10 +201,17 @@ impl PlayerInventory {
         slot: EquipmentSlot,
         f: impl FnOnce(&mut ItemStack) -> R,
     ) -> R {
-        let inventory_index = self.equipment_slot_index(slot);
-        let previous = self.items[inventory_index].clone();
-        let result = f(&mut self.items[inventory_index]);
-        if !ItemStack::matches(&self.items[inventory_index], &previous) {
+        self.with_item_mut(self.equipment_slot_index(slot), f)
+    }
+
+    pub(crate) fn with_item_mut<R>(
+        &mut self,
+        index: usize,
+        f: impl FnOnce(&mut ItemStack) -> R,
+    ) -> R {
+        let previous = self.items[index].clone();
+        let result = f(&mut self.items[index]);
+        if !ItemStack::matches(&self.items[index], &previous) {
             Container::set_changed(self);
         }
         result

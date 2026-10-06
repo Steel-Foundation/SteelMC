@@ -629,9 +629,13 @@ mod tests {
     use steel_utils::nbt::parse_nbt_path;
 
     use super::*;
-    use crate::block_entity::entities::RawBlockEntity;
+    use crate::block_entity::entities::UnimplementedBlockEntity;
 
-    fn raw_block_entity(value: i32, pos: BlockPos, reverse_order: bool) -> SharedBlockEntity {
+    fn unimplemented_block_entity(
+        value: i32,
+        pos: BlockPos,
+        reverse_order: bool,
+    ) -> SharedBlockEntity {
         let mut data = NbtCompound::new();
         if reverse_order {
             data.insert("other", 11_i32);
@@ -641,7 +645,7 @@ mod tests {
             data.insert("other", 11_i32);
         }
         data.insert("x", pos.x());
-        Arc::new(RawBlockEntity::with_data(
+        Arc::new(UnimplementedBlockEntity::with_data(
             &vanilla_block_entity_types::BARREL,
             Weak::new(),
             pos,
@@ -699,9 +703,9 @@ mod tests {
     #[test]
     fn region_block_entities_compare_type_and_custom_data_only() {
         init_vanilla_registry();
-        let source = raw_block_entity(7, BlockPos::new(1, 64, 1), false);
-        let matching = raw_block_entity(7, BlockPos::new(4, 70, 4), true);
-        let different = raw_block_entity(8, BlockPos::new(4, 70, 4), false);
+        let source = unimplemented_block_entity(7, BlockPos::new(1, 64, 1), false);
+        let matching = unimplemented_block_entity(7, BlockPos::new(4, 70, 4), true);
+        let different = unimplemented_block_entity(8, BlockPos::new(4, 70, 4), false);
 
         assert!(block_entity_data_matches(Some(&source), Some(&source)));
         assert!(block_entity_data_matches(Some(&source), Some(&matching)));

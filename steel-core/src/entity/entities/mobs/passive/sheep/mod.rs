@@ -229,7 +229,8 @@ impl SheepEntity {
         entity_data.wool.set(next);
     }
 
-    /// Returns vanilla `Sheep.readyForShearing`.
+    /// Returns whether this sheep can currently be sheared: not already
+    /// sheared and not a baby.
     #[must_use]
     pub fn ready_for_shearing(&self) -> bool {
         !self.is_sheared() && !AgeableMob::is_baby(self)
@@ -332,7 +333,8 @@ impl SheepEntity {
         None
     }
 
-    /// Returns vanilla `SheepColorSpawnRules.getSheepColor` for the biome.
+    /// Picks a weighted-random wool color for a naturally spawned sheep,
+    /// using the warm/cold/temperate table for `biome`.
     #[must_use]
     pub fn random_sheep_color(biome: BiomeRef, random: &mut impl Random) -> DyeColor {
         if biome.has_tag(&vanilla_biome_tags::BiomeTag::SPAWNS_WARM_VARIANT_FARM_ANIMALS) {
@@ -492,6 +494,17 @@ impl AgeableMob for SheepEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
+
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
+        let parent1_color = self.color();
+        let parent2_color = partner
+            .downcast_ref::<SheepEntity>()
+            .map_or(parent1_color, SheepEntity::color);
+        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
+        if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
+            offspring.set_color(mixed_color);
+        }
+    }
 }
 
 impl Animal for SheepEntity {
@@ -501,17 +514,6 @@ impl Animal for SheepEntity {
 
     fn is_food(&self, item_stack: &ItemStack) -> bool {
         SheepEntity::is_food(item_stack)
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
-        let parent1_color = self.color();
-        let parent2_color = partner
-            .downcast_ref::<SheepEntity>()
-            .map_or(parent1_color, SheepEntity::color);
-        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
-        if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
-            offspring.set_color(mixed_color);
-        }
     }
 }
 

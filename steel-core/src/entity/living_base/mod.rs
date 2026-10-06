@@ -43,6 +43,8 @@ const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
+/// Time before the last damage source expires, in game ticks.
+const DAMAGE_SOURCE_TIMEOUT: i64 = 40;
 
 /// Runtime mob-effect state.
 ///
@@ -110,31 +112,32 @@ impl MobEffectInstance {
         self.effect
     }
 
-    /// Returns vanilla `MobEffectInstance.getDuration()`.
+    /// Returns the effect's duration in ticks.
     #[must_use]
     pub const fn duration(&self) -> i32 {
         self.duration
     }
 
-    /// Returns vanilla `MobEffectInstance.getAmplifier()`.
+    /// Returns the effect's amplifier (potency level above the base).
     #[must_use]
     pub const fn amplifier(&self) -> i32 {
         self.amplifier
     }
 
-    /// Returns vanilla `MobEffectInstance.isAmbient()`.
+    /// Returns whether this effect came from an ambient source (e.g. a
+    /// beacon), reducing particle visibility.
     #[must_use]
     pub const fn is_ambient(&self) -> bool {
         self.ambient
     }
 
-    /// Returns vanilla `MobEffectInstance.isVisible()`.
+    /// Returns whether this effect shows particles.
     #[must_use]
     pub const fn is_visible(&self) -> bool {
         self.visible
     }
 
-    /// Returns vanilla `MobEffectInstance.showIcon()`.
+    /// Returns whether this effect shows its HUD icon.
     #[must_use]
     pub const fn show_icon(&self) -> bool {
         self.show_icon
@@ -209,8 +212,6 @@ impl MobEffectInstance {
     }
 
     /// Merges another instance of the same effect into this instance.
-    ///
-    /// Mirrors vanilla `MobEffectInstance.update`.
     pub fn update(&mut self, take_over: Self) -> bool {
         let mut changed = false;
         let take_over_ambient = take_over.ambient;
@@ -433,7 +434,8 @@ impl LivingTravelInput {
         self.forward
     }
 
-    /// Returns input after vanilla `LivingEntity.applyInput()` damping.
+    /// Returns this input with horizontal (sideways/forward) components
+    /// reduced by 2%, leaving vertical unchanged.
     #[must_use]
     pub const fn dampened(self) -> Self {
         Self {
@@ -465,25 +467,25 @@ impl LivingRotationState {
         }
     }
 
-    /// Returns vanilla `yBodyRot`.
+    /// Returns the entity's body yaw, used for turning smoothing separate from head yaw.
     #[must_use]
     pub const fn y_body_rot(self) -> f32 {
         self.y_body_rot
     }
 
-    /// Returns vanilla `yBodyRotO`.
+    /// Returns the entity's previous-tick body yaw, used for render interpolation.
     #[must_use]
     pub const fn y_body_rot_o(self) -> f32 {
         self.y_body_rot_o
     }
 
-    /// Returns vanilla `yHeadRot`.
+    /// Returns the entity's head yaw.
     #[must_use]
     pub const fn y_head_rot(self) -> f32 {
         self.y_head_rot
     }
 
-    /// Returns vanilla `yHeadRotO`.
+    /// Returns the entity's previous-tick head yaw, used for render interpolation.
     #[must_use]
     pub const fn y_head_rot_o(self) -> f32 {
         self.y_head_rot_o
@@ -496,13 +498,18 @@ impl Default for LivingRotationState {
     }
 }
 
-/// Vanilla arm-swing animation state stored on `LivingEntity`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SwingDescription {
+    hand: InteractionHand,
+    animation: SwingAnimation,
+    duration_ticks: i32,
+}
+
+/// Arm-swing animation state stored on a living entity.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LivingSwingState {
-    swinging: bool,
-    swinging_arm: Option<InteractionHand>,
+    current_swing: Option<SwingDescription>,
     swing_time: i32,
-    duration: i32,
     old_attack_anim: f32,
     attack_anim: f32,
 }
@@ -512,46 +519,41 @@ impl LivingSwingState {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            swinging: false,
-            swinging_arm: None,
+            current_swing: None,
             swing_time: 0,
-            duration: SwingAnimation::DEFAULT.duration,
             old_attack_anim: 0.0,
             attack_anim: 0.0,
         }
     }
 
-    /// Returns vanilla `LivingEntity.swinging`.
+    /// Returns whether an arm-swing animation is currently playing.
     #[must_use]
     pub const fn swinging(self) -> bool {
-        self.swinging
+        self.current_swing.is_some()
     }
 
-    /// Returns vanilla `LivingEntity.swingingArm`.
+    /// Returns which hand is currently swinging, if any.
     #[must_use]
     pub const fn swinging_arm(self) -> Option<InteractionHand> {
-        self.swinging_arm
+        match self.current_swing {
+            Some(swing) => Some(swing.hand),
+            None => None,
+        }
     }
 
-    /// Returns vanilla `LivingEntity.swingTime`.
+    /// Returns ticks elapsed in the current arm-swing animation.
     #[must_use]
     pub const fn swing_time(self) -> i32 {
         self.swing_time
     }
 
-    /// Returns the modified duration of the swing currently in progress.
-    #[must_use]
-    pub const fn duration(self) -> i32 {
-        self.duration
-    }
-
-    /// Returns vanilla `LivingEntity.oAttackAnim`.
+    /// Returns the previous-tick animation progress for interpolation.
     #[must_use]
     pub const fn old_attack_anim(self) -> f32 {
         self.old_attack_anim
     }
 
-    /// Returns vanilla `LivingEntity.attackAnim`.
+    /// Returns the current attack animation progress.
     #[must_use]
     pub const fn attack_anim(self) -> f32 {
         self.attack_anim
@@ -697,9 +699,9 @@ impl LivingEntityState {
 /// **Deviation from vanilla:** Vanilla calls this guard `LivingEntity.dead`,
 /// but it means death side effects have been processed, not health is zero.
 /// `ServerPlayer.die()` does NOT call `super.die()` and never sets that field.
-/// Steel uses this guard for players too because it reuses the same `Player`
-/// instance; health remains the source of truth for dead-or-dying checks such
-/// as client respawn requests.
+/// Steel uses this guard for players too so repeated callbacks cannot duplicate
+/// death side effects. Health remains the source of truth for dead-or-dying
+/// checks such as client respawn requests.
 pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
@@ -777,7 +779,7 @@ impl LivingEntityBase {
         entity_data.living_entity_mut().health.set(max_health);
     }
 
-    /// Returns vanilla `LivingEntity.equipment` storage.
+    /// Returns this entity's equipped-item storage.
     #[inline]
     pub const fn equipment(&self) -> &Shared<dyn EntityEquipment> {
         &self.equipment
@@ -874,24 +876,24 @@ impl LivingEntityBase {
         Some(*active)
     }
 
-    /// Returns vanilla `yBodyRot`.
+    /// Returns the entity's body yaw, used for turning smoothing separate from head yaw.
     #[must_use]
     pub fn y_body_rot(&self) -> f32 {
         self.state.lock().rotation.y_body_rot
     }
 
-    /// Sets vanilla `yBodyRot`.
+    /// Sets the entity's body yaw.
     pub fn set_y_body_rot(&self, y_body_rot: f32) {
         self.state.lock().rotation.y_body_rot = y_body_rot;
     }
 
-    /// Returns vanilla `yHeadRot`.
+    /// Returns the entity's head yaw.
     #[must_use]
     pub fn y_head_rot(&self) -> f32 {
         self.state.lock().rotation.y_head_rot
     }
 
-    /// Sets vanilla `yHeadRot`.
+    /// Sets the entity's head yaw.
     pub fn set_y_head_rot(&self, y_head_rot: f32) {
         self.state.lock().rotation.y_head_rot = y_head_rot;
     }
@@ -903,46 +905,54 @@ impl LivingEntityBase {
         state.rotation.y_body_rot_o = state.rotation.y_body_rot;
     }
 
-    /// Copies current attack animation to vanilla `oAttackAnim`.
-    pub fn advance_attack_animation_for_base_tick(&self) {
-        let mut state = self.state.lock();
-        state.swing.old_attack_anim = state.swing.attack_anim;
-    }
-
-    /// Starts vanilla `LivingEntity.swing` state if the swing gate allows it.
-    ///
-    /// `duration` is the modified duration of the swing being started; it is
-    /// retained so the per-tick update keeps using the animation the swing
-    /// actually began with.
-    pub fn start_swing(&self, hand: InteractionHand, duration: i32) -> bool {
+    /// Starts a swing when the active animation's restart gate allows it.
+    pub fn start_swing(
+        &self,
+        hand: InteractionHand,
+        animation: SwingAnimation,
+        duration_ticks: i32,
+    ) -> bool {
         let mut state = self.state.lock();
         let swing = &mut state.swing;
-        if swing.swinging && swing.swing_time < swing.duration / 2 && swing.swing_time >= 0 {
+        if let Some(current) = swing.current_swing
+            && swing.swing_time <= current.duration_ticks / 2
+            && swing.swing_time > 0
+        {
             return false;
         }
 
-        swing.swing_time = -1;
-        swing.swinging = true;
-        swing.swinging_arm = Some(hand);
-        swing.duration = duration;
+        let description = SwingDescription {
+            hand,
+            animation,
+            duration_ticks,
+        };
+        if swing.current_swing != Some(description) {
+            swing.old_attack_anim = 0.0;
+            swing.attack_anim = 0.0;
+        }
+        swing.current_swing = Some(description);
+        swing.swing_time = 0;
         true
     }
 
-    /// Updates vanilla `LivingEntity.swingTime` and `attackAnim`.
-    pub fn update_swing_time(&self) {
+    /// Advances the swing animation at the start of the living entity's base tick.
+    pub fn tick_swing_state(&self) {
         let mut state = self.state.lock();
         let swing = &mut state.swing;
-        if swing.swinging {
-            swing.swing_time += 1;
-            if swing.swing_time >= swing.duration {
-                swing.swing_time = 0;
-                swing.swinging = false;
-            }
-        } else {
-            swing.swing_time = 0;
+        swing.old_attack_anim = swing.attack_anim;
+        let Some(current) = swing.current_swing else {
+            swing.attack_anim = 0.0;
+            return;
+        };
+        if current.duration_ticks > 0 {
+            swing.attack_anim = (swing.swing_time as f32 / current.duration_ticks as f32).min(1.0);
         }
-
-        swing.attack_anim = swing.swing_time as f32 / swing.duration as f32;
+        let finished = swing.swing_time > current.duration_ticks;
+        swing.swing_time += 1;
+        if finished {
+            swing.current_swing = None;
+            swing.attack_anim = 0.0;
+        }
     }
 
     /// Returns vanilla `LivingEntity.absorptionAmount` for non-player living entities.
@@ -960,29 +970,29 @@ impl LivingEntityBase {
         self.state.lock().absorption_amount = amount.clamp(0.0, max_absorption);
     }
 
-    /// Runs vanilla `LivingEntity.skipDropExperience`.
+    /// Marks this entity to skip dropping experience on death.
     pub fn skip_drop_experience(&self) {
         self.state.lock().skip_drop_experience = true;
     }
 
-    /// Returns vanilla `LivingEntity.wasExperienceConsumed`.
+    /// Returns whether this entity has been marked to skip dropping experience.
     #[must_use]
     pub fn was_experience_consumed(&self) -> bool {
         self.state.lock().skip_drop_experience
     }
 
-    /// Returns vanilla `LivingEntity.noActionTime`.
+    /// Returns ticks this entity has gone without taking a noteworthy action.
     #[must_use]
     pub fn no_action_time(&self) -> i32 {
         self.state.lock().no_action_time
     }
 
-    /// Sets vanilla `LivingEntity.noActionTime`.
+    /// Sets ticks this entity has gone without taking a noteworthy action.
     pub fn set_no_action_time(&self, no_action_time: i32) {
         self.state.lock().no_action_time = no_action_time;
     }
 
-    /// Increments vanilla `LivingEntity.noActionTime` by one tick.
+    /// Increments the no-action-time counter by one tick.
     pub fn increment_no_action_time(&self) {
         self.state.lock().no_action_time += 1;
     }
@@ -1263,7 +1273,7 @@ impl LivingEntityBase {
             state.current_impulse_context_reset_grace_time.max(ticks);
     }
 
-    /// Mirrors vanilla `LivingEntity.setIgnoreFallDamageFromCurrentImpulse`.
+    /// Sets whether fall damage from the current knockback/impulse impact should be ignored.
     pub fn set_ignore_fall_damage_from_current_impulse(
         &self,
         ignore_fall_damage: bool,
@@ -1280,25 +1290,26 @@ impl LivingEntityBase {
         }
     }
 
-    /// Returns vanilla `LivingEntity.currentImpulseImpactPos`.
+    /// Returns the position of the most recent knockback/impulse impact, if still active.
     #[must_use]
     pub fn current_impulse_impact_pos(&self) -> Option<DVec3> {
         self.state.lock().current_impulse_impact_pos
     }
 
-    /// Returns vanilla `LivingEntity.currentImpulseContextResetGraceTime`.
+    /// Returns ticks remaining before the current impulse context can be reset.
     #[must_use]
     pub fn current_impulse_context_reset_grace_time(&self) -> i32 {
         self.state.lock().current_impulse_context_reset_grace_time
     }
 
-    /// Returns vanilla `LivingEntity.isIgnoringFallDamageFromCurrentImpulse`.
+    /// Returns whether fall damage should be ignored due to a recent
+    /// knockback/impulse impact.
     #[must_use]
     pub fn is_ignoring_fall_damage_from_current_impulse(&self) -> bool {
         self.state.lock().current_impulse_impact_pos.is_some()
     }
 
-    /// Mirrors vanilla `LivingEntity.tryResetCurrentImpulseContext`.
+    /// Clears the current impulse impact position once its grace time has expired.
     pub fn try_reset_current_impulse_context(&self) {
         let mut state = self.state.lock();
         if state.current_impulse_context_reset_grace_time == 0 {
@@ -1306,7 +1317,7 @@ impl LivingEntityBase {
         }
     }
 
-    /// Mirrors vanilla `LivingEntity.resetCurrentImpulseContext`.
+    /// Immediately clears the current impulse impact position and its grace time.
     pub fn reset_current_impulse_context(&self) {
         let mut state = self.state.lock();
         state.current_impulse_context_reset_grace_time = 0;
@@ -1338,13 +1349,14 @@ impl LivingEntityBase {
         self.state.lock().fall_flying = fall_flying;
     }
 
-    /// Returns vanilla `LivingEntity.fallFlyTicks`.
+    /// Returns ticks this entity has been fall-flying (elytra gliding).
     #[must_use]
     pub fn fall_flying_ticks(&self) -> i32 {
         self.state.lock().fall_flying_ticks
     }
 
-    /// Ticks vanilla `LivingEntity.fallFlyTicks`.
+    /// Advances (or resets) the fall-flying tick counter based on whether
+    /// the entity is currently fall-flying.
     pub fn tick_fall_flying_state(&self, fall_flying: bool) {
         let mut state = self.state.lock();
         if fall_flying {
@@ -1449,7 +1461,7 @@ impl LivingEntityBase {
         self.state.lock().travel_input = input;
     }
 
-    /// Applies vanilla `LivingEntity.applyInput()` damping to travel input.
+    /// Applies horizontal damping to the stored travel input.
     pub fn dampen_travel_input(&self) {
         let mut state = self.state.lock();
         state.travel_input = state.travel_input.dampened();
@@ -1531,23 +1543,31 @@ impl LivingEntityBase {
         state.last_damage_stamp = game_time;
     }
 
-    /// Returns vanilla `LivingEntity.getLastDamageSource()`.
+    /// Drops transient damage history when target-domain player state is restored.
+    pub(crate) fn clear_last_damage_source(&self) {
+        let mut state = self.state.lock();
+        state.last_damage_source = None;
+        state.last_damage_stamp = 0;
+    }
+
+    /// Returns the last damage source, unless it's older than the timeout window.
     pub fn last_damage_source(&self, game_time: i64) -> Option<DamageSource> {
         let mut state = self.state.lock();
-        if game_time - state.last_damage_stamp > 40 {
+        if game_time.wrapping_sub(state.last_damage_stamp) > DAMAGE_SOURCE_TIMEOUT {
             state.last_damage_source = None;
         }
         state.last_damage_source.clone()
     }
 
-    /// Sets vanilla `LivingEntity.lastHurtByPlayer` and memory time.
+    /// Records the player that last hurt this entity, remembered for
+    /// `time_to_remember` ticks.
     pub fn set_last_hurt_by_player(&self, player_uuid: Uuid, time_to_remember: i32) {
         let mut state = self.state.lock();
         state.last_hurt_by_player = Some(player_uuid);
         state.last_hurt_by_player_memory_time = time_to_remember;
     }
 
-    /// Returns vanilla `LivingEntity.lastHurtByPlayerMemoryTime`.
+    /// Returns ticks remaining that this entity will remember the player who last hurt it.
     #[must_use]
     pub fn last_hurt_by_player_memory_time(&self) -> i32 {
         self.state.lock().last_hurt_by_player_memory_time
@@ -1566,13 +1586,13 @@ impl LivingEntityBase {
         living_entity_from_weak(&mut state.last_hurt_by_mob)
     }
 
-    /// Returns vanilla `LivingEntity.lastHurtByMobTimestamp`.
+    /// Returns the tick timestamp this entity was last hurt by a mob.
     #[must_use]
     pub fn last_hurt_by_mob_timestamp(&self) -> i32 {
         self.state.lock().last_hurt_by_mob_timestamp
     }
 
-    /// Sets vanilla `LivingEntity.lastHurtByMob` and timestamp.
+    /// Records the mob that last hurt this entity and the tick it happened.
     pub fn set_last_hurt_by_mob(&self, target: Option<&SharedEntity>, tick_count: i32) {
         let mut state = self.state.lock();
         state.last_hurt_by_mob = weak_living_entity(target);
@@ -1586,13 +1606,13 @@ impl LivingEntityBase {
         living_entity_from_weak(&mut state.last_hurt_mob)
     }
 
-    /// Returns vanilla `LivingEntity.lastHurtMobTimestamp`.
+    /// Returns the tick timestamp this entity last hurt a mob.
     #[must_use]
     pub fn last_hurt_mob_timestamp(&self) -> i32 {
         self.state.lock().last_hurt_mob_timestamp
     }
 
-    /// Sets vanilla `LivingEntity.lastHurtMob` and timestamp.
+    /// Records the mob this entity last hurt and the tick it happened.
     pub fn set_last_hurt_mob(&self, target: Option<&SharedEntity>, tick_count: i32) {
         let mut state = self.state.lock();
         state.last_hurt_mob = weak_living_entity(target);
@@ -1646,7 +1666,7 @@ impl LivingEntityBase {
         state.death_time
     }
 
-    /// Returns vanilla `LivingEntity.deathTime`.
+    /// Returns ticks elapsed since this entity started dying (its death animation).
     #[must_use]
     pub fn death_time(&self) -> i32 {
         self.state.lock().death_time
@@ -1656,56 +1676,6 @@ impl LivingEntityBase {
     #[inline]
     pub fn reset_death_state(&self) {
         self.state.lock().reset_death_state();
-    }
-
-    /// Resets state that vanilla gets from constructing a fresh living player for death respawn.
-    pub fn reset_for_player_respawn(&self) {
-        self.set_sprinting(false);
-
-        // Vanilla respawns with a newly constructed `LivingEntity`, whose
-        // equipment snapshots and related runtime bookkeeping start empty.
-        // Steel reuses the same `Player`, so reset those fields explicitly.
-        *self.last_equipment_items.lock() = array::from_fn(|_| ItemStack::empty());
-        *self.pending_equipment_changes.lock() = array::from_fn(|_| None);
-        {
-            let mut attributes = self.attributes.lock();
-            let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
-            for modifiers in installed_modifiers.iter_mut() {
-                for key in modifiers.drain(..) {
-                    attributes.remove_modifier(key.attribute, &key.id);
-                }
-            }
-        }
-
-        let removed_effects = {
-            let mut effects = self.active_mob_effects.lock();
-            let removed_effects = effects.keys().copied().collect::<Vec<_>>();
-            effects.clear();
-            removed_effects
-        };
-
-        for effect in removed_effects.iter().copied() {
-            self.remove_effect_attribute_modifiers(effect);
-        }
-
-        {
-            let mut dirty_effects = self.dirty_mob_effects.lock();
-            dirty_effects.clear();
-            dirty_effects.extend(
-                removed_effects
-                    .into_iter()
-                    .map(|effect| MobEffectSyncChange::Remove { effect }),
-            );
-        }
-
-        let speed = self
-            .attributes
-            .lock()
-            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
-
-        let mut state = self.state.lock();
-        *state = LivingEntityState::new(speed);
-        state.effects_dirty = true;
     }
 }
 

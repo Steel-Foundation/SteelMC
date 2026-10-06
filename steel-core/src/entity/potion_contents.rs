@@ -9,7 +9,6 @@ use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
-/// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
 pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,
@@ -42,8 +41,7 @@ pub(crate) fn apply_potion_contents(
     }
 }
 
-/// Mirrors vanilla `MobEffectInstance.withScaledDuration`: scales `duration`
-/// by `scale`, leaving the infinite-duration sentinel (`-1`) and a zero
+/// Scales `duration` by `scale`, leaving the infinite-duration sentinel (`-1`) and a zero
 /// duration untouched, and never rounding a finite result below 1 tick.
 fn scale_effect_duration(duration: i32, scale: f32) -> i32 {
     if duration == -1 || duration == 0 {
@@ -66,6 +64,8 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::data_components::PotionContents;
     use steel_registry::{
         MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
@@ -73,6 +73,7 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use super::{apply_potion_contents, scale_effect_duration};
+    use crate::behavior::init_behaviors;
     use crate::entity::LivingEntity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
@@ -107,9 +108,10 @@ mod tests {
     #[test]
     fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
         init_vanilla_registry();
+        init_behaviors();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
         player.set_health(1.0);
 
         let contents = PotionContents::new(
