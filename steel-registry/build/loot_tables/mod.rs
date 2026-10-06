@@ -229,7 +229,7 @@ struct LootConditionJson {
     chances: Option<Vec<f32>>,
     // inverted
     #[serde(default)]
-    term: Option<Box<ConditionRefJson>>,
+    term: Option<ConditionRefJson>,
     // any_of / all_of
     #[serde(default)]
     terms: Option<Vec<ConditionRefJson>>,
