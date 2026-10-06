@@ -9,22 +9,19 @@ use steel_utils::{
 
 #[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Config = config::C_TRANSFER, Play = play::C_TRANSFER)]
-pub struct CTransfer {
-    pub host: String,
+pub struct CTransfer<'a> {
+    pub host: &'a str,
     pub port: i32,
 }
 
-impl CTransfer {
+impl<'a> CTransfer<'a> {
     #[must_use]
-    pub fn new(hostname: &str, port: i32) -> Self {
-        Self {
-            host: hostname.to_string(),
-            port,
-        }
+    pub const fn new(host: &'a str, port: i32) -> Self {
+        Self { host, port }
     }
 }
 
-impl WriteTo for CTransfer {
+impl WriteTo for CTransfer<'_> {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.host.write_prefixed::<VarInt>(writer)?;
         VarInt(self.port).write(writer)
