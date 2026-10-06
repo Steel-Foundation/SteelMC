@@ -450,19 +450,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
         &self,
         deflection: ProjectileDeflection,
         deflecting_entity: Option<&dyn Entity>,
-        new_owner_uuid: Option<Uuid>,
-        new_owner_entity: Option<&SharedEntity>,
+        new_owner: Option<EntityReference>,
         by_attack: bool,
     ) -> bool {
         deflection.apply(self.as_projectile_event_source(), deflecting_entity);
-        let mut state = self.projectile_base().state.lock();
-        state.owner = new_owner_uuid.map(EntityReference::from_uuid);
-        if let Some(reference) = &state.owner
-            && let Some(entity) = new_owner_entity
-        {
-            reference.cache_entity(entity);
-        }
-        drop(state);
+        self.projectile_base().state.lock().owner = new_owner;
         self.on_deflection(by_attack);
         true
     }
@@ -531,16 +523,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
                     .as_ref()
                     .and_then(Weak::upgrade)
                     .is_some_and(|last| Arc::ptr_eq(&last, &entity_hit.entity));
-                let owner_uuid = self.owner_uuid();
-                let owner_entity = self.get_owner();
+                let owner = self.projectile_base().state.lock().owner.clone();
                 if !already_deflected
-                    && self.deflect(
-                        deflection,
-                        Some(entity_hit.entity.as_ref()),
-                        owner_uuid,
-                        owner_entity.as_ref(),
-                        false,
-                    )
+                    && self.deflect(deflection, Some(entity_hit.entity.as_ref()), owner, false)
                 {
                     self.projectile_base().state.lock().last_deflected_by =
                         Some(Arc::downgrade(&entity_hit.entity));
@@ -552,9 +537,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
             && hit.world_border_hit
         {
             let deflection = ProjectileDeflection::Reverse;
-            let owner_uuid = self.owner_uuid();
-            let owner_entity = self.get_owner();
-            if self.deflect(deflection, None, owner_uuid, owner_entity.as_ref(), false) {
+            let owner = self.projectile_base().state.lock().owner.clone();
+            if self.deflect(deflection, None, owner, false) {
                 self.set_velocity(self.velocity() * 0.2);
                 return deflection;
             }
@@ -581,13 +565,12 @@ pub trait Projectile: Entity + ProjectileEventSource {
                     &EntityTypeTag::REDIRECTABLE_PROJECTILE,
                 ) && let Some(projectile) = entity_hit.entity.as_projectile()
                 {
-                    let owner_uuid = self.owner_uuid();
                     let owner_entity = self.get_owner();
+                    let owner = self.projectile_base().state.lock().owner.clone();
                     projectile.deflect(
                         ProjectileDeflection::AimDeflect,
                         owner_entity.as_deref(),
-                        owner_uuid,
-                        owner_entity.as_ref(),
+                        owner,
                         true,
                     );
                 }
@@ -888,7 +871,7 @@ mod tests {
         behavior::init_behaviors,
         block_entity::init_block_entities,
         entity::{EntityBase, entities::FireworkRocketEntity},
-        test_support::{test_world, world_border_projectile_test_world},
+        test_support::{TestPlayerBuilder, test_world, world_border_projectile_test_world},
     };
 
     struct OwnerCollisionProjectile {
@@ -1045,31 +1028,64 @@ mod tests {
         init_vanilla_registry();
 
         let world = Arc::clone(test_world());
-        let firework = Arc::new(FireworkRocketEntity::new(
-            &vanilla_entities::FIREWORK_ROCKET,
-            4,
-            DVec3::ZERO,
-            Arc::downgrade(&world),
-        ));
-        firework.set_velocity(DVec3::X);
-        let deflector = OwnerCollisionTestEntity::shared_with_type(
-            5,
-            DVec3::X,
-            true,
-            &vanilla_entities::BREEZE,
-        );
+        let owner = OwnerCollisionTestEntity::shared(6, DVec3::ZERO, true);
+        let replacement: SharedEntity =
+            TestPlayerBuilder::new(Arc::clone(&world), "Replacement", 7)
+                .uuid(owner.uuid())
+                .build();
+        for cached in [false, true] {
+            let firework = Arc::new(FireworkRocketEntity::new(
+                &vanilla_entities::FIREWORK_ROCKET,
+                4,
+                DVec3::ZERO,
+                Arc::downgrade(&world),
+            ));
+            if cached {
+                firework.set_owner_entity(Some(&owner));
+            } else {
+                firework.set_owner_uuid(Some(owner.uuid()));
+            }
+            let reference = firework
+                .projectile_base()
+                .state
+                .lock()
+                .owner
+                .clone()
+                .expect("stored owner reference");
+            firework.set_velocity(DVec3::X);
+            let deflector = OwnerCollisionTestEntity::shared_with_type(
+                5,
+                DVec3::X,
+                true,
+                &vanilla_entities::BREEZE,
+            );
 
-        let deflection = Arc::clone(&firework).hit_target_or_deflect_self(&ProjectileHit::Entity(
-            EntityHitResult {
-                entity: deflector,
-                location: DVec3::X,
-            },
-        ));
+            let deflection = Arc::clone(&firework).hit_target_or_deflect_self(
+                &ProjectileHit::Entity(EntityHitResult {
+                    entity: deflector,
+                    location: DVec3::X,
+                }),
+            );
 
-        assert_eq!(deflection, ProjectileDeflection::Reverse);
-        assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
-        assert!(firework.needs_velocity_sync());
-        assert!(!firework.is_removed());
+            assert_eq!(deflection, ProjectileDeflection::Reverse);
+            assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
+            assert!(firework.needs_velocity_sync());
+            assert!(!firework.is_removed());
+            assert_eq!(firework.owner_uuid(), Some(owner.uuid()));
+            if cached {
+                assert!(Arc::ptr_eq(
+                    &firework.get_owner().expect("cached owner"),
+                    &owner
+                ));
+            } else {
+                assert!(firework.get_owner().is_none());
+            }
+            reference.cache_entity(&replacement);
+            assert!(Arc::ptr_eq(
+                &firework.get_owner().expect("shared owner resolution"),
+                &replacement
+            ));
+        }
     }
 
     #[test]

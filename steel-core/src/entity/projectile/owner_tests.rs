@@ -8,7 +8,7 @@ use steel_registry::vanilla_entities;
 use steel_utils::{ChunkPos, UuidExt as _};
 
 use crate::entity::{
-    Entity as _, LivingEntity as _, Projectile, RemovalReason, SharedEntity,
+    Entity as _, EntityReference, LivingEntity as _, Projectile, RemovalReason, SharedEntity,
     entities::{EnderPearlEntity, PigEntity},
 };
 use crate::server::worlds::WorldMap;
@@ -87,7 +87,7 @@ fn owner_lookup_isolated_by_domain_for_uuid_and_cache() {
 }
 
 #[test]
-fn owner_cache_and_deflection_reject_mismatched_uuid() {
+fn owner_cache_rejects_mismatched_uuid_and_deflection_updates_owner() {
     let domain = test_domain("cache_owner_uuid", &["overworld"]);
     let world = domain.server_default_world().expect("world");
     let owner: SharedEntity = TestPlayerBuilder::new(Arc::clone(world), "Owner", 1).build();
@@ -100,8 +100,7 @@ fn owner_cache_and_deflection_reject_mismatched_uuid() {
     pearl.deflect(
         super::ProjectileDeflection::None,
         None,
-        Some(other.uuid()),
-        Some(&owner),
+        Some(EntityReference::from_uuid(other.uuid())),
         false,
     );
     assert!(pearl.get_owner().is_none());
@@ -110,6 +109,9 @@ fn owner_cache_and_deflection_reject_mismatched_uuid() {
         &pearl.get_owner().expect("deflected owner"),
         &other
     ));
+
+    pearl.deflect(super::ProjectileDeflection::None, None, None, false);
+    assert!(pearl.owner_uuid().is_none());
 }
 
 #[test]
