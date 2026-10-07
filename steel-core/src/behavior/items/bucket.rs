@@ -117,7 +117,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             hit_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         return InteractionResult::Success;
@@ -145,7 +145,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             hit_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         return InteractionResult::Success;
@@ -332,7 +332,7 @@ fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_
     context.world.game_event(
         &vanilla_game_events::FLUID_PLACE,
         pos,
-        &GameEventContext::new(Some(context.player), None),
+        &GameEventContext::new(Some(context.player.as_ref()), None),
     );
 }
 

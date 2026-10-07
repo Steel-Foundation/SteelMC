@@ -58,7 +58,7 @@ impl ItemBehavior for HoeItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             context.hit_result.block_pos,
-            &GameEventContext::new(Some(context.player), Some(new_state)),
+            &GameEventContext::new(Some(context.player.as_ref()), Some(new_state)),
         );
 
         if state.get_block() == &vanilla_blocks::ROOTED_DIRT {
