@@ -1,3 +1,10 @@
+use std::{
+    cmp::Ordering as CmpOrdering,
+    io::{self, Cursor},
+    sync::{Arc, Weak, atomic::Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::full_chunk::FullChunkRef;
 use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
@@ -19,14 +26,6 @@ use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
-use std::cmp::Ordering as CmpOrdering;
-use std::io::Cursor;
-use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{
-    io,
-    sync::{Arc, Weak},
-};
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };
