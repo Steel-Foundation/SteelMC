@@ -4,20 +4,15 @@ use std::{ops::ControlFlow, sync::Arc};
 
 use glam::DVec3;
 use smallvec::SmallVec;
-use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_blocks, vanilla_entities,
-};
+use steel_registry::{blocks::block_state_ext::BlockStateExt, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
 
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext, blocks::PowderSnowBlock,
 };
 use crate::entity::{Entity, EntityCollisionCandidates};
-#[cfg(test)]
-use crate::physics::block_has_extensible_collision_behavior;
 use crate::physics::shapes::join_is_not_empty;
-use crate::physics::{COLLISION_EPSILON, block_may_expand_collision_cursor};
+use crate::physics::{COLLISION_EPSILON, block_state_may_expand_collision_cursor};
 use crate::world::{BlockRegionBounds, World};
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -277,26 +272,10 @@ fn should_resolve_collision_shape(
     block_state: BlockStateId,
     cursor_type: CollisionCursorType,
 ) -> bool {
-    should_resolve_collision_shape_for_block(
-        block_state.get_block(),
-        block_state
-            .get_static_collision_shape()
-            .has_large_collision_shape(),
-        cursor_type,
-    )
-}
-
-fn should_resolve_collision_shape_for_block(
-    block: BlockRef,
-    has_large_static_shape: bool,
-    cursor_type: CollisionCursorType,
-) -> bool {
     match cursor_type {
         CollisionCursorType::Inside => true,
-        CollisionCursorType::Face => {
-            block_may_expand_collision_cursor(block, has_large_static_shape)
-        }
-        CollisionCursorType::Edge => block == &vanilla_blocks::MOVING_PISTON,
+        CollisionCursorType::Face => block_state_may_expand_collision_cursor(block_state),
+        CollisionCursorType::Edge => block_state.get_block() == &vanilla_blocks::MOVING_PISTON,
         CollisionCursorType::Corner => false,
     }
 }
@@ -904,6 +883,7 @@ mod tests {
     };
     use steel_utils::{ChunkPos, Identifier, types::UpdateFlags};
 
+    use crate::physics::block_may_expand_collision_cursor;
     use crate::{
         behavior::init_behaviors,
         test_support::{fresh_test_world, insert_ready_full_chunk},
@@ -1439,11 +1419,9 @@ mod tests {
         );
 
         assert!(!PLUGIN_BLOCK.config.dynamic_shape);
-        assert!(block_has_extensible_collision_behavior(&PLUGIN_BLOCK));
         let has_large_static_shape = false;
         let has_special_colliding_blocks =
             block_may_expand_collision_cursor(&PLUGIN_BLOCK, has_large_static_shape);
-        assert!(has_special_colliding_blocks);
 
         let bounds = BlockCollisionSearchBounds {
             min_x: 0,
@@ -1461,39 +1439,15 @@ mod tests {
             BlockPos::new(1, 1, 2),
         ];
 
-        let mut compatibility_callbacks = Vec::new();
-        let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
-            if fixture_positions.contains(&pos)
-                && should_resolve_collision_shape_for_block(
-                    &PLUGIN_BLOCK,
-                    has_large_static_shape,
-                    cursor_type,
-                )
-            {
-                compatibility_callbacks.push(pos);
+        let mut callbacks = Vec::new();
+        let _ = bounds.try_for_each_region_candidate(has_special_colliding_blocks, |pos, _| {
+            if fixture_positions.contains(&pos) {
+                callbacks.push(pos);
             }
             ControlFlow::<()>::Continue(())
         });
 
-        let mut optimized_callbacks = Vec::new();
-        let _ = bounds.try_for_each_region_candidate(
-            has_special_colliding_blocks,
-            |pos, cursor_type| {
-                if fixture_positions.contains(&pos)
-                    && should_resolve_collision_shape_for_block(
-                        &PLUGIN_BLOCK,
-                        has_large_static_shape,
-                        cursor_type,
-                    )
-                {
-                    optimized_callbacks.push(pos);
-                }
-                ControlFlow::<()>::Continue(())
-            },
-        );
-
-        assert_eq!(compatibility_callbacks, fixture_positions);
-        assert_eq!(optimized_callbacks, compatibility_callbacks);
+        assert_eq!(callbacks, fixture_positions);
     }
 
     #[test]

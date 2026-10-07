@@ -447,14 +447,7 @@ impl World {
         } else {
             options.large_explosion_particle
         };
-        #[expect(
-            clippy::manual_unwrap_or,
-            reason = "make the protocol saturation behavior explicit"
-        )]
-        let packet_block_count = match i32::try_from(affected_block_count) {
-            Ok(count) => count,
-            Err(_) => i32::MAX,
-        };
+        let packet_block_count = i32::try_from(affected_block_count).unwrap_or(i32::MAX);
 
         self.players.iter_players(|_, player| {
             if player.position().distance_squared(options.center) < MAX_PACKET_DISTANCE_SQUARED {

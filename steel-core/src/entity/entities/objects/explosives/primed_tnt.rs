@@ -109,13 +109,7 @@ impl ImmutableExplosionBlockCalculator for NetherPortalPreservingExplosionDamage
         if state.get_block() == &vanilla_blocks::NETHER_PORTAL {
             return None;
         }
-        <DefaultExplosionDamageCalculator as ImmutableExplosionBlockCalculator>::explosion_resistance(
-            &DefaultExplosionDamageCalculator,
-            reader,
-            pos,
-            state,
-            fluid,
-        )
+        DefaultExplosionDamageCalculator.explosion_resistance(reader, pos, state, fluid)
     }
 
     fn should_explode(
@@ -128,20 +122,12 @@ impl ImmutableExplosionBlockCalculator for NetherPortalPreservingExplosionDamage
         if state.get_block() == &vanilla_blocks::NETHER_PORTAL {
             return false;
         }
-        <DefaultExplosionDamageCalculator as ImmutableExplosionBlockCalculator>::should_explode(
-            &DefaultExplosionDamageCalculator,
-            reader,
-            pos,
-            state,
-            power,
-        )
+        DefaultExplosionDamageCalculator.should_explode(reader, pos, state, power)
     }
 }
 
 static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalculator =
     NetherPortalPreservingExplosionDamageCalculator;
-static DEFAULT_TNT_BLOCK_CALCULATOR: DefaultExplosionDamageCalculator =
-    DefaultExplosionDamageCalculator;
 
 /// Vanilla primed TNT entity.
 #[entity_behavior(class = "PrimedTnt")]
@@ -268,13 +254,11 @@ impl PrimedTntEntity {
         };
         let mut options = ExplosionOptions::new(center, explosion_power, ExplosionInteraction::Tnt);
         options.source = Some(Arc::clone(self) as SharedEntity);
-        options.immutable_block_calculator = Some(if used_portal {
-            &USED_PORTAL_DAMAGE_CALCULATOR
-        } else {
-            &DEFAULT_TNT_BLOCK_CALCULATOR
-        });
         if used_portal {
             options.damage_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
+            options.immutable_block_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
+        } else {
+            options.immutable_block_calculator = Some(&DefaultExplosionDamageCalculator);
         }
         world.explode(options);
     }

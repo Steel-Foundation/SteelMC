@@ -5,10 +5,7 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
-use std::{
-    collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, ops::ControlFlow, slice,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, slice, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -1511,11 +1508,10 @@ impl WorldEntityManager {
     ) -> SmallVec<[SharedEntity; 8]> {
         let state = self.state.read();
         let mut snapshot = SmallVec::new();
-        let _ = Self::visit_entity_query_entries(&state, aabb, candidates, |entry| {
+        Self::visit_entity_query_entries(&state, aabb, candidates, |entry| {
             if Self::is_accessible(&state, entry) {
                 snapshot.push(Arc::clone(&entry.entity));
             }
-            ControlFlow::<()>::Continue(())
         });
         snapshot
     }
@@ -1567,24 +1563,18 @@ impl WorldEntityManager {
 
     fn entity_query_entries<'a>(state: &'a ManagerState, aabb: &WorldAabb) -> Vec<&'a EntityEntry> {
         let mut entries = Vec::new();
-        let _ = Self::visit_entity_query_entries(
-            state,
-            aabb,
-            EntityCollisionCandidates::All,
-            |entry| {
-                entries.push(entry);
-                ControlFlow::<()>::Continue(())
-            },
-        );
+        Self::visit_entity_query_entries(state, aabb, EntityCollisionCandidates::All, |entry| {
+            entries.push(entry);
+        });
         entries
     }
 
-    fn visit_entity_query_entries<'a, B>(
+    fn visit_entity_query_entries<'a>(
         state: &'a ManagerState,
         aabb: &WorldAabb,
         candidates: EntityCollisionCandidates,
-        mut visit: impl FnMut(&'a EntityEntry) -> ControlFlow<B>,
-    ) -> ControlFlow<B> {
+        mut visit: impl FnMut(&'a EntityEntry),
+    ) {
         let bounds = EntitySpatialCellBounds::from_aabb(aabb);
         let mut populated_cells = SmallVec::<[&OrderedEntityIds; 8]>::new();
         let spatial_index = match candidates {
@@ -1613,10 +1603,10 @@ impl WorldEntityManager {
         if let [cell] = populated_cells.as_slice() {
             for entity_id in cell.iter() {
                 if let Some(entry) = state.live_by_id.get(entity_id) {
-                    visit(entry)?;
+                    visit(entry);
                 }
             }
-            return ControlFlow::Continue(());
+            return;
         }
 
         let mut entity_ids = FxHashSet::default();
@@ -1629,9 +1619,8 @@ impl WorldEntityManager {
             .collect::<Vec<_>>();
         entries.sort_unstable_by_key(|entry| entry.query_order());
         for entry in entries {
-            visit(entry)?;
+            visit(entry);
         }
-        ControlFlow::Continue(())
     }
 
     fn entity_ids_in_chunk_order(state: &ManagerState, chunk: ChunkPos) -> Vec<i32> {

@@ -436,11 +436,8 @@ pub(super) fn visit_immutable_ray_positions_cached<
 
         if remaining_power > 0.0 {
             let already_affected = cache.affected(cache_index);
-            let should_explode = if cache_policy.always_allows_block_explosion {
-                !already_affected
-            } else {
-                calculator.should_explode(reader, pos, state, remaining_power)
-            };
+            let should_explode = cache_policy.always_allows_block_explosion
+                || calculator.should_explode(reader, pos, state, remaining_power);
             if should_explode && !already_affected {
                 affected.insert(pos);
                 cache.mark_affected(cache_index);
@@ -466,10 +463,8 @@ fn ray_block_pos<const USE_BOUNDED_FLOOR: bool>(position: glam::DVec3) -> BlockP
     }
 }
 
-/// Floors a finite in-range coordinate without Rust's saturating float-to-int conversion.
-///
-/// Adding `1.5 * 2^52` maps every integral binary64 value in the i32 range exactly into the
-/// mantissa; its low 32 bits are the integer's two's-complement representation.
+/// Floors a finite in-range coordinate. Adding `1.5 * 2^52` places the integer's two's-complement
+/// representation in the low 32 mantissa bits, avoiding a saturating float-to-int conversion.
 #[inline]
 pub(super) fn bounded_floor_to_i32(value: f64) -> i32 {
     debug_assert!(

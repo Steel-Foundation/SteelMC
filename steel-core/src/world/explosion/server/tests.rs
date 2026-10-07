@@ -17,6 +17,8 @@ use steel_utils::{
     WorldAabb,
 };
 
+use super::block_rays::RAY_COUNT;
+use super::exposure::{EntityExplosionExposure, tests::seen_percent};
 use super::*;
 use crate::behavior::{BlockCollisionContext, init_behaviors};
 use crate::block_entity::{

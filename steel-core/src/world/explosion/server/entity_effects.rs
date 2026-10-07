@@ -26,18 +26,17 @@ impl ServerExplosion<'_> {
             return;
         }
 
-        let double_radius = self.radius * DAMAGE_RADIUS_SCALE;
-        let radius = f64::from(double_radius);
+        let double_radius = f64::from(self.radius * DAMAGE_RADIUS_SCALE);
         let bounds = WorldAabb::from_min_max(
             DVec3::new(
-                (self.center.x - radius - ENTITY_QUERY_PADDING).floor(),
-                (self.center.y - radius - ENTITY_QUERY_PADDING).floor(),
-                (self.center.z - radius - ENTITY_QUERY_PADDING).floor(),
+                (self.center.x - double_radius - ENTITY_QUERY_PADDING).floor(),
+                (self.center.y - double_radius - ENTITY_QUERY_PADDING).floor(),
+                (self.center.z - double_radius - ENTITY_QUERY_PADDING).floor(),
             ),
             DVec3::new(
-                (self.center.x + radius + ENTITY_QUERY_PADDING).floor(),
-                (self.center.y + radius + ENTITY_QUERY_PADDING).floor(),
-                (self.center.z + radius + ENTITY_QUERY_PADDING).floor(),
+                (self.center.x + double_radius + ENTITY_QUERY_PADDING).floor(),
+                (self.center.y + double_radius + ENTITY_QUERY_PADDING).floor(),
+                (self.center.z + double_radius + ENTITY_QUERY_PADDING).floor(),
             ),
         );
         let source_id = self.source.as_ref().map(|source| source.id());
@@ -69,7 +68,7 @@ impl ServerExplosion<'_> {
             if entity.ignore_explosion(self) {
                 continue;
             }
-            let distance = entity.position().distance(self.center) / radius;
+            let distance = entity.position().distance(self.center) / double_radius;
             if distance > 1.0 {
                 continue;
             }

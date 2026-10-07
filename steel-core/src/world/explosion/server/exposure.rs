@@ -8,8 +8,6 @@ use crate::behavior::BlockCollisionContext;
 use crate::behavior::blocks::PowderSnowBlock;
 use crate::chunk::paletted_container::BlockPalette;
 use crate::entity::Entity;
-#[cfg(test)]
-use crate::world::World as ServerWorld;
 use crate::world::raycast::{ExplosionExposureRaycast, collision_path_axis_block_bounds};
 use crate::world::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
 
@@ -166,46 +164,17 @@ impl EntityExplosionExposure {
         sample_count
     }
 
-    #[cfg(test)]
-    #[inline]
-    fn sample_is_visible(self, world: &ServerWorld, center: DVec3, from: DVec3) -> bool {
-        world.is_block_collision_path_clear(from, center, self.collision_context)
-    }
-
-    fn exposure(visible_samples: u32, sample_count: usize) -> f32 {
-        visible_samples as f32 / sample_count as f32
-    }
-
-    #[cfg(test)]
-    pub(super) fn calculate_uncached(self, world: &ServerWorld, center: DVec3) -> f32 {
-        if self.has_negative_step() {
-            return 0.0;
-        }
-
-        self.calculate_with_visibility(|from| self.sample_is_visible(world, center, from))
-    }
-
     pub(super) fn calculate_with_visibility(
         self,
         mut is_visible: impl FnMut(DVec3) -> bool,
     ) -> f32 {
-        let mut visible_samples = 0;
+        let mut visible_samples = 0_u32;
         let sample_count = self.for_each_sample(|from| {
             if is_visible(from) {
                 visible_samples += 1;
             }
         });
-        Self::exposure(visible_samples, sample_count)
-    }
-
-    #[cfg(test)]
-    fn calculate_cached(self, world: &ServerWorld, center: DVec3) -> f32 {
-        if self.has_negative_step() {
-            return 0.0;
-        }
-
-        let mut raycast = ExplosionExposureRaycast::new(world, self.collision_context);
-        self.calculate_cached_with(&mut raycast, center)
+        visible_samples as f32 / sample_count as f32
     }
 
     pub(super) fn calculate_cached_with(
@@ -231,10 +200,24 @@ fn exposure_axis_step(axis_length: f64) -> f64 {
 }
 
 #[cfg(test)]
-pub(super) fn seen_percent(world: &ServerWorld, center: DVec3, entity: &dyn Entity) -> f32 {
-    let exposure = EntityExplosionExposure::capture(entity);
-    if exposure.has_negative_step() {
-        return 0.0;
+pub(super) mod tests {
+    use super::*;
+    use crate::world::World;
+
+    impl EntityExplosionExposure {
+        pub(in super::super) fn calculate_uncached(self, world: &World, center: DVec3) -> f32 {
+            if self.has_negative_step() {
+                return 0.0;
+            }
+            self.calculate_with_visibility(|from| {
+                world.is_block_collision_path_clear(from, center, self.collision_context)
+            })
+        }
     }
-    exposure.calculate_cached(world, center)
+
+    pub(in super::super) fn seen_percent(world: &World, center: DVec3, entity: &dyn Entity) -> f32 {
+        let exposure = EntityExplosionExposure::capture(entity);
+        let mut raycast = ExplosionExposureRaycast::new(world, exposure.collision_context);
+        exposure.calculate_cached_with(&mut raycast, center)
+    }
 }

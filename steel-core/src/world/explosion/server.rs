@@ -24,11 +24,6 @@ mod exposure;
 
 const SMALL_EXPLOSION_RADIUS: f32 = 2.0;
 
-#[cfg(test)]
-use block_rays::RAY_COUNT;
-#[cfg(test)]
-use exposure::{EntityExplosionExposure, seen_percent};
-
 pub(super) struct ServerExplosion<'a> {
     world: &'a Arc<World>,
     fire: bool,

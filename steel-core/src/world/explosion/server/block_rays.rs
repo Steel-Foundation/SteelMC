@@ -19,12 +19,6 @@ mod java_block_pos_set;
 
 use java_block_pos_set::JavaBlockPosSet;
 
-#[cfg(test)]
-use cache::{
-    ExplosionBlockCache, ImmutableRayCachePolicy, bounded_floor_to_i32,
-    visit_immutable_ray_positions_cached,
-};
-
 const RAY_GRID_SIZE: i32 = 16;
 const RAY_GRID_LAST_INDEX: i32 = RAY_GRID_SIZE - 1;
 const RAY_GRID_INTERIOR_SIZE: i32 = RAY_GRID_SIZE - 2;

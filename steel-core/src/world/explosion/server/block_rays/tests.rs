@@ -4,10 +4,15 @@ use glam::DVec3;
 use sha2::{Digest as _, Sha256};
 use steel_registry::fluid::FluidState;
 use steel_registry::{init_vanilla_registry, vanilla_blocks};
+use steel_utils::locks::SyncMutex;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 
+use super::cache::{
+    ExplosionBlockCache, ImmutableRayCachePolicy, bounded_floor_to_i32,
+    visit_immutable_ray_positions_cached,
+};
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
@@ -177,7 +182,6 @@ fn deterministic_empty_world_rays_match_the_java_hash_set_fixture() {
 fn precomputed_ray_steps_match_java_bit_digest() {
     let mut digest = FNV1A_64_OFFSET_BASIS;
     for step in RAY_STEPS.iter() {
-        assert!(step.x.abs() < 1.0 && step.y.abs() < 1.0 && step.z.abs() < 1.0);
         for bits in [step.x.to_bits(), step.y.to_bits(), step.z.to_bits()] {
             for byte in bits.to_le_bytes() {
                 digest ^= u64::from(byte);
@@ -381,6 +385,62 @@ fn immutable_rays_match_sequential_lane_in_a_complete_region() {
             "radius={radius:?}"
         );
     }
+}
+
+#[test]
+fn cached_ray_decisions_keep_uncached_order_at_already_affected_positions() {
+    struct RecordingCalculator(SyncMutex<Vec<(BlockPos, u32)>>);
+
+    impl ImmutableExplosionBlockCalculator for RecordingCalculator {
+        fn can_cache_explosion_resistance(&self) -> bool {
+            true
+        }
+
+        fn should_explode(
+            &self,
+            _reader: &dyn ExplosionBlockReader,
+            pos: BlockPos,
+            _state: BlockStateId,
+            power: f32,
+        ) -> bool {
+            self.0.lock().push((pos, power.to_bits()));
+            true
+        }
+    }
+
+    init_vanilla_registry();
+    let fixture = fresh_test_world("cached_ray_callback_order");
+    let world = &fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let context = ExplosionRayContext {
+        center: DVec3::new(8.5, 64.5, 8.5),
+        bounds: ExplosionWorldBounds::from_world(world),
+    };
+    let rays = [DVec3::X, -DVec3::X].map(|direction| ExplosionRay {
+        step: direction * RAY_STEP,
+        initial_power: 1.0,
+    });
+    let uncached = RecordingCalculator(SyncMutex::new(Vec::new()));
+    let mut expected_affected = JavaBlockPosSet::default();
+    for ray in rays {
+        visit_immutable_ray_positions(ray, context, world.as_ref(), &uncached, |pos| {
+            expected_affected.insert(pos);
+        });
+    }
+    assert!(
+        uncached
+            .0
+            .lock()
+            .windows(2)
+            .any(|pair| pair[0].0 == pair[1].0)
+    );
+
+    let cached = RecordingCalculator(SyncMutex::new(Vec::new()));
+    let affected =
+        calculate_cached_immutable_rays::<_, true>(&rays, context, world.as_ref(), &cached);
+
+    assert_eq!(*cached.0.lock(), *uncached.0.lock());
+    assert_eq!(affected, expected_affected.into_iter().collect::<Vec<_>>());
 }
 
 #[test]
