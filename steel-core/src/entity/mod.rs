@@ -783,6 +783,7 @@ pub mod mob_effect;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
+mod reference;
 mod registry;
 mod spawn;
 mod storage;
@@ -843,6 +844,7 @@ pub use projectile::{
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
+pub use reference::EntityReference;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
