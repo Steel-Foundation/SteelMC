@@ -10,7 +10,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD};
+use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD, FOX_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef, MobCategory,
 };
@@ -54,15 +54,11 @@ const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
 const BABY_SCALE: f32 = 0.6;
 const FOX_BABY_WIDTH: f32 = 0.6 * BABY_SCALE;
 const FOX_BABY_HEIGHT: f32 = 0.7 * BABY_SCALE;
-const FOX_BABY_EYE_HEIGHT: f32 = 0.2975;
-const FOX_BABY_PASSENGER_Y: f64 = 0.6375 * BABY_SCALE as f64;
-const FOX_BABY_PASSENGER_Z: f64 = -0.25 * BABY_SCALE as f64;
+const FOX_BABY_EYE_HEIGHT: f32 = 0.343_75;
+const FOX_BABY_PASSENGER_Y: f64 = 0.375;
 
-const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] = [EntityAttachmentPoint::new(
-    0.0,
-    FOX_BABY_PASSENGER_Y,
-    FOX_BABY_PASSENGER_Z,
-)];
+const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
+    [EntityAttachmentPoint::new(0.0, FOX_BABY_PASSENGER_Y, 0.0)];
 const FOX_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
     FOX_BABY_WIDTH,
     FOX_BABY_HEIGHT,
@@ -591,6 +587,12 @@ impl Entity for FoxEntity {
         self.entity_type
     }
 
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(FOX_VARIANT) {
+            self.set_variant(*variant);
+        }
+    }
+
     fn base_tick(&self) {
         Mob::base_tick_mob(self);
     }
@@ -680,6 +682,10 @@ impl Entity for FoxEntity {
 impl LivingEntity for FoxEntity {
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    fn is_sleeping(&self) -> bool {
+        FoxEntity::is_sleeping(self)
     }
 
     fn get_health(&self) -> f32 {
@@ -773,22 +779,36 @@ impl AgeableMob for FoxEntity {
             partner.map_or_else(|| self.variant(), FoxEntity::variant)
         };
         offspring.set_variant(variant);
-
-        let own_cause = self.love_cause_uuid();
-        if let Some(own_cause) = own_cause {
-            offspring.add_trusted(own_cause);
-        }
-        if let Some(partner_cause) = partner.and_then(Animal::love_cause_uuid)
-            && own_cause != Some(partner_cause)
-        {
-            offspring.add_trusted(partner_cause);
-        }
     }
 }
 
 impl Animal for FoxEntity {
     fn animal_base(&self) -> &AnimalBase {
         &self.animal_base
+    }
+
+    fn finalize_spawn_child_from_breeding(
+        &self,
+        world: &Arc<World>,
+        partner: &dyn Animal,
+        offspring: Option<&dyn Animal>,
+    ) {
+        if let Some(offspring) =
+            offspring.and_then(|offspring| offspring.downcast_ref::<FoxEntity>())
+        {
+            let online = |uuid: Uuid| world.players.get_by_uuid(&uuid).map(|player| player.uuid());
+            let own_cause = self.love_cause_uuid().and_then(online);
+            let partner_cause = partner.love_cause_uuid().and_then(online);
+            if let Some(own_cause) = own_cause {
+                offspring.add_trusted(own_cause);
+            }
+            if let Some(partner_cause) = partner_cause
+                && own_cause != Some(partner_cause)
+            {
+                offspring.add_trusted(partner_cause);
+            }
+        }
+        self.finalize_spawn_child_from_breeding_animal(world, partner, offspring);
     }
 
     fn is_food(&self, item_stack: &ItemStack) -> bool {
@@ -881,6 +901,12 @@ impl Mob for FoxEntity {
         }
 
         self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+    }
+
+    fn on_offspring_spawned_from_egg(&self, spawner: &Player, offspring: &dyn Mob) {
+        if let Some(offspring) = offspring.downcast_ref::<FoxEntity>() {
+            offspring.add_trusted(spawner.uuid());
+        }
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
