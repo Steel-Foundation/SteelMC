@@ -1,7 +1,5 @@
 //! Bounded block-ray caches for immutable explosion calculators.
 
-use std::mem;
-
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::{BlockPos, BlockStateId, PackedBlockPos};
 
@@ -23,7 +21,6 @@ const EMPTY_DENSE_BLOCK_CACHE_SLOT: u16 = u16::MAX;
 const DENSE_BLOCK_CACHE_HAS_RESISTANCE: u8 = 1;
 const DENSE_BLOCK_CACHE_AFFECTED: u8 = 1 << 1;
 const F64_INTEGER_MANTISSA_BIAS: f64 = 6_755_399_441_055_744.0;
-const DENSE_BLOCK_CACHE_ENTRY_SIZE_BYTES: usize = 8;
 const LONG_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
 
 #[derive(Clone, Copy)]
@@ -49,17 +46,12 @@ pub(super) struct ExplosionBlockCache {
     entries: [ExplosionBlockCacheEntry; BLOCK_CACHE_SIZE],
 }
 
-#[repr(C)]
 #[derive(Clone, Copy)]
 struct DenseExplosionBlockCacheEntry {
     resistance: f32,
     state: BlockStateId,
     flags: u8,
-    _padding: u8,
 }
-
-const _: [(); DENSE_BLOCK_CACHE_ENTRY_SIZE_BYTES] =
-    [(); mem::size_of::<DenseExplosionBlockCacheEntry>()];
 
 pub(super) struct DenseExplosionBlockCache {
     min: BlockPos,
@@ -235,7 +227,6 @@ impl ExplosionRayBlockCache for DenseExplosionBlockCache {
             resistance,
             state,
             flags,
-            _padding: 0,
         });
         self.slots[slot_index] = entry_index as u16;
         entry_index

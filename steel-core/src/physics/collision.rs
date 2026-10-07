@@ -195,9 +195,7 @@ impl BlockCollisionSearchBounds {
         self,
         mut visit: impl FnMut(BlockPos, CollisionCursorType) -> ControlFlow<R>,
     ) -> ControlFlow<R> {
-        // Vanilla's Cursor3D advances X first, then Y, then Z. Collision behavior can be
-        // extensible, so retain that callback order even though the final shape set is usually
-        // insensitive to traversal order.
+        // Keep Vanilla's X, then Y, then Z callback order for extensible collision behavior.
         for z in self.min_z..=self.max_z {
             for y in self.min_y..=self.max_y {
                 for x in self.min_x..=self.max_x {

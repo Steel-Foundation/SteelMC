@@ -18,9 +18,7 @@ const MAX_DROPS_PER_COMBINED_STACK: i32 = 16;
 
 impl ServerExplosion<'_> {
     pub(super) fn interact_with_blocks(&self, affected: &mut [BlockPos]) {
-        self.world.with_random(|random| {
-            vanilla_shuffle(affected, |bound| random.next_i32_bounded(bound));
-        });
+        self.world.with_random(|random| random.shuffle(affected));
         let mut stacks = Vec::new();
         let mut full_chunks = LocalFullChunkHolderCache::new();
 
@@ -60,16 +58,6 @@ impl ServerExplosion<'_> {
                 );
             }
         }
-    }
-}
-
-fn vanilla_shuffle<T>(values: &mut [T], mut next_index: impl FnMut(i32) -> i32) {
-    let Ok(length) = i32::try_from(values.len()) else {
-        return;
-    };
-    for remaining in (2..=length).rev() {
-        let swap_index = next_index(remaining) as usize;
-        values.swap(remaining as usize - 1, swap_index);
     }
 }
 

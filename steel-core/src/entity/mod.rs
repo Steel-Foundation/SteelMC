@@ -12,7 +12,6 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use smallvec::SmallVec;
 use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
@@ -301,44 +300,6 @@ enum BlockEffectSegmentResult {
     Removed,
 }
 
-/// Deduplicates block and fluid effects across every movement segment processed for one entity
-/// tick. Each segment's geometric sweep separately deduplicates its candidate positions.
-enum VisitedBlockPositions {
-    Inline(SmallVec<[BlockPos; 8]>),
-    Hashed(FxHashSet<BlockPos>),
-}
-
-impl Default for VisitedBlockPositions {
-    fn default() -> Self {
-        Self::Inline(SmallVec::new())
-    }
-}
-
-impl VisitedBlockPositions {
-    fn insert(&mut self, pos: BlockPos) -> bool {
-        match self {
-            Self::Hashed(visited) => visited.insert(pos),
-            Self::Inline(inline) => {
-                if inline.contains(&pos) {
-                    return false;
-                }
-                if inline.len() < inline.inline_size() {
-                    inline.push(pos);
-                    return true;
-                }
-
-                let mut visited = FxHashSet::default();
-                visited.reserve(inline.len() + 1);
-                visited.extend(inline.drain(..));
-                let inserted = visited.insert(pos);
-                debug_assert!(inserted, "inline duplicate check must precede the fallback");
-                *self = Self::Hashed(visited);
-                true
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 struct BlockEffectFireSnapshot {
     was_on_fire: bool,
@@ -549,7 +510,7 @@ fn apply_block_effect_segment(
     to: DVec3,
     max_iterations: i32,
     effect_collector: &mut InsideBlockEffectCollector,
-    visited_blocks: &mut VisitedBlockPositions,
+    visited_blocks: &mut block_effects::VisitedBlockPositions,
 ) -> BlockEffectSegmentResult {
     let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
     if aabb.is_empty() {
@@ -686,7 +647,8 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
     apply_step_on_block(entity, &world);
 
-    let mut visited_blocks = VisitedBlockPositions::default();
+    // Deduplicates effects across every movement segment of this tick.
+    let mut visited_blocks = block_effects::VisitedBlockPositions::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
     let before_effects = BlockEffectFireSnapshot::from_entity(entity);
     for movement in movements.iter().copied() {

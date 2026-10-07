@@ -26,11 +26,6 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipHitResult, Explosion, SignalGetter as _, World};
 
-const PRIMING_SOUND_VOLUME: f32 = 1.0;
-const PRIMING_SOUND_PITCH: f32 = 1.0;
-const FLINT_AND_STEEL_DAMAGE_PER_USE: i32 = 1;
-const FIRE_CHARGE_ITEMS_PER_USE: i32 = 1;
-
 /// Vanilla TNT block behavior.
 #[block_behavior]
 pub struct TntBlock {
@@ -78,8 +73,8 @@ impl TntBlock {
             &sound_events::ENTITY_TNT_PRIMED,
             SoundSource::Blocks,
             position,
-            PRIMING_SOUND_VOLUME,
-            PRIMING_SOUND_PITCH,
+            1.0,
+            1.0,
             None,
         );
         world.game_event(
@@ -199,9 +194,9 @@ impl BlockBehavior for TntBlock {
         let used_item = inv.with_item(|item| {
             let used_item = item.item();
             if is_flint_and_steel {
-                item.hurt_and_break(FLINT_AND_STEEL_DAMAGE_PER_USE, has_infinite_materials);
-            } else if !has_infinite_materials {
-                item.shrink(FIRE_CHARGE_ITEMS_PER_USE);
+                item.hurt_and_break(1, has_infinite_materials);
+            } else {
+                item.consume_one(has_infinite_materials);
             }
             used_item
         });

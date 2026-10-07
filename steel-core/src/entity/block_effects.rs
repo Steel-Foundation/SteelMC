@@ -11,21 +11,20 @@ const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
 const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
 
-/// Deduplicates candidate positions within one geometric sweep of one movement segment.
-/// Ordinary sweeps use inline storage; unusually large sweeps switch to a hash set.
-enum MovementVisitedBlocks {
+/// Deduplicates block positions inline, switching to a hash set for unusually large sweeps.
+pub(super) enum VisitedBlockPositions {
     Inline(SmallVec<[BlockPos; 16]>),
     Hashed(FxHashSet<BlockPos>),
 }
 
-impl Default for MovementVisitedBlocks {
+impl Default for VisitedBlockPositions {
     fn default() -> Self {
         Self::Inline(SmallVec::new())
     }
 }
 
-impl MovementVisitedBlocks {
-    fn insert(&mut self, pos: BlockPos) -> bool {
+impl VisitedBlockPositions {
+    pub(super) fn insert(&mut self, pos: BlockPos) -> bool {
         match self {
             Self::Hashed(visited) => visited.insert(pos),
             Self::Inline(inline) => {
@@ -68,7 +67,8 @@ pub(super) fn for_each_block_intersected_between(
         return Some(last_iteration + 1);
     }
 
-    let mut visited = MovementVisitedBlocks::default();
+    // Deduplicates candidates within this segment's geometric sweep.
+    let mut visited = VisitedBlockPositions::default();
     let aabb_at_start = aabb_at_target.translate(-travel);
     if !for_each_between_corners_in_direction(aabb_at_start, travel, |pos| {
         last_iteration = 0;
@@ -139,7 +139,7 @@ pub(super) fn collided_with_aabb_moving_from(
     reason = "keeps the vanilla BlockGetter.addCollisionsAlongTravel port auditable"
 )]
 fn add_collisions_along_travel(
-    visited: &mut MovementVisitedBlocks,
+    visited: &mut VisitedBlockPositions,
     travel: DVec3,
     aabb_at_target: WorldAabb,
     visitor: &mut impl FnMut(BlockPos, i32) -> bool,

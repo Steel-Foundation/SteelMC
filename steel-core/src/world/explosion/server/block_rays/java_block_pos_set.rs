@@ -9,7 +9,6 @@ const JAVA_HASH_MAP_TREEIFY_THRESHOLD: usize = 8;
 const JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY: usize = 64;
 const JAVA_HASH_MAP_LOAD_FACTOR_NUMERATOR: usize = 3;
 const JAVA_HASH_MAP_LOAD_FACTOR_DENOMINATOR: usize = 4;
-const JAVA_BLOCK_POS_HASH_MULTIPLIER: i32 = 31;
 const JAVA_HASH_MAP_SPREAD_SHIFT: u32 = 16;
 const JAVA_BLOCK_POS_SET_EMPTY_INDEX: u32 = u32::MAX;
 
@@ -149,11 +148,7 @@ impl IntoIterator for JavaBlockPosSet {
 }
 
 const fn java_block_pos_bucket(pos: BlockPos, capacity: usize) -> usize {
-    let hash = pos
-        .y()
-        .wrapping_add(pos.z().wrapping_mul(JAVA_BLOCK_POS_HASH_MULTIPLIER))
-        .wrapping_mul(JAVA_BLOCK_POS_HASH_MULTIPLIER)
-        .wrapping_add(pos.x()) as u32;
+    let hash = pos.java_hash_code() as u32;
     let spread = hash ^ (hash >> JAVA_HASH_MAP_SPREAD_SHIFT);
     spread as usize & (capacity - 1)
 }

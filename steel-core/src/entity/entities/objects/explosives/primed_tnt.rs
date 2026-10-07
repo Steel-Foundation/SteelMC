@@ -37,9 +37,6 @@ const GRAVITY: f64 = 0.04;
 const AIR_DRAG: f32 = 0.98;
 const INITIAL_HORIZONTAL_SPEED: f64 = 0.02;
 const INITIAL_VERTICAL_SPEED: f32 = 0.2;
-const SHORT_FUSE_RANDOM_RANGE_DIVISOR: i32 = 4;
-const SHORT_FUSE_MINIMUM_DIVISOR: i32 = 8;
-const MIN_SHORT_FUSE_RANDOM_RANGE: i32 = 1;
 const EXPLOSION_HEIGHT_FRACTION: f32 = 0.0625;
 const GROUND_HORIZONTAL_DRAG: f64 = 0.7;
 const GROUND_VERTICAL_BOUNCE: f64 = -0.5;
@@ -163,8 +160,6 @@ unsafe impl DowncastType for PrimedTntEntity {
 impl PrimedTntEntity {
     /// Default fuse duration in ticks.
     pub const DEFAULT_FUSE_TIME: i32 = 80;
-    /// Sentinel used by Vanilla callers for an absent fuse.
-    pub const NO_FUSE: i32 = -1;
 
     /// Creates an unprimed TNT entity for the entity factory.
     #[must_use]
@@ -241,10 +236,7 @@ impl PrimedTntEntity {
     /// Returns Vanilla's shortened chain-reaction fuse for `fuse`.
     #[must_use]
     pub fn get_random_short_fuse(world: &World, fuse: i32) -> i32 {
-        let random_range =
-            (fuse / SHORT_FUSE_RANDOM_RANGE_DIVISOR).max(MIN_SHORT_FUSE_RANDOM_RANGE);
-        world.with_random(|random| random.next_i32_bounded(random_range))
-            + fuse / SHORT_FUSE_MINIMUM_DIVISOR
+        world.with_random(|random| random.next_i32_bounded((fuse / 4).max(1))) + fuse / 8
     }
 
     fn owner_reference(&self) -> Option<EntityReference> {
