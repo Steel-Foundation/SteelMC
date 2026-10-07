@@ -13,7 +13,7 @@ use crate::entity::ai::goal::{FloatGoal, Goal};
 use crate::entity::entities::PigEntity;
 use crate::entity::entities::mobs::passive::fox::goals::FOX_FLOAT_WATER_DEPTH;
 use crate::entity::{EntityFluidContact, SharedEntity};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
 use super::*;
 
@@ -368,36 +368,36 @@ fn fox_kit_inherits_a_parent_variant() {
 }
 
 #[test]
-fn fox_kit_trusts_both_parents_love_cause_players() {
-    init_vanilla_registry();
-
-    let parent = new_fox();
+fn a_bred_kit_trusts_only_the_feeders_still_online() {
+    let (world, parent) = world_with_fox("fox_bred_kit_trust");
     let partner = new_fox();
-    let fed_parent = Uuid::from_u128(0xa11ce);
-    let fed_partner = Uuid::from_u128(0xb0b);
-    parent.set_love_cause_uuid(Some(fed_parent));
-    partner.set_love_cause_uuid(Some(fed_partner));
+    let online = TestPlayerBuilder::new(Arc::clone(&world), "Feeder", next_entity_id()).build();
+    assert!(world.players.insert(Arc::clone(&online)));
+    let offline = Uuid::from_u128(0xb0b);
+    parent.set_love_cause_uuid(Some(online.uuid()));
+    partner.set_love_cause_uuid(Some(offline));
 
-    let offspring = new_fox();
-    parent.initialize_breed_offspring(&partner, &offspring);
+    let kit = new_fox();
+    parent.finalize_spawn_child_from_breeding(&world, &partner, Some(&kit));
 
-    assert!(offspring.trusts(fed_parent));
-    assert!(offspring.trusts(fed_partner));
+    assert!(kit.trusts(online.uuid()));
+    assert!(!kit.trusts(offline));
 }
 
 #[test]
-fn fox_kit_trusts_the_only_feeding_player() {
-    init_vanilla_registry();
-
-    let parent = new_fox();
+fn a_spawn_egg_kit_trusts_the_egg_user_not_the_feeder() {
+    let (world, parent) = world_with_fox("fox_spawn_egg_kit_trust");
     let partner = new_fox();
     let feeder = Uuid::from_u128(0xfeed);
-    partner.set_love_cause_uuid(Some(feeder));
+    parent.set_love_cause_uuid(Some(feeder));
+    let egg_user = TestPlayerBuilder::new(Arc::clone(&world), "EggUser", next_entity_id()).build();
 
-    let offspring = new_fox();
-    parent.initialize_breed_offspring(&partner, &offspring);
+    let kit = new_fox();
+    parent.initialize_breed_offspring(&partner, &kit);
+    parent.on_offspring_spawned_from_egg(&egg_user, &kit);
 
-    assert!(offspring.trusts(feeder));
+    assert!(kit.trusts(egg_user.uuid()));
+    assert!(!kit.trusts(feeder));
 }
 
 #[test]

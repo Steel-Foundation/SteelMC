@@ -118,13 +118,14 @@ fn listener_block_entity(
 fn active_block_entity_listener_uses_stored_selection_for_removal() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("active_block_entity_listener");
+    let world_fixture = fresh_test_world("active_block_entity_listener");
+    let world = &world_fixture.world;
     let pos = BlockPos::new(1, 64, 1);
-    let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     let state = vanilla_blocks::CHEST.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let selections = Arc::new(AtomicUsize::new(0));
-    let block_entity = listener_block_entity(&world, pos, state, 1, &events, &selections);
+    let block_entity = listener_block_entity(world, pos, state, 1, &events, &selections);
 
     {
         let Some(chunk) = holder.try_full_chunk() else {
@@ -166,7 +167,8 @@ fn active_block_entity_listener_uses_stored_selection_for_removal() {
 fn full_activation_registers_listener_without_block_ticking_readiness() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("full_block_entity_listener_activation");
+    let world_fixture = fresh_test_world("full_block_entity_listener_activation");
+    let world = &world_fixture.world;
     let min_y = world.get_min_y();
     let height = world.get_height();
     let pos = BlockPos::new(1, 64, 1);
@@ -180,7 +182,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
         chunk_pos,
         min_y,
         height,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let full = proto.promote_to_full().chunk;
     let state = vanilla_blocks::CHEST.default_state();
@@ -191,7 +193,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
             .is_some()
     );
     assert!(full.add_and_register_block_entity(listener_block_entity(
-        &world,
+        world,
         pos,
         state,
         1,
@@ -230,11 +232,12 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
 fn full_demotion_hides_listener_without_reordering_on_revival() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("retained_block_entity_listeners");
+    let world_fixture = fresh_test_world("retained_block_entity_listeners");
+    let world = &world_fixture.world;
     let first_pos = BlockPos::new(1, 64, 1);
     let second_pos = BlockPos::new(2, 64, 1);
     let chunk_pos = ChunkPos::from_block_pos(first_pos);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    let holder = insert_ready_full_chunk(world, chunk_pos);
     let state = vanilla_blocks::CHEST.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let first_selections = Arc::new(AtomicUsize::new(0));
@@ -254,7 +257,7 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
                     .is_some()
             );
             assert!(chunk.add_and_register_block_entity(listener_block_entity(
-                &world, pos, state, id, &events, selections,
+                world, pos, state, id, &events, selections,
             )));
         }
     }
@@ -326,9 +329,10 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
 fn retained_block_entity_state_does_not_reselect_listener() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("retained_block_entity_listener_state");
+    let world_fixture = fresh_test_world("retained_block_entity_listener_state");
+    let world = &world_fixture.world;
     let pos = BlockPos::new(1, 64, 1);
-    let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     let copper = vanilla_blocks::COPPER_CHEST.default_state();
     let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
@@ -344,7 +348,7 @@ fn retained_block_entity_state_does_not_reselect_listener() {
                 .is_some()
         );
         assert!(chunk.add_and_register_block_entity(listener_block_entity(
-            &world,
+            world,
             pos,
             copper,
             1,

@@ -1,9 +1,10 @@
 //! This module contains entity-related traits and types.
 
+use std::sync::Weak;
 use std::{
     any::try_as_dyn,
     borrow::Cow,
-    sync::{Arc, LazyLock, Weak},
+    sync::{Arc, LazyLock},
 };
 
 use glam::DVec3;
@@ -775,6 +776,7 @@ mod item_frame;
 mod leash;
 mod living_base;
 mod living_entity;
+mod living_reference;
 mod manager;
 mod mob;
 pub mod mob_effect;
@@ -870,7 +872,9 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-/// Type alias for a shared entity reference.
+pub use living_reference::LivingEntityRef;
+
+/// Shared ownership of an entity through its gameplay interface.
 pub type SharedEntity = Arc<dyn Entity>;
 
 /// Type alias for a weak entity reference.
@@ -1392,11 +1396,8 @@ pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
     entity: &E,
     world: &World,
 ) -> Option<SharedEntity> {
-    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
-        world
-            .players
-            .get_by_uuid(&uuid)
-            .and_then(|player| world.get_entity_by_id(player.id()))
+    if entity.last_hurt_by_player_uuid().is_some() {
+        entity.living_base().last_hurt_by_player(world)
     } else {
         entity.last_hurt_by_mob()
     }

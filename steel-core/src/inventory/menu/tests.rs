@@ -13,8 +13,7 @@ use crate::{
         slots::{NormalSlot, Slot, SlotStorage},
     },
     player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
-    world::World,
+    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
 };
 use glam::DVec3;
 use steel_registry::{
@@ -65,16 +64,17 @@ impl Slot for SingleItemSlot {
 }
 
 struct PartialSwapFixture {
-    world: Arc<World>,
+    world_fixture: TestWorld,
     player: Arc<Player>,
     target: Shared<SimpleContainer>,
 }
 
 fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> PartialSwapFixture {
     init_vanilla_registry();
-    let world = fresh_test_world(world_name);
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "SwapTester", 1).build();
+    let world_fixture = fresh_test_world(world_name);
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SwapTester", 1).build();
     player.restore_game_modes(game_mode, None);
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     {
@@ -104,7 +104,7 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
     );
 
     PartialSwapFixture {
-        world,
+        world_fixture,
         player,
         target,
     }
@@ -113,8 +113,9 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
 #[test]
 fn swap_locks_player_inventory_when_menu_has_no_inventory_slots() {
     init_vanilla_registry();
-    let world = fresh_test_world("menu_swap_without_inventory_slots");
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "SwapTester", 1).build();
+    let world_fixture = fresh_test_world("menu_swap_without_inventory_slots");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SwapTester", 1).build();
     let container = SimpleContainer::new(45).into_shared();
     container
         .lock()
@@ -147,9 +148,10 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
     init_vanilla_registry();
     init_behaviors();
     init_block_entities();
-    let world = fresh_test_world("persistent_menu_drain");
+    let world_fixture = fresh_test_world("persistent_menu_drain");
+    let world = &world_fixture.world;
     let pos = steel_utils::BlockPos::new(0, 64, 0);
-    let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     assert!(world.set_block(
         pos,
         vanilla_blocks::BARREL.default_state(),
@@ -174,7 +176,7 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
         .expect("full chunk should remain loaded")
         .clear_dirty();
 
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "DrainTester", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "DrainTester", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     let mut builder = MenuBuilder::new(None, 1);
     let drained = builder.section(container, 1);
@@ -193,8 +195,9 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
 #[test]
 fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
     init_vanilla_registry();
-    let world = fresh_test_world("one_slot_clone_drag");
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "CloneTester", 1).build();
+    let world_fixture = fresh_test_world("one_slot_clone_drag");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "CloneTester", 1).build();
     player.restore_game_modes(GameType::Creative, None);
     let container = SimpleContainer::new(1).into_shared();
     container
@@ -233,7 +236,7 @@ fn partial_swap_overflow_marks_displaced_item_as_thrown() {
     let target_item = fixture.target.lock().get_item(0).clone();
     assert!(target_item.is(&vanilla_items::DIRT));
     assert_eq!(target_item.count(), 1);
-    let dropped = fixture.world.get_entities_in_aabb_matching(
+    let dropped = fixture.world_fixture.world.get_entities_in_aabb_matching(
         &WorldAabb::new(-2.0, 62.0, -2.0, 2.0, 68.0, 2.0),
         |entity| entity.entity_type() == &vanilla_entities::ITEM,
     );
@@ -264,6 +267,7 @@ fn partial_swap_overflow_is_discarded_in_creative() {
     );
     assert!(
         fixture
+            .world_fixture
             .world
             .get_entities_in_aabb_matching(
                 &WorldAabb::new(-2.0, 62.0, -2.0, 2.0, 68.0, 2.0),
