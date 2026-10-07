@@ -7,7 +7,7 @@ use small_map::FxSmallMap;
 use steel_utils::Identifier;
 
 use crate::config::{ResolvedDomainConfig, ResolvedWorldConfig};
-use crate::world::World;
+use crate::world::{DomainEntityDirectory, World};
 
 pub(crate) const OVERWORLD_WORLD_NAME: &str = "overworld";
 pub(crate) const NETHER_WORLD_NAME: &str = "the_nether";
@@ -20,6 +20,7 @@ pub struct WorldMap {
     default_worlds: FxHashMap<String, Identifier>,
     nether_portal_targets: FxHashMap<Identifier, Identifier>,
     end_portal_targets: FxHashMap<Identifier, Identifier>,
+    entity_directories: FxHashMap<String, Arc<DomainEntityDirectory>>,
 }
 
 impl WorldMap {
@@ -50,6 +51,7 @@ impl WorldMap {
             default_worlds,
             nether_portal_targets,
             end_portal_targets,
+            entity_directories: FxHashMap::default(),
         }
     }
 
@@ -93,7 +95,17 @@ impl WorldMap {
 
     /// Inserts a loaded world.
     pub fn insert(&mut self, key: Identifier, world: Arc<World>) {
-        self.worlds.insert(key, world);
+        if let Some(replaced) = self.worlds.insert(key, Arc::clone(&world))
+            && let Some(directory) = self.entity_directories.get(replaced.domain())
+        {
+            directory.remove_world(&replaced);
+        }
+        let directory = self
+            .entity_directories
+            .entry(world.domain().to_owned())
+            .or_insert_with(|| Arc::new(DomainEntityDirectory::new()));
+        directory.add_world(&world);
+        world.set_domain_entity_directory(Arc::clone(directory));
     }
 
     /// Returns a world by loaded world identifier.
@@ -231,6 +243,62 @@ fn end_entry_portal_target_world_name(source_world_name: &str) -> Option<&'stati
 #[cfg(test)]
 mod tests {
     use super::{end_entry_portal_target_world_name, nether_portal_target_world_name};
+
+    #[test]
+    fn domain_uuid_lookup_excludes_replaced_worlds_without_retaining_worlds() {
+        use crate::entity::{SharedEntity, entities::PigEntity};
+        use crate::test_support::{
+            fresh_test_derived_world, fresh_test_world_in_domain, insert_ready_full_chunk,
+        };
+        use glam::DVec3;
+        use std::sync::Arc;
+        use steel_registry::vanilla_entities;
+        use steel_utils::ChunkPos;
+
+        let primary_fixture = fresh_test_world_in_domain("directory", "overworld");
+        let primary = &primary_fixture.world;
+        let other_fixture = fresh_test_derived_world(primary, "other");
+        let other = &other_fixture.world;
+        insert_ready_full_chunk(other, ChunkPos::new(0, 0));
+        let owner: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Arc::downgrade(other),
+        ));
+        other
+            .try_add_entity(Arc::clone(&owner))
+            .expect("register owner");
+        let mut worlds = super::WorldMap::new("directory".to_owned(), &[], &[]);
+        worlds.insert(primary.key.clone(), Arc::clone(primary));
+        worlds.insert(other.key.clone(), Arc::clone(other));
+        assert!(Arc::ptr_eq(
+            &primary
+                .get_entity_in_domain_by_uuid(&owner.uuid())
+                .expect("other world owner"),
+            &owner
+        ));
+
+        let replacement_fixture = fresh_test_derived_world(primary, "other");
+        let replacement = &replacement_fixture.world;
+        worlds.insert(replacement.key.clone(), Arc::clone(replacement));
+        assert!(
+            primary
+                .get_entity_in_domain_by_uuid(&owner.uuid())
+                .is_none()
+        );
+        assert!(
+            other.get_entity_by_uuid(&owner.uuid()).is_some(),
+            "old world is still alive but no longer loaded in the map"
+        );
+        let weak = Arc::downgrade(replacement);
+        drop(replacement_fixture);
+        drop(worlds);
+        assert!(
+            weak.upgrade().is_none(),
+            "domain directories must not keep worlds alive"
+        );
+    }
 
     #[test]
     fn nether_portal_target_names_follow_vanilla_level_keys() {
