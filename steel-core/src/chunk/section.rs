@@ -10,6 +10,7 @@ use std::{
 };
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+use smallvec::SmallVec;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{vanilla_biomes, vanilla_blocks};
@@ -297,28 +298,39 @@ enum StableAirOccupancy {
 
 impl StableAirOccupancy {
     fn from_palette(states: &BlockPalette) -> Self {
-        let has_stable_air = states.maybe_has(is_stable_vanilla_air);
-        if !has_stable_air {
+        let data = match states {
+            BlockPalette::Homogeneous(state) if is_stable_vanilla_air(*state) => {
+                return Self::Empty;
+            }
+            BlockPalette::Homogeneous(_) => return Self::Full,
+            BlockPalette::Heterogeneous(data) => data,
+            BlockPalette::Building(_) => return Self::Unknown,
+        };
+        // Classify each palette entry once instead of every block position.
+        let mut air_states = SmallVec::<[BlockStateId; 3]>::new();
+        let mut occupied_count = 0_u16;
+        for &(state, count) in &data.palette {
+            if is_stable_vanilla_air(state) {
+                air_states.push(state);
+            } else {
+                occupied_count += count;
+            }
+        }
+        if air_states.is_empty() {
             return Self::Full;
         }
-        if !states.maybe_has(|state| !is_stable_vanilla_air(state)) {
+        if occupied_count == 0 {
             return Self::Empty;
         }
 
         let mut rows = Box::new([0; STABLE_AIR_OCCUPANCY_ROW_COUNT]);
-        let mut occupied_count = 0_u16;
-        for index in 0..BlockPalette::VOLUME {
-            if is_stable_vanilla_air(states.get_at_index(index)) {
-                continue;
+        // Palette cubes iterate in Y, Z, X order, so each run of 16 values is one row.
+        for (index, state) in data.iter_values().enumerate() {
+            if !air_states.contains(state) {
+                rows[index / BlockPalette::SIZE] |= 1_u16 << (index % BlockPalette::SIZE);
             }
-            let x = index % BlockPalette::SIZE;
-            let yz_index = index / BlockPalette::SIZE;
-            let z = yz_index % BlockPalette::SIZE;
-            let y = yz_index / BlockPalette::SIZE;
-            rows[y * BlockPalette::SIZE + z] |= 1_u16 << x;
-            occupied_count += 1;
         }
-        debug_assert!(occupied_count > 0 && occupied_count < BLOCKS_PER_SECTION);
+        debug_assert!(occupied_count < BLOCKS_PER_SECTION);
         Self::Mixed {
             rows,
             occupied_count,
@@ -416,9 +428,11 @@ impl StableAirOccupancy {
 }
 
 fn is_stable_vanilla_air(state: BlockStateId) -> bool {
-    state == vanilla_blocks::AIR.default_state()
-        || state == vanilla_blocks::CAVE_AIR.default_state()
-        || state == vanilla_blocks::VOID_AIR.default_state()
+    // The cached air flag avoids three registry lookups for the common non-air state.
+    state.is_air()
+        && (state == vanilla_blocks::AIR.default_state()
+            || state == vanilla_blocks::CAVE_AIR.default_state()
+            || state == vanilla_blocks::VOID_AIR.default_state())
 }
 
 impl Sections {
