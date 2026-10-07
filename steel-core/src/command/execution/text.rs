@@ -39,6 +39,15 @@ pub(crate) struct CommandTextResolver<'a, S: ?Sized = CommandSource> {
     default_scoreboard_name: Option<String>,
 }
 
+impl<'a, S: ?Sized> CommandTextResolver<'a, S> {
+    pub(crate) const fn new(source: &'a S) -> Self {
+        Self {
+            source,
+            default_scoreboard_name: None,
+        }
+    }
+}
+
 impl<'a> CommandTextResolver<'a, CommandSource> {
     pub(crate) fn with_entity_override(source: &'a CommandSource, entity: &dyn Entity) -> Self {
         Self {

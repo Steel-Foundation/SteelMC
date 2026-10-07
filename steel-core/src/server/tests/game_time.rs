@@ -230,6 +230,9 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
                     primary_last_worlds_config(&root),
                     PermissionGroupManager::transient(PermissionGroupsConfig::default())
                         .expect("permissions"),
+                    BanListManager::transient(),
+                    IpBanListManager::transient(),
+                    WhitelistManager::transient(),
                 )
                 .await
                 .expect("startup")
@@ -424,6 +427,9 @@ fn game_time_rejects_ephemeral_primary_before_touching_derived_save() {
                 worlds_config,
                 PermissionGroupManager::transient(PermissionGroupsConfig::default())
                     .expect("permissions"),
+                BanListManager::transient(),
+                IpBanListManager::transient(),
+                WhitelistManager::transient(),
             )
             .await;
             cancel.cancel();
