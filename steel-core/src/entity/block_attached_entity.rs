@@ -58,7 +58,7 @@ impl BlockAttachedEntityBase {
         self.state.lock().pos
     }
 
-    /// Sets the position of this base's entity to something.
+    /// Sets the position of this base's entity to the given position.
     pub fn set_pos(&self, pos: BlockPos) {
         self.state.lock().pos = pos;
     }
@@ -185,10 +185,11 @@ pub trait BlockAttachedEntity: Entity {
             && block_pos_vec.len() == 3
         {
             let block_pos = BlockPos::new(block_pos_vec[0], block_pos_vec[1], block_pos_vec[2]);
-            self.block_attached_entity_base().set_pos(block_pos);
             if block_pos_distance_sqr(block_pos, self.block_position()) >= VALID_READ_DISTANCE_SQR {
                 log::warn!("Block-attached entity at invalid position: {block_pos:?}");
+                return;
             }
+            self.block_attached_entity_base().set_pos(block_pos);
         }
     }
 
