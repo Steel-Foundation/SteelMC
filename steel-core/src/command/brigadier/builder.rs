@@ -74,7 +74,7 @@ where
         Self {
             data: self.data.clone(),
             children: self.children.clone(),
-            executor: self.executor.as_ref().map(Arc::clone),
+            executor: self.executor.clone(),
             requirement: self.requirement.clone(),
             execution_requirement: self.execution_requirement.clone(),
             redirect: self.redirect.clone(),

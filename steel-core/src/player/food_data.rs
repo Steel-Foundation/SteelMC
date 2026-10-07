@@ -345,6 +345,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn player_tick_processes_food_exhaustion_once() {
+        use std::sync::Arc;
+
+        use crate::entity::Entity;
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+
+        let world_fixture = fresh_test_world("player_tick_food_exhaustion");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
+        {
+            let mut food = player.food_data.lock();
+            food.saturation_level = 3.0;
+            food.add_exhaustion(8.5);
+        }
+
+        Arc::clone(&player).tick();
+
+        let food = player.food_data.lock();
+        assert_eq!(food.exhaustion_level.to_bits(), 4.5_f32.to_bits());
+        assert_eq!(food.saturation_level.to_bits(), 2.0_f32.to_bits());
+    }
+
+    #[test]
     fn exhaustion_drains_saturation_then_food() {
         let mut food = FoodData::new();
         food.saturation_level = 3.0;
