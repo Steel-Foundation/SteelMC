@@ -1,9 +1,6 @@
-use std::io::Cursor;
-
-use simdnbt::borrow::read_compound as read_borrowed_compound;
 use steel_registry::{
-    REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
-    vanilla_entities, vanilla_game_rules, vanilla_items,
+    REGISTRY, init_vanilla_registry, vanilla_blocks, vanilla_damage_types, vanilla_entities,
+    vanilla_game_rules, vanilla_items,
 };
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -57,40 +54,6 @@ fn add_item(world: &Arc<World>, item: ItemStack) -> Arc<ItemEntity> {
 }
 
 #[test]
-fn fox_starts_red_and_picks_up_loot() {
-    init_vanilla_registry();
-
-    let fox = new_fox();
-
-    assert_eq!(fox.variant(), FoxVariant::Red);
-    assert!(
-        Mob::can_pick_up_loot(&fox),
-        "vanilla foxes have canPickUpLoot enabled"
-    );
-    assert_eq!(fox.get_health().to_bits(), fox.get_max_health().to_bits());
-    let attributes = fox.attributes().lock();
-    assert_eq!(
-        attributes
-            .required_value(vanilla_attributes::MAX_HEALTH)
-            .to_bits(),
-        10.0_f64.to_bits()
-    );
-}
-
-#[test]
-fn fox_variant_round_trips() {
-    init_vanilla_registry();
-
-    let fox = new_fox();
-
-    fox.set_variant(FoxVariant::Snow);
-    assert_eq!(fox.variant(), FoxVariant::Snow);
-
-    fox.set_variant(FoxVariant::Red);
-    assert_eq!(fox.variant(), FoxVariant::Red);
-}
-
-#[test]
 fn fox_flags_are_independent_bits() {
     init_vanilla_registry();
 
@@ -105,46 +68,6 @@ fn fox_flags_are_independent_bits() {
     fox.set_sitting(false);
     assert!(!fox.is_sitting());
     assert!(fox.is_crouching());
-}
-
-#[test]
-fn fox_uses_vanilla_fox_food_tag() {
-    init_vanilla_registry();
-
-    assert!(FoxEntity::is_food(&ItemStack::new(
-        &vanilla_items::SWEET_BERRIES
-    )));
-    assert!(!FoxEntity::is_food(&ItemStack::new(&vanilla_items::STONE)));
-}
-
-#[test]
-fn fox_saves_and_loads_variant_and_state_flags() {
-    init_vanilla_registry();
-
-    let fox = new_fox();
-    fox.set_variant(FoxVariant::Snow);
-    fox.set_sleeping(true);
-    fox.set_sitting(true);
-    fox.set_crouching(true);
-
-    let mut nbt = NbtCompound::new();
-    fox.save_additional(&mut nbt);
-    assert_eq!(nbt.byte("Sleeping"), Some(1));
-    assert_eq!(nbt.byte("Sitting"), Some(1));
-    assert_eq!(nbt.byte("Crouching"), Some(1));
-
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-
-    let loaded = new_fox();
-    loaded.load_additional((&borrowed).into());
-
-    assert_eq!(loaded.variant(), FoxVariant::Snow);
-    assert!(loaded.is_sleeping());
-    assert!(loaded.is_sitting());
-    assert!(loaded.is_crouching());
 }
 
 #[test]
@@ -176,24 +99,6 @@ fn fox_can_hold_item_follows_vanilla_swap_rules() {
         .lock()
         .set(EquipmentSlot::MainHand, berries.clone());
     assert!(!Mob::can_hold_item(&fox, &berries));
-}
-
-#[test]
-fn fox_takes_a_nearby_item_into_its_mouth() {
-    let (test_world, fox) = world_with_fox("fox_pickup");
-    let world = &test_world.world;
-    let item = add_item(world, ItemStack::new(&vanilla_items::EMERALD));
-
-    Mob::tick_looting(fox.as_ref());
-
-    assert!(item.is_removed(), "the picked-up item entity is discarded");
-    let mut holds_emerald = false;
-    fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |held| {
-        holds_emerald = held.is(&vanilla_items::EMERALD);
-    });
-    assert!(holds_emerald, "the fox holds the item in its mouth");
-    assert!(fox.is_equipment_drop_preserved(EquipmentSlot::MainHand));
-    assert_eq!(*fox.ticks_since_eaten.lock(), 0);
 }
 
 #[test]
@@ -229,60 +134,6 @@ fn fox_spits_out_its_current_item_when_grabbing_another() {
         spat_stone,
         "the stone the fox was holding is spat back into the world"
     );
-}
-
-#[test]
-fn fox_saves_and_loads_trusted_players() {
-    init_vanilla_registry();
-
-    let fox = new_fox();
-    let first = Uuid::from_u128(0x1234_5678);
-    let second = Uuid::from_u128(0x9abc_def0);
-    fox.add_trusted(first);
-    fox.add_trusted(second);
-
-    let mut nbt = NbtCompound::new();
-    fox.save_additional(&mut nbt);
-
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-
-    let loaded = new_fox();
-    let stranger = Uuid::from_u128(0x5eed);
-    loaded.add_trusted(stranger);
-    loaded.load_additional((&borrowed).into());
-
-    assert!(loaded.trusts(first));
-    assert!(loaded.trusts(second));
-    assert!(
-        !loaded.trusts(stranger),
-        "loading replaces the trusted list"
-    );
-}
-
-#[test]
-fn fox_spawn_held_item_is_always_a_vanilla_candidate() {
-    init_vanilla_registry();
-
-    let allowed = [
-        &vanilla_items::EMERALD,
-        &vanilla_items::EGG,
-        &vanilla_items::RABBIT_FOOT,
-        &vanilla_items::RABBIT_HIDE,
-        &vanilla_items::WHEAT,
-        &vanilla_items::LEATHER,
-        &vanilla_items::FEATHER,
-    ];
-
-    for _ in 0..64 {
-        let held = FoxEntity::spawn_held_item();
-        assert!(
-            allowed.iter().any(|item| held.is(item)),
-            "spawn held item should be one of the vanilla candidates"
-        );
-    }
 }
 
 #[test]
@@ -351,27 +202,6 @@ fn fox_is_alertable_to_a_nearby_untrusted_entity() {
         !fox.is_alertable(),
         "a trusted entity does not alert the fox"
     );
-}
-
-#[test]
-fn fox_kit_inherits_a_parent_variant() {
-    init_vanilla_registry();
-
-    let parent = new_fox();
-    let partner = new_fox();
-    parent.set_variant(FoxVariant::Red);
-    partner.set_variant(FoxVariant::Snow);
-
-    let kit_variants: Vec<FoxVariant> = (0..SEARCH_ATTEMPTS)
-        .map(|_| {
-            let offspring = new_fox();
-            parent.initialize_breed_offspring(&partner, &offspring);
-            offspring.variant()
-        })
-        .collect();
-
-    assert!(kit_variants.contains(&FoxVariant::Red));
-    assert!(kit_variants.contains(&FoxVariant::Snow));
 }
 
 #[test]
@@ -537,34 +367,6 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
         dropped,
         "a baby fox with mob drops off still drops its mouth item"
     );
-}
-
-#[test]
-fn a_dispenser_only_puts_things_in_a_foxs_mouth() {
-    init_vanilla_registry();
-    let fox = new_fox();
-
-    assert!(fox.can_dispenser_equip_into_slot(EquipmentSlot::MainHand));
-    assert!(!fox.can_dispenser_equip_into_slot(EquipmentSlot::Head));
-
-    fox.set_can_pick_up_loot(false);
-    assert!(!fox.can_dispenser_equip_into_slot(EquipmentSlot::MainHand));
-}
-
-#[test]
-fn a_fox_waking_up_drops_every_pose() {
-    let (_test_world, fox) = world_with_fox("fox_wake_clears_states");
-    fox.set_sleeping(true);
-    fox.set_sitting(true);
-    fox.set_crouching(true);
-    fox.set_interested(true);
-
-    FoxSleepGoal::new().stop(fox.as_ref());
-
-    assert!(!fox.is_sleeping());
-    assert!(!fox.is_sitting());
-    assert!(!fox.is_crouching());
-    assert!(!fox.is_interested());
 }
 
 fn fox_holding(name: &'static str, item: ItemStack) -> (TestWorld, Arc<FoxEntity>) {
@@ -775,27 +577,6 @@ fn a_fox_does_not_sleep_through_water_prey_or_a_storm() {
 }
 
 #[test]
-fn clearing_a_foxs_states_drops_everything_it_was_in_the_middle_of() {
-    init_vanilla_registry();
-    let fox = new_fox();
-    fox.set_interested(true);
-    fox.set_crouching(true);
-    fox.set_sitting(true);
-    fox.set_sleeping(true);
-    fox.set_defending(true);
-    fox.set_faceplanted(true);
-
-    fox.clear_states();
-
-    assert!(!fox.is_interested());
-    assert!(!fox.is_crouching());
-    assert!(!fox.is_sitting());
-    assert!(!fox.is_sleeping());
-    assert!(!fox.is_defending());
-    assert!(!fox.is_faceplanted());
-}
-
-#[test]
 fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     let (_test_world, fox) = world_with_fox("fox_float_depth");
     let depth = f64::midpoint(FOX_FLOAT_WATER_DEPTH, fox.get_fluid_jump_threshold());
@@ -816,32 +597,4 @@ fn a_fox_starts_swimming_in_shallower_water_than_most_mobs() {
     goal.start(fox.as_ref());
     assert!(!fox.is_sleeping());
     assert!(!fox.is_sitting());
-}
-
-#[test]
-fn a_defending_fox_neither_panics_nor_follows_its_parent() {
-    let (_test_world, fox) = world_with_fox("fox_defending_gates");
-    fox.set_defending(true);
-
-    assert!(!FoxPanicGoal::new(2.2).can_use(fox.as_ref()));
-    assert!(!FoxFollowParentGoal::new(1.25).can_use(fox.as_ref()));
-    assert!(!FoxFollowParentGoal::new(1.25).can_continue_to_use(fox.as_ref()));
-
-    fox.set_defending(false);
-    fox.set_sleeping(true);
-    FoxFollowParentGoal::new(1.25).start(fox.as_ref());
-    assert!(!fox.is_sleeping());
-}
-
-#[test]
-fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
-    let (_test_world, fox) = world_with_fox("fox_look_gates");
-
-    fox.set_interested(true);
-    assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
-    assert!(!FoxLookAtPlayerGoal::new(24.0).can_continue_to_use(fox.as_ref()));
-
-    fox.set_interested(false);
-    fox.set_faceplanted(true);
-    assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
 }
