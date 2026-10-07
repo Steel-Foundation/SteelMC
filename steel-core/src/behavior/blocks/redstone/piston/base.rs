@@ -609,7 +609,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BlockHitResult, BlockLootContext, PlacementOrientation, init_behaviors};
     use crate::chunk::chunk_holder::ChunkHolder;
-    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestLevel, TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
     const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FACE;
@@ -623,13 +623,14 @@ mod tests {
     fn powered_piston_world(
         key: &'static str,
         piston: BlockRef,
-    ) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, BlockPos) {
+    ) -> (TestWorld, Arc<ChunkHolder>, BlockPos, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(key);
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
         let piston_pos = BlockPos::new(8, 64, 8);
         let power_pos = piston_pos.west();
-        let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(piston_pos));
+        let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(piston_pos));
         let piston_state = piston
             .default_state()
             .set_value(FACING, Direction::East)
@@ -646,7 +647,7 @@ mod tests {
             UpdateFlags::UPDATE_ALL,
         ));
         world.run_block_events();
-        (world, holder, piston_pos, power_pos)
+        (world_fixture, holder, piston_pos, power_pos)
     }
 
     #[test]
@@ -686,9 +687,10 @@ mod tests {
     fn placement_uses_player_look_direction_not_clicked_face() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("piston_look_placement");
+        let world_fixture = fresh_test_world("piston_look_placement");
+        let world = &world_fixture.world;
         let support_pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(support_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(support_pos));
         assert!(world.set_block(
             support_pos,
             vanilla_blocks::STONE.default_state(),
@@ -707,7 +709,7 @@ mod tests {
             false,
         );
         let context = BlockPlaceContext::new(
-            &world,
+            world,
             source,
             &BlockHitResult {
                 location: DVec3::new(9.0, 64.5, 8.5),
@@ -728,12 +730,13 @@ mod tests {
 
     #[test]
     fn moving_piston_delegates_loot_to_carried_state() {
-        let (world, _holder, piston_pos, _power_pos) =
+        let (world_fixture, _holder, piston_pos, _power_pos) =
             powered_piston_world("moving_piston_loot", &vanilla_blocks::PISTON);
+        let world = &world_fixture.world;
         let moving_pos = piston_pos.relative_n(Direction::East, 2);
         let moving_state = world.get_block_state(moving_pos);
         let tool = ItemStack::new(&vanilla_items::IRON_PICKAXE);
-        let drops = BlockLootContext::new(&world, moving_pos)
+        let drops = BlockLootContext::new(world, moving_pos)
             .with_tool(&tool)
             .get_drops(moving_state);
 
@@ -743,8 +746,9 @@ mod tests {
 
     #[test]
     fn normal_piston_extends_settles_and_retracts_without_pulling() {
-        let (world, _holder, piston_pos, power_pos) =
+        let (world_fixture, _holder, piston_pos, power_pos) =
             powered_piston_world("normal_piston_cycle", &vanilla_blocks::PISTON);
+        let world = &world_fixture.world;
         assert!(world.get_block_state(piston_pos).get_value(EXTENDED));
         assert_eq!(
             world.get_block_state(piston_pos.east()).get_block(),
@@ -757,7 +761,7 @@ mod tests {
             &vanilla_blocks::MOVING_PISTON
         );
 
-        tick_block_entities(&world, 3);
+        tick_block_entities(world, 3);
         assert_eq!(
             world.get_block_state(piston_pos.east()).get_block(),
             &vanilla_blocks::PISTON_HEAD
@@ -775,7 +779,7 @@ mod tests {
             world.get_block_state(piston_pos).get_block(),
             &vanilla_blocks::MOVING_PISTON
         );
-        tick_block_entities(&world, 3);
+        tick_block_entities(world, 3);
         let base = world.get_block_state(piston_pos);
         assert_eq!(base.get_block(), &vanilla_blocks::PISTON);
         assert!(!base.get_value(EXTENDED));
@@ -792,11 +796,12 @@ mod tests {
     fn retracting_piston_keeps_rear_face_attachments_supported() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("piston_rear_face_support");
+        let world_fixture = fresh_test_world("piston_rear_face_support");
+        let world = &world_fixture.world;
         let piston_pos = BlockPos::new(8, 64, 8);
         let button_pos = piston_pos.west();
         let power_pos = piston_pos.north();
-        let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(piston_pos));
+        let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(piston_pos));
         let piston_state = vanilla_blocks::PISTON
             .default_state()
             .set_value(FACING, Direction::East)
@@ -819,7 +824,7 @@ mod tests {
             &vanilla_blocks::OAK_BUTTON
         );
 
-        tick_block_entities(&world, 3);
+        tick_block_entities(world, 3);
         assert!(world.remove_block(power_pos, false));
         world.run_block_events();
 
@@ -833,7 +838,7 @@ mod tests {
             &vanilla_blocks::OAK_BUTTON
         );
 
-        tick_block_entities(&world, 3);
+        tick_block_entities(world, 3);
         assert_eq!(
             world.get_block_state(button_pos).get_block(),
             &vanilla_blocks::OAK_BUTTON
@@ -842,9 +847,10 @@ mod tests {
 
     #[test]
     fn sticky_piston_pulls_settled_normal_block() {
-        let (world, _holder, piston_pos, power_pos) =
+        let (world_fixture, _holder, piston_pos, power_pos) =
             powered_piston_world("sticky_piston_cycle", &vanilla_blocks::STICKY_PISTON);
-        tick_block_entities(&world, 3);
+        let world = &world_fixture.world;
+        tick_block_entities(world, 3);
 
         assert!(world.remove_block(power_pos, false));
         world.run_block_events();
@@ -852,7 +858,7 @@ mod tests {
             world.get_block_state(piston_pos.east()).get_block(),
             &vanilla_blocks::MOVING_PISTON
         );
-        tick_block_entities(&world, 3);
+        tick_block_entities(world, 3);
 
         let base = world.get_block_state(piston_pos);
         assert_eq!(base.get_block(), &vanilla_blocks::STICKY_PISTON);

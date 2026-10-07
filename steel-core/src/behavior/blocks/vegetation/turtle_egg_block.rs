@@ -333,25 +333,27 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     /// A day-time tick inside the pre-dawn window where eggs always advance, so
     /// random ticks are deterministic in tests.
     const ALWAYS_HATCH_DAY_TIME: i64 = 21_500;
 
-    fn prepare(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn prepare(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(key);
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         world.set_clock_total_ticks(&vanilla_world_clocks::OVERWORLD, ALWAYS_HATCH_DAY_TIME);
-        (world, pos)
+        (world_fixture, pos)
     }
 
     #[test]
     fn eggs_crack_twice_then_hatch_on_sand() {
-        let (world, pos) = prepare("turtle_egg_hatch");
+        let (world_fixture, pos) = prepare("turtle_egg_hatch");
+        let world = &world_fixture.world;
         assert!(world.set_block(
             pos.below(),
             vanilla_blocks::SAND.default_state(),
@@ -364,22 +366,23 @@ mod tests {
         ));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TURTLE_EGG);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 1);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 2);
 
         // Final advance hatches the egg and removes the block. Spawning the baby
         // turtle is stubbed until the Turtle entity lands, so only the removal is
         // asserted here.
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert!(world.get_block_state(pos).is_air());
     }
 
     #[test]
     fn eggs_do_not_advance_off_sand() {
-        let (world, pos) = prepare("turtle_egg_off_sand");
+        let (world_fixture, pos) = prepare("turtle_egg_off_sand");
+        let world = &world_fixture.world;
         assert!(world.set_block(
             pos.below(),
             vanilla_blocks::STONE.default_state(),
@@ -392,7 +395,7 @@ mod tests {
         ));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TURTLE_EGG);
 
-        behavior.random_tick(world.get_block_state(pos), &world, pos);
+        behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 0);
     }
 }

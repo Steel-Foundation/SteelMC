@@ -36,6 +36,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
+
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerSession};
 use crate::server::Server;
@@ -1024,8 +1025,9 @@ mod tests {
 
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
-        let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
+        let world_fixture = fresh_test_world("queued_domain_switch_respawn_packet");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };

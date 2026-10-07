@@ -70,19 +70,15 @@ enum LootTableValueJson {
 /// `SequenceFunction.INLINE_CODEC`) a bare array of function objects applied in order.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "build-time representation mirrors extracted Vanilla JSON"
-)]
 enum ModifierJson {
-    Single(LootFunctionJson),
+    Single(Box<LootFunctionJson>),
     Sequence(Vec<LootFunctionJson>),
 }
 
 impl ModifierJson {
     fn functions(&self) -> Vec<&LootFunctionJson> {
         match self {
-            Self::Single(function) => vec![function],
+            Self::Single(function) => vec![function.as_ref()],
             Self::Sequence(functions) => functions.iter().collect(),
         }
     }
@@ -233,7 +229,7 @@ struct LootConditionJson {
     chances: Option<Vec<f32>>,
     // inverted
     #[serde(default)]
-    term: Option<Box<ConditionRefJson>>,
+    term: Option<ConditionRefJson>,
     // any_of / all_of
     #[serde(default)]
     terms: Option<Vec<ConditionRefJson>>,

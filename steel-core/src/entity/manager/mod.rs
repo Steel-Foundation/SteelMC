@@ -12,7 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncRwLock;
-use steel_utils::{ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
 use super::{
@@ -155,6 +155,13 @@ pub enum EntityMoveError {
         /// Destination chunk.
         chunk: ChunkPos,
     },
+    /// invalid sleep block
+    InvalidSleepPosition {
+        /// entity id
+        entity_id: i32,
+        /// bed position
+        bed_position: BlockPos,
+    },
 }
 
 impl fmt::Display for EntityMoveError {
@@ -170,6 +177,15 @@ impl fmt::Display for EntityMoveError {
                 write!(
                     f,
                     "entity {entity_id} cannot move into non-loaded chunk {chunk:?}"
+                )
+            }
+            Self::InvalidSleepPosition {
+                entity_id,
+                bed_position,
+            } => {
+                write!(
+                    f,
+                    "entity {entity_id} cannot sleep at invalid bed position {bed_position:?}"
                 )
             }
         }
@@ -354,6 +370,7 @@ pub struct ChunkEntityUnloadStart {
 #[derive(Clone)]
 struct EntityEntry {
     entity: SharedEntity,
+    _damage_history_owner: Arc<()>,
     uuid: Uuid,
     section: SectionPos,
     chunk: ChunkPos,
@@ -369,6 +386,7 @@ impl EntityEntry {
         let chunk = ChunkPos::new(section.x(), section.z());
         let bounding_box = entity.bounding_box();
         Self {
+            _damage_history_owner: entity.base().damage_history().retain_owner(),
             uuid: entity.uuid(),
             entity,
             section,
@@ -1630,7 +1648,7 @@ impl WorldEntityManager {
     ) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        entity.tick();
+        Arc::clone(entity).tick();
         self.mark_dirty_after_tick(entity, dirty_chunks);
         self.tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, dirty_chunks);
     }

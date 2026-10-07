@@ -234,9 +234,7 @@ pub(super) fn compute_bounds_inner(
         }
 
         DensityFunction::WeirdScaledSampler(_) | DensityFunction::DistanceToPoint(_) => {
-            // result = scale * noise.abs() where scale ∈ [0.5, 3.0] and
-            // noise.abs() is non-negative. The upper bound is noise-parameter
-            // dependent, so leave it unbounded for branch-elision purposes.
+            // Both functions are non-negative with no useful finite upper bound.
             (0.0, f32::INFINITY)
         }
 

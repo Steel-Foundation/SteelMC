@@ -4,7 +4,6 @@
 //! See `src/behavior/generated/items.rs` for the generated registration code.
 
 mod air;
-mod bed_item;
 mod block_item;
 mod bonemeal;
 mod bottle;
@@ -44,7 +43,6 @@ mod flint_and_steel;
 mod lead;
 
 pub use air::AirItem;
-pub use bed_item::BedItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
 pub use bottle::BottleItem;

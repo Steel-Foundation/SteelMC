@@ -52,7 +52,6 @@ impl EndIslands {
     }
 
     /// Compute the height value at section coordinates.
-    ///
     /// Takes section coordinates (block position / 8).
     fn get_height_value(island_noise: &SimplexNoise, section_x: i32, section_z: i32) -> f32 {
         let chunk_x = section_x / 2;

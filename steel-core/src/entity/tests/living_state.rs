@@ -1,14 +1,17 @@
 use super::*;
+use crate::entity::get_kill_credit;
+use crate::test_support::TestPlayerBuilder;
+use std::sync::{Arc, Weak};
 use steel_registry::data_components::vanilla_components::SwingAnimation;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
     init_vanilla_registry();
 
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0);
-    let entity_ref: &dyn Entity = &entity;
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
+    let entity_ref: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
 
-    entity_ref.tick();
+    Arc::clone(&entity_ref).tick();
 
     assert_eq!(entity.living_base().death_time(), 1);
 }
@@ -33,6 +36,43 @@ fn living_tick_state_decrements_last_hurt_by_player_memory() {
 
     assert!(entity.living_base().last_hurt_by_player_uuid().is_none());
     assert_eq!(entity.last_hurt_by_player_memory_time(), 0);
+}
+
+#[test]
+fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
+    let world_fixture = fresh_test_world("kill_credit_victim");
+    let world = &world_fixture.world;
+    let player_world_fixture = fresh_test_world("kill_credit_player");
+    let player_world = &player_world_fixture.world;
+    let player: SharedEntity =
+        TestPlayerBuilder::new(Arc::clone(player_world), "Attacker", 2).build();
+    let victim = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(world),
+    );
+    let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, Arc::clone(&player));
+
+    victim.resolve_player_responsible_for_damage(&source);
+    drop(source);
+
+    assert!(world.get_entity_by_uuid(&player.uuid()).is_none());
+    assert!(Arc::ptr_eq(
+        &get_kill_credit(&victim, world).expect("cached player credit"),
+        &player,
+    ));
+    victim.set_last_hurt_by_player(Uuid::from_u128(42), 100);
+    assert!(get_kill_credit(&victim, world).is_none());
+
+    victim.resolve_player_responsible_for_damage(&DamageSource::direct(
+        &vanilla_damage_types::PLAYER_ATTACK,
+        Arc::clone(&player),
+    ));
+    for _ in 0..=100 {
+        victim.living_base().tick_last_hurt_by_player_memory();
+    }
+    assert!(get_kill_credit(&victim, world).is_none());
 }
 
 #[test]

@@ -16,12 +16,6 @@ pub enum VerticalAnchor {
 
 impl VerticalAnchor {
     /// Resolve this anchor to a world Y coordinate.
-    ///
-    /// # Panics
-    ///
-    /// Panics on [`Self::RelativeToSeaLevel`], which vanilla resolves from
-    /// `WorldGenerationContext.getSeaLevel()`. Sea level is not threaded
-    /// through here yet, so that variant has no value to resolve against.
     #[must_use]
     pub const fn resolve_y(self, min_y: i32, height: i32, sea_level: i32) -> i32 {
         match self {
