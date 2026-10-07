@@ -394,14 +394,6 @@ impl FoxEntity {
         .collect()
     }
 
-    fn set_variant_by_name(&self, name: &str) -> bool {
-        let Some(variant) = FoxVariant::from_serialized_name(name) else {
-            return false;
-        };
-        self.set_variant(variant);
-        true
-    }
-
     fn update_dirty_mob_effect_entity_data(&self) {
         if !self.living_base.take_effects_dirty() {
             return;
@@ -708,18 +700,14 @@ impl Entity for FoxEntity {
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
 
-        if let Some(variant) = nbt.string("Type") {
-            self.set_variant_by_name(variant.to_str().as_ref());
-        }
-        if let Some(sleeping) = nbt.byte("Sleeping") {
-            self.set_sleeping(sleeping != 0);
-        }
-        if let Some(sitting) = nbt.byte("Sitting") {
-            self.set_sitting(sitting != 0);
-        }
-        if let Some(crouching) = nbt.byte("Crouching") {
-            self.set_crouching(crouching != 0);
-        }
+        let variant = nbt
+            .string("Type")
+            .and_then(|name| FoxVariant::from_serialized_name(name.to_str().as_ref()))
+            .unwrap_or(FoxVariant::Red);
+        self.set_variant(variant);
+        self.set_sleeping(nbt.byte("Sleeping").is_some_and(|value| value != 0));
+        self.set_sitting(nbt.byte("Sitting").is_some_and(|value| value != 0));
+        self.set_crouching(nbt.byte("Crouching").is_some_and(|value| value != 0));
         self.clear_trusted();
         if let Some(trusted) = nbt.list("Trusted")
             && let Some(ids) = trusted.int_arrays()
@@ -927,7 +915,7 @@ impl Mob for FoxEntity {
                 self.voice_pitch(),
             );
         } else {
-            self.make_sound(ambient);
+            self.make_sound(self.ambient_sound());
         }
     }
 
