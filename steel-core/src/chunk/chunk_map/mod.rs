@@ -987,8 +987,8 @@ impl ChunkMap {
 
     /// Flint entry point for [`Self::advance_scheduling`].
     ///
-    /// Exposed only with the `flint` feature; the same calling constraint applies.
-    #[cfg(feature = "flint")]
+    /// Exposed only with the `test-framework` feature; the same calling constraint applies.
+    #[cfg(feature = "test-framework")]
     pub fn flint_advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
         self.advance_scheduling()
     }

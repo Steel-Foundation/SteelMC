@@ -33,7 +33,7 @@ use crate::command::{
     PendingCommandExecutionQueue, client_permission_event, command_suggestions_packet,
     command_tree_packet, create_registered_dispatcher,
 };
-#[cfg(any(test, feature = "flint"))]
+#[cfg(any(test, feature = "test-framework"))]
 use crate::config::ResolvedDomainConfig;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::damage::DamageHistory;
@@ -185,7 +185,7 @@ mod tests;
 /// Builds a server around already loaded worlds without starting any server loops.
 ///
 /// Used by Steel tests and by the Flint test adapter.
-#[cfg(any(test, feature = "flint"))]
+#[cfg(any(test, feature = "test-framework"))]
 pub async fn test_server_with_worlds_and_config(
     default_domain: String,
     domains: &[ResolvedDomainConfig],
