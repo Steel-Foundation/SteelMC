@@ -395,11 +395,12 @@ mod tests {
     fn candle_placement_state_increments_and_preserves_properties() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("candle_placement_increments");
+        let world_fixture = fresh_test_world("candle_placement_increments");
+        let world = &world_fixture.world;
         let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
 
         let pos = BlockPos::new(0, 10, 0);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let existing = vanilla_blocks::CANDLE
             .default_state()
@@ -409,7 +410,7 @@ mod tests {
         world.set_block(pos, existing, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
         let mut item = ItemStack::new(&vanilla_items::CANDLE);
-        let ctx = place_context(&world, pos, Direction::Up, &mut item, false);
+        let ctx = place_context(world, pos, Direction::Up, &mut item, false);
         let placed_state = candle
             .get_state_for_placement(&ctx)
             .expect("placement state should be present");
@@ -422,11 +423,12 @@ mod tests {
     fn candle_can_place_when_clicking_block_below() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("candle_click_block_below");
+        let world_fixture = fresh_test_world("candle_click_block_below");
+        let world = &world_fixture.world;
         let stone_pos = BlockPos::new(0, 10, 0);
         let candle_pos = stone_pos.above();
 
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(stone_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(stone_pos));
 
         world.set_block(
             stone_pos,
@@ -440,7 +442,7 @@ mod tests {
         );
 
         let mut candle_item = ItemStack::new(&vanilla_items::CANDLE);
-        let ctx = place_context(&world, stone_pos, Direction::Up, &mut candle_item, false);
+        let ctx = place_context(world, stone_pos, Direction::Up, &mut candle_item, false);
 
         assert_eq!(ctx.hit_pos(), stone_pos);
         assert_eq!(ctx.place_pos(), candle_pos);

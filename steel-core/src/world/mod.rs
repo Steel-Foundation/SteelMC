@@ -17,6 +17,7 @@ use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::chunk::status::ChunkStatus;
+use crate::entity::damage::DamageHistory;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -111,6 +112,7 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod domain_entity_directory;
 mod entity_management;
 mod environment;
 mod events;
@@ -144,6 +146,7 @@ use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
+pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
 use entity_management::nearest_player_distance_in_range;
@@ -204,6 +207,8 @@ pub enum ConditionalBlockSetResult {
 /// Configuration for creating a new world.
 #[derive(Clone)]
 pub struct WorldConfig {
+    /// Server-owned history; the caller retains it while the world runs.
+    pub damage_history: Arc<DamageHistory>,
     /// Domain game-time authority, bound during construction.
     pub game_time_source: GameTimeSource,
     /// Storage configuration for chunk persistence.
@@ -234,6 +239,7 @@ pub struct WorldConfig {
 
 /// A struct that represents a world.
 pub struct World {
+    pub(crate) damage_history: Weak<DamageHistory>,
     /// The chunk map of the world.
     pub chunk_map: Arc<ChunkMap>,
     /// All players in the world with dual indexing by UUID and entity ID.
@@ -280,6 +286,7 @@ pub struct World {
     neighbor_updater: CollectingNeighborUpdater,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
+    domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
     /// Physical entries retained by this world's chunk-owned game-event registries.
@@ -418,6 +425,7 @@ impl World {
             chunk_map.start_generation_refill_loop();
 
             Self {
+                damage_history: Arc::downgrade(&config.damage_history),
                 chunk_map,
                 players: PlayerMap::new(),
                 player_area_map: PlayerAreaMap::new(),
@@ -439,6 +447,7 @@ impl World {
                 block_events: SyncMutex::new(BlockEventQueue::default()),
                 neighbor_updater: CollectingNeighborUpdater::new(max_chained_neighbor_updates),
                 entity_manager: WorldEntityManager::new(),
+                domain_entity_directory: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
@@ -488,6 +497,21 @@ impl World {
     #[must_use]
     pub fn domain(&self) -> &str {
         self.key.namespace.as_ref()
+    }
+
+    pub(crate) fn set_domain_entity_directory(&self, directory: Arc<DomainEntityDirectory>) {
+        *self.domain_entity_directory.write() = Some(directory);
+    }
+
+    /// Gets an entity by UUID, checking this world before other loaded worlds in its domain.
+    #[must_use]
+    pub fn get_entity_in_domain_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
+        self.get_entity_by_uuid(uuid).or_else(|| {
+            self.domain_entity_directory
+                .read()
+                .as_ref()
+                .and_then(|directory| directory.get_entity_by_uuid(uuid))
+        })
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),

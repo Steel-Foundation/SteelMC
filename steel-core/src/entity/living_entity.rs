@@ -6,6 +6,7 @@ use steel_registry::{DyeColor, vanilla_custom_stats};
 use super::*;
 use crate::behavior::{InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::consume_effect::apply_consume_effect;
+use crate::entity::damage::RecentDamageSource;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -479,10 +480,21 @@ pub trait LivingEntity: Entity {
         target.can_be_seen_as_enemy()
     }
 
-    /// Returns the last damage source, unless it's older than the timeout window.
-    fn last_damage_source(&self) -> Option<DamageSource> {
-        let game_time = self.level().map_or(0, |world| world.game_time());
-        self.living_base().last_damage_source(game_time)
+    /// Returns the last damage source, unless it's older than the timeout window, with
+    /// [`RecentDamageSource`] retention semantics.
+    fn last_damage_source(&self) -> Option<RecentDamageSource> {
+        self.base().damage_history().last_damage_source()
+    }
+
+    /// Records a successful hit using the victim's own level clock.
+    fn record_last_damage_source(&self, source: &DamageSource) {
+        let Some(world) = self.level() else {
+            panic!("recording living damage requires the victim's level");
+        };
+        let Some(history) = world.damage_history.upgrade() else {
+            panic!("recording living damage requires a live server damage history");
+        };
+        history.record(self.base(), source, &world.game_time);
     }
 
     /// Records the player that last hurt this entity.
@@ -536,7 +548,7 @@ pub trait LivingEntity: Entity {
     /// Records the causing entity as this entity's last-hurt-by mob, skipping
     /// damage types that shouldn't provoke anger (e.g. `no_anger`, or wind
     /// charges when this mob is immune to their anger).
-    fn resolve_mob_responsible_for_damage(&self, world: &World, source: &DamageSource) {
+    fn resolve_mob_responsible_for_damage(&self, source: &DamageSource) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_ANGER) {
             return;
         }
@@ -549,28 +561,23 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        let Some(entity_id) = source.causing_entity_id else {
-            return;
-        };
-        let Some(entity) = world.get_entity_by_id(entity_id) else {
+        let Some(entity) = source.causing_entity() else {
             return;
         };
         if entity.is_living_entity() {
-            self.set_last_hurt_by_mob(Some(&entity));
+            self.set_last_hurt_by_mob(Some(entity));
         }
     }
 
     /// Records the causing entity as this entity's last-hurt-by player, if
     /// the causing entity is a player.
-    fn resolve_player_responsible_for_damage(&self, world: &World, source: &DamageSource) {
-        let Some(entity_id) = source.causing_entity_id else {
+    fn resolve_player_responsible_for_damage(&self, source: &DamageSource) {
+        let Some(entity) = source.causing_entity() else {
             return;
         };
-        let Some(entity) = world.get_entity_by_id(entity_id) else {
-            return;
-        };
-        if entity.entity_type() == &vanilla_entities::PLAYER {
-            self.set_last_hurt_by_player(entity.uuid(), 100);
+        if entity.as_player().is_some() {
+            self.living_base()
+                .set_last_hurt_by_player_entity(entity, 100);
         }
     }
 
@@ -619,9 +626,9 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this living entity ignores a damage source.
-    fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
+    fn is_invulnerable_to(&self, _world: &World, source: &DamageSource) -> bool {
         self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(world, self, source)
+            || enchantment_helper::is_immune_to_damage(self, source)
     }
 
     /// Main vanilla living-entity damage entry point.
@@ -673,8 +680,8 @@ pub trait LivingEntity: Entity {
 
         self.before_actually_hurt(source, effective_amount);
         self.actually_hurt(world, source, effective_amount);
-        self.resolve_mob_responsible_for_damage(world, source);
-        self.resolve_player_responsible_for_damage(world, source);
+        self.resolve_mob_responsible_for_damage(source);
+        self.resolve_player_responsible_for_damage(source);
 
         if took_full_damage {
             self.broadcast_damage_event(world, source);
@@ -697,9 +704,7 @@ pub trait LivingEntity: Entity {
         }
         // TODO: Play secondary hurt sounds once equipment effects expose them.
 
-        let game_time = self.level().map_or(0, |world| world.game_time());
-        self.living_base()
-            .record_last_damage_source(source, game_time);
+        self.record_last_damage_source(source);
 
         true
     }
@@ -783,9 +788,7 @@ pub trait LivingEntity: Entity {
                         &vanilla_custom_stats::DAMAGE_RESISTED,
                         stats_to_award,
                     );
-                } else if let Some(damage_causer) = source
-                    .causing_entity_id
-                    .and_then(|id| self.level().and_then(|world| world.get_entity_by_id(id)))
+                } else if let Some(damage_causer) = source.causing_entity()
                     && let Some(player) = damage_causer.as_player()
                 {
                     player.award_custom_stat_with_count(
@@ -803,9 +806,7 @@ pub trait LivingEntity: Entity {
             return damage;
         }
 
-        let enchantment_armor = self.level().map_or(0.0, |world| {
-            enchantment_helper::get_damage_protection(&world, self, source)
-        });
+        let enchantment_armor = enchantment_helper::get_damage_protection(self, source);
         if enchantment_armor > 0.0 {
             damage = combat_rules::get_damage_after_magic_absorb(damage, enchantment_armor);
         }
@@ -826,9 +827,7 @@ pub trait LivingEntity: Entity {
 
         let absorbed_damage = original_damage - damage;
         if (0.0..f32::MAX).contains(&absorbed_damage)
-            && let Some(damage_causer) = source
-                .causing_entity_id
-                .and_then(|id| world.get_entity_by_id(id))
+            && let Some(damage_causer) = source.causing_entity()
             && let Some(player) = damage_causer.as_player()
         {
             player.award_custom_stat_with_count(
@@ -857,9 +856,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns the horizontal direction used by vanilla damage knockback.
     fn damage_knockback_direction(&self, source: &DamageSource) -> (f64, f64) {
-        if let Some(direct_entity_id) = source.direct_entity_id
-            && let Some(world) = self.level()
-            && let Some(direct_entity) = world.get_entity_by_id(direct_entity_id)
+        if let Some(direct_entity) = source.direct_entity()
             && let Some(projectile) = direct_entity.as_projectile()
             && let Some(hurt_entity) = self.as_living_entity()
         {
@@ -868,7 +865,7 @@ pub trait LivingEntity: Entity {
             return (-xd, -zd);
         }
 
-        let Some(source_position) = source.source_position else {
+        let Some(source_position) = source.source_position() else {
             return (0.0, 0.0);
         };
 
@@ -928,9 +925,13 @@ pub trait LivingEntity: Entity {
             CDamageEvent {
                 entity_id: self.id(),
                 source_type_id: source.damage_type.id() as i32,
-                source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
-                source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
-                source_position: source.source_position,
+                source_cause_id: source
+                    .causing_entity()
+                    .map_or(0, |entity| entity.id().wrapping_add(1)),
+                source_direct_id: source
+                    .direct_entity()
+                    .map_or(0, |entity| entity.id().wrapping_add(1)),
+                source_position: source.source_position_raw(),
             },
             None,
         );
@@ -1006,9 +1007,7 @@ pub trait LivingEntity: Entity {
         if let Some(world) = self.level()
             && let Some(self_entity) = self.as_living_entity()
         {
-            let source_entity = source
-                .causing_entity_id
-                .and_then(|id| world.get_entity_by_id(id));
+            let source_entity = source.causing_entity();
             if source_entity.is_none_or(|entity| entity.killed_entity(&world, self_entity, source))
             {
                 self.game_event(&vanilla_game_events::ENTITY_DIE);
@@ -1060,7 +1059,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns the experience reward for this entity's death; currently
     /// equal to the base reward (see TODO).
-    fn experience_reward(&self, _world: &World, _killer_entity_id: Option<i32>) -> i32 {
+    fn experience_reward(&self, _world: &World, _killer_entity: Option<&dyn Entity>) -> i32 {
         // TODO: Apply EnchantmentHelper.processMobExperience once enchantment
         // value-effect hooks can receive the killer/living-entity context.
         self.base_experience_reward()
@@ -1079,12 +1078,12 @@ pub trait LivingEntity: Entity {
                 mob.drop_custom_death_loot_mob(source, killed_by_player);
             }
         }
-        self.drop_experience(&world, source.causing_entity_id);
+        self.drop_experience(&world, source.causing_entity().map(AsRef::as_ref));
         // TODO: Drop non-mob equipment overrides once those foundations exist.
     }
 
     /// Awards experience for this entity's death when eligible, spawning an experience orb.
-    fn drop_experience(&self, world: &Arc<World>, killer_entity_id: Option<i32>) {
+    fn drop_experience(&self, world: &Arc<World>, killer_entity: Option<&dyn Entity>) {
         if self.was_experience_consumed() {
             return;
         }
@@ -1097,7 +1096,7 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        let reward = self.experience_reward(world, killer_entity_id);
+        let reward = self.experience_reward(world, killer_entity);
         if reward > 0 {
             ExperienceOrbEntity::award(world, self.position(), reward);
         }
@@ -1939,7 +1938,7 @@ pub trait LivingEntity: Entity {
     /// Runs vanilla `LivingEntity.tick`.
     ///
     /// The default `Entity::tick` dispatches living entities here.
-    fn tick_living_entity(&self) {
+    fn tick_living_entity(&self, entity: &SharedEntity) {
         self.default_tick();
         self.living_base().decrement_invulnerable_time();
         self.tick_mob_effects();
@@ -1952,7 +1951,7 @@ pub trait LivingEntity: Entity {
         }
 
         if !self.is_removed() {
-            self.ai_step();
+            self.ai_step(entity);
         }
 
         self.tick_living_state();
@@ -2181,7 +2180,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Server AI hook called from vanilla `LivingEntity.aiStep()`.
-    fn server_ai_step(&self) {}
+    fn server_ai_step(&self, _entity: &SharedEntity) {}
 
     /// Returns the jump-height bonus from the Jump Boost effect, scaling with amplifier.
     fn get_jump_boost_power(&self) -> f32 {
@@ -2296,12 +2295,17 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement while this entity is being ridden and steered by a controlling player.
-    fn travel_ridden(&self, controller: &Player, self_input: DVec3) -> Option<MoveResult> {
+    fn travel_ridden(
+        &self,
+        entity: &SharedEntity,
+        controller: &Player,
+        self_input: DVec3,
+    ) -> Option<MoveResult> {
         let ridden_input = self.ridden_input(controller, self_input);
         self.tick_ridden(controller, ridden_input);
         if self.can_simulate_movement() {
             self.set_speed(self.ridden_speed(controller));
-            return self.travel(ridden_input);
+            return self.travel(entity, ridden_input);
         }
 
         self.set_velocity(DVec3::ZERO);
@@ -2312,7 +2316,7 @@ pub trait LivingEntity: Entity {
     ///
     /// This covers the shared travel state Steel currently has; mob AI and
     /// equipment ticking are still separate follow-up work.
-    fn default_ai_step(&self) -> Option<MoveResult> {
+    fn default_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         self.tick_no_jump_delay();
         if !self.can_simulate_movement() {
             self.set_velocity(self.velocity() * 0.98);
@@ -2326,7 +2330,7 @@ pub trait LivingEntity: Entity {
             let input = self.travel_input();
             self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
         } else if self.is_effective_ai() {
-            self.server_ai_step();
+            self.server_ai_step(entity);
         }
 
         self.handle_living_jump();
@@ -2351,9 +2355,9 @@ pub trait LivingEntity: Entity {
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
         {
-            self.travel_ridden(controller, input)
+            self.travel_ridden(entity, controller, input)
         } else if self.can_simulate_movement() && self.is_effective_ai() {
-            self.travel(input)
+            self.travel(entity, input)
         } else {
             None
         };
@@ -2365,8 +2369,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs one AI-driven movement and effect tick for the entity.
-    fn ai_step(&self) -> Option<MoveResult> {
-        self.default_ai_step()
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.default_ai_step(entity)
     }
 
     /// Pushes nearby colliding entities away from this one.
@@ -2527,12 +2531,13 @@ pub trait LivingEntity: Entity {
     /// Applies friction-adjusted relative movement and returns the resulting velocity and move result.
     fn handle_relative_friction_and_calculate_movement(
         &self,
+        entity: &SharedEntity,
         input: DVec3,
         block_friction: f32,
     ) -> Option<(DVec3, MoveResult)> {
         self.move_relative(self.get_friction_influenced_speed(block_friction), input);
         self.set_velocity(self.handle_on_climbable(self.velocity()));
-        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if (result.horizontal_collision || self.is_jumping())
             && (self.on_climbable()
@@ -2546,7 +2551,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement, gravity, and air friction while the entity is airborne.
-    fn travel_in_air(&self, input: DVec3) -> Option<MoveResult> {
+    fn travel_in_air(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
@@ -2556,7 +2561,7 @@ pub trait LivingEntity: Entity {
         };
         let horizontal_friction = block_friction * 0.91;
         let (movement, result) =
-            self.handle_relative_friction_and_calculate_movement(input, block_friction)?;
+            self.handle_relative_friction_and_calculate_movement(entity, input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
             movement.y + levitation_y
         } else {
@@ -2637,6 +2642,7 @@ pub trait LivingEntity: Entity {
     /// Handles movement, drag, and buoyancy effects while the entity is swimming in water.
     fn travel_in_water(
         &self,
+        entity: &SharedEntity,
         input: DVec3,
         base_gravity: f64,
         is_falling: bool,
@@ -2663,7 +2669,7 @@ pub trait LivingEntity: Entity {
         }
 
         self.move_relative(speed, input);
-        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if result.horizontal_collision && self.on_climbable() {
             movement.y = 0.2;
@@ -2687,13 +2693,14 @@ pub trait LivingEntity: Entity {
     /// Handles movement and drag effects while the entity is moving through lava.
     fn travel_in_lava(
         &self,
+        entity: &SharedEntity,
         input: DVec3,
         base_gravity: f64,
         is_falling: bool,
         old_y: f64,
     ) -> Option<MoveResult> {
         self.move_relative(0.02, input);
-        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
         if self.fluid_contact().lava_height() <= self.get_fluid_jump_threshold() {
             let movement = self.velocity();
             self.set_velocity(DVec3::new(
@@ -2720,17 +2727,17 @@ pub trait LivingEntity: Entity {
     }
 
     /// Dispatches fluid movement handling to the water or lava variant based on the current fluid.
-    fn travel_in_fluid(&self, input: DVec3) -> Option<MoveResult> {
+    fn travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let is_falling = self.velocity().y <= 0.0;
         let old_y = self.position().y;
         let base_gravity = self.get_effective_gravity();
         if self.is_in_water() {
-            let result = self.travel_in_water(input, base_gravity, is_falling, old_y);
+            let result = self.travel_in_water(entity, input, base_gravity, is_falling, old_y);
             self.float_in_water_while_ridden();
             return result;
         }
 
-        self.travel_in_lava(input, base_gravity, is_falling, old_y)
+        self.travel_in_lava(entity, input, base_gravity, is_falling, old_y)
     }
 
     /// Mirrors the validation part of vanilla `LivingEntity.updateFallFlying()`.
@@ -2825,9 +2832,9 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement, lift, and collision damage while the entity is gliding with an elytra.
-    fn travel_fall_flying(&self, input: DVec3) -> Option<MoveResult> {
+    fn travel_fall_flying(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         if self.on_climbable() {
-            let result = self.travel_in_air(input);
+            let result = self.travel_in_air(entity, input);
             self.stop_fall_flying();
             return result;
         }
@@ -2835,7 +2842,7 @@ pub trait LivingEntity: Entity {
         let previous_movement = self.velocity();
         let previous_horizontal_speed = horizontal_distance(previous_movement);
         self.set_velocity(self.update_fall_flying_movement(previous_movement));
-        let result = self.move_entity(MoverType::SelfMovement, self.velocity());
+        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         let new_horizontal_speed = horizontal_distance(self.velocity());
         self.handle_fall_flying_collisions(previous_horizontal_speed, new_horizontal_speed);
         result
@@ -2843,22 +2850,22 @@ pub trait LivingEntity: Entity {
 
     /// Dispatches movement to fluid, fall-flying, or air travel handling
     /// based on current state.
-    fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
+    fn default_travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let fluid_state = get_fluid_state(&world, self.block_position());
         if self.should_travel_in_fluid(fluid_state) {
-            return self.travel_in_fluid(input);
+            return self.travel_in_fluid(entity, input);
         }
         if self.is_fall_flying() {
-            return self.travel_fall_flying(input);
+            return self.travel_fall_flying(entity, input);
         }
 
-        self.travel_in_air(input)
+        self.travel_in_air(entity, input)
     }
 
     /// Handles the entity's self-driven movement for the current tick based on its input.
-    fn travel(&self, input: DVec3) -> Option<MoveResult> {
-        self.default_travel(input)
+    fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+        self.default_travel(entity, input)
     }
 
     /// Returns the bed position that makes this living entity sleeping.
@@ -3140,24 +3147,18 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     killed_by_player: bool,
     rng: &mut R,
 ) -> Vec<ItemStack> {
-    let causing_entity = source
-        .causing_entity_id
-        .and_then(|entity_id| world.get_entity_by_id(entity_id));
-    let direct_entity = source
-        .direct_entity_id
-        .and_then(|entity_id| world.get_entity_by_id(entity_id));
+    let causing_entity = source.causing_entity();
+    let direct_entity = source.direct_entity();
     let last_damage_player = if killed_by_player {
-        entity
-            .last_hurt_by_player_uuid()
-            .and_then(|uuid| world.get_entity_by_uuid(&uuid))
+        entity.living_base().last_hurt_by_player(world)
     } else {
         None
     };
 
     let position = entity.position();
     let this_entity = living_entity_loot_ref(entity);
-    let causing_entity = causing_entity.as_deref().map(entity_loot_ref);
-    let direct_entity = direct_entity.as_deref().map(entity_loot_ref);
+    let causing_entity = causing_entity.map(|entity| entity_loot_ref(entity.as_ref()));
+    let direct_entity = direct_entity.map(|entity| entity_loot_ref(entity.as_ref()));
     let last_damage_player = last_damage_player.as_deref().map(entity_loot_ref);
     let damage_source = DamageSourceInfo {
         damage_type: Some(&source.damage_type.key),

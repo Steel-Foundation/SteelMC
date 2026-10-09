@@ -85,20 +85,21 @@ mod tests {
     fn detector_updates_only_on_vanilla_twenty_game_tick_cadence() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("daylight_detector_cadence");
+        let world_fixture = fresh_test_world("daylight_detector_cadence");
+        let world = &world_fixture.world;
         assert_eq!(
             world.set_clock_total_ticks(&vanilla_world_clocks::OVERWORLD, 18_000),
             Some(())
         );
         let pos = BlockPos::new(4, 64, 4);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::DAYLIGHT_DETECTOR
             .default_state()
             .set_value(&BlockStateProperties::INVERTED, true);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
-        let detector = DaylightDetectorBlockEntity::new(Arc::downgrade(&world), pos, state);
+        let detector = DaylightDetectorBlockEntity::new(Arc::downgrade(world), pos, state);
 
-        detector.tick(&world);
+        detector.tick(world);
         assert_eq!(
             world
                 .get_block_state(pos)
@@ -106,9 +107,9 @@ mod tests {
             11
         );
 
-        advance_test_game_time_to(&world, 1);
+        advance_test_game_time_to(world, 1);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
-        detector.tick(&world);
+        detector.tick(world);
         assert_eq!(
             world
                 .get_block_state(pos)

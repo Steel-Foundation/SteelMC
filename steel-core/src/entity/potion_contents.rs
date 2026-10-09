@@ -6,18 +6,18 @@ use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::data_components::PotionContents;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
-use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
+use crate::entity::{LivingEntityRef, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
 pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,
-    user: &dyn LivingEntity,
+    user: LivingEntityRef<'_>,
     duration_scale: f32,
 ) {
     // Vanilla passes the drinker itself as both `source` and `owner` when it
     // is a player (`null` otherwise), attributing instantaneous damage to it.
-    let damage_source_entity = user.as_player().map(Entity::id);
+    let damage_source_entity = user.living().as_player().map(|_| user.entity());
     for effect in contents.all_effects() {
         let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect.effect());
         if let Some(instantaneous) = behavior.as_instantaneous() {
@@ -27,7 +27,7 @@ pub(crate) fn apply_potion_contents(
             // `owner`.
             instantaneous.apply_instantaneous(
                 world,
-                user,
+                user.living(),
                 effect.amplifier(),
                 damage_source_entity,
                 damage_source_entity,
@@ -37,7 +37,8 @@ pub(crate) fn apply_potion_contents(
         }
 
         let scaled_duration = scale_effect_duration(effect.duration(), duration_scale);
-        user.add_mob_effect(to_runtime_instance(&effect, scaled_duration));
+        user.living()
+            .add_mob_effect(to_runtime_instance(&effect, scaled_duration));
     }
 }
 
@@ -74,7 +75,8 @@ mod tests {
 
     use super::{apply_potion_contents, scale_effect_duration};
     use crate::behavior::init_behaviors;
-    use crate::entity::LivingEntity;
+    use crate::entity::{LivingEntity, LivingEntityRef, SharedEntity};
+    use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration
@@ -109,9 +111,11 @@ mod tests {
     fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("instant_health_high_amplifier");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Test", 1).build();
+        let world_fixture = fresh_test_world("instant_health_high_amplifier");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
+        let player_entity: SharedEntity = Arc::<Player>::clone(&player);
         player.set_health(1.0);
 
         let contents = PotionContents::new(
@@ -125,7 +129,12 @@ mod tests {
             None,
         );
 
-        apply_potion_contents(&contents, &world, player.as_ref(), 1.0);
+        apply_potion_contents(
+            &contents,
+            world,
+            LivingEntityRef::new(&player_entity).expect("player is living"),
+            1.0,
+        );
 
         // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
         assert_eq!(player.get_health(), 5.0);
