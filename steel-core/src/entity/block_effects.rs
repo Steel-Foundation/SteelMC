@@ -11,7 +11,7 @@ const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
 const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
 
-/// Deduplicates block positions inline, switching to a hash set for unusually large sweeps.
+/// Deduplicates up to 16 positions without allocating, then switches to a hash set.
 pub(super) enum VisitedBlockPositions {
     Inline(SmallVec<[BlockPos; 16]>),
     Hashed(FxHashSet<BlockPos>),
@@ -521,6 +521,30 @@ fn sign_i32(value: f64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visited_positions_stay_inline_through_sixteen_and_preserve_duplicates_after_seventeen() {
+        let mut visited = VisitedBlockPositions::default();
+        for x in 0..16 {
+            assert!(visited.insert(BlockPos::new(x, 64, 0)));
+        }
+        for x in 0..16 {
+            assert!(!visited.insert(BlockPos::new(x, 64, 0)));
+        }
+        let VisitedBlockPositions::Inline(inline) = &visited else {
+            panic!("sixteen unique positions must remain inline");
+        };
+        assert!(!inline.spilled());
+
+        assert!(visited.insert(BlockPos::new(16, 64, 0)));
+        let VisitedBlockPositions::Hashed(hashed) = &visited else {
+            panic!("the seventeenth unique position must use the hash set");
+        };
+        assert_eq!(hashed.len(), 17);
+        for x in 0..17 {
+            assert!(!visited.insert(BlockPos::new(x, 64, 0)));
+        }
+    }
 
     fn visited_positions(from: DVec3, to: DVec3, aabb_at_target: WorldAabb) -> Vec<BlockPos> {
         let mut positions = Vec::new();

@@ -19,6 +19,8 @@ use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::explosion::default_block_explosion_resistance;
 use crate::world::{BlockInteraction, DefaultExplosionDamageCalculator};
 
+mod gameplay;
+
 const FIXED_RANDOM_SAMPLE: f32 = 0.5;
 const STANDARD_TNT_RADIUS: f32 = 4.0;
 const MAX_TNT_EXPLOSION_POWER: f32 = 128.0;

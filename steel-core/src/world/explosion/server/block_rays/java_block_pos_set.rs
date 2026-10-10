@@ -1,94 +1,104 @@
 //! Explosion-local emulation of Java `HashSet<BlockPos>` iteration order.
+//!
+//! Distinct hashes follow `OpenJDK` 25's linked tree-bin order. `BlockPos` inherits
+//! `Comparable<Vec3i>`, so equal-hash ties use JVM identities. Here ties use insertion
+//! indices, matching increasing JVM identities for plain `BlockPos` keys. Different
+//! identities can also change other entries' order in that bin and its later splits.
 
 use std::mem;
 use std::vec::IntoIter;
 
+use rustc_hash::FxHashMap;
 use steel_utils::BlockPos;
 
-const JAVA_HASH_MAP_TREEIFY_THRESHOLD: usize = 8;
-const JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY: usize = 64;
-const JAVA_HASH_MAP_LOAD_FACTOR_NUMERATOR: usize = 3;
-const JAVA_HASH_MAP_LOAD_FACTOR_DENOMINATOR: usize = 4;
-const JAVA_HASH_MAP_SPREAD_SHIFT: u32 = 16;
-const JAVA_BLOCK_POS_SET_EMPTY_INDEX: u32 = u32::MAX;
+#[cfg(test)]
+mod tests;
+mod tree;
+
+const EMPTY: u32 = u32::MAX;
+const TREEIFY_THRESHOLD: usize = 8;
+const MIN_TREEIFY_CAPACITY: usize = 64;
 
 #[derive(Default)]
 pub(super) struct JavaBlockPosSet {
-    buckets: Vec<JavaBlockPosBucket>,
-    entries: Vec<JavaBlockPosEntry>,
+    buckets: Vec<Bucket>,
+    entries: Vec<Entry>,
+    // Allocate tree links only for entries that have actually entered a tree bin.
+    trees: FxHashMap<u32, tree::Links>,
 }
 
 #[derive(Clone, Copy)]
-struct JavaBlockPosBucket {
+struct Bucket {
     head: u32,
+    // EMPTY marks a tree bin; empty list bins use a dummy tail and an EMPTY head.
     tail: u32,
 }
 
-impl JavaBlockPosBucket {
+impl Bucket {
     const EMPTY: Self = Self {
-        head: JAVA_BLOCK_POS_SET_EMPTY_INDEX,
-        tail: JAVA_BLOCK_POS_SET_EMPTY_INDEX,
+        head: EMPTY,
+        tail: 0,
     };
+
+    const fn is_tree(self) -> bool {
+        self.tail == EMPTY
+    }
 }
 
-struct JavaBlockPosEntry {
+struct Entry {
     pos: BlockPos,
     next: u32,
 }
 
 impl JavaBlockPosSet {
+    #[inline]
     pub(super) fn insert(&mut self, pos: BlockPos) -> bool {
         if self.buckets.is_empty() {
-            self.buckets.resize(16, JavaBlockPosBucket::EMPTY);
+            self.buckets.resize(16, Bucket::EMPTY);
             self.entries.reserve(16);
         }
-        let index = java_block_pos_bucket(pos, self.buckets.len());
+        let hash = spread(pos);
+        let index = hash as u32 as usize & (self.buckets.len() - 1);
         let bucket = self.buckets[index];
-        let mut current = bucket.head;
         let mut bin_len = 0;
-        while current != JAVA_BLOCK_POS_SET_EMPTY_INDEX {
-            let entry = &self.entries[current as usize];
-            if entry.pos == pos {
+        if bucket.is_tree() {
+            if self.find_in_tree(bucket.head, hash, pos) {
                 return false;
             }
-            current = entry.next;
-            bin_len += 1;
+        } else {
+            let mut current = bucket.head;
+            while current != EMPTY {
+                let entry = &self.entries[current as usize];
+                if entry.pos == pos {
+                    return false;
+                }
+                current = entry.next;
+                bin_len += 1;
+            }
         }
 
         let Ok(entry_index) = u32::try_from(self.entries.len()) else {
             panic!("JavaBlockPosSet entry arena exceeded its u32 index space");
         };
         assert_ne!(
-            entry_index, JAVA_BLOCK_POS_SET_EMPTY_INDEX,
+            entry_index, EMPTY,
             "JavaBlockPosSet entry arena exhausted its u32 index space"
         );
-        self.entries.push(JavaBlockPosEntry {
-            pos,
-            next: JAVA_BLOCK_POS_SET_EMPTY_INDEX,
-        });
-        if bucket.tail == JAVA_BLOCK_POS_SET_EMPTY_INDEX {
-            self.buckets[index] = JavaBlockPosBucket {
-                head: entry_index,
-                tail: entry_index,
-            };
+        self.entries.push(Entry { pos, next: EMPTY });
+        if bucket.is_tree() {
+            self.insert_tree(index, entry_index);
         } else {
-            self.entries[bucket.tail as usize].next = entry_index;
-            self.buckets[index].tail = entry_index;
+            self.append(index, entry_index);
+            // Java treeifies when adding the ninth bin entry.
+            if bin_len >= TREEIFY_THRESHOLD {
+                if self.buckets.len() < MIN_TREEIFY_CAPACITY {
+                    self.resize();
+                } else {
+                    self.treeify(index);
+                }
+            }
         }
-
-        // HashMap attempts to treeify after adding a ninth entry to one bin, but grows the
-        // table instead while its capacity is below 64. That split changes iteration order.
-        if self.buckets.len() < JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY
-            && bin_len >= JAVA_HASH_MAP_TREEIFY_THRESHOLD
-        {
-            self.resize();
-        }
-        // Steel intentionally keeps list bins at larger capacities. HashMap tree-bin order can
-        // depend on JVM identity hashes and is not a reproducible Vanilla ordering contract.
-        if self.entries.len()
-            > self.buckets.len() * JAVA_HASH_MAP_LOAD_FACTOR_NUMERATOR
-                / JAVA_HASH_MAP_LOAD_FACTOR_DENOMINATOR
-        {
+        if self.entries.len() > self.buckets.len() * 3 / 4 {
             self.resize();
         }
         true
@@ -99,30 +109,36 @@ impl JavaBlockPosSet {
         self.buckets.len()
     }
 
+    fn append(&mut self, bucket_index: usize, entry_index: u32) {
+        debug_assert!(!self.buckets[bucket_index].is_tree());
+        let bucket = &mut self.buckets[bucket_index];
+        self.entries[entry_index as usize].next = EMPTY;
+        if bucket.head == EMPTY {
+            bucket.head = entry_index;
+        } else {
+            self.entries[bucket.tail as usize].next = entry_index;
+        }
+        bucket.tail = entry_index;
+    }
+
     fn resize(&mut self) {
-        let new_capacity = self.buckets.len().saturating_mul(2);
-        if new_capacity == self.buckets.len() {
+        let old_capacity = self.buckets.len();
+        // HashMap stops growing at MAXIMUM_CAPACITY.
+        if old_capacity >= 1 << 30 {
             return;
         }
-        let resized = vec![JavaBlockPosBucket::EMPTY; new_capacity];
-        let old_buckets = mem::replace(&mut self.buckets, resized);
-        for bucket in old_buckets {
+        let old_buckets = mem::replace(&mut self.buckets, vec![Bucket::EMPTY; old_capacity * 2]);
+        for (index, bucket) in old_buckets.into_iter().enumerate() {
+            if bucket.is_tree() {
+                self.split_tree(index, bucket.head, old_capacity);
+                continue;
+            }
             let mut current = bucket.head;
-            while current != JAVA_BLOCK_POS_SET_EMPTY_INDEX {
-                let entry_index = current as usize;
-                let next = self.entries[entry_index].next;
-                let index = java_block_pos_bucket(self.entries[entry_index].pos, new_capacity);
-                let new_bucket = self.buckets[index];
-                self.entries[entry_index].next = JAVA_BLOCK_POS_SET_EMPTY_INDEX;
-                if new_bucket.tail == JAVA_BLOCK_POS_SET_EMPTY_INDEX {
-                    self.buckets[index] = JavaBlockPosBucket {
-                        head: current,
-                        tail: current,
-                    };
-                } else {
-                    self.entries[new_bucket.tail as usize].next = current;
-                    self.buckets[index].tail = current;
-                }
+            while current != EMPTY {
+                let next = self.entries[current as usize].next;
+                let target = spread(self.entries[current as usize].pos) as u32 as usize
+                    & (self.buckets.len() - 1);
+                self.append(target, current);
                 current = next;
             }
         }
@@ -137,7 +153,7 @@ impl IntoIterator for JavaBlockPosSet {
         let mut ordered = Vec::with_capacity(self.entries.len());
         for bucket in self.buckets {
             let mut current = bucket.head;
-            while current != JAVA_BLOCK_POS_SET_EMPTY_INDEX {
+            while current != EMPTY {
                 let entry = &self.entries[current as usize];
                 ordered.push(entry.pos);
                 current = entry.next;
@@ -147,8 +163,7 @@ impl IntoIterator for JavaBlockPosSet {
     }
 }
 
-const fn java_block_pos_bucket(pos: BlockPos, capacity: usize) -> usize {
+const fn spread(pos: BlockPos) -> i32 {
     let hash = pos.java_hash_code() as u32;
-    let spread = hash ^ (hash >> JAVA_HASH_MAP_SPREAD_SHIFT);
-    spread as usize & (capacity - 1)
+    (hash ^ (hash >> 16)) as i32
 }
