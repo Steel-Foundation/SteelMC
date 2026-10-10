@@ -90,6 +90,56 @@ impl ItemBehavior for ReplaceHeldStackOnUseTick {
     }
 }
 
+struct ShrinkStackOnUseTick;
+
+impl ItemBehavior for ShrinkStackOnUseTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        _user: LivingEntityRef<'_>,
+        stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        stack.shrink(1);
+    }
+}
+
+struct ShrinkAndStopUseOnTick;
+
+impl ItemBehavior for ShrinkAndStopUseOnTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        user: LivingEntityRef<'_>,
+        stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        stack.shrink(1);
+        let Some(player) = user.living().as_player() else {
+            panic!("test item use requires a player");
+        };
+        player.stop_using_item();
+    }
+}
+
+struct SwitchToOffhandUseOnTick;
+
+impl ItemBehavior for SwitchToOffhandUseOnTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        user: LivingEntityRef<'_>,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        let Some(player) = user.living().as_player() else {
+            panic!("test item use requires a player");
+        };
+        player.stop_using_item();
+        player.start_using_item(InteractionHand::OffHand);
+    }
+}
+
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
     let world_fixture = fresh_test_world("initial_player_cosmetic_metadata");
@@ -1610,6 +1660,89 @@ fn active_item_use_does_not_overwrite_a_replaced_hand_stack() {
     assert!(hand_item.is(&vanilla_items::HONEY_BOTTLE));
     assert_eq!(hand_item.count(), 2);
     assert!(!player.living_base.is_using_item());
+}
+
+#[test]
+fn active_item_use_writes_back_changes_to_the_working_stack() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("active_item_use_writes_back_working_stack_changes");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 3));
+    player.start_using_item(InteractionHand::MainHand);
+    let Some(active) = player.living_base.active_item_use() else {
+        panic!("honey bottle use should start");
+    };
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
+
+    player.tick_active_item_use_with_behavior(&player_entity, &ShrinkStackOnUseTick, active);
+
+    let inventory = player.inventory.lock();
+    let hand_item = inventory.get_item_in_hand(InteractionHand::MainHand);
+    assert_eq!(hand_item.count(), 2);
+    assert_eq!(
+        player.active_item_use_hand(),
+        Some(InteractionHand::MainHand)
+    );
+}
+
+#[test]
+fn active_item_use_writes_back_working_stack_changes_when_use_stops_in_callback() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("active_item_use_writes_back_when_callback_stops_use");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 3));
+    player.start_using_item(InteractionHand::MainHand);
+    let Some(active) = player.living_base.active_item_use() else {
+        panic!("honey bottle use should start");
+    };
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
+
+    player.tick_active_item_use_with_behavior(&player_entity, &ShrinkAndStopUseOnTick, active);
+
+    let inventory = player.inventory.lock();
+    let hand_item = inventory.get_item_in_hand(InteractionHand::MainHand);
+    assert_eq!(hand_item.count(), 2);
+    assert!(!player.living_base.is_using_item());
+}
+
+#[test]
+fn active_item_use_preserves_a_new_offhand_use_started_by_callback() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("active_item_use_preserves_callback_offhand_use");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+    {
+        let mut inventory = player.inventory.lock();
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::HONEY_BOTTLE));
+        inventory.set_offhand_item(ItemStack::new(&vanilla_items::COOKIE));
+    }
+    player.start_using_item(InteractionHand::MainHand);
+    let Some(active) = player.living_base.active_item_use() else {
+        panic!("main-hand honey bottle use should start");
+    };
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
+
+    player.tick_active_item_use_with_behavior(&player_entity, &SwitchToOffhandUseOnTick, active);
+
+    assert_eq!(
+        player.active_item_use_hand(),
+        Some(InteractionHand::OffHand)
+    );
+    assert!(player.living_base.is_using_item());
 }
 
 /// Regression test: drinking a honey bottle from a full inventory, through
