@@ -179,8 +179,8 @@ pub use c_update_attributes::{
 pub use c_update_mob_effect::{CUpdateMobEffect, MobEffectPacketFlags};
 pub use chat::{
     ArgumentSignature, CDisguisedChat, CPlayerChat, CSystemChat, ChatTypeBound, FilterType,
-    LastSeenMessagesUpdate, PreviousMessage, ProtocolRemoteChatSessionData, SChat, SChatAck,
-    SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+    LastSeenMessagesUpdate, MessageSignature, PreviousMessage, ProtocolRemoteChatSessionData,
+    SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
 };
 pub use chunk::{
     BlockEntityInfo, CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk,
