@@ -1,5 +1,6 @@
 use crate::SERVER;
 use crate::logger::history::History;
+use crate::logger::search::ReverseSearch;
 use crate::logger::{CommandLogger, LogState, Move, terminal_width};
 use crossterm::{
     clipboard::CopyToClipboard,
@@ -90,6 +91,9 @@ impl CommandLogger {
                 Some(key) = rx.recv() => {
                     let mut lock = self.input.write().await;
                     let state = &mut lock as &mut LogState;
+                    let Some(key) = search_key(state, key)? else {
+                        continue;
+                    };
                     match key {
                         ExtendedKey::Generic(key) => match key.code {
                             KeyCode::Enter => {
@@ -273,6 +277,11 @@ impl CommandLogger {
                                         copy_to_clipboard(state);
                                         continue;
                                     }
+                                    // Cancels the pending input first, and the server once there is none
+                                    if !state.out.is_empty() {
+                                        state.reset()?;
+                                        continue;
+                                    }
                                     state.cancel_token.cancel();
                                 }
                                 'q' => {
@@ -302,6 +311,10 @@ impl CommandLogger {
                                 }
                                 'n' => {
                                     next(state)?;
+                                    continue;
+                                }
+                                'r' => {
+                                    ReverseSearch::start(state)?;
                                     continue;
                                 }
                                 'j' => {
@@ -395,6 +408,36 @@ fn copy_to_clipboard(input: &mut LogState) -> Option<()> {
         return None;
     }
     Some(())
+}
+
+/// Handles a key while a reverse search is active. Keys the search does not own are
+/// returned for normal input handling, after accepting the current match.
+fn search_key(state: &mut LogState, key: ExtendedKey) -> Result<Option<ExtendedKey>> {
+    if state.search.is_none() {
+        return Ok(Some(key));
+    }
+    match key {
+        ExtendedKey::Ctrl('r') => ReverseSearch::advance(state)?,
+        ExtendedKey::Ctrl('c' | 'g') => ReverseSearch::abort(state)?,
+        ExtendedKey::String(text) if !text.contains('\n') => ReverseSearch::push(state, &text)?,
+        ExtendedKey::Generic(event) => match event.code {
+            KeyCode::Esc => ReverseSearch::abort(state)?,
+            KeyCode::Backspace => ReverseSearch::pop(state)?,
+            // Leaving the search is enough; completions come on the next press
+            KeyCode::Tab => ReverseSearch::accept(state)?,
+            _ => {
+                ReverseSearch::accept(state)?;
+                return Ok(Some(ExtendedKey::Generic(event)));
+            }
+        },
+        // Resizing only redraws, so the search survives it
+        ExtendedKey::Resize => return Ok(Some(ExtendedKey::Resize)),
+        key => {
+            ReverseSearch::accept(state)?;
+            return Ok(Some(key));
+        }
+    }
+    Ok(None)
 }
 
 fn previous(state: &mut LogState) -> Result<()> {
