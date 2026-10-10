@@ -109,7 +109,8 @@ impl PlayerAdvancement {
     fn mark_for_visibility_update(&mut self, advancement: AdvancementRef) {
         let node = REGISTRY.advancements.by_key(&advancement.key);
         if let Some(node) = node {
-            self.roots_to_update.insert(node.root());
+            self.roots_to_update
+                .insert(REGISTRY.advancements.root(node));
         }
     }
 

@@ -78,7 +78,7 @@ pub(crate) fn evaluate_visibility(
     is_done: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef) -> bool,
     output: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef, bool),
 ) -> bool {
-    let root = node.root();
+    let root = REGISTRY.advancements.root(node);
     let mut visibility_stack: Vec<VisibilityRule> = Vec::new();
     evaluate_visibility_with_rules(
         root,

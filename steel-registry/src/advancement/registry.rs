@@ -1,4 +1,3 @@
-use crate::REGISTRY;
 use crate::advancement::{Advancement, positioner};
 use rustc_hash::FxHashMap;
 use std::fmt::{Debug, Display};
@@ -55,15 +54,6 @@ impl AdvancementNode {
     pub const fn set_location(&mut self, x: f32, y: f32) {
         self.x = x;
         self.y = y;
-    }
-
-    #[must_use]
-    pub fn root(&'static self) -> AdvancementNodeRef {
-        let mut advancement_node = self;
-        while let Some(parent) = &advancement_node.parent {
-            advancement_node = &REGISTRY.advancements.adv_nodes[*parent];
-        }
-        advancement_node
     }
 }
 
@@ -206,5 +196,14 @@ impl AdvancementRegistry {
                 }
             }
         }
+    }
+
+    #[must_use]
+    pub fn root(&'static self, advancement_node: AdvancementNodeRef) -> AdvancementNodeRef {
+        let mut advancement_node = advancement_node;
+        while let Some(parent) = &advancement_node.parent {
+            advancement_node = &self.adv_nodes[*parent];
+        }
+        advancement_node
     }
 }
