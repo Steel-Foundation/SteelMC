@@ -87,8 +87,11 @@ impl SpawnEggItem {
         {
             return InteractionResult::Pass;
         }
-        if Self::spawn_offspring(stack, parent).is_none() {
+        let Some(offspring) = Self::spawn_offspring(stack, parent) else {
             return InteractionResult::Pass;
+        };
+        if let Some(offspring) = offspring.as_mob() {
+            parent.on_offspring_spawned_from_egg(player, offspring);
         }
         stack.consume_one(player.has_infinite_materials());
         InteractionResult::SuccessServer
