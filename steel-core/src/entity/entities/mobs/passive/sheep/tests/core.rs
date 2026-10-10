@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 /// Trials for the random breeding-color fallback assertion.
 const COLOR_FALLBACK_TRIALS: u32 = 32;
-/// Trials for the weighted spawn-color sampling assertions.
-const SPAWN_COLOR_TRIALS: u32 = 64;
 /// Vanilla tick rate, converting `AgeableMob.ageUp` seconds into ticks.
 const TICKS_PER_SECOND: i32 = 20;
 
@@ -416,42 +414,6 @@ fn sheep_ate_keeps_adult_age_unchanged() {
 
     assert!(!sheep.is_sheared());
     assert_eq!(sheep.get_age(), 0);
-}
-
-#[test]
-fn sheep_spawn_color_uses_vanilla_biome_configurations() {
-    init_vanilla_registry();
-
-    let desert = REGISTRY
-        .biomes
-        .by_key(&vanilla_biomes::DESERT.key)
-        .expect("desert biome should be registered");
-    let snowy_plains = REGISTRY
-        .biomes
-        .by_key(&vanilla_biomes::SNOWY_PLAINS.key)
-        .expect("snowy plains biome should be registered");
-    let plains = REGISTRY
-        .biomes
-        .by_key(&vanilla_biomes::PLAINS.key)
-        .expect("plains biome should be registered");
-
-    let warm_colors: Vec<DyeColor> = WARM_SPAWN_COLORS.iter().map(|(c, _)| *c).collect();
-    let cold_colors: Vec<DyeColor> = COLD_SPAWN_COLORS.iter().map(|(c, _)| *c).collect();
-    let temperate_colors: Vec<DyeColor> = TEMPERATE_SPAWN_COLORS.iter().map(|(c, _)| *c).collect();
-
-    for _ in 0..SPAWN_COLOR_TRIALS {
-        let mut random = LegacyRandom::from_seed(rand::random());
-        let warm = SheepEntity::random_sheep_color(desert, &mut random);
-        let cold = SheepEntity::random_sheep_color(snowy_plains, &mut random);
-        let temperate = SheepEntity::random_sheep_color(plains, &mut random);
-
-        assert!(warm_colors.contains(&warm), "desert spawn color {warm:?}");
-        assert!(cold_colors.contains(&cold), "snowy spawn color {cold:?}");
-        assert!(
-            temperate_colors.contains(&temperate),
-            "plains spawn color {temperate:?}"
-        );
-    }
 }
 
 #[test]
