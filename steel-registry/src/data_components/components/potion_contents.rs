@@ -135,8 +135,7 @@ impl PotionContents {
             .unwrap_or(default_color)
     }
 
-    /// Returns vanilla `PotionContents.getColorOptional`: the amplifier-weighted
-    /// average of every visible effect's color, or `None` when no effect is visible.
+    /// Blends visible effect colors weighted by amplifier + 1 and returns `None` when no effect is visible
     fn color_from_effects(effects: &[MobEffectInstance]) -> Option<i32> {
         // Vanilla accumulates in `int`, so huge effect lists wrap instead of
         // widening; `ARGB.color` then masks each channel to its low byte.

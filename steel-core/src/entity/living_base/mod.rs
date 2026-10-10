@@ -148,15 +148,13 @@ impl MobEffectInstance {
         self.duration == INFINITE_EFFECT_DURATION
     }
 
-    /// Returns vanilla `MobEffectInstance.endsWithin(ticks)`: whether this
-    /// effect expires within `ticks`. An infinite effect never does.
+    /// Checks whether the duration is at most `ticks` infinite effects never qualify
     #[must_use]
     pub const fn ends_within(&self, ticks: i32) -> bool {
         !self.is_infinite_duration() && self.duration <= ticks
     }
 
-    /// Returns vanilla `MobEffectInstance.mapDuration(mapper)`: applies `mapper`
-    /// to this effect's duration, leaving the infinite and zero sentinels alone.
+    /// Maps the duration leaving zero and infinite durations unchanged
     #[must_use]
     fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
         if self.is_infinite_duration() || self.duration == 0 {

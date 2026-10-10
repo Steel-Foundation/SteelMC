@@ -65,8 +65,7 @@ impl CandleBlock {
         .then(|| state.set_value(LIT_PROPERTY, true))
     }
 
-    /// Vanilla `AbstractCandleBlock.isLit`: whether `state` is a lit candle or
-    /// candle cake.
+    /// Checks whether the state is a lit candle or candle cake
     #[must_use]
     pub fn is_lit(state: steel_utils::BlockStateId) -> bool {
         let block = state.get_block();

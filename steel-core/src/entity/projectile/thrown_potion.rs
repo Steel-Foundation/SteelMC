@@ -1,8 +1,4 @@
-//! Shared splash/lingering potion projectile logic. Concrete potions ([`SplashPotionEntity`](crate::entity::entities::SplashPotionEntity))
-//! implement [`AbstractThrownPotion::on_hit_as_potion`] for their distinct
-//! area-of-effect behavior; everything else (gravity, the water-splash branch,
-//! block-hit fire dowsing, the hurt-knockback direction, and the break
-//! level-event) is shared here.
+//! Shared impact and water interaction logic for thrown potions
 
 use std::sync::Arc;
 
@@ -28,10 +24,9 @@ pub const SPLASH_RANGE_SQ: f64 = 16.0;
 /// Gravity of a thrown potion.
 const DEFAULT_GRAVITY: f64 = 0.05;
 
-/// Vanilla-shaped behavior shared by `ThrownSplashPotion` and `ThrownLingeringPotion`.
+/// Shared behavior for splash and lingering potion projectiles
 pub trait AbstractThrownPotion: ThrowableItemProjectile {
-    /// Vanilla `AbstractThrownPotion.getDefaultGravity()` (0.05, overriding the
-    /// throwable-projectile default of 0.03).
+    /// Returns the gravity of thrown potions (default is 0.05)
     fn thrown_potion_default_gravity(&self) -> f64 {
         DEFAULT_GRAVITY
     }
@@ -39,15 +34,13 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
     /// The effect-specific area-of-effect (splash) or cloud-spawning (lingering) behavior.
     fn on_hit_as_potion(&self, world: &Arc<World>, potion_item: &ItemStack, hit: &ProjectileHit);
 
-    /// Vanilla `AbstractThrownPotion.calculateHorizontalHurtKnockbackDirection`:
-    /// knock the hurt entity radially away from the potion's impact point rather
-    /// than along the potion's flight direction (the `Projectile` default).
+    /// Returns the horizontal direction from the potion to the hurt entity
     fn thrown_potion_knockback_direction(&self, hurt_entity: &dyn LivingEntity) -> (f64, f64) {
         let delta = hurt_entity.position() - self.position();
         (delta.x, delta.z)
     }
 
-    /// Vanilla `AbstractThrownPotion.onHit`.
+    /// Handles impact effects emits the break event and discards the potion
     fn thrown_potion_on_hit(&self, hit: &ProjectileHit) {
         self.projectile_on_hit(hit);
         let Some(world) = self.level() else {
@@ -116,7 +109,7 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         // (vanilla `AbstractThrownPotion.onHitAsWater` also calls `Axolotl.rehydrate()`).
     }
 
-    /// Vanilla `AbstractThrownPotion.onHitBlock`.
+    /// Handles block impact and nearby fire dowsing for water potions
     fn thrown_potion_on_hit_block(&self, hit: &ClipHitResult) {
         self.projectile_on_hit_block(hit);
         let Some(world) = self.level() else {
@@ -151,8 +144,7 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
     }
 }
 
-/// Vanilla `Potion.hasInstantEffects()`: true when any of the *base* potion's
-/// own effects (not the item stack's `custom_effects`) is instantaneous.
+/// Checks for instant effects in the base potion excluding custom effects
 fn potion_has_instant_effects(potion: &Potion) -> bool {
     potion.effects.iter().any(|effect| {
         MOB_EFFECT_BEHAVIORS
@@ -162,8 +154,7 @@ fn potion_has_instant_effects(potion: &Potion) -> bool {
     })
 }
 
-/// Vanilla `AbstractThrownPotion.dowseFire`'s campfire branch: the level event,
-/// `CampfireBlock.dowse`, then unsetting `LIT`.
+/// Plays the extinguish event dowses the campfire and clears `LIT`
 fn dowse_lit_campfire(
     world: &Arc<World>,
     pos: BlockPos,

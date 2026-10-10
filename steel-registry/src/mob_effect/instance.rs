@@ -16,8 +16,7 @@ use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 const MAX_EFFECT_DEPTH: usize = 512;
 
-/// Vanilla's sentinel duration for an effect that never expires
-/// (`MobEffectInstance.INFINITE_DURATION`).
+/// Duration sentinel for effects that never expire
 pub const INFINITE_EFFECT_DURATION: i32 = -1;
 
 /// One status-effect instance, including Vanilla's hidden fallback chain.
