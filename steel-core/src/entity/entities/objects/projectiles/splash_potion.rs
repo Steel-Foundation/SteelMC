@@ -72,7 +72,7 @@ impl SplashPotionEntity {
 
     /// Applies one effect with distance falloff and duration scaling
     fn apply_effect(
-        &self,
+        self: &Arc<Self>,
         world: &World,
         living: &dyn LivingEntity,
         effect: &RegistryMobEffectInstance,
@@ -82,12 +82,13 @@ impl SplashPotionEntity {
     ) {
         let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect.effect());
         if let Some(instantaneous) = behavior.as_instantaneous() {
+            let this: SharedEntity = Arc::<Self>::clone(self);
             instantaneous.apply_instantaneous(
                 world,
                 living,
                 effect.amplifier(),
-                Some(self.id()),
-                owner.map(|owner| owner.id()),
+                Some(&this),
+                owner,
                 scale,
             );
             return;
@@ -100,7 +101,7 @@ impl SplashPotionEntity {
         if scaled_effect.ends_within(MIN_REMAINING_TICKS) {
             return;
         }
-        let effect_source: &dyn Entity = owner.map_or(self, |owner| owner.as_ref());
+        let effect_source: &dyn Entity = owner.map_or(self.as_ref(), |owner| owner.as_ref());
         living.add_mob_effect_with_source(scaled_effect, Some(effect_source));
     }
 }
@@ -114,7 +115,7 @@ impl Entity for SplashPotionEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.throwable_projectile_tick();
     }
 
@@ -170,11 +171,11 @@ impl Projectile for SplashPotionEntity {
         self.thrown_potion_knockback_direction(hurt_entity)
     }
 
-    fn on_hit(&self, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         self.thrown_potion_on_hit(hit);
     }
 
-    fn on_hit_block(&self, hit: &ClipHitResult) {
+    fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         self.thrown_potion_on_hit_block(hit);
     }
 }
@@ -205,7 +206,12 @@ impl ThrowableItemProjectile for SplashPotionEntity {
 }
 
 impl AbstractThrownPotion for SplashPotionEntity {
-    fn on_hit_as_potion(&self, world: &Arc<World>, potion_item: &ItemStack, hit: &ProjectileHit) {
+    fn on_hit_as_potion(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        potion_item: &ItemStack,
+        hit: &ProjectileHit,
+    ) {
         let contents = potion_item
             .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
         let duration_scale =
@@ -267,12 +273,12 @@ mod tests {
         init_behaviors();
 
         let world = test_world();
-        let potion = SplashPotionEntity::new(
+        let potion = Arc::new(SplashPotionEntity::new(
             &vanilla_entities::SPLASH_POTION,
             1,
             DVec3::ZERO,
             Arc::downgrade(world),
-        );
+        ));
         let hit = ProjectileHit::Block {
             location: DVec3::ZERO,
             hit: ClipHitResult {
@@ -285,7 +291,7 @@ mod tests {
             },
         };
 
-        potion.on_hit(&hit);
+        Arc::clone(&potion).on_hit(&hit);
         assert!(potion.is_removed());
     }
 }

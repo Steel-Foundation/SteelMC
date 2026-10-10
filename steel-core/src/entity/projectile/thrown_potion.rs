@@ -32,7 +32,12 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
     }
 
     /// The effect-specific area-of-effect (splash) or cloud-spawning (lingering) behavior.
-    fn on_hit_as_potion(&self, world: &Arc<World>, potion_item: &ItemStack, hit: &ProjectileHit);
+    fn on_hit_as_potion(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        potion_item: &ItemStack,
+        hit: &ProjectileHit,
+    );
 
     /// Returns the horizontal direction from the potion to the hurt entity
     fn thrown_potion_knockback_direction(&self, hurt_entity: &dyn LivingEntity) -> (f64, f64) {
@@ -41,8 +46,11 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
     }
 
     /// Handles impact effects emits the break event and discards the potion
-    fn thrown_potion_on_hit(&self, hit: &ProjectileHit) {
-        self.projectile_on_hit(hit);
+    fn thrown_potion_on_hit(self: Arc<Self>, hit: &ProjectileHit)
+    where
+        Self: Sized + 'static,
+    {
+        Arc::clone(&self).projectile_on_hit(hit);
         let Some(world) = self.level() else {
             return;
         };
@@ -75,7 +83,10 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
 
     /// Splashes water: hurts water-sensitive entities in range and
     /// extinguishes burning ones.
-    fn on_hit_as_water(&self, world: &Arc<World>) {
+    fn on_hit_as_water(self: &Arc<Self>, world: &Arc<World>)
+    where
+        Self: Sized + 'static,
+    {
         let aabb = self.bounding_box().inflate_xyz(4.0, 2.0, 4.0);
         let potion_pos = self.position();
 
@@ -93,9 +104,9 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
 
             if sensitive_to_water {
                 let mut damage = DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
-                    .with_direct_entity(self.id());
+                    .with_direct_entity(Arc::<Self>::clone(self));
                 if let Some(owner) = self.get_owner() {
-                    damage = damage.with_causing_entity(owner.id());
+                    damage = damage.with_causing_entity(owner);
                 }
                 entity.hurt(world, &damage, 1.0);
             }

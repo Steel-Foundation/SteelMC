@@ -69,7 +69,7 @@ impl ItemBehavior for ShovelItem {
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 context.hit_result.block_pos,
-                &GameEventContext::new(Some(context.player), Some(updated_state)),
+                &GameEventContext::new(Some(context.player.as_ref()), Some(updated_state)),
             );
             return InteractionResult::Success;
         }
@@ -80,7 +80,7 @@ impl ItemBehavior for ShovelItem {
             context
                 .world
                 .level_event(level_events::SOUND_EXTINGUISH_FIRE, pos, 0, None);
-            CampfireBlock::dowse(Some(context.player), context.world, pos);
+            CampfireBlock::dowse(Some(context.player.as_ref()), context.world, pos);
             let updated_state = block_state.set_value(&LIT_PROPERTY, false);
             context
                 .world
@@ -88,7 +88,7 @@ impl ItemBehavior for ShovelItem {
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                &GameEventContext::new(Some(context.player), Some(updated_state)),
+                &GameEventContext::new(Some(context.player.as_ref()), Some(updated_state)),
             );
             let infinite_materials = context.player.has_infinite_materials();
             context

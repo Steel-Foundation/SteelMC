@@ -2,6 +2,7 @@
 
 mod clear;
 mod damage;
+mod defaultgamemode;
 mod difficulty;
 mod domain;
 mod enchant;
@@ -33,6 +34,7 @@ mod tellraw;
 mod tick;
 mod time;
 mod title;
+mod transfer;
 mod version;
 mod weather;
 mod worldborder;
@@ -69,6 +71,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
+    builder.register(defaultgamemode::registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
@@ -103,6 +106,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
+    builder.register(transfer::registration())?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
 }
@@ -149,6 +153,7 @@ mod tests {
                 "clear",
                 "deop",
                 "damage",
+                "defaultgamemode",
                 "difficulty",
                 "domain",
                 "enchant",
@@ -184,7 +189,8 @@ mod tests {
                 "version",
                 "weather",
                 "worldborder",
-                "invsee"
+                "invsee",
+                "transfer"
             ]
         );
 

@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 use steel_registry::init_vanilla_registry;
 
 use crate::behavior::init_behaviors;
@@ -68,8 +69,9 @@ fn cow_milks_bucket_into_milk_bucket_for_adults() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = fresh_test_world("cow_milking");
-    let player = TestPlayerBuilder::new(world, "Milker", 10).build();
+    let world_fixture = fresh_test_world("cow_milking");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Milker", 10).build();
     player
         .inventory
         .lock()
@@ -94,8 +96,9 @@ fn cow_milks_bucket_into_milk_bucket_for_adults() {
 fn cow_does_not_milk_when_baby() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("baby_cow_milking");
-    let player = TestPlayerBuilder::new(world, "Milker", 11).build();
+    let world_fixture = fresh_test_world("baby_cow_milking");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Milker", 11).build();
     player
         .inventory
         .lock()
@@ -196,12 +199,13 @@ fn cow_ambient_interval_and_source_match_vanilla_animal_defaults() {
 fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("cow_finalize_spawn");
+    let world_fixture = fresh_test_world("cow_finalize_spawn");
+    let world = &world_fixture.world;
     let cow = CowEntity::new(
         &vanilla_entities::COW,
         1,
         DVec3::new(0.0, 80.0, 0.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
 
     assert!(
@@ -217,7 +221,7 @@ fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
             .is_some()
     );
 
-    let _ = Mob::finalize_spawn(&cow, &world, EntitySpawnReason::Natural, None);
+    let _ = Mob::finalize_spawn(&cow, world, EntitySpawnReason::Natural, None);
 
     assert!(
         REGISTRY

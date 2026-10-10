@@ -259,7 +259,7 @@ pub(crate) struct CommandSource {
 
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
-        let player = sender.get_player().map(Arc::clone);
+        let player = sender.get_player().cloned();
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
             |player| player.get_world(),
@@ -572,13 +572,9 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn command_world_names(&self) -> Vec<String> {
-        let domain = self.world.domain();
         let mut names = Vec::new();
         for key in self.server.worlds.keys() {
             names.push(key.to_string());
-            if key.namespace.as_ref() == domain {
-                names.push(key.path.to_string());
-            }
         }
         names
     }

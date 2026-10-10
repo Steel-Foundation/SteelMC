@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 use steel_utils::types::UpdateFlags;
 
 #[test]
@@ -19,10 +20,12 @@ fn fall_damage_sound_selects_vanilla_small_and_big_sounds() {
 #[test]
 fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
-        .with_entity_type(&vanilla_entities::PIG);
+    let entity = Arc::new(
+        LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
+            .with_entity_type(&vanilla_entities::PIG),
+    );
 
-    assert!(entity.cause_fall_damage(
+    assert!(Arc::clone(&entity).cause_fall_damage(
         8.0,
         1.0,
         &DamageSource::environment(&vanilla_damage_types::FALL),
@@ -34,11 +37,16 @@ fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
 #[test]
 fn living_fall_damage_caps_distance_from_current_impulse() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(
+        0.0,
+        0.0,
+        true,
+        test_world(),
+    ));
 
     entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 4.0, 0.0));
 
-    assert!(entity.cause_fall_damage(
+    assert!(Arc::clone(&entity).cause_fall_damage(
         8.0,
         1.0,
         &DamageSource::environment(&vanilla_damage_types::FALL),
@@ -51,11 +59,11 @@ fn living_fall_damage_caps_distance_from_current_impulse() {
 #[test]
 fn living_fall_damage_resets_current_impulse_when_landing_above_impact() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
 
     entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, -1.0, 0.0));
 
-    assert!(!entity.cause_fall_damage(
+    assert!(!Arc::clone(&entity).cause_fall_damage(
         8.0,
         1.0,
         &DamageSource::environment(&vanilla_damage_types::FALL),
@@ -81,8 +89,9 @@ fn lava_contact_is_ignored_until_after_first_tick() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = fresh_test_world("first_tick_lava_contact");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("first_tick_lava_contact");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let block_pos = BlockPos::new(8, 80, 8);
     assert!(world.set_block(
@@ -91,7 +100,7 @@ fn lava_contact_is_ignored_until_after_first_tick() {
         UpdateFlags::UPDATE_NONE,
     ));
 
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world);
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world));
     entity.base().set_position_local(DVec3::new(8.5, 80.0, 8.5));
 
     let contact = entity.refresh_fluid_contact();
@@ -100,7 +109,7 @@ fn lava_contact_is_ignored_until_after_first_tick() {
     assert!(entity.is_first_tick());
     assert!(!entity.is_in_lava());
 
-    entity.tick();
+    Arc::clone(&entity).tick();
 
     assert!(!entity.is_first_tick());
     assert!(entity.is_in_lava());
