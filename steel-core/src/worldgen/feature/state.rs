@@ -1,6 +1,5 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
-use steel_worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
     pub(super) fn block_matches_holder_set(block: BlockRef, blocks: &BlockHolderSet) -> bool {
@@ -8,13 +7,6 @@ impl FeatureDecorationRunner {
             BlockHolderSet::Tag(tag) => block.has_tag(tag),
             BlockHolderSet::Entries(entries) => entries.contains(&block),
         }
-    }
-
-    pub(super) fn block_state_from_data(
-        registry: &Registry,
-        data: &BlockStateData,
-    ) -> steel_utils::BlockStateId {
-        WorldgenStateResolver::feature_block_state_from_data(registry, data, "block state provider")
     }
 
     pub(super) fn fluid_state_from_data(data: &FluidStateData) -> FluidState {
@@ -96,7 +88,7 @@ impl FeatureDecorationRunner {
             .try_get_property(state, &BlockStateProperties::LEVEL)
             .is_some()
         {
-            state = Self::set_int_property_by_name(
+            state = BlockStateProviderEvaluator::set_int_property_by_name(
                 registry,
                 state,
                 "level",

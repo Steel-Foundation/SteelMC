@@ -45,14 +45,21 @@ impl FeatureDecorationRunner {
 
         for y in (bottom + 1..=top).rev() {
             let pos = BlockPos::new(column_pos.x(), y, column_pos.z());
-            if Self::test_block_predicate(region, registry, &config.target, pos) {
-                if let Some(state) = Self::sample_block_state_provider_optional(
-                    region,
-                    registry,
-                    random,
-                    &config.state_provider,
-                    pos,
-                ) {
+            if BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                &config.target,
+                pos,
+            ) {
+                if let Some(state) =
+                    BlockStateProviderEvaluator::sample_block_state_provider_optional(
+                        region,
+                        registry,
+                        random,
+                        &config.state_provider,
+                        pos,
+                    )
+                {
                     let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
                     if !placed_above {
                         Self::mark_above_for_postprocessing(region, pos);

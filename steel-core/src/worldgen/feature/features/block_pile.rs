@@ -46,7 +46,7 @@ impl FeatureDecorationRunner {
             return;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,

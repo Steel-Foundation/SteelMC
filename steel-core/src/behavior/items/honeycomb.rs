@@ -1,7 +1,8 @@
 use steel_macros::item_behavior;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{
-    REGISTRY, blocks::block_state_ext::BlockStateExt, level_events, vanilla_game_events,
+    REGISTRY, blocks::block_state_ext::BlockStateExt, level_events, stat::vanilla_stat_types,
+    vanilla_game_events,
 };
 use steel_utils::Downcast as _;
 use steel_utils::types::UpdateFlags;
@@ -71,13 +72,20 @@ impl ItemBehavior for HoneycombItem {
         }
 
         sign.set_changed();
-        context.inv.with_item(ItemStack::shrink_one);
+        let item_used = context.inv.with_item(|item| {
+            let item_used = item.item();
+            item.shrink_one();
+            item_used
+        });
+        context
+            .player
+            .award_stat(&vanilla_stat_types::ITEM_USED, item_used);
         context.world.level_event(
             level_events::PARTICLES_WAX_ON,
             pos,
             0,
             Some(context.player.id()),
         );
-        InteractionResult::Success
+        InteractionResult::SuccessWithoutItem
     }
 }

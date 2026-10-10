@@ -10,13 +10,15 @@ impl FeatureDecorationRunner {
         config: &SimpleBlockConfiguration,
         origin: BlockPos,
     ) -> bool {
-        let Some(state_to_place) = Self::sample_block_state_provider_optional(
-            region,
-            registry,
-            random,
-            &config.to_place,
-            origin,
-        ) else {
+        let Some(state_to_place) =
+            BlockStateProviderEvaluator::sample_block_state_provider_optional(
+                region,
+                registry,
+                random,
+                &config.to_place,
+                origin,
+            )
+        else {
             return false;
         };
         let behavior = BLOCK_BEHAVIORS.get_behavior(state_to_place.get_block());

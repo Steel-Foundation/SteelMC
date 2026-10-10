@@ -13,6 +13,23 @@ pub(super) fn generate_identifier_nbt(identifier: &Identifier) -> TokenStream {
     quote! { NbtTag::String(#id.into()) }
 }
 
+fn generate_identifier_list_nbt(items: &[Identifier]) -> TokenStream {
+    if let [item] = items {
+        generate_identifier_nbt(item)
+    } else {
+        generate_nbt_list(items.iter().map(generate_identifier_nbt))
+    }
+}
+
+fn generate_predicate_offset(offset: &[i32; 3]) -> TokenStream {
+    if *offset == [0, 0, 0] {
+        TokenStream::new()
+    } else {
+        let offset = generate_offset_nbt(offset);
+        quote! { compound.insert("offset", #offset); }
+    }
+}
+
 /// Builds an `NbtTag::List`, using `NbtList::Empty` for an empty source —
 /// `NbtList::from(vec![])` can't infer its element type.
 fn generate_nbt_list(items: impl Iterator<Item = TokenStream>) -> TokenStream {
@@ -208,83 +225,91 @@ pub(super) fn generate_block_predicate_nbt(predicate: &BlockPredicate) -> TokenS
         }
         BlockPredicate::MatchingBlockTag { tag, offset } => {
             let tag = tag.to_string();
-            let offset = generate_offset_nbt(offset);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:matching_block_tag");
                 compound.insert("tag", #tag);
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::MatchingBlocks { blocks, offset } => {
-            let blocks = generate_nbt_list(blocks.0.iter().map(generate_identifier_nbt));
-            let offset = generate_offset_nbt(offset);
+            let blocks = generate_identifier_list_nbt(&blocks.0);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:matching_blocks");
                 compound.insert("blocks", #blocks);
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::MatchingFluids { fluids, offset } => {
-            let fluids = generate_nbt_list(fluids.0.iter().map(generate_identifier_nbt));
-            let offset = generate_offset_nbt(offset);
+            let fluids = generate_identifier_list_nbt(&fluids.0);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:matching_fluids");
                 compound.insert("fluids", #fluids);
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::Solid { offset } => {
-            let offset = generate_offset_nbt(offset);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:solid");
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::WouldSurvive { state, offset } => {
             let state = generate_block_state_data_nbt(state);
-            let offset = generate_offset_nbt(offset);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:would_survive");
                 compound.insert("state", #state);
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::Replaceable { offset } => {
-            let offset = generate_offset_nbt(offset);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:replaceable");
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::HasSturdyFace { direction, offset } => {
             let direction = direction_name(*direction);
-            let offset = generate_offset_nbt(offset);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:has_sturdy_face");
                 compound.insert("direction", #direction);
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
         BlockPredicate::InsideWorldBounds { offset } => {
-            let offset = generate_offset_nbt(offset);
+            let offset = generate_predicate_offset(offset);
+
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:inside_world_bounds");
-                compound.insert("offset", #offset);
+                #offset
                 NbtTag::Compound(compound)
             }}
         }
@@ -353,20 +378,12 @@ pub(super) fn generate_feature_noise_parameters_nbt(
     }}
 }
 
-pub(super) fn generate_block_state_provider_kind_nbt(
+pub(crate) fn generate_block_state_provider_kind_nbt(
     provider: &BlockStateProviderKind,
 ) -> TokenStream {
     match provider {
         BlockStateProviderKind::Reference(id) => generate_identifier_nbt(id),
-        BlockStateProviderKind::Simple { state } => {
-            let state = generate_block_state_data_nbt(state);
-            quote! {{
-                let mut compound = NbtCompound::new();
-                compound.insert("type", "minecraft:simple");
-                compound.insert("state", #state);
-                NbtTag::Compound(compound)
-            }}
-        }
+        BlockStateProviderKind::Simple { state } => generate_block_state_data_nbt(state),
         BlockStateProviderKind::Weighted { entries } => {
             let entries = generate_nbt_list(entries.iter().map(|entry| {
                 let data = generate_block_state_data_nbt(&entry.data);

@@ -112,7 +112,9 @@ impl FeatureDecorationRunner {
                 }
             }
             PlacementModifier::BlockPredicateFilter { predicate } => {
-                if Self::test_block_predicate(region, registry, predicate, origin) {
+                if BlockStateProviderEvaluator::test_block_predicate(
+                    region, registry, predicate, origin,
+                ) {
                     placed = Self::place_placed_feature_from_modifier(
                         region,
                         registry,

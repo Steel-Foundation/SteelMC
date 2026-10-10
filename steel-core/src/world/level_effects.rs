@@ -13,7 +13,7 @@ use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::vanilla_particle_types::{BUBBLE, SPLASH};
 
 pub(super) fn sound_is_within_range(
-    sound: SoundEventRef,
+    sound: &SoundEventHolder,
     volume: f32,
     distance_squared: f64,
 ) -> bool {
@@ -487,6 +487,26 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
+        self.play_sound_holder_at(
+            &SoundEventHolder::Registry(sound),
+            source,
+            pos,
+            volume,
+            pitch,
+            exclude,
+        );
+    }
+
+    /// broadcasts a registry or direct sound holder at an exact world position
+    pub fn play_sound_holder_at(
+        &self,
+        sound: &SoundEventHolder,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x.floor() as i32),
             SectionPos::block_to_section_coord(pos.z.floor() as i32),
@@ -494,7 +514,7 @@ impl World {
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
-        let packet = CSound::new(sound, source, pos, volume, pitch, seed);
+        let packet = CSound::new_holder(sound.clone(), source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {

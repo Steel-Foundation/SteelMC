@@ -16,6 +16,9 @@ use quote::quote;
 use serde_json::Value;
 use steel_utils::Identifier;
 
+use crate::features::{
+    BlockStateProviderKind, generate_block_state_provider, generate_block_state_provider_kind_nbt,
+};
 use crate::generator_functions::generate_sound_event_ref;
 
 fn path(type_name: &str) -> TokenStream {
@@ -48,7 +51,8 @@ fn identifier_token(value: &str) -> TokenStream {
 
 fn block_transform_token(value: &Value) -> TokenStream {
     let transform = object(value, "block transformer transform");
-    let provider = provider_token(required(transform, "block_state_provider"));
+    let provider = parse_provider(required(transform, "block_state_provider"));
+    let provider = generate_block_state_provider(&provider);
     let sound = sound_token(transform.get("sound"));
     let particle = particle_token(transform.get("particle"));
     let disallowed_faces = transform
@@ -80,12 +84,10 @@ fn block_transform_token(value: &Value) -> TokenStream {
             .as_bool()
             .unwrap_or_else(|| panic!("consume_on_use must be a boolean"))
     });
-    let item_damage_per_use = transform.get("item_damage_per_use").map_or(0, |value| {
-        let value = value
-            .as_i64()
-            .unwrap_or_else(|| panic!("item_damage_per_use must be an integer"));
-        i32::try_from(value)
-            .unwrap_or_else(|_| panic!("item_damage_per_use must fit an i32: {value}"))
+    let item_damage_per_use = transform.get("item_damage_per_use").map_or(0, |_| {
+        let damage = required_i32(transform, "item_damage_per_use");
+        assert!(damage >= 0, "item_damage_per_use must be nonnegative");
+        damage
     });
 
     let block_transform = path("BlockTransformData");
@@ -120,377 +122,60 @@ fn sound_token(value: Option<&Value>) -> TokenStream {
     quote! { #sound_holder::Registry(#sound_ref) }
 }
 
-/// `BlockStateProvider.CODEC`: `Either<BlockState, TypedProvider>`. A value
-/// without `type` is a bare block state (implicit `SimpleStateProvider`).
-fn provider_token(value: &Value) -> TokenStream {
-    let object_value = object(value, "block state provider");
-    let provider = path("TransformStateProvider");
-    let Some(provider_type) = object_value.get("type") else {
-        let state = block_state_token(value);
-        return quote! { #provider::Simple { state: #state } };
-    };
-    let provider_type = string(provider_type, "block state provider type");
-    match provider_type {
-        "minecraft:simple" => {
-            let state = block_state_token(required(object_value, "state"));
-            quote! { #provider::Simple { state: #state } }
-        }
-        "minecraft:copy_properties" => {
-            let source = provider_token(required(object_value, "source"));
-            quote! { #provider::CopyProperties { source: Box::new(#source) } }
-        }
-        "minecraft:rotated" => {
-            let state = provider_token(required(object_value, "state"));
-            let direction = object_value.get("direction").map_or_else(
-                || quote! { None },
-                |value| {
-                    let direction = direction_token(string(value, "rotated provider direction"));
-                    quote! { Some(#direction) }
-                },
-            );
-            quote! { #provider::RotatedBlock { state: Box::new(#state), direction: #direction } }
-        }
-        "minecraft:weighted" => {
-            let entries = required(object_value, "entries")
-                .as_array()
-                .unwrap_or_else(|| panic!("weighted provider entries must be an array"))
-                .iter()
-                .map(weighted_state_token)
-                .collect::<Vec<_>>();
-            assert!(
-                !entries.is_empty(),
-                "weighted provider entries must not be empty"
-            );
-            quote! { #provider::Weighted { entries: vec![#(#entries),*] } }
-        }
-        "minecraft:randomized_int" => {
-            let source = provider_token(required(object_value, "source"));
-            let property = string(
-                required(object_value, "property"),
-                "randomized_int property",
-            );
-            let values = int_provider_token(required(object_value, "values"));
-            quote! {
-                #provider::RandomizedInt {
-                    source: Box::new(#source),
-                    property: #property.to_owned(),
-                    values: #values,
-                }
-            }
-        }
-        "minecraft:noise" => {
-            let (seed, noise, scale) = noise_fields_token(object_value);
-            let states = block_state_list_token(required(object_value, "states"));
-            quote! { #provider::Noise { seed: #seed, noise: #noise, scale: #scale, states: vec![#(#states),*] } }
-        }
-        "minecraft:noise_threshold" => {
-            let (seed, noise, scale) = noise_fields_token(object_value);
-            let threshold = required_f32(object_value, "threshold");
-            let high_chance = required_f32(object_value, "high_chance");
-            let default_state = block_state_token(required(object_value, "default_state"));
-            let low_states = block_state_list_token(required(object_value, "low_states"));
-            let high_states = block_state_list_token(required(object_value, "high_states"));
-            quote! {
-                #provider::NoiseThreshold {
-                    seed: #seed,
-                    noise: #noise,
-                    scale: #scale,
-                    threshold: #threshold,
-                    high_chance: #high_chance,
-                    default_state: #default_state,
-                    low_states: vec![#(#low_states),*],
-                    high_states: vec![#(#high_states),*],
-                }
-            }
-        }
-        "minecraft:dual_noise" => {
-            let (seed, noise, scale) = noise_fields_token(object_value);
-            let variety = required(object_value, "variety")
-                .as_array()
-                .unwrap_or_else(|| panic!("dual_noise variety must be an array"));
-            assert_eq!(variety.len(), 2, "dual_noise variety must have two entries");
-            let min = i32::try_from(
-                variety[0]
-                    .as_i64()
-                    .expect("variety entries must be integers"),
-            )
-            .expect("variety entry must fit an i32");
-            let max = i32::try_from(
-                variety[1]
-                    .as_i64()
-                    .expect("variety entries must be integers"),
-            )
-            .expect("variety entry must fit an i32");
-            let slow_noise = noise_parameters_token(required(object_value, "slow_noise"));
-            let slow_scale = required_f32(object_value, "slow_scale");
-            let states = block_state_list_token(required(object_value, "states"));
-            quote! {
-                #provider::DualNoise {
-                    variety: (#min, #max),
-                    slow_noise: #slow_noise,
-                    slow_scale: #slow_scale,
-                    seed: #seed,
-                    noise: #noise,
-                    scale: #scale,
-                    states: vec![#(#states),*],
-                }
-            }
-        }
-        "minecraft:rule_based" => {
-            let fallback = object_value.get("fallback").map_or_else(
-                || quote! { None },
-                |value| {
-                    let provider = provider_token(value);
-                    quote! { Some(Box::new(#provider)) }
-                },
-            );
-            let rules = required(object_value, "rules")
-                .as_array()
-                .unwrap_or_else(|| panic!("rule based provider rules must be an array"))
-                .iter()
-                .map(rule_token)
-                .collect::<Vec<_>>();
-            quote! { #provider::RuleBased { fallback: #fallback, rules: vec![#(#rules),*] } }
-        }
-        unsupported => panic!("unsupported block transformer state provider type {unsupported}"),
-    }
+fn parse_provider(value: &Value) -> BlockStateProviderKind {
+    serde_json::from_value(value.clone())
+        .unwrap_or_else(|error| panic!("invalid block transformer state provider: {error}"))
 }
 
-fn weighted_state_token(value: &Value) -> TokenStream {
-    let entry = object(value, "weighted state provider entry");
-    let data = block_state_token(required(entry, "data"));
-    let weight = required(entry, "weight")
-        .as_i64()
-        .unwrap_or_else(|| panic!("weighted state provider entry weight must be an integer"));
-    let weight = i32::try_from(weight).unwrap_or_else(|_| panic!("weight must fit an i32"));
-    let weighted_state = path("WeightedTransformBlockState");
-    quote! { #weighted_state { data: #data, weight: #weight } }
-}
+fn block_transform_nbt_token(value: &Value) -> TokenStream {
+    let transform = object(value, "block transformer transform");
+    let provider = parse_provider(required(transform, "block_state_provider"));
+    let provider = generate_block_state_provider_kind_nbt(&provider);
 
-fn noise_fields_token(
-    provider: &serde_json::Map<String, Value>,
-) -> (TokenStream, TokenStream, TokenStream) {
-    let seed = required(provider, "seed")
-        .as_i64()
-        .unwrap_or_else(|| panic!("noise provider seed must be an integer"));
-    let noise = noise_parameters_token(required(provider, "noise"));
-    let scale = required_f32(provider, "scale");
-    (quote! { #seed }, noise, quote! { #scale })
-}
+    let mut fields = vec![quote! { compound.insert("block_state_provider", #provider); }];
 
-fn noise_parameters_token(value: &Value) -> TokenStream {
-    let parameters = object(value, "noise parameters");
-    let first_octave = required(parameters, "firstOctave")
-        .as_i64()
-        .unwrap_or_else(|| panic!("noise parameters firstOctave must be an integer"));
-    let first_octave =
-        i32::try_from(first_octave).unwrap_or_else(|_| panic!("firstOctave must fit an i32"));
-    let amplitudes = parameters
-        .get("amplitudes")
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .map(|value| {
+    for (name, value) in transform {
+        let field = match name.as_str() {
+            "block_state_provider" => continue,
+            "sound" | "particle" | "loot" | "drop_strategy" | "transform_type" => {
+                let value = string(value, name);
+                quote! { compound.insert(#name, #value); }
+            }
+
+            "disallowed_faces" => {
+                let values: Vec<_> = value
+                    .as_array()
+                    .unwrap_or_else(|| panic!("faces must be an array"))
+                    .iter()
+                    .map(|value| string(value, name))
+                    .collect();
+                quote! { compound.insert(#name, NbtList::String(vec![#(#values.into()),*])); }
+            }
+
+            "update_from_neighbors" | "consume_on_use" => {
+                let value = i8::from(
                     value
-                        .as_f64()
-                        .unwrap_or_else(|| panic!("amplitude must be a number"))
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let noise_parameters = path("TransformNoiseParameters");
-    quote! {
-        #noise_parameters { first_octave: #first_octave, amplitudes: vec![#(#amplitudes),*] }
+                        .as_bool()
+                        .unwrap_or_else(|| panic!("{name} must be a boolean")),
+                );
+                quote! { compound.insert(#name, #value); }
+            }
+
+            "item_damage_per_use" => {
+                let value = required_i32(transform, name);
+                quote! { compound.insert(#name, #value); }
+            }
+            field => panic!("unsupported block transformer field {field}"),
+        };
+
+        fields.push(field);
     }
-}
 
-fn int_provider_token(value: &Value) -> TokenStream {
-    let int_provider = path("IntProviderLiteral");
-    if let Some(value) = value.as_i64() {
-        let value = i32::try_from(value).unwrap_or_else(|_| panic!("int provider must fit an i32"));
-        return quote! { #int_provider::Constant(#value) };
-    }
-    let provider = object(value, "int provider");
-    let provider_type = string(required(provider, "type"), "int provider type");
-    match provider_type {
-        "minecraft:constant" => {
-            let value = required(provider, "value")
-                .as_i64()
-                .unwrap_or_else(|| panic!("constant int provider value must be an integer"));
-            let value = i32::try_from(value).unwrap_or_else(|_| panic!("value must fit an i32"));
-            quote! { #int_provider::Constant(#value) }
-        }
-        "minecraft:uniform" => {
-            let min = required_i32(provider, "min_inclusive");
-            let max = required_i32(provider, "max_inclusive");
-            quote! { #int_provider::Uniform { min_inclusive: #min, max_inclusive: #max } }
-        }
-        unsupported => panic!("unsupported block transformer int provider type {unsupported}"),
-    }
-}
-
-fn rule_token(value: &Value) -> TokenStream {
-    let rule = object(value, "rule based provider rule");
-    let if_true = predicate_token(required(rule, "if_true"));
-    let then = provider_token(required(rule, "then"));
-    let rule_type = path("TransformStateProviderRule");
-    quote! { #rule_type { if_true: #if_true, then: #then } }
-}
-
-fn predicate_token(value: &Value) -> TokenStream {
-    let predicate = object(value, "block transformer predicate");
-    let predicate_type = string(
-        required(predicate, "type"),
-        "block transformer predicate type",
-    );
-    let predicate_path = path("TransformPredicate");
-    match predicate_type {
-        "minecraft:matching_blocks" => {
-            let offset = offset_token(predicate.get("offset"));
-            let blocks = holder_set_token(required(predicate, "blocks"), "matching_blocks.blocks");
-            quote! { #predicate_path::MatchingBlocks { offset: #offset, blocks: #blocks } }
-        }
-        "minecraft:matching_block_tag" => {
-            let offset = offset_token(predicate.get("offset"));
-            let tag =
-                identifier_token(string(required(predicate, "tag"), "matching_block_tag.tag"));
-            quote! { #predicate_path::MatchingBlockTag { offset: #offset, tag: #tag } }
-        }
-        "minecraft:matching_fluids" => {
-            let offset = offset_token(predicate.get("offset"));
-            let fluids = holder_set_token(required(predicate, "fluids"), "matching_fluids.fluids");
-            quote! { #predicate_path::MatchingFluids { offset: #offset, fluids: #fluids } }
-        }
-        "minecraft:matching_biomes" => {
-            let biomes = holder_set_token(required(predicate, "biomes"), "matching_biomes.biomes");
-            quote! { #predicate_path::MatchingBiomes { biomes: #biomes } }
-        }
-        "minecraft:has_sturdy_face" => {
-            let offset = offset_token(predicate.get("offset"));
-            let direction = direction_token(string(
-                required(predicate, "direction"),
-                "has_sturdy_face.direction",
-            ));
-            quote! { #predicate_path::HasSturdyFace { offset: #offset, direction: #direction } }
-        }
-        "minecraft:solid" => {
-            let offset = offset_token(predicate.get("offset"));
-            quote! { #predicate_path::Solid { offset: #offset } }
-        }
-        "minecraft:replaceable" => {
-            let offset = offset_token(predicate.get("offset"));
-            quote! { #predicate_path::Replaceable { offset: #offset } }
-        }
-        "minecraft:would_survive" => {
-            let offset = offset_token(predicate.get("offset"));
-            let state = block_state_token(required(predicate, "state"));
-            quote! { #predicate_path::WouldSurvive { offset: #offset, state: #state } }
-        }
-        "minecraft:inside_world_bounds" => {
-            let offset = offset_token(predicate.get("offset"));
-            quote! { #predicate_path::InsideWorldBounds { offset: #offset } }
-        }
-        "minecraft:any_of" => {
-            let predicates = required(predicate, "predicates")
-                .as_array()
-                .unwrap_or_else(|| panic!("any_of predicates must be an array"))
-                .iter()
-                .map(predicate_token)
-                .collect::<Vec<_>>();
-            quote! { #predicate_path::AnyOf(vec![#(#predicates),*]) }
-        }
-        "minecraft:all_of" => {
-            let predicates = required(predicate, "predicates")
-                .as_array()
-                .unwrap_or_else(|| panic!("all_of predicates must be an array"))
-                .iter()
-                .map(predicate_token)
-                .collect::<Vec<_>>();
-            quote! { #predicate_path::AllOf(vec![#(#predicates),*]) }
-        }
-        "minecraft:not" => {
-            let inner = predicate_token(required(predicate, "predicate"));
-            quote! { #predicate_path::Not(Box::new(#inner)) }
-        }
-        "minecraft:true" => quote! { #predicate_path::True },
-        "minecraft:unobstructed" => {
-            let offset = offset_token(predicate.get("offset"));
-            quote! { #predicate_path::Unobstructed { offset: #offset } }
-        }
-        unsupported => panic!("unsupported block transformer predicate type {unsupported}"),
-    }
-}
-
-fn block_state_list_token(value: &Value) -> Vec<TokenStream> {
-    value
-        .as_array()
-        .unwrap_or_else(|| panic!("block state list must be an array"))
-        .iter()
-        .map(block_state_token)
-        .collect()
-}
-
-/// `StateHolder.codec()` field tags: lowercase `id`/`properties`.
-fn block_state_token(value: &Value) -> TokenStream {
-    let state = object(value, "block state");
-    let block = identifier_token(string(required(state, "id"), "block state id"));
-    let properties = state.get("properties").map_or_else(Vec::new, |value| {
-        object(value, "block state properties")
-            .iter()
-            .map(|(name, value)| {
-                let value = string(value, "block state property value");
-                quote! { (#name.to_owned(), #value.to_owned()) }
-            })
-            .collect()
-    });
-    let state_type = path("TransformBlockState");
-    quote! {
-        #state_type {
-            block: #block,
-            properties: vec![#(#properties),*],
-        }
-    }
-}
-
-fn holder_set_token(value: &Value, field: &str) -> TokenStream {
-    let holder_set = path("TransformHolderSet");
-    if let Some(value) = value.as_str() {
-        if let Some(tag) = value.strip_prefix('#') {
-            let tag = identifier_token(tag);
-            return quote! { #holder_set::Tag(#tag) };
-        }
-        let entry = identifier_token(value);
-        return quote! { #holder_set::Entries(vec![#entry]) };
-    }
-    let values = value
-        .as_array()
-        .unwrap_or_else(|| panic!("{field} must be an identifier, tag, or identifier array"))
-        .iter()
-        .map(|value| identifier_token(string(value, field)))
-        .collect::<Vec<_>>();
-    quote! { #holder_set::Entries(vec![#(#values),*]) }
-}
-
-fn offset_token(value: Option<&Value>) -> TokenStream {
-    let offset = value.map_or([0, 0, 0], |value| {
-        let values = value
-            .as_array()
-            .unwrap_or_else(|| panic!("predicate offset must be an array"));
-        assert_eq!(
-            values.len(),
-            3,
-            "predicate offset must have three coordinates"
-        );
-        [0, 1, 2].map(|index| {
-            let value = values[index]
-                .as_i64()
-                .unwrap_or_else(|| panic!("predicate offset must contain integers"));
-            i32::try_from(value).unwrap_or_else(|_| panic!("offset value must fit an i32: {value}"))
-        })
-    });
-    let [x, y, z] = offset;
-    quote! { (#x, #y, #z) }
+    quote! {{
+        let mut compound = NbtCompound::new();
+        #(#fields)*
+        compound
+    }}
 }
 
 fn particle_token(value: Option<&Value>) -> TokenStream {
@@ -534,12 +219,6 @@ fn direction_token(value: &str) -> TokenStream {
     }
 }
 
-fn required_f32(object: &serde_json::Map<String, Value>, field: &str) -> f32 {
-    required(object, field)
-        .as_f64()
-        .unwrap_or_else(|| panic!("{field} must be a number")) as f32
-}
-
 fn required_i32(object: &serde_json::Map<String, Value>, field: &str) -> i32 {
     let value = required(object, field)
         .as_i64()
@@ -562,6 +241,10 @@ pub(crate) fn build() -> TokenStream {
         let content = fs::read_to_string(&path).unwrap();
         let transforms: Vec<Value> = serde_json::from_str(&content)
             .unwrap_or_else(|error| panic!("failed to parse {name}: {error}"));
+        assert!(
+            (1..=200).contains(&transforms.len()),
+            "block transformer {name} must contain between 1 and 200 transforms"
+        );
         entries.push((name, transforms));
     }
     entries.sort_by(|(a, _), (b, _)| a.cmp(b));
@@ -571,21 +254,35 @@ pub(crate) fn build() -> TokenStream {
         use std::sync::LazyLock;
         use steel_utils::Identifier;
         use crate::block_transformer::{BlockTransformer, BlockTransformerRegistry};
+        use crate::{feature::*, vanilla_blocks, vanilla_fluids};
+        use steel_utils::value_providers::IntProvider;
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+        use glam::IVec3;
     });
 
     let mut register_stream = TokenStream::new();
     for (name, transforms) in &entries {
         let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
         let key = quote! { Identifier::vanilla_static(#name) };
+        let nbt_fn = Ident::new(&format!("{name}_nbt"), Span::call_site());
+        let nbt = transforms
+            .iter()
+            .map(block_transform_nbt_token)
+            .collect::<Vec<_>>();
         let transforms = transforms
             .iter()
             .map(block_transform_token)
             .collect::<Vec<_>>();
 
         stream.extend(quote! {
+            fn #nbt_fn() -> NbtList {
+                NbtList::Compound(vec![#(#nbt),*])
+            }
+
             pub static #ident: LazyLock<BlockTransformer> = LazyLock::new(|| BlockTransformer {
                 key: #key,
                 transforms: vec![#(#transforms),*],
+                nbt: #nbt_fn,
             });
         });
         register_stream.extend(quote! {

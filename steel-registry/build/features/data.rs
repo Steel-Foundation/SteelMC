@@ -607,7 +607,24 @@ impl<'de> Deserialize<'de> for BlockStateProviderKind {
             Repr::Reference(id) => Self::Reference(id),
             Repr::Simple(state) => Self::Simple { state },
             Repr::Inline(Inline::Simple { state }) => Self::Simple { state },
-            Repr::Inline(Inline::Weighted { entries }) => Self::Weighted { entries },
+            Repr::Inline(Inline::Weighted { entries }) => {
+                let mut total_weight = 0_i32;
+                for entry in &entries {
+                    if entry.weight < 0 {
+                        return Err(D::Error::custom("provider weights must be non-negative"));
+                    }
+
+                    total_weight = total_weight
+                        .checked_add(entry.weight)
+                        .ok_or_else(|| D::Error::custom("provider weight sum exceeds i32::MAX"))?;
+                }
+
+                if total_weight == 0 {
+                    return Err(D::Error::custom("provider weight sum must be positive"));
+                }
+
+                Self::Weighted { entries }
+            }
             Repr::Inline(Inline::RotatedBlock { state, direction }) => {
                 Self::RotatedBlock { state, direction }
             }

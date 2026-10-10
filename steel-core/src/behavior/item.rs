@@ -18,7 +18,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla
 use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
 
-use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
+use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem, block_transformer};
 use crate::behavior::{InteractionResult, InventoryTickContext, UseItemContext, UseOnContext};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
@@ -52,8 +52,8 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Called when this item is used on a block.
-    fn use_on(&self, _context: &mut UseOnContext) -> InteractionResult {
-        InteractionResult::Pass
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        block_transformer::use_on(context)
     }
 
     /// Called when this item is used (e.g. right click in air).
@@ -351,22 +351,19 @@ pub(crate) fn finish_consuming_stack(
 /// left (e.g. one honey bottle out of several)
 pub(crate) fn apply_use_remainder(
     original_stack: &ItemStack,
-    used_stack: ItemStack,
+    mut used_stack: ItemStack,
     user: &dyn LivingEntity,
 ) -> ItemStack {
     let Some(remainder) = original_stack.get(USE_REMAINDER) else {
         return used_stack;
     };
-    if user.has_infinite_materials() || used_stack.count() >= original_stack.count() {
-        return used_stack;
+    if let Some(extra) = remainder.convert_into_remainder(
+        &mut used_stack,
+        original_stack.count(),
+        user.has_infinite_materials(),
+    ) {
+        user.handle_extra_items_created_on_use(extra);
     }
-
-    let remainder_stack = remainder.convert_into().create();
-    if used_stack.is_empty() {
-        return remainder_stack;
-    }
-
-    user.handle_extra_items_created_on_use(remainder_stack);
     used_stack
 }
 

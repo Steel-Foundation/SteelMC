@@ -47,7 +47,7 @@ impl FeatureDecorationRunner {
                 return false;
             }
 
-            if !Self::test_block_predicate(
+            if !BlockStateProviderEvaluator::test_block_predicate(
                 region,
                 registry,
                 &config.allowed_tree_position,
@@ -178,7 +178,7 @@ impl FeatureDecorationRunner {
 
             let state = region.block_state(pos);
             if Self::block_matches_holder_set(state.get_block(), &config.root_replaceable) {
-                let replacement = Self::sample_block_state_provider(
+                let replacement = BlockStateProviderEvaluator::sample_block_state_provider(
                     region,
                     registry,
                     random,
@@ -213,7 +213,7 @@ impl FeatureDecorationRunner {
                 continue;
             }
 
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,

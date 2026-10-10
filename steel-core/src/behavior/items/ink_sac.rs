@@ -79,7 +79,7 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
         .world
         .play_sound(sound_for(glowing), SoundSource::Blocks, pos, 1.0, 1.0, None);
 
-    InteractionResult::Success
+    InteractionResult::SuccessWithoutItem
 }
 
 const fn sound_for(glowing: bool) -> SoundEventRef {

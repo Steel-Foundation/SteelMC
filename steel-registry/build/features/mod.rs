@@ -28,13 +28,15 @@ use common::{
     resource_name, sorted_json_files,
 };
 use configured::generate_configured_feature_kind;
-use nbt::generate_block_state_provider_kind_nbt;
+pub(crate) use data::BlockStateProviderKind;
+pub(crate) use nbt::generate_block_state_provider_kind_nbt;
 use placement::{
     generate_block_predicate, generate_placed_feature_data, generate_placed_feature_ref,
 };
+pub(crate) use providers::generate_block_state_provider;
 use providers::{
-    generate_block_state_provider, generate_float_provider, generate_height_provider,
-    generate_int_provider, generate_uniform_int_provider,
+    generate_float_provider, generate_height_provider, generate_int_provider,
+    generate_uniform_int_provider,
 };
 use structures::{
     generate_block_column_layer, generate_end_spike, generate_feature_size,
@@ -47,14 +49,14 @@ use structures::{
 
 use data::{
     AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, BlockHolderSet, BlockPredicate,
-    BlockStateData, BlockStateProviderKind, ConfiguredFeatureKind, ConfiguredFeatureRef,
-    DualNoiseProvider, EndSpike, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
-    FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings,
-    GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement,
-    NoiseProvider, NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef,
-    PlacementModifier, RootPlacer, RuleBasedStateProviderRule, TemplateEntry, TreeDecorator,
-    TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
-    WeightedBlockState, WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
+    BlockStateData, ConfiguredFeatureKind, ConfiguredFeatureRef, DualNoiseProvider, EndSpike,
+    FeatureHeightmap, FeatureNoiseParameters, FeatureSize, FluidStateData, FoliagePlacer,
+    FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings, GeodeLayerSettings,
+    HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement, NoiseProvider,
+    NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef, PlacementModifier,
+    RootPlacer, RuleBasedStateProviderRule, TemplateEntry, TreeDecorator, TrunkPlacer,
+    TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface, WeightedBlockState,
+    WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
 };
 
 pub(crate) fn build_configured() -> TokenStream {

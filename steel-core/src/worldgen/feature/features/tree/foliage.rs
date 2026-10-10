@@ -392,7 +392,7 @@ impl FeatureDecorationRunner {
                 }
 
                 let pos = origin.offset(dx, y, dz);
-                let foliage_state = Self::sample_block_state_provider(
+                let foliage_state = BlockStateProviderEvaluator::sample_block_state_provider(
                     region,
                     registry,
                     random,
@@ -403,7 +403,7 @@ impl FeatureDecorationRunner {
                     continue;
                 }
 
-                let trunk_state = Self::sample_block_state_provider(
+                let trunk_state = BlockStateProviderEvaluator::sample_block_state_provider(
                     region,
                     registry,
                     random,
@@ -1281,7 +1281,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let foliage_state = Self::sample_block_state_provider(
+        let foliage_state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,

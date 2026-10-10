@@ -1078,14 +1078,41 @@ impl BlockRegistry {
     }
 
     pub fn copy_matching_properties(&self, source: BlockStateId, target: BlockRef) -> BlockStateId {
-        let props = self.get_properties(source);
-        let matching: Vec<(&str, &str)> = props
-            .iter()
-            .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
-            .copied()
-            .collect();
-        self.state_id_from_block_defaulted_properties(target, matching)
-            .unwrap_or_else(|| self.get_default_state_id(target))
+        self.with_properties_of(self.get_default_state_id(target), source)
+    }
+
+    /// Copies matching properties preserving other target values
+    #[must_use]
+    pub fn with_properties_of(&self, target: BlockStateId, source: BlockStateId) -> BlockStateId {
+        let Some((target_block, target_offset)) = self.block_and_state_offset(target) else {
+            panic!("cannot copy properties onto invalid block state {target:?}");
+        };
+
+        let Some((source_block, source_offset)) = self.block_and_state_offset(source) else {
+            panic!("cannot copy properties from invalid block state {source:?}");
+        };
+
+        let mut target_indices = Self::decode_property_indices(target_block, target_offset);
+        let source_indices = Self::decode_property_indices(source_block, source_offset);
+
+        for (target_index, target_property) in target_block.properties.iter().enumerate() {
+            let Some(source_index) = source_block.properties.iter().position(|source_property| {
+                source_property.get_name() == target_property.get_name()
+                    && source_property.value_count() == target_property.value_count()
+                    && (0..target_property.value_count()).all(|index| {
+                        source_property.value_name_from_index(index)
+                            == target_property.value_name_from_index(index)
+                    })
+            }) else {
+                continue;
+            };
+
+            target_indices[target_index] = source_indices[source_index];
+        }
+
+        BlockStateId(
+            target.0 - target_offset + Self::encode_property_indices(target_block, &target_indices),
+        )
     }
 }
 

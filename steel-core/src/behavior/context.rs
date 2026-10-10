@@ -25,7 +25,9 @@ pub use steel_registry::items::item::BlockHitResult;
 pub enum InteractionResult {
     /// The interaction succeeded and consumed the action.
     Success,
-    /// The interaction succeeded with a swing that the client did not predict
+    /// Successful blockside action without automatic item use effects
+    SuccessWithoutItem,
+    /// The interaction succeeded and the server should broadcast the swing.
     SuccessServer,
     /// The interaction consumed the action without swinging.
     Consume,
@@ -45,6 +47,7 @@ impl InteractionResult {
         matches!(
             self,
             InteractionResult::Success
+                | InteractionResult::SuccessWithoutItem
                 | InteractionResult::SuccessServer
                 | InteractionResult::Consume
                 | InteractionResult::Fail
@@ -819,6 +822,9 @@ mod tests {
         assert!(InteractionResult::Success.should_apply_item_use_side_effects());
         assert!(InteractionResult::SuccessServer.should_apply_item_use_side_effects());
         assert!(InteractionResult::Consume.should_apply_item_use_side_effects());
+        assert!(InteractionResult::SuccessWithoutItem.consumes_action());
+        assert!(!InteractionResult::SuccessWithoutItem.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::SuccessWithoutItem.should_swing());
         assert!(!InteractionResult::Fail.should_apply_item_use_side_effects());
         assert!(!InteractionResult::Pass.should_apply_item_use_side_effects());
         assert!(!InteractionResult::TryEmptyHandInteraction.should_apply_item_use_side_effects());

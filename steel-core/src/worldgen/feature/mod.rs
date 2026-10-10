@@ -13,7 +13,6 @@ mod placed;
 mod placement;
 mod predicates;
 mod prelude;
-mod providers;
 mod runner;
 mod sorter;
 mod state;

@@ -11,12 +11,21 @@ impl FeatureDecorationRunner {
         biome_zoom_seed: i64,
     ) -> bool {
         let mut pos = origin;
-        while Self::test_block_predicate(region, registry, &config.can_replace, pos)
-            && random.next_f32() < config.chance_to_continue
+        while BlockStateProviderEvaluator::test_block_predicate(
+            region,
+            registry,
+            &config.can_replace,
+            pos,
+        ) && random.next_f32() < config.chance_to_continue
             && !region.is_outside_build_height(pos.y())
         {
-            let state =
-                Self::sample_block_state_provider(region, registry, random, &config.block, pos);
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
+                region,
+                registry,
+                random,
+                &config.block,
+                pos,
+            );
             let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
             pos = pos.relative(config.direction);
         }
