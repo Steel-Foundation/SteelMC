@@ -114,7 +114,7 @@ impl PlayerRespawnJob {
                 let fallback_search = PlayerSpawnSearch::new(
                     &fallback_world,
                     fallback_respawn_data.pos(),
-                    fallback_world.default_gamemode,
+                    fallback_world.default_gamemode(),
                 )?;
                 (
                     fallback_world,
@@ -265,7 +265,7 @@ impl ServerJob for PlayerRespawnJob {
                     let fallback_search = match PlayerSpawnSearch::new(
                         &fallback_world,
                         fallback_respawn_data.pos(),
-                        fallback_world.default_gamemode,
+                        fallback_world.default_gamemode(),
                     ) {
                         Ok(search) => search,
                         Err(error) => {

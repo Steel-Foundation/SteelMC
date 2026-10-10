@@ -3,6 +3,7 @@
 pub mod advancement;
 mod clear;
 mod damage;
+mod defaultgamemode;
 mod difficulty;
 mod domain;
 mod enchant;
@@ -72,6 +73,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
+    builder.register(defaultgamemode::registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
@@ -154,6 +156,7 @@ mod tests {
                 "clear",
                 "deop",
                 "damage",
+                "defaultgamemode",
                 "difficulty",
                 "domain",
                 "enchant",

@@ -35,7 +35,7 @@ pub use steel_registry::data_components::vanilla_components::ItemUseAnimation;
 /// - etc.
 pub trait ItemBehavior: Send + Sync {
     /// Returns the Rust type name of the concrete behavior implementation.
-    #[cfg(feature = "flint")]
+    #[cfg(feature = "test-framework")]
     #[must_use]
     #[expect(clippy::absolute_paths, reason = "easier for features")]
     fn type_name(&self) -> &'static str {
@@ -412,7 +412,7 @@ impl ItemBehaviorRegistry {
     }
 
     /// Get all behaviors.
-    #[cfg(feature = "flint")]
+    #[cfg(feature = "test-framework")]
     #[must_use]
     pub fn get_behaviors(&self) -> &[Box<dyn ItemBehavior>] {
         &self.behaviors
