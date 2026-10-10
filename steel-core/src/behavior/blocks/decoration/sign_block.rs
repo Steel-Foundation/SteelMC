@@ -233,6 +233,7 @@ fn can_wall_hanging_sign_survive(
 /// 2. Sign is not waxed
 /// 3. No other player is currently editing
 /// 4. Player has build permission (`may_build`)
+/// 5. Facing side contains only editable text
 ///
 /// Returns `Success` if the editor was opened, `Pass` otherwise.
 fn try_open_sign_editor(
@@ -269,6 +270,9 @@ fn try_open_sign_editor(
 
     // Determine which side the player is facing
     let slot = facing_text_slot(state, pos, player);
+    if !sign.get_text(slot).has_editable_text() {
+        return InteractionResult::Pass;
+    }
 
     open_text_edit(sign, player, pos, slot);
     InteractionResult::Success
@@ -288,7 +292,7 @@ fn open_sign_editor_on_place(world: &Arc<World>, pos: BlockPos, player: &Player)
     let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
         return;
     };
-    if sign.is_waxed() {
+    if sign.is_waxed() || !sign.get_text(SignTextSlot::Front).has_editable_text() {
         return;
     }
 
