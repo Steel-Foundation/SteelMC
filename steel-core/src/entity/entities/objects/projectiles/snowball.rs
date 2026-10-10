@@ -120,10 +120,6 @@ impl Entity for SnowballEntity {
         self.get_owner()
     }
 
-    fn attackable(&self) -> bool {
-        false
-    }
-
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }

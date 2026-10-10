@@ -39,6 +39,7 @@ mod solid_bucket_item;
 mod spawn_egg;
 mod spyglass;
 mod standing_and_wall_block_item;
+mod throw_projectile;
 mod throwable_potion;
 mod tipped_arrow;
 
