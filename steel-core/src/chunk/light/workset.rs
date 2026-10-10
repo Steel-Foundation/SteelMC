@@ -304,7 +304,7 @@ impl LightSectionReadCache<'_> {
         }
 
         let (local_x, local_y, local_z) = local_block_coords(cached_block.local_index);
-        section.states.get(local_x, local_y, local_z)
+        section.states().get(local_x, local_y, local_z)
     }
 
     /// Returns whether a cached section exists and is non-empty.
