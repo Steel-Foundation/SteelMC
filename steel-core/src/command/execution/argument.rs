@@ -30,7 +30,8 @@ use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+    ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
+    SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
@@ -195,6 +196,10 @@ impl SteelArgumentType {
 
     pub(crate) fn entity_anchor() -> Self {
         Self::new(EntityAnchorParser)
+    }
+
+    pub(crate) fn entity_tag() -> Self {
+        Self::new(EntityTagParser)
     }
 
     pub(crate) fn entity() -> Self {
@@ -761,6 +766,57 @@ unit_argument_parser!(
     },
     protocol(ProtocolArgumentType::EntityAnchor, None)
 );
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EntityTagParser;
+
+impl_downcast_type!(EntityTagParser, "steel:command/parser/entity_tag");
+
+impl SteelArgumentParser for EntityTagParser {
+    type Value = PrimitiveArgumentValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        Ok(PrimitiveArgumentValue::String(
+            reader.read_unquoted_string().into(),
+        ))
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let Ok(targets) = context.argument("targets") else {
+            return;
+        };
+        let Some(targets) = targets.downcast_ref::<EntitySelector>() else {
+            return;
+        };
+
+        let prefix = builder.remaining();
+        for tag in context
+            .source()
+            .entity_tag_suggestions(targets)
+            .into_iter()
+            .filter(|tag| tag.starts_with(prefix))
+        {
+            builder.suggest(tag);
+        }
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::String {
+                behavior: ArgumentStringTypeBehavior::SingleWord,
+            },
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct EntityParser {
