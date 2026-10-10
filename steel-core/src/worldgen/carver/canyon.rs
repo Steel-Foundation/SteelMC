@@ -11,10 +11,7 @@ use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, ChunkPos};
 use steel_worldgen::density::DimensionNoises;
 
-use crate::worldgen::carver::{
-    CarveParams, CarveRun, CarverStyle, cached_replaceable_states, can_reach,
-    horizontal_tunnel_radius,
-};
+use crate::worldgen::carver::{CarveRun, can_reach, horizontal_tunnel_radius};
 
 /// Vanilla `WorldCarver.getRange()` — 4 chunks each direction. Shared with
 /// the cave carver.
@@ -63,32 +60,21 @@ where
         let source_min_x = source_pos.0.x * 16;
         let source_min_z = source_pos.0.y * 16;
 
-        let lava_level_y = config
-            .base
-            .lava_level
-            .resolve_y(self.ctx.min_y, self.ctx.gen_depth);
-        let params = CarveParams {
-            replaceable_tag: &config.base.replaceable_tag,
-            replaceable_states: cached_replaceable_states(&config.base.replaceable_tag),
-            lava_level_y,
-            style: CarverStyle::Overworld,
-        };
-
         let state = CanyonState {
             x: f64::from(source_min_x + random.next_i32_bounded(16)),
-            y: f64::from(
-                config
-                    .base
-                    .y
-                    .sample(random, self.ctx.min_y, self.ctx.gen_depth),
-            ),
+            y: f64::from(config.base.y.sample(
+                random,
+                self.ctx.min_y,
+                self.ctx.gen_depth,
+                self.ctx.sea_level,
+            )),
             z: f64::from(source_min_z + random.next_i32_bounded(16)),
             horizontal_rotation: random.next_f32() * TAU,
             vertical_rotation: config.vertical_rotation.sample(random),
         };
 
         // Draw order: yScale, thickness, distance_factor→distance, tunnel_seed.
-        let y_scale = f64::from(config.base.y_scale.sample(random));
+        let y_scale = f64::from(config.shape.y_scale.sample(random));
         let thickness = config.shape.thickness.sample(random);
         let distance =
             (MAX_TUNNEL_DISTANCE as f32 * config.shape.distance_factor.sample(random)) as i32;
@@ -101,12 +87,11 @@ where
             y_scale,
         };
 
-        self.do_carve_canyon(&params, config, state, tunnel);
+        self.do_carve_canyon(config, state, tunnel);
     }
 
     fn do_carve_canyon(
         &mut self,
-        params: &CarveParams<'_>,
         config: &CanyonCarverConfiguration,
         mut state: CanyonState,
         tunnel: CanyonTunnel,
@@ -166,7 +151,6 @@ where
             };
 
             self.carve_ellipsoid(
-                params,
                 state.x,
                 state.y,
                 state.z,

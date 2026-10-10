@@ -6,6 +6,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::Value;
 
+mod brewing;
 mod cooking;
 mod crafting;
 mod serializer;
@@ -48,10 +49,11 @@ pub(crate) fn build() -> TokenStream {
             data_components::{DataComponentPatch, vanilla_components},
             item_stack_template::ItemStackTemplate,
             recipe::*,
-            vanilla_items, vanilla_mob_effects, vanilla_trim_patterns,
+            RegistryReference, vanilla_items, vanilla_mob_effects, vanilla_potions,
+            vanilla_trim_patterns,
         };
         use crate::data_components::vanilla_components::{
-            FireworkExplosionShape, SuspiciousStewEffect, SuspiciousStewEffects,
+            FireworkExplosionShape, PotionContents, SuspiciousStewEffect, SuspiciousStewEffects,
         };
 
         #(#declarations)*

@@ -191,7 +191,7 @@ impl PistonMovingState {
     // `EntitySelector.NO_SPECTATORS` before the piston loop.
     fn can_move_collided_entity(entity: &dyn Entity, cause_bounce: bool) -> bool {
         !entity.is_spectator()
-            && entity.piston_push_reaction() != PushReaction::Ignore
+            && entity.piston_push_reaction() != PushReaction::IgnoreEntity
             && (!cause_bounce || entity.as_player().is_none())
     }
 
@@ -505,7 +505,7 @@ impl PistonMovingState {
         let aabb = self.move_by_position_and_progress(pos, local);
         let entities = world.get_entities_in_aabb_matching(&aabb, |entity| {
             let position = entity.position();
-            entity.piston_push_reaction() == PushReaction::Normal
+            entity.piston_push_reaction() == PushReaction::PushPull
                 && entity.on_ground()
                 && (entity.is_supported_by(pos)
                     || (position.x >= aabb.min_x()

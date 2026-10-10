@@ -9,11 +9,17 @@ use quote::quote;
 use serde::Deserialize;
 use std::{mem, slice};
 
+use super::functions::DensityFunctionJson;
+
 // ── JSON types ──────────────────────────────────────────────────────────────
 
 /// Surface rule source (top-level rule node).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "build-time representation mirrors extracted Vanilla JSON"
+)]
 pub enum SurfaceRuleJson {
     #[serde(rename = "minecraft:block")]
     Block { result_state: ResultStateJson },
@@ -24,8 +30,34 @@ pub enum SurfaceRuleJson {
         if_true: SurfaceConditionJson,
         then_run: Box<SurfaceRuleJson>,
     },
+    #[serde(rename = "minecraft:ore_vein")]
+    OreVein(OreVeinRuleJson),
     #[serde(rename = "minecraft:bandlands")]
     Bandlands {},
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OreVeinRuleJson {
+    pub ore_block: String,
+    pub raw_ore_block: String,
+    pub filler_block: String,
+    pub raw_ore_chance: f32,
+    pub density: DensityFunctionJson,
+    pub richness: DensityFunctionJson,
+    pub filler_gap: DensityFunctionJson,
+}
+
+pub fn collect_ore_veins<'a>(rule: &'a SurfaceRuleJson, out: &mut Vec<&'a OreVeinRuleJson>) {
+    match rule {
+        SurfaceRuleJson::OreVein(rule) => out.push(rule),
+        SurfaceRuleJson::Sequence { sequence } => {
+            for rule in sequence {
+                collect_ore_veins(rule, out);
+            }
+        }
+        SurfaceRuleJson::Condition { then_run, .. } => collect_ore_veins(then_run, out),
+        SurfaceRuleJson::Block { .. } | SurfaceRuleJson::Bandlands {} => {}
+    }
 }
 
 /// Block state reference in a surface rule.
@@ -34,9 +66,21 @@ pub enum SurfaceRuleJson {
 /// default state). If modded surface rules need non-default block states,
 /// add a `Properties` field and wire it through the transpiler.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ResultStateJson {
-    #[serde(rename = "Name")]
-    pub name: String,
+#[serde(untagged)]
+pub enum ResultStateJson {
+    Name(String),
+    Object {
+        #[serde(rename = "Name")]
+        name: String,
+    },
+}
+
+impl ResultStateJson {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Name(name) | Self::Object { name } => name,
+        }
+    }
 }
 
 /// Surface rule condition.
@@ -145,6 +189,8 @@ pub struct SurfaceRuleTranspiler {
     pub uses_surface_secondary: bool,
     /// Whether generated conditions use `ctx.steep`.
     pub uses_steep: bool,
+    /// Next material ore-vein node index in depth-first rule order.
+    ore_vein_index: usize,
     /// Min Y for this dimension.
     min_y: i32,
     /// Height for this dimension.
@@ -161,6 +207,7 @@ impl SurfaceRuleTranspiler {
             uses_preliminary_surface,
             uses_surface_secondary: false,
             uses_steep: false,
+            ore_vein_index: 0,
             min_y,
             height,
         }
@@ -172,7 +219,7 @@ impl SurfaceRuleTranspiler {
     pub fn transpile_rule(&mut self, rule: &SurfaceRuleJson) -> TokenStream {
         match rule {
             SurfaceRuleJson::Block { result_state } => {
-                let block_name = result_state.name.as_str();
+                let block_name = result_state.name();
                 let block_state_index = if let Some(idx) = self
                     .block_state_names
                     .iter()
@@ -198,6 +245,15 @@ impl SurfaceRuleTranspiler {
                 quote! {
                     if #cond {
                         #body
+                    }
+                }
+            }
+            SurfaceRuleJson::OreVein(_) => {
+                let ore_vein_index = self.ore_vein_index;
+                self.ore_vein_index += 1;
+                quote! {
+                    if let Some(state) = ctx.ore_vein_result(#ore_vein_index) {
+                        return Some(state);
                     }
                 }
             }
@@ -403,7 +459,9 @@ impl SurfaceRuleTranspiler {
 
 fn rule_uses_preliminary_surface(rule: &SurfaceRuleJson) -> bool {
     match rule {
-        SurfaceRuleJson::Block { .. } | SurfaceRuleJson::Bandlands {} => false,
+        SurfaceRuleJson::Block { .. }
+        | SurfaceRuleJson::OreVein(_)
+        | SurfaceRuleJson::Bandlands {} => false,
         SurfaceRuleJson::Sequence { sequence } => {
             sequence.iter().any(rule_uses_preliminary_surface)
         }

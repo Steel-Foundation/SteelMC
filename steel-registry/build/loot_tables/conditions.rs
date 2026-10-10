@@ -1,16 +1,36 @@
+use std::fs;
+
 use super::{
-    EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson, TokenStream,
-    generate_damage_source_predicate, generate_entity_predicate, generate_location_predicate,
-    generate_loot_context_entity, generate_tool_predicate, quote,
+    ConditionRefJson, EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson,
+    TokenStream, generate_damage_source_predicate, generate_entity_predicate,
+    generate_location_predicate, generate_loot_context_entity, generate_tool_predicate, quote,
 };
 
-pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
+pub(super) fn generate_condition(condition: &ConditionRefJson) -> TokenStream {
+    match condition {
+        ConditionRefJson::Reference(name) => generate_condition_object(&load_predicate(name)),
+        ConditionRefJson::Inline(condition) => generate_condition_object(condition),
+    }
+}
+
+fn load_predicate(name: &str) -> LootConditionJson {
+    let path_name = name.strip_prefix("minecraft:").unwrap_or(name);
+    let path = format!(
+        "../steel-utils/build_assets/builtin_datapacks/minecraft/predicate/{path_name}.json"
+    );
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read predicate {name} at {path}: {e}"));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse predicate {name}: {e}"))
+}
+
+fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
     match condition.condition.as_str() {
         "minecraft:survives_explosion" => {
             quote! { LootCondition::SurvivesExplosion }
         }
-        "minecraft:block_state_property" => {
-            let block = condition.block.as_deref().unwrap_or("minecraft:air");
+        "minecraft:match_block" => {
+            let block = condition.blocks.as_deref().unwrap_or("minecraft:air");
             let block = block.strip_prefix("minecraft:").unwrap_or(block);
 
             let properties: Vec<TokenStream> = condition
@@ -38,7 +58,7 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                 .unwrap_or_default();
 
             quote! {
-                LootCondition::BlockStateProperty {
+                LootCondition::MatchBlock {
                     block: Identifier::vanilla_static(#block),
                     properties: &[#(#properties),*],
                 }

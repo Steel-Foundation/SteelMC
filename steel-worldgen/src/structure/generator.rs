@@ -1138,6 +1138,24 @@ mod tests {
 
     #[test]
     fn vanilla_assets_cover_vanilla_structure_sets() {
+        use std::panic;
+        use std::thread;
+
+        // Larger stack to match chunk_stage_hashes.rs / structure_starts.rs —
+        // placing every vanilla structure set recurses deeper than the default
+        // test thread stack allows.
+        let result = thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(vanilla_assets_cover_vanilla_structure_sets_inner)
+            .expect("Failed to spawn test thread")
+            .join();
+
+        if let Err(payload) = result {
+            panic::resume_unwind(payload);
+        }
+    }
+
+    fn vanilla_assets_cover_vanilla_structure_sets_inner() {
         init_vanilla_registry();
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let thread_pool = rayon::ThreadPoolBuilder::default()
@@ -1154,6 +1172,24 @@ mod tests {
 
     #[test]
     fn ring_cache_keys_entries_by_placement_inputs() {
+        use std::panic;
+        use std::thread;
+
+        // Larger stack to match chunk_stage_hashes.rs / structure_starts.rs — the
+        // doubled-distance concentric ring search here recurses deeper than the
+        // default test thread stack allows.
+        let result = thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(ring_cache_keys_entries_by_placement_inputs_inner)
+            .expect("Failed to spawn test thread")
+            .join();
+
+        if let Err(payload) = result {
+            panic::resume_unwind(payload);
+        }
+    }
+
+    fn ring_cache_keys_entries_by_placement_inputs_inner() {
         init_vanilla_registry();
         let world_dir = temp_world_dir("placement-inputs");
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);

@@ -1,5 +1,6 @@
 //! Slot abstraction for inventory access.
 
+use crate::player::player_inventory::Prediction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::ErasedType;
 
@@ -187,7 +188,7 @@ pub trait Slot: ErasedType + Send + Sync {
     ) -> ItemStack {
         if let Some(taken) = self.try_remove(guard, amount, max_amount, player) {
             if let Some(remainder) = self.on_take(guard, &taken, player) {
-                player.add_item_or_drop_with_guard(guard, remainder);
+                player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
             }
             taken
         } else {

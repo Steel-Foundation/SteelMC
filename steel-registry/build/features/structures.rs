@@ -1,13 +1,13 @@
 use super::{
     AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, EndSpike, FeatureSize, FoliagePlacer,
     FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings, GeodeLayerSettings,
-    HugeMushroomConfiguration, Ident, MangroveRootPlacement, OreTarget, RootPlacer, RuleTest, Span,
+    HugeMushroomConfiguration, Ident, MangroveRootPlacement, OreTarget, RootPlacer, Span,
     TemplateEntry, TokenStream, TreeDecorator, TrunkPlacer, TrunkPlacerBase, VerticalSurface,
     WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
-    generate_block_predicate, generate_block_ref, generate_block_state_data,
-    generate_block_state_provider, generate_direction, generate_identifier, generate_int_provider,
-    generate_option, generate_placed_feature_ref, generate_rotation, generate_uniform_int_provider,
-    generate_vec, quote,
+    generate_block_predicate, generate_block_state_data, generate_block_state_provider,
+    generate_direction, generate_identifier, generate_int_provider, generate_option,
+    generate_placed_feature_ref, generate_rotation, generate_uniform_int_provider, generate_vec,
+    quote,
 };
 
 pub(super) fn generate_block_column_layer(layer: &BlockColumnLayer) -> TokenStream {
@@ -86,22 +86,9 @@ pub(super) fn generate_geode_crack_settings(settings: &GeodeCrackSettings) -> To
 }
 
 pub(super) fn generate_ore_target(target: &OreTarget) -> TokenStream {
-    let target_rule = generate_rule_test(&target.target);
+    let target_rule = crate::structure::processors::generate_rule_test(&target.target);
     let state = generate_block_state_data(&target.state);
     quote! { OreTarget { target: #target_rule, state: #state } }
-}
-
-pub(super) fn generate_rule_test(rule: &RuleTest) -> TokenStream {
-    match rule {
-        RuleTest::BlockMatch { block } => {
-            let block = generate_block_ref(block);
-            quote! { RuleTest::BlockMatch { block: #block } }
-        }
-        RuleTest::TagMatch { tag } => {
-            let tag = generate_identifier(tag);
-            quote! { RuleTest::TagMatch { tag: #tag } }
-        }
-    }
 }
 
 pub(super) fn generate_weighted_placed_feature(feature: &WeightedPlacedFeature) -> TokenStream {
@@ -227,6 +214,23 @@ pub(super) fn generate_trunk_placer(placer: &TrunkPlacer) -> TokenStream {
                 })
             }
         }
+        TrunkPlacer::Poplar(placer) => {
+            let base_height = placer.base_height;
+            let height_rand_a = placer.height_rand_a;
+            let height_rand_b = placer.height_rand_b;
+            let trunk_height_above_branches =
+                generate_int_provider(&placer.trunk_height_above_branches);
+            let branch_amount = generate_int_provider(&placer.branch_amount);
+            quote! {
+                TrunkPlacer::Poplar(PoplarTrunkPlacer {
+                    base_height: #base_height,
+                    height_rand_a: #height_rand_a,
+                    height_rand_b: #height_rand_b,
+                    trunk_height_above_branches: #trunk_height_above_branches,
+                    branch_amount: #branch_amount,
+                })
+            }
+        }
     }
 }
 
@@ -336,6 +340,20 @@ pub(super) fn generate_foliage_placer(placer: &FoliagePlacer) -> TokenStream {
                     corner_hole_chance: #corner_hole_chance,
                     hanging_leaves_chance: #hanging_leaves_chance,
                     hanging_leaves_extension_chance: #hanging_leaves_extension_chance,
+                })
+            }
+        }
+        FoliagePlacer::Poplar(placer) => {
+            let radius = generate_int_provider(&placer.radius);
+            let offset = generate_int_provider(&placer.offset);
+            let height = generate_int_provider(&placer.height);
+            let side_hole_chance = placer.side_hole_chance;
+            quote! {
+                FoliagePlacer::Poplar(PoplarFoliagePlacer {
+                    radius: #radius,
+                    offset: #offset,
+                    height: #height,
+                    side_hole_chance: #side_hole_chance,
                 })
             }
         }
@@ -510,6 +528,9 @@ pub(super) fn generate_tree_decorator(decorator: &TreeDecorator) -> TokenStream 
                 ground_probability: #ground_probability,
             }
         },
+        TreeDecorator::ShelfMushroom { probability } => {
+            quote! { TreeDecorator::ShelfMushroom { probability: #probability } }
+        }
     }
 }
 

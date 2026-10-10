@@ -4,6 +4,7 @@
 //! beacon's pyramid level and configured effects, matching vanilla's
 //! `DATA_LEVELS`, `DATA_PRIMARY`, and `DATA_SECONDARY`.
 
+use crate::player::player_inventory::Prediction;
 use std::slice;
 use std::sync::Arc;
 
@@ -150,7 +151,7 @@ impl MenuKind for BeaconKind {
         if payment.is_empty() {
             return;
         }
-        let _ = player.drop_item(payment, false, false);
+        let _ = player.drop_item(payment, false, Prediction::ServerOnly);
     }
 
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
@@ -290,7 +291,7 @@ impl MenuKind for BeaconKind {
         }
         let slot = &behavior.slots()[slot_index];
         if let Some(leftover) = slot.on_take(guard, &remaining, player) {
-            player.add_item_or_drop_with_guard(guard, leftover);
+            player.add_item_or_drop_with_guard(guard, leftover, Prediction::Predicted);
         }
         Some(clicked)
     }

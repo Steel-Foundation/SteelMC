@@ -10,6 +10,7 @@ use steel_registry::{
     vanilla_pig_sound_variants, vanilla_pig_variants,
 };
 use steel_utils::UuidExt;
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use uuid::Uuid;
 
 use crate::entity::ai::navigation::NavigationTickContext;
@@ -46,11 +47,15 @@ impl LevelReader for EmptyNavigationLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        OverworldNoiseSettings::MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        OverworldNoiseSettings::HEIGHT
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 

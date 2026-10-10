@@ -1014,7 +1014,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_z: i32,
         section_index: usize,
         positions: &[PackedSectionBlockPos],
-        mut replacement: impl FnMut(BlockStateId) -> Option<BlockStateId>,
+        mut replacement: impl FnMut(BlockStateId, i32) -> Option<BlockStateId>,
     ) -> u64 {
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
@@ -1038,6 +1038,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             status,
             section_index,
         };
+        let section_base_y = self.region.min_y() + (section_index as i32) * 16;
         let chunk = self.chunk(chunk_x, chunk_z, status);
         if !chunk.access_mode.allows_writes() {
             Self::record_ore_write_time(ore_profile, started_at);
@@ -1060,7 +1061,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some(state) = replacement(old_state) {
+                if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
                         &mut section_guard,
@@ -1080,7 +1081,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some(state) = replacement(old_state) {
+                if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
                         &mut section_guard,
@@ -1466,6 +1467,10 @@ impl LevelReader for WorldGenRegion<'_> {
     fn height(&self) -> i32 {
         WorldGenRegion::height(self)
     }
+
+    fn sea_level(&self) -> i32 {
+        WorldGenRegion::sea_level(self)
+    }
 }
 
 impl ScheduledTickAccess for WorldGenRegion<'_> {
@@ -1512,6 +1517,7 @@ mod tests {
 
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use crate::behavior::init_behaviors;
     use crate::chunk::{
@@ -1597,39 +1603,67 @@ mod tests {
 
     #[test]
     fn biome_quart_y_indices_clamp_to_vertical_biome_range() {
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -17), (0, 0));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -16), (0, 0));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -13), (0, 3));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -12), (1, 0));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 79), (23, 3));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 80), (23, 3));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 81), (23, 3));
+        let min_y = OverworldNoiseSettings::MIN_Y;
+        let section_count = (OverworldNoiseSettings::HEIGHT / 16) as usize;
+        let min_quart_y = OverworldNoiseSettings::MIN_Y >> 2;
+        let max_quart_y = min_quart_y + section_count as i32 * 4 - 1;
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y - 1),
+            (0, 0)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y),
+            (0, 0)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y + 3),
+            (0, 3)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y + 4),
+            (1, 0)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, max_quart_y),
+            (section_count - 1, 3)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, max_quart_y + 1),
+            (section_count - 1, 3)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, max_quart_y + 2),
+            (section_count - 1, 3)
+        );
     }
 
     #[test]
     fn bulk_section_index_matches_world_height_bounds() {
+        let min_y = OverworldNoiseSettings::MIN_Y;
+        let height = OverworldNoiseSettings::HEIGHT;
+        let max_y = min_y + height - 1;
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -65),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y - 1),
             None
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -64),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y),
             Some(0)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -49),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y + 15),
             Some(0)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -48),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y + 16),
             Some(1)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, 319),
-            Some(23)
+            WorldGenBulkSectionAccess::section_index(min_y, height, max_y),
+            Some((height / 16 - 1) as usize)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, 320),
+            WorldGenBulkSectionAccess::section_index(min_y, height, max_y + 1),
             None
         );
     }

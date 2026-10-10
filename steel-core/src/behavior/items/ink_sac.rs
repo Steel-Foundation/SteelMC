@@ -18,7 +18,7 @@ use steel_registry::{
 use steel_utils::Downcast as _;
 
 use crate::{
-    behavior::{InteractionResult, ItemBehavior, UseOnContext, blocks::is_facing_front_text},
+    behavior::{InteractionResult, ItemBehavior, UseOnContext, blocks::facing_text_slot},
     block_entity::{BlockEntity, entities::SignBlockEntity},
     world::game_event::GameEventContext,
 };
@@ -42,14 +42,14 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
     }
 
     let state = context.world.get_block_state(pos);
-    let is_front_text = is_facing_front_text(state, pos, context.player);
+    let slot = facing_text_slot(state, pos, context.player);
 
     // Vanilla `SignApplicator.canApplyToSign` refuses a blank sign.
-    if !sign.get_text(is_front_text).has_message() {
+    if !sign.get_text(slot).has_message() {
         return InteractionResult::TryEmptyHandInteraction;
     }
 
-    if !sign.set_glowing(is_front_text, glowing) {
+    if !sign.set_glowing(slot, glowing) {
         return InteractionResult::TryEmptyHandInteraction;
     }
 

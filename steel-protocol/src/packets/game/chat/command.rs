@@ -99,6 +99,10 @@ pub struct LastSeenMessagesUpdate {
     /// `BitSet` indicating which of the last 20 messages were acknowledged
     /// 3 bytes = 24 bits (using 20)
     pub acknowledged: [u8; 3],
+
+    /// Checksum of the client's `LastSeenMessages`, verified against the
+    /// server's own computed checksum (0 means "skip verification").
+    pub checksum: u8,
 }
 
 impl steel_utils::serial::ReadFrom for LastSeenMessagesUpdate {
@@ -106,10 +110,12 @@ impl steel_utils::serial::ReadFrom for LastSeenMessagesUpdate {
         let offset = VarInt::read(reader)?;
         let mut acknowledged = [0u8; 3];
         reader.read_exact(&mut acknowledged)?;
+        let checksum = u8::read(reader)?;
 
         Ok(Self {
             offset,
             acknowledged,
+            checksum,
         })
     }
 }

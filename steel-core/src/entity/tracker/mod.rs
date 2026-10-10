@@ -389,6 +389,9 @@ impl EntityTracker {
                     .server_entity
                     .lock()
                     .record_send_changes(ServerEntityMovementSyncUpdate {
+                        entity_type: entity.entity_type(),
+                        vertical_collision: entity.vertical_collision(),
+                        horizontal_collision: entity.horizontal_collision(),
                         entity_id,
                         is_passenger: entity.is_passenger(),
                         position: entity.position(),

@@ -11,8 +11,14 @@ use simdnbt::borrow::{
 };
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
+use steel_registry::data_components::vanilla_components::{
+    SIGN_TEXT_BACK, SIGN_TEXT_FRONT, SignText as SignTextComponent, WAXED,
+};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{DyeColor, vanilla_block_entity_types};
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
+use steel_utils::{
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
+};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
@@ -78,6 +84,25 @@ impl SignText {
                 _ => true, // Translations, etc. count as having a message
             }
         })
+    }
+
+    /// Builds sign text from an item's `sign_text_front`/`sign_text_back`
+    /// component. Filtered messages are dropped: Steel has no text filtering.
+    fn from_component(component: Option<&SignTextComponent>) -> Self {
+        component.map_or_else(Self::new, |component| Self {
+            messages: component.messages.clone(),
+            color: component.color,
+            has_glowing_text: component.has_glowing_text,
+        })
+    }
+
+    /// Returns whether the sign editor can edit every line, i.e. all lines are
+    /// plain text. Styling is ignored; translations, scores, etc. are not editable.
+    #[must_use]
+    pub fn has_editable_text(&self) -> bool {
+        self.messages
+            .iter()
+            .all(|msg| matches!(msg.content, Content::Text { .. }))
     }
 
     /// Loads sign text from borrowed NBT.
@@ -207,9 +232,9 @@ impl SignBlockEntity {
 
     /// Gets the text for a side.
     #[must_use]
-    pub fn get_text(&self, front: bool) -> SignText {
+    pub fn get_text(&self, slot: SignTextSlot) -> SignText {
         let sign = self.sign.lock();
-        if front {
+        if slot.is_front() {
             sign.front_text.clone()
         } else {
             sign.back_text.clone()
@@ -235,9 +260,9 @@ impl SignBlockEntity {
     ///
     /// Mirrors vanilla `SignBlockEntity.updateText`: returns false when the side
     /// already has the requested glow state, so callers can skip consuming the item.
-    pub fn set_glowing(&self, front: bool, glowing: bool) -> bool {
+    pub fn set_glowing(&self, slot: SignTextSlot, glowing: bool) -> bool {
         let mut sign = self.sign.lock();
-        let text = if front {
+        let text = if slot.is_front() {
             &mut sign.front_text
         } else {
             &mut sign.back_text
@@ -250,9 +275,9 @@ impl SignBlockEntity {
     }
 
     /// Sets the text for a side.
-    pub fn set_text(&self, text: SignText, front: bool) {
+    pub fn set_text(&self, text: SignText, slot: SignTextSlot) {
         let mut sign = self.sign.lock();
-        if front {
+        if slot.is_front() {
             sign.front_text = text;
         } else {
             sign.back_text = text;
@@ -284,6 +309,13 @@ impl BlockEntity for SignBlockEntity {
         if let Some(waxed) = nbt_view.byte("is_waxed") {
             sign.is_waxed = waxed != 0;
         }
+    }
+
+    fn apply_components_from_item(&self, item: &ItemStack) {
+        let mut sign = self.sign.lock();
+        sign.front_text = SignText::from_component(item.get(SIGN_TEXT_FRONT));
+        sign.back_text = SignText::from_component(item.get(SIGN_TEXT_BACK));
+        sign.is_waxed = item.has(WAXED);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -343,12 +375,14 @@ mod tests {
 
     use simdnbt::borrow::read_tag;
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-    use steel_registry::{init_vanilla_registry, vanilla_blocks};
-    use steel_utils::BlockPos;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+    use steel_utils::{BlockPos, translations, types::SignTextSlot};
     use text_components::{Modifier as _, TextComponent};
     use uuid::Uuid;
 
-    use super::{SignBlockEntity, SignText};
+    use super::{
+        DyeColor, ItemStack, SIGN_TEXT_FRONT, SignBlockEntity, SignText, SignTextComponent, WAXED,
+    };
     use crate::block_entity::BlockEntity as _;
     use crate::test_support::fresh_test_world;
 
@@ -399,6 +433,47 @@ mod tests {
         assert_eq!(decoded.messages, expected.messages);
         assert_eq!(decoded.color, expected.color);
         assert_eq!(decoded.has_glowing_text, expected.has_glowing_text);
+    }
+
+    #[test]
+    fn styled_plain_text_is_editable_but_translations_are_not() {
+        let mut text = SignText::new();
+        text.messages[0] = TextComponent::plain("styled").bold(true);
+        assert!(text.has_editable_text());
+
+        text.messages[1] = TextComponent::translated(translations::BLOCK_MINECRAFT_STONE.msg());
+        assert!(!text.has_editable_text());
+    }
+
+    #[test]
+    fn placed_sign_takes_text_and_wax_from_item_components() {
+        init_vanilla_registry();
+        let world_fixture = fresh_test_world("sign_item_components");
+        let world = &world_fixture.world;
+        let pos = BlockPos::new(0, 64, 0);
+        let sign = SignBlockEntity::new(
+            Arc::downgrade(world),
+            pos,
+            vanilla_blocks::OAK_SIGN.default_state(),
+        );
+
+        let mut messages = array::from_fn(|_| TextComponent::new());
+        messages[0] = TextComponent::plain("front");
+        let mut item = ItemStack::new(&vanilla_items::OAK_SIGN);
+        item.set(
+            SIGN_TEXT_FRONT,
+            SignTextComponent::new(messages.clone(), None, DyeColor::Red, true),
+        );
+        item.set(WAXED, ());
+
+        sign.apply_components_from_item(&item);
+
+        let front = sign.get_text(SignTextSlot::Front);
+        assert_eq!(front.messages, messages);
+        assert_eq!(front.color, DyeColor::Red);
+        assert!(front.has_glowing_text);
+        assert!(!sign.get_text(SignTextSlot::Back).has_message());
+        assert!(sign.is_waxed());
     }
 
     #[test]

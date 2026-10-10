@@ -22,10 +22,11 @@ pub use building::{
     HayBlock, HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
     LayeredCauldronBlock, MagmaBlock, MudBlock, NetherrackBlock, PotentSulfurBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
-    SoulSandBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
-    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
-    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
-    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
+    SoulSandBlock, SpongeBlock, StairBlock, StrawBedBlock, TrapDoorBlock, WallBlock,
+    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
+    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
+    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
+    WetSpongeBlock,
 };
 pub use colored::{StainedGlassBlock, StainedGlassPaneBlock};
 pub use container::{
@@ -37,7 +38,7 @@ pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
     EndRodBlock, FlowerPotBlock, JukeboxBlock, LanternBlock, StandingSignBlock, TorchBlock,
     WallBannerBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
-    WeatheringCopperChainBlock, WeatheringLanternBlock, is_facing_front_text,
+    WeatheringCopperChainBlock, WeatheringLanternBlock, facing_text_slot,
 };
 pub use falling::{ConcretePowderBlock, DragonEggBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
@@ -49,8 +50,8 @@ pub use redstone::{
     BellBlock, ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock,
     DetectorRailBlock, LeverBlock, LightningRodBlock, MovingPistonBlock, NoteBlock, ObserverBlock,
     PistonBaseBlock, PistonHeadBlock, PoweredBlock, PoweredRailBlock, PressurePlateBlock,
-    PressurePlateSensitivity, RailBlock, RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock,
-    RedstoneTorchBlock, RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock,
+    PressurePlateSensitivity, RailBlock, RedStoneOreBlock, RedstoneLampBlock, RedstoneTorchBlock,
+    RedstoneWallTorchBlock, RedstoneWireBlock, RepeaterBlock, TargetBlock, TripWireBlock,
     TripWireHookBlock, WeatheringCopperBulbBlock, WeatheringLightningRodBlock,
     WeightedPressurePlateBlock,
 };

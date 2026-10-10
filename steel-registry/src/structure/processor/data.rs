@@ -82,6 +82,22 @@ pub enum StructureRuleTestData {
     TagMatch { tag: Identifier },
     #[serde(rename = "minecraft:blockstate_match")]
     BlockStateMatch { block_state: BlockStateData },
+    #[serde(rename = "minecraft:random_blockstate_match")]
+    RandomBlockStateMatch {
+        block_state: BlockStateData,
+        probability: f32,
+    },
+    #[serde(rename = "minecraft:all_of")]
+    AllOf { rules: Vec<StructureRuleTestData> },
+    #[serde(rename = "minecraft:any_of")]
+    AnyOf { rules: Vec<StructureRuleTestData> },
+    #[serde(rename = "minecraft:not")]
+    Not { rule: Box<StructureRuleTestData> },
+    #[serde(rename = "minecraft:height_match")]
+    HeightMatch {
+        min_inclusive: i32,
+        max_inclusive: i32,
+    },
 }
 
 /// Position rule tests used by `RuleProcessor`.

@@ -1,9 +1,10 @@
 use super::{
-    BlockStateProvider, DualNoiseProvider, FeatureNoiseParameters, FloatProvider, HeightProvider,
-    IntProvider, NoiseProvider, NoiseThresholdProvider, RuleBasedStateProviderRule, TokenStream,
-    UniformIntProvider, WeightedBlockState, WeightedIntProvider, generate_block_predicate,
-    generate_block_state_data, generate_box, generate_option, generate_vec,
-    generate_vertical_anchor, quote,
+    BlockStateProviderKind, DualNoiseProvider, FeatureNoiseParameters, FloatProvider,
+    HeightProvider, IntProvider, NoiseProvider, NoiseThresholdProvider, RuleBasedStateProviderRule,
+    TokenStream, UniformIntProvider, WeightedBlockState, WeightedIntProvider,
+    generate_block_holder_set, generate_block_predicate, generate_block_state_data,
+    generate_block_state_provider_entry_ref, generate_box, generate_direction, generate_option,
+    generate_vec, generate_vertical_anchor, quote,
 };
 
 pub(super) fn generate_height_provider(provider: HeightProvider) -> TokenStream {
@@ -114,12 +115,10 @@ pub(super) fn generate_int_provider(provider: &IntProvider) -> TokenStream {
         IntProvider::VeryBiasedToBottom {
             min_inclusive,
             max_inclusive,
-            inner,
         } => quote! {
             IntProvider::VeryBiasedToBottom {
                 min_inclusive: #min_inclusive,
                 max_inclusive: #max_inclusive,
-                inner: #inner,
             }
         },
         IntProvider::Trapezoid { min, max, plateau } => quote! {
@@ -201,12 +200,18 @@ pub(super) fn generate_float_provider(provider: FloatProvider) -> TokenStream {
 pub(super) fn generate_feature_noise_parameters(
     parameters: &FeatureNoiseParameters,
 ) -> TokenStream {
-    let first_octave = parameters.first_octave;
-    let amplitudes = parameters.amplitudes.iter();
+    let base_amplitude = parameters.base_amplitude;
+    let base_octave = parameters.base_octave;
+    let octave_count = parameters.octave_count;
+    let normalize = parameters.normalize;
+    let amplitude_modifiers = parameters.amplitude_modifiers.iter();
     quote! {
         FeatureNoiseParameters {
-            first_octave: #first_octave,
-            amplitudes: vec![#(#amplitudes),*],
+            base_amplitude: #base_amplitude,
+            base_octave: #base_octave,
+            octave_count: #octave_count,
+            normalize: #normalize,
+            amplitude_modifiers: vec![#(#amplitude_modifiers),*],
         }
     }
 }
@@ -289,21 +294,31 @@ pub(super) fn generate_rule_based_state_provider_rule(
     }
 }
 
-pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> TokenStream {
+pub(super) fn generate_block_state_provider(provider: &BlockStateProviderKind) -> TokenStream {
     match provider {
-        BlockStateProvider::Simple { state } => {
-            let state = generate_block_state_data(state);
-            quote! { BlockStateProvider::Simple { state: #state } }
+        BlockStateProviderKind::Reference(identifier) => {
+            let reference = generate_block_state_provider_entry_ref(identifier);
+            quote! { BlockStateProviderKind::Reference(#reference) }
         }
-        BlockStateProvider::Weighted { entries } => {
+        BlockStateProviderKind::Simple { state } => {
+            let state = generate_block_state_data(state);
+            quote! { BlockStateProviderKind::Simple { state: #state } }
+        }
+        BlockStateProviderKind::Weighted { entries } => {
             let entries = generate_vec(entries, generate_weighted_block_state);
-            quote! { BlockStateProvider::Weighted { entries: #entries } }
+            quote! { BlockStateProviderKind::Weighted { entries: #entries } }
         }
-        BlockStateProvider::RotatedBlock { state } => {
-            let state = generate_block_state_data(state);
-            quote! { BlockStateProvider::RotatedBlock { state: #state } }
+        BlockStateProviderKind::RotatedBlock { state, direction } => {
+            let state = generate_box(state.as_ref(), generate_block_state_provider);
+            let direction = generate_option(direction, |direction| generate_direction(*direction));
+            quote! {
+                BlockStateProviderKind::RotatedBlock {
+                    state: #state,
+                    direction: #direction,
+                }
+            }
         }
-        BlockStateProvider::RandomizedInt {
+        BlockStateProviderKind::RandomizedInt {
             property,
             source,
             values,
@@ -312,36 +327,44 @@ pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> To
             let source = generate_box(source.as_ref(), generate_block_state_provider);
             let values = generate_int_provider(values);
             quote! {
-                BlockStateProvider::RandomizedInt {
+                BlockStateProviderKind::RandomizedInt {
                     property: #property.to_string(),
                     source: #source,
                     values: #values,
                 }
             }
         }
-        BlockStateProvider::RuleBased { fallback, rules } => {
+        BlockStateProviderKind::RuleBased { fallback, rules } => {
             let fallback = generate_option(fallback, |fallback| {
                 generate_box(fallback.as_ref(), generate_block_state_provider)
             });
             let rules = generate_vec(rules, generate_rule_based_state_provider_rule);
             quote! {
-                BlockStateProvider::RuleBased {
+                BlockStateProviderKind::RuleBased {
                     fallback: #fallback,
                     rules: #rules,
                 }
             }
         }
-        BlockStateProvider::Noise(provider) => {
+        BlockStateProviderKind::Noise(provider) => {
             let provider = generate_noise_provider(provider);
-            quote! { BlockStateProvider::Noise(#provider) }
+            quote! { BlockStateProviderKind::Noise(#provider) }
         }
-        BlockStateProvider::NoiseThreshold(provider) => {
+        BlockStateProviderKind::NoiseThreshold(provider) => {
             let provider = generate_noise_threshold_provider(provider);
-            quote! { BlockStateProvider::NoiseThreshold(#provider) }
+            quote! { BlockStateProviderKind::NoiseThreshold(#provider) }
         }
-        BlockStateProvider::DualNoise(provider) => {
+        BlockStateProviderKind::DualNoise(provider) => {
             let provider = generate_dual_noise_provider(provider);
-            quote! { BlockStateProvider::DualNoise(#provider) }
+            quote! { BlockStateProviderKind::DualNoise(#provider) }
+        }
+        BlockStateProviderKind::CopyProperties { source } => {
+            let source = generate_box(source.as_ref(), generate_block_state_provider);
+            quote! { BlockStateProviderKind::CopyProperties { source: #source } }
+        }
+        BlockStateProviderKind::RandomBlock { blocks } => {
+            let blocks = generate_block_holder_set(blocks);
+            quote! { BlockStateProviderKind::RandomBlock { blocks: #blocks } }
         }
     }
 }

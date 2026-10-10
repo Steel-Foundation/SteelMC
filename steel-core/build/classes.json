@@ -94,6 +94,10 @@
       "class": "Block"
     },
     {
+      "name": "poplar_planks",
+      "class": "Block"
+    },
+    {
       "name": "bamboo_planks",
       "class": "Block"
     },
@@ -105,55 +109,59 @@
       "name": "oak_sapling",
       "class": "SaplingBlock",
       "tree_grower_name": "oak",
-      "tree_grower_secondary_chance": 0.1
+      "tree_grower_shortest_tree_type": "oak"
     },
     {
       "name": "spruce_sapling",
       "class": "SaplingBlock",
       "tree_grower_name": "spruce",
-      "tree_grower_secondary_chance": 0.5
+      "tree_grower_shortest_tree_type": "spruce"
     },
     {
       "name": "birch_sapling",
       "class": "SaplingBlock",
       "tree_grower_name": "birch",
-      "tree_grower_secondary_chance": 0.0
+      "tree_grower_shortest_tree_type": "birch"
     },
     {
       "name": "jungle_sapling",
       "class": "SaplingBlock",
       "tree_grower_name": "jungle",
-      "tree_grower_secondary_chance": 0.0
+      "tree_grower_shortest_tree_type": "jungle_tree_no_vine"
     },
     {
       "name": "acacia_sapling",
       "class": "SaplingBlock",
       "tree_grower_name": "acacia",
-      "tree_grower_secondary_chance": 0.0
+      "tree_grower_shortest_tree_type": "acacia"
     },
     {
       "name": "cherry_sapling",
       "class": "SaplingBlock",
       "tree_grower_name": "cherry",
-      "tree_grower_secondary_chance": 0.0
+      "tree_grower_shortest_tree_type": "cherry"
     },
     {
       "name": "dark_oak_sapling",
       "class": "SaplingBlock",
-      "tree_grower_name": "dark_oak",
-      "tree_grower_secondary_chance": 0.0
+      "tree_grower_name": "dark_oak"
     },
     {
       "name": "pale_oak_sapling",
       "class": "SaplingBlock",
-      "tree_grower_name": "pale_oak",
-      "tree_grower_secondary_chance": 0.0
+      "tree_grower_name": "pale_oak"
     },
     {
       "name": "mangrove_propagule",
       "class": "MangrovePropaguleBlock",
       "tree_grower_name": "mangrove",
-      "tree_grower_secondary_chance": 0.85
+      "tree_grower_shortest_tree_type": "mangrove"
+    },
+    {
+      "name": "poplar_sapling",
+      "class": "SaplingBlock",
+      "tree_grower_name": "poplar",
+      "tree_grower_shortest_tree_type": "red_poplar"
     },
     {
       "name": "bedrock",
@@ -282,6 +290,10 @@
       "class": "RotatedPillarBlock"
     },
     {
+      "name": "poplar_log",
+      "class": "RotatedPillarBlock"
+    },
+    {
       "name": "mangrove_roots",
       "class": "MangroveRootsBlock"
     },
@@ -330,6 +342,10 @@
       "class": "RotatedPillarBlock"
     },
     {
+      "name": "stripped_poplar_log",
+      "class": "RotatedPillarBlock"
+    },
+    {
       "name": "stripped_bamboo_block",
       "class": "RotatedPillarBlock"
     },
@@ -363,6 +379,10 @@
     },
     {
       "name": "mangrove_wood",
+      "class": "RotatedPillarBlock"
+    },
+    {
+      "name": "poplar_wood",
       "class": "RotatedPillarBlock"
     },
     {
@@ -402,61 +422,121 @@
       "class": "RotatedPillarBlock"
     },
     {
+      "name": "stripped_poplar_wood",
+      "class": "RotatedPillarBlock"
+    },
+    {
       "name": "oak_leaves",
       "class": "TintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "spruce_leaves",
-      "class": "TintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "class": "LeavesBlock",
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "birch_leaves",
       "class": "TintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "jungle_leaves",
       "class": "TintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "acacia_leaves",
       "class": "TintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "cherry_leaves",
       "class": "UntintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.1
+      "leaf_particle_chance": 0.1,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "dark_oak_leaves",
       "class": "TintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "pale_oak_leaves",
       "class": "UntintedParticleLeavesBlock",
-      "leaf_particle_chance": 0.02
+      "leaf_particle_chance": 0.02,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "mangrove_leaves",
       "class": "MangroveLeavesBlock",
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
+    },
+    {
+      "name": "red_poplar_leaves",
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 300,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 1,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 3
+    },
+    {
+      "name": "orange_poplar_leaves",
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 300,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 1,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 3
+    },
+    {
+      "name": "yellow_poplar_leaves",
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 300,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 1,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 3
     },
     {
       "name": "azalea_leaves",
       "class": "UntintedParticleLeavesBlock",
       "leaf_particle_color": -9399763,
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "flowering_azalea_leaves",
       "class": "UntintedParticleLeavesBlock",
       "leaf_particle_color": -9399763,
-      "leaf_particle_chance": 0.01
+      "leaf_particle_chance": 0.01,
+      "ambient_leaves_block_sound_player_chance": 0,
+      "ambient_leaves_block_sound_player_nearby_satisfying_blocks_required": 0,
+      "ambient_leaves_block_sound_player_nearby_same_leaves_required": 0
     },
     {
       "name": "sponge",
@@ -593,6 +673,10 @@
       "color": "black"
     },
     {
+      "name": "straw_bed",
+      "class": "StrawBedBlock"
+    },
+    {
       "name": "powered_rail",
       "class": "PoweredRailBlock",
       "is_straight": true
@@ -625,7 +709,13 @@
     },
     {
       "name": "bush",
-      "class": "BushBlock"
+      "class": "BushBlock",
+      "shape_height": 13
+    },
+    {
+      "name": "red_shrub",
+      "class": "BushBlock",
+      "shape_height": 13
     },
     {
       "name": "short_dry_grass",
@@ -715,6 +805,150 @@
     {
       "name": "black_wool",
       "class": "Block"
+    },
+    {
+      "name": "white_wool_stairs",
+      "class": "StairBlock",
+      "base": "white_wool"
+    },
+    {
+      "name": "orange_wool_stairs",
+      "class": "StairBlock",
+      "base": "orange_wool"
+    },
+    {
+      "name": "magenta_wool_stairs",
+      "class": "StairBlock",
+      "base": "magenta_wool"
+    },
+    {
+      "name": "light_blue_wool_stairs",
+      "class": "StairBlock",
+      "base": "light_blue_wool"
+    },
+    {
+      "name": "yellow_wool_stairs",
+      "class": "StairBlock",
+      "base": "yellow_wool"
+    },
+    {
+      "name": "lime_wool_stairs",
+      "class": "StairBlock",
+      "base": "lime_wool"
+    },
+    {
+      "name": "pink_wool_stairs",
+      "class": "StairBlock",
+      "base": "pink_wool"
+    },
+    {
+      "name": "gray_wool_stairs",
+      "class": "StairBlock",
+      "base": "gray_wool"
+    },
+    {
+      "name": "light_gray_wool_stairs",
+      "class": "StairBlock",
+      "base": "light_gray_wool"
+    },
+    {
+      "name": "cyan_wool_stairs",
+      "class": "StairBlock",
+      "base": "cyan_wool"
+    },
+    {
+      "name": "purple_wool_stairs",
+      "class": "StairBlock",
+      "base": "purple_wool"
+    },
+    {
+      "name": "blue_wool_stairs",
+      "class": "StairBlock",
+      "base": "blue_wool"
+    },
+    {
+      "name": "brown_wool_stairs",
+      "class": "StairBlock",
+      "base": "brown_wool"
+    },
+    {
+      "name": "green_wool_stairs",
+      "class": "StairBlock",
+      "base": "green_wool"
+    },
+    {
+      "name": "red_wool_stairs",
+      "class": "StairBlock",
+      "base": "red_wool"
+    },
+    {
+      "name": "black_wool_stairs",
+      "class": "StairBlock",
+      "base": "black_wool"
+    },
+    {
+      "name": "white_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "orange_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "magenta_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "light_blue_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "yellow_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "lime_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "pink_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "gray_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "light_gray_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "cyan_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "purple_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "blue_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "brown_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "green_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "red_wool_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "black_wool_slab",
+      "class": "SlabBlock"
     },
     {
       "name": "moving_piston",
@@ -855,6 +1089,10 @@
       "class": "ShelfBlock"
     },
     {
+      "name": "poplar_shelf",
+      "class": "ShelfBlock"
+    },
+    {
       "name": "spruce_shelf",
       "class": "ShelfBlock"
     },
@@ -886,14 +1124,14 @@
       "ignite_odds_n": 512,
       "ignite_odds_max_fill": 384,
       "ignite_odds_min_n": 32,
-      "ignite_odds_size": 207,
+      "ignite_odds_size": 254,
       "ignite_odds_f": 0.75,
       "burn_odds_mask": 511,
       "burn_odds_contains_null_key": false,
       "burn_odds_n": 512,
       "burn_odds_max_fill": 384,
       "burn_odds_min_n": 32,
-      "burn_odds_size": 207,
+      "burn_odds_size": 254,
       "burn_odds_f": 0.75,
       "registry_key": "fire",
       "fire_damage": 1.0
@@ -924,7 +1162,7 @@
     },
     {
       "name": "redstone_wire",
-      "class": "RedStoneWireBlock",
+      "class": "RedstoneWireBlock",
       "should_signal": true
     },
     {
@@ -959,7 +1197,8 @@
     },
     {
       "name": "farmland",
-      "class": "FarmlandBlock"
+      "class": "FarmlandBlock",
+      "base_block": "dirt"
     },
     {
       "name": "furnace",
@@ -1025,6 +1264,13 @@
       "name": "mangrove_sign",
       "class": "StandingSignBlock",
       "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
+    },
+    {
+      "name": "poplar_sign",
+      "class": "StandingSignBlock",
+      "type_name": "poplar",
       "type_fence_gate_close": "block.fence_gate.close",
       "type_fence_gate_open": "block.fence_gate.open"
     },
@@ -1130,6 +1376,13 @@
       "type_fence_gate_open": "block.fence_gate.open"
     },
     {
+      "name": "poplar_wall_sign",
+      "class": "WallSignBlock",
+      "type_name": "poplar",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
+    },
+    {
       "name": "bamboo_wall_sign",
       "class": "WallSignBlock",
       "type_name": "bamboo",
@@ -1214,6 +1467,13 @@
       "type_fence_gate_open": "block.fence_gate.open"
     },
     {
+      "name": "poplar_hanging_sign",
+      "class": "CeilingHangingSignBlock",
+      "type_name": "poplar",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
+    },
+    {
       "name": "bamboo_hanging_sign",
       "class": "CeilingHangingSignBlock",
       "type_name": "bamboo",
@@ -1280,6 +1540,13 @@
       "name": "mangrove_wall_hanging_sign",
       "class": "WallHangingSignBlock",
       "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
+    },
+    {
+      "name": "poplar_wall_hanging_sign",
+      "class": "WallHangingSignBlock",
+      "type_name": "poplar",
       "type_fence_gate_close": "block.fence_gate.close",
       "type_fence_gate_open": "block.fence_gate.open"
     },
@@ -1482,6 +1749,23 @@
       "name": "mangrove_pressure_plate",
       "class": "PressurePlateBlock",
       "type_name": "mangrove",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
+    },
+    {
+      "name": "poplar_pressure_plate",
+      "class": "PressurePlateBlock",
+      "type_name": "poplar",
       "type_can_open_by_hand": true,
       "type_can_open_by_wind_charge": true,
       "type_can_button_be_activated_by_arrows": true,
@@ -1876,6 +2160,23 @@
       "type_button_click_on": "block.wooden_button.click_on"
     },
     {
+      "name": "poplar_trapdoor",
+      "class": "TrapDoorBlock",
+      "type_name": "poplar",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
+    },
+    {
       "name": "bamboo_trapdoor",
       "class": "TrapDoorBlock",
       "type_name": "bamboo",
@@ -2226,6 +2527,10 @@
       "class": "CocoaBlock"
     },
     {
+      "name": "shelf_mushroom",
+      "class": "ShelfMushroomBlock"
+    },
+    {
       "name": "sandstone_stairs",
       "class": "StairBlock",
       "base": "sandstone"
@@ -2346,6 +2651,11 @@
       "name": "potted_pale_oak_sapling",
       "class": "FlowerPotBlock",
       "potted": "pale_oak_sapling"
+    },
+    {
+      "name": "potted_poplar_sapling",
+      "class": "FlowerPotBlock",
+      "potted": "poplar_sapling"
     },
     {
       "name": "potted_mangrove_propagule",
@@ -2603,6 +2913,24 @@
       "name": "mangrove_button",
       "class": "ButtonBlock",
       "type_name": "mangrove",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
+    },
+    {
+      "name": "poplar_button",
+      "class": "ButtonBlock",
+      "type_name": "poplar",
       "type_can_open_by_hand": true,
       "type_can_open_by_wind_charge": true,
       "type_can_button_be_activated_by_arrows": true,
@@ -2979,6 +3307,11 @@
       "name": "mangrove_stairs",
       "class": "StairBlock",
       "base": "mangrove_planks"
+    },
+    {
+      "name": "poplar_stairs",
+      "class": "StairBlock",
+      "base": "poplar_planks"
     },
     {
       "name": "bamboo_stairs",
@@ -3396,6 +3729,10 @@
       "class": "SlabBlock"
     },
     {
+      "name": "poplar_slab",
+      "class": "SlabBlock"
+    },
+    {
       "name": "bamboo_slab",
       "class": "SlabBlock"
     },
@@ -3405,10 +3742,6 @@
     },
     {
       "name": "stone_slab",
-      "class": "SlabBlock"
-    },
-    {
-      "name": "smooth_stone_slab",
       "class": "SlabBlock"
     },
     {
@@ -3456,12 +3789,12 @@
       "class": "SlabBlock"
     },
     {
-      "name": "purpur_slab",
-      "class": "SlabBlock"
-    },
-    {
       "name": "smooth_stone",
       "class": "Block"
+    },
+    {
+      "name": "smooth_stone_slab",
+      "class": "SlabBlock"
     },
     {
       "name": "smooth_sandstone",
@@ -3532,6 +3865,13 @@
       "type_fence_gate_open": "block.fence_gate.open"
     },
     {
+      "name": "poplar_fence_gate",
+      "class": "FenceGateBlock",
+      "type_name": "poplar",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
+    },
+    {
       "name": "bamboo_fence_gate",
       "class": "FenceGateBlock",
       "type_name": "bamboo",
@@ -3568,6 +3908,10 @@
     },
     {
       "name": "mangrove_fence",
+      "class": "FenceBlock"
+    },
+    {
+      "name": "poplar_fence",
       "class": "FenceBlock"
     },
     {
@@ -3711,6 +4055,23 @@
       "type_button_click_on": "block.wooden_button.click_on"
     },
     {
+      "name": "poplar_door",
+      "class": "DoorBlock",
+      "type_name": "poplar",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
+    },
+    {
       "name": "bamboo_door",
       "class": "DoorBlock",
       "type_name": "bamboo",
@@ -3745,6 +4106,10 @@
       "class": "Block"
     },
     {
+      "name": "purpur_slab",
+      "class": "SlabBlock"
+    },
+    {
       "name": "purpur_pillar",
       "class": "RotatedPillarBlock"
     },
@@ -3775,7 +4140,8 @@
     },
     {
       "name": "dirt_path",
-      "class": "DirtPathBlock"
+      "class": "PathBlock",
+      "base_block": "dirt"
     },
     {
       "name": "end_gateway",
@@ -4030,6 +4396,150 @@
     {
       "name": "black_concrete",
       "class": "Block"
+    },
+    {
+      "name": "white_concrete_stairs",
+      "class": "StairBlock",
+      "base": "white_concrete"
+    },
+    {
+      "name": "orange_concrete_stairs",
+      "class": "StairBlock",
+      "base": "orange_concrete"
+    },
+    {
+      "name": "magenta_concrete_stairs",
+      "class": "StairBlock",
+      "base": "magenta_concrete"
+    },
+    {
+      "name": "light_blue_concrete_stairs",
+      "class": "StairBlock",
+      "base": "light_blue_concrete"
+    },
+    {
+      "name": "yellow_concrete_stairs",
+      "class": "StairBlock",
+      "base": "yellow_concrete"
+    },
+    {
+      "name": "lime_concrete_stairs",
+      "class": "StairBlock",
+      "base": "lime_concrete"
+    },
+    {
+      "name": "pink_concrete_stairs",
+      "class": "StairBlock",
+      "base": "pink_concrete"
+    },
+    {
+      "name": "gray_concrete_stairs",
+      "class": "StairBlock",
+      "base": "gray_concrete"
+    },
+    {
+      "name": "light_gray_concrete_stairs",
+      "class": "StairBlock",
+      "base": "light_gray_concrete"
+    },
+    {
+      "name": "cyan_concrete_stairs",
+      "class": "StairBlock",
+      "base": "cyan_concrete"
+    },
+    {
+      "name": "purple_concrete_stairs",
+      "class": "StairBlock",
+      "base": "purple_concrete"
+    },
+    {
+      "name": "blue_concrete_stairs",
+      "class": "StairBlock",
+      "base": "blue_concrete"
+    },
+    {
+      "name": "brown_concrete_stairs",
+      "class": "StairBlock",
+      "base": "brown_concrete"
+    },
+    {
+      "name": "green_concrete_stairs",
+      "class": "StairBlock",
+      "base": "green_concrete"
+    },
+    {
+      "name": "red_concrete_stairs",
+      "class": "StairBlock",
+      "base": "red_concrete"
+    },
+    {
+      "name": "black_concrete_stairs",
+      "class": "StairBlock",
+      "base": "black_concrete"
+    },
+    {
+      "name": "white_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "orange_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "magenta_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "light_blue_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "yellow_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "lime_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "pink_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "gray_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "light_gray_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "cyan_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "purple_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "blue_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "brown_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "green_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "red_concrete_slab",
+      "class": "SlabBlock"
+    },
+    {
+      "name": "black_concrete_slab",
+      "class": "SlabBlock"
     },
     {
       "name": "white_concrete_powder",
@@ -6269,11 +6779,13 @@
     },
     {
       "name": "pink_petals",
-      "class": "FlowerBedBlock"
+      "class": "FlowerBedBlock",
+      "shape_height": 3
     },
     {
       "name": "wildflowers",
-      "class": "FlowerBedBlock"
+      "class": "FlowerBedBlock",
+      "shape_height": 3
     },
     {
       "name": "leaf_litter",
@@ -6862,6 +7374,11 @@
       "block": "mangrove_planks"
     },
     {
+      "name": "poplar_planks",
+      "class": "BlockItem",
+      "block": "poplar_planks"
+    },
+    {
       "name": "bamboo_planks",
       "class": "BlockItem",
       "block": "bamboo_planks"
@@ -6925,6 +7442,11 @@
       "name": "mangrove_propagule",
       "class": "BlockItem",
       "block": "mangrove_propagule"
+    },
+    {
+      "name": "poplar_sapling",
+      "class": "BlockItem",
+      "block": "poplar_sapling"
     },
     {
       "name": "bedrock",
@@ -7352,6 +7874,11 @@
       "block": "mangrove_log"
     },
     {
+      "name": "poplar_log",
+      "class": "BlockItem",
+      "block": "poplar_log"
+    },
+    {
       "name": "mangrove_roots",
       "class": "BlockItem",
       "block": "mangrove_roots"
@@ -7422,6 +7949,11 @@
       "block": "stripped_mangrove_log"
     },
     {
+      "name": "stripped_poplar_log",
+      "class": "BlockItem",
+      "block": "stripped_poplar_log"
+    },
+    {
       "name": "stripped_crimson_stem",
       "class": "BlockItem",
       "block": "stripped_crimson_stem"
@@ -7475,6 +8007,11 @@
       "name": "stripped_mangrove_wood",
       "class": "BlockItem",
       "block": "stripped_mangrove_wood"
+    },
+    {
+      "name": "stripped_poplar_wood",
+      "class": "BlockItem",
+      "block": "stripped_poplar_wood"
     },
     {
       "name": "stripped_crimson_hyphae",
@@ -7537,6 +8074,11 @@
       "block": "mangrove_wood"
     },
     {
+      "name": "poplar_wood",
+      "class": "BlockItem",
+      "block": "poplar_wood"
+    },
+    {
       "name": "crimson_hyphae",
       "class": "BlockItem",
       "block": "crimson_hyphae"
@@ -7590,6 +8132,21 @@
       "name": "mangrove_leaves",
       "class": "BlockItem",
       "block": "mangrove_leaves"
+    },
+    {
+      "name": "red_poplar_leaves",
+      "class": "BlockItem",
+      "block": "red_poplar_leaves"
+    },
+    {
+      "name": "orange_poplar_leaves",
+      "class": "BlockItem",
+      "block": "orange_poplar_leaves"
+    },
+    {
+      "name": "yellow_poplar_leaves",
+      "class": "BlockItem",
+      "block": "yellow_poplar_leaves"
     },
     {
       "name": "azalea_leaves",
@@ -7660,6 +8217,11 @@
       "name": "bush",
       "class": "BlockItem",
       "block": "bush"
+    },
+    {
+      "name": "red_shrub",
+      "class": "BlockItem",
+      "block": "red_shrub"
     },
     {
       "name": "azalea",
@@ -7782,6 +8344,166 @@
       "block": "black_wool"
     },
     {
+      "name": "white_wool_stairs",
+      "class": "BlockItem",
+      "block": "white_wool_stairs"
+    },
+    {
+      "name": "orange_wool_stairs",
+      "class": "BlockItem",
+      "block": "orange_wool_stairs"
+    },
+    {
+      "name": "magenta_wool_stairs",
+      "class": "BlockItem",
+      "block": "magenta_wool_stairs"
+    },
+    {
+      "name": "light_blue_wool_stairs",
+      "class": "BlockItem",
+      "block": "light_blue_wool_stairs"
+    },
+    {
+      "name": "yellow_wool_stairs",
+      "class": "BlockItem",
+      "block": "yellow_wool_stairs"
+    },
+    {
+      "name": "lime_wool_stairs",
+      "class": "BlockItem",
+      "block": "lime_wool_stairs"
+    },
+    {
+      "name": "pink_wool_stairs",
+      "class": "BlockItem",
+      "block": "pink_wool_stairs"
+    },
+    {
+      "name": "gray_wool_stairs",
+      "class": "BlockItem",
+      "block": "gray_wool_stairs"
+    },
+    {
+      "name": "light_gray_wool_stairs",
+      "class": "BlockItem",
+      "block": "light_gray_wool_stairs"
+    },
+    {
+      "name": "cyan_wool_stairs",
+      "class": "BlockItem",
+      "block": "cyan_wool_stairs"
+    },
+    {
+      "name": "purple_wool_stairs",
+      "class": "BlockItem",
+      "block": "purple_wool_stairs"
+    },
+    {
+      "name": "blue_wool_stairs",
+      "class": "BlockItem",
+      "block": "blue_wool_stairs"
+    },
+    {
+      "name": "brown_wool_stairs",
+      "class": "BlockItem",
+      "block": "brown_wool_stairs"
+    },
+    {
+      "name": "green_wool_stairs",
+      "class": "BlockItem",
+      "block": "green_wool_stairs"
+    },
+    {
+      "name": "red_wool_stairs",
+      "class": "BlockItem",
+      "block": "red_wool_stairs"
+    },
+    {
+      "name": "black_wool_stairs",
+      "class": "BlockItem",
+      "block": "black_wool_stairs"
+    },
+    {
+      "name": "white_wool_slab",
+      "class": "BlockItem",
+      "block": "white_wool_slab"
+    },
+    {
+      "name": "orange_wool_slab",
+      "class": "BlockItem",
+      "block": "orange_wool_slab"
+    },
+    {
+      "name": "magenta_wool_slab",
+      "class": "BlockItem",
+      "block": "magenta_wool_slab"
+    },
+    {
+      "name": "light_blue_wool_slab",
+      "class": "BlockItem",
+      "block": "light_blue_wool_slab"
+    },
+    {
+      "name": "yellow_wool_slab",
+      "class": "BlockItem",
+      "block": "yellow_wool_slab"
+    },
+    {
+      "name": "lime_wool_slab",
+      "class": "BlockItem",
+      "block": "lime_wool_slab"
+    },
+    {
+      "name": "pink_wool_slab",
+      "class": "BlockItem",
+      "block": "pink_wool_slab"
+    },
+    {
+      "name": "gray_wool_slab",
+      "class": "BlockItem",
+      "block": "gray_wool_slab"
+    },
+    {
+      "name": "light_gray_wool_slab",
+      "class": "BlockItem",
+      "block": "light_gray_wool_slab"
+    },
+    {
+      "name": "cyan_wool_slab",
+      "class": "BlockItem",
+      "block": "cyan_wool_slab"
+    },
+    {
+      "name": "purple_wool_slab",
+      "class": "BlockItem",
+      "block": "purple_wool_slab"
+    },
+    {
+      "name": "blue_wool_slab",
+      "class": "BlockItem",
+      "block": "blue_wool_slab"
+    },
+    {
+      "name": "brown_wool_slab",
+      "class": "BlockItem",
+      "block": "brown_wool_slab"
+    },
+    {
+      "name": "green_wool_slab",
+      "class": "BlockItem",
+      "block": "green_wool_slab"
+    },
+    {
+      "name": "red_wool_slab",
+      "class": "BlockItem",
+      "block": "red_wool_slab"
+    },
+    {
+      "name": "black_wool_slab",
+      "class": "BlockItem",
+      "block": "black_wool_slab"
+    },
+    {
       "name": "dandelion",
       "class": "BlockItem",
       "block": "dandelion"
@@ -7885,6 +8607,11 @@
       "name": "red_mushroom",
       "class": "BlockItem",
       "block": "red_mushroom"
+    },
+    {
+      "name": "shelf_mushroom",
+      "class": "BlockItem",
+      "block": "shelf_mushroom"
     },
     {
       "name": "crimson_fungus",
@@ -8035,6 +8762,11 @@
       "name": "mangrove_slab",
       "class": "BlockItem",
       "block": "mangrove_slab"
+    },
+    {
+      "name": "poplar_slab",
+      "class": "BlockItem",
+      "block": "poplar_slab"
     },
     {
       "name": "bamboo_slab",
@@ -8205,6 +8937,11 @@
       "name": "mangrove_shelf",
       "class": "BlockItem",
       "block": "mangrove_shelf"
+    },
+    {
+      "name": "poplar_shelf",
+      "class": "BlockItem",
+      "block": "poplar_shelf"
     },
     {
       "name": "oak_shelf",
@@ -8407,6 +9144,11 @@
       "name": "mangrove_fence",
       "class": "BlockItem",
       "block": "mangrove_fence"
+    },
+    {
+      "name": "poplar_fence",
+      "class": "BlockItem",
+      "block": "poplar_fence"
     },
     {
       "name": "bamboo_fence",
@@ -8896,6 +9638,11 @@
       "name": "mangrove_stairs",
       "class": "BlockItem",
       "block": "mangrove_stairs"
+    },
+    {
+      "name": "poplar_stairs",
+      "class": "BlockItem",
+      "block": "poplar_stairs"
     },
     {
       "name": "bamboo_stairs",
@@ -9798,6 +10545,166 @@
       "block": "black_concrete"
     },
     {
+      "name": "white_concrete_stairs",
+      "class": "BlockItem",
+      "block": "white_concrete_stairs"
+    },
+    {
+      "name": "orange_concrete_stairs",
+      "class": "BlockItem",
+      "block": "orange_concrete_stairs"
+    },
+    {
+      "name": "magenta_concrete_stairs",
+      "class": "BlockItem",
+      "block": "magenta_concrete_stairs"
+    },
+    {
+      "name": "light_blue_concrete_stairs",
+      "class": "BlockItem",
+      "block": "light_blue_concrete_stairs"
+    },
+    {
+      "name": "yellow_concrete_stairs",
+      "class": "BlockItem",
+      "block": "yellow_concrete_stairs"
+    },
+    {
+      "name": "lime_concrete_stairs",
+      "class": "BlockItem",
+      "block": "lime_concrete_stairs"
+    },
+    {
+      "name": "pink_concrete_stairs",
+      "class": "BlockItem",
+      "block": "pink_concrete_stairs"
+    },
+    {
+      "name": "gray_concrete_stairs",
+      "class": "BlockItem",
+      "block": "gray_concrete_stairs"
+    },
+    {
+      "name": "light_gray_concrete_stairs",
+      "class": "BlockItem",
+      "block": "light_gray_concrete_stairs"
+    },
+    {
+      "name": "cyan_concrete_stairs",
+      "class": "BlockItem",
+      "block": "cyan_concrete_stairs"
+    },
+    {
+      "name": "purple_concrete_stairs",
+      "class": "BlockItem",
+      "block": "purple_concrete_stairs"
+    },
+    {
+      "name": "blue_concrete_stairs",
+      "class": "BlockItem",
+      "block": "blue_concrete_stairs"
+    },
+    {
+      "name": "brown_concrete_stairs",
+      "class": "BlockItem",
+      "block": "brown_concrete_stairs"
+    },
+    {
+      "name": "green_concrete_stairs",
+      "class": "BlockItem",
+      "block": "green_concrete_stairs"
+    },
+    {
+      "name": "red_concrete_stairs",
+      "class": "BlockItem",
+      "block": "red_concrete_stairs"
+    },
+    {
+      "name": "black_concrete_stairs",
+      "class": "BlockItem",
+      "block": "black_concrete_stairs"
+    },
+    {
+      "name": "white_concrete_slab",
+      "class": "BlockItem",
+      "block": "white_concrete_slab"
+    },
+    {
+      "name": "orange_concrete_slab",
+      "class": "BlockItem",
+      "block": "orange_concrete_slab"
+    },
+    {
+      "name": "magenta_concrete_slab",
+      "class": "BlockItem",
+      "block": "magenta_concrete_slab"
+    },
+    {
+      "name": "light_blue_concrete_slab",
+      "class": "BlockItem",
+      "block": "light_blue_concrete_slab"
+    },
+    {
+      "name": "yellow_concrete_slab",
+      "class": "BlockItem",
+      "block": "yellow_concrete_slab"
+    },
+    {
+      "name": "lime_concrete_slab",
+      "class": "BlockItem",
+      "block": "lime_concrete_slab"
+    },
+    {
+      "name": "pink_concrete_slab",
+      "class": "BlockItem",
+      "block": "pink_concrete_slab"
+    },
+    {
+      "name": "gray_concrete_slab",
+      "class": "BlockItem",
+      "block": "gray_concrete_slab"
+    },
+    {
+      "name": "light_gray_concrete_slab",
+      "class": "BlockItem",
+      "block": "light_gray_concrete_slab"
+    },
+    {
+      "name": "cyan_concrete_slab",
+      "class": "BlockItem",
+      "block": "cyan_concrete_slab"
+    },
+    {
+      "name": "purple_concrete_slab",
+      "class": "BlockItem",
+      "block": "purple_concrete_slab"
+    },
+    {
+      "name": "blue_concrete_slab",
+      "class": "BlockItem",
+      "block": "blue_concrete_slab"
+    },
+    {
+      "name": "brown_concrete_slab",
+      "class": "BlockItem",
+      "block": "brown_concrete_slab"
+    },
+    {
+      "name": "green_concrete_slab",
+      "class": "BlockItem",
+      "block": "green_concrete_slab"
+    },
+    {
+      "name": "red_concrete_slab",
+      "class": "BlockItem",
+      "block": "red_concrete_slab"
+    },
+    {
+      "name": "black_concrete_slab",
+      "class": "BlockItem",
+      "block": "black_concrete_slab"
+    },
+    {
       "name": "white_concrete_powder",
       "class": "BlockItem",
       "block": "white_concrete_powder"
@@ -10470,6 +11377,11 @@
       "block": "mangrove_button"
     },
     {
+      "name": "poplar_button",
+      "class": "BlockItem",
+      "block": "poplar_button"
+    },
+    {
       "name": "bamboo_button",
       "class": "BlockItem",
       "block": "bamboo_button"
@@ -10550,6 +11462,11 @@
       "block": "mangrove_pressure_plate"
     },
     {
+      "name": "poplar_pressure_plate",
+      "class": "BlockItem",
+      "block": "poplar_pressure_plate"
+    },
+    {
       "name": "bamboo_pressure_plate",
       "class": "BlockItem",
       "block": "bamboo_pressure_plate"
@@ -10613,6 +11530,11 @@
       "name": "mangrove_door",
       "class": "DoubleHighBlockItem",
       "block": "mangrove_door"
+    },
+    {
+      "name": "poplar_door",
+      "class": "DoubleHighBlockItem",
+      "block": "poplar_door"
     },
     {
       "name": "bamboo_door",
@@ -10720,6 +11642,11 @@
       "block": "mangrove_trapdoor"
     },
     {
+      "name": "poplar_trapdoor",
+      "class": "BlockItem",
+      "block": "poplar_trapdoor"
+    },
+    {
       "name": "bamboo_trapdoor",
       "class": "BlockItem",
       "block": "bamboo_trapdoor"
@@ -10818,6 +11745,11 @@
       "name": "mangrove_fence_gate",
       "class": "BlockItem",
       "block": "mangrove_fence_gate"
+    },
+    {
+      "name": "poplar_fence_gate",
+      "class": "BlockItem",
+      "block": "poplar_fence_gate"
     },
     {
       "name": "bamboo_fence_gate",
@@ -11058,6 +11990,16 @@
       "entity_type": "mangrove_chest_boat"
     },
     {
+      "name": "poplar_boat",
+      "class": "BoatItem",
+      "entity_type": "poplar_boat"
+    },
+    {
+      "name": "poplar_chest_boat",
+      "class": "BoatItem",
+      "entity_type": "poplar_chest_boat"
+    },
+    {
       "name": "bamboo_raft",
       "class": "BoatItem",
       "entity_type": "bamboo_raft"
@@ -11189,7 +12131,7 @@
     },
     {
       "name": "wooden_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "wooden_pickaxe",
@@ -11197,11 +12139,11 @@
     },
     {
       "name": "wooden_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "wooden_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "copper_sword",
@@ -11209,7 +12151,7 @@
     },
     {
       "name": "copper_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "copper_pickaxe",
@@ -11217,11 +12159,11 @@
     },
     {
       "name": "copper_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "copper_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "stone_sword",
@@ -11229,7 +12171,7 @@
     },
     {
       "name": "stone_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "stone_pickaxe",
@@ -11237,11 +12179,11 @@
     },
     {
       "name": "stone_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "stone_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "golden_sword",
@@ -11249,7 +12191,7 @@
     },
     {
       "name": "golden_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "golden_pickaxe",
@@ -11257,11 +12199,11 @@
     },
     {
       "name": "golden_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "golden_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "iron_sword",
@@ -11269,7 +12211,7 @@
     },
     {
       "name": "iron_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "iron_pickaxe",
@@ -11277,11 +12219,11 @@
     },
     {
       "name": "iron_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "iron_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "diamond_sword",
@@ -11289,7 +12231,7 @@
     },
     {
       "name": "diamond_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "diamond_pickaxe",
@@ -11297,11 +12239,11 @@
     },
     {
       "name": "diamond_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "diamond_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "netherite_sword",
@@ -11309,7 +12251,7 @@
     },
     {
       "name": "netherite_shovel",
-      "class": "ShovelItem"
+      "class": "Item"
     },
     {
       "name": "netherite_pickaxe",
@@ -11317,11 +12259,11 @@
     },
     {
       "name": "netherite_axe",
-      "class": "AxeItem"
+      "class": "Item"
     },
     {
       "name": "netherite_hoe",
-      "class": "HoeItem"
+      "class": "Item"
     },
     {
       "name": "stick",
@@ -11496,84 +12438,91 @@
     },
     {
       "name": "oak_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "oak_wall_sign",
       "attachment_direction": "down",
       "block": "oak_sign"
     },
     {
       "name": "spruce_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "spruce_wall_sign",
       "attachment_direction": "down",
       "block": "spruce_sign"
     },
     {
       "name": "birch_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "birch_wall_sign",
       "attachment_direction": "down",
       "block": "birch_sign"
     },
     {
       "name": "jungle_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "jungle_wall_sign",
       "attachment_direction": "down",
       "block": "jungle_sign"
     },
     {
       "name": "acacia_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "acacia_wall_sign",
       "attachment_direction": "down",
       "block": "acacia_sign"
     },
     {
       "name": "cherry_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "cherry_wall_sign",
       "attachment_direction": "down",
       "block": "cherry_sign"
     },
     {
       "name": "dark_oak_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "dark_oak_wall_sign",
       "attachment_direction": "down",
       "block": "dark_oak_sign"
     },
     {
       "name": "pale_oak_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "pale_oak_wall_sign",
       "attachment_direction": "down",
       "block": "pale_oak_sign"
     },
     {
       "name": "mangrove_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "mangrove_wall_sign",
       "attachment_direction": "down",
       "block": "mangrove_sign"
     },
     {
+      "name": "poplar_sign",
+      "class": "StandingAndWallBlockItem",
+      "wall_block": "poplar_wall_sign",
+      "attachment_direction": "down",
+      "block": "poplar_sign"
+    },
+    {
       "name": "bamboo_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "bamboo_wall_sign",
       "attachment_direction": "down",
       "block": "bamboo_sign"
     },
     {
       "name": "crimson_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "crimson_wall_sign",
       "attachment_direction": "down",
       "block": "crimson_sign"
     },
     {
       "name": "warped_sign",
-      "class": "SignItem",
+      "class": "StandingAndWallBlockItem",
       "wall_block": "warped_wall_sign",
       "attachment_direction": "down",
       "block": "warped_sign"
@@ -11640,6 +12589,13 @@
       "wall_block": "mangrove_wall_hanging_sign",
       "attachment_direction": "up",
       "block": "mangrove_hanging_sign"
+    },
+    {
+      "name": "poplar_hanging_sign",
+      "class": "HangingSignItem",
+      "wall_block": "poplar_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "poplar_hanging_sign"
     },
     {
       "name": "bamboo_hanging_sign",
@@ -11858,6 +12814,70 @@
       "class": "BundleItem"
     },
     {
+      "name": "white_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "orange_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "magenta_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "light_blue_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "yellow_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "lime_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "pink_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "gray_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "light_gray_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "cyan_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "purple_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "blue_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "brown_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "green_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "red_cushion",
+      "class": "CushionItem"
+    },
+    {
+      "name": "black_cushion",
+      "class": "CushionItem"
+    },
+    {
       "name": "fishing_rod",
       "class": "FishingRodItem"
     },
@@ -11993,83 +13013,88 @@
     },
     {
       "name": "white_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "white_bed"
     },
     {
       "name": "orange_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "orange_bed"
     },
     {
       "name": "magenta_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "magenta_bed"
     },
     {
       "name": "light_blue_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "light_blue_bed"
     },
     {
       "name": "yellow_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "yellow_bed"
     },
     {
       "name": "lime_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "lime_bed"
     },
     {
       "name": "pink_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "pink_bed"
     },
     {
       "name": "gray_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "gray_bed"
     },
     {
       "name": "light_gray_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "light_gray_bed"
     },
     {
       "name": "cyan_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "cyan_bed"
     },
     {
       "name": "purple_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "purple_bed"
     },
     {
       "name": "blue_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "blue_bed"
     },
     {
       "name": "brown_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "brown_bed"
     },
     {
       "name": "green_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "green_bed"
     },
     {
       "name": "red_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "red_bed"
     },
     {
       "name": "black_bed",
-      "class": "BedItem",
+      "class": "BlockItem",
       "block": "black_bed"
+    },
+    {
+      "name": "straw_bed",
+      "class": "BlockItem",
+      "block": "straw_bed"
     },
     {
       "name": "cookie",
@@ -12082,6 +13107,70 @@
     },
     {
       "name": "filled_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "ocean_monument_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "woodland_mansion_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "buried_trial_chambers_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "jungle_pyramid_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "swamp_hut_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "desert_village_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "plains_village_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "savanna_village_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "snowy_village_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "taiga_village_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "buried_treasure_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "buried_ancient_city_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "buried_mineshaft_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "desert_pyramid_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "abandoned_camp_map",
+      "class": "MapItem"
+    },
+    {
+      "name": "warm_ocean_ruins_map",
       "class": "MapItem"
     },
     {
@@ -14064,6 +15153,11 @@
       "java_class": "net.minecraft.world.entity.monster.Creeper"
     },
     {
+      "name": "cushion",
+      "class": "Cushion",
+      "java_class": "net.minecraft.world.entity.decoration.Cushion"
+    },
+    {
       "name": "dark_oak_boat",
       "class": "Boat",
       "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
@@ -14107,8 +15201,8 @@
     },
     {
       "name": "enderman",
-      "class": "EnderMan",
-      "java_class": "net.minecraft.world.entity.monster.EnderMan"
+      "class": "Enderman",
+      "java_class": "net.minecraft.world.entity.monster.Enderman"
     },
     {
       "name": "endermite",
@@ -14435,6 +15529,18 @@
       "name": "polar_bear",
       "class": "PolarBear",
       "java_class": "net.minecraft.world.entity.animal.polarbear.PolarBear"
+    },
+    {
+      "name": "poplar_boat",
+      "class": "Boat",
+      "java_class": "net.minecraft.world.entity.vehicle.boat.Boat",
+      "drop_item": "poplar_boat"
+    },
+    {
+      "name": "poplar_chest_boat",
+      "class": "ChestBoat",
+      "java_class": "net.minecraft.world.entity.vehicle.boat.ChestBoat",
+      "drop_item": "poplar_chest_boat"
     },
     {
       "name": "splash_potion",

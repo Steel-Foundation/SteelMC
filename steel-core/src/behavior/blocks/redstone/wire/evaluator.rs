@@ -297,6 +297,10 @@ mod tests {
         fn height(&self) -> i32 {
             self.level.height()
         }
+
+        fn sea_level(&self) -> i32 {
+            self.level.sea_level()
+        }
     }
 
     fn powered_wire(power: u8) -> BlockStateId {

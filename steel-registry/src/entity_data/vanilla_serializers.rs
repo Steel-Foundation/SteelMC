@@ -274,6 +274,13 @@ fn ser_humanoid_arm(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     }
 }
 
+fn ser_dye_color(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
+    match data {
+        EntityData::DyeColor(v) => v.write(buf),
+        _ => Err(io::Error::other("Expected DyeColor")),
+    }
+}
+
 /// Register all vanilla entity data serializers.
 ///
 /// **IMPORTANT**: The registration order MUST match vanilla's `EntityDataSerializers.java` exactly,
@@ -333,6 +340,7 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
     reg!("quaternion", ser_quaternion); // 40
     reg!("resolvable_profile", ser_resolvable_profile); // 41
     reg!("humanoid_arm", ser_humanoid_arm); // 42
+    reg!("dye_color", ser_dye_color); // 43
 }
 
 #[cfg(test)]
@@ -398,6 +406,7 @@ mod tests {
             "quaternion",
             "resolvable_profile",
             "humanoid_arm",
+            "dye_color",
         ];
         for (expected_id, name) in expected_names.iter().enumerate() {
             assert_eq!(
@@ -408,7 +417,7 @@ mod tests {
         }
 
         // Total count
-        assert_eq!(registry.len(), 43);
+        assert_eq!(registry.len(), 44);
     }
 
     #[test]

@@ -4,9 +4,9 @@ use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
     GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext, NetworkConnection,
-    ParticleData, Player, REGISTRY, RegistryExt, SectionPos, SoundEventRef, SoundSource,
-    UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
-    vanilla_blocks, vanilla_game_events,
+    ParticleData, Player, REGISTRY, RandomizationType, RegistryExt, SectionPos, SoundEventRef,
+    SoundSource, UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block,
+    level_events, vanilla_blocks, vanilla_game_events,
 };
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use steel_registry::sound_event::SoundEventHolder;
@@ -120,9 +120,12 @@ impl World {
             x_dist: spread.x as f32,
             y_dist: spread.y as f32,
             z_dist: spread.z as f32,
-            max_speed: speed as f32,
+            x_max_speed: speed as f32,
+            y_max_speed: speed as f32,
+            z_max_speed: speed as f32,
             count,
             particle,
+            randomization_type: RandomizationType::default(),
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -181,9 +184,12 @@ impl World {
             x_dist: spread.x as f32,
             y_dist: spread.y as f32,
             z_dist: spread.z as f32,
-            max_speed: speed as f32,
+            x_max_speed: speed as f32,
+            y_max_speed: speed as f32,
+            z_max_speed: speed as f32,
             count,
             particle,
+            randomization_type: RandomizationType::default(),
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)

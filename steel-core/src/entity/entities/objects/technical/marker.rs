@@ -73,7 +73,7 @@ impl Entity for MarkerEntity {
     }
 
     fn piston_push_reaction(&self) -> PushReaction {
-        PushReaction::Ignore
+        PushReaction::IgnoreEntity
     }
 
     fn can_add_passenger(&self, _passenger: &dyn Entity) -> bool {

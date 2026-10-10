@@ -1,5 +1,6 @@
 //! Typed, plugin-extensible recipe registries and vanilla recipe data.
 
+mod brewing;
 mod crafting;
 mod ingredient;
 mod properties;
@@ -8,6 +9,7 @@ mod single_item;
 mod smithing;
 mod types;
 
+pub use brewing::{BrewingRecipe, BrewingRecipeInput, PotionIngredient};
 pub use crafting::{
     BannerDuplicateRecipe, BookCloningRecipe, CraftingInput, CraftingRecipe, DecoratedPotRecipe,
     DyeRecipe, FireworkRocketRecipe, FireworkStarFadeRecipe, FireworkStarRecipe, ImbueRecipe,

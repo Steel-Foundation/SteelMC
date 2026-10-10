@@ -178,7 +178,7 @@ impl ShulkerBoxBlockEntity {
 
         let entities = world.get_entities_in_aabb(&aabb);
         for entity in entities {
-            if entity.piston_push_reaction() == PushReaction::Ignore {
+            if entity.piston_push_reaction() == PushReaction::IgnoreEntity {
                 continue;
             }
             let (offset_x, offset_y, offset_z) = direction.offset();

@@ -116,7 +116,7 @@ pub struct TransmuteRecipe {
     pub material: Ingredient,
     pub min_material_count: usize,
     pub max_material_count: usize,
-    pub result: ItemStackTemplate,
+    pub result: Option<ItemStackTemplate>,
     pub add_material_count_to_result: bool,
 }
 
@@ -196,7 +196,7 @@ pub struct MapExtendingRecipe {
     pub properties: RecipeProperties,
     pub map: Ingredient,
     pub material: Ingredient,
-    pub result: ItemStackTemplate,
+    pub result: Option<ItemStackTemplate>,
 }
 
 #[derive(Debug)]
@@ -257,7 +257,7 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(recipe) => Some(&recipe.result),
             Self::Shapeless(recipe) => Some(&recipe.result),
-            Self::Transmute(recipe) => Some(&recipe.result),
+            Self::Transmute(recipe) => recipe.result.as_ref(),
             Self::Dye(recipe) => Some(&recipe.result),
             Self::DecoratedPot(recipe) => Some(&recipe.result),
             Self::Imbue(recipe) => Some(&recipe.result),
@@ -266,7 +266,7 @@ impl CraftingRecipe {
             Self::FireworkRocket(recipe) => Some(&recipe.result),
             Self::FireworkStar(recipe) => Some(&recipe.result),
             Self::FireworkStarFade(recipe) => Some(&recipe.result),
-            Self::MapExtending(recipe) => Some(&recipe.result),
+            Self::MapExtending(recipe) => recipe.result.as_ref(),
             Self::RepairItem(_) => None,
             Self::ShieldDecoration(recipe) => Some(&recipe.result),
         }

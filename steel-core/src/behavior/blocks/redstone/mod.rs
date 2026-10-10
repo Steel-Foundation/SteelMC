@@ -47,4 +47,4 @@ pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use target_block::TargetBlock;
 pub use tripwire::{TripWireBlock, TripWireHookBlock};
 pub use weathering_lightning_rod_block::WeatheringLightningRodBlock;
-pub use wire::RedStoneWireBlock;
+pub use wire::RedstoneWireBlock;

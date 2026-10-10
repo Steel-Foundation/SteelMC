@@ -33,7 +33,8 @@ use steel_protocol::packets::game::{
     CBlockDestruction, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
     CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
     CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
-    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
+    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, RandomizationType,
+    SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -733,6 +734,10 @@ impl LevelReader for World {
     fn height(&self) -> i32 {
         self.get_height()
     }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
 }
 
 impl LevelReader for Arc<World> {
@@ -784,6 +789,10 @@ impl LevelReader for Arc<World> {
 
     fn height(&self) -> i32 {
         self.as_ref().get_height()
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.as_ref().sea_level
     }
 }
 

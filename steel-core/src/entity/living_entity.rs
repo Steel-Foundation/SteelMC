@@ -4,9 +4,11 @@ use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
-use crate::behavior::{InventoryTickContext, MOB_EFFECT_BEHAVIORS};
+use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
+
+const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -51,16 +53,11 @@ pub trait LivingEntity: Entity {
         self.living_base().advance_rotation_for_base_tick();
     }
 
-    /// Copies current attack animation to vanilla old attack-animation state.
-    fn advance_attack_animation_for_base_tick(&self) {
-        self.living_base().advance_attack_animation_for_base_tick();
-    }
-
     /// Runs the shared per-tick living-entity behavior: rotation/animation
     /// snapshots, base entity tick, and environmental damage.
     fn base_tick_living_entity(&self) {
         self.advance_living_rotation_for_base_tick();
-        self.advance_attack_animation_for_base_tick();
+        self.living_base().tick_swing_state();
         self.entity_base_tick();
         self.tick_living_environmental_damage();
     }
@@ -70,24 +67,9 @@ pub trait LivingEntity: Entity {
         self.living_base().swing_state()
     }
 
-    /// Returns the current arm-swing duration in ticks, adjusted by Haste or Mining Fatigue.
-    fn current_swing_duration(&self) -> i32 {
-        let hand = self
-            .living_swing_state()
-            .swinging_arm()
-            .unwrap_or(InteractionHand::MainHand);
-        let slot = match hand {
-            InteractionHand::MainHand => EquipmentSlot::MainHand,
-            InteractionHand::OffHand => EquipmentSlot::OffHand,
-        };
-        let mut swing_duration = SwingAnimation::DEFAULT.duration;
-        self.with_equipment_slot(slot, &mut |item_stack| {
-            swing_duration = item_stack
-                .get(SWING_ANIMATION)
-                .copied()
-                .unwrap_or(SwingAnimation::DEFAULT)
-                .duration;
-        });
+    /// Returns the animation duration adjusted by Haste or Mining Fatigue.
+    fn modified_swing_duration(&self, animation: SwingAnimation) -> i32 {
+        let swing_duration = animation.duration;
         if let Some(haste) = self.mob_effect(vanilla_mob_effects::HASTE) {
             swing_duration - (1 + haste.amplifier())
         } else if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
@@ -97,35 +79,63 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Starts an arm-swing animation and broadcasts it to nearby trackers
-    /// (and to self if requested).
-    fn swing(&self, hand: InteractionHand, update_self: bool) {
+    /// Returns the held item's attack animation.
+    fn attack_animation(&self, hand: InteractionHand) -> SwingAnimation {
+        self.held_swing_animation(hand, ATTACK_ANIMATION)
+    }
+
+    /// Returns the held item's interaction animation.
+    fn interact_animation(&self, hand: InteractionHand) -> SwingAnimation {
+        self.held_swing_animation(hand, INTERACT_ANIMATION)
+    }
+
+    /// Reads a swing animation component off the item held in `hand`, falling
+    /// back to the vanilla default when the item does not carry one.
+    fn held_swing_animation(
+        &self,
+        hand: InteractionHand,
+        component: DataComponentType<SwingAnimation>,
+    ) -> SwingAnimation {
+        let slot = match hand {
+            InteractionHand::MainHand => EquipmentSlot::MainHand,
+            InteractionHand::OffHand => EquipmentSlot::OffHand,
+        };
+        let mut animation = SwingAnimation::DEFAULT;
+        self.with_equipment_slot(slot, &mut |item_stack| {
+            animation = item_stack
+                .get(component.clone())
+                .copied()
+                .unwrap_or(SwingAnimation::DEFAULT);
+        });
+        animation
+    }
+
+    /// Sends the animation to tracking players and returns whether a swing started
+    fn swing(&self, hand: InteractionHand, animation: SwingAnimation, update_self: bool) -> bool {
         if !self
             .living_base()
-            .start_swing(hand, self.current_swing_duration())
+            .start_swing(hand, animation, self.modified_swing_duration(animation))
         {
-            return;
+            return false;
         }
 
         let Some(world) = self.level() else {
-            return;
+            return true;
         };
-        let action = match hand {
-            InteractionHand::MainHand => AnimateAction::SwingMainHand,
-            InteractionHand::OffHand => AnimateAction::SwingOffHand,
-        };
-        let packet = CAnimate::new(self.id(), action);
+
+        let packet = CSwingAnimation::new(self.id(), hand, animation);
         let exclude = if update_self { None } else { Some(self.id()) };
         world.broadcast_to_entity_trackers(self.id(), packet.clone(), exclude);
         if update_self && let Some(player) = self.as_player() {
             player.send_packet(packet);
         }
+
+        true
     }
 
-    /// Advances the swing timer and attack-animation progress for this tick.
-    fn update_swing_time(&self) {
-        self.living_base()
-            .update_swing_time(self.current_swing_duration());
+    /// Swings with the held item's attack animation.
+    fn swing_for_attack(&self, hand: InteractionHand) {
+        self.swing(hand, self.attack_animation(hand), false);
     }
 
     /// Returns a reference to this entity's attribute map.
@@ -1964,7 +1974,6 @@ pub trait LivingEntity: Entity {
         }
         self.living_base()
             .tick_fall_flying_state(self.is_fall_flying());
-        self.update_swing_time();
         self.refresh_dirty_attributes();
         self.living_base().tick_post_impulse_grace_time();
         self.living_base().tick_last_hurt_by_player_memory();
@@ -2902,22 +2911,33 @@ pub trait LivingEntity: Entity {
 
     /// Starts sleeping at the given bed position.
     fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
-        if self.is_passenger() {
-            self.stop_riding();
-        }
-
         let Some(world) = self.level() else {
             return Err(EntityMoveError::NotLive {
                 entity_id: self.id(),
             });
         };
+        let block_state = world.get_block_state(bed_position);
+
+        let Some(sleep_height) = BLOCK_BEHAVIORS
+            .get_behavior(block_state.get_block())
+            .get_sleep_height(block_state, world.as_ref(), bed_position)
+        else {
+            return Err(EntityMoveError::InvalidSleepPosition {
+                entity_id: self.id(),
+                bed_position,
+            });
+        };
+
+        if self.is_passenger() {
+            self.stop_riding();
+        }
+
         self.try_set_position(DVec3::new(
             f64::from(bed_position.x()) + 0.5,
-            f64::from(bed_position.y()) + 0.6875,
+            f64::from(bed_position.y()) + sleep_height + BED_SLEEP_POSITION_OFFSET,
             f64::from(bed_position.z()) + 0.5,
         ))?;
 
-        let block_state = world.get_block_state(bed_position);
         if block_state.is_bed() {
             world.set_block(
                 bed_position,
@@ -2945,6 +2965,9 @@ pub trait LivingEntity: Entity {
                     state.set_value(&BlockStateProperties::OCCUPIED, false),
                     UpdateFlags::UPDATE_ALL,
                 );
+                BLOCK_BEHAVIORS
+                    .get_behavior(state.get_block())
+                    .on_stop_sleeping(state, &world, bed_position);
                 let stand_up = BedBlock::find_standup_position(
                     &world,
                     self.as_entity_event_source(),

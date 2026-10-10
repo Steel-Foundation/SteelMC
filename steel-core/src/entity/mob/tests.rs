@@ -11,6 +11,7 @@ use steel_registry::{
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
 use super::{
     can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
@@ -72,11 +73,15 @@ impl LevelReader for SurfaceLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        OverworldNoiseSettings::MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        OverworldNoiseSettings::HEIGHT
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 

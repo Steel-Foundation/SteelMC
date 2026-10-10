@@ -20,6 +20,7 @@ use steel_protocol::packets::game::{
     SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetBeacon,
     SSetCarriedItem, SSetCreativeModeSlot,
 };
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::stat::vanilla_stat_types;
@@ -35,7 +36,8 @@ use text_components::TextComponent;
 
 use super::{
     DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,
-    OpenMenuUnavailable, PendingMenuOpen, PlayerInventory, PreparedMenu, TerminalMenuRemoval,
+    OpenMenuUnavailable, PendingMenuOpen, PlayerInventory, Prediction, PreparedMenu,
+    TerminalMenuRemoval,
 };
 
 impl Player {
@@ -475,7 +477,7 @@ impl Player {
                     return;
                 }
             }
-            let _ = self.drop_item(item_stack, false, true);
+            let _ = self.drop_item(item_stack, true, Prediction::Predicted);
         }
     }
 
@@ -981,27 +983,49 @@ impl Player {
         let removed = {
             let mut inventory = self.inventory.lock();
             let selected_count = inventory.get_selected_item().count();
-            if selected_count == 0 {
-                return;
-            }
             inventory.split_item_in_hand(
                 InteractionHand::MainHand,
                 if all { selected_count } else { 1 },
             )
         };
 
-        let _ = self.drop_item(removed, false, true);
+        let _ = self.drop_item(removed, true, Prediction::Predicted);
+        self.reset_attack_strength_ticker();
     }
 
-    /// Drops an item into the world.
+    /// Swings the main hand and throws `item` in the facing direction.
     ///
-    /// Based on Java's `LivingEntity.drop(ItemStack, boolean randomly, boolean thrownFromHand)`.
+    /// Based on Java's `LivingEntity.drop(ItemStack, boolean thrownFromHand, Prediction)`.
+    /// `prediction` decides whether the swing is also sent to this player.
+    #[must_use]
+    pub fn drop_item(
+        &self,
+        item: ItemStack,
+        thrown_from_hand: bool,
+        prediction: Prediction,
+    ) -> Option<Arc<ItemEntity>> {
+        if item.is_empty() {
+            return None;
+        }
+
+        self.swing(
+            InteractionHand::MainHand,
+            SwingAnimation::DEFAULT,
+            prediction == Prediction::ServerOnly,
+        );
+        self.spawn_dropped_item(item, false, thrown_from_hand)
+    }
+
+    /// Spawns `item` as a dropped entity without swinging.
+    ///
+    /// Based on Java's `LivingEntity.createItemStackToDrop`, used directly by
+    /// death drops and `/give` overflow.
     ///
     /// - `throw_randomly`: If true, the item is thrown in a random direction.
     ///   If false, it's thrown in the direction the player is facing.
     /// - `thrown_from_hand`: If true, sets the thrower and uses a longer pickup delay.
     #[must_use]
-    pub fn drop_item(
+    pub fn spawn_dropped_item(
         &self,
         item: ItemStack,
         throw_randomly: bool,
@@ -1107,14 +1131,14 @@ impl Player {
     /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.
     ///
     /// Based on Java's `Inventory.placeItemBackInInventory`.
-    pub fn add_item_or_drop(&self, mut item: ItemStack) {
+    pub fn add_item_or_drop(&self, mut item: ItemStack, prediction: Prediction) {
         if item.is_empty() {
             return;
         }
 
         let added = self.inventory.lock().add(&mut item);
         if !added || !item.is_empty() {
-            let _ = self.drop_item(item, false, false);
+            let _ = self.drop_item(item, false, prediction);
         }
     }
 
@@ -1123,7 +1147,12 @@ impl Player {
     ///
     /// Use this variant when you already hold a `ContainerLockGuard` that includes
     /// the player's inventory to avoid deadlocks.
-    pub fn add_item_or_drop_with_guard(&self, guard: &mut ContainerLockGuard, mut item: ItemStack) {
+    pub fn add_item_or_drop_with_guard(
+        &self,
+        guard: &mut ContainerLockGuard,
+        mut item: ItemStack,
+        prediction: Prediction,
+    ) {
         if item.is_empty() {
             return;
         }
@@ -1136,7 +1165,7 @@ impl Player {
             true
         };
         if should_drop {
-            let _ = guard.run_unlocked(|| self.drop_item(item, false, false));
+            let _ = guard.run_unlocked(|| self.drop_item(item, false, prediction));
         }
     }
 }

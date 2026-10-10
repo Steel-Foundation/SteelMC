@@ -40,6 +40,8 @@ pub struct SurfaceRuleContext<'a> {
     condition_noises: &'a SurfaceConditionNoiseCache<'a>,
     /// Pre-resolved block states returned by generated surface rules.
     block_states: &'a [BlockStateId],
+    /// Results of material ore-vein rules at this exact block position.
+    ore_vein_results: &'a [Option<BlockStateId>],
     /// Lazily computed temperature condition value.
     cold_enough_to_snow: Option<bool>,
 }
@@ -83,8 +85,16 @@ impl<'a> SurfaceRuleContext<'a> {
             system,
             condition_noises,
             block_states,
+            ore_vein_results: &[],
             cold_enough_to_snow: None,
         }
+    }
+
+    /// Supplies the already-evaluated ore-vein nodes for this material-rule evaluation.
+    #[must_use]
+    pub const fn with_ore_vein_results(mut self, results: &'a [Option<BlockStateId>]) -> Self {
+        self.ore_vein_results = results;
+        self
     }
 
     /// Returns a column-cached surface condition noise value.
@@ -105,6 +115,15 @@ impl<'a> SurfaceRuleContext<'a> {
     #[must_use]
     pub const fn block_state(&self, block_state_index: usize) -> BlockStateId {
         self.block_states[block_state_index]
+    }
+
+    /// Returns the result of an ore-vein node, if that node matched.
+    #[must_use]
+    pub fn ore_vein_result(&self, ore_vein_index: usize) -> Option<BlockStateId> {
+        match self.ore_vein_results.get(ore_vein_index) {
+            Some(result) => *result,
+            None => None,
+        }
     }
 
     /// Returns a biome ID already supplied by the caller.

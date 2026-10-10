@@ -43,6 +43,15 @@ pub(super) fn parse_identifier(raw: &str) -> Result<Identifier, String> {
         .map_err(|error| format!("invalid identifier {raw}: {error}"))
 }
 
+/// Parses a value that must be a `#`-prefixed tag reference (as opposed to the
+/// tag-or-direct-id shapes handled inline elsewhere in this module).
+pub(super) fn parse_required_tag(raw: &str) -> Result<Identifier, String> {
+    let tag = raw
+        .strip_prefix('#')
+        .ok_or_else(|| format!("expected a tag reference (`#...`), got {raw}"))?;
+    parse_identifier(tag)
+}
+
 pub(super) fn object_field<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &str,
@@ -534,8 +543,10 @@ pub(super) fn parse_damage_source_tag_predicate_json(
         }
     }
 
+    // `tags` entries are always a damage-type tag reference (`DamageTypeTags`), written with
+    // the vanilla `#` sigil like any other tag id.
     Ok(DamageSourceTagPredicateJson {
-        tag: parse_identifier(&id)?,
+        tag: parse_required_tag(&id)?,
         expected,
     })
 }
@@ -546,7 +557,7 @@ pub(super) fn parse_requirements_json(
     let Some(object) = value.as_object() else {
         return Err("enchantment effect requirements must be an object".to_owned());
     };
-    let condition = string_field(object, "condition")?;
+    let condition = string_field(object, "type")?;
 
     match condition.as_str() {
         "minecraft:all_of" => {
@@ -582,7 +593,7 @@ pub(super) fn parse_requirements_json(
         }
         "minecraft:random_chance" => {
             for key in object.keys() {
-                if key != "condition" && key != "chance" {
+                if key != "type" && key != "chance" {
                     return Err(format!(
                         "unsupported random_chance requirement field `{key}`"
                     ));
@@ -594,7 +605,7 @@ pub(super) fn parse_requirements_json(
         }
         "minecraft:match_tool" => {
             for key in object.keys() {
-                if key != "condition" && key != "predicate" {
+                if key != "type" && key != "predicate" {
                     return Err(format!("unsupported match_tool requirement field `{key}`"));
                 }
             }
