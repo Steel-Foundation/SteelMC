@@ -90,6 +90,6 @@ impl AdvancementType {
 
 impl WriteTo for AdvancementType {
     fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        (*self as i32).write(writer)
+        VarInt(*self as i32).write(writer)
     }
 }

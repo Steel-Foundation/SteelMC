@@ -17,9 +17,7 @@ impl PositionError {
 
 pub type NodePositionIdx = usize;
 
-/// calculate the positions of advancement nodes using a variant of the Reingold-Tilford algorithm the same used by minecraft.
-///
-/// the resulting x position are random so can't really be compared to vanilla
+/// Calculates advancement positions using the Reingold tilford algorithm X represents display depth and Y is determined by the tree layout
 pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), PositionError> {
     let Some(root_node) = tree.adv_nodes.get(root_index) else {
         return Err(PositionError::InvalidRootIndex(root_index));
@@ -66,8 +64,7 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), Posi
     Ok(())
 }
 
-/// the minecraft code work with reference but due to rust borrow checker it's easier to work with
-/// Vector and index but the logic stay the same
+/// Stores tree links as vector indices
 struct TreeNodePosition {
     node: usize,
     parent: Option<NodePositionIdx>,
@@ -84,14 +81,7 @@ struct TreeNodePosition {
 }
 
 impl TreeNodePosition {
-    /// recursively add a child and skipping the node if it doesn't have a display
-    /// # Params
-    /// * `nodes` the main vector that register all the [`TreeNodePosition`]
-    /// * `tree` the tree that contains every advancement
-    /// * `parent_idx` the index of the parent inside `nodes`
-    /// * `adv_node_idx` the index of this node inside the `tree`
-    /// * `previous_idx` the index inside the `nodes` of the last process brother node.
-    ///   `None` if it's the first child to be process
+    /// Adds displayed children traversing through nodes without a display
     fn add_child(
         nodes: &mut Vec<TreeNodePosition>,
         tree: &mut AdvancementRegistry,
@@ -114,7 +104,6 @@ impl TreeNodePosition {
                 children: Vec::new(),
                 ancestor: child_idx,
                 thread: None,
-                // We can put 0 here because it is recalculated later inside the second_walk.
                 x: 0,
                 y: -1.0,
                 r#mod: 0.0,
@@ -284,7 +273,6 @@ impl TreeNodePosition {
             nodes[outer_right].thread = Some(next_inner_left);
             nodes[outer_right].r#mod += shift_inner_left - shift_outer_right;
         } else {
-            // in the real algorithm it doesn't have an else here but minecraft had one
             if let Some(next_inner_right) = Self::previous_or_thread(nodes, inner_right)
                 && Self::previous_or_thread(nodes, outer_left).is_none()
             {

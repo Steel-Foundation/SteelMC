@@ -263,11 +263,11 @@ fn perform(
     advancements: &[AdvancementRef],
     show_advancement: bool,
 ) -> Result<i32, CommandSyntaxError> {
-    let mut i = 0;
+    let mut player_count = 0;
     for player in targets {
-        i += action.perform(player, advancements, show_advancement);
+        player_count += action.perform(player, advancements, show_advancement);
     }
-    if i == 0 {
+    if player_count == 0 {
         return if let [first_advancement] = advancements[..] {
             if let [first_player] = targets {
                 Err(CommandSyntaxError::dynamic(
@@ -335,7 +335,7 @@ fn perform(
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_MANY_SUCCESS,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_MANY_SUCCESS,
             }
-            .message([first_advancement.name(), targets.len().to_string().into()])
+            .message([first_advancement.name(), player_count.to_string().into()])
             .component()
         }
     } else if let [first_player] = targets {
@@ -355,12 +355,12 @@ fn perform(
         }
         .message([
             TextComponent::from(advancements.len().to_string()),
-            TextComponent::from(targets.len().to_string()),
+            TextComponent::from(player_count.to_string()),
         ])
         .component()
     };
     context.send_success(&translate, true);
-    Ok(i)
+    Ok(player_count)
 }
 
 pub fn perform_criterion(
@@ -377,13 +377,13 @@ pub fn perform_criterion(
         ));
     }
 
-    let count = targets
+    let player_count = targets
         .iter()
         .map(|player| action.perform_criterion(player, advancement, criterion))
         .filter(|&success| success)
         .count() as i32;
 
-    if count == 0 {
+    if player_count == 0 {
         if let [first_player] = targets {
             Err(CommandSyntaxError::dynamic(
                 match action {
@@ -443,11 +443,11 @@ pub fn perform_criterion(
             .message([
                 criterion.to_owned().into(),
                 advancement.name(),
-                count.to_string().into(),
+                player_count.to_string().into(),
             ])
             .component()
         };
         context.send_success(&translate, true);
-        Ok(count)
+        Ok(player_count)
     }
 }

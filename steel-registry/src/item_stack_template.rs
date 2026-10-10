@@ -62,7 +62,7 @@ pub struct ItemStackTemplate {
 
 impl Default for ItemStackTemplate {
     fn default() -> Self {
-        Self::new(&vanilla_items::AIR)
+        Self::new(&vanilla_items::STONE)
     }
 }
 
@@ -73,8 +73,9 @@ impl ItemStackTemplate {
     /// Creates the common count-one template with no component changes.
     #[must_use]
     pub fn new(item: ItemRef) -> Self {
-        assert!(
-            item != &*vanilla_items::AIR,
+        assert_ne!(
+            item,
+            &*vanilla_items::AIR,
             "Item stack template item must be non-empty"
         );
         Self {

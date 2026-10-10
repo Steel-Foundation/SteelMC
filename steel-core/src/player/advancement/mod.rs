@@ -3,28 +3,26 @@
 //! Groups the advancementPlayer, advancement progress and visibility evaluator
 
 pub mod progress;
+pub mod rewards;
 mod visibility_evaluator;
 
 use crate::entity::Entity;
-use crate::entity::living_entity_loot_ref;
 use crate::player::Player;
+use crate::player::advancement::rewards::grant_reward;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::c_update_advancement::CUpdateAdvancements;
 use steel_registry::REGISTRY;
 use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
-use steel_registry::advancement::{
-    AdvancementProgressData, AdvancementRewards, Criteria,
-};
-use steel_registry::loot_table::LootContext;
+use steel_registry::advancement::{AdvancementProgressData, Criteria};
 use steel_registry::vanilla_game_rules::SHOW_ADVANCEMENT_MESSAGES;
 use steel_utils::Identifier;
 
 /// Manages a player's collection of advancements.
 ///
 /// This handles saving, loading, and tracking the state of granted / revoked advancements.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
 pub struct PlayerAdvancement {
     /// the progress of the player for each advancement
     pub(crate) progress: AdvancementProgressMap,
@@ -36,38 +34,16 @@ pub struct PlayerAdvancement {
     pub last_selected_tab: Option<AdvancementRef>,
 }
 
-/// Grants an advancement's rewards to a player.
-///
-/// Mirrors vanilla `AdvancementRewards.grant`: loot is rolled through the
-/// `ADVANCEMENT_REWARD` loot params (this entity + origin), stacks that fully fit in
-/// the inventory trigger the pickup sound, and leftovers are dropped as items with no
-/// pickup delay that only the beneficiary can collect. Recipes and functions are not
-/// handled here.
-pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
-    player.give_experience_points(reward.experience);
-
-    let position = player.position();
-    let mut rng = rand::rng();
-    let mut ctx = LootContext::new(&mut rng)
-        .with_this_entity(living_entity_loot_ref(player))
-        .with_origin(position.x, position.y, position.z);
-
-    let mut changes = false;
-    for loot_table in &reward.loots {
-        for mut item in loot_table.get_random_items(&mut ctx) {
-            if player.add_item_with_sound(&mut item) {
-                changes = true;
-                continue;
-            }
-            if let Some(drop) = player.drop_item(item, false, false) {
-                drop.set_no_pickup_delay();
-                drop.set_owner(Some(player.gameprofile.id));
-            }
+impl Default for PlayerAdvancement {
+    fn default() -> Self {
+        Self {
+            is_first_packet: true,
+            progress: AdvancementProgressMap::default(),
+            roots_to_update: FxHashSet::default(),
+            visible: FxHashSet::default(),
+            progress_changed: FxHashSet::default(),
+            last_selected_tab: Option::default(),
         }
-    }
-
-    if changes {
-        player.broadcast_inventory_changes();
     }
 }
 

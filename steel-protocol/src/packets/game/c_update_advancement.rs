@@ -4,8 +4,7 @@ use steel_registry::advancement::registry::AdvancementNodeRef;
 use steel_registry::packets::play::C_UPDATE_ADVANCEMENTS;
 use steel_utils::Identifier;
 
-/// Packet sent to clients to inform them of the number of frozen ticks to run.
-/// This is used when stepping forward while the server is frozen.
+/// Updates the client advancement tree and progress
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_UPDATE_ADVANCEMENTS)]
 pub struct CUpdateAdvancements {

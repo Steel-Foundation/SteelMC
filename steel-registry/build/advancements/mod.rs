@@ -19,7 +19,7 @@ struct AdvancementJson {
     criteria: BTreeMap<String, CriterionJson>,
     display: Option<AdvancementDisplayJson>,
     #[serde(default)]
-    send_telemetry_event: bool,
+    sends_telemetry_event: bool,
     requirements: Vec<Vec<String>>,
     #[serde(default)]
     rewards: AdvancementRewardsJson,
@@ -79,7 +79,7 @@ impl ToTokens for AdvancementData {
         let parent = generate_option(&self.advancement.parent, generate_identifier);
         let criteria = parse_criteria(&self.advancement.criteria);
         let display = generate_option(&self.advancement.display, parse_display);
-        let send_telemetry_event = self.advancement.send_telemetry_event;
+        let send_telemetry_event = self.advancement.sends_telemetry_event;
         let requirements = generate_vec(&self.advancement.requirements, |v| {
             generate_vec(v, |v2| quote! {Cow::Borrowed(#v2)})
         });

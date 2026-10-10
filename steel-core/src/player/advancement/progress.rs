@@ -8,7 +8,7 @@ use steel_registry::advancement::AdvancementRequirement;
 use steel_registry::advancement::registry::AdvancementRef;
 
 /// represent a map of all progress made for advancement of a specific player
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AdvancementProgressMap {
     pub(crate) map: BTreeMap<AdvancementRef, AdvancementProgress>,
 }

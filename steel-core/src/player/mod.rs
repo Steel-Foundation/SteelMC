@@ -631,7 +631,7 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
-            advancements: SyncMutex::new(PlayerAdvancement::default()),
+            advancements: SyncMutex::new(PlayerAdvancement::default()), // TODO save the advancement
         }
     }
 

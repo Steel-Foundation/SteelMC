@@ -1077,8 +1077,6 @@ unit_argument_parser!(
     _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
     suggest | _context,
     builder | {
-        //let advancements = &REGISTRY.advancements;
-        //info!("{:?}", advancements);
         suggest_resources(
             REGISTRY
                 .advancements

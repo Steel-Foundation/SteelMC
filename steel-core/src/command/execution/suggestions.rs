@@ -1,5 +1,4 @@
-//! Suggestion helpers shared by command arguments, mirroring vanilla's
-//! `SharedSuggestionProvider`.
+//! Suggestion helpers shared by command arguments
 
 use steel_utils::Identifier;
 
@@ -7,8 +6,7 @@ use crate::command::brigadier::{
     ArgumentSuggestionContext, CommandArgumentParser, SuggestionProvider, SuggestionsBuilder,
 };
 
-/// Characters separating the segments [`matches_substring`] searches, from
-/// vanilla's `SharedSuggestionProvider.MATCH_SPLITTER`.
+/// Characters seperating the segments [`matches_substring`] searches
 const MATCH_SPLITTER: [char; 3] = ['.', '_', '/'];
 
 /// Returns whether `input` starts with `pattern` at the beginning of the input
