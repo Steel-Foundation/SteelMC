@@ -80,22 +80,12 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
 /// relative to the sign to determine which side they're looking at.
 pub fn facing_text_slot(state: BlockStateId, pos: BlockPos, player: &Player) -> SignTextSlot {
     let player_pos = player.position();
-    facing_text_slot_from(state, pos, player_pos.x, player_pos.z)
-}
-
-/// [`facing_text_slot`] against a raw viewer position.
-fn facing_text_slot_from(
-    state: BlockStateId,
-    pos: BlockPos,
-    player_x: f64,
-    player_z: f64,
-) -> SignTextSlot {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
     // Calculate player's angle relative to the sign center
-    let dx = player_x - (f64::from(pos.0.x) + 0.5);
-    let dz = player_z - (f64::from(pos.0.z) + 0.5);
+    let dx = player_pos.x - (f64::from(pos.0.x) + 0.5);
+    let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
 
     // Calculate angle from sign to player (in degrees, -90 to account for Minecraft's coordinate system)
     let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
