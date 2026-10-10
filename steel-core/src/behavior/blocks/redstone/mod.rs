@@ -40,6 +40,7 @@ pub use powered_block::PoweredBlock;
 pub use pressure_plate::{
     PressurePlateBlock, PressurePlateSensitivity, WeightedPressurePlateBlock,
 };
+pub(crate) use rail::BaseRailBlock;
 pub use rail::{DetectorRailBlock, PoweredRailBlock, RailBlock};
 pub use redstone_lamp_block::RedstoneLampBlock;
 pub use redstone_ore_block::RedStoneOreBlock;

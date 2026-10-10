@@ -1,6 +1,33 @@
+use std::f64::consts::FRAC_1_SQRT_2;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use glam::DVec3;
+use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::packets::common::{
+    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
+};
+use steel_protocol::packets::game::{EquipmentSlotItem, SPlayerInput, SSetCreativeModeSlot};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::data_component_predicate::DataComponentMatchers;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
+use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::packets::play::C_REMOVE_ENTITIES;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::{
+    RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
+    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
+    vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
+};
+use steel_utils::codec::VarInt;
+use steel_utils::locks::{IntoShared as _, SyncMutex};
+use steel_utils::serial::ReadFrom;
+use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use text_components::TextComponent;
+use uuid::Uuid;
 
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
@@ -21,31 +48,6 @@ use crate::test_support::{
     insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
-use glam::DVec3;
-use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
-use steel_protocol::packets::common::{
-    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
-};
-use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot};
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::data_component_predicate::DataComponentMatchers;
-use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
-use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-use steel_registry::packets::play::C_REMOVE_ENTITIES;
-use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{
-    RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
-    vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
-};
-use steel_utils::codec::VarInt;
-use steel_utils::locks::{IntoShared as _, SyncMutex};
-use steel_utils::serial::ReadFrom;
-use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
-use text_components::TextComponent;
-use uuid::Uuid;
 
 use super::{
     ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
@@ -239,6 +241,65 @@ fn test_player(world: Arc<World>) -> Arc<Player> {
     let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
+}
+
+#[test]
+fn last_client_move_intent_matches_vanilla_directional_inputs() {
+    const FORWARD: u8 = 0x01;
+    const BACKWARD: u8 = 0x02;
+    const LEFT: u8 = 0x04;
+    const RIGHT: u8 = 0x08;
+    const JUMP: u8 = 0x10;
+    const SHIFT: u8 = 0x20;
+    const SPRINT: u8 = 0x40;
+
+    let player = test_player(Arc::clone(test_world()));
+    let diagonal = FRAC_1_SQRT_2;
+
+    let cases = [
+        ("no input", 0, 0.0, DVec3::ZERO),
+        ("forward", FORWARD, 0.0, DVec3::new(0.0, 0.0, 1.0)),
+        ("backward", BACKWARD, 0.0, DVec3::new(0.0, 0.0, -1.0)),
+        ("left", LEFT, 0.0, DVec3::new(1.0, 0.0, 0.0)),
+        ("right", RIGHT, 0.0, DVec3::new(-1.0, 0.0, 0.0)),
+        (
+            "opposite forward inputs",
+            FORWARD | BACKWARD,
+            0.0,
+            DVec3::ZERO,
+        ),
+        ("opposite sideways inputs", LEFT | RIGHT, 0.0, DVec3::ZERO),
+        (
+            "forward-right diagonal",
+            FORWARD | RIGHT,
+            0.0,
+            DVec3::new(-diagonal, 0.0, diagonal),
+        ),
+        (
+            "forward rotated by yaw",
+            FORWARD,
+            90.0,
+            DVec3::new(-1.0, 0.0, 0.0),
+        ),
+        (
+            "non-movement inputs",
+            JUMP | SHIFT | SPRINT,
+            0.0,
+            DVec3::ZERO,
+        ),
+    ];
+
+    for (name, flags, yaw, expected) in cases {
+        player.set_rotation((yaw, 0.0));
+        player.handle_player_input(SPlayerInput { flags });
+
+        let actual = player.last_client_move_intent();
+
+        assert!(
+            (actual - expected).length_squared() < 1.0E-12,
+            "{name}: expected {expected:?}, got {actual:?}"
+        );
+    }
 }
 
 fn test_persistent_entity(

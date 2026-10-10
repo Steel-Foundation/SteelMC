@@ -45,6 +45,7 @@ pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
     RespawnAnchorBlock, SoulFireBlock,
 };
+pub(crate) use redstone::BaseRailBlock;
 pub use redstone::{
     BellBlock, ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock,
     DetectorRailBlock, LeverBlock, LightningRodBlock, MovingPistonBlock, NoteBlock, ObserverBlock,

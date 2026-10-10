@@ -4,6 +4,7 @@ mod powered_rail_block;
 mod rail_block;
 mod rail_state;
 
+pub(crate) use base_rail_block::BaseRailBlock;
 pub use detector_rail_block::DetectorRailBlock;
 pub use powered_rail_block::PoweredRailBlock;
 pub use rail_block::RailBlock;
