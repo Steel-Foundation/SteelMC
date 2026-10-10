@@ -13,8 +13,8 @@ pub(crate) fn save(state: BlockStateId) -> NbtCompound {
     let mut encoded = NbtCompound::new();
     encoded.insert("Name", state.get_block().key.to_string());
 
-    let state_properties = REGISTRY.blocks.get_properties(state);
-    if !state_properties.is_empty() {
+    let state_properties = REGISTRY.blocks.properties(state);
+    if state_properties.len() != 0 {
         let mut properties = NbtCompound::new();
         for (name, value) in state_properties {
             properties.insert(name, value);
