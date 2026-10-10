@@ -726,6 +726,10 @@ impl LevelReader for World {
         self.dimension_type.ambient_light
     }
 
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
+
     fn min_y(&self) -> i32 {
         self.get_min_y()
     }
@@ -776,6 +780,10 @@ impl LevelReader for Arc<World> {
         self.as_ref()
             .height_at(mapped_type, x, z)
             .unwrap_or_else(|| self.min_y())
+    }
+
+    fn sea_level(&self) -> i32 {
+        LevelReader::sea_level(self.as_ref())
     }
 
     fn min_y(&self) -> i32 {
