@@ -847,7 +847,7 @@ pub use projectile::{
 pub use reference::EntityReference;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
-    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
+    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, FoxGroupData,
     SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
     create_entity_instance, spawn_entity,
 };
