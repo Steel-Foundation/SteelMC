@@ -1070,6 +1070,7 @@ pub trait LivingEntity: Entity {
         let Some(world) = self.level() else {
             return;
         };
+        self.drop_custom_death_equipment();
         if self.should_drop_loot(world.as_ref()) {
             let killed_by_player = self.last_hurt_by_player_memory_time() > 0;
             self.drop_from_loot_table(source, killed_by_player);
@@ -1081,6 +1082,9 @@ pub trait LivingEntity: Entity {
         self.drop_experience(&world, source.causing_entity().map(AsRef::as_ref));
         // TODO: Drop non-mob equipment overrides once those foundations exist.
     }
+
+    /// Drops equipment that falls out on death even when loot drops are off.
+    fn drop_custom_death_equipment(&self) {}
 
     /// Awards experience for this entity's death when eligible, spawning an experience orb.
     fn drop_experience(&self, world: &Arc<World>, killer_entity: Option<&dyn Entity>) {

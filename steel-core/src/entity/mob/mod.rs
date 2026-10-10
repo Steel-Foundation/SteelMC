@@ -614,6 +614,9 @@ pub trait Mob: LivingEntity + Leashable {
         *self.mob_base().persistence_required().lock() = true;
     }
 
+    /// Runs after a spawn egg used on this mob spawns `offspring`.
+    fn on_offspring_spawned_from_egg(&self, _spawner: &Player, _offspring: &dyn Mob) {}
+
     /// Returns whether this mob can be leashed, before its leash state is considered.
     fn mob_can_be_leashed(&self) -> bool {
         // TODO(enemy): return false for enemy mobs once hostile mob foundations exist.
