@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["place_swamp_hut","spawn_swamp_hut_mob","stairs","stairs_shape"]};

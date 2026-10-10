@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bias_towards_extreme","cube","square"],"mod":["coordinate","gradient","interpolation"]};

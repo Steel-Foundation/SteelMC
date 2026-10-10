@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ISLAND_THRESHOLD"],"struct":["EndIslands"]};

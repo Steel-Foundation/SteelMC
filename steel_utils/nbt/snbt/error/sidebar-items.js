@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SnbtErrorKind","SnbtNumberType"],"struct":["SnbtError"]};

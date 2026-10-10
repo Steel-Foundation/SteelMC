@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CookingBookCategory","CraftingBookCategory","RecipeBookCategoryKind"],"mod":["vanilla_recipe_book_categories"],"struct":["PlacementInfo","RecipeBookCategory","RecipeBookCategoryRegistry","RecipeBookProperties","RecipeProperties"],"type":["RecipeBookCategoryRef"]};

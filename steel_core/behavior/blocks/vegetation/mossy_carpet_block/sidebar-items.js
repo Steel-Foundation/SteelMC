@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BASE","EAST_WALL","NORTH_WALL","SOUTH_WALL","WEST_WALL"],"struct":["MossyCarpetBlock"]};

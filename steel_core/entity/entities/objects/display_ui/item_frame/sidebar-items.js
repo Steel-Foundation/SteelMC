@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["direction_2d_data_value","direction_3d_data_value","direction_from_3d_data_value"],"struct":["ItemFrameEntity"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["completed_property_names","current_property_start","find_unquoted","identifier_matches","parse_suggestion_identifier","parsed_command_string","suggest_block_inputs","suggest_block_properties","suggest_block_resources","suggest_blocks","suggest_blocks_and_tags"],"struct":["SuggestedBlockTarget"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_structures","squared_distance"],"mod":["piece_placer"],"struct":["FixedStructureBiomeProvider","StructureGenerator","StructureLocateCandidate","StructureLocatePlan"]};

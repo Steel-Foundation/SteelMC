@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_GROUPS","GROUPS_CONFIG_HEADER"],"fn":["load_or_create_groups","permission_metadata_value_toml","push_group_config","push_metadata_rules","push_string_array_field","push_toml_field","serialize_groups_config","toml_value","write_atomic_config"],"struct":["FilePermissionGroupStore"]};

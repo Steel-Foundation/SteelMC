@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["snapshot_old_pos_and_rot_for_tick","tick_passenger","tick_vehicle_passengers_with_ticked_if"]};

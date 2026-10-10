@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_ABSOLUTE_MAX_SIZE","MAX_CENTER_COORDINATE","MAX_SIZE"],"enum":["BorderExtent","BorderStatus","WorldBorderError"],"fn":["clamp_f64","validate_center","validate_finite"],"struct":["WorldBorder","WorldBorderSnapshot"]};

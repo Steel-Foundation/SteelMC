@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MIN_SIZE"],"fn":["add_size","added_lerp_time","command","format_ticks_to_seconds","get_size","internal_border_error","registration","set_center","set_damage_amount","set_damage_buffer","set_requested_size","set_size","set_warning_distance","set_warning_time","size_command","translated_error"]};

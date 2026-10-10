@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["generate_mansion_pieces","get_room_name"],"struct":["PlacementData"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["F2","G2","SQRT_3"],"struct":["SimplexNoise"]};

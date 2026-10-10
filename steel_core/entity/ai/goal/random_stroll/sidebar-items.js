@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RANDOM_STROLL_DEFAULT_INTERVAL"],"struct":["RandomStrollGoal"]};

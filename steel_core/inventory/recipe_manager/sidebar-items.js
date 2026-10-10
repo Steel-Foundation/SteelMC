@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["assemble_book_cloning","assemble_dye","assemble_firework_fade","assemble_firework_rocket","assemble_firework_star","assemble_for_container","assemble_recipe","assemble_repair","assemble_shield","banner_color","find_recipe","get_remaining_items","slot_changed_crafting_grid"],"type":["CraftingRecipeRef"]};

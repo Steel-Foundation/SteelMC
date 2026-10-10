@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_steel_ticket_types"],"static":["CHUNK_REQUEST"]};

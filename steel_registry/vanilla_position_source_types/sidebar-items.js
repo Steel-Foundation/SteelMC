@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_position_source_types"],"static":["BLOCK","ENTITY"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_cow_sound_variants"],"static":["CLASSIC","MOODY"]};

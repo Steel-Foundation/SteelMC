@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_DAMAGE_SOURCE_AGE_TICKS"],"mod":["binding","source"],"struct":["DamageHistory","DamageRecord"]};

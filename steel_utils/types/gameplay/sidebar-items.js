@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Difficulty","GameType","InteractionHand"],"struct":["UpdateFlags"]};

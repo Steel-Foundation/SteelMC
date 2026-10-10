@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["custom","registry","vanilla_stat_types"],"struct":["Stat","StatType","StatTypeEntry","StatTypeRegistry","StatValueRegistryData"],"trait":["StatValueRegistry","StatValueRegistryEntry"],"type":["StatTypeEntryRef","StatTypeRef"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EquipmentSlot","EquipmentSlotType"],"struct":["ItemStack"],"trait":["IntoShared"],"type":["Shared"]};

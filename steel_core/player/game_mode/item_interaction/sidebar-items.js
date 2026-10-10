@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["use_item","use_item_on"]};

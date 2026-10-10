@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COLLISION_CONTEXT_ABOVE_EPSILON"],"enum":["BlockEntityCreation"],"struct":["BlockCollisionContext","BlockLootContext","EntityFallDamage","EntityFallOnContext","EntityFallOnFacts","EntityLandingContext","PickupResult"],"trait":["Fallable","RailBehavior"],"type":["BlockCollisionBoxes"]};

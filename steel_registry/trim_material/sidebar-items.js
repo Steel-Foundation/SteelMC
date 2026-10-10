@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["hash_entries","hash_overrides","push_hash_entry","push_prehashed_entry"],"struct":["InvalidMaterialAssetInfo","MaterialAssetGroup","MaterialAssetInfo","TrimMaterial","TrimMaterialRegistry","TrimMaterialValue"],"type":["TrimMaterialRef"]};

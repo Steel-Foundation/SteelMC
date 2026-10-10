@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ANIMATION_STEPS","SHULKER_BOX_SLOTS"],"enum":["AnimationStatus"],"fn":["do_neighbor_updates"],"struct":["ShulkerBoxAnimation","ShulkerBoxBlockEntity","ShulkerBoxContainer"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","player_executor","registration","transfer"]};

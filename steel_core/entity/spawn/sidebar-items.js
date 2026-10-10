@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EntitySpawnError","EntitySpawnPlacement","EntitySpawnReason","SpawnGroupData"],"fn":["add_spawned_entity","apply_implicit_item_stack_components","apply_item_stack_components","create_entity_instance","entity_y_offset","spawn_entity"],"struct":["AgeableMobGroupData","EntitySpawnRequest"]};

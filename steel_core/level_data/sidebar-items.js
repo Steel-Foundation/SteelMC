@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GameTimeSource"],"fn":["describe_generation_settings","generation_config_string"],"mod":["game_time"],"struct":["GameTime","LevelData","LevelDataManager","RespawnData","SavedLevelSeed","SerializedRespawnData","SpawnPoint","WeatherState","WorldBorderData","WorldGenerationSettings"]};
