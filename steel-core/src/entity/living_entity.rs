@@ -110,24 +110,27 @@ pub trait LivingEntity: Entity {
         animation
     }
 
-    /// Starts an arm swing and sends its animation to tracking players.
-    fn swing(&self, hand: InteractionHand, animation: SwingAnimation, update_self: bool) {
+    /// Sends the animation to tracking players and returns whether a swing started
+    fn swing(&self, hand: InteractionHand, animation: SwingAnimation, update_self: bool) -> bool {
         if !self
             .living_base()
             .start_swing(hand, animation, self.modified_swing_duration(animation))
         {
-            return;
+            return false;
         }
 
         let Some(world) = self.level() else {
-            return;
+            return true;
         };
+
         let packet = CSwingAnimation::new(self.id(), hand, animation);
         let exclude = if update_self { None } else { Some(self.id()) };
         world.broadcast_to_entity_trackers(self.id(), packet.clone(), exclude);
         if update_self && let Some(player) = self.as_player() {
             player.send_packet(packet);
         }
+
+        true
     }
 
     /// Swings with the held item's attack animation.

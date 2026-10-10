@@ -1,5 +1,6 @@
 //! Furnace, blast-furnace, and smoker menus.
 
+use crate::player::player_inventory::Prediction;
 use std::array::from_fn;
 
 use steel_registry::recipe::SingleItemRecipeInput;
@@ -204,7 +205,7 @@ impl MenuKind for FurnaceMenuKind {
             return Some(ItemStack::empty());
         }
         if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &remaining, player) {
-            player.add_item_or_drop_with_guard(guard, remainder);
+            player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
         Some(clicked)
     }

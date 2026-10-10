@@ -29,6 +29,7 @@ pub mod stats_counter;
 mod tick_state;
 mod title;
 
+use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
 pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
@@ -945,7 +946,7 @@ impl Player {
         if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
             let drops = self.inventory.lock().take_death_drops();
             for item in drops {
-                let _ = self.drop_item(item, true, false);
+                let _ = self.spawn_dropped_item(item, true, false);
             }
 
             let reward = self.experience.lock().death_xp_reward();
@@ -2030,7 +2031,7 @@ impl LivingEntity for Player {
     fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
         let leftover = self.inventory.lock().add_or_return(extra);
         if !leftover.is_empty() {
-            let _ = self.drop_item(leftover, false, false);
+            let _ = self.drop_item(leftover, false, Prediction::Predicted);
         }
     }
 

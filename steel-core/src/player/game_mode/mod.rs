@@ -52,6 +52,7 @@ mod entity_interaction;
 mod item_interaction;
 mod player_methods;
 mod raycast;
+mod swing;
 
 pub(super) use block_breaking::BlockBreakingManager;
 pub use item_interaction::{use_item, use_item_on};

@@ -80,11 +80,12 @@ fn living_base_tick_advances_swing_before_living_state() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.swing_for_attack(InteractionHand::MainHand);
+    assert!(entity.swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, false));
     assert_eq!(entity.living_swing_state().swing_time(), 0);
 
     entity.base_tick_living_entity();
     entity.tick_living_state();
+    assert!(!entity.swing(InteractionHand::OffHand, SwingAnimation::DEFAULT, false));
 
     let swing = entity.living_swing_state();
     assert!(swing.swinging());

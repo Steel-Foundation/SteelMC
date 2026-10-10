@@ -243,6 +243,9 @@ impl BlockBreakingManager {
     ) {
         // Validate interaction range
         if !player.is_within_block_interaction_range(pos) {
+            if self.is_destroying_block && action == BlockBreakAction::Abort {
+                self.abort_destroy_block(player, world, pos);
+            }
             return;
         }
 
@@ -347,20 +350,24 @@ impl BlockBreakingManager {
             }
 
             BlockBreakAction::Abort => {
-                self.is_destroying_block = false;
-
-                if self.destroy_pos != pos {
-                    log::warn!(
-                        "Mismatch in destroy block pos: {:?} vs {:?}",
-                        self.destroy_pos,
-                        pos
-                    );
-                    world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
-                }
-
-                world.broadcast_block_destruction(player.id(), pos, -1);
+                self.abort_destroy_block(player, world, pos);
             }
         }
+    }
+
+    fn abort_destroy_block(&mut self, player: &Player, world: &Arc<World>, pos: BlockPos) {
+        self.is_destroying_block = false;
+
+        if self.destroy_pos != pos {
+            log::warn!(
+                "Mismatch in destroy block pos: {:?} vs {:?}",
+                self.destroy_pos,
+                pos
+            );
+            world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
+        }
+
+        world.broadcast_block_destruction(player.id(), pos, -1);
     }
 
     /// Destroys a block and sends appropriate response.

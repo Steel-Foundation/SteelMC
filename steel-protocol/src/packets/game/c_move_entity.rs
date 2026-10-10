@@ -169,6 +169,12 @@ impl PackedEntityDelta {
         self.0
     }
 
+    /// Precision lost when an absolute coordinate is quantized for relative movement
+    #[must_use]
+    pub fn encoding_precision_loss(position: f64) -> f64 {
+        encode_position(position) as f64 / TRUNCATION_STEPS - position
+    }
+
     /// Calculates a packed movement delta between two absolute coordinates.
     ///
     /// Returns `None` if the delta doesn't fit in the protocol's `i16` range.

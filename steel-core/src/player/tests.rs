@@ -2,6 +2,17 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use super::{
+    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
+    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
+    PlayerPermissionState, ResetReason,
+    connection::NetworkConnection,
+    experience::Experience,
+    experience::first_point_level_up_sound,
+    game_mode::block_breaking::BlockBreakAction,
+    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
+    player_inventory::MenuItemDisposition,
+};
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
@@ -46,18 +57,6 @@ use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
-
-use super::{
-    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
-    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
-    PlayerPermissionState, ResetReason,
-    connection::NetworkConnection,
-    experience::Experience,
-    experience::first_point_level_up_sound,
-    game_mode::block_breaking::BlockBreakAction,
-    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
-    player_inventory::MenuItemDisposition,
-};
 
 const PLAYER_MAIN_HAND_METADATA_INDEX: u8 = 15;
 const PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX: u8 = 16;

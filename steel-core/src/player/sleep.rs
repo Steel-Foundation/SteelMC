@@ -188,6 +188,13 @@ impl Player {
         }
 
         self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_REST);
+        let (yaw, pitch) = self.rotation();
+        if let Err(error) = self.teleport(self.position(), yaw, pitch) {
+            log::warn!(
+                "Failed to teleport player {} after starting sleep: {error}",
+                self.id()
+            );
+        }
         self.sync_entity_data();
         self.award_custom_stat(slept_in_stat);
 

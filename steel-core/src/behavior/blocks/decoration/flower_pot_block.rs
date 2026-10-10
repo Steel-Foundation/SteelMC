@@ -4,6 +4,7 @@
 //! Vanilla reads `EnvironmentAttributes.EYEBLOSSOM_OPEN`, which Steel lacks
 //! (the same gap documented on `EyeblossomBlock`).
 
+use crate::player::player_inventory::Prediction;
 use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashMap;
@@ -107,7 +108,10 @@ impl BlockBehavior for FlowerPotBlock {
             return InteractionResult::Consume;
         }
 
-        player.add_item_or_drop(ItemStack::new(REGISTRY.items.by_block(self.potted)));
+        player.add_item_or_drop(
+            ItemStack::new(REGISTRY.items.by_block(self.potted)),
+            Prediction::Predicted,
+        );
         world.set_block(
             pos,
             vanilla_blocks::FLOWER_POT.default_state(),

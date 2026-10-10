@@ -8,6 +8,7 @@
 //! - Slots 36-44: Hotbar (9)
 //! - Slot 45: Offhand
 
+use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
 use steel_registry::item_stack::ItemStack;
@@ -296,13 +297,14 @@ impl MenuKind for InventoryKind {
 
         if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &stack_mut, player) {
             // Crafting remainders like empty buckets go back to the inventory.
-            player.add_item_or_drop_with_guard(guard, remainder);
+            player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
 
         if self.result.contains(slot_index) {
             // Drop result output that didn't fit.
             if !stack_mut.is_empty() {
-                let _ = guard.run_unlocked(|| player.drop_item(stack_mut, false, false));
+                let _ = guard
+                    .run_unlocked(|| player.drop_item(stack_mut, false, Prediction::Predicted));
             }
         }
 

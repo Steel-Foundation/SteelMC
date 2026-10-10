@@ -222,6 +222,11 @@ impl Player {
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
             return;
         }
+        if packet.has_pos && !self.movement.lock().record_position_packet() {
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+            return;
+        }
+
         if self.has_won_game() {
             return;
         }
@@ -506,6 +511,22 @@ impl Player {
             .controlling_passenger()
             .is_some_and(|controller| controller.id() == self.id());
         if !controlled_by_player {
+            let current_tick = self.tick_count();
+            let last_reset = self.movement.lock().vehicle_position_last_reset_at;
+
+            if current_tick.wrapping_sub(last_reset) > 20
+                || vehicle.position().distance_squared(packet.pos) > 1.0
+            {
+                log::warn!(
+                    "{} was expected to be controlling vehicle {} but was not. Resetting vehicle position.",
+                    self.gameprofile.name,
+                    vehicle.id()
+                );
+
+                self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+                self.movement.lock().vehicle_position_last_reset_at = current_tick;
+            }
+
             return;
         }
         let Some((first_good, last_good)) =

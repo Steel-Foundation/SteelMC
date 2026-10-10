@@ -1,5 +1,6 @@
 //! Helpers shared by item behavior implementations.
 
+use crate::player::player_inventory::Prediction;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 
@@ -48,6 +49,6 @@ pub(crate) fn create_filled_result(
     });
 
     if !overflow.is_empty() {
-        let _ = player.drop_item(overflow, false, false);
+        let _ = player.drop_item(overflow, false, Prediction::Predicted);
     }
 }

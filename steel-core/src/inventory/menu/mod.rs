@@ -7,6 +7,7 @@ mod kind;
 pub mod kinds;
 mod layout;
 
+use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
 use crate::inventory::container::Container as _;
@@ -152,9 +153,9 @@ impl Menu {
         let carried = mem::take(self.behavior.carried_mut());
         if !carried.is_empty() {
             if return_to_inventory {
-                player.add_item_or_drop(carried);
+                player.add_item_or_drop(carried, Prediction::ServerOnly);
             } else {
-                let _ = player.drop_item(carried, false, false);
+                let _ = player.drop_item(carried, false, Prediction::ServerOnly);
             }
         }
         self.layout
@@ -389,7 +390,11 @@ impl Menu {
                 inventory.set_item(inventory_slot, target_item.clone());
                 target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                    player.add_item_or_drop_with_guard(&mut guard, remainder);
+                    player.add_item_or_drop_with_guard(
+                        &mut guard,
+                        remainder,
+                        Prediction::Predicted,
+                    );
                 }
             }
         } else if target_item.is_empty() {
@@ -422,7 +427,11 @@ impl Menu {
                     let to_place = inv.get_item_mut(inventory_slot).split(max_size);
                     target_slot.set_by_player(&mut guard, to_place, &target_item);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                        player.add_item_or_drop_with_guard(&mut guard, remainder);
+                        player.add_item_or_drop_with_guard(
+                            &mut guard,
+                            remainder,
+                            Prediction::Predicted,
+                        );
                     }
                     let mut displaced = target_item;
                     let Some(inventory) = guard.get_mut(player_inv_id) else {
@@ -431,7 +440,9 @@ impl Menu {
                     let added = inventory.add(&mut displaced);
                     // Vanilla's Inventory::add consumes uninserted stacks in creative mode.
                     if !added && !player.has_infinite_materials() {
-                        let _ = guard.run_unlocked(|| player.drop_item(displaced, false, true));
+                        let _ = guard.run_unlocked(|| {
+                            player.drop_item(displaced, true, Prediction::Predicted)
+                        });
                     }
                 } else {
                     let Some(inventory) = guard.get_mut(player_inv_id) else {
@@ -440,7 +451,11 @@ impl Menu {
                     inventory.set_item(inventory_slot, target_item.clone());
                     target_slot.set_by_player(&mut guard, source_item, &target_item);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                        player.add_item_or_drop_with_guard(&mut guard, remainder);
+                        player.add_item_or_drop_with_guard(
+                            &mut guard,
+                            remainder,
+                            Prediction::Predicted,
+                        );
                     }
                 }
             }

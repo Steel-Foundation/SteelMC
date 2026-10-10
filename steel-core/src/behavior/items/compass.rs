@@ -1,3 +1,4 @@
+use crate::player::player_inventory::Prediction;
 use std::borrow::Cow;
 
 use steel_macros::item_behavior;
@@ -72,7 +73,9 @@ impl ItemBehavior for CompassItem {
         });
 
         if !leftover.is_empty() {
-            let _ = context.player.drop_item(leftover, false, false);
+            let _ = context
+                .player
+                .drop_item(leftover, false, Prediction::Predicted);
         }
 
         InteractionResult::Success

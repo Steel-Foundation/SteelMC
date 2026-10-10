@@ -1,3 +1,4 @@
+use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
 use std::{mem, range::Range};
@@ -49,9 +50,10 @@ impl MenuLayout {
                 }
                 slot.set_changed(&mut guard);
                 if return_to_inventory {
-                    player.add_item_or_drop_with_guard(&mut guard, item);
+                    player.add_item_or_drop_with_guard(&mut guard, item, Prediction::ServerOnly);
                 } else {
-                    let _ = guard.run_unlocked(|| player.drop_item(item, false, false));
+                    let _ = guard
+                        .run_unlocked(|| player.drop_item(item, false, Prediction::ServerOnly));
                 }
             }
         }
@@ -105,7 +107,7 @@ impl MenuLayout {
 
         let slot = &behavior.slots()[slot_index];
         if let Some(leftover) = slot.on_take(guard, &remaining, player) {
-            player.add_item_or_drop_with_guard(guard, leftover);
+            player.add_item_or_drop_with_guard(guard, leftover, Prediction::Predicted);
         }
         // Result handlers may replace the fake source in `on_take`; apply the
         // route's policy to any unresolved output from the old result.
@@ -113,7 +115,8 @@ impl MenuLayout {
             && !remaining.is_empty()
             && route.fake_result_remainder == FakeResultRemainderPolicy::Drop
         {
-            let _ = guard.run_unlocked(|| player.drop_item(remaining.clone(), false, false));
+            let _ = guard
+                .run_unlocked(|| player.drop_item(remaining.clone(), false, Prediction::Predicted));
         }
 
         clicked

@@ -102,11 +102,13 @@ fn give_to_player(player: &Player, prototype: &ItemStack, count: i32) {
         remaining -= size;
         let mut stack = prototype.copy_with_count(size);
         if player.add_item_with_sound(&mut stack) {
-            if let Some(item) = player.drop_item(prototype.copy_with_count(1), false, false) {
+            if let Some(item) =
+                player.spawn_dropped_item(prototype.copy_with_count(1), false, false)
+            {
                 item.make_fake_item();
             }
             player.broadcast_inventory_changes();
-        } else if let Some(item) = player.drop_item(stack, false, false) {
+        } else if let Some(item) = player.spawn_dropped_item(stack, false, false) {
             item.set_no_pickup_delay();
             item.set_owner(Some(player.gameprofile.id));
         }

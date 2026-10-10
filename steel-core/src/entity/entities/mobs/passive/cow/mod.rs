@@ -1,5 +1,6 @@
 //! Vanilla Cow entity with variant + sound-variant parity.
 
+use crate::player::player_inventory::Prediction;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
@@ -232,7 +233,7 @@ impl CowEntity {
         };
 
         if !overflow.is_empty() {
-            let _ = player.drop_item(overflow, false, false);
+            let _ = player.drop_item(overflow, false, Prediction::Predicted);
         }
 
         true

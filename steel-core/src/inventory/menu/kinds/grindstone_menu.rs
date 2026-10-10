@@ -1,4 +1,5 @@
 //! Grindstone menu.
+use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
 use steel_registry::data_components::vanilla_components::MAX_DAMAGE;
@@ -324,7 +325,7 @@ impl MenuKind for GrindstoneKind {
             return Some(ItemStack::empty());
         }
         if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &remaining, player) {
-            player.add_item_or_drop_with_guard(guard, remainder);
+            player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
         Some(clicked)
     }

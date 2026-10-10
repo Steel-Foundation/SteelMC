@@ -690,10 +690,9 @@ impl Player {
             return;
         }
 
+        let animation = self.interact_animation(packet.hand);
         let result = self.interact_on(target.as_ref(), packet.hand, packet.location);
-        if result.should_swing_server() {
-            self.swing(packet.hand, self.interact_animation(packet.hand), true);
-        }
+        self.swing_after_interaction(packet.hand, animation, result);
         self.broadcast_inventory_changes();
     }
 
