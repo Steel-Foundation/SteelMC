@@ -1,0 +1,50 @@
+name: Flint PR comment
+
+# Privileged half of flint.yml. Runs via workflow_run so the token can comment
+# even when the PR comes from a fork (pull_request runs get a read-only token).
+# The report artifact is untrusted PR output: it is only posted as a comment body.
+
+on:
+  workflow_run:
+    workflows: ["Flint Tests"]
+    types: [completed]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PR report
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: flint-pr-report
+
+      - name: Create or update report comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const issue_number = parseInt(fs.readFileSync("pr_number.txt", "utf8").trim(), 10);
+            if (Number.isNaN(issue_number)) {
+              core.setFailed("Invalid PR number in artifact");
+              return;
+            }
+            const MARKER = "<!-- flint-report -->";
+            const body = fs.readFileSync("comment.md", "utf8").slice(0, 65000);
+            const { owner, repo } = context.repo;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            });
+            const existing = comments.find(c => c.user?.type === "Bot" && c.body?.startsWith(MARKER));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
