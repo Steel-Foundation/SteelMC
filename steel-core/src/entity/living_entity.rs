@@ -8,6 +8,9 @@ use crate::behavior::{InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
 
+const EQUIP_SOUND_VOLUME: f32 = 1.0;
+const EQUIP_SOUND_PITCH: f32 = 1.0;
+
 /// A trait for living entities that can take damage, heal, and die.
 ///
 /// This trait provides the core functionality for entities that have health,
@@ -1709,10 +1712,61 @@ pub trait LivingEntity: Entity {
 
     /// Returns the equip sound Steel can currently resolve for this entity.
     fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
+        self.default_equip_sound(slot, stack)
+    }
+
+    /// The equippable's own equip sound, which overrides fall back to.
+    fn default_equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
         let equippable = stack.get_equippable()?;
         (slot == equippable.slot)
             .then(|| equippable.equip_sound.registry_ref())
             .flatten()
+    }
+
+    /// Puts `stack` in `slot` and runs [`on_equip_item`](Self::on_equip_item).
+    fn set_item_slot(&self, slot: EquipmentSlot, stack: ItemStack) {
+        let new_stack = stack.clone();
+        let old_stack = self.living_base().equipment().lock().set(slot, stack);
+        self.on_equip_item(slot, &old_stack, &new_stack);
+    }
+
+    /// Plays the equip sound and emits the equip game event after `slot` changes.
+    fn on_equip_item(&self, slot: EquipmentSlot, old_stack: &ItemStack, new_stack: &ItemStack) {
+        if self.is_spectator()
+            || ItemStack::is_same_item_same_components(old_stack, new_stack)
+            || self.is_first_tick()
+        {
+            return;
+        }
+
+        let equippable_slot = new_stack.get_equippable().map(|equippable| equippable.slot);
+        if equippable_slot == Some(slot)
+            && !self.is_silent()
+            && let Some(sound) = self.equip_sound(slot, new_stack)
+            && let Some(world) = self.level()
+        {
+            world.play_sound_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                EQUIP_SOUND_VOLUME,
+                EQUIP_SOUND_PITCH,
+                None,
+            );
+        }
+
+        if self.does_emit_equip_event(slot) {
+            self.game_event(if equippable_slot.is_some() {
+                &vanilla_game_events::EQUIP
+            } else {
+                &vanilla_game_events::UNEQUIP
+            });
+        }
+    }
+
+    /// Whether a change to `slot` emits an equip game event.
+    fn does_emit_equip_event(&self, _slot: EquipmentSlot) -> bool {
+        true
     }
 
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.
@@ -1758,13 +1812,10 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         if let Some(mob) = self.as_mob() {
             mob.set_guaranteed_drop(slot);
         }
-        // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
 

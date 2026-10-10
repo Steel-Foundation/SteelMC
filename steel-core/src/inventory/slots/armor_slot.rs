@@ -66,9 +66,9 @@ impl Slot for ArmorSlot {
         guard: &mut ContainerLockGuard,
         stack: ItemStack,
         previous: &ItemStack,
+        player: &Player,
     ) {
-        // TODO: Call player.onEquipItem(equipmentSlot, previous, stack) here
-        let _ = previous;
+        player.record_pending_equip(self.slot, previous.clone(), stack.clone());
         self.set_item(guard, stack);
     }
 

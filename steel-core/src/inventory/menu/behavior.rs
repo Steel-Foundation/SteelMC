@@ -195,10 +195,11 @@ impl MenuBehavior {
         slot_index: usize,
         remaining: &ItemStack,
         previous: &ItemStack,
+        player: &Player,
     ) {
         let slot = &self.slots[slot_index];
         if remaining.is_empty() {
-            slot.set_by_player(guard, ItemStack::empty(), previous);
+            slot.set_by_player(guard, ItemStack::empty(), previous, player);
         } else {
             if !slot.is_fake() {
                 *slot.get_item_mut(guard) = remaining.clone();
@@ -210,6 +211,14 @@ impl MenuBehavior {
     /// Moves items from `source_slot` into slots `[start_slot, end_slot)`, walking
     /// the range in `direction`. Aliases of the source's physical storage are
     /// skipped. Returns true if anything moved.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the slot range, direction and acting player are all independent inputs"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the two fill passes read best side by side"
+    )]
     pub fn move_item_stack_to(
         &self,
         guard: &mut ContainerLockGuard,
@@ -218,6 +227,7 @@ impl MenuBehavior {
         start_slot: usize,
         end_slot: usize,
         direction: FillDirection,
+        player: &Player,
     ) -> bool {
         if start_slot >= end_slot {
             return false;
@@ -225,7 +235,13 @@ impl MenuBehavior {
 
         let backwards = direction == FillDirection::Backward;
         let mut anything_changed = false;
-        let source_key = self.slots[source_slot].storage().physical_key();
+        let source = &self.slots[source_slot];
+        let source_key = source.storage().physical_key();
+        let sync_source = |guard: &mut ContainerLockGuard, stack: &ItemStack| {
+            if !source.is_fake() {
+                source.get_item_mut(guard).set_count(stack.count());
+            }
+        };
 
         // First pass: stack onto existing items.
         if item_stack.is_stackable() {
@@ -264,11 +280,13 @@ impl MenuBehavior {
 
                     if total_stack <= max_stack_size {
                         item_stack.set_count(0);
+                        sync_source(guard, item_stack);
                         slot.get_item_mut(guard).set_count(total_stack);
                         slot.set_changed(guard);
                         anything_changed = true;
                     } else if target.count < max_stack_size {
                         item_stack.shrink(max_stack_size - target.count);
+                        sync_source(guard, item_stack);
                         slot.get_item_mut(guard).set_count(max_stack_size);
                         slot.set_changed(guard);
                         anything_changed = true;
@@ -314,7 +332,9 @@ impl MenuBehavior {
                 if target.is_empty() && slot.may_place(item_stack) {
                     let max_stack_size = slot.get_max_stack_size_for_item(guard, item_stack);
                     let to_place = item_stack.count.min(max_stack_size);
-                    slot.set_by_player(guard, item_stack.split(to_place), &ItemStack::empty());
+                    let placed = item_stack.split(to_place);
+                    sync_source(guard, item_stack);
+                    slot.set_by_player(guard, placed, &ItemStack::empty(), player);
                     slot.set_changed(guard);
                     anything_changed = true;
                     break;
@@ -673,7 +693,7 @@ impl MenuBehavior {
 
                     let mut new_item = source.clone();
                     new_item.set_count(new_count);
-                    slot.set_by_player(&mut guard, new_item, &slot_item);
+                    slot.set_by_player(&mut guard, new_item, &slot_item, player);
                 }
             }
 
@@ -719,7 +739,7 @@ impl MenuBehavior {
                 } else {
                     1
                 };
-                self.carried = slot.safe_insert(&mut guard, carried, requested);
+                self.carried = slot.safe_insert(&mut guard, carried, requested, player);
             } else {
                 self.carried = carried;
             }
@@ -745,7 +765,7 @@ impl MenuBehavior {
                 } else {
                     1
                 };
-                self.carried = slot.safe_insert(&mut guard, carried, requested);
+                self.carried = slot.safe_insert(&mut guard, carried, requested, player);
             } else {
                 // may_place failed: try to take from the slot instead.
                 if slot.may_pickup(&guard, player) {
@@ -774,7 +794,7 @@ impl MenuBehavior {
             // Different items: swap if both operations are allowed.
             if slot.may_pickup(&guard, player) && slot.may_place(&carried) {
                 if carried.count <= slot.get_max_stack_size_for_item(&guard, &carried) {
-                    slot.set_by_player(&mut guard, carried, &slot_item);
+                    slot.set_by_player(&mut guard, carried, &slot_item, player);
                     self.carried = slot_item;
                 } else {
                     self.carried = carried;
@@ -1022,6 +1042,8 @@ mod tests {
         },
         slots::{NormalSlot, RestrictedSlot, Slot},
     };
+    use crate::player::Player;
+    use crate::test_support::{TestPlayerBuilder, test_world};
 
     struct RecordingContainer {
         item: ItemStack,
@@ -1067,8 +1089,13 @@ mod tests {
         (builder.build(BasicKind), container_ref)
     }
 
+    fn test_player() -> Arc<Player> {
+        TestPlayerBuilder::new(Arc::clone(test_world()), "MenuTester", 1).build()
+    }
+
     #[test]
     fn quick_move_source_persists_cloned_remainder_with_vanilla_callbacks() {
+        let player = test_player();
         let (menu, container_ref) = recording_menu();
         let behavior = menu.behavior();
         let container_id = container_ref.container_id();
@@ -1076,7 +1103,7 @@ mod tests {
         let previous = ItemStack::with_count(&vanilla_items::STONE, 5);
         let remainder = ItemStack::with_count(&vanilla_items::STONE, 2);
 
-        behavior.update_quick_move_source(&mut guard, 0, &remainder, &previous);
+        behavior.update_quick_move_source(&mut guard, 0, &remainder, &previous, &player);
         let state = guard
             .get_typed::<RecordingContainer>(container_id)
             .expect("recording container should remain locked");
@@ -1084,7 +1111,7 @@ mod tests {
         assert_eq!(state.set_item_calls, 0);
         assert_eq!(state.set_changed_calls, 1);
 
-        behavior.update_quick_move_source(&mut guard, 0, &ItemStack::empty(), &remainder);
+        behavior.update_quick_move_source(&mut guard, 0, &ItemStack::empty(), &remainder, &player);
         let state = guard
             .get_typed::<RecordingContainer>(container_id)
             .expect("recording container should remain locked");
@@ -1095,6 +1122,7 @@ mod tests {
 
     #[test]
     fn safe_insert_uses_set_by_player_before_the_menu_notification() {
+        let player = test_player();
         let (menu, container_ref) = recording_menu();
         let behavior = menu.behavior();
         let container_id = container_ref.container_id();
@@ -1104,6 +1132,7 @@ mod tests {
             &mut guard,
             ItemStack::with_count(&vanilla_items::STONE, 3),
             3,
+            &player,
         );
         behavior.slots()[0].set_changed(&mut guard);
 
@@ -1119,6 +1148,7 @@ mod tests {
     #[test]
     fn quick_move_skips_aliases_of_the_source_slot() {
         init_vanilla_registry();
+        let player = test_player();
         let container = SimpleContainer::new(2).into_shared();
         container
             .lock()
@@ -1144,8 +1174,9 @@ mod tests {
             1,
             3,
             FillDirection::Forward,
+            &player,
         ));
-        behavior.update_quick_move_source(&mut guard, 0, &remaining, &clicked);
+        behavior.update_quick_move_source(&mut guard, 0, &remaining, &clicked, &player);
 
         let container = guard
             .get(container_ref.container_id())

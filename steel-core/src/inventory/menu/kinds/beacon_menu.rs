@@ -250,6 +250,7 @@ impl MenuKind for BeaconKind {
                 pay_start,
                 pay_start + 1,
                 FillDirection::Forward,
+                player,
             )
         } else if self.player_main.contains(slot_index) {
             behavior.move_item_stack_to(
@@ -259,6 +260,7 @@ impl MenuKind for BeaconKind {
                 self.player_hotbar.start(),
                 self.player_hotbar.end(),
                 FillDirection::Forward,
+                player,
             )
         } else if self.player_hotbar.contains(slot_index) {
             behavior.move_item_stack_to(
@@ -268,6 +270,7 @@ impl MenuKind for BeaconKind {
                 self.player_main.start(),
                 self.player_main.end(),
                 FillDirection::Forward,
+                player,
             )
         } else {
             behavior.move_item_stack_to(
@@ -277,6 +280,7 @@ impl MenuKind for BeaconKind {
                 self.player_main.start(),
                 self.player_hotbar.end(),
                 FillDirection::Forward,
+                player,
             )
         };
 
@@ -284,7 +288,7 @@ impl MenuKind for BeaconKind {
             return Some(ItemStack::empty());
         }
 
-        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
+        behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked, player);
         if remaining.count == clicked.count {
             return Some(ItemStack::empty());
         }

@@ -1279,7 +1279,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let has_infinite_materials = player.has_infinite_materials();
         for slot in EquipmentSlot::ALL {
             let sheared = {
-                let mut equipment = mob.living_base().equipment().lock();
+                let equipment = mob.living_base().equipment().lock();
                 let item_stack = equipment.get_ref(slot);
                 let Some(equippable) = item_stack.get_equippable() else {
                     continue;
@@ -1293,7 +1293,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 }
 
                 let shearing_sound = equippable.shearing_sound.registry_ref();
-                (equipment.take(slot), shearing_sound)
+                (item_stack.clone(), shearing_sound)
             };
             let (item_stack, shearing_sound) = sheared;
             if item_stack.is_empty() {
@@ -1304,6 +1304,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 .inventory
                 .lock()
                 .hurt_item_in_hand(hand, 1, has_infinite_materials);
+            mob.set_item_slot(slot, ItemStack::empty());
             mob.set_guaranteed_drop(slot);
             mob.set_persistence_required();
 

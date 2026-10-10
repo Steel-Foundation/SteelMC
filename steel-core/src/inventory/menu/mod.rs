@@ -387,7 +387,7 @@ impl Menu {
                     unreachable!("the explicitly locked player inventory must be present");
                 };
                 inventory.set_item(inventory_slot, target_item.clone());
-                target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
+                target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item, player);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
                 }
@@ -401,13 +401,13 @@ impl Menu {
                         unreachable!("the explicitly locked player inventory must be present");
                     };
                     let to_place = inv.get_item_mut(inventory_slot).split(max_size);
-                    target_slot.set_by_player(&mut guard, to_place, &ItemStack::empty());
+                    target_slot.set_by_player(&mut guard, to_place, &ItemStack::empty(), player);
                 } else {
                     let Some(inventory) = guard.get_mut(player_inv_id) else {
                         unreachable!("the explicitly locked player inventory must be present");
                     };
                     inventory.set_item(inventory_slot, ItemStack::empty());
-                    target_slot.set_by_player(&mut guard, source_item, &ItemStack::empty());
+                    target_slot.set_by_player(&mut guard, source_item, &ItemStack::empty(), player);
                 }
             }
         } else {
@@ -420,7 +420,7 @@ impl Menu {
                         unreachable!("the explicitly locked player inventory must be present");
                     };
                     let to_place = inv.get_item_mut(inventory_slot).split(max_size);
-                    target_slot.set_by_player(&mut guard, to_place, &target_item);
+                    target_slot.set_by_player(&mut guard, to_place, &target_item, player);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                         player.add_item_or_drop_with_guard(&mut guard, remainder);
                     }
@@ -438,7 +438,7 @@ impl Menu {
                         unreachable!("the explicitly locked player inventory must be present");
                     };
                     inventory.set_item(inventory_slot, target_item.clone());
-                    target_slot.set_by_player(&mut guard, source_item, &target_item);
+                    target_slot.set_by_player(&mut guard, source_item, &target_item, player);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                         player.add_item_or_drop_with_guard(&mut guard, remainder);
                     }
