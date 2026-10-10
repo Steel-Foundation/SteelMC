@@ -1,6 +1,5 @@
-use std::{collections::BTreeMap, str::FromStr};
-
 use serde::{Deserialize, Deserializer, de::Error as _};
+use std::{collections::BTreeMap, str::FromStr};
 use steel_utils::Identifier;
 
 /// Shared `{"id": ..., "properties": {...}}`-or-bare-string shorthand
@@ -113,4 +112,16 @@ pub struct TextComponentJson {
     pub(crate) translate: String,
     #[serde(default)]
     pub(crate) color: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ItemStackTemplateJson {
+    pub(crate) id: Identifier,
+    #[serde(default = "one")]
+    pub(crate) count: i32,
+    // TODO: add components deserialisation
+}
+
+const fn one() -> i32 {
+    1
 }

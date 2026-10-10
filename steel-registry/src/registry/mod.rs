@@ -10,6 +10,7 @@ pub use holder_set::{RegistryHolderSet, RegistryHolderSetEntry};
 pub use reference::{RegistryReference, RegistryReferenceEntry};
 pub use tags::RegistryTags;
 
+use crate::advancement::registry::AdvancementRegistry;
 use crate::game_events::GameEventRegistry;
 use crate::stat::custom::CustomStatRegistry;
 use crate::stat::{StatTypeRegistry, vanilla_stat_types};
@@ -73,20 +74,21 @@ use crate::{
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
-    vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns, vanilla_biome_tags,
-    vanilla_biomes, vanilla_block_entity_types, vanilla_block_state_providers, vanilla_block_tags,
-    vanilla_block_transformers, vanilla_blocks, vanilla_cat_sound_variants, vanilla_cat_variants,
-    vanilla_chat_types, vanilla_chicken_sound_variants, vanilla_chicken_variants,
-    vanilla_configured_carvers, vanilla_configured_features, vanilla_cow_sound_variants,
-    vanilla_cow_variants, vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types,
-    vanilla_decorated_pot_patterns, vanilla_dialog_tags, vanilla_dialogs, vanilla_dimension_types,
-    vanilla_enchantment_tags, vanilla_enchantments, vanilla_entities, vanilla_entity_type_tags,
-    vanilla_fluid_tags, vanilla_fluids, vanilla_frog_variants, vanilla_game_events,
-    vanilla_game_rules, vanilla_instrument_tags, vanilla_instruments, vanilla_item_tags,
-    vanilla_items, vanilla_jukebox_songs, vanilla_loot_tables, vanilla_map_decoration_types,
-    vanilla_menu_types, vanilla_mob_effects, vanilla_painting_variant_tags,
-    vanilla_painting_variants, vanilla_particle_types, vanilla_pig_sound_variants,
-    vanilla_pig_variants, vanilla_placed_features, vanilla_poi_type_tags, vanilla_poi_types,
+    vanilla_advancements, vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns,
+    vanilla_biome_tags, vanilla_biomes, vanilla_block_entity_types, vanilla_block_state_providers,
+    vanilla_block_tags, vanilla_block_transformers, vanilla_blocks, vanilla_cat_sound_variants,
+    vanilla_cat_variants, vanilla_chat_types, vanilla_chicken_sound_variants,
+    vanilla_chicken_variants, vanilla_configured_carvers, vanilla_configured_features,
+    vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_custom_stats,
+    vanilla_damage_type_tags, vanilla_damage_types, vanilla_decorated_pot_patterns,
+    vanilla_dialog_tags, vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags,
+    vanilla_enchantments, vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags,
+    vanilla_fluids, vanilla_frog_variants, vanilla_game_events, vanilla_game_rules,
+    vanilla_instrument_tags, vanilla_instruments, vanilla_item_tags, vanilla_items,
+    vanilla_jukebox_songs, vanilla_loot_tables, vanilla_map_decoration_types, vanilla_menu_types,
+    vanilla_mob_effects, vanilla_painting_variant_tags, vanilla_painting_variants,
+    vanilla_particle_types, vanilla_pig_sound_variants, vanilla_pig_variants,
+    vanilla_placed_features, vanilla_poi_type_tags, vanilla_poi_types,
     vanilla_position_source_types, vanilla_potion_tags, vanilla_potions, vanilla_recipes,
     vanilla_structure_processors, vanilla_structure_tags, vanilla_structures,
     vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags, vanilla_timelines,
@@ -175,6 +177,7 @@ pub trait TaggedRegistryExt: RegistryExt {
     fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_;
 }
 
+pub const ADVANCEMENT_REGISTRY: Identifier = Identifier::vanilla_static("advancement");
 pub const BLOCKS_REGISTRY: Identifier = Identifier::vanilla_static("block");
 pub const ITEMS_REGISTRY: Identifier = Identifier::vanilla_static("item");
 pub const BIOMES_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/biome");
@@ -304,6 +307,7 @@ pub struct Registry {
     pub custom_stats: CustomStatRegistry,
     pub stat_types: StatTypeRegistry,
     pub ticket_types: TicketTypeRegistry,
+    pub advancements: AdvancementRegistry,
 }
 
 impl Debug for Registry {
@@ -318,7 +322,8 @@ impl Registry {
     #[must_use]
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
-
+        vanilla_advancements::register_advancements(&mut registry.advancements);
+        registry.advancements.update_tree();
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
@@ -782,6 +787,7 @@ impl Registry {
             custom_stats: CustomStatRegistry::new(),
             stat_types: StatTypeRegistry::new(),
             ticket_types: TicketTypeRegistry::new(),
+            advancements: AdvancementRegistry::new(),
         }
     }
 }
