@@ -2,10 +2,10 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::behavior::{InteractionResult, init_behaviors};
+use crate::behavior::{InteractionResult, ItemBehavior, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, LivingEntityRef, SharedEntity,
     damage::DamageSource, entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
@@ -67,6 +67,28 @@ const HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID: i32 = 42;
 
 const MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET: u8 = 0xff;
 const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
+
+struct ReplaceHeldStackOnUseTick {
+    replacement: ItemStack,
+}
+
+impl ItemBehavior for ReplaceHeldStackOnUseTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        user: LivingEntityRef<'_>,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        let Some(player) = user.living().as_player() else {
+            panic!("test item use requires a player");
+        };
+        player
+            .inventory
+            .lock()
+            .set_item_in_hand(InteractionHand::MainHand, self.replacement.clone());
+    }
+}
 
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
@@ -1555,6 +1577,39 @@ fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
         panic!("dropped entity should retain its concrete item type");
     };
     assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+#[test]
+fn active_item_use_does_not_overwrite_a_replaced_hand_stack() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("active_item_use_does_not_overwrite_replaced_stack");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 3));
+    player.start_using_item(InteractionHand::MainHand);
+    let Some(active) = player.living_base.active_item_use() else {
+        panic!("honey bottle use should start");
+    };
+
+    let behavior = ReplaceHeldStackOnUseTick {
+        replacement: ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 2),
+    };
+    player.tick_active_item_use_with_behavior(&player_entity, &behavior, active);
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(hand_item.is(&vanilla_items::HONEY_BOTTLE));
+    assert_eq!(hand_item.count(), 2);
+    assert!(!player.living_base.is_using_item());
 }
 
 /// Regression test: drinking a honey bottle from a full inventory, through

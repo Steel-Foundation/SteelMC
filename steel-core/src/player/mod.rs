@@ -450,22 +450,35 @@ impl Player {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
+            inventory.get_item_in_hand(hand).item() == active.item() // TODO: compare entire stack with ItemStack::matches instead
         };
         if !item_matches {
             self.stop_using_item();
             return;
         }
-        let mut item = {
+
+        let stack_before_use = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);
             current.clone()
         };
+        let mut item = stack_before_use.clone();
+
         let world = self.get_world();
         let Some(user) = LivingEntityRef::new(entity) else {
             panic!("active item use requires a living entity");
         };
         behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+
+        let hand_stack = {
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.clone()
+        };
+        if !ItemStack::matches(&hand_stack, &stack_before_use) {
+            self.stop_using_item();
+            return;
+        }
 
         if self.active_item_use_hand() != Some(hand) {
             self.inventory.lock().set_item_in_hand(hand, item);
