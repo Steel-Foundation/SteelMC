@@ -22,7 +22,7 @@ pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
                 changes = true;
                 continue;
             }
-            if let Some(drop) = player.drop_item(item, false, false) {
+            if let Some(drop) = player.spawn_dropped_item(item, false, false) {
                 drop.set_no_pickup_delay();
                 drop.set_owner(Some(player.gameprofile.id));
             }
