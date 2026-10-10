@@ -176,7 +176,7 @@ impl ReadFrom for MaterialAssetGroup {
 }
 
 /// Complete registry-independent trim material definition.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrimMaterialValue {
     assets: MaterialAssetGroup,
     description: TextComponent,

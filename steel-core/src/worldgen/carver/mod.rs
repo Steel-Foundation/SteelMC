@@ -286,7 +286,7 @@ impl CarverBlockIds {
     /// decide `under_fluid`.
     #[must_use]
     pub const fn is_air_like(&self, state: BlockStateId) -> bool {
-        // SAFETY: BlockStateId is a `#[repr(transparent)]` wrapper around u16.
+        // BlockStateId is a `#[repr(transparent)]` wrapper around u16.
         // Hand-written equality keeps this function `const`.
         state.0 == self.air.0 || state.0 == self.cave_air.0
     }

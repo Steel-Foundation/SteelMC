@@ -169,10 +169,7 @@ mod tests {
     fn empty_properties_use_an_empty_compound() {
         let empty = BlockItemStateProperties::empty();
         assert!(empty.is_empty());
-        assert_eq!(
-            empty.clone().to_nbt_tag(),
-            NbtTag::Compound(NbtCompound::new())
-        );
+        assert_eq!(empty.to_nbt_tag(), NbtTag::Compound(NbtCompound::new()));
     }
 
     #[test]

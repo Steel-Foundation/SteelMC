@@ -58,7 +58,7 @@ impl HashComponent for DamagePredicate {
 impl_predicate_downcast_type!(DamagePredicate, "steel:data_component_predicate/damage");
 
 /// One enchantment holder-set and accepted level range.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnchantmentPredicate {
     enchantments: Option<RegistryHolderSet<Enchantment>>,
     levels: IntBounds,
@@ -109,7 +109,7 @@ impl EnchantmentPredicate {
 }
 
 /// Applied-enchantment predicates.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnchantmentsPredicate(Vec<EnchantmentPredicate>);
 
 impl EnchantmentsPredicate {
@@ -146,7 +146,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Stored-enchantment predicates.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredEnchantmentsPredicate(Vec<EnchantmentPredicate>);
 
 impl StoredEnchantmentsPredicate {
@@ -183,7 +183,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Accepted registered potion values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PotionsPredicate(RegistryHolderSet<Potion>);
 
 impl PotionsPredicate {

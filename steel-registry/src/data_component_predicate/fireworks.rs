@@ -140,7 +140,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Predicate over firework explosions and flight duration.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FireworksPredicate {
     explosions: Option<CollectionPredicate<FireworkPredicate>>,
     flight_duration: IntBounds,

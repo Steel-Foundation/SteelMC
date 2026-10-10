@@ -15,7 +15,7 @@ use crate::damage_type::DamageTypeRef;
 use crate::sound_event::SoundEventHolder;
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DamageTypeComponent {
     pub damage_type: DamageTypeRef,
 }
