@@ -187,7 +187,7 @@ impl Goal for MoveToBlockGoal {
 
     fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let move_to_target = self.move_to_target();
-        if block_pos_closer_to_center_than(move_to_target, mob.position(), self.accepted_distance) {
+        if move_to_target.closer_to_center_than(mob.position(), self.accepted_distance) {
             self.reached_target = true;
             self.try_ticks -= 1;
         } else {
@@ -209,11 +209,6 @@ fn block_center_with_y(pos: BlockPos, y: i32) -> DVec3 {
         f64::from(y),
         f64::from(pos.z()) + 0.5,
     )
-}
-
-fn block_pos_closer_to_center_than(pos: BlockPos, position: DVec3, distance: f64) -> bool {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z).distance_squared(position) < distance * distance
 }
 
 fn find_nearest_block_from(
