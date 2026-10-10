@@ -450,7 +450,7 @@ impl Player {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item() // TODO: compare entire stack with ItemStack::matches instead
+            inventory.get_item_in_hand(hand).item() == active.item()
         };
         if !item_matches {
             self.stop_using_item();
