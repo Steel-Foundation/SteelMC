@@ -1,6 +1,7 @@
 //! Vanilla `minecraft:potion_contents` item component.
 
 use std::io::{Cursor, Error, Result, Write};
+use std::num::Wrapping;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -137,31 +138,32 @@ impl PotionContents {
     /// Returns vanilla `PotionContents.getColorOptional`: the amplifier-weighted
     /// average of every visible effect's color, or `None` when no effect is visible.
     fn color_from_effects(effects: &[MobEffectInstance]) -> Option<i32> {
-        let mut red: i64 = 0;
-        let mut green: i64 = 0;
-        let mut blue: i64 = 0;
-        let mut total_weight: i64 = 0;
+        // Vanilla accumulates in `int`, so huge effect lists wrap instead of
+        // widening; `ARGB.color` then masks each channel to its low byte.
+        let mut red = Wrapping(0_i32);
+        let mut green = Wrapping(0_i32);
+        let mut blue = Wrapping(0_i32);
+        let mut total_weight = Wrapping(0_i32);
 
         for effect in effects {
             if !effect.show_particles() {
                 continue;
             }
             let color = effect.effect().color;
-            let weight = i64::from(effect.amplifier() + 1);
-            red += weight * i64::from(color.red());
-            green += weight * i64::from(color.green());
-            blue += weight * i64::from(color.blue());
+            let weight = Wrapping(effect.amplifier()) + Wrapping(1);
+            red += weight * Wrapping(i32::from(color.red()));
+            green += weight * Wrapping(i32::from(color.green()));
+            blue += weight * Wrapping(i32::from(color.blue()));
             total_weight += weight;
         }
 
-        if total_weight == 0 {
-            None
-        } else {
-            let r = (red / total_weight) as i32;
-            let g = (green / total_weight) as i32;
-            let b = (blue / total_weight) as i32;
-            Some(OPAQUE_ALPHA | (r << 16) | (g << 8) | b)
+        if total_weight.0 == 0 {
+            return None;
         }
+        let r = (red / total_weight).0 & 0xFF;
+        let g = (green / total_weight).0 & 0xFF;
+        let b = (blue / total_weight).0 & 0xFF;
+        Some(OPAQUE_ALPHA | (r << 16) | (g << 8) | b)
     }
 
     fn to_nbt_tag_ref(&self) -> NbtTag {

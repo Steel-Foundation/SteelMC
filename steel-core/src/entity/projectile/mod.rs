@@ -19,7 +19,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::{DEGREE_180, DEGREE_360};
+use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, trig};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -50,7 +50,7 @@ pub use thrown_potion::{AbstractThrownPotion, SPLASH_RANGE_SQ};
 /// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
 
-const MAX_ENTITY_HIT_MARGIN: f64 = 0.3;
+const MAX_ENTITY_HIT_MARGIN: f32 = 0.3;
 
 /// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
@@ -431,13 +431,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
         power: f32,
         uncertainty: f32,
     ) {
-        let yaw = y_rot.to_radians();
-        let pitch = x_rot.to_radians();
-        let pitch_offset = (x_rot + y_offset).to_radians();
+        let yaw = f64::from(y_rot * DEG_TO_RAD);
+        let pitch = f64::from(x_rot * DEG_TO_RAD);
+        let pitch_offset = f64::from((x_rot + y_offset) * DEG_TO_RAD);
         let direction = DVec3::new(
-            f64::from(-yaw.sin() * pitch.cos()),
-            f64::from(-pitch_offset.sin()),
-            f64::from(yaw.cos() * pitch.cos()),
+            f64::from(-trig::sin(yaw) * trig::cos(pitch)),
+            f64::from(-trig::sin(pitch_offset)),
+            f64::from(trig::cos(yaw) * trig::cos(pitch)),
         );
         self.shoot(direction, power, uncertainty);
 
@@ -755,7 +755,7 @@ where
 /// 0.3 over the first ticks of flight.
 #[must_use]
 pub fn compute_margin(tick_count: i32) -> f64 {
-    (f64::from(tick_count - 2) / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN)
+    f64::from(((tick_count - 2) as f32 / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN))
 }
 
 /// Outcome of casting a projectile-style ray along an entity's view vector.
@@ -995,7 +995,14 @@ mod tests {
     fn compute_margin_ramps_from_zero_to_cap() {
         assert!((compute_margin(2) - 0.0).abs() < 1.0e-9);
         assert!((compute_margin(7) - 0.25).abs() < 1.0e-9);
-        assert!((compute_margin(100) - 0.3).abs() < 1.0e-9);
+        assert!((compute_margin(100) - 0.3).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn compute_margin_matches_vanilla_float_widening() {
+        assert_eq!(compute_margin(3), f64::from(0.05_f32));
+        assert_eq!(compute_margin(100), f64::from(0.3_f32));
+        assert_ne!(compute_margin(100), 0.3);
     }
 
     #[test]

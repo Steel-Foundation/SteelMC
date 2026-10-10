@@ -60,11 +60,7 @@ pub(crate) const fn to_runtime_instance_icon_from_visibility(
     effect: &RegistryMobEffectInstance,
     duration: i32,
 ) -> RuntimeMobEffectInstance {
-    let visible = effect.show_particles();
-    RuntimeMobEffectInstance::with_duration(effect.effect(), duration, effect.amplifier())
-        .with_ambient(effect.ambient())
-        .with_visible(visible)
-        .with_show_icon(visible)
+    to_runtime_instance(effect, duration).with_show_icon(effect.show_particles())
 }
 
 #[cfg(test)]

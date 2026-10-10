@@ -2907,8 +2907,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Plays vanilla's extinguished-on-fire entity sound.
     fn play_entity_on_fire_extinguished_sound(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
         let pitch = 1.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
-        self.play_sound(&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
+        world.play_sound_at(
+            &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
+            self.sound_source(),
+            self.position(),
+            0.7,
+            pitch,
+            None,
+        );
     }
 
     /// Plays the base vanilla step sound for a block.
