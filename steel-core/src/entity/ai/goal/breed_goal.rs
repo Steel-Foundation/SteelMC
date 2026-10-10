@@ -9,10 +9,13 @@ const PARTNER_SEARCH_RANGE: f64 = 8.0;
 const BREED_DISTANCE_SQR: f64 = 9.0;
 const BREED_TIME: i32 = 60;
 
+type BreedFn = fn(&dyn PathfinderMob, &dyn Animal);
+
 pub struct BreedGoal {
     partner: Option<SharedEntity>,
     love_time: i32,
     speed_modifier: f64,
+    breed: BreedFn,
 }
 
 impl BreedGoal {
@@ -22,7 +25,15 @@ impl BreedGoal {
             partner: None,
             love_time: 0,
             speed_modifier,
+            breed: spawn_child,
         }
+    }
+
+    /// Replaces what happens once the pair has spent long enough together.
+    #[must_use]
+    pub(crate) const fn with_breed(mut self, breed: BreedFn) -> Self {
+        self.breed = breed;
+        self
     }
 
     fn get_free_partner(mob: &dyn PathfinderMob, animal: &dyn Animal) -> Option<SharedEntity> {
@@ -96,9 +107,6 @@ impl Goal for BreedGoal {
         let Some(partner) = &self.partner else {
             return;
         };
-        let Some(animal) = mob.as_animal() else {
-            return;
-        };
         let Some(partner_animal) = partner.as_animal() else {
             return;
         };
@@ -118,11 +126,15 @@ impl Goal for BreedGoal {
             return;
         }
 
-        let Some(world) = mob.level() else {
-            return;
-        };
-        animal.spawn_child_from_breeding(&world, partner_animal);
+        (self.breed)(mob, partner_animal);
     }
+}
+
+fn spawn_child(mob: &dyn PathfinderMob, partner: &dyn Animal) {
+    let (Some(animal), Some(world)) = (mob.as_animal(), mob.level()) else {
+        return;
+    };
+    animal.spawn_child_from_breeding(&world, partner);
 }
 
 #[cfg(test)]
