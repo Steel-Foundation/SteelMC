@@ -9,6 +9,7 @@ use std::simd::f64x4;
 use crate::BlockStateId;
 use crate::random::RandomSplitter;
 use crate::surface::SurfaceRuleContext;
+use crate::surface_partial::PartialSurfaceRule;
 use rustc_hash::FxHashMap;
 
 use super::NoiseParameters;
@@ -160,6 +161,12 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// Whether vein functions have interpolation channels.
     fn vein_interp_enabled() -> bool;
 
+    /// Interpolated channels that, when `<= 0` at all 8 corners of a cell,
+    /// prove the combined final density is not positive anywhere in the cell.
+    /// Derived by the transpiler from the final-density tree; `None` when no
+    /// such proof exists.
+    fn final_density_nonpositive_channels() -> Option<&'static [usize]>;
+
     /// Compute blended noise for an entire column of Y values.
     ///
     /// Called by `NoiseChunk::fill_slice` before iterating over Y corners.
@@ -266,6 +273,15 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     /// Whether the generated surface rule reads biome-dependent context.
     fn surface_rule_uses_biome() -> bool;
+
+    /// Distinct `biome_is` sets the generated surface rule tests, as biome
+    /// registry ids. Together with a biome's temperature parameters these are
+    /// everything the rule can observe about a biome.
+    fn surface_rule_biome_sets() -> &'static [Box<[u16]>];
+
+    /// The surface rule reduced to what is decidable from Y and biome below the
+    /// preliminary surface.
+    fn surface_rule_below_preliminary_surface() -> &'static PartialSurfaceRule;
 
     /// Whether the generated surface rule reads preliminary surface level.
     fn surface_rule_uses_preliminary_surface() -> bool;

@@ -45,6 +45,7 @@ mod context;
 mod fingerprint;
 mod graph;
 mod naming;
+mod nonpositive;
 
 /// Input to the transpiler.
 pub struct TranspilerInput {

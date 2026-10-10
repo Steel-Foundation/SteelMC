@@ -5,6 +5,7 @@ mod empty;
 mod flat;
 mod generation_chunk;
 pub mod registry;
+mod surface_biomes;
 pub(crate) mod vanilla;
 
 pub use empty::EmptyChunkGenerator;
