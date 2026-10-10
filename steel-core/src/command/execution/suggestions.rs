@@ -6,7 +6,7 @@ use crate::command::brigadier::{
     ArgumentSuggestionContext, CommandArgumentParser, SuggestionProvider, SuggestionsBuilder,
 };
 
-/// Characters seperating the segments [`matches_substring`] searches
+/// Characters separating the segments [`matches_substring`] searches
 const MATCH_SPLITTER: [char; 3] = ['.', '_', '/'];
 
 /// Returns whether `input` starts with `pattern` at the beginning of the input
