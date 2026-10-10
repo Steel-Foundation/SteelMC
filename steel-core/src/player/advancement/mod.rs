@@ -12,7 +12,8 @@ use crate::player::advancement::rewards::grant_reward;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::time::UNIX_EPOCH;
-use steel_protocol::packets::game::c_update_advancement::CUpdateAdvancements;
+use steel_protocol::packets::game::CSelectAdvancementsTab;
+use steel_protocol::packets::game::CUpdateAdvancements;
 use steel_registry::REGISTRY;
 use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
 use steel_registry::advancement::{AdvancementProgressData, Criteria};
@@ -198,5 +199,24 @@ impl PlayerAdvancement {
             }
         }
         self.is_first_packet = false;
+    }
+
+    /// change the selected tab and update the client with it
+    pub fn set_selected_tab(&mut self, player: &Player, advancement: Option<AdvancementRef>) {
+        let old = self.last_selected_tab;
+        if let Some(value) = advancement
+            && value.is_root()
+            && value.display.is_some()
+        {
+            self.last_selected_tab = advancement;
+        } else {
+            self.last_selected_tab = None;
+        }
+
+        if old != self.last_selected_tab {
+            player.send_packet(CSelectAdvancementsTab::new(
+                self.last_selected_tab.map(|e| e.key.clone()),
+            ));
+        }
     }
 }

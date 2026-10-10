@@ -1,5 +1,9 @@
 use std::{f32::consts::TAU, mem, sync::Arc};
 
+use super::{
+    DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,
+    OpenMenuUnavailable, PendingMenuOpen, PlayerInventory, PreparedMenu, TerminalMenuRemoval,
+};
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
@@ -15,10 +19,11 @@ use crate::{
     player::{Player, connection::NetworkConnection as _},
 };
 use glam::DVec3;
+use steel_protocol::packets::game::SSeenAdvancement::Opened;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetBeacon,
-    SSetCarriedItem, SSetCreativeModeSlot, SoundSource,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSeenAdvancement,
+    SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SoundSource,
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
@@ -33,11 +38,6 @@ use steel_utils::{
     types::{GameType, InteractionHand},
 };
 use text_components::TextComponent;
-
-use super::{
-    DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,
-    OpenMenuUnavailable, PendingMenuOpen, PlayerInventory, PreparedMenu, TerminalMenuRemoval,
-};
 
 impl Player {
     fn take_open_menu_for_callback(
@@ -494,6 +494,16 @@ impl Player {
             );
         } else {
             self.reset_last_action_time();
+        }
+    }
+
+    /// Set the selected advancement
+    pub fn handle_seen_advancement(&self, packet: SSeenAdvancement) {
+        if let Opened(tab_id) = packet {
+            let advancement = REGISTRY.advancements.value_by_key(&tab_id);
+            if advancement.is_some() {
+                self.advancements.lock().set_selected_tab(self, advancement);
+            }
         }
     }
 
