@@ -58,7 +58,9 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v20: Added chunk-owned light section persistence.
 /// v21: Matched vanilla scheduled-tick persistence by rebuilding sub-tick order on load.
 /// v22: Preserve Vanilla pending `DUMMY` block entities across chunk stages.
-pub const FORMAT_VERSION: u16 = 22;
+/// v23: Chunk payloads record their own position and status, so a damaged chunk
+///      table entry can be detected by disagreeing with the payload it points at.
+pub const FORMAT_VERSION: u16 = 23;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -233,20 +235,23 @@ impl RegionHeader {
         bytes
     }
 
-    /// Deserializes the header from bytes.
+    /// Deserializes the header, leaving undecodable entries empty and returning
+    /// their indices. Each entry describes one chunk, so only that chunk is lost.
     ///
     /// # Panics
     /// Panics if bytes length is not exactly `CHUNK_TABLE_SIZE`.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, usize> {
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> (Self, Vec<usize>) {
         assert_eq!(bytes.len(), CHUNK_TABLE_SIZE);
         let mut entries = Box::new([ChunkEntry::default(); CHUNKS_PER_REGION]);
+        let mut undecodable = Vec::new();
         for (i, &chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
-            let Some(entry) = ChunkEntry::from_bytes(chunk) else {
-                return Err(i);
-            };
-            entries[i] = entry;
+            match ChunkEntry::from_bytes(chunk) {
+                Some(entry) => entries[i] = entry,
+                None => undecodable.push(i),
+            }
         }
-        Ok(Self { entries })
+        (Self { entries }, undecodable)
     }
 
     /// Finds a contiguous range of free sectors for allocation.
@@ -359,8 +364,18 @@ impl PersistentLightSection {
 ///
 /// Each chunk stores its own block state and biome palettes, making it
 /// self-contained. Sections reference indices into these chunk-level palettes.
+///
+/// The payload also records its own `pos` and `status`. Both are duplicated in
+/// the region's [`ChunkEntry`], but the entry table is uncompressed and
+/// unchecksummed while this payload rides inside a checksummed zstd frame, so a
+/// damaged entry can be detected by disagreeing with the payload.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentChunk<'a> {
+    /// Position this chunk was saved at, as ground truth for its table entry.
+    pub pos: PackedChunkPos,
+    /// Generation status this chunk was saved at, as ground truth for its
+    /// table entry.
+    pub status: ChunkStatus,
     /// Unix timestamp of last modification.
     pub last_modified: u32,
     /// Block states used in this chunk. Sections reference indices into this.
@@ -1303,5 +1318,21 @@ mod tests {
         assert_eq!(header.find_free_sectors(3, 12), 5);
         // Needs more than gap, append at end
         assert_eq!(header.find_free_sectors(6, 12), 12);
+    }
+
+    #[test]
+    fn undecodable_table_entry_decodes_as_an_empty_slot() {
+        let mut header = RegionHeader::new();
+        header.entries[0] = ChunkEntry::new(3, 8000, ChunkStatus::Full);
+        header.entries[1] = ChunkEntry::new(5, 8000, ChunkStatus::Full);
+        let mut bytes = header.to_bytes();
+        bytes[7] = u8::MAX;
+
+        let (decoded, undecodable) = RegionHeader::from_bytes(&bytes);
+        assert_eq!(undecodable, vec![0]);
+        assert!(!decoded.entries[0].exists());
+        assert_eq!(decoded.entries[1].sector_offset, 5);
+        assert_eq!(decoded.entries[1].size_bytes, 8000);
+        assert_eq!(decoded.entries[1].status, ChunkStatus::Full);
     }
 }
