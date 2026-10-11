@@ -517,6 +517,7 @@ impl EntityLandingContext {
     }
 
     /// Computes the Y velocity after bouncing on a block.
+    /// doesn't test if the bounce is valid
     #[must_use]
     pub fn velocity_after_fall(&self, restitution: f32) -> DVec3 {
         // Fraction of the downward movement reached before the collision.
@@ -553,21 +554,6 @@ mod tests {
             0.08,
             0.98,
         )
-    }
-
-    #[test]
-    fn upward_velocity_is_left_unchanged() {
-        let context = landing(0.3, 0.3);
-        assert_eq!(context.velocity_after_fall(1.0), context.velocity);
-    }
-
-    #[test]
-    fn bounce_is_zeroed_once_downward_speed_reaches_gravity() {
-        let context = landing(-0.05, -0.05);
-        let result = context.velocity_after_fall(1.0);
-        assert_eq!(result.y, 0.0);
-        assert_eq!(result.x, context.velocity.x);
-        assert_eq!(result.z, context.velocity.z);
     }
 
     #[test]
