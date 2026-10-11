@@ -33,6 +33,8 @@ use crate::command::{
     PendingCommandExecutionQueue, client_permission_event, command_suggestions_packet,
     command_tree_packet, create_registered_dispatcher,
 };
+#[cfg(any(test, feature = "test-framework"))]
+use crate::config::ResolvedDomainConfig;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::damage::DamageHistory;
 use crate::entity::{
@@ -180,6 +182,95 @@ fn cap_positive_thread_count(
 #[cfg(test)]
 mod tests;
 
+/// Builds a server around already loaded worlds without starting any server loops.
+///
+/// Used by Steel tests and by the Flint test adapter.
+#[cfg(any(test, feature = "test-framework"))]
+pub async fn test_server_with_worlds_and_config(
+    default_domain: String,
+    domains: &[ResolvedDomainConfig],
+    loaded_worlds: &[Arc<World>],
+    player_permission_states: PermissionSubjectIndex,
+    config: Arc<RuntimeConfig>,
+) -> Result<Arc<Server>, String> {
+    let mut worlds = WorldMap::new(default_domain, domains, &[]);
+    for world in loaded_worlds {
+        worlds.insert(world.key.clone(), Arc::clone(world));
+    }
+    worlds.validate_game_times()?;
+    let scoreboards = DomainScoreboards::load(&worlds)
+        .await
+        .map_err(|error| format!("test scoreboards should load: {error}"))?;
+    let command_storage = DomainCommandStorage::load(&worlds)
+        .await
+        .map_err(|error| format!("test command storage should load: {error}"))?;
+    let player_data_storage = PlayerDataStorage::in_memory();
+    let registered_commands = create_registered_dispatcher(CommandRegistry::new())
+        .map_err(|error| format!("test commands should register: {error}"))?;
+    let command_permission_keys = registered_commands
+        .permissions
+        .iter()
+        .map(|permission| permission.as_str().to_owned())
+        .collect();
+    let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
+        .map_err(|error| format!("test permission groups should resolve: {error}"))?;
+    let registry_cache = RegistryCache::new(config.compression);
+    let chunk_encoding_pool = ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .map_err(|error| format!("test chunk encoding pool should initialize: {error}"))?;
+    let service_keys = ServiceKeyStore::new(None)
+        .map_err(|error| format!("test services key store should initialize: {error}"))?;
+    let damage_history = loaded_worlds
+        .first()
+        .and_then(|world| world.damage_history.upgrade())
+        .ok_or("test worlds must have a live damage history owner")?;
+    let shares_history = loaded_worlds.iter().all(|world| {
+        world
+            .damage_history
+            .upgrade()
+            .is_some_and(|history| Arc::ptr_eq(&history, &damage_history))
+    });
+    if !shares_history {
+        return Err("test worlds must share the server's history owner".to_owned());
+    }
+
+    Ok(Arc::new(Server {
+        damage_history,
+        config,
+        permission_groups,
+        cancel_token: CancellationToken::new(),
+        key_store: KeyStore::create(),
+        registry_cache,
+        worlds,
+        online_players: PlayerMap::new(),
+        player_admissions: SyncMutex::new(FxHashMap::default()),
+        player_admission_changed: Notify::new(),
+        server_tick_changed: Notify::new(),
+        tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+        scoreboards,
+        command_storage,
+        command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
+        command_permission_keys,
+        command_requests: CommandRequestQueue::new(),
+        packet_processor: PacketProcessor::new(),
+        chunk_encoding_pool: Arc::new(chunk_encoding_pool),
+        jobs: ServerJobQueue::new(),
+        player_data_storage,
+        player_permission_states: SyncRwLock::new(player_permission_states),
+        player_permission_updates: AsyncMutex::new(()),
+        known_players: SyncMutex::new(KnownPlayerCacheState::new(KnownPlayers::new())),
+        known_player_save_idle: Notify::new(),
+        profile_lookup_client: reqwest::Client::new(),
+        service_keys: Arc::new(service_keys),
+        pending_player_joins: PlayerJoinQueue::new(),
+        pending_player_disconnects: PlayerDisconnectQueue::new(),
+        pending_world_changes: SyncMutex::new(Vec::new()),
+        pending_domain_switches: SyncMutex::new(Vec::new()),
+        player_idle_timeout: AtomicI32::new(0),
+    }))
+}
+
 #[derive(Clone, Copy)]
 struct PreparedSpawn {
     position: DVec3,
@@ -189,11 +280,11 @@ struct PreparedSpawn {
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
     player.base().set_position_local(spawn.position);
     player.set_rotation(spawn.rotation);
-    player.restore_game_modes(world.default_gamemode, None);
+    player.restore_game_modes(world.default_gamemode(), None);
     player
         .abilities
         .lock()
-        .update_for_game_mode(world.default_gamemode);
+        .update_for_game_mode(world.default_gamemode());
 }
 
 fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
