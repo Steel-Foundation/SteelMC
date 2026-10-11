@@ -518,7 +518,7 @@ impl ChunkMap {
 
     /// Returns whether the chunk is in block simulation range with confirmed r1 readiness.
     #[must_use]
-    pub(crate) fn is_block_ticking_full_chunk_simulated(&self, pos: ChunkPos) -> bool {
+    pub fn is_block_ticking_full_chunk_simulated(&self, pos: ChunkPos) -> bool {
         self.lookup_active_holder(pos).is_some_and(|holder| {
             is_block_ticking(holder.simulation_level())
                 && holder.ticking_readiness_snapshot().is_block_ticking()
@@ -983,6 +983,14 @@ impl ChunkMap {
         self.process_unloads();
         timings.process_unloads = start.elapsed();
         timings
+    }
+
+    /// Flint entry point for [`Self::advance_scheduling`].
+    ///
+    /// Exposed only with the `test-framework` feature; the same calling constraint applies.
+    #[cfg(feature = "test-framework")]
+    pub fn flint_advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+        self.advance_scheduling()
     }
 
     fn apply_simulation_changes(&self, changes: &[SimulationLevelChange]) -> bool {
