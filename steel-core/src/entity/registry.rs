@@ -203,6 +203,16 @@ impl EntityRegistry {
         let id = entity_type.id();
         self.entries.get(id).is_some_and(|e| e.factory.is_some())
     }
+
+    /// Get all entity types with a registered factory.
+    #[cfg(feature = "test-framework")]
+    pub fn get_implemented(&self) -> impl Iterator<Item = EntityTypeRef> + '_ {
+        REGISTRY
+            .entity_types
+            .iter()
+            .map(|(_, entity_type)| entity_type)
+            .filter(|&entity_type| self.has_factory(entity_type))
+    }
 }
 
 impl Default for EntityRegistry {
