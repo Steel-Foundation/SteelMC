@@ -201,7 +201,8 @@ impl WorldSpawnTeleportJob {
             &target_world,
             spawn_suggestion,
             target_world.default_gamemode(),
-        )?;
+        )?
+        .with_safe_fallback();
         Ok(Self {
             entity,
             source_world,

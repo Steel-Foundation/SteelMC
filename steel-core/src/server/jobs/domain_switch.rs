@@ -195,7 +195,8 @@ impl DomainSwitchJob {
                 (respawn_data.yaw, respawn_data.pitch),
             )
         };
-        let search = PlayerSpawnSearch::new(&world, spawn_suggestion, world.default_gamemode())?;
+        let search = PlayerSpawnSearch::new(&world, spawn_suggestion, world.default_gamemode())?
+            .with_safe_fallback();
         Ok(DomainSwitchJobPhase::SearchingSpawn {
             world,
             data,

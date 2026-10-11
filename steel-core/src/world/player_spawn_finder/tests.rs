@@ -1,5 +1,7 @@
 use steel_registry::dimension_type::DimensionTypeRef;
-use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_dimension_types};
+use steel_registry::{
+    init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_game_rules,
+};
 use steel_utils::types::UpdateFlags;
 use tokio::runtime::Builder;
 
@@ -55,6 +57,10 @@ fn new_search(world: &Arc<World>, suggestion: BlockPos) -> PlayerSpawnSearch {
     search
 }
 
+fn set_block(world: &Arc<World>, pos: BlockPos, state: steel_utils::BlockStateId) {
+    assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
+}
+
 #[test]
 fn candidates_are_consumed_in_vanilla_order_across_chunks() {
     with_search_world("order", &vanilla_dimension_types::OVERWORLD, |world| {
@@ -89,4 +95,70 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
         search.sequence.offset = 0;
         assert_eq!(run_search(world, &mut search), expected);
     });
+}
+
+#[test]
+fn safe_spawn_in_a_ceiling_dimension_avoids_fluid_and_the_roof() {
+    with_search_world(
+        "safe_spawn",
+        &vanilla_dimension_types::THE_NETHER,
+        |world| {
+            insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+            let set = |y: i32, state| set_block(world, BlockPos::new(0, y, 0), state);
+            let bedrock = vanilla_blocks::BEDROCK.default_state();
+            let lava = vanilla_blocks::LAVA.default_state();
+
+            // An open cavern: bedrock floor under a lava sea, bedrock roof at y=127. The only
+            // free standing spot is on top of the roof, which must not be chosen.
+            set(0, bedrock);
+            for y in 1..=31 {
+                set(y, lava);
+            }
+            set(127, bedrock);
+            assert_eq!(world.safe_spawn_in_column(0, 0), None);
+
+            // A ledge above the lava is the highest standing spot under the roof.
+            set(100, vanilla_blocks::NETHERRACK.default_state());
+            assert_eq!(
+                world.safe_spawn_in_column(0, 0),
+                Some(BlockPos::new(0, 101, 0))
+            );
+        },
+    );
+}
+
+#[test]
+fn failed_search_in_a_lava_cavern_falls_back_to_a_ledge_only_when_asked() {
+    with_search_world("cavern", &vanilla_dimension_types::THE_NETHER, |world| {
+        assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 0));
+        insert_chunks_around_origin(world);
+        let set = |y: i32, state| set_block(world, BlockPos::new(0, y, 0), state);
+        set(0, vanilla_blocks::BEDROCK.default_state());
+        for y in 1..=31 {
+            set(y, vanilla_blocks::LAVA.default_state());
+        }
+        set(100, vanilla_blocks::NETHERRACK.default_state());
+        set(127, vanilla_blocks::BEDROCK.default_state());
+
+        let run = |safe_fallback: bool| {
+            let mut search = new_search(world, BlockPos::new(0, 64, 0));
+            if safe_fallback {
+                search = search.with_safe_fallback();
+            }
+            run_search(world, &mut search)
+        };
+
+        // The vanilla fixup walks down to the lava sea; the safe fallback uses the ledge.
+        assert_eq!(run(false).y, 32.0);
+        assert_eq!(run(true).y, 101.0);
+    });
+}
+
+/// The four chunks around the origin, which the radius-0 search and its fixup read.
+fn insert_chunks_around_origin(world: &Arc<World>) {
+    for z in -1..=0 {
+        for x in -1..=0 {
+            insert_ready_full_chunk(world, ChunkPos::new(x, z));
+        }
+    }
 }

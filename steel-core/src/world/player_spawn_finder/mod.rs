@@ -16,9 +16,11 @@ use crate::world::World;
 
 use candidates::CandidateSequence;
 use chunk_load::{ChunkLoad, ChunkLoadState};
+use fallback::{FallbackPass, FallbackPoll};
 
 mod candidates;
 mod chunk_load;
+mod fallback;
 #[cfg(test)]
 mod tests;
 
@@ -49,6 +51,10 @@ pub(crate) struct PlayerSpawnSearch {
     /// The only chunk request held by the search. A new request waits for the next tick's
     /// ticket commit, so a chunk is requested once, not once per candidate.
     loading: Option<ChunkLoad>,
+    /// Whether a failed search prefers a standing spot found by [`World::safe_spawn_in_column`]
+    /// over [`World::fixup_spawn_height`], which can end in fluid or on a ceiling dimension's roof.
+    safe_fallback: bool,
+    fallback: FallbackPass,
 }
 
 #[derive(Clone, Copy)]
@@ -117,7 +123,17 @@ impl PlayerSpawnSearch {
             pending: None,
             results: vec![CandidateResult::Unchecked; slots],
             loading: None,
+            safe_fallback: false,
+            fallback: FallbackPass::default(),
         })
+    }
+
+    /// Makes a failed search prefer a standing spot that avoids fluid and a ceiling
+    /// dimension's roof over the vanilla height fixup.
+    #[must_use]
+    pub(crate) const fn with_safe_fallback(mut self) -> Self {
+        self.safe_fallback = true;
+        self
     }
 
     /// The radius, in blocks, of the square searched around `spawn_suggestion`.
@@ -162,7 +178,7 @@ impl PlayerSpawnSearch {
                 pending
             };
             if matches!(pending.kind, SpawnCandidateKind::Fixup) {
-                return self.poll_fixup(world, pending);
+                return self.poll_fixup(world, pending, &mut budget);
             }
 
             if matches!(self.result(pending.index), CandidateResult::Unchecked)
@@ -187,14 +203,34 @@ impl PlayerSpawnSearch {
         &mut self,
         world: &Arc<World>,
         pending: PendingSpawnCandidate,
+        budget: &mut PollBudget,
     ) -> PlayerSpawnSearchPoll {
+        if self.safe_fallback && !self.fallback.exhausted {
+            match self.poll_fallback_pass(world, budget) {
+                FallbackPoll::Found(pos) => {
+                    return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
+                }
+                FallbackPoll::Waiting => return PlayerSpawnSearchPoll::Pending,
+                FallbackPoll::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
+                FallbackPoll::Exhausted => self.fallback.exhausted = true,
+            }
+        }
         match self.poll_loading(world, pending.chunk, 0) {
             ChunkLoadState::Ready => {}
             ChunkLoadState::Waiting => return PlayerSpawnSearchPoll::Pending,
             ChunkLoadState::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
         }
+        let safe_pos = self
+            .safe_fallback
+            .then(|| {
+                world.safe_spawn_in_column(self.spawn_suggestion.x(), self.spawn_suggestion.z())
+            })
+            .flatten();
         self.loading = None;
-        PlayerSpawnSearchPoll::Ready(world.fixup_spawn_height(self.spawn_suggestion))
+        PlayerSpawnSearchPoll::Ready(safe_pos.map_or_else(
+            || world.fixup_spawn_height(self.spawn_suggestion),
+            block_bottom_center,
+        ))
     }
 
     /// Polls the chunk being read, opening it first when none is. A new request costs a
