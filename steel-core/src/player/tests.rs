@@ -140,6 +140,30 @@ impl ItemBehavior for SwitchToOffhandUseOnTick {
     }
 }
 
+struct RestartMainHandUseOnTick {
+    replacement: ItemStack,
+}
+
+impl ItemBehavior for RestartMainHandUseOnTick {
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        user: LivingEntityRef<'_>,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+        let Some(player) = user.living().as_player() else {
+            panic!("test item use requires a player");
+        };
+        player.stop_using_item();
+        player
+            .inventory
+            .lock()
+            .set_item_in_hand(InteractionHand::MainHand, self.replacement.clone());
+        player.start_using_item(InteractionHand::MainHand);
+    }
+}
+
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
     let world_fixture = fresh_test_world("initial_player_cosmetic_metadata");
@@ -1742,6 +1766,82 @@ fn active_item_use_preserves_a_new_offhand_use_started_by_callback() {
         player.active_item_use_hand(),
         Some(InteractionHand::OffHand)
     );
+    assert!(player.living_base.is_using_item());
+}
+
+#[test]
+fn active_item_use_preserves_same_hand_restart_of_same_stack() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("active_item_use_preserves_same_stack_restart");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+    let original_stack = ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 3);
+    player
+        .inventory
+        .lock()
+        .set_item_in_hand(InteractionHand::MainHand, original_stack.clone());
+    player.start_using_item(InteractionHand::MainHand);
+    let Some(active) = player.living_base.active_item_use() else {
+        panic!("initial honey bottle use should start");
+    };
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
+
+    let behavior = RestartMainHandUseOnTick {
+        replacement: original_stack.clone(),
+    };
+    let old_session_id = active.session_id();
+    player.tick_active_item_use_with_behavior(&player_entity, &behavior, active);
+
+    let Some(restarted) = player.living_base.active_item_use() else {
+        panic!("restarted honey bottle use should remain active");
+    };
+    assert_eq!(restarted.hand(), InteractionHand::MainHand);
+    assert_eq!(restarted.item(), &*vanilla_items::HONEY_BOTTLE);
+    assert_ne!(restarted.session_id(), old_session_id);
+    assert_eq!(restarted.remaining_ticks(), restarted.duration());
+    assert!(player.living_base.is_using_item());
+}
+
+#[test]
+fn active_item_use_preserves_same_hand_restart_with_replacement_item() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("active_item_use_preserves_replacement_restart");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::MainHand,
+        ItemStack::new(&vanilla_items::HONEY_BOTTLE),
+    );
+    player.start_using_item(InteractionHand::MainHand);
+    let Some(active) = player.living_base.active_item_use() else {
+        panic!("initial honey bottle use should start");
+    };
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
+
+    let behavior = RestartMainHandUseOnTick {
+        replacement: ItemStack::new(&vanilla_items::COOKIE),
+    };
+    let old_session_id = active.session_id();
+    player.tick_active_item_use_with_behavior(&player_entity, &behavior, active);
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(hand_item.is(&vanilla_items::COOKIE));
+
+    let Some(restarted) = player.living_base.active_item_use() else {
+        panic!("restarted cookie use should remain active");
+    };
+    assert_eq!(restarted.hand(), InteractionHand::MainHand);
+    assert_eq!(restarted.item(), &*vanilla_items::COOKIE);
+    assert_ne!(restarted.session_id(), old_session_id);
+    assert_eq!(restarted.remaining_ticks(), restarted.duration());
     assert!(player.living_base.is_using_item());
 }
 
