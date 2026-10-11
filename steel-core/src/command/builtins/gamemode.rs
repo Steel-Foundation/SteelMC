@@ -217,7 +217,7 @@ fn game_mode_permission(game_mode: GameType) -> Result<PermissionExpr, Permissio
     Ok(PermissionExpr::scoped_key(root, mode))
 }
 
-const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
+pub(super) const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
     match game_mode {
         GameType::Survival => &translations::GAME_MODE_SURVIVAL,
         GameType::Creative => &translations::GAME_MODE_CREATIVE,
