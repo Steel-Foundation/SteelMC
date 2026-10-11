@@ -953,6 +953,8 @@ pub trait BlockBehavior: Send + Sync {
         self.default_fall_on(state, world, pos, context)
     }
 
+    /// called when an entity bounce on the block.
+    /// only works if the block has a restitution > 0.0 and the entity is not suppressing bounce
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
