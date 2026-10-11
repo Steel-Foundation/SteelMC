@@ -14,8 +14,8 @@ use crate::{
         player_data::PersistentPlayerData, player_data_storage::GlobalPlayerData,
     },
     server::{
-        DomainPlayerData, DomainPlayerState, PlayerAdmissionState, PreparedSpawn, Server,
-        UnpreparedDomainPlayerData, UnpreparedDomainPlayerState,
+        DomainPlayerData, DomainPlayerState, EntryOverride, PlayerAdmissionState, PreparedSpawn,
+        Server, UnpreparedDomainPlayerData, UnpreparedDomainPlayerState,
     },
     world::{
         World,
@@ -31,6 +31,7 @@ pub(in crate::server) struct DomainSwitchJob {
     source_domain: String,
     source_data: Option<Arc<PersistentPlayerData>>,
     target_domain: String,
+    entry_override: Option<EntryOverride>,
     pending_token: PendingWorldChangeToken,
     residence_token: DomainResidenceToken,
     phase: DomainSwitchJobPhase,
@@ -69,6 +70,7 @@ impl DomainSwitchJob {
         source_data: PersistentPlayerData,
         target_domain: String,
         target_world: Option<Arc<World>>,
+        entry_override: Option<EntryOverride>,
         pending_token: PendingWorldChangeToken,
         residence_token: DomainResidenceToken,
     ) -> Self {
@@ -108,6 +110,7 @@ impl DomainSwitchJob {
             source_domain,
             source_data: Some(source_data),
             target_domain,
+            entry_override,
             pending_token,
             residence_token,
             phase: DomainSwitchJobPhase::WaitingForStorage { receiver, task },
@@ -159,6 +162,7 @@ impl DomainSwitchJob {
     fn phase_after_storage(
         server: &Server,
         target_domain: &str,
+        entry_override: Option<EntryOverride>,
         state: UnpreparedDomainPlayerState,
     ) -> Result<DomainSwitchJobPhase, String> {
         let UnpreparedDomainPlayerState {
@@ -166,7 +170,34 @@ impl DomainSwitchJob {
             explicit_target,
             data,
         } = state;
-        if let UnpreparedDomainPlayerData::SavedRestored { data } = data {
+        if let Some(EntryOverride::Exact(destination)) = entry_override {
+            let state = match data {
+                // The saved location, and the vehicle saved with it, are replaced like a teleport
+                // takes a rider off its vehicle.
+                UnpreparedDomainPlayerData::SavedRestored { mut data } => {
+                    data.pos = destination.position.to_array();
+                    data.rotation = [destination.rotation.0, destination.rotation.1];
+                    data.motion = [0.0; 3];
+                    data.root_vehicle = None;
+                    let request = world.request_player_spawn_chunks(destination.position);
+                    DomainPlayerState {
+                        world,
+                        data: DomainPlayerData::SavedRestored { data },
+                        spawn_chunk_request: request,
+                    }
+                }
+                data => Self::state_after_spawn_search(world, data, destination)?,
+            };
+            return Ok(DomainSwitchJobPhase::LoadingSpawn { state });
+        }
+        let rotation_override = match entry_override {
+            Some(EntryOverride::Rotation(rotation)) => Some(rotation),
+            _ => None,
+        };
+        if let UnpreparedDomainPlayerData::SavedRestored { mut data } = data {
+            if let Some((yaw, pitch)) = rotation_override {
+                data.rotation = [yaw, pitch];
+            }
             let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
             let request = world.request_player_spawn_chunks(spawn_position);
             return Ok(DomainSwitchJobPhase::LoadingSpawn {
@@ -195,6 +226,7 @@ impl DomainSwitchJob {
                 (respawn_data.yaw, respawn_data.pitch),
             )
         };
+        let rotation = rotation_override.unwrap_or(rotation);
         let search = PlayerSpawnSearch::new(&world, spawn_suggestion, world.default_gamemode())?
             .with_safe_fallback()
             .with_spawn_area_prefetch(&world);
@@ -372,11 +404,15 @@ impl ServerJob for DomainSwitchJob {
                         Ok(state) => state,
                         Err(error) => return self.finish_source_disconnect(Some(&error)),
                     };
-                    self.phase =
-                        match Self::phase_after_storage(&server, &self.target_domain, state) {
-                            Ok(phase) => phase,
-                            Err(error) => return self.finish_source_disconnect(Some(&error)),
-                        };
+                    self.phase = match Self::phase_after_storage(
+                        &server,
+                        &self.target_domain,
+                        self.entry_override,
+                        state,
+                    ) {
+                        Ok(phase) => phase,
+                        Err(error) => return self.finish_source_disconnect(Some(&error)),
+                    };
                 }
                 DomainSwitchJobPhase::SearchingSpawn {
                     world,

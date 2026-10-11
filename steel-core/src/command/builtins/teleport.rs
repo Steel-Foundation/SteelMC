@@ -305,7 +305,7 @@ fn perform_teleport(
     }
 }
 
-fn ensure_spawnable_position(position: DVec3) -> Result<(), CommandSyntaxError> {
+pub(super) fn ensure_spawnable_position(position: DVec3) -> Result<(), CommandSyntaxError> {
     if World::is_in_spawnable_bounds(BlockPos::from(position)) {
         return Ok(());
     }
@@ -411,7 +411,7 @@ fn packet_rotation(
     ))
 }
 
-fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
+pub(super) fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
     (wrap_degrees(yaw), wrap_degrees(pitch))
 }
 

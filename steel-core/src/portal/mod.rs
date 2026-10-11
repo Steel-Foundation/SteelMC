@@ -6,6 +6,7 @@
 
 use crate::chunk::chunk_request::ChunkRequestHandle;
 use crate::entity::{Entity, PendingWorldChangeToken};
+use crate::server::EntryOverride;
 use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
@@ -451,6 +452,8 @@ pub enum WorldChangeRequest {
         /// Chunks around the target's spawn, requested when the selection was queued so they
         /// start loading in the same tick.
         prefetch: Option<ChunkRequestHandle>,
+        /// Places the player exactly, or only changes their rotation, instead of the spawn search's result.
+        entry_override: Option<EntryOverride>,
     },
     /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {

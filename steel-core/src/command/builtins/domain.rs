@@ -9,7 +9,11 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::{inventory::prelude::*, server::Server, world::World};
+use crate::{
+    inventory::prelude::*,
+    server::{EntryOverride, PreparedSpawn, Server},
+    world::World,
+};
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
@@ -19,6 +23,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use super::teleport::{ensure_spawnable_position, wrap_rotation};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("domain"), |_| command())
@@ -42,10 +47,76 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 
             Ok(1)
         })
-        .then(argument("world", SteelArgumentType::world()).executes(switch_world))
+        .then(
+            argument("world", SteelArgumentType::world())
+                .executes(switch_world)
+                .then(
+                    argument("location", SteelArgumentType::vec3(true))
+                        .executes(switch_world_to_location)
+                        .then(
+                            argument("rotation", SteelArgumentType::rotation())
+                                .executes(switch_world_to_location_with_rotation),
+                        ),
+                )
+                .then(
+                    argument("rotation", SteelArgumentType::rotation())
+                        .executes(switch_world_with_rotation),
+                ),
+        )
 }
 
 fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+    switch_world_to(context, None)
+}
+
+fn switch_world_to_location(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    switch_world_at_location(context, false)
+}
+
+fn switch_world_to_location_with_rotation(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    switch_world_at_location(context, true)
+}
+
+/// Enters the world as usual, then faces the given rotation.
+fn switch_world_with_rotation(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    let rotation = context.coordinates("rotation")?.rotation(context.source());
+    switch_world_to(
+        context,
+        Some(EntryOverride::Rotation(wrap_rotation(rotation))),
+    )
+}
+
+/// Resolves `location` and the optional `rotation` like `/teleport` does: relative parts
+/// are relative to the sender, and the sender's rotation is kept when none is given.
+fn switch_world_at_location(
+    context: &SteelCommandContext<CommandSource>,
+    has_rotation: bool,
+) -> Result<i32, CommandSyntaxError> {
+    let source = context.source();
+    let position = context.coordinates("location")?.position(source);
+    ensure_spawnable_position(position)?;
+    let rotation = if has_rotation {
+        context.coordinates("rotation")?.rotation(source)
+    } else {
+        source.rotation()
+    };
+    let destination = PreparedSpawn {
+        position,
+        rotation: wrap_rotation(rotation),
+    };
+    switch_world_to(context, Some(EntryOverride::Exact(destination)))
+}
+
+fn switch_world_to(
+    context: &SteelCommandContext<CommandSource>,
+    entry_override: Option<EntryOverride>,
+) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
     let Some(player) = source.player() else {
         return Err(CommandSyntaxError::dynamic(
@@ -56,13 +127,21 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world))
+        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world), entry_override)
         .map_err(CommandSyntaxError::dynamic)?;
 
-    source.send_success(
-        &TextComponent::plain(format!("Switching to world {}", world.key)),
-        true,
-    );
+    let message = match entry_override {
+        Some(EntryOverride::Exact(PreparedSpawn { position, .. })) => format!(
+            "Switching to world {} at {:.2} {:.2} {:.2}",
+            world.key, position.x, position.y, position.z
+        ),
+        Some(EntryOverride::Rotation((yaw, pitch))) => format!(
+            "Switching to world {} facing {yaw:.1} {pitch:.1}",
+            world.key
+        ),
+        None => format!("Switching to world {}", world.key),
+    };
+    source.send_success(&TextComponent::plain(message), true);
     Ok(1)
 }
 
@@ -205,10 +284,11 @@ impl MenuKind for DomainMenuKind {
             return ClickOutcome::Consume;
         }
 
-        if let Err(error) = self
-            .server
-            .queue_player_world_selection(Arc::clone(&self.player), Arc::clone(world))
-        {
+        if let Err(error) = self.server.queue_player_world_selection(
+            Arc::clone(&self.player),
+            Arc::clone(world),
+            None,
+        ) {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }
         self.player.close_container();
@@ -257,5 +337,34 @@ mod tests {
             panic!("world argument should exist");
         };
         assert!(world.is_executable());
+    }
+
+    #[test]
+    fn domain_graph_takes_a_location_and_a_rotation_or_only_a_rotation() {
+        init_vanilla_registry();
+        let Ok(dispatcher) = create_dispatcher() else {
+            panic!("built-in commands should register");
+        };
+        let root = child(&dispatcher, dispatcher.root(), "domain");
+        let world = child(&dispatcher, root, "world");
+        let location = child(&dispatcher, world, "location");
+        let arguments = [
+            (location, SteelArgumentType::vec3(true)),
+            (
+                child(&dispatcher, location, "rotation"),
+                SteelArgumentType::rotation(),
+            ),
+            (
+                child(&dispatcher, world, "rotation"),
+                SteelArgumentType::rotation(),
+            ),
+        ];
+        for (node, argument_type) in arguments {
+            let Some(node) = dispatcher.node(node) else {
+                panic!("argument node should exist");
+            };
+            assert_eq!(node.argument_type(), Some(&argument_type));
+            assert!(node.is_executable());
+        }
     }
 }

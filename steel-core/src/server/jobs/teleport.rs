@@ -1,10 +1,11 @@
 use super::super::{
     Arc, BlockPos, ChunkPos, ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkStatus,
-    ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, NetworkConnection,
-    PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch,
-    PlayerSpawnSearchPoll, PreparedSpawn, RelativeMovement, RemovalReason, RespawnData, Server,
-    SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World, change_entity_world,
-    end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal, vanilla_entities,
+    ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, EntryOverride,
+    NetworkConnection, PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player,
+    PlayerSpawnSearch, PlayerSpawnSearchPoll, PreparedSpawn, RelativeMovement, RemovalReason,
+    RespawnData, Server, SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World,
+    change_entity_world, end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal,
+    vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
 use crate::entity::LivingEntity as _;
@@ -189,29 +190,42 @@ impl WorldSpawnTeleportJob {
         target_world: Arc<World>,
         pending_token: PendingWorldChangeToken,
         prefetch: Option<ChunkRequestHandle>,
+        entry_override: Option<EntryOverride>,
     ) -> Result<Self, String> {
         if entity.as_player().is_none() {
             return Err("world spawn selection does not belong to a player".to_owned());
         }
-        let (spawn_suggestion, rotation) = {
+        let (spawn_suggestion, mut rotation) = {
             let level_data = target_world.level_data.read();
             let data = level_data.data();
             (data.spawn_pos(), (data.spawn.angle, 0.0))
         };
-        let search = PlayerSpawnSearch::new(
-            &target_world,
-            spawn_suggestion,
-            target_world.default_gamemode(),
-        )?
-        .with_safe_fallback()
-        .with_prefetch(prefetch);
+        if let Some(EntryOverride::Rotation(turned)) = entry_override {
+            rotation = turned;
+        }
+        let phase = if let Some(EntryOverride::Exact(spawn)) = entry_override {
+            WorldSpawnTeleportPhase::Loading {
+                request: target_world.request_player_spawn_chunks(spawn.position),
+                spawn,
+            }
+        } else {
+            WorldSpawnTeleportPhase::Searching(
+                PlayerSpawnSearch::new(
+                    &target_world,
+                    spawn_suggestion,
+                    target_world.default_gamemode(),
+                )?
+                .with_safe_fallback()
+                .with_prefetch(prefetch),
+            )
+        };
         Ok(Self {
             entity,
             source_world,
             target_world,
             pending_token,
             rotation,
-            phase: WorldSpawnTeleportPhase::Searching(search),
+            phase,
         })
     }
 

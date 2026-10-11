@@ -271,10 +271,22 @@ pub async fn test_server_with_worlds_and_config(
     }))
 }
 
+/// A position and `(yaw, pitch)` rotation a player is placed at when entering a world.
 #[derive(Clone, Copy)]
-struct PreparedSpawn {
-    position: DVec3,
-    rotation: (f32, f32),
+pub struct PreparedSpawn {
+    /// Where the player is placed.
+    pub position: DVec3,
+    /// The player's `(yaw, pitch)` in degrees.
+    pub rotation: (f32, f32),
+}
+
+/// How a world selection overrides where or how the player enters the target world.
+#[derive(Clone, Copy)]
+pub enum EntryOverride {
+    /// Places the player exactly there, with no spawn search and no saved location.
+    Exact(PreparedSpawn),
+    /// Enters at the usual spawn or saved location, then faces this `(yaw, pitch)`.
+    Rotation((f32, f32)),
 }
 
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
@@ -421,6 +433,7 @@ struct DomainSwitchRequest {
     player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
+    entry_override: Option<EntryOverride>,
     pending_token: PendingWorldChangeToken,
 }
 

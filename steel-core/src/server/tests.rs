@@ -78,12 +78,13 @@ use super::player_admission::{PendingPlayerJoin, PlayerAdmissionState};
 use super::service_keys::CONNECT_TIMEOUT as SERVICE_KEY_CONNECT_TIMEOUT;
 use super::{
     CancellationToken, ChunkSender, CommandRequest, DomainPlayerData, DomainPlayerState,
-    EnderPearlRestoreJob, FxHashMap, KnownPlayerCacheState, KnownPlayers, PersistentEnderPearl,
-    PersistentEntity, PersistentPlayerData, PersistentRootVehicle, PreparedSpawn,
-    RootVehicleRestoreJob, Server, SyncMutex, TabListTickStats, UnpreparedDomainPlayerData,
-    UnpreparedDomainPlayerState, can_entity_return_from_end_to_overworld,
-    cap_positive_thread_count, is_allowed_to_enter_portal_target, is_end_return_transition,
-    offline_uuid, portal_entity_still_valid, test_server_with_worlds_and_config,
+    EnderPearlRestoreJob, EntryOverride, FxHashMap, KnownPlayerCacheState, KnownPlayers,
+    PersistentEnderPearl, PersistentEntity, PersistentPlayerData, PersistentRootVehicle,
+    PreparedSpawn, RootVehicleRestoreJob, Server, SyncMutex, TabListTickStats,
+    UnpreparedDomainPlayerData, UnpreparedDomainPlayerState,
+    can_entity_return_from_end_to_overworld, cap_positive_thread_count,
+    is_allowed_to_enter_portal_target, is_end_return_transition, offline_uuid,
+    portal_entity_still_valid, test_server_with_worlds_and_config,
     validate_player_permission_group_update,
 };
 
@@ -1947,21 +1948,25 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(stale_sibling_world))
+                .queue_player_world_selection(
+                    Arc::clone(&player),
+                    Arc::clone(stale_sibling_world),
+                    None
+                )
                 .is_err()
         );
         assert!(!player.is_world_change_pending());
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(sibling_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(sibling_world), None)
                 .is_ok(),
             "world selection is authorization-neutral after command admission"
         );
         assert!(player.is_world_change_pending());
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world), None)
                 .is_err(),
             "the relocation lease must reject a repeated selection"
         );
@@ -1985,7 +1990,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(source_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(source_world), None)
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2001,7 +2006,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world), None)
                 .is_ok()
         );
         let request = server.pending_domain_switches.lock().pop();
@@ -2065,7 +2070,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world))
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(target_world), None)
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2119,6 +2124,241 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         );
 
         drop((player, server));
+    });
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one integration test follows both entry overrides through the same world setup"
+)]
+fn same_domain_world_selection_applies_an_entry_override() {
+    let source_world_fixture = fresh_test_world_in_domain("alpha", "override_source");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_derived_world(source_world, "override_target");
+    let target_world = &target_world_fixture.world;
+    init_behaviors();
+    {
+        let mut level_data = target_world.level_data.write();
+        level_data.data_mut().set_spawn_pos(BlockPos::new(0, 64, 0));
+        level_data.data_mut().spawn.angle = 37.0;
+    }
+    assert!(target_world.set_game_rule(&RESPAWN_RADIUS, 0));
+
+    let domain = ResolvedDomainConfig {
+        name: "alpha".to_owned(),
+        default_world: source_world.key.clone(),
+        worlds: vec![source_world.key.clone(), target_world.key.clone()],
+    };
+    let loaded_worlds = [Arc::clone(source_world), Arc::clone(target_world)];
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server_with_worlds(
+            domain.name.clone(),
+            slice::from_ref(&domain),
+            &loaded_worlds,
+            PermissionSubjectIndex::new(),
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        for z in -3..=3 {
+            for x in -3..=3 {
+                insert_ready_full_chunk(target_world, ChunkPos::new(x, z));
+            }
+        }
+        for y in [64, 65] {
+            assert!(target_world.set_block(
+                BlockPos::new(0, y, 0),
+                vanilla_blocks::STONE.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            ));
+        }
+
+        let exact = PreparedSpawn {
+            position: DVec3::new(10.25, 70.5, -3.75),
+            rotation: (123.0, -20.0),
+        };
+        let overrides = [
+            (1_i32, EntryOverride::Exact(exact)),
+            (2, EntryOverride::Rotation((200.0, 15.0))),
+        ];
+        for (entity_id, entry_override) in overrides {
+            let (player, _) = test_player_with_uuid_and_packets(
+                &server,
+                Arc::clone(source_world),
+                Uuid::from_u128(u128::from(entity_id.unsigned_abs())),
+                "TestPlayer",
+                entity_id,
+            );
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(source_world.players.insert(Arc::clone(&player)));
+            let _ = player.mark_joined_world();
+
+            assert!(
+                server
+                    .queue_player_world_selection(
+                        Arc::clone(&player),
+                        Arc::clone(target_world),
+                        Some(entry_override),
+                    )
+                    .is_ok()
+            );
+            server.process_world_changes(0, true);
+            for tick in 1..=1_000 {
+                target_world.chunk_map.advance_scheduling();
+                server.tick_jobs(tick, true);
+                if server.jobs.is_empty() {
+                    break;
+                }
+                sleep(Duration::from_millis(1)).await;
+            }
+
+            assert!(server.jobs.is_empty());
+            assert!(target_world.contains_player(&player));
+            let (position, rotation) = match entry_override {
+                EntryOverride::Exact(spawn) => (spawn.position, spawn.rotation),
+                // The spawn search still picks the spot above the stone. Only the facing
+                // differs from the world's spawn angle of 37.
+                EntryOverride::Rotation(rotation) => (DVec3::new(0.5, 66.0, 0.5), rotation),
+            };
+            assert_eq!(player.position(), position);
+            assert_eq!(player.rotation(), rotation);
+
+            target_world.remove_player_for_world_change(&player);
+            assert!(server.online_players.remove_player_sync(&player).is_some());
+        }
+
+        source_world.chunk_map.stop_generation_refill_loop();
+        target_world.chunk_map.stop_generation_refill_loop();
+        source_world.chunk_map.task_tracker.close();
+        target_world.chunk_map.task_tracker.close();
+        tokio::join!(
+            source_world.chunk_map.task_tracker.wait(),
+            target_world.chunk_map.task_tracker.wait(),
+        );
+
+        drop(server);
+    });
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one integration test follows both cross-domain placements across storage and chunk scheduling"
+)]
+fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation() {
+    let source_world_fixture = fresh_test_world_in_domain("source", "dest_spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "dest_spawn");
+    let target_world = &target_world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let destination = PreparedSpawn {
+            position: DVec3::new(-12.5, 90.25, 40.75),
+            rotation: (123.0, -20.0),
+        };
+        // The first player has a saved location in the target world, the second is new there.
+        let turned = (200.0, 15.0);
+        let cases = [
+            (1_i32, true, EntryOverride::Exact(destination)),
+            (2, false, EntryOverride::Exact(destination)),
+            (3, true, EntryOverride::Rotation(turned)),
+            (4, false, EntryOverride::Rotation(turned)),
+        ];
+        for (entity_id, has_saved_location, entry_override) in cases {
+            let (player, _) = test_player_with_uuid_and_packets(
+                &server,
+                Arc::clone(source_world),
+                Uuid::from_u128(u128::from(entity_id.unsigned_abs())),
+                "TestPlayer",
+                entity_id,
+            );
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+
+            if has_saved_location {
+                let mut saved = PersistentPlayerData::from_player(&player);
+                saved.world = target_world.key.to_string();
+                saved.pos = [8.5, 70.0, 8.5];
+                let saved = server
+                    .player_data_storage
+                    .save_domain_data("target", player.gameprofile.id, &saved)
+                    .await;
+                if let Err(error) = saved {
+                    panic!("target-domain data should save: {error}");
+                }
+            }
+
+            assert!(
+                server
+                    .queue_player_world_selection(
+                        Arc::clone(&player),
+                        Arc::clone(target_world),
+                        Some(entry_override),
+                    )
+                    .is_ok()
+            );
+            server.process_domain_switches();
+            for tick in 1..=10_000 {
+                source_world.chunk_map.advance_scheduling();
+                target_world.chunk_map.advance_scheduling();
+                server.tick_jobs(tick, true);
+                if server.jobs.is_empty() {
+                    break;
+                }
+                sleep(Duration::from_millis(1)).await;
+            }
+
+            assert!(server.jobs.is_empty(), "domain switch job should finish");
+            assert!(target_world.contains_player(&player));
+            match entry_override {
+                EntryOverride::Exact(_) => {
+                    assert_eq!(player.position(), destination.position);
+                    assert_eq!(player.rotation(), destination.rotation);
+                }
+                EntryOverride::Rotation(_) => {
+                    assert_eq!(player.rotation(), turned);
+                    if has_saved_location {
+                        assert_eq!(player.position(), DVec3::new(8.5, 70.0, 8.5));
+                    }
+                }
+            }
+        }
+
+        drop(server);
     });
 }
 
