@@ -19,13 +19,11 @@ use crate::{
     },
     world::{
         World,
-        player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll},
+        player_spawn_finder::{POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll},
     },
 };
 
 use super::{JobPoll, ServerJob, ServerJobContext};
-
-const DOMAIN_SPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
 pub(in crate::server) struct DomainSwitchJob {
     server: Weak<Server>,
@@ -383,10 +381,7 @@ impl ServerJob for DomainSwitchJob {
                     data,
                     rotation,
                     mut search,
-                } => match search.poll_with_ready_candidate_budget(
-                    &world,
-                    DOMAIN_SPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                ) {
+                } => match search.poll_with_time_budget(&world, POLL_TIME_BUDGET) {
                     PlayerSpawnSearchPoll::Pending => {
                         self.phase = DomainSwitchJobPhase::SearchingSpawn {
                             world,

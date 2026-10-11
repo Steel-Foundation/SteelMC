@@ -8,6 +8,7 @@ use super::super::{
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
 use crate::entity::LivingEntity as _;
+use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 
 pub(in crate::server) struct RootVehicleRestoreJob {
     player: Arc<Player>,
@@ -164,8 +165,6 @@ fn poll_portal_chunks_until_ready(
     }
 }
 
-const WORLD_SPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
-
 pub(in crate::server) struct WorldSpawnTeleportJob {
     entity: SharedEntity,
     source_world: Arc<World>,
@@ -255,10 +254,7 @@ impl ServerJob for WorldSpawnTeleportJob {
         loop {
             match &mut self.phase {
                 WorldSpawnTeleportPhase::Searching(search) => {
-                    match search.poll_with_ready_candidate_budget(
-                        &self.target_world,
-                        WORLD_SPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                    ) {
+                    match search.poll_with_time_budget(&self.target_world, POLL_TIME_BUDGET) {
                         PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
                         PlayerSpawnSearchPoll::Cancelled => {
                             self.finish_pending();
@@ -421,8 +417,6 @@ impl ServerJob for NetherPortalTeleportJob {
         self.request.cancel();
     }
 }
-
-const END_PORTAL_RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
 struct EndPortalRespawnSpawn {
     position: DVec3,
@@ -590,10 +584,7 @@ impl ServerJob for EndPortalTeleportJob {
                     target_world,
                     respawn_data,
                     search,
-                } => match search.poll_with_ready_candidate_budget(
-                    target_world,
-                    END_PORTAL_RESPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                ) {
+                } => match search.poll_with_time_budget(target_world, POLL_TIME_BUDGET) {
                     PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
                     PlayerSpawnSearchPoll::Cancelled => {
                         clear_pending_world_change(&entity, pending_token);
