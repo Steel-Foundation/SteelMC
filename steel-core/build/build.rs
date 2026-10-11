@@ -75,8 +75,19 @@ pub fn main() {
     let git_hash_short = git_output(["rev-parse", "--short=7", "HEAD"]);
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
     println!("cargo:rustc-env=GIT_HASH_SHORT={git_hash_short}");
-    println!("cargo:rerun-if-changed={manifest_dir}/../.git/HEAD");
-    println!("cargo:rerun-if-changed={manifest_dir}/../.git/refs/heads");
+    // Git resolves metadata correctly for normal checkouts, submodules, and worktrees.
+    // Watch refs as a directory to catch loose refs created from previously packed refs.
+    for git_path in ["HEAD", "refs", "packed-refs"] {
+        let resolved = git_output([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            git_path,
+        ]);
+        if Path::new(&resolved).exists() {
+            println!("cargo:rerun-if-changed={resolved}");
+        }
+    }
 }
 
 fn git_output<const N: usize>(args: [&str; N]) -> String {
