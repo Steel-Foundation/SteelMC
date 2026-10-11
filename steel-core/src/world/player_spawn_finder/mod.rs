@@ -25,6 +25,7 @@ mod fallback;
 mod tests;
 
 const PLAYER_SPAWN_CHUNK_RADIUS: u8 = 3;
+const BLOCKS_PER_CHUNK: i32 = 16;
 const CHUNK_REQUEST_POLL_DELAY: Duration = Duration::from_millis(10);
 /// How long one poll may spend evaluating candidates before yielding to the next tick.
 ///
@@ -55,6 +56,11 @@ pub(crate) struct PlayerSpawnSearch {
     /// over [`World::fixup_spawn_height`], which can end in fluid or on a ceiling dimension's roof.
     safe_fallback: bool,
     fallback: FallbackPass,
+    /// Chunks around the spawn suggestion that load while the search runs.
+    prefetch: Option<ChunkRequestHandle>,
+    /// Set once a request made after the prefetch is ready. Ticket receipts commit in order,
+    /// so the prefetch's tickets are then committed too.
+    prefetch_committed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -125,6 +131,8 @@ impl PlayerSpawnSearch {
             loading: None,
             safe_fallback: false,
             fallback: FallbackPass::default(),
+            prefetch: None,
+            prefetch_committed: false,
         })
     }
 
@@ -153,6 +161,52 @@ impl PlayerSpawnSearch {
             radius = 1;
         }
         radius
+    }
+
+    /// Requests the spawn chunk square around `world`'s spawn point, for a search that
+    /// has not been created yet. See [`Self::with_prefetch`].
+    pub(crate) fn prefetch_world_spawn_area(world: &Arc<World>) -> Option<ChunkRequestHandle> {
+        let spawn_suggestion = world.level_data.read().data().spawn_pos();
+        let radius = if world.default_gamemode() == GameType::Adventure {
+            0
+        } else {
+            Self::search_radius(world, spawn_suggestion)
+        };
+        Self::request_spawn_area(world, spawn_suggestion, radius)
+    }
+
+    /// Requests the chunk square around the spawn suggestion, if the search stays within one
+    /// chunk of it. The final spawn is then inside the square, so the square requested after
+    /// the search overlaps this one in at least 36 of its 49 chunks.
+    fn request_spawn_area(
+        world: &Arc<World>,
+        spawn_suggestion: BlockPos,
+        radius: i32,
+    ) -> Option<ChunkRequestHandle> {
+        (radius <= BLOCKS_PER_CHUNK).then(|| {
+            world.chunk_map.request_square(
+                block_to_chunk(spawn_suggestion.x(), spawn_suggestion.z()),
+                PLAYER_SPAWN_CHUNK_RADIUS,
+                ChunkStatus::Full,
+                ChunkTicketKind::PlayerSpawn,
+            )
+        })
+    }
+
+    /// Adopts a spawn area request made by [`Self::prefetch_world_spawn_area`]. Chunk
+    /// generation then overlaps the search instead of following it.
+    #[must_use]
+    pub(crate) fn with_prefetch(mut self, prefetch: Option<ChunkRequestHandle>) -> Self {
+        self.prefetch = prefetch;
+        self
+    }
+
+    /// Starts loading the spawn chunk square around the spawn suggestion now.
+    #[must_use]
+    pub(crate) fn with_spawn_area_prefetch(self, world: &Arc<World>) -> Self {
+        let prefetch =
+            Self::request_spawn_area(world, self.spawn_suggestion, self.sequence.radius());
+        self.with_prefetch(prefetch)
     }
 
     #[must_use]
@@ -233,18 +287,36 @@ impl PlayerSpawnSearch {
         ))
     }
 
-    /// Polls the chunk being read, opening it first when none is. A new request costs a
-    /// tick for its tickets to commit.
+    /// Whether `chunk` is inside the prefetch square and the prefetch's tickets are committed.
+    fn chunk_is_held(&self, chunk: ChunkPos) -> bool {
+        self.prefetch_committed
+            && self
+                .prefetch
+                .as_ref()
+                .is_some_and(|prefetch| prefetch.positions().contains(&chunk))
+    }
+
+    /// Polls the chunk being read, opening it first when none is. A chunk the prefetch holds
+    /// is read directly; any other gets a request, which costs a tick for its tickets to commit.
     fn poll_loading(
         &mut self,
         world: &Arc<World>,
         chunk: ChunkPos,
         next_scan: i32,
     ) -> ChunkLoadState {
-        let load = self
-            .loading
-            .get_or_insert_with(|| ChunkLoad::open(world, chunk, next_scan));
-        load.poll()
+        if self.loading.is_none() {
+            let held = self.chunk_is_held(chunk);
+            self.loading = Some(ChunkLoad::open(world, chunk, next_scan, held));
+        }
+        let Some(load) = &self.loading else {
+            return ChunkLoadState::Waiting;
+        };
+        let state = load.poll(world);
+        if matches!(state, ChunkLoadState::Ready) && load.made_request() && self.prefetch.is_some()
+        {
+            self.prefetch_committed = true;
+        }
+        state
     }
 
     fn result(&self, index: i32) -> CandidateResult {

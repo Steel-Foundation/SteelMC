@@ -1972,6 +1972,7 @@ fn player_world_selection_uses_one_token_owned_route() {
                 WorldChangeRequest::WorldSpawn {
                     target_world,
                     pending_token,
+                    ..
                 },
             )) = pending.pop()
             else {

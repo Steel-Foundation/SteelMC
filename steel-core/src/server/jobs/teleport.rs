@@ -188,6 +188,7 @@ impl WorldSpawnTeleportJob {
         source_world: Arc<World>,
         target_world: Arc<World>,
         pending_token: PendingWorldChangeToken,
+        prefetch: Option<ChunkRequestHandle>,
     ) -> Result<Self, String> {
         if entity.as_player().is_none() {
             return Err("world spawn selection does not belong to a player".to_owned());
@@ -202,7 +203,8 @@ impl WorldSpawnTeleportJob {
             spawn_suggestion,
             target_world.default_gamemode(),
         )?
-        .with_safe_fallback();
+        .with_safe_fallback()
+        .with_prefetch(prefetch);
         Ok(Self {
             entity,
             source_world,

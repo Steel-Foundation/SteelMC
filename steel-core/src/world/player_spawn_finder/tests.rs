@@ -91,9 +91,37 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
         let (x, z) = sequence.column(earlier);
         let expected = DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5);
 
-        let mut search = new_search(world, suggestion);
-        search.sequence.offset = 0;
-        assert_eq!(run_search(world, &mut search), expected);
+        for prefetch in [false, true] {
+            let mut search = new_search(world, suggestion);
+            search.sequence.offset = 0;
+            if prefetch {
+                search = search.with_spawn_area_prefetch(world);
+            }
+            assert_eq!(run_search(world, &mut search), expected);
+        }
+    });
+}
+
+#[test]
+fn prefetched_chunks_are_read_directly_once_their_tickets_are_committed() {
+    with_search_world("prefetch", &vanilla_dimension_types::OVERWORLD, |world| {
+        insert_chunks(world, 3);
+        let mut search = new_search(world, BlockPos::new(0, 64, 0)).with_spawn_area_prefetch(world);
+        let inside = ChunkPos::new(2, -2);
+        let outside = ChunkPos::new(10, 10);
+        assert!(!search.chunk_is_held(inside), "nothing is committed yet");
+
+        for _ in 0..100 {
+            world.chunk_map.advance_scheduling();
+            // The empty world has no valid spawn, so the search keeps going.
+            let _ = search.poll_with_time_budget(world, POLL_TIME_BUDGET);
+            if search.prefetch_committed {
+                break;
+            }
+        }
+        assert!(search.prefetch_committed);
+        assert!(search.chunk_is_held(inside));
+        assert!(!search.chunk_is_held(outside));
     });
 }
 

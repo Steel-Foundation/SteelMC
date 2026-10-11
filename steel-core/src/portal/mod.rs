@@ -4,6 +4,7 @@
 //! loaded runtime worlds and reserves "dimension type" for the vanilla registry
 //! entry that defines world rules.
 
+use crate::chunk::chunk_request::ChunkRequestHandle;
 use crate::entity::{Entity, PendingWorldChangeToken};
 use crate::world::World;
 use glam::DVec3;
@@ -447,6 +448,9 @@ pub enum WorldChangeRequest {
         target_world: Arc<World>,
         /// Runtime token proving this request still owns the player's relocation.
         pending_token: PendingWorldChangeToken,
+        /// Chunks around the target's spawn, requested when the selection was queued so they
+        /// start loading in the same tick.
+        prefetch: Option<ChunkRequestHandle>,
     },
     /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {

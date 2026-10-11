@@ -41,6 +41,10 @@ impl CandidateSequence {
         self.count
     }
 
+    pub(super) const fn radius(&self) -> i32 {
+        self.radius
+    }
+
     /// The block column of the candidate at `index`.
     pub(super) const fn column(&self, index: i32) -> (i32, i32) {
         let value = (self.offset + self.coprime * index) % self.count;

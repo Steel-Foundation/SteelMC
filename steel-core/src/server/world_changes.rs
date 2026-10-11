@@ -6,7 +6,9 @@ use super::{
     change_entity_world, clear_pending_world_change, is_allowed_to_enter_portal,
     is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
 };
+use crate::chunk::chunk_request::ChunkRequestHandle;
 use crate::entity::LivingEntity as _;
+use crate::world::player_spawn_finder::PlayerSpawnSearch;
 
 impl Server {
     pub(super) fn process_world_changes(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
@@ -26,10 +28,12 @@ impl Server {
                 WorldChangeRequest::WorldSpawn {
                     target_world,
                     pending_token,
+                    prefetch,
                 } => self.process_player_world_selection(
                     entity,
                     target_world,
                     pending_token,
+                    prefetch,
                     tick_count,
                     runs_normally,
                 ),
@@ -413,11 +417,13 @@ impl Server {
         let (current_world, pending_token) = self.begin_player_relocation(&player)?;
 
         if current_world.domain() == target_domain {
+            let prefetch = PlayerSpawnSearch::prefetch_world_spawn_area(&target_world);
             self.pending_world_changes.lock().push((
                 player,
                 WorldChangeRequest::WorldSpawn {
                     target_world,
                     pending_token,
+                    prefetch,
                 },
             ));
             return Ok(());
@@ -562,6 +568,7 @@ impl Server {
         entity: SharedEntity,
         target_world: Arc<World>,
         pending_token: PendingWorldChangeToken,
+        prefetch: Option<ChunkRequestHandle>,
         tick_count: u64,
         runs_normally: bool,
     ) {
@@ -582,6 +589,7 @@ impl Server {
             source_world,
             target_world,
             pending_token,
+            prefetch,
         ) {
             Ok(job) => job,
             Err(error) => {
