@@ -933,7 +933,8 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
-            context.fall_distance,
+            context.fall_distance
+                * f64::from(1f32 - state.get_block().config.fall_distance_reduction),
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
@@ -950,6 +951,19 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, context)
+    }
+
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn bounce_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) {
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
@@ -1000,8 +1014,19 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         context: EntityLandingContext,
+        bounced: &mut bool,
     ) -> DVec3 {
-        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+        if context.velocity.y >= 0.0 {
+            return context.velocity;
+        }
+        let restitution = state.get_block().config.bounce_restitution;
+        if restitution <= 0.0 || context.suppresses_bounce || -context.velocity.y <= context.gravity
+        {
+            self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+        } else {
+            *bounced = true;
+            context.velocity_after_fall(restitution)
+        }
     }
 
     /// Default step-on hook.

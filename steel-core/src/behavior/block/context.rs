@@ -1,4 +1,5 @@
 use crate::block_entity::BlockEntity;
+use steel_math::lerp;
 
 use super::{
     Arc, Axis, BlockLocalAabb, BlockPos, BlockStateId, DVec3, DamageSource, Entity, EntityTypeRef,
@@ -334,12 +335,19 @@ impl BlockCollisionContext {
 /// Entity facts needed by `Block.updateEntityMovementAfterFallOn`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityLandingContext {
-    /// Entity velocity before the block landing hook adjusts it.
+    /// Entity velocity before the block landing hook adjusts it (`currentMovement` in vanilla).
     pub velocity: DVec3,
+    /// Vertical movement actually achieved this tick after collision clipping
+    /// (`movement.y` in vanilla `restituteMovementAfterCollisions`).
+    pub achieved_movement_y: f64,
     /// Whether the entity uses vanilla living-entity bounce behavior.
     pub is_living_entity: bool,
     /// Whether vanilla bounce behavior should be suppressed.
     pub suppresses_bounce: bool,
+    /// The gravity applied to the entity.
+    pub gravity: f64,
+    /// The air drag of the entity.
+    pub air_drag: f32,
 }
 
 /// Entity facts needed by `Block.fallOn`.
@@ -484,11 +492,21 @@ impl EntityFallDamage {
 impl EntityLandingContext {
     /// Creates a landing context for a vertical movement collision.
     #[must_use]
-    pub const fn new(velocity: DVec3, is_living_entity: bool, suppresses_bounce: bool) -> Self {
+    pub const fn new(
+        velocity: DVec3,
+        achieved_movement_y: f64,
+        is_living_entity: bool,
+        suppresses_bounce: bool,
+        gravity: f64,
+        air_drag: f32,
+    ) -> Self {
         Self {
             velocity,
+            achieved_movement_y,
             is_living_entity,
             suppresses_bounce,
+            gravity,
+            air_drag,
         }
     }
 
@@ -496,5 +514,86 @@ impl EntityLandingContext {
     #[must_use]
     pub const fn default_velocity_after_fall_on(self) -> DVec3 {
         DVec3::new(self.velocity.x, 0.0, self.velocity.z)
+    }
+
+    /// Computes the Y velocity after bouncing on a block.
+    #[must_use]
+    pub fn velocity_after_fall(&self, restitution: f32) -> DVec3 {
+        // Fraction of the downward movement reached before the collision.
+        let portion_with_movement = if self.velocity.y == 0.0 {
+            1.0
+        } else {
+            self.achieved_movement_y / self.velocity.y
+        };
+
+        let gravity_compensation = portion_with_movement * self.gravity;
+        let effective_drag = lerp(portion_with_movement, 1.0, f64::from(self.air_drag));
+
+        let entity_factor = if self.is_living_entity { 1.0 } else { 0.8 };
+        let restitution = f64::from(restitution) * entity_factor;
+
+        DVec3::new(
+            self.velocity.x,
+            (gravity_compensation - self.velocity.y) * effective_drag * restitution,
+            self.velocity.z,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DVec3, EntityLandingContext};
+
+    fn landing(velocity_y: f64, achieved_movement_y: f64) -> EntityLandingContext {
+        EntityLandingContext::new(
+            DVec3::new(0.25, velocity_y, -0.5),
+            achieved_movement_y,
+            true,
+            false,
+            0.08,
+            0.98,
+        )
+    }
+
+    #[test]
+    fn upward_velocity_is_left_unchanged() {
+        let context = landing(0.3, 0.3);
+        assert_eq!(context.velocity_after_fall(1.0), context.velocity);
+    }
+
+    #[test]
+    fn bounce_is_zeroed_once_downward_speed_reaches_gravity() {
+        let context = landing(-0.05, -0.05);
+        let result = context.velocity_after_fall(1.0);
+        assert_eq!(result.y, 0.0);
+        assert_eq!(result.x, context.velocity.x);
+        assert_eq!(result.z, context.velocity.z);
+    }
+
+    #[test]
+    fn bounce_uses_fraction_of_requested_movement_actually_achieved() {
+        // portionWithMovement = -0.75 / -1.5 = 0.5
+        // gravityCompensation = 0.5 * 0.08 = 0.04
+        // effectiveDrag = lerp(0.5, 1.0, 0.98) = 0.99
+        // result.y = (0.04 - (-1.5)) * 0.99 * 1.0 = 1.5246
+        let context = landing(-1.5, -0.75);
+        let result = context.velocity_after_fall(1.0);
+        assert!((result.y - 1.5246).abs() < 1.0e-6, "got {}", result.y);
+    }
+
+    #[test]
+    fn non_living_entities_bounce_lower() {
+        let living = landing(-1.5, -0.75).velocity_after_fall(1.0);
+        let non_living = EntityLandingContext::new(
+            DVec3::new(0.25, -1.5, -0.5),
+            -0.75,
+            false,
+            false,
+            0.08,
+            0.98,
+        )
+        .velocity_after_fall(1.0);
+
+        assert!((non_living.y - living.y * 0.8).abs() < 1.0e-9);
     }
 }

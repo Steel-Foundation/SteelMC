@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::entity::leash::Leashable;
-use steel_math::DEGREE_90;
+use steel_math::{DEGREE_90, clamp};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -3185,6 +3185,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
+    /// get the air drag value of the entity
+    fn get_air_drag(&self) -> f32 {
+        let Some(entity) = self.as_living_entity() else {
+            return 0.98f32;
+        };
+        compute_modified_friction(
+            0.98f32,
+            entity
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
+        )
+    }
+
     /// Applies gravity to the entity's velocity.
     fn apply_gravity(&self) {
         let gravity = self.get_gravity();
@@ -3323,19 +3337,37 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
                 velocity,
+                result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
+                self.get_gravity(),
+                self.get_air_drag(),
             );
+
             let next_velocity =
                 if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
                     let effect_state = world.get_block_state(effect_pos);
                     let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-                    behavior.update_entity_movement_after_fall_on(
+                    let mut bounced = false;
+                    let res = behavior.update_entity_movement_after_fall_on(
                         effect_state,
                         &world,
                         effect_pos,
                         landing_context,
-                    )
+                        &mut bounced,
+                    );
+                    if bounced {
+                        behavior.bounce_on(
+                            effect_state,
+                            &world,
+                            effect_pos,
+                            EntityFallOnContext::from_entity(
+                                self.fall_distance(),
+                                self.as_entity_event_source(),
+                            ),
+                        );
+                    }
+                    res
                 } else {
                     landing_context.default_velocity_after_fall_on()
                 };
@@ -3737,6 +3769,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
         // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
     }
+}
+
+fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
+    clamp(f64::from(1.0 - (1.0 - friction) * modifier), 0.0, 1.0) as f32
 }
 
 /// Repositions a direct passenger from the vehicle's attachment point.

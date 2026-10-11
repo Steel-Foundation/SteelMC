@@ -1,13 +1,15 @@
 use crate::behavior::{
-    BlockBehavior, EntityLandingContext, blocks::vegetation::bonemealable::Bonemealable,
+    BlockBehavior, EntityFallOnContext, blocks::vegetation::bonemealable::Bonemealable,
     context::BlockPlaceContext,
 };
 use crate::entity::ai::path::PathComputationType;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
-use glam::DVec3;
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
+use steel_protocol::packets::game::SoundSource;
+use steel_registry::sound_events::BLOCK_SHELF_MUSHROOM_BOUNCE;
+use steel_registry::vanilla_entities::{ITEM_DISPLAY, TNT};
 use steel_registry::{
     blocks::{
         BlockRef,
@@ -22,8 +24,6 @@ use steel_utils::{BlockPos, BlockStateId};
 const MAX_AGE: u8 = 1;
 const AGE: &IntProperty = &BlockStateProperties::AGE_1;
 const FACING_PROPERTY: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
-
-const MUSHROOM_SHELF_BOUNCE_SCALE: f64 = 0.75f64;
 
 /// Shelf Mushroom Block behavior
 #[block_behavior(class = "ShelfMushroomBlock")]
@@ -44,20 +44,6 @@ impl ShelfMushroomBlock {
 
     fn facing(state: BlockStateId) -> Direction {
         state.get_value(FACING_PROPERTY)
-    }
-
-    #[must_use]
-    fn velocity_after_fall(context: EntityLandingContext) -> DVec3 {
-        if context.velocity.y >= 0.0 {
-            return context.velocity;
-        }
-
-        let bounce_factor = if context.is_living_entity { 1.0 } else { 0.8 };
-        DVec3::new(
-            context.velocity.x,
-            -context.velocity.y * bounce_factor,
-            context.velocity.z,
-        )
     }
 }
 
@@ -87,20 +73,6 @@ impl BlockBehavior for ShelfMushroomBlock {
         None
     }
 
-    fn update_entity_movement_after_fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityLandingContext,
-    ) -> DVec3 {
-        if context.suppresses_bounce {
-            return self.default_update_entity_movement_after_fall_on(state, world, pos, context);
-        }
-
-        Self::velocity_after_fall(context)
-    }
-
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -128,6 +100,25 @@ impl BlockBehavior for ShelfMushroomBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn bounce_on(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) {
+        if context.entity.entity_type != &ITEM_DISPLAY && context.entity.entity_type != &TNT {
+            world.play_sound(
+                &BLOCK_SHELF_MUSHROOM_BOUNCE,
+                SoundSource::Blocks,
+                pos,
+                1.0f32,
+                1.0f32,
+                None,
+            );
+        }
     }
 }
 
