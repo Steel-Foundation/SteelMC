@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _, InteractionResult, InventoryAccess, PlacementSource,
+        BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
+        InteractionResult, InventoryAccess, PlacementSource,
     },
     entity::{Entity, ai::path::PathComputationType, dismount_helper},
     player::Player,
