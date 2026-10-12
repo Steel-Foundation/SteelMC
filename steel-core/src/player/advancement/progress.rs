@@ -10,8 +10,8 @@ use steel_registry::advancement::registry::AdvancementRef;
 #[derive(Debug, Default, Clone)]
 pub struct AdvancementProgressMap {
     /// A map of all advancement progress for the player.
-    pub(crate) map: FxHashMap<AdvancementRef, usize>,
-    pub(crate) order: Vec<(AdvancementRef, AdvancementProgress)>,
+    map: FxHashMap<AdvancementRef, usize>,
+    order: Vec<(AdvancementRef, AdvancementProgress)>,
 }
 
 impl AdvancementProgressMap {
