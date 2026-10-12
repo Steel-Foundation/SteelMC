@@ -79,23 +79,13 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
 /// Uses the sign's rotation (from block state) and the player's position
 /// relative to the sign to determine which side they're looking at.
 pub fn facing_text_slot(state: BlockStateId, pos: BlockPos, player: &Player) -> SignTextSlot {
-    let player_pos = player.position();
-    facing_text_slot_from(state, pos, player_pos.x, player_pos.z)
-}
-
-/// [`facing_text_slot`] against a raw viewer position.
-fn facing_text_slot_from(
-    state: BlockStateId,
-    pos: BlockPos,
-    player_x: f64,
-    player_z: f64,
-) -> SignTextSlot {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
     // Calculate player's angle relative to the sign center
-    let dx = player_x - (f64::from(pos.0.x) + 0.5);
-    let dz = player_z - (f64::from(pos.0.z) + 0.5);
+    let player_pos = player.position();
+    let dx = player_pos.x - (f64::from(pos.0.x) + 0.5);
+    let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
 
     // Calculate angle from sign to player (in degrees, -90 to account for Minecraft's coordinate system)
     let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
@@ -210,19 +200,7 @@ fn can_wall_hanging_sign_survive(
 //   - Get the SignText for the side player is facing
 //   - If color differs from dye color, update it and consume the dye
 //   - Play DYE_USE sound
-// - Glow Ink Sac: Make sign text glow
-//   - Check if sign is not waxed
-//   - If text is not already glowing, set has_glowing_text = true
-//   - Consume the ink sac
-//   - Play GLOW_INK_SAC_USE sound
-// - Ink Sac: Remove glow from sign text
-//   - Check if sign is not waxed
-//   - If text is glowing, set has_glowing_text = false
-//   - Consume the ink sac
-//   - Play INK_SAC_USE sound
 // - Honeycomb: Wax the sign (prevents future edits)
-//   - If sign is not already waxed, set is_waxed = true
-//   - Consume the honeycomb
 //   - Play HONEYCOMB_WAX_ON sound
 //   - Spawn WAX_ON particles
 

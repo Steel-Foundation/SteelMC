@@ -242,8 +242,8 @@ pub mod vanilla_recipe_types {
 
     use super::{RecipeType, RecipeTypeRegistry};
     use crate::recipe::{
-        BrewingRecipe, BrewingRecipeInput, CookingRecipe, CraftingInput, CraftingRecipe,
-        SingleItemRecipeInput, SmithingRecipe, SmithingRecipeInput, StonecuttingRecipe,
+        CookingRecipe, CraftingInput, CraftingRecipe, SingleItemRecipeInput, SmithingRecipe,
+        SmithingRecipeInput, StonecuttingRecipe,
     };
 
     const fn cooking_type(key: &'static str) -> RecipeType<CookingRecipe, SingleItemRecipeInput> {
@@ -263,8 +263,6 @@ pub mod vanilla_recipe_types {
         RecipeType::new(Identifier::vanilla_static("stonecutting"));
     pub static SMITHING: RecipeType<SmithingRecipe, SmithingRecipeInput> =
         RecipeType::new(Identifier::vanilla_static("smithing"));
-    pub static BREWING: RecipeType<BrewingRecipe, BrewingRecipeInput> =
-        RecipeType::new(Identifier::vanilla_static("brewing"));
 
     pub(crate) fn register(registry: &mut RecipeTypeRegistry) {
         registry.register(&CRAFTING);
@@ -274,6 +272,5 @@ pub mod vanilla_recipe_types {
         registry.register(&CAMPFIRE_COOKING);
         registry.register(&STONECUTTING);
         registry.register(&SMITHING);
-        registry.register(&BREWING);
     }
 }

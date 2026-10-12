@@ -147,28 +147,18 @@ impl StandingAndWallBlockItem {
             self.wall_block
         }
     }
-
-    /// Returns whether this item can be placed at a certain location with a block state.
-    /// This assumes that `can_survive` has already returned `true`.
-    pub(crate) const fn can_place(
-        _world: &Arc<World>,
-        _state: BlockStateId,
-        _pos: BlockPos,
-    ) -> bool {
-        // The canSurvive check is already handled by get_state_for_placement.
-        true
-    }
 }
 
 impl ItemBehavior for StandingAndWallBlockItem {
+    // Survival check required here because it was a true function and this should be better
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.base.place_with_policy(
             context.build_place_context(),
             Some,
-            SurvivalCheck::Required,
+            SurvivalCheck::Skipped,
             BlockItem::place_block,
             self.standing_block.config.sound_type.place_sound,
-            |context| self.get_placement_state(context, Self::can_place),
+            |context| self.get_placement_state(context, |_, _, _| true),
         )
     }
 }

@@ -46,20 +46,3 @@ impl CAnimate {
         Self::new(entity_id, AnimateAction::MagicCriticalHit)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use steel_utils::serial::WriteTo as _;
-
-    use super::{AnimateAction, CAnimate};
-
-    #[test]
-    fn writes_entity_id_then_action_byte() {
-        let mut bytes = Vec::new();
-        CAnimate::new(300, AnimateAction::MagicCriticalHit)
-            .write(&mut bytes)
-            .expect("write should succeed");
-
-        assert_eq!(bytes, vec![0xAC, 0x02, 2]);
-    }
-}

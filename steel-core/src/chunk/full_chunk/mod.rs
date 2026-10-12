@@ -460,7 +460,7 @@ impl FullChunkRef<'_> {
                     ProtoBlockEntityAdoption::Retry => {}
                     ProtoBlockEntityAdoption::Gone => break,
                     ProtoBlockEntityAdoption::Discarded => {
-                        log::debug!(
+                        log::warn!(
                             "Discarding promoted block entity {} at {pos:?}: block {} does not accept that type",
                             block_entity.get_type().key,
                             state.get_block().key,

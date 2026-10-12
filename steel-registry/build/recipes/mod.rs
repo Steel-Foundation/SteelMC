@@ -6,7 +6,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::Value;
 
-mod brewing;
 mod cooking;
 mod crafting;
 mod serializer;
@@ -40,6 +39,8 @@ pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed={}", recipe_dir.display());
 
     let mut recipes: Vec<ParsedRecipe> = read_resources(recipe_dir);
+    // TODO: generate `minecraft:brewing` recipes once brewing stands are implemented.
+    recipes.retain(|recipe| string_field(&recipe.value, "type") != "minecraft:brewing");
     recipes.sort_by(|left, right| left.name.cmp(&right.name));
 
     let declarations: Vec<_> = recipes.iter().map(generate_declaration).collect();

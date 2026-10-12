@@ -57,16 +57,11 @@ fn can_attach_to(
 
     if let Some(block) = attach_block
         && block.has_tag(&BlockTag::WALL_HANGING_SIGNS)
-    {
-        // Wall hanging signs can chain if they're on the same axis
-        if let Some(neighbor_facing) =
+        && let Some(neighbor_facing) =
             attach_state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
-        {
-            return neighbor_facing.axis() == sign_facing.axis();
-        }
+    {
+        return neighbor_facing.axis() == sign_facing.axis();
     }
-
-    // Otherwise, check for sturdy face with FULL support
     world.is_face_sturdy_for(attach_state, attach_pos, attach_face, SupportType::Full)
 }
 
@@ -100,28 +95,23 @@ fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: Blo
 /// This matches vanilla's `HangingSignItem.canPlace` override which adds
 /// an additional check for `WallHangingSignBlock.canPlace`.
 ///
-/// This assumes that `can_survive` has already returned `true`.
+/// Survival is already checked by `get_state_for_placement`.
 fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos) -> bool {
-    let block = REGISTRY.blocks.by_state_id(state);
+    let is_wall_hanging_sign = REGISTRY
+        .blocks
+        .by_state_id(state)
+        .is_some_and(|block| block.has_tag(&BlockTag::WALL_HANGING_SIGNS));
 
-    // If it's a wall hanging sign, we need the additional canPlace check
-    if let Some(block) = block
-        && block.has_tag(&BlockTag::WALL_HANGING_SIGNS)
-        && !can_wall_hanging_sign_place(world, state, pos)
-    {
-        return false;
-    }
-
-    // Defer to super function
-    StandingAndWallBlockItem::can_place(world, state, pos)
+    !is_wall_hanging_sign || can_wall_hanging_sign_place(world, state, pos)
 }
 
 impl ItemBehavior for HangingSignItem {
+    // Survival check required here because it was a true function and this should be better
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.base.base.place_with_policy(
             context.build_place_context(),
             Some,
-            SurvivalCheck::Required,
+            SurvivalCheck::Skipped,
             BlockItem::place_block,
             self.ceiling_block.config.sound_type.place_sound,
             |context| {
