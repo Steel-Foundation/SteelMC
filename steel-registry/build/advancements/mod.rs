@@ -1,12 +1,13 @@
 use crate::advancements::criterion::{CriterionJson, parse_criteria};
 use crate::advancements::display::{AdvancementDisplayJson, parse_display};
-use crate::generator_functions::{generate_identifier, generate_option, generate_vec};
+use crate::generator_functions::{
+    ResourceData, generate_identifier, generate_option, generate_vec, read_resources,
+};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 use steel_utils::Identifier;
 
@@ -72,6 +73,22 @@ struct AdvancementData {
     advancement: AdvancementJson,
 }
 
+impl ResourceData<AdvancementJson> for AdvancementData {
+    fn new_data(key: String, value: AdvancementJson) -> Self {
+        let const_name = key.replace('/', "_").to_shouty_snake_case();
+        let const_ident = Ident::new(&const_name, Span::call_site());
+        AdvancementData {
+            key,
+            const_ident,
+            advancement: value,
+        }
+    }
+
+    fn name() -> &'static str {
+        "advancement"
+    }
+}
+
 impl ToTokens for AdvancementData {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let const_ident = &self.const_ident;
@@ -102,7 +119,7 @@ pub(crate) fn build() -> TokenStream {
     let advancement_dir =
         Path::new("../steel-utils/build_assets/builtin_datapacks/minecraft/advancement");
     println!("cargo:rerun-if-changed={}", advancement_dir.display());
-    let mut advancements = read_advancements(advancement_dir);
+    let mut advancements: Vec<AdvancementData> = read_resources(advancement_dir);
     advancements.sort_by(|a, b| a.key.cmp(&b.key));
 
     let mut stream = TokenStream::new();
@@ -140,53 +157,4 @@ pub(crate) fn build() -> TokenStream {
         }
     });
     stream
-}
-
-fn read_advancements(dir: &Path) -> Vec<AdvancementData> {
-    let mut advancements = Vec::new();
-    read_advancements_from(dir, dir, &mut advancements);
-    advancements
-}
-
-fn read_advancements_from(root: &Path, dir: &Path, advancements: &mut Vec<AdvancementData>) {
-    let entries = fs::read_dir(dir).unwrap_or_else(|error| {
-        panic!(
-            "Cannot read advancement directory {}: {error}",
-            dir.display()
-        )
-    });
-    for entry in entries {
-        let entry = entry.unwrap_or_else(|error| {
-            panic!(
-                "Cannot read an entry in advancement directory {}: {error}",
-                dir.display()
-            )
-        });
-        let path = entry.path();
-        if path.is_dir() {
-            read_advancements_from(root, &path, advancements);
-            continue;
-        }
-        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
-            continue;
-        }
-        let key = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .with_extension("")
-            .to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/");
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("Cannot read advancement {}: {error}", path.display()));
-        let const_name = key.replace('/', "_").to_shouty_snake_case();
-        let const_ident = Ident::new(&const_name, Span::call_site());
-        let advancement: AdvancementJson = serde_json::from_str(&source)
-            .unwrap_or_else(|e| panic!("Failed to parse advancement {const_name}: {e}"));
-
-        advancements.push(AdvancementData {
-            key,
-            const_ident,
-            advancement,
-        });
-    }
 }
