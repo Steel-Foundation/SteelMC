@@ -214,6 +214,14 @@ impl Beardifier {
         self.rigids.is_empty() && self.junctions.is_empty()
     }
 
+    /// Whether [`Self::compute`] can be non-zero anywhere in the inclusive
+    /// block box `min..=max`.
+    #[must_use]
+    pub fn may_affect(&self, min: IVec3, max: IVec3) -> bool {
+        self.affected_box
+            .is_some_and(|affected| affected.intersects_bounds(min, max))
+    }
+
     /// Compute the total density contribution at a world-space block position.
     ///
     /// Returns 0.0 if no structures are nearby.
