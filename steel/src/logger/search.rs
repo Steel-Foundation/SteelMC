@@ -86,7 +86,20 @@ impl ReverseSearch {
 
     pub(super) fn prompt(&self) -> String {
         let failed = if self.failed { "failed " } else { "" };
-        format!("({failed}reverse-i-search)`{}': ", self.query)
+        let head = format!("({failed}reverse-i-search)`");
+        const TAIL: &str = "': ";
+
+        // Keep the prompt within half the terminal so the input stays visible and
+        // the line never wraps; an overlong query shows only its end.
+        let budget = (super::terminal_width() / 2)
+            .saturating_sub(head.chars().count() + TAIL.len())
+            .max(1);
+        let query_len = self.query.chars().count();
+        if query_len <= budget {
+            return format!("{head}{}{TAIL}", self.query);
+        }
+        let tail: String = self.query.chars().skip(query_len - (budget - 1)).collect();
+        format!("{head}…{tail}{TAIL}")
     }
 
     pub(super) fn match_range(&self) -> Option<Range<usize>> {
