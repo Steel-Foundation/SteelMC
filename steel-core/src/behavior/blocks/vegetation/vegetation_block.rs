@@ -17,7 +17,7 @@ pub trait Vegetation {
 }
 
 /// Shared survival logic for basic vegetation.
-pub fn vegetation_can_survive<H: Vegetation>(
+pub(crate) fn vegetation_can_survive<H: Vegetation>(
     hooks: &H,
     _state: BlockStateId,
     world: &dyn LevelReader,
@@ -31,7 +31,7 @@ pub fn vegetation_can_survive<H: Vegetation>(
 ///
 /// Important: this calls the final `BlockBehavior::can_survive`,
 /// not `vegetation_can_survive`, so leaf blocks can override survival.
-pub fn survival_update_shape<B: BlockBehavior>(
+pub(crate) fn survival_update_shape<B: BlockBehavior>(
     block: &B,
     state: BlockStateId,
     world: &dyn ScheduledTickAccess,

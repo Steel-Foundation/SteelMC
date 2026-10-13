@@ -200,7 +200,9 @@ fn invsee_rejects_players_in_different_domains() {
     finish_domain_switch(&target, switch_token);
     assert!(ensure_same_domain(&source, &target).is_ok());
 
-    target.set_world(fresh_test_world_in_domain("other", "invsee_target"));
+    let target_world_fixture = fresh_test_world_in_domain("other", "invsee_target");
+    let target_world = &target_world_fixture.world;
+    target.set_world(Arc::clone(target_world));
 
     assert!(ensure_same_domain(&source, &target).is_err());
 }
@@ -483,7 +485,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0, 39]);
 
-    recording.player.tick();
+    Arc::clone(&recording.player).tick();
 
     assert_eq!(
         player_inventory_updates(&recording.packets),
@@ -525,7 +527,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
     }
     recording.packets.lock().clear();
 
-    recording.player.tick();
+    Arc::clone(&recording.player).tick();
     assert_eq!(player_inventory_updates(&recording.packets).len(), 0);
 
     recording.player.do_close_container();
@@ -697,7 +699,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     finish_domain_switch(&source, source_switch_token);
     assert!(readonly_menu.still_valid(&source));
 
-    source.set_world(fresh_test_world_in_domain("other", "invsee_viewer"));
+    let target_world_fixture = fresh_test_world_in_domain("other", "invsee_viewer");
+    let target_world = &target_world_fixture.world;
+    source.set_world(Arc::clone(target_world));
     assert!(!readonly_menu.still_valid(&source));
     source.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));
@@ -707,7 +711,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     finish_domain_switch(&target, target_switch_token);
     assert!(readonly_menu.still_valid(&source));
 
-    target.set_world(fresh_test_world_in_domain("other", "invsee_domain"));
+    let target_world_fixture = fresh_test_world_in_domain("other", "invsee_domain");
+    let target_world = &target_world_fixture.world;
+    target.set_world(Arc::clone(target_world));
     assert!(!readonly_menu.still_valid(&source));
     target.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));

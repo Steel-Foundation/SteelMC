@@ -190,14 +190,15 @@ mod tests {
     #[test]
     fn potent_sulfur_ticker_selection_matches_live_geyser_state() {
         init_vanilla_registry();
-        let world = fresh_test_world("potent_sulfur_ticker");
+        let world_fixture = fresh_test_world("potent_sulfur_ticker");
+        let world = &world_fixture.world;
         let behavior = PotentSulfurBlock::new(&vanilla_blocks::POTENT_SULFUR);
         let base = vanilla_blocks::POTENT_SULFUR.default_state();
 
         let dry = base.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Dry);
         assert!(
             behavior
-                .get_block_entity_ticker(&world, dry, &vanilla_block_entity_types::POTENT_SULFUR,)
+                .get_block_entity_ticker(world, dry, &vanilla_block_entity_types::POTENT_SULFUR,)
                 .is_none()
         );
 
@@ -213,7 +214,7 @@ mod tests {
             assert!(
                 behavior
                     .get_block_entity_ticker(
-                        &world,
+                        world,
                         state,
                         &vanilla_block_entity_types::POTENT_SULFUR,
                     )
@@ -223,7 +224,7 @@ mod tests {
 
         assert!(
             behavior
-                .get_block_entity_ticker(&world, wet, &vanilla_block_entity_types::CHEST)
+                .get_block_entity_ticker(world, wet, &vanilla_block_entity_types::CHEST)
                 .is_none()
         );
     }

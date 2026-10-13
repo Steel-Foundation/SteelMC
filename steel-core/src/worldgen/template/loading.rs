@@ -144,16 +144,16 @@ impl StructureTemplate {
     ) -> Result<Vec<BlockStateId>, String> {
         let mut states = Vec::with_capacity(entries.len());
         for entry in entries.clone() {
-            let Some(name) = entry.string("Name") else {
+            let Some(name) = entry.string("id") else {
                 return Err(format!(
-                    "structure template {context} has palette entry without Name"
+                    "structure template {context} has palette entry without id"
                 ));
             };
             let name = Identifier::from_str(name.to_str().as_ref()).map_err(|err| {
                 format!("structure template {context} has invalid block identifier: {err}")
             })?;
             let mut properties = BTreeMap::new();
-            if let Some(props) = entry.compound("Properties") {
+            if let Some(props) = entry.compound("properties") {
                 for (key, value) in props.iter() {
                     let Some(value) = value.string() else {
                         return Err(format!(

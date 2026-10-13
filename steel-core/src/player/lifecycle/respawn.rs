@@ -114,7 +114,7 @@ impl PlayerRespawnJob {
                 let fallback_search = PlayerSpawnSearch::new(
                     &fallback_world,
                     fallback_respawn_data.pos(),
-                    fallback_world.default_gamemode,
+                    fallback_world.default_gamemode(),
                 )?;
                 (
                     fallback_world,
@@ -265,7 +265,7 @@ impl ServerJob for PlayerRespawnJob {
                     let fallback_search = match PlayerSpawnSearch::new(
                         &fallback_world,
                         fallback_respawn_data.pos(),
-                        fallback_world.default_gamemode,
+                        fallback_world.default_gamemode(),
                     ) {
                         Ok(search) => search,
                         Err(error) => {
@@ -369,7 +369,7 @@ impl PlayerRespawnJob {
         if state.is_bed()
             && Player::bed_rule_value_allows_in_world(
                 world,
-                world.dimension_type.bed_rule.can_set_spawn,
+                Player::bed_rule_for(world, state).can_set_spawn,
             )
         {
             let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);

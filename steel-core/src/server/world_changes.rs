@@ -398,12 +398,12 @@ impl Server {
     pub fn queue_player_world_selection(
         &self,
         player: Arc<Player>,
-        target_world: Arc<World>,
+        target_world: &Arc<World>,
     ) -> Result<(), String> {
         let target_world = self
             .worlds
             .get(&target_world.key)
-            .filter(|registered| Arc::ptr_eq(registered, &target_world))
+            .filter(|registered| Arc::ptr_eq(registered, target_world))
             .cloned()
             .ok_or_else(|| "target world is not the registered loaded world".to_owned())?;
         let target_domain = target_world.domain().to_owned();

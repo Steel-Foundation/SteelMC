@@ -156,9 +156,9 @@ mod tests {
     #[test]
     fn replacement_retains_ender_chest_for_death_and_end_respawns() {
         init_vanilla_registry();
-        let world = fresh_test_world("respawn_restore_ender_chest");
-        let old_player =
-            TestPlayerBuilder::new(Arc::clone(&world), "Respawning", ENTITY_ID).build();
+        let world_fixture = fresh_test_world("respawn_restore_ender_chest");
+        let world = &world_fixture.world;
+        let old_player = TestPlayerBuilder::new(Arc::clone(world), "Respawning", ENTITY_ID).build();
         old_player
             .ender_chest_inventory
             .lock()
@@ -166,7 +166,7 @@ mod tests {
 
         for restore_all in [false, true] {
             let replacement =
-                old_player.new_respawn_replacement(Arc::clone(&world), restore_all, false, true);
+                old_player.new_respawn_replacement(Arc::clone(world), restore_all, false, true);
 
             assert!(Arc::ptr_eq(
                 &replacement.ender_chest_inventory,
@@ -182,20 +182,22 @@ mod tests {
     #[test]
     fn replacement_is_fresh_detached_entity_in_same_session() {
         init_vanilla_registry();
-        let source_world = fresh_test_world("respawn_restore_identity_source");
-        let target_world = fresh_test_world("respawn_restore_identity_target");
+        let source_world_fixture = fresh_test_world("respawn_restore_identity_source");
+        let source_world = &source_world_fixture.world;
+        let target_world_fixture = fresh_test_world("respawn_restore_identity_target");
+        let target_world = &target_world_fixture.world;
         let client_information = ClientInformation {
             language: "en_gb".to_owned(),
             view_distance: 3,
             ..ClientInformation::default()
         };
-        let old_player = TestPlayerBuilder::new(source_world, "Respawning", ENTITY_ID)
+        let old_player = TestPlayerBuilder::new(Arc::clone(source_world), "Respawning", ENTITY_ID)
             .client_information(client_information)
             .build();
         old_player.teleport_state.lock().teleport_id = 41;
 
         let replacement =
-            old_player.new_respawn_replacement(Arc::clone(&target_world), false, false, true);
+            old_player.new_respawn_replacement(Arc::clone(target_world), false, false, true);
 
         assert_eq!(replacement.id(), old_player.id());
         assert_eq!(replacement.uuid(), old_player.uuid());
@@ -204,7 +206,7 @@ mod tests {
         assert!(Arc::ptr_eq(&replacement.connection, &old_player.connection));
         assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
         assert!(Arc::ptr_eq(&replacement.config, &old_player.config));
-        assert!(Arc::ptr_eq(&replacement.get_world(), &target_world));
+        assert!(Arc::ptr_eq(&replacement.get_world(), target_world));
         assert_eq!(replacement.client_information().language, "en_gb");
         assert_eq!(replacement.client_information().view_distance, 3);
         assert_eq!(replacement.teleport_state.lock().teleport_id, 41);
@@ -227,9 +229,12 @@ mod tests {
     fn restore_all_copies_vanilla_restore_state_without_mutating_source() {
         init_vanilla_registry();
         init_behaviors();
-        let source_world = fresh_test_world("respawn_restore_all_source");
-        let target_world = fresh_test_world("respawn_restore_all_target");
-        let old_player = TestPlayerBuilder::new(source_world, "Credits", ENTITY_ID).build();
+        let source_world_fixture = fresh_test_world("respawn_restore_all_source");
+        let source_world = &source_world_fixture.world;
+        let target_world_fixture = fresh_test_world("respawn_restore_all_target");
+        let target_world = &target_world_fixture.world;
+        let old_player =
+            TestPlayerBuilder::new(Arc::clone(source_world), "Credits", ENTITY_ID).build();
         let permanent_modifier_id = Identifier::vanilla_static("respawn_restore_test");
 
         old_player.restore_game_modes(GameType::Spectator, Some(GameType::Creative));
@@ -287,7 +292,8 @@ mod tests {
             .set_position_local(DVec3::new(10.0, 80.0, 10.0));
         old_player.mark_joined_world();
 
-        let replacement = old_player.new_respawn_replacement(target_world, true, false, true);
+        let replacement =
+            old_player.new_respawn_replacement(Arc::clone(target_world), true, false, true);
 
         assert_eq!(replacement.game_mode(), GameType::Spectator);
         assert_eq!(replacement.previous_game_mode(), Some(GameType::Creative));
@@ -346,9 +352,12 @@ mod tests {
     fn death_restore_keeps_fresh_state_unless_inventory_transfer_is_requested() {
         init_vanilla_registry();
         init_behaviors();
-        let source_world = fresh_test_world("respawn_restore_death_source");
-        let target_world = fresh_test_world("respawn_restore_death_target");
-        let old_player = TestPlayerBuilder::new(source_world, "Death", ENTITY_ID).build();
+        let source_world_fixture = fresh_test_world("respawn_restore_death_source");
+        let source_world = &source_world_fixture.world;
+        let target_world_fixture = fresh_test_world("respawn_restore_death_target");
+        let target_world = &target_world_fixture.world;
+        let old_player =
+            TestPlayerBuilder::new(Arc::clone(source_world), "Death", ENTITY_ID).build();
         let permanent_modifier_id = Identifier::vanilla_static("death_restore_test");
 
         {
@@ -390,8 +399,9 @@ mod tests {
         ));
 
         let fresh =
-            old_player.new_respawn_replacement(Arc::clone(&target_world), false, false, false);
-        let transferred = old_player.new_respawn_replacement(target_world, false, true, true);
+            old_player.new_respawn_replacement(Arc::clone(target_world), false, false, false);
+        let transferred =
+            old_player.new_respawn_replacement(Arc::clone(target_world), false, true, true);
 
         assert_eq!(fresh.get_health().to_bits(), 30.0_f32.to_bits());
         assert!(

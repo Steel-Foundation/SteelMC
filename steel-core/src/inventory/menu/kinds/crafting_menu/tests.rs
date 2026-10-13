@@ -21,15 +21,16 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, WorldAabb};
 fn partial_result_overflow_uses_the_default_drop_policy() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("crafting_menu_partial_result_overflow");
+    let world_fixture = fresh_test_world("crafting_menu_partial_result_overflow");
+    let world = &world_fixture.world;
     let pos = BlockPos::new(0, 64, 0);
-    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     assert!(world.set_block(
         pos,
         vanilla_blocks::CRAFTING_TABLE.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "Crafter", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Crafter", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     let mut menu = crafting(Arc::clone(&player.inventory), 1, pos);
     let Some(kind) = menu.kind().downcast_ref::<CraftingKind>() else {

@@ -268,11 +268,12 @@ mod tests {
     fn entity_inside_powers_wire_and_attached_hooks() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("tripwire_entity_inside");
+        let world_fixture = fresh_test_world("tripwire_entity_inside");
+        let world = &world_fixture.world;
         let left = BlockPos::new(5, 64, 8);
         let wire_pos = left.east();
         let right = wire_pos.east();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(left));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(left));
         assert!(world.set_block(
             left.west(),
             vanilla_blocks::STONE.default_state(),
@@ -296,12 +297,12 @@ mod tests {
             vanilla_blocks::TRIPWIRE.default_state(),
             UpdateFlags::UPDATE_NONE,
         ));
-        TripWireHookBlock::calculate_state(&world, left, left_state, false, false, -1, None);
+        TripWireHookBlock::calculate_state(world, left, left_state, false, false, -1, None);
 
         let entity: SharedEntity = TestEntity::shared(
             7_002,
             DVec3::new(6.5, 64.0, 8.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             &vanilla_entities::PIG,
         );
         let mut effects = InsideBlockEffectCollector::new();
@@ -309,7 +310,7 @@ mod tests {
             .get_behavior(&vanilla_blocks::TRIPWIRE)
             .entity_inside(
                 world.get_block_state(wire_pos),
-                &world,
+                world,
                 wire_pos,
                 entity.as_ref(),
                 &mut effects,

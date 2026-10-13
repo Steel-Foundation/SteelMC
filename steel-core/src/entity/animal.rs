@@ -377,6 +377,7 @@ pub trait Animal: AgeableMob {
 mod tests {
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockStateId;
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -401,11 +402,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 

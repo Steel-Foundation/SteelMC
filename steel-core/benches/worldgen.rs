@@ -22,6 +22,7 @@ use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::chunk::status::ChunkStatus;
+use steel_core::entity::damage::DamageHistory;
 use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::generator::generation_benchmark_support;
@@ -35,6 +36,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use steel_worldgen::noise::Beardifier;
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
@@ -479,7 +481,7 @@ fn make_holder_for_features(
     if distance <= 1 {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
-            ChunkStatus::Carvers,
+            ChunkStatus::Terrain,
         );
     } else {
         let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
@@ -514,7 +516,7 @@ fn make_holder_for_feature_centers(
     if needs_carvers {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
-            ChunkStatus::Carvers,
+            ChunkStatus::Terrain,
         );
     } else {
         let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
@@ -530,6 +532,7 @@ struct FeatureFixture {
     cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
     target: Arc<ChunkHolder>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
@@ -567,7 +570,9 @@ fn build_feature_fixture_at(
             .build()
             .expect("feature benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -609,6 +614,7 @@ fn build_feature_fixture_at(
         cache,
         target,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -618,6 +624,7 @@ struct ConcurrentFeatureFixture {
     targets: Vec<Arc<ChunkHolder>>,
     generation_pool: Arc<rayon::ThreadPool>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -639,6 +646,7 @@ struct ConcurrentFullPipelineFixture {
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 struct ConcurrentLightFixture {
@@ -650,6 +658,7 @@ struct ConcurrentLightFixture {
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -696,28 +705,24 @@ const CONCURRENT_FEATURE_GRID_MAX: i32 = 2;
 const CONCURRENT_FEATURE_THREAD_COUNT: usize = 8;
 const FULL_PIPELINE_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
 const LIGHT_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
-const FULL_PIPELINE_STATUSES: [ChunkStatus; 12] = [
+const FULL_PIPELINE_STATUSES: [ChunkStatus; 10] = [
     ChunkStatus::Empty,
     ChunkStatus::StructureStarts,
     ChunkStatus::StructureReferences,
     ChunkStatus::Biomes,
-    ChunkStatus::Noise,
-    ChunkStatus::Surface,
-    ChunkStatus::Carvers,
+    ChunkStatus::Terrain,
     ChunkStatus::Features,
     ChunkStatus::InitializeLight,
     ChunkStatus::Light,
     ChunkStatus::Spawn,
     ChunkStatus::Full,
 ];
-const LIGHT_SETUP_STATUSES: [ChunkStatus; 9] = [
+const LIGHT_SETUP_STATUSES: [ChunkStatus; 7] = [
     ChunkStatus::Empty,
     ChunkStatus::StructureStarts,
     ChunkStatus::StructureReferences,
     ChunkStatus::Biomes,
-    ChunkStatus::Noise,
-    ChunkStatus::Surface,
-    ChunkStatus::Carvers,
+    ChunkStatus::Terrain,
     ChunkStatus::Features,
     ChunkStatus::InitializeLight,
 ];
@@ -838,7 +843,9 @@ fn build_concurrent_feature_fixture(
             .build()
             .expect("feature benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -893,6 +900,7 @@ fn build_concurrent_feature_fixture(
         targets,
         generation_pool,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -929,7 +937,9 @@ fn build_concurrent_full_pipeline_fixture(
             .build()
             .expect("full-pipeline benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -988,6 +998,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_pool,
         targets,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -1024,7 +1035,9 @@ fn build_concurrent_light_fixture(
             .build()
             .expect("light benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
         game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
@@ -1090,6 +1103,7 @@ fn build_concurrent_light_fixture(
         generation_pool,
         targets,
         _world: world,
+        _damage_history: damage_history,
     };
     run_concurrent_light_setup(&fixture);
     fixture
@@ -1626,7 +1640,7 @@ fn build_references_fixture(
         Weak::new(),
         dim.min_y,
         dim.height,
-        63, // overworld sea level (bench is overworld)
+        OverworldNoiseSettings::SEA_LEVEL,
     ));
 
     let gen_for_factory = Arc::clone(&generator_arc);
@@ -1805,7 +1819,7 @@ fn bench_end_full(c: &mut Criterion) {
 /// the kernel's heavy scalar permutation-gather floor. Each variant computes
 /// the same 8 Y samples per column across a fixed set of columns.
 fn bench_noise_kernel(c: &mut Criterion) {
-    use std::simd::{f64x4, f64x8};
+    use std::simd::{f32x4, f32x8, f64x4, f64x8};
     use steel_utils::random::xoroshiro::Xoroshiro;
     use steel_worldgen::noise::ImprovedNoise;
 
@@ -1827,7 +1841,7 @@ fn bench_noise_kernel(c: &mut Criterion) {
     // Current production path: generic 4 lanes, two calls per 8 Ys.
     group.bench_function("y_scale_4x_generic", |b| {
         b.iter(|| {
-            let mut acc = f64x4::splat(0.0);
+            let mut acc = f32x4::splat(0.0);
             for &(x, z) in &columns {
                 acc += noise.noise_with_y_scale_simd(
                     black_box(x),
@@ -1851,7 +1865,7 @@ fn bench_noise_kernel(c: &mut Criterion) {
     // 8-wide (AVX-512 on Zen 5), one call per 8 Ys.
     group.bench_function("y_scale_8x_generic", |b| {
         b.iter(|| {
-            let mut acc = f64x8::splat(0.0);
+            let mut acc = f32x8::splat(0.0);
             for &(x, z) in &columns {
                 acc += noise.noise_with_y_scale_simd::<8>(
                     black_box(x),

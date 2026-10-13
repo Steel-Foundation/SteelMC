@@ -33,6 +33,7 @@ use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
 
+use crate::entity::damage::DamageHistoryBinding;
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
     EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
@@ -382,6 +383,7 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    damage_history: DamageHistoryBinding,
     /// Generation counter for this runtime construction of the entity.
     generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
@@ -453,6 +455,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            damage_history: DamageHistoryBinding::default(),
             generation: EntityGeneration::next(),
             id,
             uuid,
@@ -483,6 +486,10 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    pub(crate) const fn damage_history(&self) -> &DamageHistoryBinding {
+        &self.damage_history
     }
 
     /// Gets the generation counter of this runtime construction of the entity.
@@ -971,16 +978,20 @@ impl EntityBase {
     ///
     /// Notifies the level callback on first removal.
     pub fn set_removed(&self, reason: RemovalReason) {
-        let callback = {
+        let (callback, released) = {
             let mut lifecycle = self.lifecycle.lock();
             if lifecycle.removal_reason.is_some() {
-                None
+                (None, None)
             } else {
                 lifecycle.removal_reason = Some(reason);
                 lifecycle.pending_world_change = None;
-                Some(self.level_callback.lock().clone())
+                (
+                    Some(self.level_callback.lock().clone()),
+                    self.damage_history.release_on_removal(),
+                )
             }
         };
+        drop(released);
 
         if let Some(callback) = callback {
             self.detach_from_relationships(reason);
@@ -1057,11 +1068,13 @@ impl EntityBase {
     /// Clears the removed flag and returns whether the entity had been removed.
     ///
     /// Vanilla uses this when an entity instance itself survives a world change.
+    /// Previously downgraded history stays weak; a new hit can retain a new source.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
         lifecycle.pending_world_change = None;
+        self.damage_history.clear_removed();
         was_removed
     }
 
@@ -1196,7 +1209,7 @@ impl EntityBase {
     }
 
     fn notify_bounding_box_changed(&self, bounding_box: WorldAabb) {
-        let callback = Arc::clone(&self.level_callback.lock());
+        let callback = self.level_callback.lock().clone();
         callback.on_bounding_box_changed(bounding_box);
     }
 

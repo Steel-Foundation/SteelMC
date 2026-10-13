@@ -140,7 +140,7 @@ fn push_toml_field<T: Serialize + ?Sized>(
 
 fn toml_value<T: Serialize + ?Sized>(value: &T) -> Result<String, TomlSerializeError> {
     #[derive(Serialize)]
-    struct Field<'a, T: Serialize + ?Sized> {
+    struct Field<'a, T: ?Sized> {
         value: &'a T,
     }
 

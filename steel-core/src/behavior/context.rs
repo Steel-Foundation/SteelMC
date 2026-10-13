@@ -25,7 +25,7 @@ pub use steel_registry::items::item::BlockHitResult;
 pub enum InteractionResult {
     /// The interaction succeeded and consumed the action.
     Success,
-    /// The interaction succeeded and the server should broadcast the swing.
+    /// The interaction succeeded with a swing that the client did not predict
     SuccessServer,
     /// The interaction consumed the action without swinging.
     Consume,
@@ -51,10 +51,13 @@ impl InteractionResult {
         )
     }
 
-    /// Returns true when vanilla requests the server to broadcast the swing.
+    /// Returns whether the interaction starts a predicted or serveronly swing
     #[must_use]
-    pub const fn should_swing_server(self) -> bool {
-        matches!(self, InteractionResult::SuccessServer)
+    pub const fn should_swing(self) -> bool {
+        matches!(
+            self,
+            InteractionResult::Success | InteractionResult::SuccessServer
+        )
     }
 
     /// Returns true for vanilla `InteractionResult.Success` variants that run
@@ -617,7 +620,7 @@ impl InventoryAccess {
 /// disjoint fields.
 pub struct UseOnContext<'a> {
     /// The player using the item.
-    pub player: &'a Player,
+    pub player: &'a Arc<Player>,
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// Information about where the block was hit.
@@ -632,7 +635,7 @@ impl<'a> UseOnContext<'a> {
     /// Creates a new `UseOnContext`.
     #[must_use]
     pub const fn new(
-        player: &'a Player,
+        player: &'a Arc<Player>,
         hand: InteractionHand,
         hit_result: BlockHitResult,
         world: &'a Arc<World>,
@@ -664,7 +667,7 @@ impl<'a> UseOnContext<'a> {
 /// `inv` is mutably borrowed.
 pub struct UseItemContext<'a> {
     /// The player using the item.
-    pub player: &'a Player,
+    pub player: &'a Arc<Player>,
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
@@ -677,7 +680,7 @@ impl<'a> UseItemContext<'a> {
     /// Creates a new `UseItemContext`.
     #[must_use]
     pub const fn new(
-        player: &'a Player,
+        player: &'a Arc<Player>,
         hand: InteractionHand,
         world: &'a Arc<World>,
         inventory: Shared<PlayerInventory>,

@@ -334,7 +334,8 @@ mod tests {
     #[test]
     fn end_gateway_creates_typed_block_entity() {
         init_vanilla_registry();
-        let world = fresh_test_world("end_gateway_ticker");
+        let world_fixture = fresh_test_world("end_gateway_ticker");
+        let world = &world_fixture.world;
         let behavior = EndGatewayBlock::new(&vanilla_blocks::END_GATEWAY);
         let state = vanilla_blocks::END_GATEWAY.default_state();
         let pos = BlockPos::new(2, 70, -4);
@@ -352,12 +353,12 @@ mod tests {
         assert_eq!(block_entity.get_block_state(), state);
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::END_GATEWAY,)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::END_GATEWAY,)
                 .is_some()
         );
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::END_PORTAL)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::END_PORTAL)
                 .is_none()
         );
     }
