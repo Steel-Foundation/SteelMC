@@ -1,5 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::{C_DISGUISED_CHAT, C_PLAYER_CHAT};
+use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::{
     codec::{BitSet, VarInt},
     serial::PrefixedWrite,
@@ -20,13 +21,27 @@ pub struct ChatTypeBound {
     pub target_name: Option<TextComponent>,
 }
 
+impl Default for ChatTypeBound {
+    fn default() -> Self {
+        Self {
+            registry_id: vanilla_chat_types::CHAT.id() as i32,
+            sender_name: TextComponent::new(),
+            target_name: None,
+        }
+    }
+}
+
+/// Binary cryptographic signature supplied by the official client (typically 256 bytes for RSA-SHA256).
+#[derive(Clone, Debug)]
+pub struct MessageSignature(pub [u8; 256]);
+
 #[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_PLAYER_CHAT)]
 pub struct CPlayerChat {
     pub global_index: i32,
     pub sender: Uuid,
     pub index: i32,
-    pub message_signature: Option<Box<[u8]>>,
+    pub message_signature: Option<MessageSignature>,
     pub message: String,
     pub timestamp: i64,
     pub salt: i64,
@@ -37,23 +52,21 @@ pub struct CPlayerChat {
 }
 
 impl CPlayerChat {
-    #[expect(clippy::too_many_arguments)]
     #[must_use]
+    #[expect(clippy::too_many_arguments)]
     pub const fn new(
-        global_index: i32,
         sender: Uuid,
         index: i32,
-        message_signature: Option<Box<[u8]>>,
+        message_signature: Option<MessageSignature>,
         message: String,
         timestamp: i64,
         salt: i64,
         previous_messages: Box<[PreviousMessage]>,
         unsigned_content: Option<TextComponent>,
-        filter_type: FilterType,
         chat_type: ChatTypeBound,
     ) -> Self {
         Self {
-            global_index,
+            global_index: 0, // Assigned when sending the message
             sender,
             index,
             message_signature,
@@ -62,7 +75,7 @@ impl CPlayerChat {
             salt,
             previous_messages,
             unsigned_content,
-            filter_type,
+            filter_type: FilterType::PassThrough, // Change only on Realms
             chat_type,
         }
     }
@@ -77,7 +90,7 @@ impl steel_utils::serial::WriteTo for CPlayerChat {
         match &self.message_signature {
             Some(sig) => {
                 true.write(writer)?;
-                writer.write_all(sig)?;
+                writer.write_all(&sig.0)?;
             }
             None => false.write(writer)?,
         }
