@@ -103,6 +103,7 @@ fn persistent_chunk_loads_chunk_owned_light_into_full_chunk() {
         Vec::new(),
         Vec::new(),
         ChunkPos::new(0, 0),
+        ChunkStatus::Full,
     );
 
     let loaded = ChunkStorage::persistent_to_chunk(

@@ -42,7 +42,7 @@ impl KnownPlayersFile {
     pub(super) fn into_known_players(self) -> io::Result<KnownPlayers> {
         if self.data_version != KNOWN_PLAYERS_DATA_VERSION {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+                io::ErrorKind::Unsupported,
                 format!(
                     "unsupported known player index payload version {}",
                     self.data_version

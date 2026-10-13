@@ -12,6 +12,8 @@ pub static STEEL_LOGGER: OnceLock<Arc<dyn SteelLogger>> = OnceLock::new();
 pub enum Level {
     /// Standard levels from tracing
     Tracing(tracing::Level),
+    /// Unrecoverable failure level
+    Fatal,
     /// Console input level
     Console,
     /// Chat message level
@@ -32,6 +34,7 @@ impl Display for Level {
                     tracing::Level::DEBUG => "\x1b[0;1;32m[Debug]\x1b[0m".to_string(),
                     tracing::Level::TRACE => "\x1b[0;1;90m[Trace]\x1b[0m".to_string(),
                 },
+                Level::Fatal => "\x1b[0;1;97;41m[Fatal]\x1b[0m".to_string(),
                 Level::Console => "\x1b[0;1;35m[Console]\x1b[0m".to_string(),
                 Level::Chat(name) => format!("\x1b[0;36m[Chat: {name}]\x1b[0m"),
                 Level::Command(name) => format!("\x1b[0;35m[Command: {name}]\x1b[0m"),
@@ -52,6 +55,7 @@ impl Debug for Level {
                     tracing::Level::DEBUG => "[Debug]".to_string(),
                     tracing::Level::TRACE => "[Trace]".to_string(),
                 },
+                Level::Fatal => "[Fatal]".to_string(),
                 Level::Console => "[Console]".to_string(),
                 Level::Chat(name) => format!("[Chat: {name}]"),
                 Level::Command(name) => format!("[Command: {name}]"),
@@ -60,6 +64,15 @@ impl Debug for Level {
     }
 }
 
+/// A log macro for unrecoverable failures.
+#[macro_export]
+macro_rules! fatal {
+    ($($arg:tt)+) =>
+        ($crate::logger::STEEL_LOGGER.get().expect("Steel logger isn't initialized!").log(
+            $crate::logger::Level::Fatal,
+            $crate::logger::LogData::message(format!($($arg)+)),
+        ));
+}
 /// A log macro for console input.
 #[macro_export]
 macro_rules! console {
