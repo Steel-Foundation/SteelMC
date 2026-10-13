@@ -12,7 +12,7 @@ const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
-const DEFAULT_AIR_DRAG_VALUE: f32 = 0.98f32;
+pub const DEFAULT_AIR_DRAG_VALUE: f32 = 0.98f32;
 
 fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;

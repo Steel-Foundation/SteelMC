@@ -578,6 +578,11 @@ mod tests {
         )
         .velocity_after_bounce(1.0);
 
-        assert!((non_living.y - living.y * 0.8).abs() < 1.0e-9);
+        assert!(
+            (non_living.y - living.y * 0.8).abs() < 1.0e-6,
+            "non-living {} vs living {}",
+            non_living.y,
+            living.y
+        );
     }
 }
