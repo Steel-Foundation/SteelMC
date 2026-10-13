@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use rustc_hash::FxHashSet;
+use smallvec::SmallVec;
 
 use super::{Entity, SharedEntity};
 
@@ -16,40 +16,37 @@ pub(crate) fn snapshot_old_pos_and_rot_for_tick(entity: &dyn Entity) {
 ///
 /// Mirrors vanilla `ServerLevel.tickPassenger`: invalid vehicle links are detached, and
 /// passengers only recurse when the server-level entity tick list says they may tick.
-pub(crate) fn tick_vehicle_passengers_with_ticked_if(
+pub(crate) fn tick_vehicle_passengers_if(
     vehicle: &dyn Entity,
-    ticked_entities: &mut FxHashSet<i32>,
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
 ) {
-    let mut visited = FxHashSet::default();
-    visited.insert(vehicle.id());
+    let passengers = vehicle.passengers();
+    if passengers.is_empty() {
+        return;
+    }
 
-    for passenger in vehicle.passengers() {
-        tick_passenger(
-            vehicle,
-            &passenger,
-            ticked_entities,
-            post_tick,
-            can_tick,
-            &mut visited,
-        );
+    let mut visited = SmallVec::<[i32; 8]>::new();
+    visited.push(vehicle.id());
+
+    for passenger in passengers {
+        tick_passenger(vehicle, &passenger, post_tick, can_tick, &mut visited);
     }
 }
 
 fn tick_passenger(
     vehicle: &dyn Entity,
     entity: &SharedEntity,
-    ticked_entities: &mut FxHashSet<i32>,
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
-    visited: &mut FxHashSet<i32>,
+    visited: &mut SmallVec<[i32; 8]>,
 ) {
+    let entity_id = entity.id();
     assert!(
-        visited.insert(entity.id()),
-        "cyclic passenger relationship involving entity {}",
-        entity.id()
+        !visited.contains(&entity_id),
+        "cyclic passenger relationship involving entity {entity_id}"
     );
+    visited.push(entity_id);
 
     if entity.is_removed()
         || entity
@@ -57,27 +54,22 @@ fn tick_passenger(
             .is_none_or(|current_vehicle| current_vehicle.id() != vehicle.id())
     {
         entity.stop_riding();
-        visited.remove(&entity.id());
+        let popped = visited.pop();
+        debug_assert_eq!(popped, Some(entity_id));
         return;
     }
 
-    if can_tick(entity) && ticked_entities.insert(entity.id()) {
+    if can_tick(entity) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
         Arc::clone(entity).ride_tick();
         post_tick(entity);
 
         for passenger in entity.passengers() {
-            tick_passenger(
-                entity.as_ref(),
-                &passenger,
-                ticked_entities,
-                post_tick,
-                can_tick,
-                visited,
-            );
+            tick_passenger(entity.as_ref(), &passenger, post_tick, can_tick, visited);
         }
     }
 
-    visited.remove(&entity.id());
+    let popped = visited.pop();
+    debug_assert_eq!(popped, Some(entity_id));
 }

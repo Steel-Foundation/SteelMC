@@ -233,6 +233,15 @@ impl BlockPos {
         self.0.z
     }
 
+    /// Returns vanilla `Vec3i.hashCode`, which orders Java `HashSet<BlockPos>` iteration.
+    #[must_use]
+    pub const fn java_hash_code(&self) -> i32 {
+        self.y()
+            .wrapping_add(self.z().wrapping_mul(31))
+            .wrapping_mul(31)
+            .wrapping_add(self.x())
+    }
+
     /// Returns the position one block above (Y + 1).
     #[must_use]
     pub const fn above(&self) -> Self {

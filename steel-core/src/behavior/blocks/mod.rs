@@ -50,8 +50,8 @@ pub use redstone::{
     DetectorRailBlock, LeverBlock, LightningRodBlock, MovingPistonBlock, NoteBlock, ObserverBlock,
     PistonBaseBlock, PistonHeadBlock, PoweredBlock, PoweredRailBlock, PressurePlateBlock,
     PressurePlateSensitivity, RailBlock, RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock,
-    RedstoneTorchBlock, RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock,
-    TripWireHookBlock, WeatheringCopperBulbBlock, WeatheringLightningRodBlock,
+    RedstoneTorchBlock, RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TntBlock,
+    TripWireBlock, TripWireHookBlock, WeatheringCopperBulbBlock, WeatheringLightningRodBlock,
     WeightedPressurePlateBlock,
 };
 pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};

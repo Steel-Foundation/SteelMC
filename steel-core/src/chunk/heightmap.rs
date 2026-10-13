@@ -591,7 +591,7 @@ impl ChunkHeightmaps {
         'sections: for section_idx in (0..sections.len()).rev() {
             let guard = sections[section_idx].read();
             if matches!(
-                &guard.states,
+                guard.states(),
                 super::paletted_container::BlockPalette::Homogeneous(state) if state.is_air()
             ) {
                 continue;
@@ -607,7 +607,7 @@ impl ChunkHeightmaps {
                         continue;
                     }
 
-                    let state = guard.states.get_at_index(layer_start + column_index);
+                    let state = guard.states().get_at_index(layer_start + column_index);
                     let matched_mask = heightmap_opacity_mask(state, *pending_mask);
                     if matched_mask == 0 {
                         continue;
