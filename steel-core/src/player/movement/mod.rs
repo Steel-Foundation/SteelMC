@@ -33,6 +33,7 @@ use crate::physics::{
     is_colliding_with_new_shapes, movement_error_delta,
 };
 use crate::player::Player;
+use crate::server::tick_rate_manager::DEFAULT_TICK_RATE;
 use crate::world::World;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
@@ -514,7 +515,7 @@ impl Player {
             let current_tick = self.tick_count();
             let last_reset = self.movement.lock().vehicle_position_last_reset_at;
 
-            if current_tick.wrapping_sub(last_reset) > 20
+            if current_tick.wrapping_sub(last_reset) > DEFAULT_TICK_RATE
                 || vehicle.position().distance_squared(packet.pos) > 1.0
             {
                 log::warn!(
