@@ -1997,8 +1997,6 @@ pub trait LivingEntity: Entity {
 
         if self.is_dead_or_dying() {
             self.tick_death();
-            self.tick_living_state();
-            return;
         }
 
         if !self.is_removed() {
