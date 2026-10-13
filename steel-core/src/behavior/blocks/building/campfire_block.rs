@@ -10,8 +10,8 @@ use steel_registry::fluid::FluidState;
 use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::vanilla_damage_types;
 use steel_registry::{
-    REGISTRY, sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_custom_stats,
-    vanilla_fluids, vanilla_game_events,
+    REGISTRY, sound_events, vanilla_block_entity_types, vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_custom_stats, vanilla_fluids, vanilla_game_events,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Downcast as _,
@@ -98,6 +98,22 @@ impl CampfireBlock {
             && !state.get_value(LIT)
             && !state.get_value(WATERLOGGED))
         .then(|| state.set_value(LIT, true))
+    }
+
+    /// Whether `state` is a lit campfire or soul campfire.
+    #[must_use]
+    pub fn is_lit_campfire(state: BlockStateId) -> bool {
+        state.get_block().has_tag(&BlockTag::CAMPFIRES) && state.try_get_value(LIT) == Some(true)
+    }
+
+    /// The shared part of putting out a campfire (shovels, water potions,
+    /// water flowing in).
+    pub fn dowse(source: Option<&dyn Entity>, level: &dyn LevelAccessor, pos: BlockPos) {
+        level.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(source, None),
+        );
     }
 }
 
@@ -224,11 +240,7 @@ impl BlockBehavior for CampfireBlock {
                 1.0,
                 None,
             );
-            level.game_event(
-                &vanilla_game_events::BLOCK_CHANGE,
-                pos,
-                &GameEventContext::new(None, Some(state.set_value(LIT, false))),
-            );
+            Self::dowse(None, level, pos);
         }
 
         level.set_block_state(
@@ -427,5 +439,44 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![&vanilla_game_events::BLOCK_CHANGE]
         );
+        assert_eq!(level.game_events.borrow()[0].affected_state, None);
+    }
+
+    #[test]
+    fn is_lit_campfire_accepts_only_lit_campfires() {
+        init_vanilla_registry();
+
+        let campfire = vanilla_blocks::CAMPFIRE.default_state();
+        let soul_campfire = vanilla_blocks::SOUL_CAMPFIRE.default_state();
+
+        assert!(CampfireBlock::is_lit_campfire(
+            campfire.set_value(LIT, true)
+        ));
+        assert!(!CampfireBlock::is_lit_campfire(
+            campfire.set_value(LIT, false)
+        ));
+        assert!(CampfireBlock::is_lit_campfire(
+            soul_campfire.set_value(LIT, true)
+        ));
+        assert!(!CampfireBlock::is_lit_campfire(
+            vanilla_blocks::CANDLE.default_state().set_value(LIT, true)
+        ));
+    }
+
+    #[test]
+    fn dowse_emits_block_change_without_touching_the_block() {
+        init_vanilla_registry();
+        let level = TestLevel::default();
+        let pos = BlockPos::new(1, 2, 3);
+
+        CampfireBlock::dowse(None, &level, pos);
+
+        assert!(level.last_placed_state().is_none());
+        let events = level.game_events.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, &vanilla_game_events::BLOCK_CHANGE);
+        assert_eq!(events[0].pos, pos);
+        assert_eq!(events[0].source_entity_id, None);
+        assert_eq!(events[0].affected_state, None);
     }
 }

@@ -73,7 +73,7 @@ pub trait InstantaneousMobEffect: MobEffectBehavior {
         amplifier: i32,
         direct_entity: Option<&SharedEntity>,
         causing_entity: Option<&SharedEntity>,
-        scale: f32,
+        scale: f64,
     ) {
         let _ = (direct_entity, causing_entity, scale);
         self.apply_effect_tick(world, user, amplifier);

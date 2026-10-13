@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -8,10 +7,9 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    entity_data::ParticleData,
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_items, vanilla_particle_types,
+    vanilla_blocks, vanilla_items,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -23,7 +21,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         blocks::{CakeBlock, CandleBlock},
     },
-    entity::{Entity, projectile::Projectile},
+    entity::projectile::Projectile,
     player::Player,
     world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
@@ -37,7 +35,6 @@ pub struct CandleCakeBlock {
 }
 
 const LIT: &BoolProperty = &BlockStateProperties::LIT;
-const PARTICLE_OFFSETS: [DVec3; 1] = [DVec3::new(8.0 * 0.0625, 16.0 * 0.0625, 8.0 * 0.0625)];
 
 impl CandleCakeBlock {
     /// Creates a new Candle Cake Block Behavior
@@ -83,27 +80,7 @@ impl BlockBehavior for CandleCakeBlock {
             && is_empty
             && state.get_value(LIT)
         {
-            world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
-            for particle_pos in PARTICLE_OFFSETS {
-                world.send_particles(
-                    ParticleData::simple(&vanilla_particle_types::SMOKE),
-                    DVec3::new(
-                        f64::from(pos.x()) + particle_pos.x,
-                        f64::from(pos.y()) + particle_pos.y,
-                        f64::from(pos.z()) + particle_pos.z,
-                    ),
-                    1,
-                    DVec3::new(0.0, 0.1, 0.0),
-                    1.0,
-                );
-            }
-            world.play_block_sound(
-                &sound_events::BLOCK_CANDLE_EXTINGUISH,
-                pos,
-                1.0,
-                1.0,
-                Some(player.id()),
-            );
+            CandleBlock::extinguish(Some(player), state, world, pos);
             return InteractionResult::Success;
         }
         InteractionResult::TryEmptyHandInteraction
