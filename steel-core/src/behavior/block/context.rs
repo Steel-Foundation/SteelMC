@@ -338,7 +338,6 @@ pub struct EntityLandingContext {
     /// Entity velocity before the block landing hook adjusts it (`currentMovement` in vanilla).
     pub velocity: DVec3,
     /// Vertical movement actually achieved this tick after collision clipping
-    /// (`movement.y` in vanilla `restituteMovementAfterCollisions`).
     pub achieved_movement_y: f64,
     /// Whether the entity uses vanilla living-entity bounce behavior.
     pub is_living_entity: bool,
@@ -519,8 +518,7 @@ impl EntityLandingContext {
     /// Computes the Y velocity after bouncing on a block.
     /// doesn't test if the bounce is valid
     #[must_use]
-    pub fn velocity_after_fall(&self, restitution: f32) -> DVec3 {
-        // Fraction of the downward movement reached before the collision.
+    pub fn velocity_after_bounce(&self, restitution: f32) -> DVec3 {
         let portion_with_movement = if self.velocity.y == 0.0 {
             1.0
         } else {
@@ -530,8 +528,8 @@ impl EntityLandingContext {
         let gravity_compensation = portion_with_movement * self.gravity;
         let effective_drag = lerp(portion_with_movement, 1.0, f64::from(self.air_drag));
 
-        let entity_factor = if self.is_living_entity { 1.0 } else { 0.8 };
-        let restitution = f64::from(restitution) * entity_factor;
+        let entity_factor: f32 = if self.is_living_entity { 1.0 } else { 0.8 };
+        let restitution = f64::from(restitution * entity_factor);
 
         DVec3::new(
             self.velocity.x,
@@ -563,13 +561,13 @@ mod tests {
         // effectiveDrag = lerp(0.5, 1.0, 0.98) = 0.99
         // result.y = (0.04 - (-1.5)) * 0.99 * 1.0 = 1.5246
         let context = landing(-1.5, -0.75);
-        let result = context.velocity_after_fall(1.0);
+        let result = context.velocity_after_bounce(1.0);
         assert!((result.y - 1.5246).abs() < 1.0e-6, "got {}", result.y);
     }
 
     #[test]
     fn non_living_entities_bounce_lower() {
-        let living = landing(-1.5, -0.75).velocity_after_fall(1.0);
+        let living = landing(-1.5, -0.75).velocity_after_bounce(1.0);
         let non_living = EntityLandingContext::new(
             DVec3::new(0.25, -1.5, -0.5),
             -0.75,
@@ -578,7 +576,7 @@ mod tests {
             0.08,
             0.98,
         )
-        .velocity_after_fall(1.0);
+        .velocity_after_bounce(1.0);
 
         assert!((non_living.y - living.y * 0.8).abs() < 1.0e-9);
     }

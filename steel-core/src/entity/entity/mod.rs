@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::entity::leash::Leashable;
-use steel_math::{DEGREE_90, clamp};
+use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -11,6 +11,8 @@ const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
 const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
+
+const DEFAULT_AIR_DRAG_VALUE: f32 = 0.98f32;
 
 fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;
@@ -3188,10 +3190,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// get the air drag value of the entity
     fn get_air_drag(&self) -> f32 {
         let Some(entity) = self.as_living_entity() else {
-            return 0.98f32;
+            return DEFAULT_AIR_DRAG_VALUE;
         };
         compute_modified_friction(
-            0.98f32,
+            DEFAULT_AIR_DRAG_VALUE,
             entity
                 .attributes()
                 .lock()
@@ -3340,7 +3342,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
-                self.get_gravity(),
+                self.as_living_entity()
+                    .map_or_else(|| self.get_gravity(), LivingEntity::get_effective_gravity),
                 self.get_air_drag(),
             );
 
@@ -3348,13 +3351,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
                     let effect_state = world.get_block_state(effect_pos);
                     let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-                    let mut bounced = false;
-                    let res = behavior.update_entity_movement_after_fall_on(
+                    let (res, bounced) = behavior.update_entity_movement_after_fall_on(
                         effect_state,
                         &world,
                         effect_pos,
                         landing_context,
-                        &mut bounced,
                     );
                     if bounced {
                         behavior.bounce_on(
@@ -3772,7 +3773,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 }
 
 fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
-    clamp(f64::from(1.0 - (1.0 - friction) * modifier), 0.0, 1.0) as f32
+    (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
 /// Repositions a direct passenger from the vehicle's attachment point.

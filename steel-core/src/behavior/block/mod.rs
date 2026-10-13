@@ -1016,18 +1016,19 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         context: EntityLandingContext,
-        bounced: &mut bool,
-    ) -> DVec3 {
-        if context.velocity.y >= 0.0 {
-            return context.velocity;
-        }
+    ) -> (DVec3, bool) {
         let restitution = state.get_block().config.bounce_restitution;
-        if restitution <= 0.0 || context.suppresses_bounce || -context.velocity.y <= context.gravity
+        if context.velocity.y >= 0.0
+            || restitution <= 0.0
+            || context.suppresses_bounce
+            || -context.velocity.y <= context.gravity
         {
-            self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+            (
+                self.default_update_entity_movement_after_fall_on(state, world, pos, context),
+                false,
+            )
         } else {
-            *bounced = true;
-            context.velocity_after_fall(restitution)
+            (context.velocity_after_bounce(restitution), true)
         }
     }
 

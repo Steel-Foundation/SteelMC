@@ -9,7 +9,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::sound_events::BLOCK_SHELF_MUSHROOM_BOUNCE;
-use steel_registry::vanilla_entities::{ITEM_DISPLAY, TNT};
+use steel_registry::vanilla_entities::{ITEM, TNT};
 use steel_registry::{
     blocks::{
         BlockRef,
@@ -38,10 +38,12 @@ impl ShelfMushroomBlock {
         Self { block }
     }
 
+    #[inline]
     fn age(state: BlockStateId) -> u8 {
         state.get_value(AGE)
     }
 
+    #[inline]
     fn facing(state: BlockStateId) -> Direction {
         state.get_value(FACING_PROPERTY)
     }
@@ -109,7 +111,7 @@ impl BlockBehavior for ShelfMushroomBlock {
         pos: BlockPos,
         context: EntityFallOnContext<'_>,
     ) {
-        if context.entity.entity_type != &ITEM_DISPLAY && context.entity.entity_type != &TNT {
+        if context.entity.entity_type != &ITEM && context.entity.entity_type != &TNT {
             world.play_sound(
                 &BLOCK_SHELF_MUSHROOM_BOUNCE,
                 SoundSource::Blocks,
@@ -123,6 +125,7 @@ impl BlockBehavior for ShelfMushroomBlock {
 }
 
 impl Bonemealable for ShelfMushroomBlock {
+    #[inline]
     fn is_valid_bonemeal_target(
         &self,
         state: BlockStateId,
@@ -132,6 +135,7 @@ impl Bonemealable for ShelfMushroomBlock {
         Self::age(state) < MAX_AGE
     }
 
+    #[inline]
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
@@ -139,6 +143,10 @@ impl Bonemealable for ShelfMushroomBlock {
         _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        world.set_block(pos, state.set_value(AGE, 1), UpdateFlags::UPDATE_CLIENTS);
+        world.set_block(
+            pos,
+            state.set_value(AGE, MAX_AGE),
+            UpdateFlags::UPDATE_CLIENTS,
+        );
     }
 }
