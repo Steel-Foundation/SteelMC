@@ -39,27 +39,20 @@ pub(crate) enum PlayerSpawnSearchPoll {
     Cancelled,
 }
 
-/// Finds a spawn the way vanilla's `PlayerSpawnFinder` does: the first valid candidate in a
-/// shuffled order. Each chunk is requested once and all of its candidates are evaluated
-/// together, but they are still consumed in the vanilla order.
+/// Batches candidates by chunk in candidate order
 pub(crate) struct PlayerSpawnSearch {
     spawn_suggestion: BlockPos,
     sequence: CandidateSequence,
     next_candidate_index: i32,
     pending: Option<PendingSpawnCandidate>,
-    /// Evaluated candidates by sequence index.
+    /// cached results indexed by candidate order
     results: Vec<CandidateResult>,
-    /// The only chunk request held by the search. A new request waits for the next tick's
-    /// ticket commit, so a chunk is requested once, not once per candidate.
     loading: Option<ChunkLoad>,
-    /// Whether a failed search prefers a standing spot found by [`World::safe_spawn_in_column`]
-    /// over [`World::fixup_spawn_height`], which can end in fluid or on a ceiling dimension's roof.
+    /// tries safe standing spots before the vanilla height fixup
     safe_fallback: bool,
     fallback: FallbackPass,
-    /// Chunks around the spawn suggestion that load while the search runs.
     prefetch: Option<ChunkRequestHandle>,
-    /// Set once a request made after the prefetch is ready. Ticket receipts commit in order,
-    /// so the prefetch's tickets are then committed too.
+    /// A later request committed receipt also covers the prefetch tickets
     prefetch_committed: bool,
 }
 
