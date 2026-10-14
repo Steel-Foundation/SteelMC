@@ -13,18 +13,15 @@ mod sign_block;
 mod torch_block;
 mod weathering_lantern_block;
 
-pub use banner_block::{BannerBlock, WallBannerBlock};
-pub use cake_block::CakeBlock;
-pub use candle_block::CandleBlock;
-pub use candle_cake_block::CandleCakeBlock;
-pub use chain_block::{ChainBlock, WeatheringCopperChainBlock};
-pub use end_rod_block::EndRodBlock;
-pub use flower_pot_block::FlowerPotBlock;
-pub use jukebox_block::JukeboxBlock;
-pub use lantern_block::LanternBlock;
-pub use sign_block::{
-    CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
-    facing_text_slot,
-};
-pub use torch_block::{TorchBlock, WallTorchBlock};
-pub use weathering_lantern_block::WeatheringLanternBlock;
+pub use banner_block::*;
+pub use cake_block::*;
+pub use candle_block::*;
+pub use candle_cake_block::*;
+pub use chain_block::*;
+pub use end_rod_block::*;
+pub use flower_pot_block::*;
+pub use jukebox_block::*;
+pub use lantern_block::*;
+pub use sign_block::*;
+pub use torch_block::*;
+pub use weathering_lantern_block::*;
