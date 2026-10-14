@@ -283,7 +283,8 @@ pub struct PreparedSpawn {
 /// Where and how a world selection places the player in the target world.
 #[derive(Clone, Copy)]
 pub enum WorldEntry {
-    /// The usual entry: the saved location if the domain has one, otherwise the spawn search.
+    /// The usual entry: a domain switch restores the saved location if there is one; otherwise
+    /// the spawn search places the player.
     Usual,
     /// The usual entry, then faces this `(yaw, pitch)`.
     Rotation((f32, f32)),

@@ -36,8 +36,7 @@ pub(super) struct ChunkLoad {
     pub(super) chunk: ChunkPos,
     /// `None` when the chunk is held by the prefetch, which keeps it loaded already.
     request: Option<ChunkRequestHandle>,
-    /// Next sequence index to look at. Candidates before the pending one are already
-    /// consumed, so the scan starts at the pending candidate.
+    /// Next sequence index to look at. Indices before it need no more work from this chunk.
     pub(super) next_scan: i32,
 }
 
@@ -87,8 +86,8 @@ impl ChunkLoad {
         };
         match request.poll() {
             ChunkRequestState::Cancelled => ChunkLoadState::Cancelled,
-            ChunkRequestState::Ready if request.ready_chunks().is_some() => ChunkLoadState::Ready,
-            ChunkRequestState::Pending { .. } | ChunkRequestState::Ready => ChunkLoadState::Waiting,
+            ChunkRequestState::Ready => ChunkLoadState::Ready,
+            ChunkRequestState::Pending { .. } => ChunkLoadState::Waiting,
         }
     }
 

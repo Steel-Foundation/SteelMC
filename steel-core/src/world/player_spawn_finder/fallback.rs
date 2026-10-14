@@ -90,9 +90,10 @@ impl PlayerSpawnSearch {
 }
 
 impl World {
-    /// Returns the highest position in the column where a player can stand: on a block
-    /// with a full top face that holds no fluid, with a free player box above it. In a
-    /// dimension with a ceiling the scan starts below the roof, so the roof is never chosen.
+    /// Returns a position in the column where a player can stand: on a block with a full top
+    /// face that holds no fluid, with a free player box above it. In a dimension with a
+    /// ceiling the scan starts below the roof, so the roof is never chosen, and it returns the
+    /// highest such spot. Under an open sky only the surface position is tested.
     pub(super) fn safe_spawn_in_column(self: &Arc<Self>, x: i32, z: i32) -> Option<BlockPos> {
         let min_y = self.get_min_y();
         let top_y = if self.dimension_type.has_ceiling {

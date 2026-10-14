@@ -455,7 +455,7 @@ pub struct WorldSelection {
     /// Runtime token proving this request still owns the player's relocation.
     pub pending_token: PendingWorldChangeToken,
     /// Chunks around the target's spawn, requested when the selection was queued so they
-    /// start loading in the same tick.
+    /// start loading in the same tick. `None` for an exact placement, which searches nothing.
     pub prefetch: Option<ChunkRequestHandle>,
     /// How the player enters the target world.
     pub entry: WorldEntry,
