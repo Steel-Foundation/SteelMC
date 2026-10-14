@@ -18,7 +18,7 @@ use super::super::{
 use super::position::{ensure_spawnable_position, wrap_rotation};
 use crate::{
     entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
-    portal::{TeleportPostTransition, TeleportTransition},
+    portal::{TeleportPostTransition, TeleportTransition, land_after_teleport},
     world::World,
 };
 
@@ -292,14 +292,7 @@ fn perform_teleport(
         }
     }
 
-    if target
-        .as_living_entity()
-        .is_none_or(|living| !living.is_fall_flying())
-    {
-        let velocity = target.velocity();
-        target.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
-        target.set_on_ground(true);
-    }
+    land_after_teleport(target.as_ref());
     if let Some(pathfinder) = target.as_pathfinder_mob() {
         pathfinder.mob_base().navigation().lock().stop();
     }

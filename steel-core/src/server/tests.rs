@@ -2233,6 +2233,8 @@ fn same_domain_world_selection_applies_a_world_entry() {
             };
             assert_eq!(player.position(), position);
             assert_eq!(player.rotation(), rotation);
+            // Only an exact placement lands like `/teleport`.
+            assert_eq!(player.on_ground(), matches!(entry, WorldEntry::Exact(_)));
 
             target_world.remove_player_for_world_change(&player);
             assert!(server.online_players.remove_player_sync(&player).is_some());
@@ -2302,12 +2304,14 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
         // The first player has a saved location in the target world, the second is new there.
         let turned = (200.0, 15.0);
         let cases = [
-            (1_i32, true, WorldEntry::Exact(destination)),
-            (2, false, WorldEntry::Exact(destination)),
-            (3, true, WorldEntry::Rotation(turned)),
-            (4, false, WorldEntry::Rotation(turned)),
+            (1_i32, true, false, WorldEntry::Exact(destination)),
+            (2, false, false, WorldEntry::Exact(destination)),
+            (3, true, false, WorldEntry::Rotation(turned)),
+            (4, false, false, WorldEntry::Rotation(turned)),
+            (5, true, true, WorldEntry::Exact(destination)),
+            (6, false, true, WorldEntry::Exact(destination)),
         ];
-        for (entity_id, has_saved_location, entry) in cases {
+        for (entity_id, has_saved_location, gliding, entry) in cases {
             let (player, _) = test_player_with_uuid_and_packets(
                 &server,
                 Arc::clone(source_world),
@@ -2318,12 +2322,15 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
             assert!(server.online_players.insert(Arc::clone(&player)));
             assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
             let _ = player.mark_joined_world();
+            player.set_fall_flying(gliding);
 
             if has_saved_location {
                 let mut saved = PersistentPlayerData::from_player(&player);
                 saved.world = target_world.key.to_string();
                 saved.pos = [8.5, 70.0, 8.5];
-                if matches!(entry, WorldEntry::Exact(_)) {
+                // The saved state is the opposite, so only the player's own state can win.
+                saved.fall_flying = !gliding;
+                if matches!(entry, WorldEntry::Exact(_)) && !gliding {
                     saved.root_vehicle = Some(PersistentRootVehicle {
                         attach: vehicle_uuid,
                         entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
@@ -2364,7 +2371,10 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                 WorldEntry::Exact(_) => {
                     assert_eq!(player.position(), destination.position);
                     assert_eq!(player.rotation(), destination.rotation);
-                    if has_saved_location {
+                    // Like `/teleport`: a gliding player keeps gliding, anyone else lands.
+                    assert_eq!(player.is_fall_flying(), gliding);
+                    assert_eq!(player.on_ground(), !gliding);
+                    if has_saved_location && !gliding {
                         // The saved vehicle stays where it was, without the player.
                         let vehicle =
                             target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
