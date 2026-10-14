@@ -149,6 +149,50 @@ fn prefetch_follows_the_radius_the_search_uses() {
 }
 
 #[test]
+fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
+    with_search_world("stale_spot", &vanilla_dimension_types::OVERWORLD, |world| {
+        insert_chunks(world, 3);
+        let _hold = world.chunk_map.request_square(
+            ChunkPos::new(0, 0),
+            3,
+            ChunkStatus::Full,
+            ChunkTicketKind::Command,
+        );
+        let suggestion = BlockPos::new(0, 64, 0);
+        let mut sequence = new_search(world, suggestion).sequence;
+        sequence.offset = 0;
+        let first_chunk = sequence.chunk(0);
+        let Some(later) =
+            (50..sequence.count()).find(|&index| sequence.chunk(index) == first_chunk)
+        else {
+            panic!("the first chunk should hold a later candidate");
+        };
+        let (x, z) = sequence.column(later);
+        let ground = BlockPos::new(x, 64, z);
+        let spot = DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5);
+
+        set_block(world, ground, vanilla_blocks::STONE.default_state());
+        for remove_ground in [false, true] {
+            let mut search = new_search(world, suggestion);
+            search.sequence.offset = 0;
+            // The first poll waits for the first chunk; the second evaluates the whole chunk, so
+            // `later` is cached as valid, and then waits for the chunk of the next candidate.
+            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
+            world.chunk_map.advance_scheduling();
+            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
+            assert!(matches!(search.result(later), CandidateResult::Valid(_)));
+
+            if remove_ground {
+                set_block(world, ground, vanilla_blocks::AIR.default_state());
+            }
+            let result = run_search(world, &mut search);
+            // The spot is only reached after the wait, so a removed ground must be noticed.
+            assert_eq!(result == spot, !remove_ground);
+        }
+    });
+}
+
+#[test]
 fn a_poll_budget_that_ends_mid_chunk_does_not_skip_candidates() {
     with_search_world(
         "budget_yield",

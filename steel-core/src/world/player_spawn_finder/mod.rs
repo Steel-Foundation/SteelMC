@@ -191,6 +191,9 @@ impl PlayerSpawnSearch {
                 return self.poll_fixup(world, pending, &mut budget);
             }
 
+            if matches!(self.result(pending.index), CandidateResult::Valid(_)) {
+                self.recheck_cached_spot(world, pending);
+            }
             // A batch that ran out of budget is still open and continues before the next candidate.
             if (self.loading.is_some()
                 || matches!(self.result(pending.index), CandidateResult::Unchecked))
@@ -268,6 +271,20 @@ impl PlayerSpawnSearch {
             }
             ChunkLoadState::Cancelled => LoadPoll::Cancelled,
         }
+    }
+
+    /// Evaluates a cached valid spot again, since blocks or entities may have changed while the
+    /// search waited. If its chunk has unloaded, the result is dropped and the batch reads it again.
+    fn recheck_cached_spot(&mut self, world: &Arc<World>, pending: PendingSpawnCandidate) {
+        let (x, z) = self.sequence.column(pending.index);
+        let Some(slot) = self.results.get_mut(pending.index as usize) else {
+            return;
+        };
+        *slot = if world.has_full_chunk(pending.chunk) {
+            Self::evaluate_candidate(world, x, z)
+        } else {
+            CandidateResult::Unchecked
+        };
     }
 
     fn result(&self, index: i32) -> CandidateResult {
