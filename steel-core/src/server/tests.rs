@@ -2391,6 +2391,187 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
     });
 }
 
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one integration test follows the disconnect and the next login through the same setup"
+)]
+fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
+    init_vanilla_registry();
+    init_entities();
+    init_behaviors();
+    let source_world_fixture = fresh_test_world_in_domain("source", "dc_spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "dc_spawn");
+    let target_world = &target_world_fixture.world;
+    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let vehicle_uuid = [22; 16];
+        let destination = PreparedSpawn {
+            position: DVec3::new(-12.5, 90.25, 40.75),
+            rotation: (123.0, -20.0),
+        };
+        let player_uuid = Uuid::from_u128(77);
+        let (player, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(source_world),
+            player_uuid,
+            "TestPlayer",
+            next_entity_id(),
+        );
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+
+        let mut seeded = PersistentPlayerData::from_player(&player);
+        seeded.world = target_world.key.to_string();
+        seeded.pos = [8.5, 70.0, 8.5];
+        seeded.root_vehicle = Some(PersistentRootVehicle {
+            attach: vehicle_uuid,
+            entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
+        });
+        if let Err(error) = server
+            .player_data_storage
+            .save_domain_data("target", player.gameprofile.id, &seeded)
+            .await
+        {
+            panic!("target-domain data should save: {error}");
+        }
+
+        assert!(
+            server
+                .queue_player_world_selection_with_entry(
+                    Arc::clone(&player),
+                    target_world,
+                    WorldEntry::Exact(destination)
+                )
+                .is_ok()
+        );
+        server.process_domain_switches();
+        // Stop as soon as the player has arrived, before the vehicle restore job has run.
+        let mut arrived_with_restore_pending = false;
+        for tick in 1..=10_000 {
+            source_world.chunk_map.advance_scheduling();
+            target_world.chunk_map.advance_scheduling();
+            server.tick_jobs(tick, true);
+            if target_world.contains_player(&player)
+                && player.pending_root_vehicle_for_current_world().is_some()
+            {
+                arrived_with_restore_pending = true;
+                break;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+        assert!(
+            arrived_with_restore_pending,
+            "the player should arrive while the vehicle restore is still pending"
+        );
+        assert!(
+            target_world
+                .get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid))
+                .is_none()
+        );
+
+        player.connection.close();
+        server.queue_player_disconnect(Arc::clone(&player));
+        server.jobs.cancel_all();
+        let mut disconnect_saves = JoinSet::new();
+        for _ in 0..1_000 {
+            server.start_player_disconnect_saves(&mut disconnect_saves);
+            if disconnect_saves.is_empty() {
+                break;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+        assert!(
+            disconnect_saves.is_empty(),
+            "the disconnect should be persisted"
+        );
+        assert!(server.online_players.get_by_uuid(&player_uuid).is_none());
+        drop(player);
+
+        let loaded = server
+            .player_data_storage
+            .load_domain("target", player_uuid)
+            .await;
+        let Ok(Some(loaded)) = loaded else {
+            panic!("the disconnect should save the target-domain data");
+        };
+        assert_eq!(
+            loaded.root_vehicle.as_ref().map(|root| root.entity.uuid),
+            Some(vehicle_uuid),
+            "the vehicle must not be lost"
+        );
+        assert_eq!(loaded.pos, destination.position.to_array());
+
+        // The next login restores the vehicle, and with it the player.
+        let (rejoined, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(target_world),
+            player_uuid,
+            "TestPlayer",
+            next_entity_id(),
+        );
+        assert!(server.reserve_player_join(&rejoined));
+        let spawn_position = DVec3::new(loaded.pos[0], loaded.pos[1], loaded.pos[2]);
+        let state = DomainPlayerState {
+            world: Arc::clone(target_world),
+            data: DomainPlayerData::SavedRestored {
+                data: Box::new(loaded),
+            },
+            spawn_chunk_request: target_world.request_player_spawn_chunks(spawn_position),
+        };
+        server.finish_prepared_player_join(PendingPlayerJoin {
+            player: Arc::clone(&rejoined),
+            state: Ok(state),
+        });
+        for tick in 20_000..30_000 {
+            target_world.chunk_map.advance_scheduling();
+            server.tick_jobs(tick, true);
+            if server.jobs.is_empty() {
+                break;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+        assert_eq!(
+            rejoined.vehicle().map(|vehicle| vehicle.uuid()),
+            Some(Uuid::from_bytes(vehicle_uuid)),
+            "the vehicle is restored with the player on it"
+        );
+
+        drop(rejoined);
+        drop(server);
+    });
+}
+
 fn test_player(server: &Arc<Server>, world: Arc<World>) -> Arc<Player> {
     test_player_with_packets(server, world, "TestPlayer", 1).0
 }
