@@ -296,8 +296,7 @@ impl PlayerSpawnSearch {
                 .is_some_and(|prefetch| prefetch.positions().contains(&chunk))
     }
 
-    /// Polls the chunk being read, opening it first when none is. A chunk the prefetch holds
-    /// is read directly; any other gets a request, which costs a tick for its tickets to commit.
+/// Reuses prefetched chunks otherwise waits for a new request ticket commit
     fn poll_loading(
         &mut self,
         world: &Arc<World>,
