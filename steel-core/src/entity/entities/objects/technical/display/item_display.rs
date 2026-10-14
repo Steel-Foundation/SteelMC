@@ -180,7 +180,7 @@ impl ItemDisplayView<'_> {
 
     /// Sets the item stack used in this item display to `item`.
     pub fn set_item_stack(&mut self, item: ItemStack) {
-        self.0.item_stack.set(item);
+        self.0.item_stack.set_and_force_dirty(item, true);
     }
 }
 

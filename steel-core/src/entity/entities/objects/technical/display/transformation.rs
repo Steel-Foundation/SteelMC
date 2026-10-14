@@ -11,6 +11,7 @@ use steel_utils::nbt::{
 };
 
 pub const DECOMPOSITION_EPSILON: f32 = 1.0e-6;
+pub const DECOMPOSITION_EPSILON_F64: f64 = 1.0e-6;
 
 /// A structure describing an affine transformation in 3D space.
 ///
@@ -58,7 +59,7 @@ impl Transformation {
     }
 
     fn qr_givens_quat(a: f32, b: f32) -> Givens {
-        let p = a.hypot(b);
+        let p = f64::from(a).hypot(f64::from(b)) as f32;
 
         let mut sin_half = if p > DECOMPOSITION_EPSILON { b } else { 0.0 };
         let mut cos_half = a.abs() + p.max(DECOMPOSITION_EPSILON);
@@ -123,7 +124,6 @@ impl Transformation {
 
         let mat = Mat3::from_mat4(input);
 
-        // Calculate transpose(A) * A.
         let mut ata = mat.transpose() * mat;
 
         // Approximate the eigendecomposition of ata.
@@ -135,8 +135,8 @@ impl Transformation {
         // Use the resulting quaternion to get the right rotation's conjugate.
         right_rotation = right_rotation.normalize();
 
-        let zero_column_0 = ata.col(0)[0] < DECOMPOSITION_EPSILON;
-        let zero_column_1 = ata.col(1)[1] < DECOMPOSITION_EPSILON;
+        let zero_column_0 = f64::from(ata.col(0)[0]) < DECOMPOSITION_EPSILON_F64;
+        let zero_column_1 = f64::from(ata.col(1)[1]) < DECOMPOSITION_EPSILON_F64;
 
         // Get a matrix that can be reduced to a diagonal form.
         let u012s = mat * Mat3::from_quat(right_rotation);
@@ -209,7 +209,8 @@ impl Givens {
     }
 
     fn from_unnormalized(sin_half: f32, cos_half: f32) -> Self {
-        let inv_sqrt = 1.0 / sin_half.hypot(cos_half);
+        let length_squared = sin_half * sin_half + cos_half * cos_half;
+        let inv_sqrt = 1.0 / (f64::from(length_squared).sqrt() as f32);
         Self::new(inv_sqrt * sin_half, inv_sqrt * cos_half)
     }
 
@@ -344,12 +345,13 @@ mod tests {
     /// the given matrix.
     fn check_transformation(transformation: Transformation, given_mat: Mat4) {
         let new = Transformation::decompose(transformation.compose());
+
         assert!(
-            transformation.compose().abs_diff_eq(new.compose(), 1.0e-4),
+            transformation.compose().abs_diff_eq(new.compose(), 1.0e-5),
             "Transformation matrices are not approximately equal: {transformation:?} {new:?}"
         );
         assert!(
-            transformation.compose().abs_diff_eq(given_mat, 1.0e-2),
+            transformation.compose().abs_diff_eq(given_mat, 1.0e-5),
             "The new matrix and the given matrix are not approximately equal: {:?} {given_mat:?}",
             transformation.compose()
         );
@@ -378,9 +380,9 @@ mod tests {
                 right_rotation: Quat::from_axis_angle(Vec3::new(7.0, 8.0, 9.0).normalize(), 0.22),
             },
             Mat4::from_cols(
-                Vec4::new(2.495, 1.423, -0.8674, 0.0),
-                Vec4::new(-1.073, 2.566, 1.124, 0.0),
-                Vec4::new(1.275, -0.6245, 2.643, 0.0),
+                Vec4::new(2.494755268, 1.422634602, -0.867355704, 0.0),
+                Vec4::new(-1.072713733, 2.566348314, 1.123895526, 0.0),
+                Vec4::new(1.274943113, -0.624473333, 2.642830372, 0.0),
                 Vec4::new(1.0, 2.0, 3.0, 1.0),
             ),
         );
@@ -396,9 +398,9 @@ mod tests {
                 ),
             },
             Mat4::from_cols(
-                Vec4::new(9.746, 30.41, 3.378, 0.0),
-                Vec4::new(-29.80, 9.971, -9.624, 0.0),
-                Vec4::new(-10.05, -0.1865, 29.36, 0.0),
+                Vec4::new(9.745660782, 30.406545639, 3.377947807, 0.0),
+                Vec4::new(-29.800283432, 9.970774651, -9.624348640, 0.0),
+                Vec4::new(-10.048495293, -0.186506540, 29.358907700, 0.0),
                 Vec4::new(-99.0, 25.0, 3000.0, 1.0),
             ),
         );

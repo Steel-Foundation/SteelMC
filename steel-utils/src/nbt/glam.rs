@@ -7,24 +7,25 @@ use simdnbt::borrow::NbtTag as BorrowedNbtTag;
 
 fn numeric_f32_list(tag: BorrowedNbtTag, len: usize) -> Option<Vec<f32>> {
     if let Some(list) = tag.list() {
-        list.to_owned()
+        return list
+            .to_owned()
             .as_nbt_tags()
             .iter()
             .map(NbtNumeric::codec_f32)
             .take(len)
-            .collect()
-            .filter(|v| v.len() >= len)
+            .collect::<Option<Vec<_>>>()
+            .filter(|v| v.len() >= len);
     }
 
     tag.byte_array()
-        .map(|v| v.iter().map(|&v| f32::from(v as i8)).collect())
+        .map(|v| v.iter().map(|&v| f32::from(v as i8)).collect::<Vec<_>>())
         .or_else(|| {
             tag.int_array()
-                .map(|v| v.into_iter().map(|v| v as f32).collect())
+                .map(|v| v.into_iter().map(|v| v as f32).collect::<Vec<_>>())
         })
         .or_else(|| {
             tag.long_array()
-                .map(|v| v.into_iter().map(|v| v as f32).collect())
+                .map(|v| v.into_iter().map(|v| v as f32).collect::<Vec<_>>())
         })
         .filter(|v| v.len() >= len)
 }
@@ -38,11 +39,7 @@ pub fn vec3_to_nbt_tag(vec3: Vec3) -> NbtTag {
 /// Tries to convert a [`Vec3`] from its NBT representation (recreates `ExtraCodecs.VECTOR3F`).
 #[must_use]
 pub fn vec3_from_nbt_tag(tag: BorrowedNbtTag) -> Option<Vec3> {
-    if let Some(floats) = numeric_f32_list(tag, 3) {
-        Some(Vec3::new(floats[0], floats[1], floats[2]))
-    } else {
-        None
-    }
+    numeric_f32_list(tag, 3).map(|floats| Vec3::new(floats[0], floats[1], floats[2]))
 }
 
 /// A rotation storing an angle and axis (in 3 components).
@@ -114,6 +111,7 @@ pub fn mat4_to_nbt_tag(mat: Mat4) -> NbtTag {
 /// Tries to convert a [`Mat4`] from its NBT representation (recreates `ExtraCodecs.MATRIX4F`).
 #[must_use]
 pub fn mat4_from_nbt_tag(tag: BorrowedNbtTag) -> Option<Mat4> {
-    let floats = numeric_f32_list(tag, 16)?.as_array()?;
-    Some(Mat4::from_cols_array(&floats).transpose())
+    let list = numeric_f32_list(tag, 16)?;
+    let floats = list.as_array()?;
+    Some(Mat4::from_cols_array(floats).transpose())
 }
