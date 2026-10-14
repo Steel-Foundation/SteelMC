@@ -228,7 +228,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .set(duration);
     }
 
-    /// Gets the display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks.
+    /// Gets the display entity's *start interpolation delay* (the time to interpolate to a new position due to a teleport), in ticks.
     ///
     /// Values are clamped to be between `0` and `59` ticks, inclusive.
     ///
@@ -257,7 +257,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
         *self.display_data().pos_rot_interpolation_duration.get()
     }
 
-    /// Sets the display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks, to `duration`.
+    /// Sets the display entity's *start interpolation delay* (the time to interpolate to a new position due to a teleport), in ticks, to `duration`.
     fn set_pos_rot_interpolation_duration(&mut self, duration: i32) {
         self.display_data_mut()
             .pos_rot_interpolation_duration
