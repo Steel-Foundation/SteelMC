@@ -132,7 +132,7 @@ pub enum TransformStateProvider {
 
 /// Minimal stand-in for `net.minecraft.util.valueproviders.IntProvider`,
 /// covering only the shapes wired up for `randomized_int` block transforms.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntProviderLiteral {
     Constant(i32),
     Uniform {

@@ -17,7 +17,7 @@ use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 /// Mirrors vanilla's `TrimMaterial(Identifier paletteId, Component description)`
 /// record — the old per-equipment `asset_name`/`override_armor_assets` texture
 /// suffix system was removed in favor of a single shared palette texture.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrimMaterialValue {
     palette_id: Identifier,
     description: TextComponent,

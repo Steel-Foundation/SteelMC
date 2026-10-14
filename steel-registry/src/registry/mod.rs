@@ -102,6 +102,7 @@ use crate::{
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
 use std::{
+
     fmt::Debug,
     ops::Deref,
     sync::{Once, OnceLock},

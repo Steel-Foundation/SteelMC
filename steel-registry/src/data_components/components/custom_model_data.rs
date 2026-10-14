@@ -385,9 +385,6 @@ mod tests {
             vec![0x123456],
         );
 
-        assert_eq!(
-            value.compute_hash(),
-            value.clone().to_nbt_tag().compute_hash()
-        );
+        assert_eq!(value.compute_hash(), value.to_nbt_tag().compute_hash());
     }
 }

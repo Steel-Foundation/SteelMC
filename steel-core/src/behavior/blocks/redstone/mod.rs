@@ -26,25 +26,23 @@ pub(crate) const MAX_REDSTONE_SIGNAL: i32 = 15;
 /// Minimum vanilla redstone signal strength.
 pub(crate) const MIN_REDSTONE_SIGNAL: i32 = 0;
 
-pub use bell_block::BellBlock;
-pub use button_block::ButtonBlock;
-pub use copper_bulb_block::{CopperBulbBlock, WeatheringCopperBulbBlock};
-pub use daylight_detector_block::DaylightDetectorBlock;
-pub use diode::{ComparatorBlock, RepeaterBlock};
-pub use lever_block::LeverBlock;
-pub use lightning_rod_block::LightningRodBlock;
-pub use note_block::NoteBlock;
-pub use observer_block::ObserverBlock;
-pub use piston::{MovingPistonBlock, PistonBaseBlock, PistonHeadBlock};
-pub use powered_block::PoweredBlock;
-pub use pressure_plate::{
-    PressurePlateBlock, PressurePlateSensitivity, WeightedPressurePlateBlock,
-};
-pub use rail::{DetectorRailBlock, PoweredRailBlock, RailBlock};
-pub use redstone_lamp_block::RedstoneLampBlock;
-pub use redstone_ore_block::RedStoneOreBlock;
-pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
-pub use target_block::TargetBlock;
-pub use tripwire::{TripWireBlock, TripWireHookBlock};
-pub use weathering_lightning_rod_block::WeatheringLightningRodBlock;
-pub use wire::RedstoneWireBlock;
+pub use bell_block::*;
+pub use button_block::*;
+pub use copper_bulb_block::*;
+pub use daylight_detector_block::*;
+pub use diode::*;
+pub use lever_block::*;
+pub use lightning_rod_block::*;
+pub use note_block::*;
+pub use observer_block::*;
+pub use piston::*;
+pub use powered_block::*;
+pub use pressure_plate::*;
+pub use rail::*;
+pub use redstone_lamp_block::*;
+pub use redstone_ore_block::*;
+pub use redstone_torch_block::*;
+pub use target_block::*;
+pub use tripwire::*;
+pub use weathering_lightning_rod_block::*;
+pub use wire::*;

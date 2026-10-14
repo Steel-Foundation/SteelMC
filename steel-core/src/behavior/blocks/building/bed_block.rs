@@ -70,7 +70,7 @@ impl BedBlock {
         pos: BlockPos,
     ) -> Option<(BlockStateId, BlockPos)> {
         let part = state.get_value(BED_PART);
-        let other_pos = Self::neighbor_direction(&part, state.get_value(FACING)).relative(pos);
+        let other_pos = Self::neighbor_direction(part, state.get_value(FACING)).relative(pos);
         let other_state = world.get_block_state(other_pos);
         if other_state.get_block() != self.block || other_state.get_value(BED_PART) == part {
             return None;
@@ -82,7 +82,7 @@ impl BedBlock {
         }
     }
 
-    const fn neighbor_direction(part: &BedPart, facing: Direction) -> Direction {
+    const fn neighbor_direction(part: BedPart, facing: Direction) -> Direction {
         match part {
             BedPart::Foot => facing,
             BedPart::Head => facing.opposite(),
@@ -306,7 +306,7 @@ impl BlockBehavior for BedBlock {
         }
 
         let facing = state.get_value(FACING);
-        let head_pos = Self::neighbor_direction(&BedPart::Foot, facing).relative(pos);
+        let head_pos = Self::neighbor_direction(BedPart::Foot, facing).relative(pos);
         let head_state = world.get_block_state(head_pos);
         if head_state.get_block() != self.block || head_state.get_value(BED_PART) != BedPart::Head {
             return state;
@@ -332,7 +332,7 @@ impl BlockBehavior for BedBlock {
     ) -> BlockStateId {
         let part = state.get_value(BED_PART);
         let facing = state.get_value(FACING);
-        if direction != Self::neighbor_direction(&part, facing) {
+        if direction != Self::neighbor_direction(part, facing) {
             return state;
         }
 

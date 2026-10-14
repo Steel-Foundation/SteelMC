@@ -1,6 +1,6 @@
 use super::{
-    Arc, CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
-    Entity, EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
+    CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket, Entity,
+    EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
 };
 
 impl World {
@@ -11,8 +11,8 @@ impl World {
     pub fn broadcast_chat(
         &self,
         mut packet: CPlayerChat,
-        _sender: Arc<Player>,
-        sender_last_seen: LastSeen,
+        _sender: &Player,
+        sender_last_seen: &LastSeen,
         message_signature: Option<&[u8; 256]>,
     ) {
         log::debug!(
@@ -37,7 +37,7 @@ impl World {
             let previous_messages = {
                 let chat = recipient.chat().lock();
                 chat.signature_cache
-                    .index_previous_messages(&sender_last_seen)
+                    .index_previous_messages(sender_last_seen)
             };
 
             log::debug!(
@@ -55,8 +55,7 @@ impl World {
             {
                 let mut chat = recipient.chat().lock();
                 if let Some(signature) = message_signature {
-                    chat.signature_cache
-                        .push(&sender_last_seen, Some(signature));
+                    chat.signature_cache.push(sender_last_seen, Some(signature));
 
                     log::debug!("  Added signature to recipient's cache and pending list");
 

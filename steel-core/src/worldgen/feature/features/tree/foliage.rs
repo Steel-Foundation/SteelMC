@@ -1150,7 +1150,9 @@ impl FeatureDecorationRunner {
                 Self::cherry_foliage_should_skip_location(random, placer, dx, y, dz, current_radius)
             }
             FoliagePlacer::DarkOak(_) => unreachable!(),
-            FoliagePlacer::Poplar(_) => todo!("poplar tree foliage placement"),
+            FoliagePlacer::Poplar(_) => {
+                unreachable!("Poplar uses poplar_foliage_should_skip_location")
+            }
         }
     }
 

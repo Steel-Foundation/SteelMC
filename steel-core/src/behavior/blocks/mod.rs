@@ -15,46 +15,13 @@ mod redstone;
 mod utils;
 pub mod vegetation;
 
-pub use building::{
-    AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BrushableBlock,
-    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, ConduitBlock, DoorBlock,
-    DropExperienceBlock, FenceBlock, FenceGateBlock, FrostedIceBlock, GlazedTerracottaBlock,
-    HayBlock, HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
-    LayeredCauldronBlock, MagmaBlock, MudBlock, NetherrackBlock, PotentSulfurBlock,
-    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
-    SoulSandBlock, SpongeBlock, StairBlock, StrawBedBlock, TrapDoorBlock, WallBlock,
-    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
-    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
-    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
-    WetSpongeBlock,
-};
-pub use colored::{StainedGlassBlock, StainedGlassPaneBlock};
-pub use container::{
-    AnvilBlock, BarrelBlock, BeaconBlock, BeehiveBlock, BlastFurnaceBlock, ChiseledBookShelfBlock,
-    CraftingTableBlock, EnderChestBlock, FurnaceBlock, GrindstoneBlock, ShulkerBoxBlock,
-    SmokerBlock,
-};
-pub use decoration::{
-    BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
-    EndRodBlock, FlowerPotBlock, JukeboxBlock, LanternBlock, StandingSignBlock, TorchBlock,
-    WallBannerBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
-    WeatheringCopperChainBlock, WeatheringLanternBlock, facing_text_slot,
-};
-pub use falling::{ConcretePowderBlock, DragonEggBlock, FallingBlock, SandBlock};
-pub use fluid::{BubbleColumnBlock, LiquidBlock};
-pub use portal::{
-    EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
-    RespawnAnchorBlock, SoulFireBlock,
-};
-pub use redstone::{
-    BellBlock, ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock,
-    DetectorRailBlock, LeverBlock, LightningRodBlock, MovingPistonBlock, NoteBlock, ObserverBlock,
-    PistonBaseBlock, PistonHeadBlock, PoweredBlock, PoweredRailBlock, PressurePlateBlock,
-    PressurePlateSensitivity, RailBlock, RedStoneOreBlock, RedstoneLampBlock, RedstoneTorchBlock,
-    RedstoneWallTorchBlock, RedstoneWireBlock, RepeaterBlock, TargetBlock, TripWireBlock,
-    TripWireHookBlock, WeatheringCopperBulbBlock, WeatheringLightningRodBlock,
-    WeightedPressurePlateBlock,
-};
-pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
+pub use building::*;
+pub use colored::*;
+pub use container::*;
+pub use decoration::*;
+pub use falling::*;
+pub use fluid::*;
+pub use portal::*;
+pub use redstone::*;
 pub(crate) use utils::multiface_face_property;
 pub use vegetation::*;

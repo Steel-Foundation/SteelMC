@@ -11,7 +11,7 @@ use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum Direction {
     /// Negative Y direction.
     Down,

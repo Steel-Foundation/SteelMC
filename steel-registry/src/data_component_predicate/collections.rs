@@ -4,7 +4,7 @@ use super::{
 };
 
 /// Generic collection predicate shared by container, firework, book, and attribute checks.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectionPredicate<P> {
     contains: Option<Vec<P>>,
     counts: Option<Vec<CollectionCountPredicate<P>>>,
@@ -99,7 +99,7 @@ impl<P> CollectionPredicate<P> {
 }
 
 /// One element predicate and the accepted number of matching elements.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectionCountPredicate<P> {
     test: P,
     count: IntBounds,

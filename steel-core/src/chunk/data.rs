@@ -176,9 +176,9 @@ impl Chunk {
         level: Weak<World>,
         mut light: ChunkLightData,
     ) -> Self {
-        if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
-            panic!("invalid loaded proto chunk light emptiness map length: {error:?}");
-        }
+        light
+            .refresh_emptiness_maps_from_sections(&sections)
+            .expect("invalid loaded proto chunk light emptiness map length");
 
         let chunk = Self {
             sections,
@@ -982,13 +982,10 @@ impl Chunk {
     }
 
     pub(crate) fn refresh_light_emptiness_maps(&self) {
-        if let Err(error) = self
-            .light
+        self.light
             .write()
             .refresh_emptiness_maps_from_sections(&self.sections)
-        {
-            panic!("invalid proto chunk light emptiness map length: {error:?}");
-        }
+            .expect("invalid proto chunk light emptiness map length");
     }
 
     /// Applies the heightmap side effect for an optimized direct section write.
