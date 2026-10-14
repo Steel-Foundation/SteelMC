@@ -202,6 +202,37 @@ fn safe_spawn_in_a_ceiling_dimension_avoids_fluid_and_the_roof() {
 }
 
 #[test]
+fn safe_spawn_does_not_drop_through_an_ocean_floor_into_a_cave() {
+    with_search_world("ocean_cave", &vanilla_dimension_types::OVERWORLD, |world| {
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let set = |y: i32, state| set_block(world, BlockPos::new(0, y, 0), state);
+        let stone = vanilla_blocks::STONE.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+        let water = vanilla_blocks::WATER.default_state();
+
+        // Open sea over a floor of stone, with a sealed air pocket deep below it.
+        for y in 20..=60 {
+            set(y, stone);
+        }
+        for y in 61..=63 {
+            set(y, water);
+        }
+        set(30, air);
+        set(31, air);
+        assert_eq!(world.safe_spawn_in_column(0, 0), None);
+
+        // Dry land over the same pocket stands on the surface.
+        for y in 61..=63 {
+            set(y, air);
+        }
+        assert_eq!(
+            world.safe_spawn_in_column(0, 0),
+            Some(BlockPos::new(0, 61, 0))
+        );
+    });
+}
+
+#[test]
 fn failed_search_in_a_lava_cavern_falls_back_to_a_ledge_only_when_asked() {
     with_search_world("cavern", &vanilla_dimension_types::THE_NETHER, |world| {
         assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 0));

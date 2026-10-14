@@ -101,7 +101,14 @@ impl World {
             self.vanilla_chunk_height_at(HeightmapType::MotionBlocking, x, z)? + 1
         };
 
-        for y in ((min_y + 1)..=top_y).rev() {
+        // Below an open sky only the surface counts; what lies under it is sealed caves.
+        let lowest_y = if self.dimension_type.has_ceiling {
+            min_y + 1
+        } else {
+            top_y
+        };
+
+        for y in (lowest_y..=top_y).rev() {
             let floor_pos = BlockPos::new(x, y - 1, z);
             let floor = self.get_block_state(floor_pos);
             if floor.has_fluid()
