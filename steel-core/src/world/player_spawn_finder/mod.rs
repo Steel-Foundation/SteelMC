@@ -326,10 +326,7 @@ impl PlayerSpawnSearch {
             .unwrap_or(CandidateResult::Invalid)
     }
 
-    /// Loads the pending candidate's chunk and evaluates every candidate in it, then
-    /// releases the chunk. Stops early once the pending candidate is a valid spawn.
-    ///
-    /// Returns the poll to report when the batch is not done yet.
+    /// Evaluates candidates in one chunk and caches their results by sequence index
     fn poll_chunk_batch(
         &mut self,
         world: &Arc<World>,
