@@ -12,7 +12,7 @@ pub(super) use steel_registry::feature::{
     AttachedToLeavesDecorator, AttachedToLogsDecorator, BambooConfiguration,
     BasaltColumnsConfiguration, BendingTrunkPlacer, BlobFoliagePlacer, BlockBlobConfiguration,
     BlockColumnConfiguration, BlockHolderSet, BlockPileConfiguration, BlockPredicate,
-    BlockStateData, BlockStateProvider, CherryFoliagePlacer, CherryTrunkPlacer,
+    BlockStateData, BlockStateProviderKind, CherryFoliagePlacer, CherryTrunkPlacer,
     ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
     DripstoneClusterConfiguration, DualNoiseProvider, EndGatewayConfiguration, EndSpike,
     EndSpikeConfiguration, FallenTreeConfiguration, FeatureHeightmap, FeatureNoiseParameters,
@@ -22,14 +22,17 @@ pub(super) use steel_registry::feature::{
     MultifaceGrowthConfiguration, NetherForestVegetationConfiguration,
     NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
     PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
-    PlacementModifier, PointedDripstoneConfiguration, RandomSpreadFoliagePlacer, RootPlacer,
-    RootSystemConfiguration, RuleTest, SculkPatchConfiguration, SeaPickleConfiguration,
-    SeagrassConfiguration, SimpleBlockConfiguration, SpeleothemClusterConfiguration,
-    SpeleothemConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
+    PlacementModifier, PointedDripstoneConfiguration, PoplarFoliagePlacer, PoplarTrunkPlacer,
+    ProjectedRandomPatchySquareConfiguration, RandomNeighborSpreadConfiguration,
+    RandomSpreadFoliagePlacer, RootPlacer, RootSystemConfiguration, SculkPatchConfiguration,
+    SeaPickleConfiguration, SeagrassConfiguration, SimpleBlockConfiguration,
+    SingleBlockPillarConfiguration, SpeleothemClusterConfiguration, SpeleothemConfiguration,
+    SpikeConfiguration, SpringConfiguration, SteppedColumnClusterConfiguration, TreeConfiguration,
     TreeDecorator, TrunkPlacer, TwistingVinesConfiguration, UnderwaterMagmaConfiguration,
     UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration, VerticalSurface,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
+pub(super) use steel_registry::structure_processor::StructureRuleTestData;
 pub(super) use steel_registry::{
     REGISTRY, Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _,
     vanilla_blocks, vanilla_fluids,

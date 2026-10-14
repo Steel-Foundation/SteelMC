@@ -550,7 +550,7 @@ impl FishingHookEntity {
                             return damage;
                         };
 
-                        self.spawn_loot_award_stat(items, Arc::clone(&world), Arc::clone(&owner));
+                        self.spawn_loot_award_stat(items, &world, owner.as_ref());
 
                         let orb_pos = DVec3::new(
                             player.position().x,
@@ -626,12 +626,7 @@ impl FishingHookEntity {
 
     // I added this fn because I thought it would be cleaner this way, it's not in the vanilla src, but how I use it ensures vanilla behavior
     /// Loops through a `vec` of `ItemStack`s (the fishing loot), spawns them as `ItemEntity`s in the world and awards the stat `FISH_CAUGHT`
-    fn spawn_loot_award_stat(
-        &self,
-        items: Vec<ItemStack>,
-        world: Arc<World>,
-        owner: Arc<dyn Entity>,
-    ) {
+    fn spawn_loot_award_stat(&self, items: Vec<ItemStack>, world: &Arc<World>, owner: &dyn Entity) {
         for item_stack in items {
             const SPEED: f64 = 0.1;
             const INVERSE_CUBE: f64 = 0.08;
@@ -647,7 +642,7 @@ impl FishingHookEntity {
                     za * SPEED,
                 );
 
-                World::spawn_item_with_velocity(&world, self.position(), item_stack.clone(), vel);
+                World::spawn_item_with_velocity(world, self.position(), item_stack.clone(), vel);
 
                 if item_stack.item().has_tag(&ItemTag::FISHES) {
                     player.award_custom_stat(&vanilla_custom_stats::FISH_CAUGHT);

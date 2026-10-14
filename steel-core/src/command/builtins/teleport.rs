@@ -3,9 +3,8 @@
 use std::{slice, sync::Arc};
 
 use glam::DVec3;
-use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{CSetCamera, RelativeMovement};
-use steel_utils::{BlockPos, Identifier, translations};
+use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
 use super::super::{
@@ -16,6 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use super::position::{ensure_spawnable_position, wrap_rotation};
 use crate::{
     entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
     portal::{TeleportPostTransition, TeleportTransition},
@@ -305,15 +305,6 @@ fn perform_teleport(
     }
 }
 
-pub(super) fn ensure_spawnable_position(position: DVec3) -> Result<(), CommandSyntaxError> {
-    if World::is_in_spawnable_bounds(BlockPos::from(position)) {
-        return Ok(());
-    }
-    Err(CommandSyntaxError::dynamic(TextComponent::from(
-        &translations::COMMANDS_TELEPORT_INVALID_POSITION,
-    )))
-}
-
 fn ensure_same_domain_targets(
     targets: &[SharedEntity],
     target_world: &World,
@@ -409,10 +400,6 @@ fn packet_rotation(
             desired.1
         },
     ))
-}
-
-pub(super) fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
-    (wrap_degrees(yaw), wrap_degrees(pitch))
 }
 
 fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], destination: &dyn Entity) {

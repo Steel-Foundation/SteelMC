@@ -36,6 +36,10 @@ quote.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
 steel-registry.workspace = true
 criterion.workspace = true
 

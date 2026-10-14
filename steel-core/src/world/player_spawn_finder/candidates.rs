@@ -1,4 +1,4 @@
-use steel_utils::BlockPos;
+use steel_utils::{BlockPos, ChunkPos};
 
 const ABSOLUTE_MAX_ATTEMPTS: i32 = 1024;
 
@@ -41,10 +41,6 @@ impl CandidateSequence {
         self.count
     }
 
-    pub(super) const fn radius(&self) -> i32 {
-        self.radius
-    }
-
     /// The block column of the candidate at `index`.
     pub(super) const fn column(&self, index: i32) -> (i32, i32) {
         let value = (self.offset + self.coprime * index) % self.count;
@@ -53,6 +49,12 @@ impl CandidateSequence {
             self.spawn_suggestion.x() + value % side - self.radius,
             self.spawn_suggestion.z() + value / side - self.radius,
         )
+    }
+
+    /// The chunk of the candidate at `index`.
+    pub(super) const fn chunk(&self, index: i32) -> ChunkPos {
+        let (x, z) = self.column(index);
+        ChunkPos::from_block_pos(BlockPos::new(x, 0, z))
     }
 }
 

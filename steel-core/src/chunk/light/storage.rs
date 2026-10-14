@@ -413,10 +413,7 @@ impl ChunkLightData {
     /// Panics when the supplied world height cannot form a valid light-section range.
     #[must_use]
     pub fn for_valid_world_height(min_y: i32, height: i32) -> Self {
-        match Self::new(min_y, height) {
-            Ok(data) => data,
-            Err(error) => panic!("invalid world height for chunk light data: {error:?}"),
-        }
+        Self::new(min_y, height).expect("invalid world height for chunk light data")
     }
 
     /// Refreshes both layer emptiness maps from current chunk section counters.

@@ -10,8 +10,8 @@ use steel_utils::BlockPos;
 use crate::chunk::heightmap::HeightmapType;
 use crate::world::World;
 
-use super::chunk_load::ChunkLoadState;
-use super::{PlayerSpawnSearch, PollBudget, block_to_chunk};
+use super::chunk_load::{PollBudget, ScanEnd, Visit};
+use super::{LoadPoll, PlayerSpawnSearch};
 
 /// Looks for a standing spot in the candidate columns, one chunk at a time.
 #[derive(Default)]
@@ -56,39 +56,35 @@ impl PlayerSpawnSearch {
                     return FallbackPoll::Exhausted;
                 };
                 self.fallback.anchor = anchor;
-                let (x, z) = sequence.column(anchor);
-                (block_to_chunk(x, z), anchor)
+                (sequence.chunk(anchor), anchor)
             };
-            match self.poll_loading(world, chunk, next_scan) {
-                ChunkLoadState::Ready => {}
-                ChunkLoadState::Waiting => return FallbackPoll::Waiting,
-                ChunkLoadState::Cancelled => return FallbackPoll::Cancelled,
-            }
-            let Some(load) = self.loading.as_mut() else {
-                return FallbackPoll::Waiting;
+            let mut load = match self.poll_loading(world, chunk, next_scan) {
+                LoadPoll::Ready(load) => load,
+                LoadPoll::Waiting => return FallbackPoll::Waiting,
+                LoadPoll::Cancelled => return FallbackPoll::Cancelled,
             };
 
-            while load.next_scan < sequence.count() {
-                if budget.exhausted() {
-                    return FallbackPoll::Waiting;
-                }
-                let index = load.next_scan;
-                load.next_scan += 1;
-                let (x, z) = sequence.column(index);
-                let Some(scanned) = self.fallback.scanned.get_mut(index as usize) else {
-                    continue;
+            let scanned = &mut self.fallback.scanned;
+            let end = load.scan(&sequence, budget, |index, x, z| {
+                let Some(scanned) = scanned.get_mut(index as usize) else {
+                    return Visit::Skip;
                 };
-                if *scanned || block_to_chunk(x, z) != load.chunk {
-                    continue;
+                if *scanned {
+                    return Visit::Skip;
                 }
                 *scanned = true;
-                budget.evaluated += 1;
-                if let Some(pos) = world.safe_spawn_in_column(x, z) {
-                    self.loading = None;
-                    return FallbackPoll::Found(pos);
+                world
+                    .safe_spawn_in_column(x, z)
+                    .map_or(Visit::Evaluated, Visit::Stop)
+            });
+            match end {
+                ScanEnd::Stopped(pos) => return FallbackPoll::Found(pos),
+                ScanEnd::OutOfBudget => {
+                    self.loading = Some(load);
+                    return FallbackPoll::Waiting;
                 }
+                ScanEnd::Finished => {}
             }
-            self.loading = None;
         }
     }
 }
@@ -114,8 +110,9 @@ impl World {
                 continue;
             }
             let pos = BlockPos::new(x, y, z);
-            // Cheap rejection before the full box test. Slightly stricter than it: a shape
-            // in the top fifth of the head block would not touch the player box.
+            // Prunes the solid blocks below the surface before the much costlier box test. It
+            // also rejects a head block whose shape stays above the player's box, which the box
+            // test would allow.
             let head_pos = pos.above();
             let feet = self.get_block_state(pos);
             let head = self.get_block_state(head_pos);

@@ -1,9 +1,9 @@
 use super::super::{
     Arc, BlockPos, ChunkPos, ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkStatus,
-    ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, EntryOverride,
-    NetworkConnection, PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player,
-    PlayerSpawnSearch, PlayerSpawnSearchPoll, PreparedSpawn, RelativeMovement, RemovalReason,
-    RespawnData, Server, SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World,
+    ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, NetworkConnection,
+    PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch,
+    PlayerSpawnSearchPoll, PreparedSpawn, RelativeMovement, RemovalReason, RespawnData, Server,
+    SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World, WorldEntry,
     change_entity_world, end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal,
     vanilla_entities,
 };
@@ -18,6 +18,7 @@ pub(in crate::server) struct RootVehicleRestoreJob {
     attach: [u8; 16],
     root_uuid: [u8; 16],
     residence_token: DomainResidenceToken,
+    mount_player: bool,
 }
 
 impl RootVehicleRestoreJob {
@@ -26,6 +27,7 @@ impl RootVehicleRestoreJob {
         world: Arc<World>,
         root_vehicle: &PersistentRootVehicle,
         residence_token: DomainResidenceToken,
+        mount_player: bool,
     ) -> Option<Self> {
         let root_chunk = persistent_entity_chunk(&root_vehicle.entity)?;
         let request = world.chunk_map.request_chunk(
@@ -40,6 +42,7 @@ impl RootVehicleRestoreJob {
             attach: root_vehicle.attach,
             root_uuid: root_vehicle.entity.uuid,
             residence_token,
+            mount_player,
         })
     }
 }
@@ -80,7 +83,12 @@ impl ServerJob for RootVehicleRestoreJob {
                     self.attach,
                     self.root_uuid,
                 ) {
-                    restore_root_vehicle_for_player(&player, &self.world, root_vehicle);
+                    restore_root_vehicle_for_player(
+                        &player,
+                        &self.world,
+                        root_vehicle,
+                        self.mount_player,
+                    );
                 }
                 JobPoll::Finished
             }
@@ -190,20 +198,22 @@ impl WorldSpawnTeleportJob {
         target_world: Arc<World>,
         pending_token: PendingWorldChangeToken,
         prefetch: Option<ChunkRequestHandle>,
-        entry_override: Option<EntryOverride>,
+        entry: WorldEntry,
     ) -> Result<Self, String> {
         if entity.as_player().is_none() {
             return Err("world spawn selection does not belong to a player".to_owned());
         }
-        let (spawn_suggestion, mut rotation) = {
+        let (spawn_suggestion, spawn_rotation) = {
             let level_data = target_world.level_data.read();
             let data = level_data.data();
             (data.spawn_pos(), (data.spawn.angle, 0.0))
         };
-        if let Some(EntryOverride::Rotation(turned)) = entry_override {
-            rotation = turned;
-        }
-        let phase = if let Some(EntryOverride::Exact(spawn)) = entry_override {
+        let rotation = match entry {
+            WorldEntry::Usual => spawn_rotation,
+            WorldEntry::Rotation(turned) => turned,
+            WorldEntry::Exact(spawn) => spawn.rotation,
+        };
+        let phase = if let WorldEntry::Exact(spawn) = entry {
             WorldSpawnTeleportPhase::Loading {
                 request: target_world.request_player_spawn_chunks(spawn.position),
                 spawn,
@@ -810,6 +820,7 @@ fn restore_root_vehicle_for_player(
     player: &Arc<Player>,
     world: &Arc<World>,
     root_vehicle: PersistentRootVehicle,
+    mount_player: bool,
 ) {
     let Some(root_chunk) = persistent_entity_chunk(&root_vehicle.entity) else {
         return;
@@ -851,10 +862,12 @@ fn restore_root_vehicle_for_player(
         return;
     }
 
-    let player_entity: SharedEntity = Arc::<Player>::clone(player);
-    EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
-    attach_entity.position_rider(player.as_ref());
-    player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
+    if mount_player {
+        let player_entity: SharedEntity = Arc::<Player>::clone(player);
+        EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
+        attach_entity.position_rider(player.as_ref());
+        player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
+    }
 
     world.mark_chunk_dirty(root_chunk);
     for entity in &entities {

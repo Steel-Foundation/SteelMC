@@ -14,6 +14,8 @@ use super::{
 pub(super) struct PreparedDomainRestores {
     pub(super) target_world: Arc<World>,
     pub(super) root_vehicle: Option<PersistentRootVehicle>,
+    /// Whether the player rides the restored vehicle.
+    pub(super) mount_vehicle: bool,
     pub(super) ender_pearls: Vec<PreparedEnderPearlRestore>,
 }
 
@@ -262,6 +264,7 @@ impl Server {
         &self,
         player: &Player,
         state: &DomainPlayerState,
+        mount_vehicle: bool,
     ) -> PreparedDomainRestores {
         let target_domain = state.world.domain();
         let ender_pearls = Self::ender_pearls_to_restore(state)
@@ -274,6 +277,7 @@ impl Server {
         PreparedDomainRestores {
             target_world: Arc::clone(&state.world),
             root_vehicle: Self::root_vehicle_to_restore(state),
+            mount_vehicle,
             ender_pearls,
         }
     }
@@ -307,6 +311,7 @@ impl Server {
                 Arc::clone(&restores.target_world),
                 &root_vehicle,
                 residence_token,
+                restores.mount_vehicle,
             ) {
                 self.jobs.spawn(job);
             } else {

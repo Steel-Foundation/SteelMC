@@ -14,14 +14,14 @@ use super::TranspilerInput;
 /// inputs the function can be sampled at. When tight bounds aren't derivable
 /// (e.g., free-form noise with unknown amplitude product, or potentially
 /// unbounded operations like reciprocal), the corresponding side is set to
-/// `f64::NEG_INFINITY` / `f64::INFINITY` and downstream short-circuit
+/// `f32::NEG_INFINITY` / `f32::INFINITY` and downstream short-circuit
 /// optimizations correctly fall through to the unconditional codegen.
 ///
 /// Mirrors the static-bounds analysis used by C2ME's
 /// `MaxShortNode`/`MinShortNode` rewriters, with one extension: we resolve
 /// `Reference` nodes through the build-time registry so cross-function
 /// bounds propagate.
-pub(super) fn compute_bounds(df: &DensityFunction, input: &TranspilerInput) -> (f64, f64) {
+pub(super) fn compute_bounds(df: &DensityFunction, input: &TranspilerInput) -> (f32, f32) {
     compute_bounds_inner(df, input, &mut Vec::new())
 }
 
@@ -29,22 +29,26 @@ pub(super) fn compute_bounds(df: &DensityFunction, input: &TranspilerInput) -> (
     clippy::too_many_lines,
     reason = "one match arm per DensityFunction variant; splitting the dispatch would obscure the per-variant bounds analysis"
 )]
+#[expect(
+    clippy::float_cmp,
+    reason = "exact lerp endpoints avoid NaNs when the other bound is infinite"
+)]
 pub(super) fn compute_bounds_inner(
     df: &DensityFunction,
     input: &TranspilerInput,
     visiting: &mut Vec<String>,
-) -> (f64, f64) {
+) -> (f32, f32) {
     match df {
-        DensityFunction::Constant(c) => (c.value, c.value),
+        DensityFunction::Constant(c) => (c.value as f32, c.value as f32),
 
         DensityFunction::Reference(r) => {
             // Avoid infinite recursion through self-referential cycles (shouldn't
             // happen in practice, but DF graphs are cycle-free only by convention).
             if visiting.iter().any(|n| n == &r.id) {
-                return (f64::NEG_INFINITY, f64::INFINITY);
+                return (f32::NEG_INFINITY, f32::INFINITY);
             }
             let Some(target) = input.registry.get(&r.id) else {
-                return (f64::NEG_INFINITY, f64::INFINITY);
+                return (f32::NEG_INFINITY, f32::INFINITY);
             };
             visiting.push(r.id.clone());
             let bounds = compute_bounds_inner(target, input, visiting);
@@ -53,9 +57,13 @@ pub(super) fn compute_bounds_inner(
         }
 
         DensityFunction::YClampedGradient(g) => {
-            let lo = g.from_value.min(g.to_value);
-            let hi = g.from_value.max(g.to_value);
-            (lo, hi)
+            let Some(span) = g.to_y.checked_sub(g.from_y).filter(|span| *span > 0) else {
+                return (f32::NEG_INFINITY, f32::INFINITY);
+            };
+            let from = g.from_value as f32;
+            let step = (g.to_value as f32 - from) / span as f32;
+            let end = from + span as f32 * step;
+            (from.min(end), from.max(end))
         }
 
         DensityFunction::Noise(_)
@@ -64,7 +72,34 @@ pub(super) fn compute_bounds_inner(
         | DensityFunction::ShiftB(_)
         | DensityFunction::Shift(_)
         | DensityFunction::Spline(_)
-        | DensityFunction::BlendedNoise(_) => (f64::NEG_INFINITY, f64::INFINITY),
+        | DensityFunction::BlendedNoise(_) => (f32::NEG_INFINITY, f32::INFINITY),
+
+        DensityFunction::Lerp(l) => {
+            let (alpha_lo, alpha_hi) = compute_bounds_inner(&l.alpha, input, visiting);
+            let (first_lo, first_hi) = compute_bounds_inner(&l.first, input, visiting);
+            let (second_lo, second_hi) = compute_bounds_inner(&l.second, input, visiting);
+            let mut lo = f32::INFINITY;
+            let mut hi = f32::NEG_INFINITY;
+            for alpha in [alpha_lo, alpha_hi] {
+                for first in [first_lo, first_hi] {
+                    for second in [second_lo, second_hi] {
+                        let value = if alpha == 0.0 {
+                            first
+                        } else if alpha == 1.0 {
+                            second
+                        } else {
+                            first + alpha * (second - first)
+                        };
+                        if value.is_nan() {
+                            return (f32::NEG_INFINITY, f32::INFINITY);
+                        }
+                        lo = lo.min(value);
+                        hi = hi.max(value);
+                    }
+                }
+            }
+            (lo, hi)
+        }
 
         DensityFunction::TwoArgumentSimple(t) => {
             let (a_lo, a_hi) = compute_bounds_inner(&t.argument1, input, visiting);
@@ -74,11 +109,11 @@ pub(super) fn compute_bounds_inner(
                 TwoArgType::Mul => {
                     // Interval arithmetic for sign-mixed multiplication.
                     let candidates = [a_lo * b_lo, a_lo * b_hi, a_hi * b_lo, a_hi * b_hi];
-                    let mut lo = f64::INFINITY;
-                    let mut hi = f64::NEG_INFINITY;
+                    let mut lo = f32::INFINITY;
+                    let mut hi = f32::NEG_INFINITY;
                     for c in candidates {
                         if c.is_nan() {
-                            return (f64::NEG_INFINITY, f64::INFINITY);
+                            return (f32::NEG_INFINITY, f32::INFINITY);
                         }
                         if c < lo {
                             lo = c;
@@ -91,6 +126,28 @@ pub(super) fn compute_bounds_inner(
                 }
                 TwoArgType::Min => (a_lo.min(b_lo), a_hi.min(b_hi)),
                 TwoArgType::Max => (a_lo.max(b_lo), a_hi.max(b_hi)),
+                TwoArgType::Sub => (a_lo - b_hi, a_hi - b_lo),
+                TwoArgType::Div => {
+                    if b_lo <= 0.0 && b_hi >= 0.0 {
+                        (f32::NEG_INFINITY, f32::INFINITY)
+                    } else {
+                        let candidates = [a_lo / b_lo, a_lo / b_hi, a_hi / b_lo, a_hi / b_hi];
+                        let mut lo = f32::INFINITY;
+                        let mut hi = f32::NEG_INFINITY;
+                        for c in candidates {
+                            if c.is_nan() {
+                                return (f32::NEG_INFINITY, f32::INFINITY);
+                            }
+                            if c < lo {
+                                lo = c;
+                            }
+                            if c > hi {
+                                hi = c;
+                            }
+                        }
+                        (lo, hi)
+                    }
+                }
             }
         }
 
@@ -122,11 +179,11 @@ pub(super) fn compute_bounds_inner(
                 MappedType::HalfNegative => {
                     // `if v > 0 { v } else { v * 0.5 }` — monotone non-decreasing
                     // (slope 0.5 below 0, slope 1 above 0).
-                    let map = |v: f64| if v > 0.0 { v } else { v * 0.5 };
+                    let map = |v: f32| if v > 0.0 { v } else { v * 0.5 };
                     (map(lo), map(hi))
                 }
                 MappedType::QuarterNegative => {
-                    let map = |v: f64| if v > 0.0 { v } else { v * 0.25 };
+                    let map = |v: f32| if v > 0.0 { v } else { v * 0.25 };
                     (map(lo), map(hi))
                 }
                 MappedType::Invert => {
@@ -136,12 +193,12 @@ pub(super) fn compute_bounds_inner(
                         let b = 1.0 / hi;
                         (a.min(b), a.max(b))
                     } else {
-                        (f64::NEG_INFINITY, f64::INFINITY)
+                        (f32::NEG_INFINITY, f32::INFINITY)
                     }
                 }
                 MappedType::Squeeze => {
                     // clamp(-1, 1) → c/2 - c³/24. Endpoints: -1/2 + 1/24, 1/2 - 1/24.
-                    let map = |v: f64| {
+                    let map = |v: f32| {
                         let c = v.clamp(-1.0, 1.0);
                         c / 2.0 - c * c * c / 24.0
                     };
@@ -149,10 +206,11 @@ pub(super) fn compute_bounds_inner(
                     let hi_c = hi.clamp(-1.0, 1.0);
                     (map(lo_c), map(hi_c))
                 }
+                MappedType::Negate => (-hi, -lo),
             }
         }
 
-        DensityFunction::Clamp(c) => (c.min, c.max),
+        DensityFunction::Clamp(c) => (c.min as f32, c.max as f32),
 
         DensityFunction::RangeChoice(rc) => {
             let (in_lo, in_hi) = compute_bounds_inner(&rc.when_in_range, input, visiting);
@@ -161,25 +219,23 @@ pub(super) fn compute_bounds_inner(
         }
 
         DensityFunction::IntervalSelect(interval) => {
-            let mut lo = f64::INFINITY;
-            let mut hi = f64::NEG_INFINITY;
+            let mut lo = f32::INFINITY;
+            let mut hi = f32::NEG_INFINITY;
             for function in &interval.functions {
                 let (function_lo, function_hi) = compute_bounds_inner(function, input, visiting);
                 lo = lo.min(function_lo);
                 hi = hi.max(function_hi);
             }
             if lo > hi {
-                (f64::NEG_INFINITY, f64::INFINITY)
+                (f32::NEG_INFINITY, f32::INFINITY)
             } else {
                 (lo, hi)
             }
         }
 
-        DensityFunction::WeirdScaledSampler(_) => {
-            // result = scale * noise.abs() where scale ∈ [0.5, 3.0] and
-            // noise.abs() is non-negative. The upper bound is noise-parameter
-            // dependent, so leave it unbounded for branch-elision purposes.
-            (0.0, f64::INFINITY)
+        DensityFunction::WeirdScaledSampler(_) | DensityFunction::DistanceToPoint(_) => {
+            // Both functions are non-negative with no useful finite upper bound.
+            (0.0, f32::INFINITY)
         }
 
         DensityFunction::EndIslands => (-100.0, 80.0),
@@ -194,7 +250,9 @@ pub(super) fn compute_bounds_inner(
             // Returns a Y coordinate in [lower_bound, upper_bound rounded down].
             // upper_bound is itself a DF — its static upper bound caps the result.
             let (_, upper) = compute_bounds_inner(&fts.upper_bound, input, visiting);
-            (f64::from(fts.lower_bound), upper)
+            (fts.lower_bound as f32, upper.max(fts.lower_bound as f32))
         }
+
+        DensityFunction::Slice(s) => compute_bounds_inner(&s.input, input, visiting),
     }
 }

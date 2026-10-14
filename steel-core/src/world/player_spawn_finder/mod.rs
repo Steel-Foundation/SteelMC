@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::DVec3;
 use steel_registry::vanilla_entities;
@@ -15,7 +15,7 @@ use crate::physics::{CollisionWorld as _, WorldCollisionProvider};
 use crate::world::World;
 
 use candidates::CandidateSequence;
-use chunk_load::{ChunkLoad, ChunkLoadState};
+use chunk_load::{ChunkLoad, ChunkLoadState, PollBudget, ScanEnd, Visit};
 use fallback::{FallbackPass, FallbackPoll};
 
 mod candidates;
@@ -49,8 +49,13 @@ pub(crate) struct PlayerSpawnSearch {
     safe_fallback: bool,
     fallback: FallbackPass,
     prefetch: Option<ChunkRequestHandle>,
-    /// A later request committed receipt also covers the prefetch tickets
-    prefetch_committed: bool,
+}
+
+/// Result of polling the chunk being read; a ready load is handed over.
+enum LoadPoll {
+    Ready(ChunkLoad),
+    Waiting,
+    Cancelled,
 }
 
 #[derive(Clone, Copy)]
@@ -71,28 +76,6 @@ enum CandidateResult {
     Unchecked,
     Invalid,
     Valid(BlockPos),
-}
-
-/// Bounds the time one poll spends evaluating candidates.
-struct PollBudget {
-    started: Instant,
-    limit: Duration,
-    evaluated: usize,
-}
-
-impl PollBudget {
-    fn new(limit: Duration) -> Self {
-        Self {
-            started: Instant::now(),
-            limit,
-            evaluated: 0,
-        }
-    }
-
-    /// At least one candidate is evaluated per poll, so the search always moves forward.
-    fn exhausted(&self) -> bool {
-        self.evaluated > 0 && self.started.elapsed() >= self.limit
-    }
 }
 
 impl PlayerSpawnSearch {
@@ -122,12 +105,11 @@ impl PlayerSpawnSearch {
             safe_fallback: false,
             fallback: FallbackPass::default(),
             prefetch: None,
-            prefetch_committed: false,
         })
     }
 
-    /// Makes a failed search prefer a standing spot that avoids fluid and a ceiling
-    /// dimension's roof over the vanilla height fixup.
+    /// Tries a standing spot that avoids fluid and a ceiling dimension's roof before the
+    /// vanilla height fixup.
     #[must_use]
     pub(crate) const fn with_safe_fallback(mut self) -> Self {
         self.safe_fallback = true;
@@ -153,29 +135,20 @@ impl PlayerSpawnSearch {
         radius
     }
 
-    /// Requests the spawn chunk square around `world`'s spawn point, for a search that
-    /// has not been created yet. See [`Self::with_prefetch`].
-    pub(crate) fn prefetch_world_spawn_area(world: &Arc<World>) -> Option<ChunkRequestHandle> {
-        let spawn_suggestion = world.level_data.read().data().spawn_pos();
+    /// Requests the spawn area around `spawn_suggestion` before the search starts, unless the
+    /// search is wide enough for its spawn to lie outside the square. See [`Self::with_prefetch`].
+    pub(crate) fn prefetch_spawn_area(
+        world: &Arc<World>,
+        spawn_suggestion: BlockPos,
+    ) -> Option<ChunkRequestHandle> {
         let radius = if world.default_gamemode() == GameType::Adventure {
             0
         } else {
             Self::search_radius(world, spawn_suggestion)
         };
-        Self::request_spawn_area(world, spawn_suggestion, radius)
-    }
-
-    /// Requests the chunk square around the spawn suggestion, if the search stays within one
-    /// chunk of it. The final spawn is then inside the square, so the square requested after
-    /// the search overlaps this one in at least 36 of its 49 chunks.
-    fn request_spawn_area(
-        world: &Arc<World>,
-        spawn_suggestion: BlockPos,
-        radius: i32,
-    ) -> Option<ChunkRequestHandle> {
         (radius <= BLOCKS_PER_CHUNK).then(|| {
             world.chunk_map.request_square(
-                block_to_chunk(spawn_suggestion.x(), spawn_suggestion.z()),
+                ChunkPos::from_block_pos(spawn_suggestion),
                 PLAYER_SPAWN_CHUNK_RADIUS,
                 ChunkStatus::Full,
                 ChunkTicketKind::PlayerSpawn,
@@ -183,20 +156,11 @@ impl PlayerSpawnSearch {
         })
     }
 
-    /// Adopts a spawn area request made by [`Self::prefetch_world_spawn_area`]. Chunk
-    /// generation then overlaps the search instead of following it.
+    /// Adopts a request made by [`Self::prefetch_spawn_area`].
     #[must_use]
     pub(crate) fn with_prefetch(mut self, prefetch: Option<ChunkRequestHandle>) -> Self {
         self.prefetch = prefetch;
         self
-    }
-
-    /// Starts loading the spawn chunk square around the spawn suggestion now.
-    #[must_use]
-    pub(crate) fn with_spawn_area_prefetch(self, world: &Arc<World>) -> Self {
-        let prefetch =
-            Self::request_spawn_area(world, self.spawn_suggestion, self.sequence.radius());
-        self.with_prefetch(prefetch)
     }
 
     #[must_use]
@@ -225,7 +189,9 @@ impl PlayerSpawnSearch {
                 return self.poll_fixup(world, pending, &mut budget);
             }
 
-            if matches!(self.result(pending.index), CandidateResult::Unchecked)
+            // A batch that ran out of budget is still open and continues before the next candidate.
+            if (self.loading.is_some()
+                || matches!(self.result(pending.index), CandidateResult::Unchecked))
                 && let Some(poll) = self.poll_chunk_batch(world, pending, &mut budget)
             {
                 return poll;
@@ -236,8 +202,14 @@ impl PlayerSpawnSearch {
                     return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
                 }
                 CandidateResult::Invalid => {}
-                // The batch always evaluates the pending candidate before it is done.
-                CandidateResult::Unchecked => return PlayerSpawnSearchPoll::Pending,
+                CandidateResult::Unchecked => {
+                    tracing::error!(
+                        "Spawn search finished chunk {:?} without evaluating candidate {}",
+                        pending.chunk,
+                        pending.index
+                    );
+                    return PlayerSpawnSearchPoll::Cancelled;
+                }
             }
         }
     }
@@ -259,53 +231,44 @@ impl PlayerSpawnSearch {
                 FallbackPoll::Exhausted => self.fallback.exhausted = true,
             }
         }
-        match self.poll_loading(world, pending.chunk, 0) {
-            ChunkLoadState::Ready => {}
-            ChunkLoadState::Waiting => return PlayerSpawnSearchPoll::Pending,
-            ChunkLoadState::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
-        }
+        let _load = match self.poll_loading(world, pending.chunk, 0) {
+            LoadPoll::Ready(load) => load,
+            LoadPoll::Waiting => return PlayerSpawnSearchPoll::Pending,
+            LoadPoll::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
+        };
         let safe_pos = self
             .safe_fallback
             .then(|| {
                 world.safe_spawn_in_column(self.spawn_suggestion.x(), self.spawn_suggestion.z())
             })
             .flatten();
-        self.loading = None;
         PlayerSpawnSearchPoll::Ready(safe_pos.map_or_else(
             || world.fixup_spawn_height(self.spawn_suggestion),
             block_bottom_center,
         ))
     }
 
-    /// Whether `chunk` is inside the prefetch square and the prefetch's tickets are committed.
+    /// Whether the prefetch holds `chunk`: it is in the square and the tickets are committed.
     fn chunk_is_held(&self, chunk: ChunkPos) -> bool {
-        self.prefetch_committed
-            && self
-                .prefetch
-                .as_ref()
-                .is_some_and(|prefetch| prefetch.positions().contains(&chunk))
+        self.prefetch.as_ref().is_some_and(|prefetch| {
+            prefetch.tickets_committed() && prefetch.positions().contains(&chunk)
+        })
     }
 
-/// Reuses prefetched chunks otherwise waits for a new request ticket commit
-    fn poll_loading(
-        &mut self,
-        world: &Arc<World>,
-        chunk: ChunkPos,
-        next_scan: i32,
-    ) -> ChunkLoadState {
-        if self.loading.is_none() {
-            let held = self.chunk_is_held(chunk);
-            self.loading = Some(ChunkLoad::open(world, chunk, next_scan, held));
+    /// Reuses prefetched chunks otherwise waits for a new request ticket commit
+    fn poll_loading(&mut self, world: &Arc<World>, chunk: ChunkPos, next_scan: i32) -> LoadPoll {
+        let load = self
+            .loading
+            .take()
+            .unwrap_or_else(|| ChunkLoad::open(world, chunk, next_scan, self.chunk_is_held(chunk)));
+        match load.poll(world) {
+            ChunkLoadState::Ready => LoadPoll::Ready(load),
+            ChunkLoadState::Waiting => {
+                self.loading = Some(load);
+                LoadPoll::Waiting
+            }
+            ChunkLoadState::Cancelled => LoadPoll::Cancelled,
         }
-        let Some(load) = &self.loading else {
-            return ChunkLoadState::Waiting;
-        };
-        let state = load.poll(world);
-        if matches!(state, ChunkLoadState::Ready) && load.made_request() && self.prefetch.is_some()
-        {
-            self.prefetch_committed = true;
-        }
-        state
     }
 
     fn result(&self, index: i32) -> CandidateResult {
@@ -322,37 +285,31 @@ impl PlayerSpawnSearch {
         pending: PendingSpawnCandidate,
         budget: &mut PollBudget,
     ) -> Option<PlayerSpawnSearchPoll> {
-        match self.poll_loading(world, pending.chunk, pending.index) {
-            ChunkLoadState::Ready => {}
-            ChunkLoadState::Waiting => return Some(PlayerSpawnSearchPoll::Pending),
-            ChunkLoadState::Cancelled => return Some(PlayerSpawnSearchPoll::Cancelled),
-        }
-        let sequence = self.sequence;
-        let Some(load) = self.loading.as_mut() else {
-            return Some(PlayerSpawnSearchPoll::Pending);
+        let mut load = match self.poll_loading(world, pending.chunk, pending.index) {
+            LoadPoll::Ready(load) => load,
+            LoadPoll::Waiting => return Some(PlayerSpawnSearchPoll::Pending),
+            LoadPoll::Cancelled => return Some(PlayerSpawnSearchPoll::Cancelled),
         };
-
-        while load.next_scan < sequence.count() {
-            if budget.exhausted() {
-                return Some(PlayerSpawnSearchPoll::Pending);
-            }
-            let index = load.next_scan;
-            load.next_scan += 1;
-            let (x, z) = sequence.column(index);
-            let Some(slot) = self.results.get_mut(index as usize) else {
-                continue;
+        let results = &mut self.results;
+        let end = load.scan(&self.sequence, budget, |index, x, z| {
+            let Some(slot) = results.get_mut(index as usize) else {
+                return Visit::Skip;
             };
-            if !matches!(slot, CandidateResult::Unchecked) || block_to_chunk(x, z) != load.chunk {
-                continue;
+            if !matches!(slot, CandidateResult::Unchecked) {
+                return Visit::Skip;
             }
             let result = Self::evaluate_candidate(world, x, z);
-            budget.evaluated += 1;
             *slot = result;
             if matches!(result, CandidateResult::Valid(_)) && index == pending.index {
-                break;
+                Visit::Stop(())
+            } else {
+                Visit::Evaluated
             }
+        });
+        if matches!(end, ScanEnd::OutOfBudget) {
+            self.loading = Some(load);
+            return Some(PlayerSpawnSearchPoll::Pending);
         }
-        self.loading = None;
         None
     }
 
@@ -367,19 +324,18 @@ impl PlayerSpawnSearch {
         if self.next_candidate_index < self.sequence.count() {
             let index = self.next_candidate_index;
             self.next_candidate_index += 1;
-            let (x, z) = self.sequence.column(index);
 
             return PendingSpawnCandidate {
                 index,
                 kind: SpawnCandidateKind::Candidate,
-                chunk: block_to_chunk(x, z),
+                chunk: self.sequence.chunk(index),
             };
         }
 
         PendingSpawnCandidate {
             index: self.sequence.count(),
             kind: SpawnCandidateKind::Fixup,
-            chunk: block_to_chunk(self.spawn_suggestion.x(), self.spawn_suggestion.z()),
+            chunk: ChunkPos::from_block_pos(self.spawn_suggestion),
         }
     }
 }
@@ -502,13 +458,6 @@ pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> b
     }
 
     false
-}
-
-const fn block_to_chunk(x: i32, z: i32) -> ChunkPos {
-    ChunkPos::new(
-        SectionPos::block_to_section_coord(x),
-        SectionPos::block_to_section_coord(z),
-    )
 }
 
 fn block_bottom_center(pos: BlockPos) -> DVec3 {

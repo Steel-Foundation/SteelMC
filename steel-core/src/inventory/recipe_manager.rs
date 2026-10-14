@@ -14,8 +14,8 @@ use steel_registry::recipe::{
     TypedRecipeRef, vanilla_recipe_types,
 };
 use steel_registry::{
-    DyeColor, REGISTRY, RegistryExt as _, TaggedRegistryExt as _, item_stack::ItemStack,
-    vanilla_enchantment_tags, vanilla_items,
+    DyeColor, ItemStackTemplate, REGISTRY, RegistryExt as _, TaggedRegistryExt as _,
+    item_stack::ItemStack, vanilla_enchantment_tags, vanilla_items,
 };
 
 use crate::inventory::container::CraftingContainer;
@@ -71,24 +71,26 @@ pub fn assemble_recipe(recipe: CraftingRecipeRef, input: &CraftingInput) -> Item
                 .items
                 .iter()
                 .find(|stack| !stack.is_empty() && recipe.input.test(stack))
-                .map_or_else(ItemStack::empty, |source| {
-                    recipe.result.apply(
-                        recipe.result.count().saturating_add(extra_count),
+                .map_or_else(ItemStack::empty, |source| match &recipe.result {
+                    Some(result) => result.apply(
+                        result.count().saturating_add(extra_count),
                         source.components_patch(),
-                    )
+                    ),
+                    None => source.copy_with_count(1i32.saturating_add(extra_count)),
                 })
         }
         CraftingRecipe::Dye(recipe) => assemble_dye(recipe, input),
         CraftingRecipe::DecoratedPot(recipe) => {
-            let decorations = [
-                input.get(1, 0).item(),
-                input.get(0, 1).item(),
-                input.get(2, 1).item(),
-                input.get(1, 2).item(),
-            ];
-            let Ok(decorations) = PotDecorations::from_ordered(&decorations) else {
-                return ItemStack::empty();
+            // Vanilla stores one decoration item per side, never the slot's count.
+            let decoration = |x: usize, y: usize| {
+                ItemStackTemplate::from_stack(&input.get(x, y).copy_with_count(1)).ok()
             };
+            let decorations = PotDecorations::new(
+                decoration(1, 0),
+                decoration(0, 1),
+                decoration(2, 1),
+                decoration(1, 2),
+            );
             let mut result = recipe.result.create();
             result.set(POT_DECORATIONS, decorations);
             result
@@ -120,9 +122,10 @@ pub fn assemble_recipe(recipe: CraftingRecipeRef, input: &CraftingInput) -> Item
         CraftingRecipe::FireworkStarFade(recipe) => assemble_firework_fade(recipe, input),
         CraftingRecipe::MapExtending(recipe) => {
             let source = input.get(1, 1);
-            let mut result = recipe
-                .result
-                .apply(recipe.result.count(), source.components_patch());
+            let mut result = match &recipe.result {
+                Some(result) => result.apply(result.count(), source.components_patch()),
+                None => source.copy_with_count(1),
+            };
             result.set(MAP_POST_PROCESSING, MapPostProcessing::Scale);
             result
         }

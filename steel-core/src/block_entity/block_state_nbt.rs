@@ -11,7 +11,7 @@ use steel_utils::{BlockStateId, Identifier};
 #[must_use]
 pub(crate) fn save(state: BlockStateId) -> NbtCompound {
     let mut encoded = NbtCompound::new();
-    encoded.insert("Name", state.get_block().key.to_string());
+    encoded.insert("id", state.get_block().key.to_string());
 
     let state_properties = REGISTRY.blocks.get_properties(state);
     if !state_properties.is_empty() {
@@ -19,7 +19,7 @@ pub(crate) fn save(state: BlockStateId) -> NbtCompound {
         for (name, value) in state_properties {
             properties.insert(name, value);
         }
-        encoded.insert("Properties", properties);
+        encoded.insert("properties", properties);
     }
 
     encoded
@@ -27,12 +27,12 @@ pub(crate) fn save(state: BlockStateId) -> NbtCompound {
 
 #[must_use]
 pub(crate) fn load(encoded: BorrowedNbtCompound<'_, '_>) -> Option<BlockStateId> {
-    let name = encoded.string("Name")?;
+    let name = encoded.string("id")?;
     let identifier = Identifier::from_str(name.to_str().as_ref()).ok()?;
     let block = REGISTRY.blocks.by_key(&identifier)?;
 
     let mut properties = Vec::new();
-    if let Some(encoded_properties) = encoded.compound("Properties") {
+    if let Some(encoded_properties) = encoded.compound("properties") {
         for (name, value) in encoded_properties.iter() {
             let value = value.string()?;
             properties.push((name.to_str().into_owned(), value.to_str().into_owned()));
@@ -70,11 +70,11 @@ mod tests {
 
         let encoded = save(state);
         assert_eq!(
-            encoded.string("Name").map(|name| name.to_str()),
+            encoded.string("id").map(|name| name.to_str()),
             Some("minecraft:piston_head".into())
         );
         assert!(matches!(
-            encoded.get("Properties"),
+            encoded.get("properties"),
             Some(NbtTag::Compound(_))
         ));
 

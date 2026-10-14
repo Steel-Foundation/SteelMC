@@ -68,10 +68,7 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
         let suggestion = BlockPos::new(0, 64, 0);
         let mut sequence = new_search(world, suggestion).sequence;
         sequence.offset = 0;
-        let chunk_of = |index| {
-            let (x, z) = sequence.column(index);
-            block_to_chunk(x, z)
-        };
+        let chunk_of = |index| sequence.chunk(index);
 
         // `later` shares a chunk with the first candidate, so the first chunk's batch
         // evaluates it. `earlier` comes before it in the order but lies in another chunk.
@@ -95,7 +92,8 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
             let mut search = new_search(world, suggestion);
             search.sequence.offset = 0;
             if prefetch {
-                search = search.with_spawn_area_prefetch(world);
+                search =
+                    search.with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(world, suggestion));
             }
             assert_eq!(run_search(world, &mut search), expected);
         }
@@ -106,23 +104,71 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
 fn prefetched_chunks_are_read_directly_once_their_tickets_are_committed() {
     with_search_world("prefetch", &vanilla_dimension_types::OVERWORLD, |world| {
         insert_chunks(world, 3);
-        let mut search = new_search(world, BlockPos::new(0, 64, 0)).with_spawn_area_prefetch(world);
+        let suggestion = BlockPos::new(0, 64, 0);
+        let search = new_search(world, suggestion)
+            .with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(world, suggestion));
         let inside = ChunkPos::new(2, -2);
         let outside = ChunkPos::new(10, 10);
         assert!(!search.chunk_is_held(inside), "nothing is committed yet");
 
         for _ in 0..100 {
             world.chunk_map.advance_scheduling();
-            // The empty world has no valid spawn, so the search keeps going.
-            let _ = search.poll_with_time_budget(world, POLL_TIME_BUDGET);
-            if search.prefetch_committed {
+            if search.chunk_is_held(inside) {
                 break;
             }
         }
-        assert!(search.prefetch_committed);
         assert!(search.chunk_is_held(inside));
         assert!(!search.chunk_is_held(outside));
     });
+}
+
+#[test]
+fn a_poll_budget_that_ends_mid_chunk_does_not_skip_candidates() {
+    with_search_world(
+        "budget_yield",
+        &vanilla_dimension_types::OVERWORLD,
+        |world| {
+            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 40));
+            insert_chunks(world, 3);
+            // Keeps the chunks loaded between searches, which release their own tickets.
+            let _hold = world.chunk_map.request_square(
+                ChunkPos::new(0, 0),
+                3,
+                ChunkStatus::Full,
+                ChunkTicketKind::Command,
+            );
+            let suggestion = BlockPos::new(0, 64, 0);
+            let mut sequence = new_search(world, suggestion).sequence;
+            sequence.offset = 0;
+
+            // Only one candidate has ground at a time, so a skipped candidate changes the result.
+            for target in 0..60 {
+                let (x, z) = sequence.column(target);
+                let ground = BlockPos::new(x, 64, z);
+                set_block(world, ground, vanilla_blocks::STONE.default_state());
+                let mut search = new_search(world, suggestion);
+                search.sequence.offset = 0;
+                let mut polls = 0;
+                let position = loop {
+                    world.chunk_map.advance_scheduling();
+                    // A zero budget ends every poll after one evaluated candidate.
+                    if let PlayerSpawnSearchPoll::Ready(position) =
+                        search.poll_with_time_budget(world, Duration::ZERO)
+                    {
+                        break position;
+                    }
+                    polls += 1;
+                    assert!(polls < 10_000, "search should finish");
+                };
+                assert_eq!(
+                    position,
+                    DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5),
+                    "only candidate {target} is valid"
+                );
+                set_block(world, ground, vanilla_blocks::AIR.default_state());
+            }
+        },
+    );
 }
 
 #[test]

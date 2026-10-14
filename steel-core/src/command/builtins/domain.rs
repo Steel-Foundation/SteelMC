@@ -11,7 +11,7 @@ use text_components::TextComponent;
 
 use crate::{
     inventory::prelude::*,
-    server::{EntryOverride, PreparedSpawn, Server},
+    server::{PreparedSpawn, Server, WorldEntry},
     world::World,
 };
 
@@ -23,7 +23,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use super::teleport::{ensure_spawnable_position, wrap_rotation};
+use super::position::{ensure_spawnable_position, wrap_rotation};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("domain"), |_| command())
@@ -66,19 +66,20 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 }
 
 fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    switch_world_to(context, None)
+    switch_world_to(context, WorldEntry::Usual)
 }
 
 fn switch_world_to_location(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    switch_world_at_location(context, false)
+    switch_world_at_location(context, None)
 }
 
 fn switch_world_to_location_with_rotation(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    switch_world_at_location(context, true)
+    let rotation = context.coordinates("rotation")?.rotation(context.source());
+    switch_world_at_location(context, Some(rotation))
 }
 
 /// Enters the world as usual, then faces the given rotation.
@@ -86,35 +87,27 @@ fn switch_world_with_rotation(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
     let rotation = context.coordinates("rotation")?.rotation(context.source());
-    switch_world_to(
-        context,
-        Some(EntryOverride::Rotation(wrap_rotation(rotation))),
-    )
+    switch_world_to(context, WorldEntry::Rotation(wrap_rotation(rotation)))
 }
 
 /// resolves coordinates like `/teleport` keeping the sender rotation if omitted
 fn switch_world_at_location(
     context: &SteelCommandContext<CommandSource>,
-    has_rotation: bool,
+    rotation: Option<(f32, f32)>,
 ) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
     let position = context.coordinates("location")?.position(source);
     ensure_spawnable_position(position)?;
-    let rotation = if has_rotation {
-        context.coordinates("rotation")?.rotation(source)
-    } else {
-        source.rotation()
-    };
     let destination = PreparedSpawn {
         position,
-        rotation: wrap_rotation(rotation),
+        rotation: wrap_rotation(rotation.unwrap_or_else(|| source.rotation())),
     };
-    switch_world_to(context, Some(EntryOverride::Exact(destination)))
+    switch_world_to(context, WorldEntry::Exact(destination))
 }
 
 fn switch_world_to(
     context: &SteelCommandContext<CommandSource>,
-    entry_override: Option<EntryOverride>,
+    entry: WorldEntry,
 ) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
     let Some(player) = source.player() else {
@@ -126,19 +119,19 @@ fn switch_world_to(
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world), entry_override)
+        .queue_player_world_selection_with_entry(Arc::clone(player), &world, entry)
         .map_err(CommandSyntaxError::dynamic)?;
 
-    let message = match entry_override {
-        Some(EntryOverride::Exact(PreparedSpawn { position, .. })) => format!(
+    let message = match entry {
+        WorldEntry::Exact(PreparedSpawn { position, .. }) => format!(
             "Switching to world {} at {:.2} {:.2} {:.2}",
             world.key, position.x, position.y, position.z
         ),
-        Some(EntryOverride::Rotation((yaw, pitch))) => format!(
+        WorldEntry::Rotation((yaw, pitch)) => format!(
             "Switching to world {} facing {yaw:.1} {pitch:.1}",
             world.key
         ),
-        None => format!("Switching to world {}", world.key),
+        WorldEntry::Usual => format!("Switching to world {}", world.key),
     };
     source.send_success(&TextComponent::plain(message), true);
     Ok(1)
@@ -283,11 +276,10 @@ impl MenuKind for DomainMenuKind {
             return ClickOutcome::Consume;
         }
 
-        if let Err(error) = self.server.queue_player_world_selection(
-            Arc::clone(&self.player),
-            Arc::clone(world),
-            None,
-        ) {
+        if let Err(error) = self
+            .server
+            .queue_player_world_selection(Arc::clone(&self.player), world)
+        {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }
         self.player.close_container();

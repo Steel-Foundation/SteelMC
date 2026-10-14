@@ -61,8 +61,8 @@ use crate::player::{
     ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
-    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
-    end_portal, nether_portal,
+    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, WorldSelection,
+    end_gateway, end_portal, nether_portal,
 };
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
@@ -280,13 +280,15 @@ pub struct PreparedSpawn {
     pub rotation: (f32, f32),
 }
 
-/// How a world selection overrides where or how the player enters the target world.
+/// Where and how a world selection places the player in the target world.
 #[derive(Clone, Copy)]
-pub enum EntryOverride {
+pub enum WorldEntry {
+    /// The usual entry: the saved location if the domain has one, otherwise the spawn search.
+    Usual,
+    /// The usual entry, then faces this `(yaw, pitch)`.
+    Rotation((f32, f32)),
     /// Places the player exactly there, with no spawn search and no saved location.
     Exact(PreparedSpawn),
-    /// Enters at the usual spawn or saved location, then faces this `(yaw, pitch)`.
-    Rotation((f32, f32)),
 }
 
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
@@ -433,7 +435,7 @@ struct DomainSwitchRequest {
     player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
-    entry_override: Option<EntryOverride>,
+    entry: WorldEntry,
     pending_token: PendingWorldChangeToken,
 }
 

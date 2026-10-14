@@ -6,7 +6,7 @@
 
 use crate::chunk::chunk_request::ChunkRequestHandle;
 use crate::entity::{Entity, PendingWorldChangeToken};
-use crate::server::EntryOverride;
+use crate::server::WorldEntry;
 use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
@@ -437,6 +437,19 @@ fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
 
 /// A queued request to move an entity between loaded worlds.
 ///
+/// A player's selection of a loaded world, queued until the next tick's world changes.
+pub struct WorldSelection {
+    /// The target world to teleport into.
+    pub target_world: Arc<World>,
+    /// Runtime token proving this request still owns the player's relocation.
+    pub pending_token: PendingWorldChangeToken,
+    /// Chunks around the target's spawn, requested when the selection was queued so they
+    /// start loading in the same tick.
+    pub prefetch: Option<ChunkRequestHandle>,
+    /// How the player enters the target world.
+    pub entry: WorldEntry,
+}
+
 /// Vanilla calls these world changes "dimension changes". Steel keeps the
 /// runtime API named after loaded worlds to avoid confusing worlds with vanilla
 /// dimension types.
@@ -444,17 +457,7 @@ pub enum WorldChangeRequest {
     /// Pre-computed transition (players after chunk pre-warming).
     Computed(TeleportTransition),
     /// Token-owned player selection of a loaded world's spawn.
-    WorldSpawn {
-        /// The target world to teleport into.
-        target_world: Arc<World>,
-        /// Runtime token proving this request still owns the player's relocation.
-        pending_token: PendingWorldChangeToken,
-        /// Chunks around the target's spawn, requested when the selection was queued so they
-        /// start loading in the same tick.
-        prefetch: Option<ChunkRequestHandle>,
-        /// Places the player exactly, or only changes their rotation, instead of the spawn search's result.
-        entry_override: Option<EntryOverride>,
-    },
+    WorldSpawn(WorldSelection),
     /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {
         /// The portal behavior that produced this request.
