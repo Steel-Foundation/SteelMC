@@ -1,5 +1,6 @@
 //! Vanilla chiseled bookshelf placement, interaction, and comparator behavior.
 
+use crate::player::player_inventory::Prediction;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -226,7 +227,7 @@ impl BlockBehavior for ChiseledBookShelfBlock {
             Self::SOUND_PITCH,
             None,
         );
-        player.add_item_or_drop(removed);
+        player.add_item_or_drop(removed, Prediction::ServerOnly);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,

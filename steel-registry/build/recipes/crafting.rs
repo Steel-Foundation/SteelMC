@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::RecipeGenerator;
 use super::shared::{
     array_field, book_properties, field, ingredient_tokens, integer_field, object_field,
-    result_tokens,
+    optional_result_tokens, result_tokens,
 };
 
 pub(super) fn generator(path: &str) -> Option<RecipeGenerator> {
@@ -105,7 +105,7 @@ fn generate_transmute(value: &Value) -> TokenStream {
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let properties = crafting_properties(value);
-    let result = result_tokens(field(value, "result"));
+    let result = optional_result_tokens(field(value, "result"));
     quote! {{
         let input = #input;
         let material = #material;
@@ -266,7 +266,7 @@ fn generate_firework_star_fade(value: &Value) -> TokenStream {
 fn generate_map_extending(value: &Value) -> TokenStream {
     let map = ingredient_tokens(field(value, "map"));
     let material = ingredient_tokens(field(value, "material"));
-    let result = result_tokens(field(value, "result"));
+    let result = optional_result_tokens(field(value, "result"));
     quote! {
         CraftingRecipe::MapExtending(MapExtendingRecipe {
             properties: RecipeProperties::special(),

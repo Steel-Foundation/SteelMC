@@ -14,15 +14,16 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
-    AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CSwingAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     behavior::PushReaction, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
+use steel_registry::data_components::DataComponentType;
 use steel_registry::data_components::vanilla_components::{
-    GLIDER, SWING_ANIMATION, SwingAnimation,
+    ATTACK_ANIMATION, GLIDER, INTERACT_ANIMATION, SwingAnimation,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose, HumanoidArm};
@@ -1151,12 +1152,12 @@ fn teleport_entity_cross_world(
     };
 
     let target_level = Arc::downgrade(&teleport_transition.target_world);
-    let mut new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
+    let new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
         &persistent,
         ChunkPos::from_entity_pos(entity.position()),
         &target_level,
     );
-    let Some(new_entity) = new_entities.drain(..).next() else {
+    let Some(new_entity) = new_entities.into_iter().next() else {
         tracing::warn!(
             entity_id = entity.id(),
             entity_type = ?entity.entity_type().key,

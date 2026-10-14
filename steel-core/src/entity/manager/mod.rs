@@ -12,7 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncRwLock;
-use steel_utils::{ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
 use super::{
@@ -155,6 +155,13 @@ pub enum EntityMoveError {
         /// Destination chunk.
         chunk: ChunkPos,
     },
+    /// invalid sleep block
+    InvalidSleepPosition {
+        /// entity id
+        entity_id: i32,
+        /// bed position
+        bed_position: BlockPos,
+    },
 }
 
 impl fmt::Display for EntityMoveError {
@@ -170,6 +177,15 @@ impl fmt::Display for EntityMoveError {
                 write!(
                     f,
                     "entity {entity_id} cannot move into non-loaded chunk {chunk:?}"
+                )
+            }
+            Self::InvalidSleepPosition {
+                entity_id,
+                bed_position,
+            } => {
+                write!(
+                    f,
+                    "entity {entity_id} cannot sleep at invalid bed position {bed_position:?}"
                 )
             }
         }

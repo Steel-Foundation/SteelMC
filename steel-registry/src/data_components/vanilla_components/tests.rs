@@ -25,7 +25,7 @@ fn registry_matches_extracted_vanilla_catalog() {
     let mut registry = DataComponentRegistry::new();
     register_vanilla_data_components(&mut registry);
 
-    assert_eq!(catalog.components.len(), 111);
+    assert_eq!(catalog.components.len(), 122);
     assert_eq!(registry.len(), catalog.components.len());
     for (expected_id, component) in catalog.components.into_iter().enumerate() {
         assert_eq!(component.id, expected_id, "{}", component.key);
@@ -317,7 +317,6 @@ fn registry_validation_uses_concrete_downcast_keys() {
             &DYED_COLOR.key,
             ComponentData::new(DyedItemColor::new(0x123456)),
         ),
-        (&MAP_COLOR.key, ComponentData::new(MapItemColor::DEFAULT)),
         (&MAP_ID.key, ComponentData::new(MapId::new(7))),
         (
             &FOOD.key,

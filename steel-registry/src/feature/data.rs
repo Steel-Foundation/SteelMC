@@ -11,7 +11,9 @@ use crate::fluid::FluidRef;
 use glam::IVec3;
 use steel_utils::{
     Direction, Identifier, Rotation,
-    value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
+    value_providers::{
+        FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
+    },
 };
 
 /// A configured feature reference, either a registry entry or an inline configured feature.
@@ -57,9 +59,13 @@ pub enum ConfiguredFeatureKind {
     BlueIce,
     BonusChest,
     ChorusPlant,
-    CoralClaw,
+    CoralClaw {
+        feature: PlacedFeatureRef,
+    },
     CoralMushroom,
-    CoralTree,
+    CoralTree {
+        feature: PlacedFeatureRef,
+    },
     DeltaFeature(DeltaFeatureConfiguration),
     DesertWell,
     Disk(DiskConfiguration),
@@ -67,6 +73,9 @@ pub enum ConfiguredFeatureKind {
     EndGateway(EndGatewayConfiguration),
     EndIsland,
     EndPlatform,
+    EndPodium {
+        active: bool,
+    },
     EndSpike(EndSpikeConfiguration),
     FallenTree(FallenTreeConfiguration),
     Fossil(FossilConfiguration),
@@ -81,11 +90,18 @@ pub enum ConfiguredFeatureKind {
     Lake(LakeConfiguration),
     LargeDripstone(LargeDripstoneConfiguration),
     MonsterRoom,
+    NoOp,
     MultifaceGrowth(MultifaceGrowthConfiguration),
     NetherForestVegetation(NetherForestVegetationConfiguration),
     NetherrackReplaceBlobs(NetherrackReplaceBlobsConfiguration),
+    /// Places every placed feature in the set at the same origin.
+    Overlay {
+        features: Vec<PlacedFeatureRef>,
+    },
     Ore(OreConfiguration),
+    ProjectedRandomPatchySquare(ProjectedRandomPatchySquareConfiguration),
     PointedDripstone(PointedDripstoneConfiguration),
+    RandomNeighborSpread(RandomNeighborSpreadConfiguration),
     RandomBooleanSelector(RandomBooleanSelectorConfiguration),
     RandomSelector(RandomSelectorConfiguration),
     RootSystem(RootSystemConfiguration),
@@ -95,6 +111,8 @@ pub enum ConfiguredFeatureKind {
     Seagrass(SeagrassConfiguration),
     Sequence(CompositeFeatureConfiguration),
     SimpleBlock(SimpleBlockConfiguration),
+    SingleBlockPillar(SingleBlockPillarConfiguration),
+    SteppedColumnCluster(SteppedColumnClusterConfiguration),
     SimpleRandomSelector(SimpleRandomSelectorConfiguration),
     Speleothem(SpeleothemConfiguration),
     SpeleothemCluster(SpeleothemClusterConfiguration),
@@ -190,11 +208,38 @@ pub enum BlockPredicate {
     InsideWorldBounds {
         offset: Offset,
     },
+    HeightRange {
+        min_inclusive: VerticalAnchor,
+        max_inclusive: VerticalAnchor,
+    },
+    VolumeMatch {
+        min: Offset,
+        max: Offset,
+        matches: Box<BlockPredicate>,
+    },
 }
+
+/// A registered `worldgen/block_state_provider` entry.
+#[derive(Debug)]
+pub struct BlockStateProvider {
+    /// Registry key.
+    pub key: Identifier,
+    /// Typed provider data.
+    pub kind: BlockStateProviderKind,
+    /// Build-time-baked `BlockStateProvider.DIRECT_CODEC` encoding, for the registry sync packet.
+    pub nbt: fn() -> simdnbt::owned::NbtCompound,
+    /// Cached registry ID.
+    pub id: std::sync::OnceLock<usize>,
+}
+
+/// Read-only reference to a registered [`BlockStateProvider`].
+pub type BlockStateProviderRef = &'static BlockStateProvider;
 
 /// Block-state provider used by features.
 #[derive(Debug, Clone)]
-pub enum BlockStateProvider {
+pub enum BlockStateProviderKind {
+    /// Registry-backed block-state provider.
+    Reference(BlockStateProviderRef),
     Simple {
         state: BlockStateData,
     },
@@ -202,20 +247,29 @@ pub enum BlockStateProvider {
         entries: Vec<WeightedBlockState>,
     },
     RotatedBlock {
-        state: BlockStateData,
+        state: Box<BlockStateProviderKind>,
+        direction: Option<Direction>,
     },
     RandomizedInt {
         property: String,
-        source: Box<BlockStateProvider>,
+        source: Box<BlockStateProviderKind>,
         values: IntProvider,
     },
     RuleBased {
-        fallback: Option<Box<BlockStateProvider>>,
+        fallback: Option<Box<BlockStateProviderKind>>,
         rules: Vec<RuleBasedStateProviderRule>,
     },
     Noise(NoiseProvider),
     NoiseThreshold(NoiseThresholdProvider),
     DualNoise(DualNoiseProvider),
+    /// Copies the properties of the block being replaced onto the sourced state.
+    CopyProperties {
+        source: Box<BlockStateProviderKind>,
+    },
+    /// Picks a random block from a holder set (default state, no properties).
+    RandomBlock {
+        blocks: BlockHolderSet,
+    },
 }
 
 /// Weighted block-state provider entry.
@@ -229,14 +283,21 @@ pub struct WeightedBlockState {
 #[derive(Debug, Clone)]
 pub struct RuleBasedStateProviderRule {
     pub if_true: BlockPredicate,
-    pub then: BlockStateProvider,
+    pub then: BlockStateProviderKind,
 }
 
-/// Noise parameters embedded in vanilla feature providers.
+/// `NormalNoise.Parameters`, embedded in vanilla feature providers.
+///
+/// `normalize` is modeled as a plain bool (`enabled`/`disabled`, matching
+/// vanilla's `Codec.BOOL` branch) — the deprecated `"legacy"` string form
+/// never appears in extracted data.
 #[derive(Debug, Clone)]
 pub struct FeatureNoiseParameters {
-    pub first_octave: i32,
-    pub amplitudes: Vec<f64>,
+    pub base_amplitude: f64,
+    pub base_octave: i32,
+    pub octave_count: i32,
+    pub normalize: bool,
+    pub amplitude_modifiers: Vec<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -299,6 +360,23 @@ pub enum PlacementModifier {
         heightmap: FeatureHeightmap,
     },
     InSquare,
+    Offset {
+        x: IntProvider,
+        y: IntProvider,
+        z: IntProvider,
+    },
+    RandomlySelected {
+        placements: Vec<PlacementModifier>,
+    },
+    RandomChance {
+        chance: f32,
+    },
+    Cuboid {
+        xz_size: IntProvider,
+        y_size: IntProvider,
+        include_edges: bool,
+        include_interior: bool,
+    },
     NoiseBasedCount {
         noise_to_count_ratio: i32,
         noise_factor: f64,
@@ -365,12 +443,12 @@ pub struct BlockColumnConfiguration {
 #[derive(Debug, Clone)]
 pub struct BlockColumnLayer {
     pub height: IntProvider,
-    pub provider: BlockStateProvider,
+    pub provider: BlockStateProviderKind,
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockPileConfiguration {
-    pub state_provider: BlockStateProvider,
+    pub state_provider: BlockStateProviderKind,
 }
 
 #[derive(Debug, Clone)]
@@ -383,10 +461,57 @@ pub struct DeltaFeatureConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct DiskConfiguration {
-    pub state_provider: BlockStateProvider,
+    pub state_provider: BlockStateProviderKind,
     pub target: BlockPredicate,
     pub radius: IntProvider,
     pub half_height: i32,
+}
+
+/// `ProjectedRandomPatchySquare` — projects a random square patch of blocks
+/// downward until `project_through` stops matching.
+#[derive(Debug, Clone)]
+pub struct ProjectedRandomPatchySquareConfiguration {
+    pub block: BlockStateProviderKind,
+    pub project_through: BlockPredicate,
+    pub size: IntProvider,
+    pub max_projection_height: i32,
+}
+
+/// `RandomNeighborSpreadFeature` — spreads a block outward from the origin
+/// wherever exactly one accepted-neighbor block is adjacent.
+#[derive(Debug, Clone)]
+pub struct RandomNeighborSpreadConfiguration {
+    pub block: BlockStateProviderKind,
+    pub accepted_neighbors: BlockHolderSet,
+    pub can_replace: BlockPredicate,
+    pub attempts: IntProvider,
+    pub xz_offset: IntProvider,
+    pub y_offset: IntProvider,
+}
+
+/// `SingleBlockPillarFeature` — grows a pillar of one block, optionally
+/// capped with another placed feature.
+#[derive(Debug, Clone)]
+pub struct SingleBlockPillarConfiguration {
+    pub block: BlockStateProviderKind,
+    pub can_replace: BlockPredicate,
+    pub direction: Direction,
+    pub chance_to_continue: f32,
+    pub cap_feature: Option<PlacedFeatureRef>,
+}
+
+/// `SteppedColumnClusterFeature` — places a cluster of block columns of
+/// varying height/reach (basalt pillars, dripstone-adjacent clusters).
+#[derive(Debug, Clone)]
+pub struct SteppedColumnClusterConfiguration {
+    pub block: BlockStateProviderKind,
+    pub continue_through: BlockPredicate,
+    pub can_replace: BlockPredicate,
+    pub cannot_place_on: BlockHolderSet,
+    pub cluster_reach: IntProvider,
+    pub column_count: IntProvider,
+    pub column_reach: IntProvider,
+    pub height: IntProvider,
 }
 
 #[derive(Debug, Clone)]
@@ -457,7 +582,7 @@ pub struct EndSpike {
 
 #[derive(Debug, Clone)]
 pub struct FallenTreeConfiguration {
-    pub trunk_provider: BlockStateProvider,
+    pub trunk_provider: BlockStateProviderKind,
     pub log_length: IntProvider,
     pub stump_decorators: Vec<TreeDecorator>,
     pub log_decorators: Vec<TreeDecorator>,
@@ -491,11 +616,11 @@ pub struct GeodeConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct GeodeBlockSettings {
-    pub filling_provider: BlockStateProvider,
-    pub inner_layer_provider: BlockStateProvider,
-    pub alternate_inner_layer_provider: BlockStateProvider,
-    pub middle_layer_provider: BlockStateProvider,
-    pub outer_layer_provider: BlockStateProvider,
+    pub filling_provider: BlockStateProviderKind,
+    pub inner_layer_provider: BlockStateProviderKind,
+    pub alternate_inner_layer_provider: BlockStateProviderKind,
+    pub middle_layer_provider: BlockStateProviderKind,
+    pub outer_layer_provider: BlockStateProviderKind,
     pub inner_placements: Vec<BlockStateData>,
     pub cannot_replace: Identifier,
     pub invalid_blocks: Identifier,
@@ -518,8 +643,8 @@ pub struct GeodeCrackSettings {
 
 #[derive(Debug, Clone)]
 pub struct HugeMushroomConfiguration {
-    pub cap_provider: BlockStateProvider,
-    pub stem_provider: BlockStateProvider,
+    pub cap_provider: BlockStateProviderKind,
+    pub stem_provider: BlockStateProviderKind,
     pub foliage_radius: i32,
     pub can_place_on: BlockPredicate,
 }
@@ -536,8 +661,8 @@ pub struct HugeFungusConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct LakeConfiguration {
-    pub fluid: BlockStateProvider,
-    pub barrier: BlockStateProvider,
+    pub fluid: BlockStateProviderKind,
+    pub barrier: BlockStateProviderKind,
     pub can_place_feature: BlockPredicate,
     pub can_replace_with_air_or_fluid: BlockPredicate,
     pub can_replace_with_barrier: BlockPredicate,
@@ -570,7 +695,7 @@ pub struct MultifaceGrowthConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct NetherForestVegetationConfiguration {
-    pub state_provider: BlockStateProvider,
+    pub state_provider: BlockStateProviderKind,
     pub spread_width: i32,
     pub spread_height: i32,
 }
@@ -591,14 +716,10 @@ pub struct OreConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct OreTarget {
-    pub target: RuleTest,
+    /// Vanilla's shared `RuleTest` type (`net.minecraft.world.level.levelgen.structure.templatesystem.RuleTest`)
+    /// — the same predicate tree used by structure processors' `input_predicate`/`location_predicate`.
+    pub target: crate::structure::processor::data::StructureRuleTestData,
     pub state: BlockStateData,
-}
-
-#[derive(Debug, Clone)]
-pub enum RuleTest {
-    BlockMatch { block: BlockRef },
-    TagMatch { tag: Identifier },
 }
 
 #[derive(Debug, Clone)]
@@ -661,8 +782,8 @@ pub struct RootSystemConfiguration {
     pub hanging_roots_vertical_span: i32,
     pub hanging_root_placement_attempts: i32,
     pub allowed_vertical_water_for_tree: i32,
-    pub root_state_provider: BlockStateProvider,
-    pub hanging_root_state_provider: BlockStateProvider,
+    pub root_state_provider: BlockStateProviderKind,
+    pub hanging_root_state_provider: BlockStateProviderKind,
     pub root_replaceable: BlockHolderSet,
     pub allowed_tree_position: BlockPredicate,
 }
@@ -674,8 +795,6 @@ pub struct SculkPatchConfiguration {
     pub spread_attempts: i32,
     pub growth_rounds: i32,
     pub spread_rounds: i32,
-    pub extra_rare_growths: IntProvider,
-    pub catalyst_chance: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -690,7 +809,7 @@ pub struct SeagrassConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct SimpleBlockConfiguration {
-    pub to_place: BlockStateProvider,
+    pub to_place: BlockStateProviderKind,
     pub schedule_tick: bool,
 }
 
@@ -713,6 +832,10 @@ pub struct SpringConfiguration {
 #[derive(Debug, Clone)]
 pub struct TemplateFeatureConfiguration {
     pub templates: Vec<WeightedTemplateEntry>,
+    /// Structure processors applied after placing the template. Only the
+    /// inline (`{"processors": [...]}`) shape appears in extracted data —
+    /// a bare registry-reference string isn't modeled yet.
+    pub processors: Option<crate::structure::processor::data::StructureProcessorListData>,
 }
 
 #[derive(Debug, Clone)]
@@ -729,9 +852,9 @@ pub struct TemplateEntry {
 
 #[derive(Debug, Clone)]
 pub struct TreeConfiguration {
-    pub trunk_provider: BlockStateProvider,
-    pub below_trunk_provider: BlockStateProvider,
-    pub foliage_provider: BlockStateProvider,
+    pub trunk_provider: BlockStateProviderKind,
+    pub below_trunk_provider: BlockStateProviderKind,
+    pub foliage_provider: BlockStateProviderKind,
     pub trunk_placer: TrunkPlacer,
     pub foliage_placer: FoliagePlacer,
     pub minimum_size: FeatureSize,
@@ -751,6 +874,16 @@ pub enum TrunkPlacer {
     Bending(BendingTrunkPlacer),
     UpwardsBranching(UpwardsBranchingTrunkPlacer),
     Cherry(CherryTrunkPlacer),
+    Poplar(PoplarTrunkPlacer),
+}
+
+#[derive(Debug, Clone)]
+pub struct PoplarTrunkPlacer {
+    pub base_height: i32,
+    pub height_rand_a: i32,
+    pub height_rand_b: i32,
+    pub trunk_height_above_branches: IntProvider,
+    pub branch_amount: IntProvider,
 }
 
 #[derive(Debug, Clone)]
@@ -804,6 +937,15 @@ pub enum FoliagePlacer {
     DarkOak(FoliagePlacerBase),
     RandomSpread(RandomSpreadFoliagePlacer),
     Cherry(CherryFoliagePlacer),
+    Poplar(PoplarFoliagePlacer),
+}
+
+#[derive(Debug, Clone)]
+pub struct PoplarFoliagePlacer {
+    pub radius: IntProvider,
+    pub offset: IntProvider,
+    pub height: IntProvider,
+    pub side_hole_chance: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -891,14 +1033,14 @@ pub enum RootPlacer {
 #[derive(Debug, Clone)]
 pub struct MangroveRootPlacer {
     pub trunk_offset_y: IntProvider,
-    pub root_provider: BlockStateProvider,
+    pub root_provider: BlockStateProviderKind,
     pub above_root_placement: AboveRootPlacement,
     pub mangrove_root_placement: MangroveRootPlacement,
 }
 
 #[derive(Debug, Clone)]
 pub struct AboveRootPlacement {
-    pub above_root_provider: BlockStateProvider,
+    pub above_root_provider: BlockStateProviderKind,
     pub above_root_placement_chance: f32,
 }
 
@@ -906,7 +1048,7 @@ pub struct AboveRootPlacement {
 pub struct MangroveRootPlacement {
     pub can_grow_through: Identifier,
     pub muddy_roots_in: Vec<Identifier>,
-    pub muddy_roots_provider: BlockStateProvider,
+    pub muddy_roots_provider: BlockStateProviderKind,
     pub max_root_width: i32,
     pub max_root_length: i32,
     pub random_skew_chance: f32,
@@ -915,7 +1057,7 @@ pub struct MangroveRootPlacement {
 #[derive(Debug, Clone)]
 pub enum TreeDecorator {
     AlterGround {
-        provider: BlockStateProvider,
+        provider: BlockStateProviderKind,
     },
     Beehive {
         probability: f32,
@@ -938,6 +1080,9 @@ pub enum TreeDecorator {
         trunk_probability: f32,
         ground_probability: f32,
     },
+    ShelfMushroom {
+        probability: f32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -946,20 +1091,20 @@ pub struct AttachedToLeavesDecorator {
     pub exclusion_radius_xz: i32,
     pub exclusion_radius_y: i32,
     pub required_empty_blocks: i32,
-    pub block_provider: BlockStateProvider,
+    pub block_provider: BlockStateProviderKind,
     pub directions: Vec<Direction>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AttachedToLogsDecorator {
     pub probability: f32,
-    pub block_provider: BlockStateProvider,
+    pub block_provider: BlockStateProviderKind,
     pub directions: Vec<Direction>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PlaceOnGroundDecorator {
-    pub block_state_provider: BlockStateProvider,
+    pub block_state_provider: BlockStateProviderKind,
     pub tries: i32,
     pub radius: i32,
     pub height: i32,
@@ -982,7 +1127,7 @@ pub struct UnderwaterMagmaConfiguration {
 #[derive(Debug, Clone)]
 pub struct VegetationPatchConfiguration {
     pub replaceable: Identifier,
-    pub ground_state: BlockStateProvider,
+    pub ground_state: BlockStateProviderKind,
     pub vegetation_feature: PlacedFeatureRef,
     pub surface: VerticalSurface,
     pub depth: IntProvider,

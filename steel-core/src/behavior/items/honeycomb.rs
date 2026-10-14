@@ -42,7 +42,7 @@ impl ItemBehavior for HoneycombItem {
                 &GameEventContext::new(Some(context.player.as_ref()), Some(waxed_state)),
             );
             context.world.level_event(
-                level_events::PARTICLES_AND_SOUND_WAX_ON,
+                level_events::PARTICLES_WAX_ON,
                 pos,
                 0,
                 Some(context.player.id()),
@@ -52,7 +52,7 @@ impl ItemBehavior for HoneycombItem {
                 pos,
                 old_block_state,
                 context.player,
-                Some(level_events::PARTICLES_AND_SOUND_WAX_ON),
+                Some(level_events::PARTICLES_WAX_ON),
             );
             return InteractionResult::Success;
         }
@@ -73,7 +73,7 @@ impl ItemBehavior for HoneycombItem {
         sign.set_changed();
         context.inv.with_item(ItemStack::shrink_one);
         context.world.level_event(
-            level_events::PARTICLES_AND_SOUND_WAX_ON,
+            level_events::PARTICLES_WAX_ON,
             pos,
             0,
             Some(context.player.id()),

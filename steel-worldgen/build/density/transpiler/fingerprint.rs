@@ -88,6 +88,11 @@ pub(super) fn collect_expensive_inner(
             collect_expensive_inner(&t.argument1, out);
             collect_expensive_inner(&t.argument2, out);
         }
+        DensityFunction::Lerp(l) => {
+            collect_expensive_inner(&l.alpha, out);
+            collect_expensive_inner(&l.first, out);
+            collect_expensive_inner(&l.second, out);
+        }
         DensityFunction::Mapped(m) => collect_expensive_inner(&m.input, out),
         DensityFunction::Clamp(c) => collect_expensive_inner(&c.input, out),
         DensityFunction::RangeChoice(rc) => {
@@ -104,6 +109,7 @@ pub(super) fn collect_expensive_inner(
         DensityFunction::WeirdScaledSampler(ws) => collect_expensive_inner(&ws.input, out),
         DensityFunction::BlendDensity(bd) => collect_expensive_inner(&bd.input, out),
         DensityFunction::Marker(m) => collect_expensive_inner(&m.wrapped, out),
+        DensityFunction::Slice(s) => collect_expensive_inner(&s.input, out),
         _ => {}
     }
 }
@@ -148,6 +154,11 @@ pub(super) fn hash_df(df: &DensityFunction, h: &mut impl Hasher) {
             hash_df(&t.argument1, h);
             hash_df(&t.argument2, h);
         }
+        DensityFunction::Lerp(l) => {
+            hash_df(&l.alpha, h);
+            hash_df(&l.first, h);
+            hash_df(&l.second, h);
+        }
         DensityFunction::Mapped(m) => {
             mem::discriminant(&m.op).hash(h);
             hash_df(&m.input, h);
@@ -191,6 +202,15 @@ pub(super) fn hash_df(df: &DensityFunction, h: &mut impl Hasher) {
         DensityFunction::FindTopSurface(fts) => {
             hash_df(&fts.density, h);
             hash_df(&fts.upper_bound, h);
+        }
+        DensityFunction::Slice(s) => {
+            mem::discriminant(&s.axis).hash(h);
+            s.coordinate.hash(h);
+            hash_df(&s.input, h);
+        }
+        DensityFunction::DistanceToPoint(d) => {
+            d.point.hash(h);
+            mem::discriminant(&d.metric).hash(h);
         }
     }
 }

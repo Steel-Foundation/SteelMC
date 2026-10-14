@@ -1,5 +1,6 @@
 //! Item behavior trait and registry.
 
+use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
 use std::borrow::Cow;
@@ -104,7 +105,9 @@ pub trait ItemBehavior: Send + Sync {
         match result {
             EquipmentSwapResult::Success(overflow) => {
                 if !overflow.is_empty() {
-                    let _ = context.player.drop_item(overflow, false, false);
+                    let _ = context
+                        .player
+                        .drop_item(overflow, false, Prediction::Predicted);
                 }
                 InteractionResult::Success
             }

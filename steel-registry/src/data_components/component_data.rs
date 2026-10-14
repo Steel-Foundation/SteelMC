@@ -4,18 +4,21 @@ use std::fmt::{self, Debug, Formatter};
 
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
+use crate::block_transformer::BlockTransformerComponent;
+
 use super::components::{
     ArmorTrim, AttackRange, BannerPatternLayers, Bees, BlockEntityData, BlockItemStateProperties,
-    BlocksAttacks, BundleContents, ChargedProjectiles, Consumable, CustomData, CustomModelData,
-    DamageResistant, DamageTypeComponent, DeathProtection, DebugStickState, DyedItemColor,
-    Enchantable, EntityData, Equippable, FireworkExplosion, Fireworks, FoodProperties,
-    InstrumentComponent, ItemAttributeModifiers, ItemContainerContents, ItemEnchantments, ItemLore,
-    JukeboxPlayable, KineticWeapon, LodestoneTracker, MapDecorations, MapId, MapItemColor,
-    MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon,
-    PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes,
-    Repairable, SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffects, SwingAnimation,
-    Tool, TooltipDisplay, UseCooldown, UseEffects, UseRemainder, Weapon, WritableBookContent,
-    WrittenBookContent,
+    BlocksAttacks, BrewingFuel, BundleContents, ChargedProjectiles, Compostable, Consumable,
+    CookingFuel, CustomData, CustomModelData, DamageResistant, DamageTypeComponent,
+    DeathProtection, DebugStickState, DyedItemColor, Enchantable, EntityData, Equippable,
+    FireworkExplosion, Fireworks, FoodProperties, InstrumentComponent, ItemAttributeModifiers,
+    ItemContainerContents, ItemEnchantments, ItemLore, JukeboxPlayable, KineticWeapon,
+    LodestoneTracker, MapDecorations, MapId, MapItemColor, MapPostProcessing, MobVisibility,
+    OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon, PotDecorations,
+    PotionContents, ProvidesBannerPatterns, ProvidesPotteryPattern, ProvidesTrimMaterial, Rarity,
+    Recipes, Repairable, SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffects,
+    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood,
+    Weapon, WritableBookContent, WrittenBookContent,
 };
 use crate::cat_sound_variant::CatSoundVariant;
 use crate::cat_variant::CatVariant;
@@ -207,6 +210,10 @@ impl_component_downcast_type!(
     ProvidesTrimMaterial,
     "steel:item_component/provides_trim_material"
 );
+impl_component_downcast_type!(
+    ProvidesPotteryPattern,
+    "steel:item_component/provides_pottery_pattern"
+);
 impl_component_downcast_type!(JukeboxPlayable, "steel:item_component/jukebox_playable");
 impl_component_downcast_type!(
     ProvidesBannerPatterns,
@@ -223,6 +230,16 @@ impl_component_downcast_type!(ItemLore, "steel:item_component/lore");
 impl_component_downcast_type!(Rarity, "steel:item_component/rarity");
 impl_component_downcast_type!(TooltipDisplay, "steel:item_component/tooltip_display");
 impl_component_downcast_type!(SwingAnimation, "steel:item_component/swing_animation");
+impl_component_downcast_type!(CookingFuel, "steel:item_component/cooking_fuel");
+impl_component_downcast_type!(BrewingFuel, "steel:item_component/brewing_fuel");
+impl_component_downcast_type!(MobVisibility, "steel:item_component/mob_visibility");
+impl_component_downcast_type!(
+    BlockTransformerComponent,
+    "steel:item_component/block_transformer"
+);
+impl_component_downcast_type!(VillagerFood, "steel:item_component/villager_food");
+impl_component_downcast_type!(SignText, "steel:item_component/sign_text");
+impl_component_downcast_type!(Compostable, "steel:item_component/compostable");
 impl_component_downcast_type!(
     MapPostProcessing,
     "steel:item_component/map_post_processing"
