@@ -74,7 +74,7 @@ pub trait Display: Entity {
 
     /// The base `pistonPushReaction()` method for display entities.
     fn piston_push_reaction_display(&self) -> PushReaction {
-        PushReaction::Ignore
+        PushReaction::IgnoreEntity
     }
 
     /// The base `isIgnoringBlockTriggers()` method for display entities.

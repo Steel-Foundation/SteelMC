@@ -12,7 +12,7 @@ use parking_lot::MutexGuard;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
@@ -95,7 +95,7 @@ impl Entity for TextDisplayEntity {
         Some(&self.entity_data)
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.tick_display();
     }
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
