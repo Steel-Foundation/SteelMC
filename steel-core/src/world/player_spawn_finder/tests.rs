@@ -303,6 +303,29 @@ fn safe_spawn_does_not_drop_through_an_ocean_floor_into_a_cave() {
 }
 
 #[test]
+fn a_surface_that_cannot_be_stood_on_ends_the_search_with_the_height_fixup() {
+    with_search_world(
+        "slab_surface",
+        &vanilla_dimension_types::OVERWORLD,
+        |world| {
+            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 0));
+            insert_chunks_around_origin(world);
+            let set = |y: i32, state| set_block(world, BlockPos::new(0, y, 0), state);
+            // Solid ground under a bottom slab: the slab's top face is not full, and below an open
+            // sky the fallback only tests the surface, so it finds no standing spot.
+            set(60, vanilla_blocks::STONE.default_state());
+            set(61, vanilla_blocks::STONE.default_state());
+            set(62, vanilla_blocks::STONE_SLAB.default_state());
+            assert_eq!(world.safe_spawn_in_column(0, 0), None);
+
+            let mut search = new_search(world, BlockPos::new(0, 64, 0)).with_safe_fallback();
+            let fixup = world.fixup_spawn_height(BlockPos::new(0, 64, 0));
+            assert_eq!(run_search(world, &mut search), fixup);
+        },
+    );
+}
+
+#[test]
 fn failed_search_in_a_lava_cavern_falls_back_to_a_ledge_only_when_asked() {
     with_search_world("cavern", &vanilla_dimension_types::THE_NETHER, |world| {
         assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 0));

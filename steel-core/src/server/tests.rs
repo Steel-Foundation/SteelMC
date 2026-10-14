@@ -2446,6 +2446,181 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one integration test runs every awkward saved-data case through the same setup"
+)]
+fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
+    init_vanilla_registry();
+    init_entities();
+    init_behaviors();
+    let source_world_fixture = fresh_test_world_in_domain("source", "awk_spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "awk_spawn");
+    let target_world = &target_world_fixture.world;
+    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let destination = PreparedSpawn {
+            position: DVec3::new(-12.5, 90.25, 40.75),
+            rotation: (123.0, -20.0),
+        };
+        let turned = (200.0, 15.0);
+        let vehicle_uuid = [41; 16];
+        let passenger_uuid = [42; 16];
+        let pearl_uuid = [43; 16];
+        let pig = || test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid);
+        let pig_with_passenger = || {
+            let mut vehicle = pig();
+            vehicle.passengers = vec![test_persistent_entity(
+                &vanilla_entities::PIG,
+                passenger_uuid,
+            )];
+            vehicle
+        };
+        let ride = |entity: PersistentEntity| PersistentRootVehicle {
+            attach: vehicle_uuid,
+            entity,
+        };
+        let pearl = PersistentEnderPearl {
+            world: target_world.key.to_string(),
+            entity: test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid),
+        };
+
+        // Each case saves data for a fresh player in the target domain and enters it. The second
+        // and third reuse the first case's vehicle UUID, which is still registered in the world.
+        type Edit<'a> = Box<dyn Fn(&mut PersistentPlayerData) + 'a>;
+        let cases: Vec<(&str, WorldEntry, Edit)> = vec![
+            (
+                "a vehicle with a passenger",
+                WorldEntry::Exact(destination),
+                Box::new(|saved| saved.root_vehicle = Some(ride(pig_with_passenger()))),
+            ),
+            (
+                "an exact entry over a vehicle that is already registered",
+                WorldEntry::Exact(destination),
+                Box::new(|saved| saved.root_vehicle = Some(ride(pig()))),
+            ),
+            (
+                "a rotation entry over a vehicle that is already registered",
+                WorldEntry::Rotation(turned),
+                Box::new(|saved| saved.root_vehicle = Some(ride(pig()))),
+            ),
+            (
+                "a thrown ender pearl",
+                WorldEntry::Exact(destination),
+                Box::new(|saved| saved.ender_pearls = vec![pearl.clone()]),
+            ),
+            (
+                "no health left",
+                WorldEntry::Exact(destination),
+                Box::new(|saved| saved.health = 0.0),
+            ),
+            (
+                "a saved ground and glide state that differ from the player",
+                WorldEntry::Exact(destination),
+                Box::new(|saved| {
+                    saved.on_ground = true;
+                    saved.fall_flying = true;
+                }),
+            ),
+        ];
+        for (id, (name, entry, edit)) in (51_u128..).zip(cases) {
+            let (player, _) = test_player_with_uuid_and_packets(
+                &server,
+                Arc::clone(source_world),
+                Uuid::from_u128(id),
+                "TestPlayer",
+                next_entity_id(),
+            );
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+
+            let mut saved = PersistentPlayerData::from_player(&player);
+            saved.world = target_world.key.to_string();
+            saved.pos = [8.5, 70.0, 8.5];
+            edit(&mut saved);
+            let saved = server
+                .player_data_storage
+                .save_domain_data("target", player.gameprofile.id, &saved)
+                .await;
+            if let Err(error) = saved {
+                panic!("target-domain data should save: {error}");
+            }
+
+            assert!(
+                server
+                    .queue_player_world_selection_with_entry(
+                        Arc::clone(&player),
+                        target_world,
+                        entry
+                    )
+                    .is_ok(),
+                "{name}"
+            );
+            server.process_domain_switches();
+            for tick in 1..=10_000 {
+                source_world.chunk_map.advance_scheduling();
+                target_world.chunk_map.advance_scheduling();
+                server.tick_jobs(tick, true);
+                if server.jobs.is_empty() {
+                    break;
+                }
+                sleep(Duration::from_millis(1)).await;
+            }
+
+            assert!(server.jobs.is_empty(), "{name}: the job should finish");
+            assert!(target_world.contains_player(&player), "{name}");
+            match entry {
+                WorldEntry::Exact(_) => {
+                    assert_eq!(player.position(), destination.position, "{name}");
+                    assert_eq!(player.rotation(), destination.rotation, "{name}");
+                    assert!(player.vehicle().is_none(), "{name}: not mounted");
+                }
+                WorldEntry::Rotation(_) => assert_eq!(player.rotation(), turned, "{name}"),
+                WorldEntry::Usual => unreachable!("the cases use an exact or a rotation entry"),
+            }
+        }
+
+        // The first case's vehicle stays registered through the cases that reuse its UUID.
+        assert!(
+            target_world
+                .get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid))
+                .is_some()
+        );
+        drop(server);
+    });
+}
+
+#[test]
 fn domain_command_at_a_location_keeps_the_players_own_rotation() {
     init_vanilla_registry();
     init_entities();
