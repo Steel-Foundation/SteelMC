@@ -92,8 +92,7 @@ fn switch_world_with_rotation(
     )
 }
 
-/// Resolves `location` and the optional `rotation` like `/teleport` does: relative parts
-/// are relative to the sender, and the sender's rotation is kept when none is given.
+/// resolves coordinates like `/teleport` keeping the sender rotation if omitted
 fn switch_world_at_location(
     context: &SteelCommandContext<CommandSource>,
     has_rotation: bool,
