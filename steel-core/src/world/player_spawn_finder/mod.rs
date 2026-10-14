@@ -27,10 +27,7 @@ mod tests;
 const PLAYER_SPAWN_CHUNK_RADIUS: u8 = 3;
 const BLOCKS_PER_CHUNK: i32 = 16;
 const CHUNK_REQUEST_POLL_DELAY: Duration = Duration::from_millis(10);
-/// How long one poll may spend evaluating candidates before yielding to the next tick.
-///
-/// A plain candidate costs a few microseconds but a standing-spot scan about 100, so the
-/// limit is time, not a candidate count.
+/// time budget per spawn-search poll before yielding to the next tick
 pub(crate) const POLL_TIME_BUDGET: Duration = Duration::from_millis(1);
 
 pub(crate) enum PlayerSpawnSearchPoll {
