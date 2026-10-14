@@ -435,8 +435,6 @@ fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
     DVec3::new(vec.x * cos + vec.z * sin, vec.y, vec.z * cos - vec.x * sin)
 }
 
-/// A queued request to move an entity between loaded worlds.
-///
 /// A player's selection of a loaded world, queued until the next tick's world changes.
 pub struct WorldSelection {
     /// The target world to teleport into.
@@ -450,6 +448,8 @@ pub struct WorldSelection {
     pub entry: WorldEntry,
 }
 
+/// A queued request to move an entity between loaded worlds.
+///
 /// Vanilla calls these world changes "dimension changes". Steel keeps the
 /// runtime API named after loaded worlds to avoid confusing worlds with vanilla
 /// dimension types.

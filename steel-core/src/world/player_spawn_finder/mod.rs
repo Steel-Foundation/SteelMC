@@ -202,14 +202,11 @@ impl PlayerSpawnSearch {
                     return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
                 }
                 CandidateResult::Invalid => {}
-                CandidateResult::Unchecked => {
-                    tracing::error!(
-                        "Spawn search finished chunk {:?} without evaluating candidate {}",
-                        pending.chunk,
-                        pending.index
-                    );
-                    return PlayerSpawnSearchPoll::Cancelled;
-                }
+                CandidateResult::Unchecked => tracing::error!(
+                    "Spawn search finished chunk {:?} without evaluating candidate {}",
+                    pending.chunk,
+                    pending.index
+                ),
             }
         }
     }
