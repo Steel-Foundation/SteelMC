@@ -10,6 +10,7 @@ use steel_utils::Identifier;
 use text_components::TextComponent;
 
 use crate::{
+    entity::Entity as _,
     inventory::prelude::*,
     server::{PreparedSpawn, Server, WorldEntry},
     world::World,
@@ -90,19 +91,26 @@ fn switch_world_with_rotation(
     switch_world_to(context, WorldEntry::Rotation(wrap_rotation(rotation)))
 }
 
-/// resolves coordinates like `/teleport` keeping the sender rotation if omitted
+/// resolves coordinates like `/teleport` keeping the player's own rotation if omitted
 fn switch_world_at_location(
     context: &SteelCommandContext<CommandSource>,
     rotation: Option<(f32, f32)>,
 ) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
+    let player = command_player(source)?;
     let position = context.coordinates("location")?.position(source);
     ensure_spawnable_position(position)?;
     let destination = PreparedSpawn {
         position,
-        rotation: wrap_rotation(rotation.unwrap_or_else(|| source.rotation())),
+        rotation: wrap_rotation(rotation.unwrap_or_else(|| player.rotation())),
     };
     switch_world_to(context, WorldEntry::Exact(destination))
+}
+
+fn command_player(source: &CommandSource) -> Result<&Arc<Player>, CommandSyntaxError> {
+    source
+        .player()
+        .ok_or_else(|| CommandSyntaxError::dynamic("This command can only be used by a player"))
 }
 
 fn switch_world_to(
@@ -110,11 +118,7 @@ fn switch_world_to(
     entry: WorldEntry,
 ) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
-    let Some(player) = source.player() else {
-        return Err(CommandSyntaxError::dynamic(
-            "This command can only be used by a player",
-        ));
-    };
+    let player = command_player(source)?;
     let world = context.world_argument("world")?;
     let world = world.resolve(source)?;
     source

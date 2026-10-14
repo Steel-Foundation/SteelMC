@@ -2253,6 +2253,14 @@ fn same_domain_world_selection_applies_a_world_entry() {
     });
 }
 
+/// What a player has saved in the target domain.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Saved {
+    Nothing,
+    Location,
+    WithoutLocation,
+}
+
 #[test]
 #[expect(
     clippy::too_many_lines,
@@ -2296,26 +2304,39 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
             panic!("test server should initialize");
         };
 
-        let vehicle_uuid = [21; 16];
         let destination = PreparedSpawn {
             position: DVec3::new(-12.5, 90.25, 40.75),
             rotation: (123.0, -20.0),
         };
-        // The first player has a saved location in the target world, the second is new there.
+        // A player can be new to the target domain, have a saved location there, or have saved
+        // data whose world no longer exists (so only the location is lost).
         let turned = (200.0, 15.0);
         let cases = [
-            (1_i32, true, false, WorldEntry::Exact(destination)),
-            (2, false, false, WorldEntry::Exact(destination)),
-            (3, true, false, WorldEntry::Rotation(turned)),
-            (4, false, false, WorldEntry::Rotation(turned)),
-            (5, true, true, WorldEntry::Exact(destination)),
-            (6, false, true, WorldEntry::Exact(destination)),
+            (1_u8, Saved::Location, false, WorldEntry::Exact(destination)),
+            (2, Saved::Nothing, false, WorldEntry::Exact(destination)),
+            (3, Saved::Location, false, WorldEntry::Rotation(turned)),
+            (4, Saved::Nothing, false, WorldEntry::Rotation(turned)),
+            (5, Saved::Location, true, WorldEntry::Exact(destination)),
+            (6, Saved::Nothing, true, WorldEntry::Exact(destination)),
+            (
+                7,
+                Saved::WithoutLocation,
+                false,
+                WorldEntry::Exact(destination),
+            ),
+            (
+                8,
+                Saved::WithoutLocation,
+                false,
+                WorldEntry::Rotation(turned),
+            ),
         ];
-        for (entity_id, has_saved_location, gliding, entry) in cases {
+        for (entity_id, saved_data, gliding, entry) in cases {
+            let vehicle_uuid = [20 + entity_id; 16];
             let (player, _) = test_player_with_uuid_and_packets(
                 &server,
                 Arc::clone(source_world),
-                Uuid::from_u128(u128::from(entity_id.unsigned_abs())),
+                Uuid::from_u128(u128::from(entity_id)),
                 "TestPlayer",
                 next_entity_id(),
             );
@@ -2324,13 +2345,17 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
             let _ = player.mark_joined_world();
             player.set_fall_flying(gliding);
 
-            if has_saved_location {
+            if saved_data != Saved::Nothing {
                 let mut saved = PersistentPlayerData::from_player(&player);
-                saved.world = target_world.key.to_string();
+                saved.world = if saved_data == Saved::Location {
+                    target_world.key.to_string()
+                } else {
+                    "steel:missing".to_owned()
+                };
                 saved.pos = [8.5, 70.0, 8.5];
                 // The saved state is the opposite, so only the player's own state can win.
                 saved.fall_flying = !gliding;
-                if matches!(entry, WorldEntry::Exact(_)) && !gliding {
+                if !gliding {
                     saved.root_vehicle = Some(PersistentRootVehicle {
                         attach: vehicle_uuid,
                         entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
@@ -2374,21 +2399,40 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                     // Like `/teleport`: a gliding player keeps gliding, anyone else lands.
                     assert_eq!(player.is_fall_flying(), gliding);
                     assert_eq!(player.on_ground(), !gliding);
-                    if has_saved_location && !gliding {
+                    let vehicle = target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
+                    if let (Saved::Location, false) = (saved_data, gliding) {
                         // The saved vehicle stays where it was, without the player.
-                        let vehicle =
-                            target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
                         let Some(vehicle) = vehicle else {
                             panic!("the saved vehicle should be restored");
                         };
                         assert_eq!(vehicle.position(), DVec3::new(4.0, 65.0, 6.0));
                         assert!(player.vehicle().is_none());
+                    } else {
+                        assert!(
+                            vehicle.is_none(),
+                            "only a saved location restores a vehicle"
+                        );
                     }
                 }
                 WorldEntry::Rotation(_) => {
                     assert_eq!(player.rotation(), turned);
-                    if has_saved_location {
-                        assert_eq!(player.position(), DVec3::new(8.5, 70.0, 8.5));
+                    match saved_data {
+                        Saved::Location => {
+                            // The usual entry restores the saved ride, so the player sits on it.
+                            let Some(vehicle) = player.vehicle() else {
+                                panic!("the usual entry should remount the saved vehicle");
+                            };
+                            assert_eq!(vehicle.position(), DVec3::new(4.0, 65.0, 6.0));
+                            assert_eq!(player.position().x, 4.0);
+                            assert_eq!(player.position().z, 6.0);
+                        }
+                        Saved::WithoutLocation => {
+                            assert_ne!(player.position(), DVec3::new(8.5, 70.0, 8.5));
+                            let vehicle =
+                                target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
+                            assert!(vehicle.is_none());
+                        }
+                        Saved::Nothing => {}
                     }
                 }
                 WorldEntry::Usual => {
@@ -2397,6 +2441,99 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
             }
         }
 
+        drop(server);
+    });
+}
+
+#[test]
+fn domain_command_at_a_location_keeps_the_players_own_rotation() {
+    init_vanilla_registry();
+    init_entities();
+    init_behaviors();
+    let source_world_fixture = fresh_test_world_in_domain("source", "rot_spawn");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "rot_spawn");
+    let target_world = &target_world_fixture.world;
+    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (player, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(source_world),
+            Uuid::from_u128(91),
+            "TestPlayer",
+            next_entity_id(),
+        );
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+        player.set_rotation((77.0, 12.0));
+        server.player_permission_states.write().set(
+            player.gameprofile.id,
+            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+        );
+        player.set_permission_state(
+            vec![OP_GROUP.to_owned()],
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+        );
+
+        // `rotated` changes the source's rotation but not the player's, as for `/tp`.
+        let source = CommandSource::new(
+            CommandSender::Player(Arc::clone(&player)),
+            Arc::clone(&server),
+        );
+        run_command(
+            &server,
+            source,
+            &format!(
+                "execute rotated 0 0 run domain {} 10 70 10",
+                target_world.key
+            ),
+        );
+        server.process_domain_switches();
+        for tick in 1..=10_000 {
+            source_world.chunk_map.advance_scheduling();
+            target_world.chunk_map.advance_scheduling();
+            server.tick_jobs(tick, true);
+            if server.jobs.is_empty() {
+                break;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+
+        assert!(server.jobs.is_empty(), "domain switch job should finish");
+        assert!(target_world.contains_player(&player));
+        assert_eq!(player.position(), DVec3::new(10.5, 70.0, 10.5));
+        assert_eq!(player.rotation(), (77.0, 12.0));
         drop(server);
     });
 }

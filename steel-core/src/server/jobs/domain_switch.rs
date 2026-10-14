@@ -32,7 +32,6 @@ pub(in crate::server) struct DomainSwitchJob {
     source_domain: String,
     source_data: Option<Arc<PersistentPlayerData>>,
     /// Whether the player was gliding when they left, which an exact placement keeps.
-    source_fall_flying: bool,
     target_domain: String,
     entry: WorldEntry,
     pending_token: PendingWorldChangeToken,
@@ -81,7 +80,6 @@ impl DomainSwitchJob {
         let task_server = Arc::clone(server);
         let task_player = Arc::clone(&player);
         let task_source_domain = source_domain.clone();
-        let source_fall_flying = source_data.fall_flying;
         let source_data = Arc::new(source_data);
         let task_source_data = Arc::clone(&source_data);
         let task_target_domain = target_domain.clone();
@@ -113,7 +111,6 @@ impl DomainSwitchJob {
             player,
             source_domain,
             source_data: Some(source_data),
-            source_fall_flying,
             target_domain,
             entry,
             pending_token,
@@ -294,15 +291,17 @@ impl DomainSwitchJob {
             ));
         }
 
-        let mount_vehicle = !matches!(self.entry, WorldEntry::Exact(_));
-        let restores = server.prepare_domain_restores(&self.player, &state, mount_vehicle);
+        let mount_player = !matches!(self.entry, WorldEntry::Exact(_));
+        let restores = server.prepare_domain_restores(&self.player, &state, mount_player);
         let restore_player = Arc::clone(&self.player);
+        let fall_flying = self.player.is_fall_flying();
         self.player
             .reset_after_detached_domain_restore(Arc::clone(&state.world), || {
                 Server::apply_domain_player_state(&restore_player, &state);
                 if matches!(self.entry, WorldEntry::Exact(_)) {
-                    // Like `/teleport`, the player's own gliding state carries over.
-                    restore_player.set_fall_flying(self.source_fall_flying);
+                    // Like `/teleport`, the gliding state carries over. A glider stays airborne,
+                    // so it must not keep a saved `on_ground`.
+                    restore_player.set_fall_flying(fall_flying);
                     restore_player.set_on_ground(false);
                     land_after_teleport(restore_player.as_ref());
                 }
