@@ -179,6 +179,8 @@ impl ChunkRequestHandle {
         if inner.lease.positions.is_empty() {
             return ChunkRequestState::Ready;
         }
+        // Read before the scan: chunks seen ready afterwards stay held by the committed tickets.
+        let tickets_committed = inner.tickets_committed();
         let mut ready = 0;
         for &pos in &inner.lease.positions {
             let Some(holder) = inner
@@ -195,7 +197,7 @@ impl ChunkRequestHandle {
             }
         }
 
-        if inner.tickets_committed() && ready == inner.lease.positions.len() {
+        if tickets_committed && ready == inner.lease.positions.len() {
             ChunkRequestState::Ready
         } else {
             ChunkRequestState::Pending {
