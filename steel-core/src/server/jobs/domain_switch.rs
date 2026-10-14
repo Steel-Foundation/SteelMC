@@ -220,6 +220,7 @@ impl DomainSwitchJob {
             .with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(
                 &world,
                 spawn_suggestion,
+                world.default_gamemode(),
             ));
         Ok(DomainSwitchJobPhase::SearchingSpawn {
             world,

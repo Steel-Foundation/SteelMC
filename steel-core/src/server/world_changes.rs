@@ -428,7 +428,11 @@ impl Server {
                 None
             } else {
                 let spawn_suggestion = target_world.level_data.read().data().spawn_pos();
-                PlayerSpawnSearch::prefetch_spawn_area(&target_world, spawn_suggestion)
+                PlayerSpawnSearch::prefetch_spawn_area(
+                    &target_world,
+                    spawn_suggestion,
+                    target_world.default_gamemode(),
+                )
             };
             self.pending_world_changes.lock().push((
                 player,

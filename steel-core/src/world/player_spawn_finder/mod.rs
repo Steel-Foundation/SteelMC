@@ -84,13 +84,9 @@ impl PlayerSpawnSearch {
         spawn_suggestion: BlockPos,
         game_type: GameType,
     ) -> Result<Self, String> {
-        let sequence = if game_type == GameType::Adventure {
-            CandidateSequence::empty(spawn_suggestion)
-        } else {
-            CandidateSequence::new(
-                spawn_suggestion,
-                Self::search_radius(world, spawn_suggestion),
-            )?
+        let sequence = match Self::search_radius(world, spawn_suggestion, game_type) {
+            Some(radius) => CandidateSequence::new(spawn_suggestion, radius)?,
+            None => CandidateSequence::empty(spawn_suggestion),
         };
         let slots = usize::try_from(sequence.count())
             .map_err(|e| format!("invalid spawn candidate count: {e}"))?;
@@ -116,8 +112,16 @@ impl PlayerSpawnSearch {
         self
     }
 
-    /// The radius, in blocks, of the square searched around `spawn_suggestion`.
-    fn search_radius(world: &Arc<World>, spawn_suggestion: BlockPos) -> i32 {
+    /// The radius, in blocks, of the square searched around `spawn_suggestion`, or `None` when
+    /// the game mode skips the search.
+    fn search_radius(
+        world: &Arc<World>,
+        spawn_suggestion: BlockPos,
+        game_type: GameType,
+    ) -> Option<i32> {
+        if game_type == GameType::Adventure {
+            return None;
+        }
         let mut radius = world.get_game_rule(&RESPAWN_RADIUS).max(0);
         let border_distance = world
             .world_border_snapshot()
@@ -132,7 +136,7 @@ impl PlayerSpawnSearch {
         if border_distance <= 1 {
             radius = 1;
         }
-        radius
+        Some(radius)
     }
 
     /// Requests the spawn area around `spawn_suggestion` before the search starts, unless the
@@ -140,20 +144,18 @@ impl PlayerSpawnSearch {
     pub(crate) fn prefetch_spawn_area(
         world: &Arc<World>,
         spawn_suggestion: BlockPos,
+        game_type: GameType,
     ) -> Option<ChunkRequestHandle> {
-        let radius = if world.default_gamemode() == GameType::Adventure {
-            0
-        } else {
-            Self::search_radius(world, spawn_suggestion)
-        };
-        (radius <= BLOCKS_PER_CHUNK).then(|| {
-            world.chunk_map.request_square(
-                ChunkPos::from_block_pos(spawn_suggestion),
-                PLAYER_SPAWN_CHUNK_RADIUS,
-                ChunkStatus::Full,
-                ChunkTicketKind::PlayerSpawn,
-            )
-        })
+        let radius = Self::search_radius(world, spawn_suggestion, game_type);
+        if radius.is_some_and(|radius| radius > BLOCKS_PER_CHUNK) {
+            return None;
+        }
+        Some(world.chunk_map.request_square(
+            ChunkPos::from_block_pos(spawn_suggestion),
+            PLAYER_SPAWN_CHUNK_RADIUS,
+            ChunkStatus::Full,
+            ChunkTicketKind::PlayerSpawn,
+        ))
     }
 
     /// Adopts a request made by [`Self::prefetch_spawn_area`].

@@ -92,8 +92,11 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
             let mut search = new_search(world, suggestion);
             search.sequence.offset = 0;
             if prefetch {
-                search =
-                    search.with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(world, suggestion));
+                search = search.with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(
+                    world,
+                    suggestion,
+                    GameType::Survival,
+                ));
             }
             assert_eq!(run_search(world, &mut search), expected);
         }
@@ -105,8 +108,9 @@ fn prefetched_chunks_are_read_directly_once_their_tickets_are_committed() {
     with_search_world("prefetch", &vanilla_dimension_types::OVERWORLD, |world| {
         insert_chunks(world, 3);
         let suggestion = BlockPos::new(0, 64, 0);
-        let search = new_search(world, suggestion)
-            .with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(world, suggestion));
+        let search = new_search(world, suggestion).with_prefetch(
+            PlayerSpawnSearch::prefetch_spawn_area(world, suggestion, GameType::Survival),
+        );
         let inside = ChunkPos::new(2, -2);
         let outside = ChunkPos::new(10, 10);
         assert!(!search.chunk_is_held(inside), "nothing is committed yet");
@@ -120,6 +124,28 @@ fn prefetched_chunks_are_read_directly_once_their_tickets_are_committed() {
         assert!(search.chunk_is_held(inside));
         assert!(!search.chunk_is_held(outside));
     });
+}
+
+#[test]
+fn prefetch_follows_the_radius_the_search_uses() {
+    with_search_world(
+        "prefetch_rule",
+        &vanilla_dimension_types::OVERWORLD,
+        |world| {
+            let suggestion = BlockPos::new(0, 64, 0);
+            let prefetches = |game_type| {
+                PlayerSpawnSearch::prefetch_spawn_area(world, suggestion, game_type).is_some()
+            };
+
+            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 10));
+            assert!(prefetches(GameType::Survival));
+            // A search wide enough to leave the prefetched square does not prefetch it.
+            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 40));
+            assert!(!prefetches(GameType::Survival));
+            // Adventure skips the search, so the prefetch covers the whole of it.
+            assert!(prefetches(GameType::Adventure));
+        },
+    );
 }
 
 #[test]
