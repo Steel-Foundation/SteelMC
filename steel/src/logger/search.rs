@@ -85,9 +85,9 @@ impl ReverseSearch {
     }
 
     pub(super) fn prompt(&self) -> String {
+        const TAIL: &str = "': ";
         let failed = if self.failed { "failed " } else { "" };
         let head = format!("({failed}reverse-i-search)`");
-        const TAIL: &str = "': ";
 
         // Keep the prompt within half the terminal so the input stays visible and
         // the line never wraps; an overlong query shows only its end.
