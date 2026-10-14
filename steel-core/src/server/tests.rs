@@ -2253,6 +2253,9 @@ fn same_domain_world_selection_applies_a_world_entry() {
     });
 }
 
+/// Changes a player's saved data before it enters the target domain.
+type SavedEdit<'a> = Box<dyn Fn(&mut PersistentPlayerData) + 'a>;
+
 /// What a player has saved in the target domain.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Saved {
@@ -2516,8 +2519,7 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
 
         // Each case saves data for a fresh player in the target domain and enters it. The second
         // and third reuse the first case's vehicle UUID, which is still registered in the world.
-        type Edit<'a> = Box<dyn Fn(&mut PersistentPlayerData) + 'a>;
-        let cases: Vec<(&str, WorldEntry, Edit)> = vec![
+        let cases: Vec<(&str, WorldEntry, SavedEdit)> = vec![
             (
                 "a vehicle with a passenger",
                 WorldEntry::Exact(destination),
