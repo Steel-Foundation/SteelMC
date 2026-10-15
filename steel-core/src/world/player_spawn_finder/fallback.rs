@@ -118,9 +118,8 @@ impl World {
                 continue;
             }
             let pos = BlockPos::new(x, y, z);
-            // Prunes the solid blocks below the surface before the much costlier box test. It
-            // also rejects a head block whose shape stays above the player's box, which the box
-            // test would allow.
+            // Prunes solid blocks before the much costlier box test. It also rejects a head block
+            // whose shape stays above the player's box, which the box test would allow.
             let head_pos = pos.above();
             let feet = self.get_block_state(pos);
             let head = self.get_block_state(head_pos);

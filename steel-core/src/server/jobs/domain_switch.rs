@@ -31,7 +31,6 @@ pub(in crate::server) struct DomainSwitchJob {
     player: Arc<Player>,
     source_domain: String,
     source_data: Option<Arc<PersistentPlayerData>>,
-    /// Whether the player was gliding when they left, which an exact placement keeps.
     target_domain: String,
     entry: WorldEntry,
     pending_token: PendingWorldChangeToken,

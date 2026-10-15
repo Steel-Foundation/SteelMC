@@ -280,8 +280,11 @@ impl PlayerSpawnSearch {
         let Some(slot) = self.results.get_mut(pending.index as usize) else {
             return;
         };
+        let result = Self::evaluate_candidate(world, x, z);
+        // A chunk that unloaded during the evaluation reads as invalid, so the result only counts
+        // if the chunk is still loaded.
         *slot = if world.has_full_chunk(pending.chunk) {
-            Self::evaluate_candidate(world, x, z)
+            result
         } else {
             CandidateResult::Unchecked
         };
