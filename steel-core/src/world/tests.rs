@@ -257,6 +257,34 @@ fn entity_breaker_is_available_to_chorus_flower_loot() {
     assert_eq!(BlockLootContext::new(world, pos).get_drops(state).len(), 0);
 }
 
+#[test]
+fn wall_torch_variants_use_their_standing_torch_loot_tables() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("wall_torch_variant_loot");
+    let world = &world_fixture.world;
+    let context = BlockLootContext::new(world, BlockPos::new(0, 64, 0));
+    let cases = [
+        (&vanilla_blocks::WALL_TORCH, &*vanilla_items::TORCH),
+        (
+            &vanilla_blocks::SOUL_WALL_TORCH,
+            &*vanilla_items::SOUL_TORCH,
+        ),
+        (
+            &vanilla_blocks::COPPER_WALL_TORCH,
+            &*vanilla_items::COPPER_TORCH,
+        ),
+    ];
+
+    for (block, expected_item) in cases {
+        let drops = context.get_drops(block.default_state());
+        assert_eq!(drops.len(), 1, "{block:?}");
+        assert_eq!(drops[0].item(), expected_item, "{block:?}");
+        assert_eq!(drops[0].count(), 1, "{block:?}");
+    }
+}
+
 fn assert_vec3_close(left: DVec3, right: DVec3) {
     let diff = left - right;
     assert!(
