@@ -186,8 +186,17 @@ fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
                 set_block(world, ground, vanilla_blocks::AIR.default_state());
             }
             let result = run_search(world, &mut search);
-            // The spot is only reached after the wait, so a removed ground must be noticed.
-            assert_eq!(result == spot, !remove_ground);
+            // The spot is only reached after the wait, so a removed ground must be noticed and the
+            // search ends with the height fixup, as when no candidate has ground.
+            let expected = if remove_ground {
+                world.fixup_spawn_height(suggestion)
+            } else {
+                spot
+            };
+            if remove_ground {
+                assert_ne!(expected, spot, "the two outcomes must differ");
+            }
+            assert_eq!(result, expected);
         }
     });
 }

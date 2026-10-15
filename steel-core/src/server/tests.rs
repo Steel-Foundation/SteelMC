@@ -2256,6 +2256,9 @@ fn same_domain_world_selection_applies_a_world_entry() {
 /// Changes a player's saved data before it enters the target domain.
 type SavedEdit<'a> = Box<dyn Fn(&mut PersistentPlayerData) + 'a>;
 
+/// Checks what the world and the player look like after the entry.
+type ArrivalCheck<'a> = Box<dyn Fn(&Player, &World) + 'a>;
+
 /// What a player has saved in the target domain.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Saved {
@@ -2358,12 +2361,10 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                 saved.pos = [8.5, 70.0, 8.5];
                 // The saved state is the opposite, so only the player's own state can win.
                 saved.fall_flying = !gliding;
-                if !gliding {
-                    saved.root_vehicle = Some(PersistentRootVehicle {
-                        attach: vehicle_uuid,
-                        entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
-                    });
-                }
+                saved.root_vehicle = Some(PersistentRootVehicle {
+                    attach: vehicle_uuid,
+                    entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
+                });
                 let saved = server
                     .player_data_storage
                     .save_domain_data("target", player.gameprofile.id, &saved)
@@ -2403,8 +2404,9 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                     assert_eq!(player.is_fall_flying(), gliding);
                     assert_eq!(player.on_ground(), !gliding);
                     let vehicle = target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
-                    if let (Saved::Location, false) = (saved_data, gliding) {
-                        // The saved vehicle stays where it was, without the player.
+                    if saved_data == Saved::Location {
+                        // The saved vehicle stays where it was, without the player, even when the
+                        // player arrives gliding.
                         let Some(vehicle) = vehicle else {
                             panic!("the saved vehicle should be restored");
                         };
@@ -2419,6 +2421,7 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                 }
                 WorldEntry::Rotation(_) => {
                     assert_eq!(player.rotation(), turned);
+                    assert_ne!(player.position(), destination.position);
                     match saved_data {
                         Saved::Location => {
                             // The usual entry restores the saved ride, so the player sits on it.
@@ -2519,31 +2522,56 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
 
         // Each case saves data for a fresh player in the target domain and enters it. The second
         // and third reuse the first case's vehicle UUID, which is still registered in the world.
-        let cases: Vec<(&str, WorldEntry, SavedEdit)> = vec![
+        let in_world =
+            |world: &World, uuid: [u8; 16]| world.get_entity_by_uuid(&Uuid::from_bytes(uuid));
+        let cases: Vec<(&str, WorldEntry, SavedEdit, ArrivalCheck)> = vec![
             (
                 "a vehicle with a passenger",
                 WorldEntry::Exact(destination),
                 Box::new(|saved| saved.root_vehicle = Some(ride(pig_with_passenger()))),
+                Box::new(|player, world| {
+                    assert!(in_world(world, vehicle_uuid).is_some());
+                    assert!(
+                        in_world(world, passenger_uuid).is_some(),
+                        "the passenger comes too"
+                    );
+                    assert!(player.vehicle().is_none());
+                }),
             ),
             (
                 "an exact entry over a vehicle that is already registered",
                 WorldEntry::Exact(destination),
                 Box::new(|saved| saved.root_vehicle = Some(ride(pig()))),
+                Box::new(|player, world| {
+                    assert!(in_world(world, vehicle_uuid).is_some());
+                    assert!(player.vehicle().is_none());
+                }),
             ),
             (
                 "a rotation entry over a vehicle that is already registered",
                 WorldEntry::Rotation(turned),
                 Box::new(|saved| saved.root_vehicle = Some(ride(pig()))),
+                // The second pig cannot be registered, so the player stays at the saved spot.
+                Box::new(|player, world| {
+                    assert!(in_world(world, vehicle_uuid).is_some());
+                    assert!(player.vehicle().is_none());
+                    assert_eq!(player.position(), DVec3::new(8.5, 70.0, 8.5));
+                }),
             ),
             (
                 "a thrown ender pearl",
                 WorldEntry::Exact(destination),
                 Box::new(|saved| saved.ender_pearls = vec![pearl.clone()]),
+                Box::new(|_, world| assert!(in_world(world, pearl_uuid).is_some())),
             ),
             (
                 "no health left",
                 WorldEntry::Exact(destination),
                 Box::new(|saved| saved.health = 0.0),
+                // As at login, the saved health carries over: the player arrives dead.
+                Box::new(|player, _| {
+                    assert!(player.get_health() <= 0.0);
+                }),
             ),
             (
                 "a saved ground and glide state that differ from the player",
@@ -2552,9 +2580,13 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
                     saved.on_ground = true;
                     saved.fall_flying = true;
                 }),
+                Box::new(|player, _| {
+                    assert!(!player.is_fall_flying());
+                    assert!(player.on_ground());
+                }),
             ),
         ];
-        for (id, (name, entry, edit)) in (51_u128..).zip(cases) {
+        for (id, (name, entry, edit, check)) in (51_u128..).zip(cases) {
             let (player, _) = test_player_with_uuid_and_packets(
                 &server,
                 Arc::clone(source_world),
@@ -2610,20 +2642,19 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
                 WorldEntry::Rotation(_) => assert_eq!(player.rotation(), turned, "{name}"),
                 WorldEntry::Usual => unreachable!("the cases use an exact or a rotation entry"),
             }
+            check(&player, target_world);
         }
 
-        // The first case's vehicle stays registered through the cases that reuse its UUID.
-        assert!(
-            target_world
-                .get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid))
-                .is_some()
-        );
         drop(server);
     });
 }
 
 #[test]
-fn domain_command_at_a_location_keeps_the_players_own_rotation() {
+#[expect(
+    clippy::too_many_lines,
+    reason = "one integration test checks the accepted forms and then runs a rotated command through the same setup"
+)]
+fn domain_command_accepts_its_forms_and_keeps_the_players_own_rotation() {
     init_vanilla_registry();
     init_entities();
     init_behaviors();
@@ -2683,11 +2714,34 @@ fn domain_command_at_a_location_keeps_the_players_own_rotation() {
             PermissionMetadataSet::new(),
         );
 
-        // `rotated` changes the source's rotation but not the player's, as for `/tp`.
         let source = CommandSource::new(
             CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
         );
+        // The forms `/domain` accepts: a world alone, with a location, with a location and a
+        // rotation, or with only a rotation.
+        let world_key = &target_world.key;
+        let accepted = |command: &str| {
+            let dispatcher = server.command_dispatcher.read();
+            let parse = dispatcher.parse(command, source.clone());
+            dispatcher.context_chain(parse).is_ok()
+        };
+        for command in [
+            format!("domain {world_key}"),
+            format!("domain {world_key} 1 2 3"),
+            format!("domain {world_key} 1 2 3 45 10"),
+            format!("domain {world_key} 45 10"),
+        ] {
+            assert!(accepted(&command), "{command} should be accepted");
+        }
+        for command in [
+            format!("domain {world_key} 1 2 3 4"),
+            format!("domain {world_key} abc"),
+        ] {
+            assert!(!accepted(&command), "{command} should be rejected");
+        }
+
+        // `rotated` changes the source's rotation but not the player's, as for `/tp`.
         run_command(
             &server,
             source,

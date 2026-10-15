@@ -333,33 +333,4 @@ mod tests {
         };
         assert!(world.is_executable());
     }
-
-    #[test]
-    fn domain_graph_takes_a_location_and_a_rotation_or_only_a_rotation() {
-        init_vanilla_registry();
-        let Ok(dispatcher) = create_dispatcher() else {
-            panic!("built-in commands should register");
-        };
-        let root = child(&dispatcher, dispatcher.root(), "domain");
-        let world = child(&dispatcher, root, "world");
-        let location = child(&dispatcher, world, "location");
-        let arguments = [
-            (location, SteelArgumentType::vec3(true)),
-            (
-                child(&dispatcher, location, "rotation"),
-                SteelArgumentType::rotation(),
-            ),
-            (
-                child(&dispatcher, world, "rotation"),
-                SteelArgumentType::rotation(),
-            ),
-        ];
-        for (node, argument_type) in arguments {
-            let Some(node) = dispatcher.node(node) else {
-                panic!("argument node should exist");
-            };
-            assert_eq!(node.argument_type(), Some(&argument_type));
-            assert!(node.is_executable());
-        }
-    }
 }

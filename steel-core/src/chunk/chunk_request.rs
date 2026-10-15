@@ -352,8 +352,26 @@ mod tests {
             ChunkRequestState::Pending { ready: 1, total: 1 }
         );
         assert!(second.ready_chunks().is_none());
+        assert!(!second.tickets_committed());
 
         drive_request_until_ready(&world.chunk_map, &second);
         assert!(second.ready_chunks().is_some());
+        assert!(second.tickets_committed());
+    }
+
+    #[test]
+    fn a_cancelled_request_has_no_committed_tickets() {
+        let world_fixture = fresh_test_world("chunk_request_cancel");
+        let world = &world_fixture.world;
+        let mut request = world.chunk_map.request_chunk(
+            ChunkPos::new(1, 1),
+            ChunkStatus::Empty,
+            ChunkTicketKind::Command,
+        );
+        drive_request_until_ready(&world.chunk_map, &request);
+        assert!(request.tickets_committed());
+
+        request.cancel();
+        assert!(!request.tickets_committed());
     }
 }
