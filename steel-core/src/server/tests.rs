@@ -3,6 +3,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use std::ptr;
 use std::thread;
 use std::{
+    cell::Cell,
     env::temp_dir,
     io::Cursor,
     path::{Path, PathBuf},
@@ -2267,98 +2268,197 @@ enum Saved {
     WithoutLocation,
 }
 
-#[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one integration test follows both cross-domain placements across storage and chunk scheduling"
-)]
-fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation() {
-    init_vanilla_registry();
-    init_entities();
-    init_behaviors();
-    let source_world_fixture = fresh_test_world_in_domain("source", "dest_spawn");
-    let source_world = &source_world_fixture.world;
-    let target_world_fixture = fresh_test_world_in_domain("target", "dest_spawn");
-    let target_world = &target_world_fixture.world;
-    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
-    let runtime = Builder::new_current_thread().enable_all().build();
-    let Ok(runtime) = runtime else {
-        panic!("test runtime should initialize");
-    };
-    runtime.block_on(async {
-        let domains = [
-            ResolvedDomainConfig {
-                name: "source".to_owned(),
-                default_world: source_world.key.clone(),
-                worlds: vec![source_world.key.clone()],
-            },
-            ResolvedDomainConfig {
-                name: "target".to_owned(),
-                default_world: target_world.key.clone(),
-                worlds: vec![target_world.key.clone()],
-            },
-        ];
-        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
-        let server = test_server_with_worlds(
-            "source".to_owned(),
-            &domains,
-            &worlds,
-            PermissionSubjectIndex::new(),
-        )
-        .await;
-        let Ok(server) = server else {
-            panic!("test server should initialize");
-        };
+/// Where the exact-entry tests place the player.
+const DESTINATION: PreparedSpawn = PreparedSpawn {
+    position: DVec3::new(-12.5, 90.25, 40.75),
+    rotation: (123.0, -20.0),
+};
 
-        let destination = PreparedSpawn {
-            position: DVec3::new(-12.5, 90.25, 40.75),
-            rotation: (123.0, -20.0),
+/// What the rotation-entry tests turn the player to.
+const TURNED: (f32, f32) = (200.0, 15.0);
+
+/// Where a player's saved location in the target domain is.
+const SAVED_POS: [f64; 3] = [8.5, 70.0, 8.5];
+
+/// A server with the domains `source` and `target`, of one world each.
+struct TwoDomains<'a> {
+    source: &'a Arc<World>,
+    target: &'a Arc<World>,
+    server: Arc<Server>,
+    tick: Cell<u64>,
+}
+
+impl TwoDomains<'_> {
+    /// Runs `test` against a fresh server whose worlds have their origin chunk loaded. `key`
+    /// keeps each test's worlds apart.
+    fn run(key: &'static str, test: impl AsyncFnOnce(&TwoDomains<'_>)) {
+        init_vanilla_registry();
+        init_entities();
+        init_behaviors();
+        let source = fresh_test_world_in_domain("source", key);
+        let target = fresh_test_world_in_domain("target", key);
+        for world in [&source.world, &target.world] {
+            insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        }
+        let Ok(runtime) = Builder::new_current_thread().enable_all().build() else {
+            panic!("test runtime should initialize");
         };
+        runtime.block_on(async {
+            let domains = [&source.world, &target.world].map(|world| ResolvedDomainConfig {
+                name: world.domain().to_owned(),
+                default_world: world.key.clone(),
+                worlds: vec![world.key.clone()],
+            });
+            let worlds = [Arc::clone(&source.world), Arc::clone(&target.world)];
+            let server = test_server_with_worlds(
+                "source".to_owned(),
+                &domains,
+                &worlds,
+                PermissionSubjectIndex::new(),
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            test(&TwoDomains {
+                source: &source.world,
+                target: &target.world,
+                server,
+                tick: Cell::new(0),
+            })
+            .await;
+        });
+    }
+
+    /// Adds a player with `uuid` to the source world.
+    fn join_source(&self, uuid: u128) -> Arc<Player> {
+        let (player, _) = test_player_with_uuid_and_packets(
+            &self.server,
+            Arc::clone(self.source),
+            Uuid::from_u128(uuid),
+            "TestPlayer",
+            next_entity_id(),
+        );
+        assert!(self.server.online_players.insert(Arc::clone(&player)));
+        assert!(
+            self.source
+                .add_player(Arc::clone(&player), ResetReason::InitialJoin)
+        );
+        let _ = player.mark_joined_world();
+        player
+    }
+
+    /// Makes `player` an operator and returns a command source for it.
+    fn operator_source(&self, player: &Arc<Player>) -> CommandSource {
+        self.server.player_permission_states.write().set(
+            player.gameprofile.id,
+            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+        );
+        player.set_permission_state(
+            vec![OP_GROUP.to_owned()],
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+        );
+        CommandSource::new(
+            CommandSender::Player(Arc::clone(player)),
+            Arc::clone(&self.server),
+        )
+    }
+
+    /// Saved data for `player` at [`SAVED_POS`] in the target world.
+    fn saved_in_target(&self, player: &Player) -> PersistentPlayerData {
+        let mut saved = PersistentPlayerData::from_player(player);
+        saved.world = self.target.key.to_string();
+        saved.pos = SAVED_POS;
+        saved
+    }
+
+    async fn save_target_data(&self, player: &Player, data: &PersistentPlayerData) {
+        let saved = self
+            .server
+            .player_data_storage
+            .save_domain_data("target", player.gameprofile.id, data)
+            .await;
+        if let Err(error) = saved {
+            panic!("target-domain data should save: {error}");
+        }
+    }
+
+    /// Queues `player`'s entry into the target world and processes the domain switch request.
+    fn queue_target_entry(&self, player: &Arc<Player>, entry: WorldEntry) {
+        let queued =
+            self.server
+                .queue_player_world_selection(Arc::clone(player), self.target, entry);
+        if let Err(error) = queued {
+            panic!("the world selection should queue: {error}");
+        }
+        self.server.process_domain_switches();
+    }
+
+    /// Processes queued domain switches and ticks until every job has finished.
+    async fn run_domain_switches(&self) {
+        self.server.process_domain_switches();
+        assert!(
+            self.tick_until(|| self.server.jobs.is_empty()).await,
+            "the jobs should finish"
+        );
+    }
+
+    /// Advances chunk scheduling and server jobs until `done` holds; `false` if it never does.
+    async fn tick_until(&self, mut done: impl FnMut() -> bool) -> bool {
+        for _ in 0..10_000 {
+            let tick = self.tick.get() + 1;
+            self.tick.set(tick);
+            self.source.chunk_map.advance_scheduling();
+            self.target.chunk_map.advance_scheduling();
+            self.server.tick_jobs(tick, true);
+            if done() {
+                return true;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+        false
+    }
+}
+
+#[test]
+fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation() {
+    TwoDomains::run("dest_spawn", async |domains| {
+        let target = domains.target;
         // A player can be new to the target domain, have a saved location there, or have saved
         // data whose world no longer exists (so only the location is lost).
-        let turned = (200.0, 15.0);
         let cases = [
-            (1_u8, Saved::Location, false, WorldEntry::Exact(destination)),
-            (2, Saved::Nothing, false, WorldEntry::Exact(destination)),
-            (3, Saved::Location, false, WorldEntry::Rotation(turned)),
-            (4, Saved::Nothing, false, WorldEntry::Rotation(turned)),
-            (5, Saved::Location, true, WorldEntry::Exact(destination)),
-            (6, Saved::Nothing, true, WorldEntry::Exact(destination)),
+            (1_u8, Saved::Location, false, WorldEntry::Exact(DESTINATION)),
+            (2, Saved::Nothing, false, WorldEntry::Exact(DESTINATION)),
+            (3, Saved::Location, false, WorldEntry::Rotation(TURNED)),
+            (4, Saved::Nothing, false, WorldEntry::Rotation(TURNED)),
+            (5, Saved::Location, true, WorldEntry::Exact(DESTINATION)),
+            (6, Saved::Nothing, true, WorldEntry::Exact(DESTINATION)),
             (
                 7,
                 Saved::WithoutLocation,
                 false,
-                WorldEntry::Exact(destination),
+                WorldEntry::Exact(DESTINATION),
             ),
             (
                 8,
                 Saved::WithoutLocation,
                 false,
-                WorldEntry::Rotation(turned),
+                WorldEntry::Rotation(TURNED),
             ),
         ];
-        for (entity_id, saved_data, gliding, entry) in cases {
-            let vehicle_uuid = [20 + entity_id; 16];
-            let (player, _) = test_player_with_uuid_and_packets(
-                &server,
-                Arc::clone(source_world),
-                Uuid::from_u128(u128::from(entity_id)),
-                "TestPlayer",
-                next_entity_id(),
-            );
-            assert!(server.online_players.insert(Arc::clone(&player)));
-            assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-            let _ = player.mark_joined_world();
+        for (id, saved_data, gliding, entry) in cases {
+            let vehicle_uuid = [20 + id; 16];
+            let player = domains.join_source(u128::from(id));
             player.set_fall_flying(gliding);
 
             if saved_data != Saved::Nothing {
-                let mut saved = PersistentPlayerData::from_player(&player);
-                saved.world = if saved_data == Saved::Location {
-                    target_world.key.to_string()
-                } else {
-                    "steel:missing".to_owned()
-                };
-                saved.pos = [8.5, 70.0, 8.5];
+                let mut saved = domains.saved_in_target(&player);
+                if saved_data == Saved::WithoutLocation {
+                    saved.world = "steel:missing".to_owned();
+                }
                 // The saved glide state is the opposite, so only the player's own state can win, and
                 // a saved ground state must not hold a glider down.
                 saved.fall_flying = !gliding;
@@ -2368,37 +2468,17 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                     attach: vehicle_uuid,
                     entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
                 });
-                let saved = server
-                    .player_data_storage
-                    .save_domain_data("target", player.gameprofile.id, &saved)
-                    .await;
-                if let Err(error) = saved {
-                    panic!("target-domain data should save: {error}");
-                }
+                domains.save_target_data(&player, &saved).await;
             }
 
-            assert!(
-                server
-                    .queue_player_world_selection(Arc::clone(&player), target_world, entry)
-                    .is_ok()
-            );
-            server.process_domain_switches();
-            for tick in 1..=10_000 {
-                source_world.chunk_map.advance_scheduling();
-                target_world.chunk_map.advance_scheduling();
-                server.tick_jobs(tick, true);
-                if server.jobs.is_empty() {
-                    break;
-                }
-                sleep(Duration::from_millis(1)).await;
-            }
-
-            assert!(server.jobs.is_empty(), "domain switch job should finish");
-            assert!(target_world.contains_player(&player));
+            domains.queue_target_entry(&player, entry);
+            domains.run_domain_switches().await;
+            assert!(target.contains_player(&player));
+            let vehicle = target.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
             match entry {
                 WorldEntry::Exact(_) => {
-                    assert_eq!(player.position(), destination.position);
-                    assert_eq!(player.rotation(), destination.rotation);
+                    assert_eq!(player.position(), DESTINATION.position);
+                    assert_eq!(player.rotation(), DESTINATION.rotation);
                     // Like `/teleport`: a gliding player keeps gliding, anyone else lands.
                     assert_eq!(player.is_fall_flying(), gliding);
                     assert_eq!(player.on_ground(), !gliding);
@@ -2407,7 +2487,7 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                         DVec3::ZERO,
                         "the saved motion is dropped"
                     );
-                    let vehicle = target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
+                    assert!(player.vehicle().is_none());
                     if saved_data == Saved::Location {
                         // The saved vehicle stays where it was, without the player, even when the
                         // player arrives gliding.
@@ -2415,7 +2495,6 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                             panic!("the saved vehicle should be restored");
                         };
                         assert_eq!(vehicle.position(), DVec3::new(4.0, 65.0, 6.0));
-                        assert!(player.vehicle().is_none());
                     } else {
                         assert!(
                             vehicle.is_none(),
@@ -2424,8 +2503,8 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                     }
                 }
                 WorldEntry::Rotation(_) => {
-                    assert_eq!(player.rotation(), turned);
-                    assert_ne!(player.position(), destination.position);
+                    assert_eq!(player.rotation(), TURNED);
+                    assert_ne!(player.position(), DESTINATION.position);
                     match saved_data {
                         Saved::Location => {
                             // The usual entry restores the saved ride, so the player sits on it.
@@ -2437,9 +2516,7 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                             assert_eq!(player.position().z, 6.0);
                         }
                         Saved::WithoutLocation => {
-                            assert_ne!(player.position(), DVec3::new(8.5, 70.0, 8.5));
-                            let vehicle =
-                                target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
+                            assert_ne!(player.position().to_array(), SAVED_POS);
                             assert!(vehicle.is_none());
                         }
                         Saved::Nothing => {}
@@ -2450,136 +2527,82 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                 }
             }
         }
-
-        drop(server);
     });
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one integration test runs every awkward saved-data case through the same setup"
-)]
 fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
-    init_vanilla_registry();
-    init_entities();
-    init_behaviors();
-    let source_world_fixture = fresh_test_world_in_domain("source", "awk_spawn");
-    let source_world = &source_world_fixture.world;
-    let target_world_fixture = fresh_test_world_in_domain("target", "awk_spawn");
-    let target_world = &target_world_fixture.world;
-    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
-    let runtime = Builder::new_current_thread().enable_all().build();
-    let Ok(runtime) = runtime else {
-        panic!("test runtime should initialize");
-    };
-    runtime.block_on(async {
-        let domains = [
-            ResolvedDomainConfig {
-                name: "source".to_owned(),
-                default_world: source_world.key.clone(),
-                worlds: vec![source_world.key.clone()],
-            },
-            ResolvedDomainConfig {
-                name: "target".to_owned(),
-                default_world: target_world.key.clone(),
-                worlds: vec![target_world.key.clone()],
-            },
-        ];
-        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
-        let server = test_server_with_worlds(
-            "source".to_owned(),
-            &domains,
-            &worlds,
-            PermissionSubjectIndex::new(),
-        )
-        .await;
-        let Ok(server) = server else {
-            panic!("test server should initialize");
-        };
-
-        let destination = PreparedSpawn {
-            position: DVec3::new(-12.5, 90.25, 40.75),
-            rotation: (123.0, -20.0),
-        };
-        let turned = (200.0, 15.0);
+    TwoDomains::run("awk_spawn", async |domains| {
         let vehicle_uuid = [41; 16];
         let passenger_uuid = [42; 16];
         let pearl_uuid = [43; 16];
         let pig = || test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid);
-        let pig_with_passenger = || {
-            let mut vehicle = pig();
-            vehicle.passengers = vec![test_persistent_entity(
-                &vanilla_entities::PIG,
-                passenger_uuid,
-            )];
-            vehicle
-        };
         let ride = |entity: PersistentEntity| PersistentRootVehicle {
             attach: vehicle_uuid,
             entity,
         };
         let pearl = PersistentEnderPearl {
-            world: target_world.key.to_string(),
+            world: domains.target.key.to_string(),
             entity: test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid),
         };
+        let in_world =
+            |world: &World, uuid: [u8; 16]| world.get_entity_by_uuid(&Uuid::from_bytes(uuid));
 
         // Each case saves data for a fresh player in the target domain and enters it. The second
         // and third reuse the first case's vehicle UUID, which is still registered in the world.
-        let in_world =
-            |world: &World, uuid: [u8; 16]| world.get_entity_by_uuid(&Uuid::from_bytes(uuid));
         let cases: Vec<(&str, WorldEntry, SavedEdit, ArrivalCheck)> = vec![
             (
                 "a vehicle with a passenger",
-                WorldEntry::Exact(destination),
-                Box::new(|saved| saved.root_vehicle = Some(ride(pig_with_passenger()))),
-                Box::new(|player, world| {
+                WorldEntry::Exact(DESTINATION),
+                Box::new(|saved| {
+                    let mut vehicle = pig();
+                    vehicle.passengers = vec![test_persistent_entity(
+                        &vanilla_entities::PIG,
+                        passenger_uuid,
+                    )];
+                    saved.root_vehicle = Some(ride(vehicle));
+                }),
+                Box::new(|_, world| {
                     assert!(in_world(world, vehicle_uuid).is_some());
                     assert!(
                         in_world(world, passenger_uuid).is_some(),
                         "the passenger comes too"
                     );
-                    assert!(player.vehicle().is_none());
                 }),
             ),
             (
                 "an exact entry over a vehicle that is already registered",
-                WorldEntry::Exact(destination),
+                WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| saved.root_vehicle = Some(ride(pig()))),
-                Box::new(|player, world| {
-                    assert!(in_world(world, vehicle_uuid).is_some());
-                    assert!(player.vehicle().is_none());
-                }),
+                Box::new(|_, world| assert!(in_world(world, vehicle_uuid).is_some())),
             ),
             (
                 "a rotation entry over a vehicle that is already registered",
-                WorldEntry::Rotation(turned),
+                WorldEntry::Rotation(TURNED),
                 Box::new(|saved| saved.root_vehicle = Some(ride(pig()))),
                 // The second pig cannot be registered, so the player stays at the saved spot.
                 Box::new(|player, world| {
                     assert!(in_world(world, vehicle_uuid).is_some());
                     assert!(player.vehicle().is_none());
-                    assert_eq!(player.position(), DVec3::new(8.5, 70.0, 8.5));
+                    assert_eq!(player.position().to_array(), SAVED_POS);
                 }),
             ),
             (
                 "a thrown ender pearl",
-                WorldEntry::Exact(destination),
+                WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| saved.ender_pearls = vec![pearl.clone()]),
                 Box::new(|_, world| assert!(in_world(world, pearl_uuid).is_some())),
             ),
             (
                 "no health left",
-                WorldEntry::Exact(destination),
+                WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| saved.health = 0.0),
                 // As at login, the saved health carries over: the player arrives dead.
-                Box::new(|player, _| {
-                    assert!(player.get_health() <= 0.0);
-                }),
+                Box::new(|player, _| assert!(player.get_health() <= 0.0)),
             ),
             (
                 "a saved ground and glide state that differ from the player",
-                WorldEntry::Exact(destination),
+                WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| {
                     saved.on_ground = true;
                     saved.fall_flying = true;
@@ -2591,136 +2614,39 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
             ),
         ];
         for (id, (name, entry, edit, check)) in (51_u128..).zip(cases) {
-            let (player, _) = test_player_with_uuid_and_packets(
-                &server,
-                Arc::clone(source_world),
-                Uuid::from_u128(id),
-                "TestPlayer",
-                next_entity_id(),
-            );
-            assert!(server.online_players.insert(Arc::clone(&player)));
-            assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-            let _ = player.mark_joined_world();
-
-            let mut saved = PersistentPlayerData::from_player(&player);
-            saved.world = target_world.key.to_string();
-            saved.pos = [8.5, 70.0, 8.5];
+            let player = domains.join_source(id);
+            let mut saved = domains.saved_in_target(&player);
             edit(&mut saved);
-            let saved = server
-                .player_data_storage
-                .save_domain_data("target", player.gameprofile.id, &saved)
-                .await;
-            if let Err(error) = saved {
-                panic!("target-domain data should save: {error}");
-            }
+            domains.save_target_data(&player, &saved).await;
 
-            assert!(
-                server
-                    .queue_player_world_selection(Arc::clone(&player), target_world, entry)
-                    .is_ok(),
-                "{name}"
-            );
-            server.process_domain_switches();
-            for tick in 1..=10_000 {
-                source_world.chunk_map.advance_scheduling();
-                target_world.chunk_map.advance_scheduling();
-                server.tick_jobs(tick, true);
-                if server.jobs.is_empty() {
-                    break;
-                }
-                sleep(Duration::from_millis(1)).await;
-            }
-
-            assert!(server.jobs.is_empty(), "{name}: the job should finish");
-            assert!(target_world.contains_player(&player), "{name}");
+            domains.queue_target_entry(&player, entry);
+            domains.run_domain_switches().await;
+            assert!(domains.target.contains_player(&player), "{name}");
             match entry {
                 WorldEntry::Exact(_) => {
-                    assert_eq!(player.position(), destination.position, "{name}");
-                    assert_eq!(player.rotation(), destination.rotation, "{name}");
+                    assert_eq!(player.position(), DESTINATION.position, "{name}");
+                    assert_eq!(player.rotation(), DESTINATION.rotation, "{name}");
                     assert!(player.vehicle().is_none(), "{name}: not mounted");
                 }
-                WorldEntry::Rotation(_) => assert_eq!(player.rotation(), turned, "{name}"),
+                WorldEntry::Rotation(_) => assert_eq!(player.rotation(), TURNED, "{name}"),
                 WorldEntry::Usual => unreachable!("the cases use an exact or a rotation entry"),
             }
-            check(&player, target_world);
+            check(&player, domains.target);
         }
-
-        drop(server);
     });
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one integration test checks the accepted forms and then runs a rotated command through the same setup"
-)]
 fn domain_command_accepts_its_forms_and_keeps_the_players_own_rotation() {
-    init_vanilla_registry();
-    init_entities();
-    init_behaviors();
-    let source_world_fixture = fresh_test_world_in_domain("source", "rot_spawn");
-    let source_world = &source_world_fixture.world;
-    let target_world_fixture = fresh_test_world_in_domain("target", "rot_spawn");
-    let target_world = &target_world_fixture.world;
-    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
-    let runtime = Builder::new_current_thread().enable_all().build();
-    let Ok(runtime) = runtime else {
-        panic!("test runtime should initialize");
-    };
-    runtime.block_on(async {
-        let domains = [
-            ResolvedDomainConfig {
-                name: "source".to_owned(),
-                default_world: source_world.key.clone(),
-                worlds: vec![source_world.key.clone()],
-            },
-            ResolvedDomainConfig {
-                name: "target".to_owned(),
-                default_world: target_world.key.clone(),
-                worlds: vec![target_world.key.clone()],
-            },
-        ];
-        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
-        let server = test_server_with_worlds(
-            "source".to_owned(),
-            &domains,
-            &worlds,
-            PermissionSubjectIndex::new(),
-        )
-        .await;
-        let Ok(server) = server else {
-            panic!("test server should initialize");
-        };
-        let (player, _) = test_player_with_uuid_and_packets(
-            &server,
-            Arc::clone(source_world),
-            Uuid::from_u128(91),
-            "TestPlayer",
-            next_entity_id(),
-        );
-        assert!(server.online_players.insert(Arc::clone(&player)));
-        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-        let _ = player.mark_joined_world();
+    TwoDomains::run("rot_spawn", async |domains| {
+        let player = domains.join_source(91);
         player.set_rotation((77.0, 12.0));
-        server.player_permission_states.write().set(
-            player.gameprofile.id,
-            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
-        );
-        player.set_permission_state(
-            vec![OP_GROUP.to_owned()],
-            PermissionSet::new(),
-            PermissionMetadataSet::new(),
-            PermissionSet::new(),
-            PermissionMetadataSet::new(),
-        );
+        let source = domains.operator_source(&player);
+        let server = &domains.server;
 
-        let source = CommandSource::new(
-            CommandSender::Player(Arc::clone(&player)),
-            Arc::clone(&server),
-        );
         // The forms `/domain` accepts: a world alone, with a location, with a location and a
         // rotation, or with only a rotation.
-        let world_key = &target_world.key;
+        let world_key = &domains.target.key;
         let accepted = |command: &str| {
             let dispatcher = server.command_dispatcher.read();
             let parse = dispatcher.parse(command, source.clone());
@@ -2743,112 +2669,38 @@ fn domain_command_accepts_its_forms_and_keeps_the_players_own_rotation() {
 
         // `rotated` changes the source's rotation but not the player's, as for `/tp`.
         run_command(
-            &server,
+            server,
             source,
-            &format!(
-                "execute rotated 0 0 run domain {} 10 70 10",
-                target_world.key
-            ),
+            &format!("execute rotated 0 0 run domain {world_key} 10 70 10"),
         );
-        server.process_domain_switches();
-        for tick in 1..=10_000 {
-            source_world.chunk_map.advance_scheduling();
-            target_world.chunk_map.advance_scheduling();
-            server.tick_jobs(tick, true);
-            if server.jobs.is_empty() {
-                break;
-            }
-            sleep(Duration::from_millis(1)).await;
-        }
-
-        assert!(server.jobs.is_empty(), "domain switch job should finish");
-        assert!(target_world.contains_player(&player));
+        domains.run_domain_switches().await;
+        assert!(domains.target.contains_player(&player));
         assert_eq!(player.position(), DVec3::new(10.5, 70.0, 10.5));
         assert_eq!(player.rotation(), (77.0, 12.0));
-        drop(server);
     });
 }
 
 #[test]
 fn domain_and_teleport_check_the_location_and_rotation_like_vanilla() {
-    init_vanilla_registry();
-    init_entities();
-    init_behaviors();
-    let source_world_fixture = fresh_test_world_in_domain("source", "huge_rot");
-    let source_world = &source_world_fixture.world;
-    let target_world_fixture = fresh_test_world_in_domain("target", "huge_rot");
-    let target_world = &target_world_fixture.world;
-    insert_ready_full_chunk(source_world, ChunkPos::new(0, 0));
-    let runtime = Builder::new_current_thread().enable_all().build();
-    let Ok(runtime) = runtime else {
-        panic!("test runtime should initialize");
-    };
-    runtime.block_on(async {
-        let domains = [
-            ResolvedDomainConfig {
-                name: "source".to_owned(),
-                default_world: source_world.key.clone(),
-                worlds: vec![source_world.key.clone()],
-            },
-            ResolvedDomainConfig {
-                name: "target".to_owned(),
-                default_world: target_world.key.clone(),
-                worlds: vec![target_world.key.clone()],
-            },
-        ];
-        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
-        let server = test_server_with_worlds(
-            "source".to_owned(),
-            &domains,
-            &worlds,
-            PermissionSubjectIndex::new(),
-        )
-        .await;
-        let Ok(server) = server else {
-            panic!("test server should initialize");
-        };
-        let (player, _) = test_player_with_uuid_and_packets(
-            &server,
-            Arc::clone(source_world),
-            Uuid::from_u128(92),
-            "TestPlayer",
-            next_entity_id(),
-        );
-        assert!(server.online_players.insert(Arc::clone(&player)));
-        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-        let _ = player.mark_joined_world();
+    TwoDomains::run("huge_rot", async |domains| {
+        let player = domains.join_source(92);
         player.set_rotation((77.0, 12.0));
-        server.player_permission_states.write().set(
-            player.gameprofile.id,
-            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
-        );
-        player.set_permission_state(
-            vec![OP_GROUP.to_owned()],
-            PermissionSet::new(),
-            PermissionMetadataSet::new(),
-            PermissionSet::new(),
-            PermissionMetadataSet::new(),
-        );
+        let server = &domains.server;
         // A source captures the player's rotation, so each command gets a fresh one.
-        let source = || {
-            CommandSource::new(
-                CommandSender::Player(Arc::clone(&player)),
-                Arc::clone(&server),
-            )
-        };
+        let source = || domains.operator_source(&player);
 
         // The yaw parses as a double too large for `f32`, so it becomes infinite. Vanilla discards
         // a rotation component that is not finite and keeps the entity's own.
         let huge = format!("1{}", "0".repeat(45));
-        run_command(&server, source(), &format!("tp @s 0 70 0 {huge} 30"));
+        run_command(server, source(), &format!("tp @s 0 70 0 {huge} 30"));
         assert_eq!(player.rotation(), (77.0, 30.0));
-        run_command(&server, source(), &format!("tp @s 0 70 0 ~{huge} ~"));
+        run_command(server, source(), &format!("tp @s 0 70 0 ~{huge} ~"));
         assert_eq!(player.rotation(), (77.0, 30.0));
 
-        let world_key = &target_world.key;
+        let world_key = &domains.target.key;
         // Outside the spawnable bounds `/domain` fails like `/teleport` and queues nothing.
         run_command(
-            &server,
+            server,
             source(),
             &format!("domain {world_key} 30000000 70 0"),
         );
@@ -2859,7 +2711,7 @@ fn domain_and_teleport_check_the_location_and_rotation_like_vanilla() {
             (format!("domain {world_key} {huge} 30"), (77.0, 30.0)),
             (format!("domain {world_key} 1 70 1 370 30"), (10.0, 30.0)),
         ] {
-            run_command(&server, source(), &command);
+            run_command(server, source(), &command);
             let Some(request) = server.pending_domain_switches.lock().pop() else {
                 panic!("{command} should queue a domain switch");
             };
@@ -2872,116 +2724,37 @@ fn domain_and_teleport_check_the_location_and_rotation_like_vanilla() {
             assert!(player.finish_domain_switch(request.pending_token));
             assert!(player.finish_pending_world_change(request.pending_token));
         }
-
-        drop(server);
     });
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one integration test follows the disconnect and the next login through the same setup"
-)]
 fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
-    init_vanilla_registry();
-    init_entities();
-    init_behaviors();
-    let source_world_fixture = fresh_test_world_in_domain("source", "dc_spawn");
-    let source_world = &source_world_fixture.world;
-    let target_world_fixture = fresh_test_world_in_domain("target", "dc_spawn");
-    let target_world = &target_world_fixture.world;
-    insert_ready_full_chunk(target_world, ChunkPos::new(0, 0));
-    let runtime = Builder::new_current_thread().enable_all().build();
-    let Ok(runtime) = runtime else {
-        panic!("test runtime should initialize");
-    };
-    runtime.block_on(async {
-        let domains = [
-            ResolvedDomainConfig {
-                name: "source".to_owned(),
-                default_world: source_world.key.clone(),
-                worlds: vec![source_world.key.clone()],
-            },
-            ResolvedDomainConfig {
-                name: "target".to_owned(),
-                default_world: target_world.key.clone(),
-                worlds: vec![target_world.key.clone()],
-            },
-        ];
-        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
-        let server = test_server_with_worlds(
-            "source".to_owned(),
-            &domains,
-            &worlds,
-            PermissionSubjectIndex::new(),
-        )
-        .await;
-        let Ok(server) = server else {
-            panic!("test server should initialize");
-        };
-
+    TwoDomains::run("dc_spawn", async |domains| {
+        let (server, target) = (&domains.server, domains.target);
         let vehicle_uuid = [22; 16];
-        let destination = PreparedSpawn {
-            position: DVec3::new(-12.5, 90.25, 40.75),
-            rotation: (123.0, -20.0),
-        };
-        let player_uuid = Uuid::from_u128(77);
-        let (player, _) = test_player_with_uuid_and_packets(
-            &server,
-            Arc::clone(source_world),
-            player_uuid,
-            "TestPlayer",
-            next_entity_id(),
-        );
-        assert!(server.online_players.insert(Arc::clone(&player)));
-        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-        let _ = player.mark_joined_world();
-
-        let mut seeded = PersistentPlayerData::from_player(&player);
-        seeded.world = target_world.key.to_string();
-        seeded.pos = [8.5, 70.0, 8.5];
+        let player = domains.join_source(77);
+        let player_uuid = player.gameprofile.id;
+        let mut seeded = domains.saved_in_target(&player);
         seeded.root_vehicle = Some(PersistentRootVehicle {
             attach: vehicle_uuid,
             entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
         });
-        if let Err(error) = server
-            .player_data_storage
-            .save_domain_data("target", player.gameprofile.id, &seeded)
-            .await
-        {
-            panic!("target-domain data should save: {error}");
-        }
+        domains.save_target_data(&player, &seeded).await;
 
-        assert!(
-            server
-                .queue_player_world_selection(
-                    Arc::clone(&player),
-                    target_world,
-                    WorldEntry::Exact(destination)
-                )
-                .is_ok()
-        );
-        server.process_domain_switches();
+        domains.queue_target_entry(&player, WorldEntry::Exact(DESTINATION));
         // Stop as soon as the player has arrived, before the vehicle restore job has run.
-        let mut arrived_with_restore_pending = false;
-        for tick in 1..=10_000 {
-            source_world.chunk_map.advance_scheduling();
-            target_world.chunk_map.advance_scheduling();
-            server.tick_jobs(tick, true);
-            if target_world.contains_player(&player)
-                && player.pending_root_vehicle_for_current_world().is_some()
-            {
-                arrived_with_restore_pending = true;
-                break;
-            }
-            sleep(Duration::from_millis(1)).await;
-        }
+        let arrived_with_restore_pending = domains
+            .tick_until(|| {
+                target.contains_player(&player)
+                    && player.pending_root_vehicle_for_current_world().is_some()
+            })
+            .await;
         assert!(
             arrived_with_restore_pending,
             "the player should arrive while the vehicle restore is still pending"
         );
         assert!(
-            target_world
+            target
                 .get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid))
                 .is_none()
         );
@@ -3016,45 +2789,34 @@ fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
             Some(vehicle_uuid),
             "the vehicle must not be lost"
         );
-        assert_eq!(loaded.pos, destination.position.to_array());
+        assert_eq!(loaded.pos, DESTINATION.position.to_array());
 
         // The next login restores the vehicle, and with it the player.
         let (rejoined, _) = test_player_with_uuid_and_packets(
-            &server,
-            Arc::clone(target_world),
+            server,
+            Arc::clone(target),
             player_uuid,
             "TestPlayer",
             next_entity_id(),
         );
         assert!(server.reserve_player_join(&rejoined));
-        let spawn_position = DVec3::new(loaded.pos[0], loaded.pos[1], loaded.pos[2]);
         let state = DomainPlayerState {
-            world: Arc::clone(target_world),
+            world: Arc::clone(target),
+            spawn_chunk_request: target.request_player_spawn_chunks(DESTINATION.position),
             data: DomainPlayerData::SavedRestored {
                 data: Box::new(loaded),
             },
-            spawn_chunk_request: target_world.request_player_spawn_chunks(spawn_position),
         };
         server.finish_prepared_player_join(PendingPlayerJoin {
             player: Arc::clone(&rejoined),
             state: Ok(state),
         });
-        for tick in 20_000..30_000 {
-            target_world.chunk_map.advance_scheduling();
-            server.tick_jobs(tick, true);
-            if server.jobs.is_empty() {
-                break;
-            }
-            sleep(Duration::from_millis(1)).await;
-        }
+        domains.run_domain_switches().await;
         assert_eq!(
             rejoined.vehicle().map(|vehicle| vehicle.uuid()),
             Some(Uuid::from_bytes(vehicle_uuid)),
             "the vehicle is restored with the player on it"
         );
-
-        drop(rejoined);
-        drop(server);
     });
 }
 

@@ -50,8 +50,11 @@ fn run_search(world: &Arc<World>, search: &mut PlayerSpawnSearch) -> DVec3 {
     panic!("search should finish");
 }
 
-fn new_search(world: &Arc<World>, suggestion: BlockPos) -> PlayerSpawnSearch {
-    let Ok(search) = PlayerSpawnSearch::new(world, suggestion, GameType::Survival) else {
+/// The spawn suggestion every search in these tests starts from.
+const ORIGIN: BlockPos = BlockPos::new(0, 64, 0);
+
+fn new_search(world: &Arc<World>) -> PlayerSpawnSearch {
+    let Ok(search) = PlayerSpawnSearch::new(world, ORIGIN, GameType::Survival) else {
         panic!("search should start");
     };
     search
@@ -61,44 +64,74 @@ fn set_block(world: &Arc<World>, pos: BlockPos, state: steel_utils::BlockStateId
     assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 }
 
+/// Inserts the chunks around the origin and holds them, so they stay loaded after a search
+/// releases its own tickets.
+fn insert_held_chunks(world: &Arc<World>) -> ChunkRequestHandle {
+    insert_chunks(world, 3);
+    world.chunk_map.request_square(
+        ChunkPos::new(0, 0),
+        3,
+        ChunkStatus::Full,
+        ChunkTicketKind::Command,
+    )
+}
+
+/// A search around the origin whose candidate order starts at offset 0, so tests can predict it.
+fn ordered_search(world: &Arc<World>) -> PlayerSpawnSearch {
+    let mut search = new_search(world);
+    search.sequence.offset = 0;
+    search
+}
+
+/// A candidate well after the first that shares the first candidate's chunk, so the first chunk's
+/// batch evaluates it long before its turn.
+fn later_candidate_in_first_chunk(sequence: &CandidateSequence) -> i32 {
+    let first_chunk = sequence.chunk(0);
+    let Some(later) = (50..sequence.count()).find(|&index| sequence.chunk(index) == first_chunk)
+    else {
+        panic!("the first chunk should hold a later candidate");
+    };
+    later
+}
+
+/// Where a player stands on ground placed at y=64 in column `(x, z)`.
+fn spot_above_ground((x, z): (i32, i32)) -> DVec3 {
+    DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5)
+}
+
 #[test]
 fn candidates_are_consumed_in_vanilla_order_across_chunks() {
     with_search_world("order", &vanilla_dimension_types::OVERWORLD, |world| {
         insert_chunks(world, 3);
-        let suggestion = BlockPos::new(0, 64, 0);
-        let mut sequence = new_search(world, suggestion).sequence;
-        sequence.offset = 0;
-        let chunk_of = |index| sequence.chunk(index);
-
-        // `later` shares a chunk with the first candidate, so the first chunk's batch
-        // evaluates it. `earlier` comes before it in the order but lies in another chunk.
-        let first_chunk = chunk_of(0);
-        let Some(later) = (50..sequence.count()).find(|&index| chunk_of(index) == first_chunk)
+        let sequence = ordered_search(world).sequence;
+        // `earlier` comes before `later` in the order but lies in another chunk.
+        let later = later_candidate_in_first_chunk(&sequence);
+        let Some(earlier) = (1..later).find(|&index| sequence.chunk(index) != sequence.chunk(0))
         else {
-            panic!("the first chunk should hold a later candidate");
-        };
-        let Some(earlier) = (1..later).find(|&index| chunk_of(index) != first_chunk) else {
             panic!("an earlier candidate should lie in another chunk");
         };
-        let stone = vanilla_blocks::STONE.default_state();
         for index in [earlier, later] {
             let (x, z) = sequence.column(index);
-            assert!(world.set_block(BlockPos::new(x, 64, z), stone, UpdateFlags::UPDATE_ALL));
+            set_block(
+                world,
+                BlockPos::new(x, 64, z),
+                vanilla_blocks::STONE.default_state(),
+            );
         }
-        let (x, z) = sequence.column(earlier);
-        let expected = DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5);
 
         for prefetch in [false, true] {
-            let mut search = new_search(world, suggestion);
-            search.sequence.offset = 0;
+            let mut search = ordered_search(world);
             if prefetch {
                 search = search.with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(
                     world,
-                    suggestion,
+                    ORIGIN,
                     GameType::Survival,
                 ));
             }
-            assert_eq!(run_search(world, &mut search), expected);
+            assert_eq!(
+                run_search(world, &mut search),
+                spot_above_ground(sequence.column(earlier))
+            );
         }
     });
 }
@@ -107,10 +140,11 @@ fn candidates_are_consumed_in_vanilla_order_across_chunks() {
 fn prefetched_chunks_are_read_directly_once_their_tickets_are_committed() {
     with_search_world("prefetch", &vanilla_dimension_types::OVERWORLD, |world| {
         insert_chunks(world, 3);
-        let suggestion = BlockPos::new(0, 64, 0);
-        let search = new_search(world, suggestion).with_prefetch(
-            PlayerSpawnSearch::prefetch_spawn_area(world, suggestion, GameType::Survival),
-        );
+        let search = new_search(world).with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(
+            world,
+            ORIGIN,
+            GameType::Survival,
+        ));
         let inside = ChunkPos::new(2, -2);
         let outside = ChunkPos::new(10, 10);
         assert!(!search.chunk_is_held(inside), "nothing is committed yet");
@@ -132,9 +166,8 @@ fn prefetch_follows_the_radius_the_search_uses() {
         "prefetch_rule",
         &vanilla_dimension_types::OVERWORLD,
         |world| {
-            let suggestion = BlockPos::new(0, 64, 0);
             let prefetches = |game_type| {
-                PlayerSpawnSearch::prefetch_spawn_area(world, suggestion, game_type).is_some()
+                PlayerSpawnSearch::prefetch_spawn_area(world, ORIGIN, game_type).is_some()
             };
 
             assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 16));
@@ -151,30 +184,16 @@ fn prefetch_follows_the_radius_the_search_uses() {
 #[test]
 fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
     with_search_world("stale_spot", &vanilla_dimension_types::OVERWORLD, |world| {
-        insert_chunks(world, 3);
-        let _hold = world.chunk_map.request_square(
-            ChunkPos::new(0, 0),
-            3,
-            ChunkStatus::Full,
-            ChunkTicketKind::Command,
-        );
-        let suggestion = BlockPos::new(0, 64, 0);
-        let mut sequence = new_search(world, suggestion).sequence;
-        sequence.offset = 0;
-        let first_chunk = sequence.chunk(0);
-        let Some(later) =
-            (50..sequence.count()).find(|&index| sequence.chunk(index) == first_chunk)
-        else {
-            panic!("the first chunk should hold a later candidate");
-        };
-        let (x, z) = sequence.column(later);
-        let ground = BlockPos::new(x, 64, z);
-        let spot = DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5);
+        let _hold = insert_held_chunks(world);
+        let sequence = ordered_search(world).sequence;
+        let later = later_candidate_in_first_chunk(&sequence);
+        let column = sequence.column(later);
+        let ground = BlockPos::new(column.0, 64, column.1);
+        let spot = spot_above_ground(column);
 
         set_block(world, ground, vanilla_blocks::STONE.default_state());
         for remove_ground in [false, true] {
-            let mut search = new_search(world, suggestion);
-            search.sequence.offset = 0;
+            let mut search = ordered_search(world);
             // The first poll waits for the first chunk; the second evaluates the whole chunk, so
             // `later` is cached as valid, and then waits for the chunk of the next candidate.
             assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
@@ -189,7 +208,7 @@ fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
             // The spot is only reached after the wait, so a removed ground must be noticed and the
             // search ends with the height fixup, as when no candidate has ground.
             let expected = if remove_ground {
-                world.fixup_spawn_height(suggestion)
+                world.fixup_spawn_height(ORIGIN)
             } else {
                 spot
             };
@@ -207,26 +226,10 @@ fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
         "stale_invalid",
         &vanilla_dimension_types::OVERWORLD,
         |world| {
-            insert_chunks(world, 3);
-            let _hold = world.chunk_map.request_square(
-                ChunkPos::new(0, 0),
-                3,
-                ChunkStatus::Full,
-                ChunkTicketKind::Command,
-            );
-            let suggestion = BlockPos::new(0, 64, 0);
-            let mut sequence = new_search(world, suggestion).sequence;
-            sequence.offset = 0;
-            let first_chunk = sequence.chunk(0);
-            let Some(later) =
-                (50..sequence.count()).find(|&index| sequence.chunk(index) == first_chunk)
-            else {
-                panic!("the first chunk should hold a later candidate");
-            };
-            let (x, z) = sequence.column(later);
-
-            let mut search = new_search(world, suggestion);
-            search.sequence.offset = 0;
+            let _hold = insert_held_chunks(world);
+            let mut search = ordered_search(world);
+            let later = later_candidate_in_first_chunk(&search.sequence);
+            let (x, z) = search.sequence.column(later);
             // The first chunk's batch caches `later` as invalid, since nothing stands there yet.
             assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
             world.chunk_map.advance_scheduling();
@@ -239,10 +242,7 @@ fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
                 BlockPos::new(x, 64, z),
                 vanilla_blocks::STONE.default_state(),
             );
-            assert_eq!(
-                run_search(world, &mut search),
-                DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5)
-            );
+            assert_eq!(run_search(world, &mut search), spot_above_ground((x, z)));
         },
     );
 }
@@ -253,7 +253,7 @@ fn a_cached_result_whose_chunk_has_unloaded_is_read_again() {
         "unloaded_spot",
         &vanilla_dimension_types::OVERWORLD,
         |world| {
-            let mut search = new_search(world, BlockPos::new(0, 64, 0));
+            let mut search = new_search(world);
             let pending = search.next_candidate();
             assert!(!world.has_full_chunk(pending.chunk));
             let (x, z) = search.sequence.column(pending.index);
@@ -276,17 +276,8 @@ fn rechecking_cached_results_stays_within_the_poll_budget() {
         "recheck_budget",
         &vanilla_dimension_types::OVERWORLD,
         |world| {
-            insert_chunks(world, 3);
-            let _hold = world.chunk_map.request_square(
-                ChunkPos::new(0, 0),
-                3,
-                ChunkStatus::Full,
-                ChunkTicketKind::Command,
-            );
-            for _ in 0..100 {
-                world.chunk_map.advance_scheduling();
-            }
-            let mut search = new_search(world, BlockPos::new(0, 64, 0));
+            let _hold = insert_held_chunks(world);
+            let mut search = new_search(world);
             search.results.fill(CandidateResult::Invalid);
 
             // A zero budget allows one evaluation per poll, so only the first cached result is
@@ -307,25 +298,15 @@ fn a_poll_budget_that_ends_mid_chunk_does_not_skip_candidates() {
         &vanilla_dimension_types::OVERWORLD,
         |world| {
             assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 40));
-            insert_chunks(world, 3);
-            // Keeps the chunks loaded between searches, which release their own tickets.
-            let _hold = world.chunk_map.request_square(
-                ChunkPos::new(0, 0),
-                3,
-                ChunkStatus::Full,
-                ChunkTicketKind::Command,
-            );
-            let suggestion = BlockPos::new(0, 64, 0);
-            let mut sequence = new_search(world, suggestion).sequence;
-            sequence.offset = 0;
+            let _hold = insert_held_chunks(world);
+            let sequence = ordered_search(world).sequence;
 
             // Only one candidate has ground at a time, so a skipped candidate changes the result.
             for target in 0..60 {
                 let (x, z) = sequence.column(target);
                 let ground = BlockPos::new(x, 64, z);
                 set_block(world, ground, vanilla_blocks::STONE.default_state());
-                let mut search = new_search(world, suggestion);
-                search.sequence.offset = 0;
+                let mut search = ordered_search(world);
                 let mut polls = 0;
                 let position = loop {
                     world.chunk_map.advance_scheduling();
@@ -340,7 +321,7 @@ fn a_poll_budget_that_ends_mid_chunk_does_not_skip_candidates() {
                 };
                 assert_eq!(
                     position,
-                    DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5),
+                    spot_above_ground((x, z)),
                     "only candidate {target} is valid"
                 );
                 set_block(world, ground, vanilla_blocks::AIR.default_state());
@@ -426,8 +407,8 @@ fn a_surface_that_cannot_be_stood_on_ends_the_search_with_the_height_fixup() {
             set(62, vanilla_blocks::STONE_SLAB.default_state());
             assert_eq!(world.safe_spawn_in_column(0, 0), None);
 
-            let mut search = new_search(world, BlockPos::new(0, 64, 0)).with_safe_fallback();
-            let fixup = world.fixup_spawn_height(BlockPos::new(0, 64, 0));
+            let mut search = new_search(world).with_safe_fallback();
+            let fixup = world.fixup_spawn_height(ORIGIN);
             assert_eq!(run_search(world, &mut search), fixup);
         },
     );
@@ -447,7 +428,7 @@ fn failed_search_in_a_lava_cavern_falls_back_to_a_ledge_only_when_asked() {
         set(127, vanilla_blocks::BEDROCK.default_state());
 
         let run = |safe_fallback: bool| {
-            let mut search = new_search(world, BlockPos::new(0, 64, 0));
+            let mut search = new_search(world);
             if safe_fallback {
                 search = search.with_safe_fallback();
             }
@@ -459,9 +440,7 @@ fn failed_search_in_a_lava_cavern_falls_back_to_a_ledge_only_when_asked() {
         assert_eq!(run(true).y, 101.0);
 
         // Adventure has no candidates, so the fallback reads the suggestion's own column.
-        let Ok(search) =
-            PlayerSpawnSearch::new(world, BlockPos::new(0, 64, 0), GameType::Adventure)
-        else {
+        let Ok(search) = PlayerSpawnSearch::new(world, ORIGIN, GameType::Adventure) else {
             panic!("search should start");
         };
         assert_eq!(run_search(world, &mut search.with_safe_fallback()).y, 101.0);
