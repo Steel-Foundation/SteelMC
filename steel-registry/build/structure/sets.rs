@@ -1281,7 +1281,7 @@ pub(crate) fn build() -> TokenStream {
                         .clone()
                 } else {
                     // Direct biome identifier
-                    vec![tag_ref.clone()]
+                    vec![tag_ref]
                 };
                 let biome_tokens: Vec<TokenStream> = preferred_biomes
                     .iter()

@@ -13,6 +13,7 @@ use super::Bees;
 use crate::ItemStackTemplate;
 use crate::data_components::registry::ValidatePersistentComponent;
 use crate::data_components::vanilla_components::{BEES, BUNDLE_CONTENTS};
+use crate::item_stack::ItemStack;
 
 macro_rules! impl_template_wrapper_codecs {
     ($type:ty, $field:ident) => {
@@ -63,6 +64,25 @@ impl UseRemainder {
     #[must_use]
     pub const fn convert_into(&self) -> &ItemStackTemplate {
         &self.convert_into
+    }
+
+    /// replaces an empty stack or returns an extra remainder to deliver after unlocking
+    #[must_use]
+    pub fn convert_into_remainder(
+        &self,
+        used_stack: &mut ItemStack,
+        stack_count_before_using: i32,
+        has_infinite_materials: bool,
+    ) -> Option<ItemStack> {
+        if has_infinite_materials || used_stack.count() >= stack_count_before_using {
+            return None;
+        }
+        let remainder = self.convert_into.create();
+        if used_stack.is_empty() {
+            *used_stack = remainder;
+            return None;
+        }
+        Some(remainder)
     }
 }
 

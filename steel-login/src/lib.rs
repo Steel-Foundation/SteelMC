@@ -6,6 +6,9 @@
 //! - Login, configuration, and status state handlers
 //! - Type re-exports for convenience
 
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
+
 mod authentication;
 mod connection;
 mod handlers;

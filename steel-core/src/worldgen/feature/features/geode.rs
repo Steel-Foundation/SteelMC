@@ -86,7 +86,7 @@ impl FeatureDecorationRunner {
                     );
                     Self::schedule_geode_adjacent_fluid_ticks(region, pos);
                 } else if dist_sum_shell >= inner_air {
-                    let state = Self::sample_block_state_provider(
+                    let state = BlockStateProviderEvaluator::sample_block_state_provider(
                         region,
                         registry,
                         random,
@@ -108,8 +108,9 @@ impl FeatureDecorationRunner {
                     } else {
                         &blocks.inner_layer_provider
                     };
-                    let state =
-                        Self::sample_block_state_provider(region, registry, random, provider, pos);
+                    let state = BlockStateProviderEvaluator::sample_block_state_provider(
+                        region, registry, random, provider, pos,
+                    );
                     Self::safe_set_geode_block(
                         region,
                         registry,
@@ -124,7 +125,7 @@ impl FeatureDecorationRunner {
                         potential_crystal_placements.push(pos);
                     }
                 } else if dist_sum_shell >= inner_crust {
-                    let state = Self::sample_block_state_provider(
+                    let state = BlockStateProviderEvaluator::sample_block_state_provider(
                         region,
                         registry,
                         random,
@@ -139,7 +140,7 @@ impl FeatureDecorationRunner {
                         &blocks.cannot_replace,
                     );
                 } else if dist_sum_shell >= outer_crust {
-                    let state = Self::sample_block_state_provider(
+                    let state = BlockStateProviderEvaluator::sample_block_state_provider(
                         region,
                         registry,
                         random,
@@ -316,7 +317,10 @@ impl FeatureDecorationRunner {
                 );
             };
             let index = random.next_i32_bounded(bound) as usize;
-            let mut state = Self::block_state_from_data(registry, &blocks.inner_placements[index]);
+            let mut state = BlockStateProviderEvaluator::block_state_from_data(
+                registry,
+                &blocks.inner_placements[index],
+            );
 
             for direction in Self::VANILLA_DIRECTION_VALUES {
                 if state.try_get_value(&BlockStateProperties::FACING).is_some() {

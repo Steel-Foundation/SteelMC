@@ -333,8 +333,8 @@ fn filled_result_creative_unlimited_discards_unadded_result() {
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::LAVA_BUCKET));
-    for slot in 1..PlayerInventory::INVENTORY_SIZE {
-        inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
+    for item in &mut inventory.items[1..PlayerInventory::INVENTORY_SIZE] {
+        *item = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
     }
 
     let overflow = inventory.apply_filled_result(
@@ -462,8 +462,8 @@ fn main_inventory_search_does_not_use_equipment_slots() {
     init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
-    for slot in 0..PlayerInventory::INVENTORY_SIZE {
-        inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
+    for item in &mut inventory.items[..PlayerInventory::INVENTORY_SIZE] {
+        *item = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
     }
     inventory.set(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
 

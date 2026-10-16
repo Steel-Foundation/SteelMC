@@ -1141,7 +1141,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,
@@ -1198,7 +1198,7 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) {
-        let Some(state) = Self::sample_block_state_provider_optional(
+        let Some(state) = BlockStateProviderEvaluator::sample_block_state_provider_optional(
             region,
             registry,
             random,
@@ -1222,7 +1222,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,
@@ -1261,7 +1261,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,
