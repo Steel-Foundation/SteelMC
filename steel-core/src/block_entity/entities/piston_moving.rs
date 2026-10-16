@@ -399,6 +399,14 @@ impl PistonMovingState {
         );
         entity.apply_effects_from_blocks_between(previous_position, entity.position());
         entity.remove_latest_movement_recording();
+
+        if let Some(player) = entity.as_player() {
+            let new_pos = player.position();
+            if (new_pos - previous_position).length_squared() > 1e-7 {
+                let (yaw, pitch) = player.rotation();
+                let _ = player.teleport_with_velocity(new_pos, player.velocity(), yaw, pitch);
+            }
+        }
     }
 
     fn fix_entity_within_piston_base(
@@ -413,8 +421,7 @@ impl PistonMovingState {
             return;
         }
 
-        let opposite = direction.opposite();
-        let delta = Self::overlap_movement(box_at_pos, opposite, entity_aabb) + PUSH_OFFSET;
+        let delta = Self::overlap_movement(box_at_pos, direction, entity_aabb) + PUSH_OFFSET;
         let intersection = WorldAabb::new(
             entity_aabb.min_x().max(box_at_pos.min_x()),
             entity_aabb.min_y().max(box_at_pos.min_y()),
@@ -424,10 +431,10 @@ impl PistonMovingState {
             entity_aabb.max_z().min(box_at_pos.max_z()),
         );
         let intersected_delta =
-            Self::overlap_movement(box_at_pos, opposite, intersection) + PUSH_OFFSET;
+            Self::overlap_movement(box_at_pos, direction, intersection) + PUSH_OFFSET;
         if (delta - intersected_delta).abs() < PUSH_OFFSET {
             let delta = delta.min(delta_progress) + PUSH_OFFSET;
-            Self::move_entity_by_piston(direction, entity, delta, opposite);
+            Self::move_entity_by_piston(direction, entity, delta, direction);
         }
     }
 
@@ -481,8 +488,16 @@ impl PistonMovingState {
             }
             let delta = delta.min(delta_progress) + PUSH_OFFSET;
             Self::move_entity_by_piston(movement, &entity, delta, movement);
-            if !self.extending && self.source_piston {
-                Self::fix_entity_within_piston_base(pos, &entity, movement, delta_progress);
+        }
+
+        if !self.extending && self.source_piston {
+            let base_box = BlockLocalAabb::FULL_BLOCK.at_block(pos);
+            let base_entities = world.get_entities_in_aabb(&base_box);
+            for entity in &base_entities {
+                if !Self::can_move_collided_entity(entity.as_ref(), false) {
+                    continue;
+                }
+                Self::fix_entity_within_piston_base(pos, entity, self.direction, delta_progress);
             }
         }
     }
@@ -522,6 +537,17 @@ impl PistonMovingState {
     fn finish_tick(self, world: &Arc<World>, pos: BlockPos) {
         if world.get_block_state(pos).get_block() != &vanilla_blocks::MOVING_PISTON {
             return;
+        }
+
+        if !self.extending && self.source_piston {
+            let base_box = BlockLocalAabb::FULL_BLOCK.at_block(pos);
+            let base_entities = world.get_entities_in_aabb(&base_box);
+            for entity in &base_entities {
+                if !Self::can_move_collided_entity(entity.as_ref(), false) {
+                    continue;
+                }
+                Self::fix_entity_within_piston_base(pos, entity, self.direction, 1.0);
+            }
         }
 
         let mut new_state = world.update_from_neighbor_shapes(self.moved_state, pos);

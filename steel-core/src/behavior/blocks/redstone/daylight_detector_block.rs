@@ -80,8 +80,10 @@ fn java_round(value: f32) -> i32 {
 }
 
 impl BlockBehavior for DaylightDetectorBlock {
-    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state())
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let state = self.block.default_state();
+        let target = Self::signal_strength(context.world, context.place_pos(), state);
+        Some(state.set_value(POWER, target))
     }
 
     fn use_without_item(
@@ -98,7 +100,7 @@ impl BlockBehavior for DaylightDetectorBlock {
         }
 
         let new_state = state.set_value(INVERTED, !state.get_value(INVERTED));
-        world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
