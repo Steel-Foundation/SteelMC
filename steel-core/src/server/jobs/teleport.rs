@@ -181,8 +181,7 @@ pub(in crate::server) struct WorldSpawnTeleportJob {
     target_world: Arc<World>,
     pending_token: PendingWorldChangeToken,
     rotation: (f32, f32),
-    /// Whether the player is placed exactly, and lands like `/teleport`.
-    exact: bool,
+    entry: WorldEntry,
     phase: WorldSpawnTeleportPhase,
 }
 
@@ -238,7 +237,7 @@ impl WorldSpawnTeleportJob {
             target_world,
             pending_token,
             rotation,
-            exact: matches!(entry, WorldEntry::Exact(_)),
+            entry,
             phase,
         })
     }
@@ -325,7 +324,8 @@ impl ServerJob for WorldSpawnTeleportJob {
                         };
                         let changed_entity =
                             change_entity_world(Arc::clone(&self.entity), &transition);
-                        if self.exact
+                        // An exact placement lands like `/teleport`.
+                        if matches!(self.entry, WorldEntry::Exact(_))
                             && let Some(entity) = &changed_entity
                         {
                             land_after_teleport(entity.as_ref());

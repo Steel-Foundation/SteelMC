@@ -46,8 +46,7 @@ pub(crate) struct PlayerSpawnSearch {
     results: Vec<CandidateResult>,
     loading: Option<ChunkLoad>,
     /// tries safe standing spots before the vanilla height fixup
-    safe_fallback: bool,
-    fallback: FallbackPass,
+    fallback: Option<FallbackPass>,
     prefetch: Option<ChunkRequestHandle>,
 }
 
@@ -98,8 +97,7 @@ impl PlayerSpawnSearch {
             pending: None,
             results: vec![CandidateResult::Unchecked; slots],
             loading: None,
-            safe_fallback: false,
-            fallback: FallbackPass::default(),
+            fallback: None,
             prefetch: None,
         })
     }
@@ -107,8 +105,8 @@ impl PlayerSpawnSearch {
     /// Tries a standing spot that avoids fluid and a ceiling dimension's roof before the
     /// vanilla height fixup.
     #[must_use]
-    pub(crate) const fn with_safe_fallback(mut self) -> Self {
-        self.safe_fallback = true;
+    pub(crate) fn with_safe_fallback(mut self) -> Self {
+        self.fallback = Some(FallbackPass::new(self.results.len()));
         self
     }
 
@@ -225,14 +223,18 @@ impl PlayerSpawnSearch {
         pending: PendingSpawnCandidate,
         budget: &mut PollBudget,
     ) -> PlayerSpawnSearchPoll {
-        if self.safe_fallback && !self.fallback.exhausted {
+        if self
+            .fallback
+            .as_ref()
+            .is_some_and(|fallback| !fallback.exhausted)
+        {
             match self.poll_fallback_pass(world, budget) {
                 FallbackPoll::Found(pos) => {
                     return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
                 }
                 FallbackPoll::Waiting => return PlayerSpawnSearchPoll::Pending,
                 FallbackPoll::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
-                FallbackPoll::Exhausted => self.fallback.exhausted = true,
+                FallbackPoll::Exhausted => {}
             }
         }
         let _load = match self.poll_loading(world, pending.chunk, 0) {
@@ -241,7 +243,8 @@ impl PlayerSpawnSearch {
             LoadPoll::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
         };
         let safe_pos = self
-            .safe_fallback
+            .fallback
+            .is_some()
             .then(|| {
                 world.safe_spawn_in_column(self.spawn_suggestion.x(), self.spawn_suggestion.z())
             })

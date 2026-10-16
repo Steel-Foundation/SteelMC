@@ -14,7 +14,6 @@ use super::chunk_load::{PollBudget, ScanEnd, Visit};
 use super::{LoadPoll, PlayerSpawnSearch};
 
 /// Looks for a standing spot in the candidate columns, one chunk at a time.
-#[derive(Default)]
 pub(super) struct FallbackPass {
     /// Candidate indices whose column was already scanned.
     scanned: Vec<bool>,
@@ -22,6 +21,16 @@ pub(super) struct FallbackPass {
     anchor: i32,
     /// Set once every candidate column was scanned without finding a spot.
     pub(super) exhausted: bool,
+}
+
+impl FallbackPass {
+    pub(super) fn new(candidates: usize) -> Self {
+        Self {
+            scanned: vec![false; candidates],
+            anchor: 0,
+            exhausted: false,
+        }
+    }
 }
 
 pub(super) enum FallbackPoll {
@@ -39,23 +48,23 @@ impl PlayerSpawnSearch {
         budget: &mut PollBudget,
     ) -> FallbackPoll {
         let sequence = self.sequence;
-        if self.fallback.scanned.is_empty() {
-            self.fallback.scanned = vec![false; self.results.len()];
-        }
-
         loop {
             let (chunk, next_scan) = if let Some(load) = &self.loading {
                 (load.chunk, load.next_scan)
             } else {
-                let Some(anchor) = (self.fallback.anchor..sequence.count()).find(|&index| {
-                    self.fallback
+                let Some(fallback) = self.fallback.as_mut() else {
+                    return FallbackPoll::Exhausted;
+                };
+                let Some(anchor) = (fallback.anchor..sequence.count()).find(|&index| {
+                    fallback
                         .scanned
                         .get(index as usize)
                         .is_some_and(|scanned| !scanned)
                 }) else {
+                    fallback.exhausted = true;
                     return FallbackPoll::Exhausted;
                 };
-                self.fallback.anchor = anchor;
+                fallback.anchor = anchor;
                 (sequence.chunk(anchor), anchor)
             };
             let mut load = match self.poll_loading(world, chunk, next_scan) {
@@ -64,7 +73,10 @@ impl PlayerSpawnSearch {
                 LoadPoll::Cancelled => return FallbackPoll::Cancelled,
             };
 
-            let scanned = &mut self.fallback.scanned;
+            let Some(fallback) = self.fallback.as_mut() else {
+                return FallbackPoll::Exhausted;
+            };
+            let scanned = &mut fallback.scanned;
             let end = load.scan(&sequence, budget, |index, x, z| {
                 let Some(scanned) = scanned.get_mut(index as usize) else {
                     return Visit::Skip;
