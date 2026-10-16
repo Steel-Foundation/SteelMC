@@ -2770,6 +2770,105 @@ fn domain_command_accepts_its_forms_and_keeps_the_players_own_rotation() {
 }
 
 #[test]
+fn a_rotation_beyond_f32_range_keeps_the_players_own_rotation() {
+    init_vanilla_registry();
+    init_entities();
+    init_behaviors();
+    let source_world_fixture = fresh_test_world_in_domain("source", "huge_rot");
+    let source_world = &source_world_fixture.world;
+    let target_world_fixture = fresh_test_world_in_domain("target", "huge_rot");
+    let target_world = &target_world_fixture.world;
+    insert_ready_full_chunk(source_world, ChunkPos::new(0, 0));
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(source_world), Arc::clone(target_world)];
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (player, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(source_world),
+            Uuid::from_u128(92),
+            "TestPlayer",
+            next_entity_id(),
+        );
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+        player.set_rotation((77.0, 12.0));
+        server.player_permission_states.write().set(
+            player.gameprofile.id,
+            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+        );
+        player.set_permission_state(
+            vec![OP_GROUP.to_owned()],
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+        );
+        // A source captures the player's rotation, so each command gets a fresh one.
+        let source = || {
+            CommandSource::new(
+                CommandSender::Player(Arc::clone(&player)),
+                Arc::clone(&server),
+            )
+        };
+
+        // The yaw parses as a double too large for `f32`, so it becomes infinite. Vanilla discards
+        // a rotation component that is not finite and keeps the entity's own.
+        let huge = format!("1{}", "0".repeat(45));
+        run_command(&server, source(), &format!("tp @s 0 70 0 {huge} 30"));
+        assert_eq!(player.rotation(), (77.0, 30.0));
+        run_command(&server, source(), &format!("tp @s 0 70 0 ~{huge} ~"));
+        assert_eq!(player.rotation(), (77.0, 30.0));
+
+        let world_key = &target_world.key;
+        for command in [
+            format!("domain {world_key} 1 70 1 {huge} 30"),
+            format!("domain {world_key} {huge} 30"),
+        ] {
+            run_command(&server, source(), &command);
+            let Some(request) = server.pending_domain_switches.lock().pop() else {
+                panic!("{command} should queue a domain switch");
+            };
+            let rotation = match request.entry {
+                WorldEntry::Exact(spawn) => spawn.rotation,
+                WorldEntry::Rotation(rotation) => rotation,
+                WorldEntry::Usual => panic!("{command} should not queue the usual entry"),
+            };
+            assert_eq!(rotation, (77.0, 30.0), "{command}");
+            assert!(player.finish_domain_switch(request.pending_token));
+            assert!(player.finish_pending_world_change(request.pending_token));
+        }
+
+        drop(server);
+    });
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "one integration test follows the disconnect and the next login through the same setup"

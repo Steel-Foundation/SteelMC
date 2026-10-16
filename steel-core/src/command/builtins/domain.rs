@@ -24,7 +24,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use super::position::{ensure_spawnable_position, wrap_rotation};
+use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("domain"), |_| command())
@@ -87,7 +87,9 @@ fn switch_world_to_location_with_rotation(
 fn switch_world_with_rotation(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
+    let player = command_player(context.source())?;
     let rotation = context.coordinates("rotation")?.rotation(context.source());
+    let rotation = finite_rotation(rotation, player.rotation());
     switch_world_to(context, WorldEntry::Rotation(wrap_rotation(rotation)))
 }
 
@@ -102,7 +104,10 @@ fn switch_world_at_location(
     ensure_spawnable_position(position)?;
     let destination = PreparedSpawn {
         position,
-        rotation: wrap_rotation(rotation.unwrap_or_else(|| player.rotation())),
+        rotation: wrap_rotation(rotation.map_or_else(
+            || player.rotation(),
+            |rotation| finite_rotation(rotation, player.rotation()),
+        )),
     };
     switch_world_to(context, WorldEntry::Exact(destination))
 }

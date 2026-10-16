@@ -15,7 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use super::position::{ensure_spawnable_position, wrap_rotation};
+use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
 use crate::{
     entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
     portal::{TeleportPostTransition, TeleportTransition, land_after_teleport},
@@ -237,7 +237,9 @@ fn teleport_to_position(
             same_world,
         );
         let target_rotation = target.rotation();
-        let desired_rotation = resolved_rotation.unwrap_or(target_rotation);
+        let desired_rotation = resolved_rotation.map_or(target_rotation, |rotation| {
+            finite_rotation(rotation, target_rotation)
+        });
         let transition = TeleportTransition {
             target_world: Arc::clone(source.world()),
             position: packet_position(position, target.position(), relatives),

@@ -17,6 +17,17 @@ pub(super) fn ensure_spawnable_position(position: DVec3) -> Result<(), CommandSy
     )))
 }
 
+/// Keeps `own` for a component that is not finite, since vanilla discards such a rotation.
+pub(super) const fn finite_rotation(
+    (yaw, pitch): (f32, f32),
+    (own_yaw, own_pitch): (f32, f32),
+) -> (f32, f32) {
+    (
+        if yaw.is_finite() { yaw } else { own_yaw },
+        if pitch.is_finite() { pitch } else { own_pitch },
+    )
+}
+
 pub(super) fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
     (wrap_degrees(yaw), wrap_degrees(pitch))
 }
