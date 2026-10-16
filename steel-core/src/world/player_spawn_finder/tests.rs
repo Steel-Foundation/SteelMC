@@ -202,6 +202,82 @@ fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
 }
 
 #[test]
+fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
+    with_search_world(
+        "stale_invalid",
+        &vanilla_dimension_types::OVERWORLD,
+        |world| {
+            insert_chunks(world, 3);
+            let _hold = world.chunk_map.request_square(
+                ChunkPos::new(0, 0),
+                3,
+                ChunkStatus::Full,
+                ChunkTicketKind::Command,
+            );
+            let suggestion = BlockPos::new(0, 64, 0);
+            let mut sequence = new_search(world, suggestion).sequence;
+            sequence.offset = 0;
+            let first_chunk = sequence.chunk(0);
+            let Some(later) =
+                (50..sequence.count()).find(|&index| sequence.chunk(index) == first_chunk)
+            else {
+                panic!("the first chunk should hold a later candidate");
+            };
+            let (x, z) = sequence.column(later);
+
+            let mut search = new_search(world, suggestion);
+            search.sequence.offset = 0;
+            // The first chunk's batch caches `later` as invalid, since nothing stands there yet.
+            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
+            world.chunk_map.advance_scheduling();
+            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
+            assert!(matches!(search.result(later), CandidateResult::Invalid));
+
+            // Ground placed before the search reaches `later` makes it the only valid candidate.
+            set_block(
+                world,
+                BlockPos::new(x, 64, z),
+                vanilla_blocks::STONE.default_state(),
+            );
+            assert_eq!(
+                run_search(world, &mut search),
+                DVec3::new(f64::from(x) + 0.5, 65.0, f64::from(z) + 0.5)
+            );
+        },
+    );
+}
+
+#[test]
+fn rechecking_cached_results_stays_within_the_poll_budget() {
+    with_search_world(
+        "recheck_budget",
+        &vanilla_dimension_types::OVERWORLD,
+        |world| {
+            insert_chunks(world, 3);
+            let _hold = world.chunk_map.request_square(
+                ChunkPos::new(0, 0),
+                3,
+                ChunkStatus::Full,
+                ChunkTicketKind::Command,
+            );
+            for _ in 0..100 {
+                world.chunk_map.advance_scheduling();
+            }
+            let mut search = new_search(world, BlockPos::new(0, 64, 0));
+            search.results.fill(CandidateResult::Invalid);
+
+            // A zero budget allows one evaluation per poll, so only the first cached result is
+            // checked again before the poll yields.
+            assert!(matches!(
+                search.poll_with_time_budget(world, Duration::ZERO),
+                PlayerSpawnSearchPoll::Pending
+            ));
+            assert_eq!(search.next_candidate_index, 2);
+        },
+    );
+}
+
+#[test]
 fn a_poll_budget_that_ends_mid_chunk_does_not_skip_candidates() {
     with_search_world(
         "budget_yield",

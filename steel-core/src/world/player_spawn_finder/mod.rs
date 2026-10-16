@@ -191,8 +191,15 @@ impl PlayerSpawnSearch {
                 return self.poll_fixup(world, pending, &mut budget);
             }
 
-            if matches!(self.result(pending.index), CandidateResult::Valid(_)) {
-                self.recheck_cached_spot(world, pending);
+            // A result cached by an earlier batch is evaluated again at its turn, as in vanilla.
+            if self.loading.is_none()
+                && !matches!(self.result(pending.index), CandidateResult::Unchecked)
+            {
+                if budget.exhausted() {
+                    return PlayerSpawnSearchPoll::Pending;
+                }
+                self.recheck_cached_result(world, pending);
+                budget.record_evaluation();
             }
             // A batch that ran out of budget is still open and continues before the next candidate.
             if (self.loading.is_some()
@@ -273,9 +280,9 @@ impl PlayerSpawnSearch {
         }
     }
 
-    /// Evaluates a cached valid spot again, since blocks or entities may have changed while the
-    /// search waited. If its chunk has unloaded, the result is dropped and the batch reads it again.
-    fn recheck_cached_spot(&mut self, world: &Arc<World>, pending: PendingSpawnCandidate) {
+    /// Evaluates a cached result again, since blocks or entities may have changed while the search
+    /// waited. If its chunk has unloaded, the result is dropped and the batch reads it again.
+    fn recheck_cached_result(&mut self, world: &Arc<World>, pending: PendingSpawnCandidate) {
         let (x, z) = self.sequence.column(pending.index);
         let Some(slot) = self.results.get_mut(pending.index as usize) else {
             return;

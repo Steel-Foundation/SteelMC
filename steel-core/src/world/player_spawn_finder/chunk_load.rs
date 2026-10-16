@@ -26,8 +26,12 @@ impl PollBudget {
     }
 
     /// At least one candidate is evaluated per poll, so the search always moves forward.
-    fn exhausted(&self) -> bool {
+    pub(super) fn exhausted(&self) -> bool {
         self.evaluated > 0 && self.started.elapsed() >= self.limit
+    }
+
+    pub(super) const fn record_evaluation(&mut self) {
+        self.evaluated += 1;
     }
 }
 
@@ -110,9 +114,9 @@ impl ChunkLoad {
             let (x, z) = sequence.column(index);
             match visit(index, x, z) {
                 Visit::Skip => {}
-                Visit::Evaluated => budget.evaluated += 1,
+                Visit::Evaluated => budget.record_evaluation(),
                 Visit::Stop(value) => {
-                    budget.evaluated += 1;
+                    budget.record_evaluation();
                     return ScanEnd::Stopped(value);
                 }
             }
