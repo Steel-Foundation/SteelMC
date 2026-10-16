@@ -22,7 +22,12 @@ impl CompileModifier for SetInstrument {
         let options = match options {
             HolderSet::Single(key) if key.starts_with('#') => {
                 let tag = identifier(&key[1..]);
-                quote! { REGISTRY.instruments.get_tag(&#tag).ok_or_else(|| ctx.unsupported("missing instrument tag"))? }
+                quote! {{
+                    let Some(instruments) = REGISTRY.instruments.get_tag(&#tag) else {
+                        return ctx.unsupported("missing instrument tag");
+                    };
+                    instruments
+                }}
             }
             HolderSet::Single(key) => {
                 let key = ident(key);

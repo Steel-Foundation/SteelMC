@@ -56,7 +56,7 @@ pub type LootResult<T> = Result<T, LootError>;
 #[expect(clippy::absolute_paths, reason = "generated references use qualified paths to avoid collisions")]
 #[expect(clippy::unreadable_literal, reason = "generated numeric tokens preserve extracted vanilla values")]
 #[expect(clippy::collapsible_if, reason = "generated modifier conditions stay separate from operation control flow")]
-#[expect(clippy::too_many_lines, reason = "generated pool sizes follow extracted entries, which expand inline")]
+#[expect(clippy::possible_missing_else, reason = "token serialization places independent conditionals on one line; both branches must run")]
 #[expect(clippy::vec_init_then_push, reason = "generated entries append candidates in order, including conditional and composite expansions")]
 #[rustfmt::skip]
 #[path = "generated/tables.rs"]

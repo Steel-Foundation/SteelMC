@@ -75,6 +75,6 @@ impl CompileCondition for LocationCheck {
         // and loaded-chunk semantics. Extracted tables already need biome and
         // block/state checks; also cover position, dimension, structures, campfire
         // smoke, light, fluid, and sky visibility predicates.
-        quote! { Err::<bool, _>(ctx.unsupported("minecraft:location_check"))? }
+        quote! { ctx.unsupported::<bool>("minecraft:location_check")? }
     }
 }

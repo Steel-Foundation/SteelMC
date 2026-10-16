@@ -87,7 +87,7 @@ impl Compiler {
                 let operation = format!("entity component {name}");
                 component_checks.insert(
                     name.as_str(),
-                    quote! { Err::<bool, _>(ctx.unsupported(#operation))? },
+                    quote! { ctx.unsupported::<bool>(#operation)? },
                 );
             }
             checks.extend(component_checks.into_values());
@@ -139,7 +139,7 @@ impl Compiler {
                 // TODO: Decode and match cube-mob size, fishing-hook open-water,
                 // and raider raid/captain predicates through entity capabilities.
                 let operation = format!("entity predicate {key}");
-                checks.push(quote! { Err::<bool, _>(ctx.unsupported(#operation))? });
+                checks.push(quote! { ctx.unsupported::<bool>(#operation)? });
             }
         }
         if let Some(sheep) = &predicate.sheep {
@@ -150,9 +150,7 @@ impl Compiler {
         }
         if predicate.vehicle.is_some() {
             // TODO: Resolve the entity's actual vehicle and evaluate its predicate.
-            checks.push(
-                quote! { Err::<bool, _>(ctx.unsupported("entity predicate minecraft:vehicle"))? },
-            );
+            checks.push(quote! { ctx.unsupported::<bool>("entity predicate minecraft:vehicle")? });
         }
         Self::all(&checks)
     }

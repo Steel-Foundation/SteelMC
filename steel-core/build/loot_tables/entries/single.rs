@@ -67,7 +67,7 @@ impl CompileEntry for DynamicEntry {
         Compiler::weighted_candidate(
             *weight,
             *quality,
-            quote! { |ctx, _| Err(ctx.unsupported(#operation)) },
+            quote! { |ctx, _| ctx.unsupported(#operation) },
         )
     }
 }
@@ -163,7 +163,9 @@ impl CompileEntry for TagEntry {
         );
         if *expand {
             EntryExpansion::Statements(quote! {{
-                let items = REGISTRY.items.get_tag(&#tag).ok_or_else(|| ctx.unsupported("missing item tag"))?;
+                let Some(items) = REGISTRY.items.get_tag(&#tag) else {
+                    return ctx.unsupported("missing item tag");
+                };
                 for item in items {
                     candidates.push(LootCandidate::new(#weight, #quality, ctx.luck, move |ctx, output| output(ctx, ItemStack::new(item))));
                 }
@@ -173,7 +175,9 @@ impl CompileEntry for TagEntry {
                 *weight,
                 *quality,
                 quote! { |ctx, output| {
-                        let items = REGISTRY.items.get_tag(&#tag).ok_or_else(|| ctx.unsupported("missing item tag"))?;
+                        let Some(items) = REGISTRY.items.get_tag(&#tag) else {
+                            return ctx.unsupported("missing item tag");
+                        };
                         for item in items { output(ctx, ItemStack::new(item))?; }
                         Ok(())
                     }

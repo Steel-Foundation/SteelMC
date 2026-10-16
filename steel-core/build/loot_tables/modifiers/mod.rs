@@ -63,6 +63,6 @@ impl Compiler {
     }
 
     fn unsupported_modifier(operation: &str) -> TokenStream {
-        quote! { Err::<(), _>(ctx.unsupported(#operation))?; }
+        quote! { ctx.unsupported::<()>(#operation)?; }
     }
 }

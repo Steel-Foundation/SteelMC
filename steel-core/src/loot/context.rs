@@ -1,4 +1,4 @@
-use super::{LootError, LootTableBehaviorRegistry};
+use super::{LootError, LootResult, LootTableBehaviorRegistry};
 use crate::{block_entity::BlockEntity, entity::Entity, world::World};
 use steel_registry::{
     DyeColor, REGISTRY, RegistryExt, equipment::EquipmentSlot, item_stack::ItemStack,
@@ -302,13 +302,12 @@ impl<'a> LootContext<'a> {
 }
 
 impl LootContext<'_> {
-    /// Adds table context to an unsupported-operation error.
-    #[must_use]
-    pub fn unsupported(&self, operation: &'static str) -> LootError {
-        LootError::Unsupported {
+    /// Fails an unsupported operation with the currently evaluating table.
+    pub fn unsupported<T>(&self, operation: &'static str) -> LootResult<T> {
+        Err(LootError::Unsupported {
             table: self.visited.last().cloned(),
             operation,
-        }
+        })
     }
 
     /// Enchantment level over the attacking living entity's applicable equipment slots.

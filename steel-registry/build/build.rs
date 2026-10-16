@@ -4,11 +4,8 @@
 )]
 #![expect(
     clippy::absolute_paths,
-    clippy::allow_attributes_without_reason,
-    clippy::collapsible_match,
     clippy::float_cmp,
     clippy::items_after_statements,
-    clippy::manual_let_else,
     clippy::many_single_char_names,
     clippy::match_same_arms,
     clippy::match_wild_err_arm,

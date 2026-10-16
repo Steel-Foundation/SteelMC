@@ -18,9 +18,9 @@ pub(super) fn copy_block_entity_name(
     };
     // TODO: Use collected block-entity components for custom-name copying,
     // including entities without Nameable and absent-name no-op behavior.
-    let nameable = block_entity
-        .as_nameable()
-        .ok_or_else(|| ctx.unsupported("copy_components/block_entity custom name"))?;
+    let Some(nameable) = block_entity.as_nameable() else {
+        return ctx.unsupported("copy_components/block_entity custom name");
+    };
     if let Some(name) = nameable.custom_name() {
         item.set(CUSTOM_NAME, name);
     }
