@@ -494,3 +494,8 @@ pub mod vanilla_block_state_providers;
 #[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_suspicious_stew_effects.rs"]
+pub mod vanilla_suspicious_stew_effects;
