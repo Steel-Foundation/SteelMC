@@ -4,7 +4,7 @@ use std::time::Duration;
 use glam::DVec3;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_game_rules::RESPAWN_RADIUS;
-use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb, types::GameType};
+use steel_utils::{BlockPos, ChunkPos, WorldAabb, types::GameType};
 use tokio::time::sleep;
 
 use crate::behavior::BlockCollisionContext;
@@ -150,12 +150,7 @@ impl PlayerSpawnSearch {
         if radius.is_some_and(|radius| radius > BLOCKS_PER_CHUNK) {
             return None;
         }
-        Some(world.chunk_map.request_square(
-            ChunkPos::from_block_pos(spawn_suggestion),
-            PLAYER_SPAWN_CHUNK_RADIUS,
-            ChunkStatus::Full,
-            ChunkTicketKind::PlayerSpawn,
-        ))
+        Some(world.request_player_spawn_chunks(block_bottom_center(spawn_suggestion)))
     }
 
     /// Adopts a request made by [`Self::prefetch_spawn_area`].
@@ -399,13 +394,8 @@ impl World {
         self: &Arc<Self>,
         spawn_position: DVec3,
     ) -> ChunkRequestHandle {
-        let spawn_pos = BlockPos::containing(spawn_position.x, spawn_position.y, spawn_position.z);
-        let center = ChunkPos::new(
-            SectionPos::block_to_section_coord(spawn_pos.x()),
-            SectionPos::block_to_section_coord(spawn_pos.z()),
-        );
         self.chunk_map.request_square(
-            center,
+            ChunkPos::from_entity_pos(spawn_position),
             PLAYER_SPAWN_CHUNK_RADIUS,
             ChunkStatus::Full,
             ChunkTicketKind::PlayerSpawn,
