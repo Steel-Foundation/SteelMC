@@ -464,7 +464,8 @@ pub enum WorldEntry {
     Usual,
     /// The usual entry, then faces this `(yaw, pitch)`.
     Rotation((f32, f32)),
-    /// Places the player exactly there, with no spawn search and no saved location.
+    /// Places the player exactly there, with no spawn search and no saved location. It lands like
+    /// `/teleport`, except that its velocity is always cleared, even on axes given as relative.
     Exact(PreparedSpawn),
 }
 
