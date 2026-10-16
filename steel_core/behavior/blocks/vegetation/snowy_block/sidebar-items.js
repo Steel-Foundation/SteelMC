@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_snowy_setting","snowy_placement_state","update_snowy_shape"],"struct":["SnowyBlock"]};

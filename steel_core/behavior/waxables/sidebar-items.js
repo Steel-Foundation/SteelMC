@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_normal_from_waxed_variant","get_waxed_from_normal_variant"]};

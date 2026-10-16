@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONTEXT_AMOUNT"],"enum":["CommandSyntaxErrorKind"],"struct":["CommandErrorContext","CommandSyntaxError"]};

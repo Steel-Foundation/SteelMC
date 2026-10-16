@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_disk_storage","create_ram_storage","path_to_string","validate_disk_config","validate_empty_config"],"struct":["DiskStorageConfig","WorldStorageFactory","WorldStorageOutput","WorldStorageRegistry"]};

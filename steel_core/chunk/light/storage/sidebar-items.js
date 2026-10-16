@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LightSection","LightSectionData"],"fn":["section_relative_coord"],"struct":["ChunkLightData","ChunkLightEmptinessMapLengthError","ChunkLightLayerStorage"]};

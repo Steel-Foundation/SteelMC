@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WATER_CHECK_DISTANCE_VERTICAL"],"fn":["block_pos_corner","look_for_water"],"struct":["PanicGoal"]};

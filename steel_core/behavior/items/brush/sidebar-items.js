@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ANIMATION_DURATION","SOUND_TICK_OFFSET","USE_DURATION"],"fn":["calculate_block_hit","equipped_brush_slot","release_player_use"],"struct":["BrushItem"]};

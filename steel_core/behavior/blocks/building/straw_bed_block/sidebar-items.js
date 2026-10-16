@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BED_PART","FACING","OCCUPIED"],"struct":["StrawBedBlock"]};

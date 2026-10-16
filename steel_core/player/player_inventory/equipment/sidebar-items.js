@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EquipmentSwapResult"],"fn":["equipment_to_slot","hand_to_equipment_slot"]};

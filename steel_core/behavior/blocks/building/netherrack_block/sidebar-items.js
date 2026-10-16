@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WARPED_VS_CRIMSON_CHANCE"],"struct":["NetherrackBlock"]};

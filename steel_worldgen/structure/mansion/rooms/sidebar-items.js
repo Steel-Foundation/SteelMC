@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["add_room_1x1","add_room_1x2","add_room_2x2","add_room_2x2_secret"]};

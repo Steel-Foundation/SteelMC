@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["chunk_max_block_x","chunk_max_block_z","chunk_min_block_x","chunk_min_block_z"]};

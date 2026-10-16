@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BED_INTERACTION_XZ_RANGE","BED_INTERACTION_Y_RANGE"],"enum":["BedSleepingProblem"]};

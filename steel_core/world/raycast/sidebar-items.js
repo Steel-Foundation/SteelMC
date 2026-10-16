@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ClipBlockShape","ClipFluid","RaytraceAction"],"struct":["ClipHitResult"]};

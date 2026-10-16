@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["connected_chest_pos","emit_connected_chest_block_change"]};

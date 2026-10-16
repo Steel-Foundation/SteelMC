@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["make_shipwreck_piece"],"static":["BEACHED","OCEAN"],"struct":["ShipwreckStructure"]};

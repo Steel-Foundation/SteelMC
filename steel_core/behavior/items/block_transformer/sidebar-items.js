@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["consume_transform_item","drop_loot","particle_event","player_has_blocking_item_use_intent","use_on"]};

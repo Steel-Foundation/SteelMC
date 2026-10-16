@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["block_pos_axis","is_empty","nether_portal_config","vec_axis"],"struct":["PortalFrameConfig","PortalShape"]};

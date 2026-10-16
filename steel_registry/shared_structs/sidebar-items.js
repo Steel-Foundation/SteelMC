@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BiomeConditionTarget"],"fn":["deserialize_optional_tag_identifier","deserialize_tag_identifier","insert_spawn_conditions","pick_spawn_conditioned_entry"],"struct":["BiomeCondition","BlockStateData","FluidStateData","SpawnConditionEntry"]};

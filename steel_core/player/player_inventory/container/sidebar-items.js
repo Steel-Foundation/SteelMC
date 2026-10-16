@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["armor_equipment","slot_to_equipment"],"static":["EMPTY_ITEM"],"struct":["InvalidHotbarSlot"]};

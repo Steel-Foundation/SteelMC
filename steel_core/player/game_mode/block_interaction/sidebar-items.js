@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["strip_formatting_codes"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FUDGE_POSITION_EPSILON","FUDGE_SMALL_DIMENSION_LIMIT","MAX_ENTITY_MOTION_COMPONENT"],"enum":["AcceptedClientMovementOutcome"],"fn":["apply_entity_look_at","look_at_rotation","position_rider_default","read_nbt_dvec3","read_nbt_rotation","sanitize_nbt_motion"],"struct":["AcceptedClientMovement"],"trait":["Entity","EntityEventSource"]};

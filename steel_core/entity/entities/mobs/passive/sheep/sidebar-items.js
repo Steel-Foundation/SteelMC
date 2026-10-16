@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ATE_AGE_UP_SECONDS","COLOR_ID_MASK","SHEARED_BIT","SHEEP_BABY_DIMENSIONS","SHEEP_BABY_PASSENGER_ATTACHMENTS"],"mod":["color_spawn_rules"],"struct":["SheepEntity"]};

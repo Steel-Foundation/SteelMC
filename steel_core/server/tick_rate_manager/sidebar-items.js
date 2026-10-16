@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_TICK_RATE","MS_PER_SEC","NANOS_PER_MS","NANOS_PER_SEC","TICK_STATS_SPAN","TICK_TIME_SMOOTHING"],"struct":["SprintReport","TickRateManager"]};

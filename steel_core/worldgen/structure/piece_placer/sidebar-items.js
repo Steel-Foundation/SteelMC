@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["buried_treasure","desert_pyramid","fortress","jungle_temple","mineshaft","ocean_monument","pool_element","ruined_portal","scattered_feature","stronghold","swamp_hut","template_piece","template_processors"],"struct":["StructurePiecePlacer"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WATER_AVOIDING_RANDOM_STROLL_PROBABILITY"],"fn":["random_stroll_pos"],"struct":["WaterAvoidingRandomStrollGoal"]};

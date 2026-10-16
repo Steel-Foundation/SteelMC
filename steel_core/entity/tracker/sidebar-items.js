@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLOCKS_PER_CHUNK"],"fn":["add_passenger_tracking_ranges","direct_player_passenger_delta","effective_tracking_range","is_within_tracking_distance","leash_holder_id"],"struct":["EntityChangeSenders","EntitySpawnPairing","EntityTracker","EntityTrackingRange","TrackedEntity"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cooking_type","register"],"static":["BLASTING","CAMPFIRE_COOKING","CRAFTING","SMELTING","SMITHING","SMOKING","STONECUTTING"]};

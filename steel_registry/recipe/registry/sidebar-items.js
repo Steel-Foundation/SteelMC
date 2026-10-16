@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CachedRecipeCheck","RecipeRegistry","TypedRecipeRef","TypedRecipeSet","UntypedRecipeRef"]};

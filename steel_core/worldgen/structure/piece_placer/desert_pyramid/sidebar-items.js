@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DESERT_PYRAMID_ARCHAEOLOGY","DESERT_PYRAMID_LOOT","HORIZONTAL_PLANE"],"fn":["direction_2d_data_value"],"struct":["DesertPyramidPlacer"]};
