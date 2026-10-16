@@ -248,6 +248,29 @@ fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
 }
 
 #[test]
+fn a_cached_result_whose_chunk_has_unloaded_is_read_again() {
+    with_search_world(
+        "unloaded_spot",
+        &vanilla_dimension_types::OVERWORLD,
+        |world| {
+            let mut search = new_search(world, BlockPos::new(0, 64, 0));
+            let pending = search.next_candidate();
+            assert!(!world.has_full_chunk(pending.chunk));
+            let (x, z) = search.sequence.column(pending.index);
+            search.results[pending.index as usize] =
+                CandidateResult::Valid(BlockPos::new(x, 65, z));
+
+            // An unloaded chunk reads as invalid, so the result must be dropped, not marked invalid.
+            search.recheck_cached_result(world, pending);
+            assert!(matches!(
+                search.result(pending.index),
+                CandidateResult::Unchecked
+            ));
+        },
+    );
+}
+
+#[test]
 fn rechecking_cached_results_stays_within_the_poll_budget() {
     with_search_world(
         "recheck_budget",
