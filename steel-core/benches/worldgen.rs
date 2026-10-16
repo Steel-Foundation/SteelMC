@@ -1,4 +1,6 @@
 #![feature(portable_simd)]
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};

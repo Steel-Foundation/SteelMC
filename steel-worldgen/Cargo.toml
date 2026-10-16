@@ -22,8 +22,6 @@ wincode.workspace = true
 rayon.workspace = true
 
 [build-dependencies]
-steel-utils.workspace = true
-
 # Serialization
 serde.workspace = true
 serde_json.workspace = true

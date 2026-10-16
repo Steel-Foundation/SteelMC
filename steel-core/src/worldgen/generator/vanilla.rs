@@ -1247,8 +1247,7 @@ impl<'a> FuzzedBiomeColumn<'a> {
 
         let mut min_i = 0usize;
         let mut min_dist = f64::INFINITY;
-        for i in 0..8usize {
-            let (fy, xz_partial) = self.candidates[i];
+        for (i, &(fy, xz_partial)) in self.candidates.iter().enumerate() {
             let dy = if (i & 2) == 0 { fract_y } else { fract_y - 1.0 };
             let dist = xz_partial + (dy + fy) * (dy + fy);
             if min_dist > dist {

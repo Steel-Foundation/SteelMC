@@ -669,9 +669,7 @@ impl ChunkStorage {
             Self::structure_references_to_persistent(&chunk.structure_references());
 
         // Collect POI occupancy data from world storage
-        let pois = full
-            .map(|full| Self::pois_to_persistent(full, pos))
-            .unwrap_or_default();
+        let pois = full.map_or_default(|full| Self::pois_to_persistent(full, pos));
 
         let postprocessing = if let Some(full) = full {
             full.postprocessing_for_serialization()

@@ -334,8 +334,7 @@ where
         let (player_packets, player_bytes) = state
             .lanes
             .get(&key)
-            .map(|lane| (lane.outstanding_packets, lane.outstanding_bytes))
-            .unwrap_or_default();
+            .map_or_default(|lane| (lane.outstanding_packets, lane.outstanding_bytes));
         if player_packets >= self.limits.per_player_packets {
             return Err(PacketAdmissionError::PlayerPacketLimit);
         }

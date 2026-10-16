@@ -339,13 +339,12 @@ impl StructureTemplate {
     pub(super) fn read_entity_tags(nbt: &BorrowedNbtCompound<'_, '_>) -> BTreeSet<String> {
         nbt.list("Tags")
             .and_then(|list| list.strings())
-            .map(|tags| {
+            .map_or_default(|tags| {
                 tags.iter()
                     .take(MAX_ENTITY_TAGS)
                     .map(|tag| tag.to_str().into_owned())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     pub(super) fn strip_entity_base_fields(nbt: &mut NbtCompound) {

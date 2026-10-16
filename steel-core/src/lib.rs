@@ -3,6 +3,8 @@
 //! The core library for the Steel Minecraft server. Handles everything related to the PLAY state.
 
 #![feature(try_as_dyn)]
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
 
 use crate::chunk::chunk_map::ChunkMap;
 

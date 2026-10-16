@@ -148,18 +148,14 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
                 _ => quote! { CopySource::BlockEntity },
             };
 
-            let include: Vec<TokenStream> = function
-                .include
-                .as_ref()
-                .map(|inc| {
-                    inc.iter()
-                        .map(|s| {
-                            let s = s.strip_prefix("minecraft:").unwrap_or(s);
-                            quote! { Identifier::vanilla_static(#s) }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let include: Vec<TokenStream> = function.include.as_ref().map_or_default(|inc| {
+                inc.iter()
+                    .map(|s| {
+                        let s = s.strip_prefix("minecraft:").unwrap_or(s);
+                        quote! { Identifier::vanilla_static(#s) }
+                    })
+                    .collect()
+            });
 
             quote! {
                 LootFunction::CopyComponents {
@@ -175,8 +171,7 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
             let properties: Vec<TokenStream> = function
                 .properties
                 .as_ref()
-                .map(|props| props.iter().map(|p| quote! { #p }).collect())
-                .unwrap_or_default();
+                .map_or_default(|props| props.iter().map(|p| quote! { #p }).collect());
 
             quote! {
                 LootFunction::CopyState {
@@ -252,28 +247,24 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
             quote! { LootFunction::SetPotion { id: Identifier::vanilla_static(#id) } }
         }
         "minecraft:set_stew_effect" => {
-            let effects: Vec<TokenStream> = function
-                .effects
-                .as_ref()
-                .map(|effs| {
-                    effs.iter()
-                        .map(|e| {
-                            let effect_type = e
-                                .effect_type
-                                .strip_prefix("minecraft:")
-                                .unwrap_or(&e.effect_type);
-                            let duration = generate_number_provider(&e.duration);
+            let effects: Vec<TokenStream> = function.effects.as_ref().map_or_default(|effs| {
+                effs.iter()
+                    .map(|e| {
+                        let effect_type = e
+                            .effect_type
+                            .strip_prefix("minecraft:")
+                            .unwrap_or(&e.effect_type);
+                        let duration = generate_number_provider(&e.duration);
 
-                            quote! {
-                                StewEffect {
-                                    effect_type: Identifier::vanilla_static(#effect_type),
-                                    duration: #duration,
-                                }
+                        quote! {
+                            StewEffect {
+                                effect_type: Identifier::vanilla_static(#effect_type),
+                                duration: #duration,
                             }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+                        }
+                    })
+                    .collect()
+            });
 
             quote! { LootFunction::SetStewEffect { effects: &[#(#effects),*] } }
         }
@@ -282,10 +273,8 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
             quote! { LootFunction::SetInstrument { options: #options } }
         }
         "minecraft:set_enchantments" => {
-            let enchantments: Vec<TokenStream> = function
-                .enchantments
-                .as_ref()
-                .map(|enc| {
+            let enchantments: Vec<TokenStream> =
+                function.enchantments.as_ref().map_or_default(|enc| {
                     enc.iter()
                         .map(|(name, level)| {
                             let name = name.strip_prefix("minecraft:").unwrap_or(name);
@@ -293,8 +282,7 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
                             quote! { (Identifier::vanilla_static(#name), #level) }
                         })
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             let add = function.add;
             quote! {
                 LootFunction::SetEnchantments {
