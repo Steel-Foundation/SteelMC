@@ -457,6 +457,14 @@ fn failed_search_in_a_lava_cavern_falls_back_to_a_ledge_only_when_asked() {
         // The vanilla fixup walks down to the lava sea; the safe fallback uses the ledge.
         assert_eq!(run(false).y, 32.0);
         assert_eq!(run(true).y, 101.0);
+
+        // Adventure has no candidates, so the fallback reads the suggestion's own column.
+        let Ok(search) =
+            PlayerSpawnSearch::new(world, BlockPos::new(0, 64, 0), GameType::Adventure)
+        else {
+            panic!("search should start");
+        };
+        assert_eq!(run_search(world, &mut search.with_safe_fallback()).y, 101.0);
     });
 }
 
