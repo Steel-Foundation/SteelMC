@@ -1021,6 +1021,7 @@ pub trait BlockBehavior: Send + Sync {
         if context.velocity.y >= 0.0
             || restitution <= 0.0
             || context.suppresses_bounce
+            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
             || -context.velocity.y <= context.gravity
         {
             (
