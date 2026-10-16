@@ -81,7 +81,7 @@ impl JavaTcpClient {
         }
         log::debug!("Select known packs packet: {packet:?}");
 
-        let registry_cache = self.server.registry_cache.registry_packets.clone();
+        let registry_cache = Arc::clone(&self.server.registry_cache.registry_packets);
         for encoded_packet in registry_cache.iter() {
             self.send_packet_now(encoded_packet).await;
         }
@@ -113,7 +113,7 @@ impl JavaTcpClient {
 
         let client_info = self.client_information.lock().await.clone();
 
-        let world = self.server.overworld().clone();
+        let world = Arc::clone(self.server.overworld());
         let entity_id = next_entity_id();
 
         let session = Arc::new(PlayerSession::new(
@@ -124,7 +124,7 @@ impl JavaTcpClient {
             self.outgoing_queue.clone(),
             self.cancel_token.clone(),
             self.compression.load(),
-            self.network_writer.clone(),
+            Arc::clone(&self.network_writer),
             self.id,
             Arc::clone(&session),
         );
@@ -135,7 +135,7 @@ impl JavaTcpClient {
             Arc::clone(&session),
             world,
             Arc::downgrade(&self.server),
-            self.server.config.clone(),
+            Arc::clone(&self.server.config),
             entity_id,
             client_info,
         ));

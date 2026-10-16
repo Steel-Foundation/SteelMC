@@ -1,6 +1,6 @@
 //! Build-time generation for worldgen structure registries.
 
-mod processors;
+pub(crate) mod processors;
 mod sets;
 mod template_pools;
 

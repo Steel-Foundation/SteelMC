@@ -1,8 +1,10 @@
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
-    wrap_degrees,
+    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
+    World, wrap_degrees,
 };
+use steel_registry::data_components::vanilla_components::USE_REMAINDER;
+use steel_registry::stat::vanilla_stat_types;
 
 /// Handles using an item on a block.
 ///
@@ -16,7 +18,7 @@ use super::{
 /// 5. If item not empty: Call item behavior's `use_on` for placement
 /// 6. Handle creative mode infinite materials
 pub fn use_item_on(
-    player: &Player,
+    player: &Arc<Player>,
     world: &Arc<World>,
     hand: InteractionHand,
     hit_result: &BlockHitResult,
@@ -51,7 +53,7 @@ pub fn use_item_on(
         };
         let behavior = block_behaviors.get_behavior(block);
 
-        let mut inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
+        let mut inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
 
         let block_result = behavior.use_item_on(
             state,
@@ -85,7 +87,7 @@ pub fn use_item_on(
         }
     }
 
-    let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
+    let inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
     let (is_empty, original_count, item_ref, stack_before_use) =
         inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
@@ -99,10 +101,30 @@ pub fn use_item_on(
             hand,
             hit_result.clone(),
             world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
+
+        if result.should_apply_item_use_side_effects() {
+            player.award_stat(&vanilla_stat_types::ITEM_USED, item_ref);
+
+            let extra = stack_before_use.get(USE_REMAINDER).and_then(|remainder| {
+                context.inv.with_item(|item| {
+                    remainder.convert_into_remainder(
+                        item,
+                        stack_before_use.count(),
+                        player.has_infinite_materials(),
+                    )
+                })
+            });
+
+            if let Some(extra) = extra {
+                player.handle_extra_items_created_on_use(extra);
+            }
+
+            player.apply_item_use_cooldown(&stack_before_use);
+        }
 
         // Restored in both directions: `use_on` can also grow the held stack when
         // its result merges back into the slot it came from.
@@ -116,16 +138,24 @@ pub fn use_item_on(
     InteractionResult::Pass
 }
 
+#[cfg(test)]
+#[path = "item_interaction/use_on_tests.rs"]
+mod use_on_tests;
+
 /// Handles using an item (general usage like right-clicking air).
 ///
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
-pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> InteractionResult {
+pub fn use_item(
+    player: &Arc<Player>,
+    world: &Arc<World>,
+    hand: InteractionHand,
+) -> InteractionResult {
     // Spectator mode: can only open menus
     if player.game_mode() == GameType::Spectator {
         return InteractionResult::Pass;
     }
 
-    let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
+    let inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
     let (is_empty, item_ref, stack_before_use) =
         inventory_access.with_item(|item| (item.is_empty(), item.item, item.clone()));
 
@@ -134,13 +164,18 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
             return InteractionResult::Pass;
         }
 
-        let mut context =
-            crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
+        let mut context = crate::behavior::UseItemContext::new(
+            player,
+            hand,
+            world,
+            Arc::clone(&player.inventory),
+        );
 
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
-        let is_instantly_used = item_behavior.get_use_duration(&stack_before_use, player) <= 0;
+        let is_instantly_used =
+            item_behavior.get_use_duration(&stack_before_use, player.as_ref()) <= 0;
 
         let result = item_behavior.use_item(&mut context);
 
@@ -156,7 +191,7 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
 
 impl Player {
     /// Handles the use of an item.
-    pub fn handle_use_item(&self, packet: SUseItem) {
+    pub fn handle_use_item(self: &Arc<Self>, packet: SUseItem) {
         if !self.has_client_loaded() {
             return;
         }
@@ -200,11 +235,9 @@ impl Player {
         }
 
         let world = self.get_world();
+        let animation = self.interact_animation(packet.hand);
         let result = use_item(self, &world, packet.hand);
-
-        if result.should_swing_server() {
-            self.swing(packet.hand, true);
-        }
+        self.swing_after_interaction(packet.hand, animation, result);
 
         self.broadcast_inventory_changes();
     }
@@ -212,6 +245,8 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::use_item;
     use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
@@ -223,9 +258,10 @@ mod tests {
 
     #[test]
     fn use_item_discards_non_finite_rotation_components() {
-        let world = fresh_test_world("use_item_non_finite_rotation");
+        let world_fixture = fresh_test_world("use_item_non_finite_rotation");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -254,16 +290,17 @@ mod tests {
     /// starting active use.
     #[test]
     fn use_item_refuses_normal_food_at_full_hunger() {
-        let world = fresh_test_world("use_item_full_hunger_normal_food");
+        let world_fixture = fresh_test_world("use_item_full_hunger_normal_food");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::APPLE));
 
-        let result = use_item(&player, &world, InteractionHand::MainHand);
+        let result = use_item(&player, world, InteractionHand::MainHand);
 
         assert_eq!(result, InteractionResult::Fail);
         assert_eq!(player.active_item_use_hand(), None);
@@ -273,16 +310,17 @@ mod tests {
     /// full hunger, matching vanilla `FoodProperties.canAlwaysEat`.
     #[test]
     fn use_item_allows_always_edible_food_at_full_hunger() {
-        let world = fresh_test_world("use_item_full_hunger_always_edible_food");
+        let world_fixture = fresh_test_world("use_item_full_hunger_always_edible_food");
+        let world = &world_fixture.world;
         init_behaviors();
-        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::GOLDEN_APPLE));
 
-        let result = use_item(&player, &world, InteractionHand::MainHand);
+        let result = use_item(&player, world, InteractionHand::MainHand);
 
         assert_eq!(result, InteractionResult::Consume);
         assert_eq!(

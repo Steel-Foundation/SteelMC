@@ -297,12 +297,12 @@ impl FilePlayerDataStorage {
     }
 
     async fn file_lock(&self, path: &Path) -> OwnedAsyncMutexGuard<()> {
-        let mutex = self
-            .file_locks
-            .lock()
-            .entry(path.to_path_buf())
-            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-            .clone();
+        let mutex = Arc::clone(
+            self.file_locks
+                .lock()
+                .entry(path.to_path_buf())
+                .or_insert_with(|| Arc::new(AsyncMutex::new(()))),
+        );
 
         mutex.lock_owned().await
     }

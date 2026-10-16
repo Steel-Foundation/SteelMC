@@ -47,7 +47,7 @@ pub struct BlockBehaviorRegistry {
 
 impl BlockBehaviorRegistry {
     /// Get all behaviors.
-    #[cfg(feature = "flint")]
+    #[cfg(feature = "test-framework")]
     #[must_use]
     pub fn get_behaviors(&self) -> &[Box<dyn BlockBehavior>] {
         &self.behaviors

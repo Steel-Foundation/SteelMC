@@ -61,7 +61,7 @@ impl BlockBehavior for GrindstoneBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let inventory = player.inventory.clone();
+        let inventory = Arc::clone(&player.inventory);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_GRINDSTONE_TITLE.msg()),
             move |context| grindstone(inventory, context.container_id, pos, context.world),

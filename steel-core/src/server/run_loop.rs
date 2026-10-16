@@ -11,6 +11,7 @@ use super::{
     SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
     command_suggestions_packet, sleep, spawn_blocking,
 };
+
 use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
@@ -35,7 +36,7 @@ impl Server {
             worker_threads_for_available(self.config.packet_workers, available_worker_threads());
         let mut packet_handles = Vec::with_capacity(packet_worker_count);
         for worker_id in 0..packet_worker_count {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             packet_handles.push(tokio::spawn(async move {
                 if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
@@ -54,16 +55,16 @@ impl Server {
             }
         };
         let game_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
-            let task_guard = GameTickTaskGuard::new(self.clone(), cancel_token.clone());
+            let task_guard = GameTickTaskGuard::new(Arc::clone(&self), cancel_token.clone());
             tokio::spawn(async move {
                 let _task_guard = task_guard;
                 s.run_game_tick(t).await;
             })
         };
         let chunk_send_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
         };
@@ -119,6 +120,7 @@ impl Server {
             players_to_save.push((player, domain, data));
         }
 
+        self.damage_history.clear();
         log::info!("Saving world data...");
         let command_data = self.save_command_data().await;
         match command_data.scoreboards {
@@ -258,7 +260,7 @@ impl Server {
             self.process_player_joins();
 
             {
-                let server = self.clone();
+                let server = Arc::clone(&self);
                 let _ =
                     spawn_blocking(move || server.process_world_changes(tick_count, runs_normally))
                         .await;
@@ -502,7 +504,7 @@ impl Server {
                 break;
             }
 
-            let server = self.clone();
+            let server = Arc::clone(&self);
             let _ = spawn_blocking(move || {
                 server.tick_chunk_sending();
             })
@@ -595,6 +597,7 @@ impl Server {
         if runs_normally {
             self.worlds.advance_domain_game_times();
         }
+        self.damage_history.expire();
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
@@ -659,6 +662,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::Server;
+
     use crate::{
         player::ResetReason,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
@@ -668,10 +672,11 @@ mod tests {
 
     #[test]
     fn chunk_send_commit_rechecks_live_world_membership() {
-        let world = fresh_test_world("chunk_send_membership_revalidation");
+        let world_fixture = fresh_test_world("chunk_send_membership_revalidation");
+        let world = &world_fixture.world;
         let center = ChunkPos::new(0, 0);
-        insert_ready_full_chunk(&world, center);
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "ChunkTester", 1).build();
+        insert_ready_full_chunk(world, center);
+        let player = TestPlayerBuilder::new(Arc::clone(world), "ChunkTester", 1).build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 
@@ -680,7 +685,7 @@ mod tests {
             panic!("test chunk encoding pool should initialize");
         };
         let mut encode_cache = FxHashMap::default();
-        Server::send_chunks_for_player(&player, &world, &mut encode_cache, &encoding_pool);
+        Server::send_chunks_for_player(&player, world, &mut encode_cache, &encoding_pool);
 
         let sender = player.chunk_sender().lock();
         assert!(sender.pending_chunks.contains(&center));

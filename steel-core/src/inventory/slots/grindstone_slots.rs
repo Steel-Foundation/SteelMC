@@ -88,11 +88,11 @@ impl GrindstoneResultHandler {
 
 impl ResultHandler for GrindstoneResultHandler {
     fn result_container(&self) -> ContainerRef {
-        ContainerRef::from(self.result_container.clone())
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     fn dependencies(&self) -> Vec<ContainerRef> {
-        vec![ContainerRef::from(self.input_container.clone())]
+        vec![ContainerRef::from(Arc::clone(&self.input_container))]
     }
 
     fn update_result(&self, _guard: &mut ContainerLockGuard) {}

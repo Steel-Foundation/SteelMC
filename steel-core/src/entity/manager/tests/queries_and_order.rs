@@ -17,7 +17,7 @@ fn aabb_matching_query_filters_accessible_entities() {
     );
     assert!(
         manager
-            .add_live_entity(second.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&second), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(matches!(
@@ -42,7 +42,8 @@ fn visibility_transitions_separate_tracking_and_ticking() {
     assert!(result.ticking_started.is_empty());
 
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
-    let changes = match manager.add_live_entity(entity.clone(), EntityOwnership::ManagerOwned) {
+    let changes = match manager.add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+    {
         Ok(changes) => changes,
         Err(error) => panic!("entity should register in active hidden chunk: {error}"),
     };
@@ -149,7 +150,7 @@ fn nearest_aabb_matching_query_returns_closest_match() {
     let near_filtered_out = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     let near_match = entity(2, 2, DVec3::new(3.0, 64.0, 1.0));
     let far_match = entity(3, 3, DVec3::new(8.0, 64.0, 1.0));
-    for entity in [near_filtered_out, near_match.clone(), far_match] {
+    for entity in [near_filtered_out, Arc::clone(&near_match), far_match] {
         assert!(
             manager
                 .add_live_entity(entity, EntityOwnership::ManagerOwned)

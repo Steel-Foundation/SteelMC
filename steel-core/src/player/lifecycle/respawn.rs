@@ -114,7 +114,7 @@ impl PlayerRespawnJob {
                 let fallback_search = PlayerSpawnSearch::new(
                     &fallback_world,
                     fallback_respawn_data.pos(),
-                    fallback_world.default_gamemode,
+                    fallback_world.default_gamemode(),
                 )?;
                 (
                     fallback_world,
@@ -265,7 +265,7 @@ impl ServerJob for PlayerRespawnJob {
                     let fallback_search = match PlayerSpawnSearch::new(
                         &fallback_world,
                         fallback_respawn_data.pos(),
-                        fallback_world.default_gamemode,
+                        fallback_world.default_gamemode(),
                     ) {
                         Ok(search) => search,
                         Err(error) => {
@@ -369,7 +369,7 @@ impl PlayerRespawnJob {
         if state.is_bed()
             && Player::bed_rule_value_allows_in_world(
                 world,
-                world.dimension_type.bed_rule.can_set_spawn,
+                Player::bed_rule_for(world, state).can_set_spawn,
             )
         {
             let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
@@ -715,18 +715,17 @@ impl Player {
         health <= 0.0
     }
 
-    /// Returns vanilla `ServerPlayer.seenCredits`.
+    /// Returns whether this player has already seen the End credits screen.
     #[must_use]
     pub fn has_seen_credits(&self) -> bool {
         *self.seen_credits.lock()
     }
 
-    /// Sets vanilla `ServerPlayer.seenCredits`.
+    /// Sets whether this player has seen the End credits screen.
     pub fn set_seen_credits(&self, seen_credits: bool) {
         *self.seen_credits.lock() = seen_credits;
     }
 
-    /// Returns vanilla `ServerPlayer.wonGame`.
     #[must_use]
     pub(crate) fn has_won_game(&self) -> bool {
         *self.won_game.lock()

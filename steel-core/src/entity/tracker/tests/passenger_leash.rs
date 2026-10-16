@@ -42,7 +42,7 @@ fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
-    let passenger: SharedEntity = passenger_typed.clone();
+    let passenger: SharedEntity = Arc::<PairingTestEntity>::clone(&passenger_typed);
     vehicle_typed.add_passenger(&passenger);
     let vehicle: SharedEntity = vehicle_typed;
     passenger_typed.set_vehicle(&vehicle);
@@ -59,7 +59,7 @@ fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
-    let passenger: SharedEntity = passenger_typed.clone();
+    let passenger: SharedEntity = Arc::<PairingTestEntity>::clone(&passenger_typed);
     vehicle_typed.add_passenger(&passenger);
     let vehicle: SharedEntity = vehicle_typed;
     passenger_typed.set_vehicle(&vehicle);
@@ -185,7 +185,7 @@ fn send_changes_broadcasts_passenger_changes_once() {
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
-    let vehicle: SharedEntity = vehicle_typed.clone();
+    let vehicle: SharedEntity = Arc::<PairingTestEntity>::clone(&vehicle_typed);
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
     let passenger: SharedEntity = passenger_typed;
     track_entity_for_player(&tracker, &vehicle, 99);

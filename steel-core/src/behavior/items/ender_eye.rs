@@ -164,7 +164,7 @@ impl ItemBehavior for EnderEyeItem {
         world.game_event_at(
             &vanilla_game_events::PROJECTILE_SHOOT,
             spawn_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         let pitch = 0.4 / rand::random_range(0.8..1.2);

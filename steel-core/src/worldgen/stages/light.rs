@@ -108,11 +108,8 @@ fn run_light_stage(
     } else {
         Vec::new()
     };
-    let block_result =
-        match propagate_block_light_chunk(&workset, BlockLightChunkEdgeChecks::Required) {
-            Ok(result) => result,
-            Err(error) => panic!("block light chunk propagation failed: {error:?}"),
-        };
+    let block_result = propagate_block_light_chunk(&workset, BlockLightChunkEdgeChecks::Required)
+        .expect("block light chunk propagation failed");
 
     (sky_updates, block_result.updated_sections)
 }

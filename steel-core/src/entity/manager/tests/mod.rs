@@ -118,7 +118,7 @@ impl Entity for MovingTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         if let Err(error) = self.try_set_position(self.tick_position) {
             panic!("moving tick test entity failed to move during tick: {error}");
@@ -166,7 +166,7 @@ impl Entity for AddDuringTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         let Some(entity) = self.entity_to_add.lock().take() else {
             return;

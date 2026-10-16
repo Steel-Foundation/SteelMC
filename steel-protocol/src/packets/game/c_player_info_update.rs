@@ -145,7 +145,6 @@ pub struct CPlayerInfoUpdate {
 impl CPlayerInfoUpdate {
     /// Creates a full player initializing packet with all information.
     /// This is sent when a player joins to add them to the tab list.
-    /// Matches vanilla's `ClientboundPlayerInfoUpdatePacket.createPlayerInitializing()`
     #[must_use]
     pub fn create_player_initializing(
         uuid: Uuid,

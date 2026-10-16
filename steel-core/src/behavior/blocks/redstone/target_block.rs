@@ -22,7 +22,7 @@ const ACTIVATION_TICKS_OTHER: i32 = 8;
 const RESET_ON_PLACE_FLAGS: UpdateFlags =
     UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_KNOWN_SHAPE);
 
-/// Vanilla `TargetBlock` behavior.
+/// Target block behavior.
 #[block_behavior]
 pub struct TargetBlock {
     block: BlockRef,

@@ -302,13 +302,11 @@ impl Chunk {
             "Proto chunk scheduled-tick container was already promoted"
         );
         let pending_entities = proto_chunk.entities.close_and_drain();
-        if let Err(error) = proto_chunk
+        proto_chunk
             .light
             .write()
             .refresh_emptiness_maps_from_sections(&proto_chunk.sections)
-        {
-            panic!("invalid proto chunk light emptiness map length: {error:?}");
-        }
+            .expect("invalid proto chunk light emptiness map length");
 
         FullChunkRef::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
         let game_event_listener_count = level
@@ -383,11 +381,10 @@ impl Chunk {
             heightmaps,
             structure_starts,
             structure_references,
-            None,
             postprocessing,
             block_ticks,
             fluid_ticks,
-            level.clone(),
+            Weak::clone(&level),
             light,
         );
 
@@ -831,10 +828,8 @@ impl FullChunkRef<'_> {
             .ok_or(TickSchedulerError::MissingContainer(self.chunk.pos))
         };
 
-        match result {
-            Ok(true) => self.chunk.dirty.store(true, Ordering::Release),
-            Ok(false) => {}
-            Err(error) => panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}"),
+        if result.expect("Full chunk scheduled-tick ownership invariant failed") {
+            self.chunk.dirty.store(true, Ordering::Release);
         }
     }
 
@@ -866,25 +861,19 @@ impl FullChunkRef<'_> {
             .ok_or(TickSchedulerError::MissingContainer(self.chunk.pos))
         };
 
-        match result {
-            Ok(true) => self.chunk.dirty.store(true, Ordering::Release),
-            Ok(false) => {}
-            Err(error) => panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}"),
+        if result.expect("Full chunk scheduled-tick ownership invariant failed") {
+            self.chunk.dirty.store(true, Ordering::Release);
         }
     }
 
     /// Takes an owned persistence snapshot without exposing live scheduler data.
     pub(crate) fn scheduled_tick_snapshot(&self) -> ScheduledTickSnapshot {
         let current_tick = self.get_level().map_or(0, |world| world.game_time());
-        let result = self
-            .chunk
+        self.chunk
             .scheduled_tick_container()
             .snapshot(current_tick)
-            .ok_or(TickSchedulerError::MissingContainer(self.chunk.pos));
-        match result {
-            Ok(snapshot) => snapshot,
-            Err(error) => panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}"),
-        }
+            .ok_or(TickSchedulerError::MissingContainer(self.chunk.pos))
+            .expect("Full chunk scheduled-tick ownership invariant failed")
     }
 
     /// Fills the vanilla skylight-source cache from current section contents.
@@ -1785,14 +1774,11 @@ impl FullChunkRef<'_> {
     }
 
     pub(crate) fn refresh_light_emptiness_maps(&self) {
-        if let Err(error) = self
-            .chunk
+        self.chunk
             .light
             .write()
             .refresh_emptiness_maps_from_sections(&self.chunk.sections)
-        {
-            panic!("invalid chunk light emptiness map length: {error:?}");
-        }
+            .expect("invalid chunk light emptiness map length");
     }
 
     /// Gets a block state at the given position.
@@ -1824,7 +1810,7 @@ impl FullChunkRef<'_> {
         section_guard.states.get(local_x, local_y, local_z)
     }
 
-    /// Mirrors vanilla `ChunkAccess.getHighestFilledSectionIndex`.
+    /// Returns the index of the highest filled section in this chunk, if any.
     #[must_use]
     pub fn highest_filled_section_index(&self) -> Option<usize> {
         self.chunk
@@ -1834,7 +1820,7 @@ impl FullChunkRef<'_> {
             .rposition(|section| !section.read().is_empty())
     }
 
-    /// Mirrors vanilla `ChunkAccess.getHighestSectionPosition`.
+    /// Returns the Y coordinate of the highest filled section in this chunk.
     #[must_use]
     pub fn highest_section_position(&self) -> i32 {
         self.highest_filled_section_index()

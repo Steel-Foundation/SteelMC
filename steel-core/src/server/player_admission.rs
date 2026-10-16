@@ -589,7 +589,7 @@ impl Server {
         }
 
         let world = player.get_world();
-        let (player, domain, player_data) = world.detach_player_for_disconnect(Arc::clone(&player));
+        let (player, domain, player_data) = world.detach_player_for_disconnect(player);
 
         // Vanilla broadcasts before removing the player from its global player list.
         self.broadcast_player_leave_message(&player);

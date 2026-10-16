@@ -41,7 +41,7 @@ pub trait EntitySyncedData: Send + Sync {
     /// Packs all non-default values for initial entity spawn.
     fn pack_all(&self) -> Vec<DataValue>;
 
-    /// Returns the shared vanilla `NoGravity` flag.
+    /// Returns whether this entity ignores gravity, synced to clients.
     fn is_no_gravity(&self) -> bool;
 
     /// Sets synchronized vanilla air supply.
@@ -56,7 +56,7 @@ pub trait EntitySyncedData: Send + Sync {
     /// Sets synchronized vanilla silent flag.
     fn set_silent(&self, silent: bool);
 
-    /// Sets the shared vanilla `NoGravity` flag.
+    /// Sets whether this entity ignores gravity, synced to clients.
     fn set_no_gravity(&self, no_gravity: bool);
 
     /// Sets synchronized vanilla pose.

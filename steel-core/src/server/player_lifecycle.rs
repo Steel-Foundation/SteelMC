@@ -171,7 +171,7 @@ impl Server {
         world: &Arc<World>,
     ) -> Result<(Arc<World>, PreparedSpawn), String> {
         if explicit_target_world {
-            return Ok((world.clone(), Self::prepare_default_spawn(world).await?));
+            return Ok((Arc::clone(world), Self::prepare_default_spawn(world).await?));
         }
 
         let (world, respawn_data) = self.respawn_world_and_data_for_domain(target_domain)?;
@@ -188,7 +188,7 @@ impl Server {
             )
         };
         let position = world
-            .find_adjusted_shared_spawn_pos(spawn_pos, world.default_gamemode)
+            .find_adjusted_shared_spawn_pos(spawn_pos, world.default_gamemode())
             .await?;
         Ok(PreparedSpawn {
             position,
@@ -201,7 +201,7 @@ impl Server {
         respawn_data: &RespawnData,
     ) -> Result<PreparedSpawn, String> {
         let position = world
-            .find_adjusted_shared_spawn_pos(respawn_data.pos(), world.default_gamemode)
+            .find_adjusted_shared_spawn_pos(respawn_data.pos(), world.default_gamemode())
             .await?;
         Ok(PreparedSpawn {
             position,
@@ -381,7 +381,7 @@ impl Server {
             );
             return None;
         }
-        Some(world.clone())
+        Some(Arc::clone(world))
     }
 
     pub(super) fn send_login_packet(&self, player: &Player, world: &World) {
@@ -423,7 +423,7 @@ impl Server {
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
         self.online_players.iter_players(|_, p: &Arc<Player>| {
-            players.push(p.clone());
+            players.push(Arc::clone(p));
             true
         });
         players
@@ -540,7 +540,7 @@ impl Server {
         else {
             let respawn_data = default_world
                 .world_border_adjusted_respawn_data(local_respawn_data_for_world(&default_world));
-            return Ok((default_world.clone(), respawn_data));
+            return Ok((Arc::clone(&default_world), respawn_data));
         };
 
         let respawn_data = target_world.world_border_adjusted_respawn_data(respawn_data);

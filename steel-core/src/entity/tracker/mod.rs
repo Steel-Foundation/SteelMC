@@ -255,7 +255,7 @@ impl EntityTracker {
                 let mut seen_by = tracked.seen_by.write();
                 if visible {
                     if seen_by.insert(player_id) {
-                        entities_to_spawn.push(entity.clone());
+                        entities_to_spawn.push(Arc::clone(&entity));
                     }
                 } else if seen_by.remove(&player_id) {
                     despawn = true;
@@ -389,6 +389,9 @@ impl EntityTracker {
                     .server_entity
                     .lock()
                     .record_send_changes(ServerEntityMovementSyncUpdate {
+                        entity_type: entity.entity_type(),
+                        vertical_collision: entity.vertical_collision(),
+                        horizontal_collision: entity.horizontal_collision(),
                         entity_id,
                         is_passenger: entity.is_passenger(),
                         position: entity.position(),

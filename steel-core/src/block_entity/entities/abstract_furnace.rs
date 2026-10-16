@@ -72,6 +72,14 @@ impl FurnaceKind {
             Self::BlastFurnace | Self::Smoker => vanilla_duration / 2,
         }
     }
+
+    #[must_use]
+    const fn cooking_time(self, recipe_time: i32) -> i32 {
+        match self {
+            Self::Furnace => recipe_time,
+            Self::BlastFurnace | Self::Smoker => recipe_time / 2,
+        }
+    }
 }
 
 /// Independently lockable furnace inventory and progress data.
@@ -127,9 +135,10 @@ impl FurnaceContainer {
     }
 
     fn reset_cooking_for_input(&mut self) {
-        self.cooking_total_time = self
+        let recipe_time = self
             .recipe_for_input()
             .map_or(DEFAULT_COOKING_TIME, |recipe| recipe.data().cooking_time);
+        self.cooking_total_time = self.kind.cooking_time(recipe_time);
         self.cooking_timer = 0;
     }
 
@@ -203,7 +212,8 @@ impl FurnaceContainer {
                         self.cooking_timer += 1;
                         if self.cooking_timer == self.cooking_total_time {
                             self.cooking_timer = 0;
-                            self.cooking_total_time = recipe.data().cooking_time;
+                            self.cooking_total_time =
+                                self.kind.cooking_time(recipe.data().cooking_time);
                             self.burn(recipe);
                             changed = true;
                         }
@@ -315,7 +325,7 @@ impl AbstractFurnaceBlockEntity {
     ) -> Self {
         let base = Arc::new(BlockEntityBase::new(block_entity_type, level, pos, state));
         let container = FurnaceContainer::new(kind).into_shared();
-        let shared: SharedContainer = container.clone();
+        let shared: SharedContainer = Arc::<SyncMutex<FurnaceContainer>>::clone(&container);
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
             base,
@@ -442,7 +452,11 @@ pub(crate) fn pop_furnace_experience(
 
 macro_rules! furnace_block_entity {
     ($name:ident, $key:literal, $type:ident, $kind:ident) => {
-        #[doc = concat!("Concrete Vanilla `", stringify!($name), "` implementation.")]
+        #[doc = concat!(
+                                            "`",
+                                            stringify!($name),
+                                            "` block entity backed by the shared smelting logic."
+                                        )]
         pub struct $name {
             common: AbstractFurnaceBlockEntity,
         }

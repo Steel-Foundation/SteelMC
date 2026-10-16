@@ -255,9 +255,10 @@ mod tests {
     fn minecart_powers_detector_and_schedules_relative_tick() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("detector_rail_minecart");
+        let world_fixture = fresh_test_world("detector_rail_minecart");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         world.set_block(
             pos.below(),
             vanilla_blocks::STONE.default_state(),
@@ -269,7 +270,7 @@ mod tests {
         let minecart: SharedEntity = TestEntity::shared(
             8_001,
             DVec3::new(8.5, 64.0, 8.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             &vanilla_entities::MINECART,
         );
         world
@@ -278,18 +279,18 @@ mod tests {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::DETECTOR_RAIL);
         let mut effects = InsideBlockEffectCollector::new();
-        behavior.entity_inside(state, &world, pos, minecart.as_ref(), &mut effects, true);
+        behavior.entity_inside(state, world, pos, minecart.as_ref(), &mut effects, true);
 
         let powered = world.get_block_state(pos);
         assert!(powered.get_value(POWERED));
         assert_eq!(
-            behavior.get_own_signal(powered, &world, pos, SignalQueryContext::DEFAULT,),
+            behavior.get_own_signal(powered, world.as_ref(), pos, SignalQueryContext::DEFAULT,),
             15
         );
         assert_eq!(
             behavior.get_direct_signal(
                 powered,
-                &world,
+                world.as_ref(),
                 pos,
                 Direction::Up,
                 SignalQueryContext::DEFAULT,
@@ -299,7 +300,7 @@ mod tests {
         assert_eq!(
             behavior.get_direct_signal(
                 powered,
-                &world,
+                world.as_ref(),
                 pos,
                 Direction::North,
                 SignalQueryContext::DEFAULT,
@@ -309,7 +310,7 @@ mod tests {
         assert!(world.has_scheduled_block_tick(pos, &vanilla_blocks::DETECTOR_RAIL));
 
         minecart.set_removed(RemovalReason::Discarded);
-        behavior.tick(powered, &world, pos);
+        behavior.tick(powered, world, pos);
         assert!(!world.get_block_state(pos).get_value(POWERED));
     }
 }

@@ -26,9 +26,10 @@ use crate::chunk::light::{
 };
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
+use crate::entity::damage::DamageHistory;
 use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::{World, WorldConfig, WorldStorageConfig};
-use crate::worldgen::generator::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
+use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
 use flate2::read::GzDecoder;
 use glam::IVec3;
@@ -39,6 +40,9 @@ use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
+use steel_worldgen::density_functions::{
+    end::EndNoiseSettings, nether::NetherNoiseSettings, overworld::OverworldNoiseSettings,
+};
 use steel_worldgen::noise::Beardifier;
 use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
@@ -89,13 +93,7 @@ struct ChunkStageHashesJson {
 }
 
 /// Stages to verify in vanilla generation order.
-const STAGES: &[&str] = &[
-    "minecraft:noise",
-    "minecraft:surface",
-    "minecraft:carvers",
-    "minecraft:features",
-    "minecraft:light",
-];
+const STAGES: &[&str] = &["minecraft:terrain", "minecraft:features", "minecraft:light"];
 
 /// Match the extractor run's structure setting.
 ///
@@ -122,7 +120,7 @@ const FEATURE_STAGE: &str = "minecraft:features";
 const LIGHT_STAGE: &str = "minecraft:light";
 const CHUNK_GENERATION_ORDER_X_Z_ASCENDING: &str = "x_z_ascending";
 const FEATURE_HASH_CAPTURE_AFTER_ALL_READY: &str = "after_all_tracked_features_ready";
-const HASHSET_ITERATION_ORDER_INSERTION: &str = "insertion_order";
+const HASHSET_ITERATION_ORDER_VANILLA: &str = "vanilla";
 const LIGHT_HASH_CAPTURE_AFTER_IDLE: &str =
     "after_all_tracked_light_ready_pending_tasks_drained_and_light_engine_idle";
 const LIGHT_FEATURE_DEPENDENCY_CAPTURE: &str = "after_tracked_features_before_light_x_z_ascending";
@@ -230,6 +228,7 @@ fn create_test_world(
     seed: u64,
     generator: Arc<ChunkGeneratorType>,
     generation_pool: Arc<rayon::ThreadPool>,
+    damage_history: &Arc<DamageHistory>,
 ) -> Arc<World> {
     let runtime = Arc::new(Runtime::new().expect("failed to create chunk-stage hash test runtime"));
     let dim_short = dim_key.strip_prefix("minecraft:").unwrap_or(dim_key);
@@ -242,18 +241,19 @@ fn create_test_world(
         dim_type.height,
     );
     let sea_level = match dim_key {
-        "minecraft:the_nether" => 32,
-        "minecraft:the_end" => 0,
-        _ => 63,
+        "minecraft:the_nether" => NetherNoiseSettings::SEA_LEVEL,
+        "minecraft:the_end" => EndNoiseSettings::SEA_LEVEL,
+        _ => OverworldNoiseSettings::SEA_LEVEL,
     };
 
     runtime
         .block_on(World::new_with_config(
-            runtime.clone(),
+            Arc::clone(&runtime),
             Identifier::new(Identifier::VANILLA_NAMESPACE, dim_short.to_owned()),
             dim_type,
             seed as i64,
             WorldConfig {
+                damage_history: Arc::clone(damage_history),
                 game_time_source: GameTimeSource::Primary,
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: None,
@@ -289,7 +289,7 @@ fn build_feature_holders(
             height,
         ));
         let status = if carver_positions.contains(&pos) {
-            ChunkStatus::Carvers
+            ChunkStatus::Terrain
         } else {
             ChunkStatus::StructureStarts
         };
@@ -339,12 +339,6 @@ fn compute_block_hash(sections: &Sections) -> String {
     }
 
     format!("{:x}", ctx.finalize())
-}
-
-fn recalculate_section_counts(chunk: &Chunk) {
-    for section in &chunk.sections.sections {
-        section.write().recalculate_counts();
-    }
 }
 
 /// Per-chunk reference block data from the extractor binary.
@@ -981,18 +975,18 @@ fn generate_features_for_positions(
             panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
         };
         {
-            let Some(chunk) = center_holder.try_chunk(ChunkStatus::Carvers) else {
+            let Some(chunk) = center_holder.try_chunk(ChunkStatus::Terrain) else {
                 panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
             };
             chunk.prime_final_heightmaps();
         }
-        let cache_holders = inputs.holders.clone();
+        let cache_holders = Arc::clone(inputs.holders);
         let cache = Arc::new(StaticCache2D::create(
             chunk_x,
             chunk_z,
             inputs.feature_cache_radius,
             move |x, z| match cache_holders.get(&(x, z)) {
-                Some(holder) => holder.clone(),
+                Some(holder) => Arc::clone(holder),
                 None => panic!("Missing feature dependency chunk ({x}, {z})"),
             },
         ));
@@ -1037,7 +1031,7 @@ fn propagate_light_for_positions(
     for &(chunk_x, chunk_z) in positions {
         let center = ChunkPos::new(chunk_x, chunk_z);
         let layout = LightCacheLayout::new(center, range);
-        let holder_map = holders.clone();
+        let holder_map = Arc::clone(holders);
         let Ok(workset) = LightWorkset::setup_with_scopes(
             layout,
             LightCacheSetupRadius::Full,
@@ -1107,8 +1101,8 @@ fn chunk_stage_hashes_inner() {
         );
         assert_eq!(
             expected.hashset_iteration_order.as_deref(),
-            Some(HASHSET_ITERATION_ORDER_INSERTION),
-            "features stage hashes must be extracted with deterministic insertion-order HashSet normalization; rerun the extractor"
+            Some(HASHSET_ITERATION_ORDER_VANILLA),
+            "features stage hashes must be extracted with Vanilla HashSet iteration; rerun the extractor"
         );
     }
     let includes_light = STAGES.contains(&LIGHT_STAGE);
@@ -1143,7 +1137,7 @@ fn chunk_stage_hashes_inner() {
     let feature_cache_radius = feature_step.direct_dependencies.get_radius() as i32;
     let feature_carver_radius = feature_step
         .direct_dependencies
-        .get_radius_of(ChunkStatus::Carvers) as i32;
+        .get_radius_of(ChunkStatus::Terrain) as i32;
     let debug_dimension = debug_dimension_filter();
     let debug_stage = debug_stage_filter();
     let stop_after_first_mismatch = env::var_os(DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV).is_some();
@@ -1201,11 +1195,20 @@ fn chunk_stage_hashes_inner() {
             }
             _ => unreachable!(),
         });
-        let feature_world = includes_features
-            .then(|| create_test_world(dim_key, dim_type, seed, generator.clone(), thread_pool));
+        let damage_history = Arc::new(DamageHistory::default());
+        let feature_world = includes_features.then(|| {
+            create_test_world(
+                dim_key,
+                dim_type,
+                seed,
+                Arc::clone(&generator),
+                thread_pool,
+                &damage_history,
+            )
+        });
         let feature_context = feature_world
             .as_ref()
-            .map(|world| world.chunk_map.world_gen_context.clone());
+            .map(|world| Arc::clone(&world.chunk_map.world_gen_context));
 
         eprintln!("{dim_key}");
 
@@ -1327,13 +1330,13 @@ fn chunk_stage_hashes_inner() {
         // STRUCTURE_STARTS — per-chunk; uses biome_source directly (no chunk biomes
         // required). Most chunks early-exit at `placement.is_structure_chunk`.
         if GENERATE_STRUCTURES {
-            for chunk in chunks.values() {
-                generator.create_structures(chunk);
+            for pos in sorted_positions(&starts_positions) {
+                generator.create_structures(chunk_or_panic(&chunks, pos));
             }
         }
 
         // BIOMES — only for the 3×3 around each test chunk (surface stage's lookup).
-        for &pos in &biome_positions {
+        for pos in sorted_positions(&biome_positions) {
             generator.create_biomes(chunk_or_panic(&chunks, pos));
         }
 
@@ -1375,8 +1378,7 @@ fn chunk_stage_hashes_inner() {
             }
         }
 
-        // NOISE — fill_from_noise with per-chunk beardifier built from references.
-        let noise_positions = if includes_features {
+        let terrain_positions = if includes_features {
             sorted_positions(&feature_carver_positions)
         } else {
             test_entries
@@ -1384,21 +1386,35 @@ fn chunk_stage_hashes_inner() {
                 .map(|entry| (entry.x, entry.z))
                 .collect()
         };
-        for pos in noise_positions {
+        for pos in terrain_positions {
             let chunk = chunk_or_panic(&chunks, pos);
             let beardifier = if GENERATE_STRUCTURES {
                 build_test_beardifier(chunk, &chunks)
             } else {
                 None
             };
-            generator.fill_from_noise(
-                GenerationChunk::<NoisePhase>::for_test(chunk),
+            let neighbor_biomes = |quart_pos: IVec3| -> u16 {
+                let neighbor_chunk_x = quart_pos.x >> 2;
+                let neighbor_chunk_z = quart_pos.z >> 2;
+                let neighbor = chunk_or_panic(&chunks, (neighbor_chunk_x, neighbor_chunk_z));
+                let local_quart_x = (quart_pos.x - neighbor_chunk_x * 4) as usize;
+                let local_quart_z = (quart_pos.z - neighbor_chunk_z * 4) as usize;
+                let local_quart_y = (quart_pos.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                let section_index = local_quart_y / 4;
+                neighbor.sections.sections[section_index].read().biomes.get(
+                    local_quart_x,
+                    local_quart_y % 4,
+                    local_quart_z,
+                )
+            };
+            generator.build_terrain(
+                GenerationChunk::<TerrainPhase>::for_test(chunk),
                 beardifier.as_ref(),
+                &neighbor_biomes,
             );
         }
 
         let mut feature_holders: Option<FeatureHolderMap> = None;
-        let mut feature_dependencies_prepared = false;
         let mut generated_feature_positions = FxHashSet::default();
         let mut light_initialized = false;
         let mut light_propagated = false;
@@ -1429,48 +1445,6 @@ fn chunk_stage_hashes_inner() {
             let mut mismatches = Vec::new();
 
             if (stage == FEATURE_STAGE || stage == LIGHT_STAGE) && feature_holders.is_none() {
-                // Vanilla requests all sampled chunks to CARVERS first, then requests
-                // FEATURES in x/z order. Untracked dependencies must reach CARVERS,
-                // but their feature stage must wait until after tracked feature hashes.
-                if !feature_dependencies_prepared {
-                    let dependency_positions = sorted_positions(&feature_carver_positions);
-                    let tracked_block_stages_already_ran = debug_stage.is_none();
-                    for &pos in &dependency_positions {
-                        if tracked_block_stages_already_ran && tracked_positions.contains(&pos) {
-                            continue;
-                        }
-                        let chunk = chunk_or_panic(&chunks, pos);
-                        let neighbor_biomes = |q: IVec3| -> u16 {
-                            let cx = q.x >> 2;
-                            let cz = q.z >> 2;
-                            let neighbor = chunk_or_panic(&chunks, (cx, cz));
-                            let sections = &neighbor.sections;
-                            let local_qx = (q.x - cx * 4) as usize;
-                            let local_qz = (q.z - cz * 4) as usize;
-                            let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
-                            let section_idx = qy_clamped / 4;
-                            let local_qy = qy_clamped % 4;
-                            sections.sections[section_idx]
-                                .read()
-                                .biomes
-                                .get(local_qx, local_qy, local_qz)
-                        };
-                        generator.build_surface(
-                            GenerationChunk::<SurfacePhase>::for_test(chunk),
-                            &neighbor_biomes,
-                        );
-                    }
-                    for &pos in &dependency_positions {
-                        if tracked_block_stages_already_ran && tracked_positions.contains(&pos) {
-                            continue;
-                        }
-                        let chunk = chunk_or_panic(&chunks, pos);
-                        recalculate_section_counts(chunk);
-                        generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(chunk));
-                    }
-                    feature_dependencies_prepared = true;
-                }
-
                 feature_holders = Some(Arc::new(build_feature_holders(
                     mem::take(&mut chunks),
                     &feature_carver_positions,
@@ -1565,7 +1539,7 @@ fn chunk_stage_hashes_inner() {
                     let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
                         panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
                     };
-                    let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
+                    let Some(chunk) = holder.try_chunk(ChunkStatus::Terrain) else {
                         panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                     };
                     compute_block_hash(&chunk.sections)
@@ -1582,40 +1556,6 @@ fn chunk_stage_hashes_inner() {
                     compute_light_hash(chunk)
                 } else {
                     let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
-
-                    // Apply current stage (structure_starts, references, biomes, noise
-                    // already done by pre-pass).
-                    if stage != "minecraft:noise" {
-                        let neighbor_biomes = |q: IVec3| -> u16 {
-                            let cx = q.x >> 2;
-                            let cz = q.z >> 2;
-                            let neighbor = chunk_or_panic(&chunks, (cx, cz));
-                            let sections = &neighbor.sections;
-                            let local_qx = (q.x - cx * 4) as usize;
-                            let local_qz = (q.z - cz * 4) as usize;
-                            let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
-                            let section_idx = qy_clamped / 4;
-                            let local_qy = qy_clamped % 4;
-                            sections.sections[section_idx]
-                                .read()
-                                .biomes
-                                .get(local_qx, local_qy, local_qz)
-                        };
-
-                        match stage {
-                            "minecraft:surface" => generator.build_surface(
-                                GenerationChunk::<SurfacePhase>::for_test(chunk),
-                                &neighbor_biomes,
-                            ),
-                            "minecraft:carvers" => {
-                                recalculate_section_counts(chunk);
-                                generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(
-                                    chunk,
-                                ));
-                            }
-                            _ => panic!("Stage {stage} not yet implemented in test harness"),
-                        }
-                    }
 
                     compute_block_hash(&chunk.sections)
                 };
@@ -1660,7 +1600,7 @@ fn chunk_stage_hashes_inner() {
                                             "Missing feature center chunk ({chunk_x}, {chunk_z})"
                                         );
                                     };
-                                    let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
+                                    let Some(chunk) = holder.try_chunk(ChunkStatus::Terrain) else {
                                         panic!(
                                             "Feature center chunk ({chunk_x}, {chunk_z}) missing"
                                         );

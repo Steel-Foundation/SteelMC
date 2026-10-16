@@ -274,7 +274,7 @@ where
         let density =
             column_interpolated_density::<N>(self.height_cache, self.noises, x, y, z, cw, ch);
         let aq = self.aquifer.ensure(self.height_cache);
-        match aq.compute_substance(self.noises, x, y, z, density) {
+        match aq.compute_substance(self.noises, x, y, z, f64::from(density)) {
             AquiferResult::Solid => ColumnBlock::Solid,
             AquiferResult::Fluid(_) => ColumnBlock::Fluid,
             AquiferResult::Air => ColumnBlock::Air,
@@ -468,7 +468,7 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
             );
             match probe
                 .aquifer
-                .compute_substance(self.noises, x, y, z, density)
+                .compute_substance(self.noises, x, y, z, f64::from(density))
             {
                 AquiferResult::Solid => true,
                 AquiferResult::Fluid(_) => !ocean_floor,

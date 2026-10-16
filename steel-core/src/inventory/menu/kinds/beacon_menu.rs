@@ -4,6 +4,7 @@
 //! beacon's pyramid level and configured effects, matching vanilla's
 //! `DATA_LEVELS`, `DATA_PRIMARY`, and `DATA_SECONDARY`.
 
+use crate::player::player_inventory::Prediction;
 use std::slice;
 use std::sync::Arc;
 
@@ -67,7 +68,7 @@ pub fn beacon(
     block_entity: Arc<BlockEntityBase>,
 ) -> Menu {
     let payment_container = PaymentContainer::new().into_shared();
-    let payment_ref = ContainerRef::from(payment_container.clone());
+    let payment_ref = ContainerRef::from(Arc::clone(&payment_container));
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::BEACON, container_id);
     let payment = builder.section_with(
@@ -150,7 +151,7 @@ impl MenuKind for BeaconKind {
         if payment.is_empty() {
             return;
         }
-        let _ = player.drop_item(payment, false, false);
+        let _ = player.drop_item(payment, false, Prediction::ServerOnly);
     }
 
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
@@ -290,7 +291,7 @@ impl MenuKind for BeaconKind {
         }
         let slot = &behavior.slots()[slot_index];
         if let Some(leftover) = slot.on_take(guard, &remaining, player) {
-            player.add_item_or_drop_with_guard(guard, leftover);
+            player.add_item_or_drop_with_guard(guard, leftover, Prediction::Predicted);
         }
         Some(clicked)
     }
@@ -338,7 +339,7 @@ mod tests {
             .expect("beacon block entity type");
 
         let menu = beacon(
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
             1,
             pos,
             world,
@@ -374,11 +375,12 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world = fresh_test_world("beacon_menu_iron_payment");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "BeaconTester", 1).build();
+        let world_fixture = fresh_test_world("beacon_menu_iron_payment");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "BeaconTester", 1).build();
 
-        let (mut menu, state) = open_test_beacon(&world, &player, BlockPos::new(8, 64, 8));
+        let (mut menu, state) = open_test_beacon(world, &player, BlockPos::new(8, 64, 8));
         let payment_id = payment_id_of(&menu);
 
         click_into_payment(&mut menu, &player, ItemStack::new(&vanilla_items::DIRT));
@@ -434,11 +436,12 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world = fresh_test_world("beacon_menu_occupied_payment");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "BeaconShift", 1).build();
+        let world_fixture = fresh_test_world("beacon_menu_occupied_payment");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "BeaconShift", 1).build();
 
-        let (mut menu, _) = open_test_beacon(&world, &player, BlockPos::new(8, 64, 8));
+        let (mut menu, _) = open_test_beacon(world, &player, BlockPos::new(8, 64, 8));
         let payment_id = payment_id_of(&menu);
 
         click_into_payment(
@@ -487,11 +490,12 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world = fresh_test_world("beacon_menu_drops_payment");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "BeaconClose", 1).build();
+        let world_fixture = fresh_test_world("beacon_menu_drops_payment");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "BeaconClose", 1).build();
 
-        let (mut menu, _) = open_test_beacon(&world, &player, BlockPos::new(8, 64, 8));
+        let (mut menu, _) = open_test_beacon(world, &player, BlockPos::new(8, 64, 8));
         click_into_payment(
             &mut menu,
             &player,

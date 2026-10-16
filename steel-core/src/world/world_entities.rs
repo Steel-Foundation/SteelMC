@@ -328,7 +328,7 @@ impl World {
         if Self::reject_duplicate_player_membership(&player, self, "world change") {
             return false;
         }
-        if !self.players.insert(player.clone()) {
+        if !self.players.insert(Arc::clone(&player)) {
             player.connection.close();
             return false;
         }

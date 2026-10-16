@@ -342,7 +342,8 @@ impl BlockPos {
         }
     }
 
-    /// Returns vanilla `BlockPos.spiralAround`.
+    /// Returns an iterator over positions in an outward square spiral around
+    /// `center`, alternating between `first_direction` and `second_direction`.
     ///
     /// # Panics
     ///
@@ -513,7 +514,8 @@ impl BlockPos {
         }
     }
 
-    /// Returns vanilla `BlockPos.findClosestMatch`.
+    /// Returns the closest position within the given search radii for which
+    /// `predicate` returns true, or `None` if no position matches.
     #[must_use]
     pub fn find_closest_match(
         self,

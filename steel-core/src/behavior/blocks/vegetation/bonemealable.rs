@@ -122,7 +122,7 @@ fn get_spreadable_neighbor_pos(
 }
 
 /// Default Bonemeal implementation for all crops
-pub trait CropBonemealExt: CropLike + Bonemealable {
+pub(crate) trait CropBonemealExt: CropLike + Bonemealable {
     /// Default `perform_bonemeal` implementation for all crops
     fn default_perform_bonemeal(
         &self,

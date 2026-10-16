@@ -170,7 +170,7 @@ impl Goal for LookAtPlayerGoal {
         self.look_at = None;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(look_at) = &self.look_at else {
             return;
         };

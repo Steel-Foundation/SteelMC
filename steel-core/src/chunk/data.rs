@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use parking_lot::{MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use steel_registry::{
     REGISTRY,
@@ -36,7 +36,6 @@ use crate::world::World;
 use crate::world::tick_scheduler::{
     BlockTickList, ChunkTickContainer, ChunkTickLists, FluidTickList, TickPriority,
 };
-use crate::worldgen::carving_mask::CarvingMask;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 pub(crate) fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
@@ -97,8 +96,6 @@ pub struct Chunk {
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks.
     pub structure_references: SyncRwLock<StructureReferenceMap>,
-    /// Bitset of positions visited by carvers (lazily initialized).
-    pub carving_mask: SyncRwLock<Option<CarvingMask>>,
     /// Section-indexed packed offsets that need vanilla postprocessing after promotion.
     pub postprocessing: SyncMutex<Box<[Vec<u16>]>>,
     /// Stable block and fluid scheduled-tick storage retained through Full promotion.
@@ -140,7 +137,6 @@ impl Chunk {
             entities: EntityStorage::new(),
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
-            carving_mask: SyncRwLock::new(None),
             postprocessing: SyncMutex::new(empty_postprocessing(height)),
             scheduled_ticks: Arc::new(ChunkTickContainer::new_proto(ChunkTickLists::new(
                 BlockTickList::new_pending(),
@@ -174,16 +170,15 @@ impl Chunk {
         heightmaps: ChunkHeightmaps,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
-        carving_mask: Option<CarvingMask>,
         postprocessing: Vec<Vec<u16>>,
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
         level: Weak<World>,
         mut light: ChunkLightData,
     ) -> Self {
-        if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
-            panic!("invalid loaded proto chunk light emptiness map length: {error:?}");
-        }
+        light
+            .refresh_emptiness_maps_from_sections(&sections)
+            .expect("invalid loaded proto chunk light emptiness map length");
 
         let chunk = Self {
             sections,
@@ -201,7 +196,6 @@ impl Chunk {
             },
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
-            carving_mask: SyncRwLock::new(carving_mask),
             postprocessing: SyncMutex::new(postprocessing_from_disk(height, postprocessing)),
             scheduled_ticks: Arc::new(if status == ChunkStatus::Full {
                 ChunkTickContainer::new(ChunkTickLists::new(block_ticks, fluid_ticks))
@@ -548,22 +542,6 @@ impl Chunk {
         self.transient_generation_state.lock().value = None;
     }
 
-    /// Returns a write guard to this chunk's carving mask, initializing it on
-    /// first access. Mirrors vanilla's `ProtoChunk.getOrCreateCarvingMask`.
-    ///
-    /// # Panics
-    /// Never — the mask is populated immediately before projecting the guard.
-    pub(crate) fn get_or_create_carving_mask(&self) -> MappedRwLockWriteGuard<'_, CarvingMask> {
-        let mut guard = self.carving_mask.write();
-        if guard.is_none() {
-            *guard = Some(CarvingMask::new(self.height, self.min_y));
-        }
-        RwLockWriteGuard::map(guard, |opt| match opt {
-            Some(mask) => mask,
-            None => unreachable!("carving mask initialized immediately above"),
-        })
-    }
-
     /// Vanilla `ProtoChunk.packOffsetCoordinates` for postprocessing offsets.
     #[must_use]
     pub const fn pack_postprocessing_offset(pos: BlockPos) -> u16 {
@@ -613,7 +591,7 @@ impl Chunk {
     /// Returns the weak reference to the world.
     #[must_use]
     pub(crate) fn level_weak(&self) -> Weak<World> {
-        self.level.clone()
+        Weak::clone(&self.level)
     }
 
     /// Returns a reference to the world if it is still alive.
@@ -757,7 +735,7 @@ impl Chunk {
             }
 
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            let creation = behavior.new_block_entity(self.level.clone(), pos, state);
+            let creation = behavior.new_block_entity(Weak::clone(&self.level), pos, state);
             match self.commit_pending_creation(pos, state, creation) {
                 PendingPromotionCommit::Retry => {}
                 PendingPromotionCommit::Complete(block_entity) => return block_entity,
@@ -1004,13 +982,10 @@ impl Chunk {
     }
 
     pub(crate) fn refresh_light_emptiness_maps(&self) {
-        if let Err(error) = self
-            .light
+        self.light
             .write()
             .refresh_emptiness_maps_from_sections(&self.sections)
-        {
-            panic!("invalid proto chunk light emptiness map length: {error:?}");
-        }
+            .expect("invalid proto chunk light emptiness map length");
     }
 
     /// Applies the heightmap side effect for an optimized direct section write.

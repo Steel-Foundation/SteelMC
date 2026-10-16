@@ -12,14 +12,13 @@ use crate::sound_types::SoundType;
 /// How a block reacts when pushed by a piston.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PushReaction {
-    Normal,
-    Destroy,
-    Block,
-    Ignore,
-    PushOnly,
+    PushPull,
+    Popped,
+    Immoveable,
+    IgnoreEntity,
+    Push,
 }
 
-/// Vanilla `BlockBehavior.OffsetType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffsetType {
     None,
@@ -68,7 +67,7 @@ impl BlockConfig {
             is_randomly_ticking: false,
             force_solid_off: false,
             force_solid_on: false,
-            push_reaction: PushReaction::Normal,
+            push_reaction: PushReaction::PushPull,
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,

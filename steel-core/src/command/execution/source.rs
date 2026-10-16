@@ -259,7 +259,7 @@ pub(crate) struct CommandSource {
 
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
-        let player = sender.get_player().map(Arc::clone);
+        let player = sender.get_player().cloned();
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
             |player| player.get_world(),
@@ -443,6 +443,17 @@ impl CommandSource {
         self.silent
     }
 
+    /// Sends informational command output straight to the sender.
+    ///
+    /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
+    /// game rule and never broadcasts to admins - it's for output the sender
+    /// explicitly asked for (e.g. `/version`), not command-result feedback.
+    pub(crate) fn send_system_message(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
+    }
+
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
         if self.silent {
             return;
@@ -561,13 +572,9 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn command_world_names(&self) -> Vec<String> {
-        let domain = self.world.domain();
         let mut names = Vec::new();
         for key in self.server.worlds.keys() {
             names.push(key.to_string());
-            if key.namespace.as_ref() == domain {
-                names.push(key.path.to_string());
-            }
         }
         names
     }

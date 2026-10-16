@@ -7,12 +7,13 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
-use steel_protocol::packets::game::SSwing;
+use steel_protocol::packets::game::SPunch;
+use steel_utils::types::InteractionHand;
 
 impl Player {
-    /// Vanilla `Player.DEFAULT_BLOCK_INTERACTION_RANGE`.
+    /// Default reach distance for block interactions, in blocks.
     pub const DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
-    /// Vanilla `Player.DEFAULT_ENTITY_INTERACTION_RANGE`.
+    /// Default reach distance for entity interactions, in blocks.
     pub const DEFAULT_ENTITY_INTERACTION_RANGE: f64 = 3.0;
 
     /// Sets the player's game mode and notifies the client.
@@ -220,7 +221,8 @@ impl Player {
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         self.is_within_block_interaction_range_with_buffer(pos, 1.0)
     }
-    /// Vanilla `player.blockInteractionRange()`
+    /// Returns this player's current block interaction range, from the
+    /// attribute modifier if set, or the default range otherwise.
     #[must_use]
     pub fn block_interaction_range(&self) -> f64 {
         self.attributes()
@@ -316,9 +318,15 @@ impl Player {
         self.is_crouching()
     }
 
-    /// Handles a player swing packet.
-    pub fn handle_animate(&self, packet: SSwing) {
+    /// Handles a player punch packet. The punch always swings the main hand
+    /// with the held item's attack animation.
+    pub fn handle_punch(&self, _packet: &SPunch) {
         self.reset_last_action_time();
-        self.swing(packet.hand, false);
+        self.swing(
+            InteractionHand::MainHand,
+            self.attack_animation(InteractionHand::MainHand),
+            false,
+        );
+        self.reset_attack_strength_ticker();
     }
 }

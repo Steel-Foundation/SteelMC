@@ -48,7 +48,6 @@ use crate::world::{
 };
 use steel_registry::vanilla_fluids;
 
-/// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
     context: &BlockPlaceContext<'_>,
@@ -149,7 +148,7 @@ use collision::world_aabb_bounds;
 /// - State changes
 pub trait BlockBehavior: Send + Sync {
     /// Returns the Rust type name of the concrete behavior implementation.
-    #[cfg(feature = "flint")]
+    #[cfg(feature = "test-framework")]
     #[must_use]
     #[expect(clippy::absolute_paths, reason = "easier for features")]
     fn type_name(&self) -> &'static str {
@@ -332,8 +331,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Called after a player successfully removes this block.
-    ///
-    /// Mirrors vanilla `Block.destroy(LevelAccessor, BlockPos, BlockState)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -610,6 +607,26 @@ pub trait BlockBehavior: Send + Sync {
     fn is_bed(&self) -> bool {
         false
     }
+
+    /// Sleep height
+    ///
+    /// `None` rejects sleeping
+    #[expect(unused_variables, reason = "only bed behaviors provide a sleep height")]
+    fn get_sleep_height(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> Option<f64> {
+        None
+    }
+
+    /// Sleep exit hook
+    #[expect(
+        unused_variables,
+        reason = "only blocks with leave-sleep behavior override this hook"
+    )]
+    fn on_stop_sleeping(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {}
 
     /// Returns whether this behavior implements vanilla `LiquidBlock`.
     fn is_liquid_block(&self) -> bool {

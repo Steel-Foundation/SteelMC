@@ -16,7 +16,6 @@ pub trait UuidExt {
     /// Parses a UUID from an int array (vanilla NBT format).
     ///
     /// Returns `None` if the slice doesn't have exactly 4 elements.
-    /// Matches vanilla's `UUIDUtil.uuidFromIntArray()`.
     fn from_int_array(arr: &[i32]) -> Option<Uuid>;
 }
 
