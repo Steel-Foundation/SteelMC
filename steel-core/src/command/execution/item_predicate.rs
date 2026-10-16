@@ -27,8 +27,9 @@ use crate::command::brigadier::{
 };
 
 use super::{
-    argument::{matches_substring, parse_identifier},
+    argument::parse_identifier,
     item::{component_value_is_valid, numeric_i32, read_component_value},
+    suggestions::matches_substring,
 };
 
 const VANILLA_DATA_COMPONENT_PREDICATE_KEYS: &[&str] = &[
