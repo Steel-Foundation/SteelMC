@@ -12,7 +12,8 @@ use text_components::TextComponent;
 use crate::{
     entity::Entity as _,
     inventory::prelude::*,
-    server::{PreparedSpawn, Server, WorldEntry},
+    portal::{PreparedSpawn, WorldEntry},
+    server::Server,
     world::World,
 };
 

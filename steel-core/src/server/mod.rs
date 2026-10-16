@@ -61,8 +61,8 @@ use crate::player::{
     ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
-    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, WorldSelection,
-    end_gateway, end_portal, nether_portal,
+    PortalKind, PreparedSpawn, TeleportPostTransition, TeleportTransition, WorldChangeRequest,
+    WorldEntry, WorldSelection, end_gateway, end_portal, nether_portal,
 };
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
@@ -269,27 +269,6 @@ pub async fn test_server_with_worlds_and_config(
         pending_domain_switches: SyncMutex::new(Vec::new()),
         player_idle_timeout: AtomicI32::new(0),
     }))
-}
-
-/// A position and `(yaw, pitch)` rotation a player is placed at when entering a world.
-#[derive(Clone, Copy)]
-pub struct PreparedSpawn {
-    /// Where the player is placed.
-    pub position: DVec3,
-    /// The player's `(yaw, pitch)` in degrees.
-    pub rotation: (f32, f32),
-}
-
-/// Where and how a world selection places the player in the target world.
-#[derive(Clone, Copy)]
-pub enum WorldEntry {
-    /// The usual entry: a domain switch restores the saved location if there is one; otherwise
-    /// the spawn search places the player.
-    Usual,
-    /// The usual entry, then faces this `(yaw, pitch)`.
-    Rotation((f32, f32)),
-    /// Places the player exactly there, with no spawn search and no saved location.
-    Exact(PreparedSpawn),
 }
 
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {

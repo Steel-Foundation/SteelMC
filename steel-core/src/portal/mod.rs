@@ -6,7 +6,6 @@
 
 use crate::chunk::chunk_request::ChunkRequestHandle;
 use crate::entity::{Entity, PendingWorldChangeToken};
-use crate::server::WorldEntry;
 use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
@@ -446,6 +445,27 @@ pub(crate) fn land_after_teleport(entity: &dyn Entity) {
         entity.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
         entity.set_on_ground(true);
     }
+}
+
+/// A position and `(yaw, pitch)` rotation a player is placed at when entering a world.
+#[derive(Clone, Copy)]
+pub struct PreparedSpawn {
+    /// Where the player is placed.
+    pub position: DVec3,
+    /// The player's `(yaw, pitch)` in degrees.
+    pub rotation: (f32, f32),
+}
+
+/// Where and how a world selection places the player in the target world.
+#[derive(Clone, Copy)]
+pub enum WorldEntry {
+    /// The usual entry: a domain switch restores the saved location if there is one; otherwise
+    /// the spawn search places the player.
+    Usual,
+    /// The usual entry, then faces this `(yaw, pitch)`.
+    Rotation((f32, f32)),
+    /// Places the player exactly there, with no spawn search and no saved location.
+    Exact(PreparedSpawn),
 }
 
 /// A player's selection of a loaded world, queued until the next tick's world changes.
