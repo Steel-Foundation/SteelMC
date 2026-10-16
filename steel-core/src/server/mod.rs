@@ -61,9 +61,10 @@ use crate::player::{
     ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
-    PortalKind, PreparedSpawn, TeleportPostTransition, TeleportTransition, WorldChangeRequest,
-    WorldEntry, WorldSelection, end_gateway, end_portal, nether_portal,
+    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, WorldSelection,
+    end_gateway, end_portal, nether_portal,
 };
+pub use crate::portal::{PreparedSpawn, WorldEntry};
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
