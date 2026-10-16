@@ -139,8 +139,8 @@ impl PlayerSpawnSearch {
         Some(radius)
     }
 
-    /// Requests the spawn area around `spawn_suggestion` before the search starts, unless the
-    /// search is wide enough for its spawn to lie outside the square. See [`Self::with_prefetch`].
+    /// Requests the radius-3 chunk square around `spawn_suggestion` before the search starts. A
+    /// search wider than [`BLOCKS_PER_CHUNK`] blocks gets no prefetch. See [`Self::with_prefetch`].
     pub(crate) fn prefetch_spawn_area(
         world: &Arc<World>,
         spawn_suggestion: BlockPos,

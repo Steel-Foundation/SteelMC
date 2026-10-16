@@ -137,10 +137,10 @@ fn prefetch_follows_the_radius_the_search_uses() {
                 PlayerSpawnSearch::prefetch_spawn_area(world, suggestion, game_type).is_some()
             };
 
-            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 10));
+            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 16));
             assert!(prefetches(GameType::Survival));
-            // A search wide enough to leave the prefetched square does not prefetch it.
-            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 40));
+            // A search wider than one chunk does not prefetch.
+            assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 17));
             assert!(!prefetches(GameType::Survival));
             // Adventure skips the search, so the prefetch covers the whole of it.
             assert!(prefetches(GameType::Adventure));
