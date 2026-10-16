@@ -95,6 +95,9 @@ unsafe impl steel_utils::DowncastType for ChestKind {
 }
 
 impl MenuKind for ChestKind {
+    fn opened_containers(&self) -> smallvec::SmallVec<[ContainerId; 2]> {
+        smallvec::smallvec![self.container.container_id()]
+    }
     /// Returns true if the backing container is still valid for the player.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         self.container.still_valid(player)

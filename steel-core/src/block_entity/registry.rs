@@ -225,6 +225,10 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(SignBlockEntity::new_hanging(level, pos, state)),
         );
 
+        registry.register(&vanilla_block_entity_types::CHEST, |level, pos, state| {
+            Arc::new(ChestBlockEntity::new(level, pos, state))
+        });
+
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))

@@ -1450,6 +1450,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Projectile>(self)
     }
 
+    /// Returns this entity's container-user capability.
+    fn as_container_user(&self) -> Option<&dyn super::ContainerUser> {
+        try_as_dyn::<Self, dyn super::ContainerUser>(self)
+    }
+
     /// Returns this entity as a living entity when it has living behavior.
     fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
         try_as_dyn::<Self, dyn LivingEntity>(self)

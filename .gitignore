@@ -49,3 +49,5 @@ rustc-ice-*
 .DS_STORE
 .gitcraft-tmp/
 /.vs
+
+/steel-core/src/loot/generated

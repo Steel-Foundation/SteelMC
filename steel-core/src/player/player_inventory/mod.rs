@@ -2,9 +2,14 @@
 
 use std::sync::Arc;
 
+use smallvec::SmallVec;
 use text_components::TextComponent;
 
-use crate::{inventory::menu::Menu, player::Player, world::World};
+use crate::{
+    inventory::{lock::ContainerId, menu::Menu},
+    player::Player,
+    world::World,
+};
 
 mod container;
 mod core;
@@ -108,6 +113,7 @@ impl PlayerInventorySyncState {
 struct OpenMenuDispatch {
     container_id: u8,
     overrides_player_slots: bool,
+    opened_containers: SmallVec<[ContainerId; 2]>,
     actions: Vec<DeferredMenuAction>,
 }
 

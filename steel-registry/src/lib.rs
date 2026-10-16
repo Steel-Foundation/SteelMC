@@ -11,7 +11,6 @@
     clippy::match_same_arms,
     clippy::missing_fields_in_debug,
     clippy::missing_panics_doc,
-    clippy::ref_option,
     clippy::return_self_not_must_use,
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
@@ -59,7 +58,6 @@ pub mod item_stack;
 pub mod item_stack_template;
 pub mod items;
 pub mod jukebox_song;
-pub mod loot_table;
 mod macros;
 pub mod map_decoration_type;
 pub mod menu_type;
@@ -395,11 +393,6 @@ pub mod vanilla_poi_type_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_fluid_tags.rs"]
 pub mod vanilla_fluid_tags;
-
-#[expect(warnings)]
-#[rustfmt::skip]
-#[path = "generated/vanilla_loot_tables.rs"]
-pub mod vanilla_loot_tables;
 
 #[expect(warnings)]
 #[rustfmt::skip]
