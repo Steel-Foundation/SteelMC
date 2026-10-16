@@ -10,7 +10,6 @@ use std::{
     fs::OpenOptions,
     io::{Cursor, ErrorKind, Read, copy},
     path::{Path, PathBuf},
-    process::Command,
     thread,
     time::{Duration, Instant},
 };
@@ -19,8 +18,6 @@ use text_components::build::build_translations;
 
 mod entity_events;
 mod translations;
-
-const FMT: bool = cfg!(feature = "fmt");
 
 const OUT_DIR: &str = "src/generated";
 const IDS: &str = "vanilla_translations/ids";
@@ -383,16 +380,19 @@ pub fn main() {
 
     let content = build_version_constant();
     write_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
-
-    if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
-        for entry in entries.flatten() {
-            let _ = Command::new("rustfmt").arg(entry.path()).output();
-        }
-    }
 }
 
 fn write_if_changed(path: impl AsRef<Path>, content: String) {
     let path = path.as_ref();
+    #[cfg(feature = "fmt")]
+    let content = if path.extension().is_some_and(|extension| extension == "rs") {
+        let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
+            panic!("Failed to parse generated file {}: {error}", path.display())
+        });
+        prettyplease::unparse(&syntax)
+    } else {
+        content
+    };
     if let Ok(existing) = fs::read_to_string(path)
         && existing == content
     {

@@ -31,6 +31,8 @@ serde_json.workspace = true
 # Proc macros
 proc-macro2.workspace = true
 quote.workspace = true
+prettyplease = { workspace = true, optional = true }
+syn = { workspace = true, features = ["full"], optional = true }
 
 # Data structures
 rustc-hash.workspace = true
@@ -47,4 +49,4 @@ harness = false
 workspace = true
 
 [features]
-fmt = []
+fmt = ["dep:prettyplease", "dep:syn"]
