@@ -8,6 +8,7 @@ use crate::chunk::chunk_map::ChunkMap;
 
 pub mod behavior;
 pub mod block_entity;
+mod block_state_provider;
 pub mod bootstrap;
 pub mod chunk;
 pub mod chunk_saver;

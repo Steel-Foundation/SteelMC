@@ -9,8 +9,13 @@ impl FeatureDecorationRunner {
         config: &RandomNeighborSpreadConfiguration,
         origin: BlockPos,
     ) -> bool {
-        let origin_state =
-            Self::sample_block_state_provider(region, registry, random, &config.block, origin);
+        let origin_state = BlockStateProviderEvaluator::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &config.block,
+            origin,
+        );
         let _ = region.set_block_state(origin, origin_state, UpdateFlags::UPDATE_CLIENTS);
 
         let attempts = config.attempts.sample(random);
@@ -20,7 +25,12 @@ impl FeatureDecorationRunner {
                 config.y_offset.sample(random),
                 config.xz_offset.sample(random),
             );
-            if !Self::test_block_predicate(region, registry, &config.can_replace, place_pos) {
+            if !BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                &config.can_replace,
+                place_pos,
+            ) {
                 continue;
             }
 
@@ -38,7 +48,7 @@ impl FeatureDecorationRunner {
             }
 
             if neighbors == 1 {
-                let state = Self::sample_block_state_provider(
+                let state = BlockStateProviderEvaluator::sample_block_state_provider(
                     region,
                     registry,
                     random,

@@ -294,7 +294,7 @@ pub(super) fn generate_rule_based_state_provider_rule(
     }
 }
 
-pub(super) fn generate_block_state_provider(provider: &BlockStateProviderKind) -> TokenStream {
+pub(crate) fn generate_block_state_provider(provider: &BlockStateProviderKind) -> TokenStream {
     match provider {
         BlockStateProviderKind::Reference(identifier) => {
             let reference = generate_block_state_provider_entry_ref(identifier);

@@ -57,20 +57,29 @@ impl FeatureDecorationRunner {
 
         for pos in BlockPos::between_closed(min, max) {
             let step_limit = Self::manhattan_distance(pos, origin);
-            let column_pos =
-                if Self::test_block_predicate(region, registry, &config.can_replace, pos) {
-                    Self::find_stepped_column_surface(region, registry, config, pos, step_limit)
-                } else {
-                    Self::find_stepped_column_air(region, config, pos, step_limit)
-                };
+            let column_pos = if BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                &config.can_replace,
+                pos,
+            ) {
+                Self::find_stepped_column_surface(region, registry, config, pos, step_limit)
+            } else {
+                Self::find_stepped_column_air(region, config, pos, step_limit)
+            };
             let Some(mut cursor) = column_pos else {
                 continue;
             };
 
             let mut blocks_left = column_height - step_limit / 2;
             while blocks_left >= 0 {
-                if Self::test_block_predicate(region, registry, &config.can_replace, cursor) {
-                    let state = Self::sample_block_state_provider(
+                if BlockStateProviderEvaluator::test_block_predicate(
+                    region,
+                    registry,
+                    &config.can_replace,
+                    cursor,
+                ) {
+                    let state = BlockStateProviderEvaluator::sample_block_state_provider(
                         region,
                         registry,
                         random,
@@ -81,7 +90,7 @@ impl FeatureDecorationRunner {
                     cursor = cursor.above();
                     placed_any = true;
                 } else {
-                    if !Self::test_block_predicate(
+                    if !BlockStateProviderEvaluator::test_block_predicate(
                         region,
                         registry,
                         &config.continue_through,
@@ -123,7 +132,12 @@ impl FeatureDecorationRunner {
         config: &SteppedColumnClusterConfiguration,
         pos: BlockPos,
     ) -> bool {
-        if !Self::test_block_predicate(region, registry, &config.can_replace, pos) {
+        if !BlockStateProviderEvaluator::test_block_predicate(
+            region,
+            registry,
+            &config.can_replace,
+            pos,
+        ) {
             return false;
         }
 

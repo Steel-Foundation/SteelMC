@@ -21,7 +21,7 @@ impl FeatureDecorationRunner {
 
                 let mut base = origin.offset(dx, 0, dz);
                 let mut drop = config.max_projection_height;
-                while Self::test_block_predicate(
+                while BlockStateProviderEvaluator::test_block_predicate(
                     region,
                     registry,
                     &config.project_through,
@@ -34,7 +34,7 @@ impl FeatureDecorationRunner {
                     }
                 }
 
-                let Some(state) = Self::sample_block_state_provider_optional(
+                let Some(state) = BlockStateProviderEvaluator::sample_block_state_provider_optional(
                     region,
                     registry,
                     random,

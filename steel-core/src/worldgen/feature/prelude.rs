@@ -14,13 +14,12 @@ pub(super) use steel_registry::feature::{
     BlockColumnConfiguration, BlockHolderSet, BlockPileConfiguration, BlockPredicate,
     BlockStateData, BlockStateProviderKind, CherryFoliagePlacer, CherryTrunkPlacer,
     ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
-    DripstoneClusterConfiguration, DualNoiseProvider, EndGatewayConfiguration, EndSpike,
-    EndSpikeConfiguration, FallenTreeConfiguration, FeatureHeightmap, FeatureNoiseParameters,
-    FeatureSize, FluidStateData, FoliagePlacer, FossilConfiguration, GeodeBlockSettings,
-    GeodeConfiguration, HugeFungusConfiguration, HugeMushroomConfiguration, LakeConfiguration,
-    LargeDripstoneConfiguration, MangroveRootPlacement, MangroveRootPlacer,
-    MultifaceGrowthConfiguration, NetherForestVegetationConfiguration,
-    NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
+    DripstoneClusterConfiguration, EndGatewayConfiguration, EndSpike, EndSpikeConfiguration,
+    FallenTreeConfiguration, FeatureHeightmap, FeatureSize, FluidStateData, FoliagePlacer,
+    FossilConfiguration, GeodeBlockSettings, GeodeConfiguration, HugeFungusConfiguration,
+    HugeMushroomConfiguration, LakeConfiguration, LargeDripstoneConfiguration,
+    MangroveRootPlacement, MangroveRootPlacer, MultifaceGrowthConfiguration,
+    NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, OreConfiguration,
     PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
     PlacementModifier, PointedDripstoneConfiguration, PoplarFoliagePlacer, PoplarTrunkPlacer,
     ProjectedRandomPatchySquareConfiguration, RandomNeighborSpreadConfiguration,
@@ -55,3 +54,5 @@ pub(super) use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 pub(super) use crate::worldgen::region::{WorldGenBulkSectionAccess, WorldGenRegion};
 
 pub(super) const DECORATION_STEP_COUNT: usize = 11;
+
+pub(super) use crate::block_state_provider::BlockStateProviderEvaluator;

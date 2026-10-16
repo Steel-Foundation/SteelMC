@@ -1,111 +1,79 @@
-//! Ink sac and glow ink sac item behaviors.
-//!
-//! Ports vanilla `InkSacItem` and `GlowInkSacItem` (`SignApplicator`), along with
-//! the guards `SignBlock.useItemOn` applies before delegating to them.
-//!
-//! Vanilla dispatches these from the block side via the `SignApplicator` interface;
-//! Steel implements them as item behaviors to match the existing `HoneycombItem`
-//! sign-waxing path.
+//! Ink sac and glow ink sac sign applicators.
 
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::{
-    sound_event::SoundEventRef,
-    sound_events::{ITEM_GLOW_INK_SAC_USE, ITEM_INK_SAC_USE},
-    stat::vanilla_stat_types,
-    vanilla_game_events,
-};
-use steel_utils::Downcast as _;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_events::{ITEM_GLOW_INK_SAC_USE, ITEM_INK_SAC_USE};
+use steel_utils::types::SignTextSlot;
 
-use crate::{
-    behavior::{InteractionResult, ItemBehavior, UseOnContext, blocks::facing_text_slot},
-    block_entity::{BlockEntity, entities::SignBlockEntity},
-    world::game_event::GameEventContext,
-};
+use crate::behavior::{ItemBehavior, SignApplicator};
+use crate::block_entity::{BlockEntity, entities::SignBlockEntity};
+use crate::player::Player;
+use crate::world::World;
 
-/// Shared applicator path for both ink sac variants.
-fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
-    let pos = context.hit_result.block_pos;
-
-    let Some(block_entity) = context.world.get_block_entity(pos) else {
-        return InteractionResult::Pass;
-    };
-    let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
-        return InteractionResult::Pass;
-    };
-
-    if !context.player.abilities.lock().may_build
-        || sign.is_waxed()
-        || sign.is_other_player_editing(context.player.gameprofile.id)
-    {
-        return InteractionResult::TryEmptyHandInteraction;
-    }
-
-    let state = context.world.get_block_state(pos);
-    let slot = facing_text_slot(state, pos, context.player);
-
-    // Vanilla `SignApplicator.canApplyToSign` refuses a blank sign.
-    if !sign.get_text(slot).has_message() {
-        return InteractionResult::TryEmptyHandInteraction;
-    }
-
+fn apply_glow(world: &World, sign: &SignBlockEntity, slot: SignTextSlot, glowing: bool) -> bool {
     if !sign.set_glowing(slot, glowing) {
-        return InteractionResult::TryEmptyHandInteraction;
+        return false;
     }
 
-    sign.set_changed();
-    if let Some(nbt) = sign.get_update_tag() {
-        context
-            .world
-            .broadcast_block_entity_update(pos, sign.get_type(), nbt);
-    }
-
-    context.world.game_event(
-        &vanilla_game_events::BLOCK_CHANGE,
-        pos,
-        &GameEventContext::new(Some(context.player.as_ref()), Some(state)),
-    );
-
-    let has_infinite_materials = context.player.has_infinite_materials();
-    let item_used = context.inv.with_item(|item| {
-        item.consume_one(has_infinite_materials);
-        item.item
-    });
-    context
-        .player
-        .award_stat(&vanilla_stat_types::ITEM_USED, item_used);
-
-    context
-        .world
-        .play_sound(sound_for(glowing), SoundSource::Blocks, pos, 1.0, 1.0, None);
-
-    InteractionResult::Success
-}
-
-const fn sound_for(glowing: bool) -> SoundEventRef {
-    if glowing {
+    let sound = if glowing {
         &ITEM_GLOW_INK_SAC_USE
     } else {
         &ITEM_INK_SAC_USE
-    }
+    };
+    world.play_sound(
+        sound,
+        SoundSource::Blocks,
+        sign.get_block_pos(),
+        1.0,
+        1.0,
+        None,
+    );
+    true
 }
 
-/// Behavior for the ink sac item. Removes glow from sign text.
+/// Removes glow from sign text.
 #[item_behavior]
 pub struct InkSacItem;
 
 impl ItemBehavior for InkSacItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        apply_glow(context, false)
+    fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
+        Some(self)
     }
 }
 
-/// Behavior for the glow ink sac item. Makes sign text glow.
+impl SignApplicator for InkSacItem {
+    fn try_apply_to_sign(
+        &self,
+        world: &World,
+        sign: &SignBlockEntity,
+        slot: SignTextSlot,
+        _item: &ItemStack,
+        _player: &Player,
+    ) -> bool {
+        apply_glow(world, sign, slot, false)
+    }
+}
+
+/// Makes sign text glow.
 #[item_behavior]
 pub struct GlowInkSacItem;
 
 impl ItemBehavior for GlowInkSacItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        apply_glow(context, true)
+    fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
+        Some(self)
+    }
+}
+
+impl SignApplicator for GlowInkSacItem {
+    fn try_apply_to_sign(
+        &self,
+        world: &World,
+        sign: &SignBlockEntity,
+        slot: SignTextSlot,
+        _item: &ItemStack,
+        _player: &Player,
+    ) -> bool {
+        apply_glow(world, sign, slot, true)
     }
 }

@@ -9,8 +9,9 @@ impl FeatureDecorationRunner {
         config: &NetherrackReplaceBlobsConfiguration,
         origin: BlockPos,
     ) -> bool {
-        let target = Self::block_state_from_data(registry, &config.target);
-        let replacement = Self::block_state_from_data(registry, &config.state);
+        let target = BlockStateProviderEvaluator::block_state_from_data(registry, &config.target);
+        let replacement =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.state);
         let clamped_origin = BlockPos::new(
             origin.x(),
             origin
