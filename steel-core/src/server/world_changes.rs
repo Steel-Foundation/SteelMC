@@ -395,17 +395,8 @@ impl Server {
     ///
     /// Same-domain selections move to the world's spawn. Cross-domain
     /// selections restore that domain while honoring the explicit target.
+    /// `entry` can instead place the player exactly, or only change their rotation.
     pub fn queue_player_world_selection(
-        &self,
-        player: Arc<Player>,
-        target_world: &Arc<World>,
-    ) -> Result<(), String> {
-        self.queue_player_world_selection_with_entry(player, target_world, WorldEntry::Usual)
-    }
-
-    /// Like [`Self::queue_player_world_selection`], but `entry` can place the player exactly,
-    /// with no spawn search, or only change their rotation.
-    pub fn queue_player_world_selection_with_entry(
         &self,
         player: Arc<Player>,
         target_world: &Arc<World>,

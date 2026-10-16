@@ -434,19 +434,6 @@ fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
     DVec3::new(vec.x * cos + vec.z * sin, vec.y, vec.z * cos - vec.x * sin)
 }
 
-/// What vanilla's `/teleport` does once an entity has moved: unless it is gliding, it ends up on
-/// the ground without vertical motion.
-pub(crate) fn land_after_teleport(entity: &dyn Entity) {
-    if entity
-        .as_living_entity()
-        .is_none_or(|living| !living.is_fall_flying())
-    {
-        let velocity = entity.velocity();
-        entity.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
-        entity.set_on_ground(true);
-    }
-}
-
 /// A position and `(yaw, pitch)` rotation a player is placed at when entering a world.
 #[derive(Clone, Copy)]
 pub struct PreparedSpawn {

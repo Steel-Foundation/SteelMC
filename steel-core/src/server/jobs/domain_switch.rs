@@ -13,7 +13,6 @@ use crate::{
         DomainResidenceToken, Player, ResetReason, connection::NetworkConnection,
         player_data::PersistentPlayerData, player_data_storage::GlobalPlayerData,
     },
-    portal::land_after_teleport,
     server::{
         DomainPlayerData, DomainPlayerState, PlayerAdmissionState, PreparedSpawn, Server,
         UnpreparedDomainPlayerData, UnpreparedDomainPlayerState, WorldEntry,
@@ -302,7 +301,7 @@ impl DomainSwitchJob {
                     // so it must not keep a saved `on_ground`.
                     restore_player.set_fall_flying(fall_flying);
                     restore_player.set_on_ground(false);
-                    land_after_teleport(restore_player.as_ref());
+                    restore_player.land_after_teleport();
                 }
             });
         if !Server::install_domain_restores(&self.player, self.residence_token, &restores) {

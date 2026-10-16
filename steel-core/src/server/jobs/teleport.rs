@@ -9,7 +9,6 @@ use super::super::{
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
 use crate::entity::LivingEntity as _;
-use crate::portal::land_after_teleport;
 use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 
 pub(in crate::server) struct RootVehicleRestoreJob {
@@ -328,7 +327,7 @@ impl ServerJob for WorldSpawnTeleportJob {
                         if matches!(self.entry, WorldEntry::Exact(_))
                             && let Some(entity) = &changed_entity
                         {
-                            land_after_teleport(entity.as_ref());
+                            entity.land_after_teleport();
                         }
                         return finish_portal_world_change(
                             &self.entity,

@@ -18,7 +18,7 @@ use super::super::{
 use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
 use crate::{
     entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
-    portal::{TeleportPostTransition, TeleportTransition, land_after_teleport},
+    portal::{TeleportPostTransition, TeleportTransition},
     world::World,
 };
 
@@ -294,7 +294,7 @@ fn perform_teleport(
         }
     }
 
-    land_after_teleport(target.as_ref());
+    target.land_after_teleport();
     if let Some(pathfinder) = target.as_pathfinder_mob() {
         pathfinder.mob_base().navigation().lock().stop();
     }

@@ -27,7 +27,7 @@ mod tests;
 const PLAYER_SPAWN_CHUNK_RADIUS: u8 = 3;
 const BLOCKS_PER_CHUNK: i32 = 16;
 const CHUNK_REQUEST_POLL_DELAY: Duration = Duration::from_millis(10);
-/// time budget per spawn-search poll before yielding to the next tick
+/// Time budget per spawn search poll before yielding to the next tick.
 pub(crate) const POLL_TIME_BUDGET: Duration = Duration::from_millis(1);
 
 pub(crate) enum PlayerSpawnSearchPoll {
@@ -36,16 +36,16 @@ pub(crate) enum PlayerSpawnSearchPoll {
     Cancelled,
 }
 
-/// Batches candidates by chunk in candidate order
+/// Batches candidates by chunk in candidate order.
 pub(crate) struct PlayerSpawnSearch {
     spawn_suggestion: BlockPos,
     sequence: CandidateSequence,
     next_candidate_index: i32,
     pending: Option<PendingSpawnCandidate>,
-    /// cached results indexed by candidate order
+    /// Cached results, indexed by candidate order.
     results: Vec<CandidateResult>,
     loading: Option<ChunkLoad>,
-    /// tries safe standing spots before the vanilla height fixup
+    /// Tries safe standing spots before the vanilla height fixup.
     fallback: Option<FallbackPass>,
     prefetch: Option<ChunkRequestHandle>,
 }
@@ -262,7 +262,7 @@ impl PlayerSpawnSearch {
         })
     }
 
-    /// Reuses prefetched chunks otherwise waits for a new request ticket commit
+    /// Reuses a prefetched chunk; otherwise waits for a new request's tickets to commit.
     fn poll_loading(&mut self, world: &Arc<World>, chunk: ChunkPos, next_scan: i32) -> LoadPoll {
         let load = self
             .loading
@@ -302,7 +302,7 @@ impl PlayerSpawnSearch {
             .unwrap_or(CandidateResult::Invalid)
     }
 
-    /// Evaluates candidates in one chunk and caches their results by sequence index
+    /// Evaluates candidates in one chunk and caches their results by sequence index.
     fn poll_chunk_batch(
         &mut self,
         world: &Arc<World>,

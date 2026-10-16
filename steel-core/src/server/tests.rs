@@ -1955,21 +1955,25 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), stale_sibling_world)
+                .queue_player_world_selection(
+                    Arc::clone(&player),
+                    stale_sibling_world,
+                    WorldEntry::Usual
+                )
                 .is_err()
         );
         assert!(!player.is_world_change_pending());
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), sibling_world)
+                .queue_player_world_selection(Arc::clone(&player), sibling_world, WorldEntry::Usual)
                 .is_ok(),
             "world selection is authorization-neutral after command admission"
         );
         assert!(player.is_world_change_pending());
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), target_world)
+                .queue_player_world_selection(Arc::clone(&player), target_world, WorldEntry::Usual)
                 .is_err(),
             "the relocation lease must reject a repeated selection"
         );
@@ -1993,7 +1997,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), source_world)
+                .queue_player_world_selection(Arc::clone(&player), source_world, WorldEntry::Usual)
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2009,7 +2013,7 @@ fn player_world_selection_uses_one_token_owned_route() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), target_world)
+                .queue_player_world_selection(Arc::clone(&player), target_world, WorldEntry::Usual)
                 .is_ok()
         );
         let request = server.pending_domain_switches.lock().pop();
@@ -2073,7 +2077,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
 
         assert!(
             server
-                .queue_player_world_selection(Arc::clone(&player), target_world)
+                .queue_player_world_selection(Arc::clone(&player), target_world, WorldEntry::Usual)
                 .is_ok()
         );
         server.process_world_changes(0, true);
@@ -2205,11 +2209,7 @@ fn same_domain_world_selection_applies_a_world_entry() {
 
             assert!(
                 server
-                    .queue_player_world_selection_with_entry(
-                        Arc::clone(&player),
-                        target_world,
-                        entry
-                    )
+                    .queue_player_world_selection(Arc::clone(&player), target_world, entry)
                     .is_ok()
             );
             server.process_world_changes(0, true);
@@ -2379,11 +2379,7 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
 
             assert!(
                 server
-                    .queue_player_world_selection_with_entry(
-                        Arc::clone(&player),
-                        target_world,
-                        entry
-                    )
+                    .queue_player_world_selection(Arc::clone(&player), target_world, entry)
                     .is_ok()
             );
             server.process_domain_switches();
@@ -2620,11 +2616,7 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
 
             assert!(
                 server
-                    .queue_player_world_selection_with_entry(
-                        Arc::clone(&player),
-                        target_world,
-                        entry
-                    )
+                    .queue_player_world_selection(Arc::clone(&player), target_world, entry)
                     .is_ok(),
                 "{name}"
             );
@@ -2962,7 +2954,7 @@ fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
 
         assert!(
             server
-                .queue_player_world_selection_with_entry(
+                .queue_player_world_selection(
                     Arc::clone(&player),
                     target_world,
                     WorldEntry::Exact(destination)

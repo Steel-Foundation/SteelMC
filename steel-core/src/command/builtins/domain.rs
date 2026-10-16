@@ -94,7 +94,7 @@ fn switch_world_with_rotation(
     switch_world_to(context, WorldEntry::Rotation(wrap_rotation(rotation)))
 }
 
-/// resolves coordinates like `/teleport` keeping the player's own rotation if omitted
+/// Resolves the location like `/teleport`, keeping the player's own rotation if none is given.
 fn switch_world_at_location(
     context: &SteelCommandContext<CommandSource>,
     rotation: Option<(f32, f32)>,
@@ -129,7 +129,7 @@ fn switch_world_to(
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection_with_entry(Arc::clone(player), &world, entry)
+        .queue_player_world_selection(Arc::clone(player), &world, entry)
         .map_err(CommandSyntaxError::dynamic)?;
 
     let message = match entry {
@@ -286,10 +286,11 @@ impl MenuKind for DomainMenuKind {
             return ClickOutcome::Consume;
         }
 
-        if let Err(error) = self
-            .server
-            .queue_player_world_selection(Arc::clone(&self.player), world)
-        {
+        if let Err(error) = self.server.queue_player_world_selection(
+            Arc::clone(&self.player),
+            world,
+            WorldEntry::Usual,
+        ) {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }
         self.player.close_container();
