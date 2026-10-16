@@ -2359,8 +2359,11 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                     "steel:missing".to_owned()
                 };
                 saved.pos = [8.5, 70.0, 8.5];
-                // The saved state is the opposite, so only the player's own state can win.
+                // The saved glide state is the opposite, so only the player's own state can win, and
+                // a saved ground state must not hold a glider down.
                 saved.fall_flying = !gliding;
+                saved.on_ground = true;
+                saved.motion = [0.4, 0.3, -0.2];
                 saved.root_vehicle = Some(PersistentRootVehicle {
                     attach: vehicle_uuid,
                     entity: test_persistent_entity(&vanilla_entities::PIG, vehicle_uuid),
@@ -2403,6 +2406,11 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                     // Like `/teleport`: a gliding player keeps gliding, anyone else lands.
                     assert_eq!(player.is_fall_flying(), gliding);
                     assert_eq!(player.on_ground(), !gliding);
+                    assert_eq!(
+                        player.velocity(),
+                        DVec3::ZERO,
+                        "the saved motion is dropped"
+                    );
                     let vehicle = target_world.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
                     if saved_data == Saved::Location {
                         // The saved vehicle stays where it was, without the player, even when the
