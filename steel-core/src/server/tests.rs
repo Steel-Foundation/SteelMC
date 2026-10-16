@@ -2778,7 +2778,7 @@ fn domain_command_accepts_its_forms_and_keeps_the_players_own_rotation() {
 }
 
 #[test]
-fn a_rotation_beyond_f32_range_keeps_the_players_own_rotation() {
+fn domain_and_teleport_check_the_location_and_rotation_like_vanilla() {
     init_vanilla_registry();
     init_entities();
     init_behaviors();
@@ -2854,9 +2854,18 @@ fn a_rotation_beyond_f32_range_keeps_the_players_own_rotation() {
         assert_eq!(player.rotation(), (77.0, 30.0));
 
         let world_key = &target_world.key;
-        for command in [
-            format!("domain {world_key} 1 70 1 {huge} 30"),
-            format!("domain {world_key} {huge} 30"),
+        // Outside the spawnable bounds `/domain` fails like `/teleport` and queues nothing.
+        run_command(
+            &server,
+            source(),
+            &format!("domain {world_key} 30000000 70 0"),
+        );
+        assert!(server.pending_domain_switches.lock().is_empty());
+
+        for (command, expected) in [
+            (format!("domain {world_key} 1 70 1 {huge} 30"), (77.0, 30.0)),
+            (format!("domain {world_key} {huge} 30"), (77.0, 30.0)),
+            (format!("domain {world_key} 1 70 1 370 30"), (10.0, 30.0)),
         ] {
             run_command(&server, source(), &command);
             let Some(request) = server.pending_domain_switches.lock().pop() else {
@@ -2867,7 +2876,7 @@ fn a_rotation_beyond_f32_range_keeps_the_players_own_rotation() {
                 WorldEntry::Rotation(rotation) => rotation,
                 WorldEntry::Usual => panic!("{command} should not queue the usual entry"),
             };
-            assert_eq!(rotation, (77.0, 30.0), "{command}");
+            assert_eq!(rotation, expected, "{command}");
             assert!(player.finish_domain_switch(request.pending_token));
             assert!(player.finish_pending_world_change(request.pending_token));
         }
