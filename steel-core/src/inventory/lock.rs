@@ -17,9 +17,12 @@ use steel_utils::{Downcast as _, DowncastType, locks::SyncMutex};
 use crate::{
     block_entity::{BlockEntityBase, SharedBlockEntity},
     inventory::container::Container,
+    loot::LootResult,
     player::{Player, player_inventory::PlayerInventory},
 };
 use steel_registry::item_stack::ItemStack;
+
+type ContainerAccessCallback = Arc<dyn Fn() -> LootResult<()> + Send + Sync>;
 
 type ContainerChangedCallback = Arc<dyn Fn() + Send + Sync>;
 
@@ -57,6 +60,7 @@ pub struct ContainerRef {
     id: ContainerId,
     source: SharedContainer,
     owner: Option<ContainerOwner>,
+    before_access: Option<ContainerAccessCallback>,
 }
 
 impl<T> From<Shared<T>> for ContainerRef
@@ -70,6 +74,7 @@ where
             id,
             source: container,
             owner: None,
+            before_access: None,
         }
     }
 }
@@ -101,14 +106,13 @@ impl From<SharedContainer> for ContainerRef {
             id: ContainerId::from_arc(&container),
             source: container,
             owner: None,
+            before_access: None,
         }
     }
 }
 
 impl ContainerRef {
-    /// Creates a `ContainerRef` from a block entity, if it implements Container.
-    ///
-    /// Returns `None` if the block entity has no container capability.
+    /// Creates a `ContainerRef` from a block entity, if it exposes inventory storage.
     #[must_use]
     pub fn from_block_entity(block_entity: SharedBlockEntity) -> Option<Self> {
         block_entity.container_ref()
@@ -129,6 +133,7 @@ impl ContainerRef {
                 block_entity: owner,
                 after_changed: None,
             }),
+            before_access: None,
         }
     }
 
@@ -151,7 +156,15 @@ impl ContainerRef {
                 block_entity: owner,
                 after_changed: Some(after_changed),
             }),
+            before_access: None,
         }
+    }
+
+    /// Adds lazy preparation that runs before any inventory in a group is locked.
+    #[must_use]
+    pub fn with_access_callback(mut self, callback: ContainerAccessCallback) -> Self {
+        self.before_access = Some(callback);
+        self
     }
 
     /// Returns a unique identifier for this container based on its Arc pointer address.
@@ -185,7 +198,7 @@ impl ContainerRef {
 /// let player_inv = ContainerRef::from(player_inv_arc);
 /// let chest = ContainerRef::from(chest_arc);
 ///
-/// let mut guard = ContainerLockGuard::lock_all(&[&player_inv, &chest]);
+/// let mut guard = ContainerLockGuard::lock_all(&[&player_inv, &chest])?;
 ///
 /// // Access containers by their IDs
 /// let player_id = player_inv.container_id();
@@ -203,13 +216,37 @@ pub struct ContainerLockGuard {
 }
 
 impl ContainerLockGuard {
-    /// Create a new lock guard and lock all containers in deterministic order.
+    /// Prepares container access, then locks all containers in deterministic order.
     ///
     /// Containers are sorted by their pointer address before locking to ensure
     /// a consistent lock order across all call sites, preventing deadlocks.
-    /// Duplicate containers (same Arc) are automatically deduplicated.
-    #[must_use]
-    pub fn lock_all<C>(containers: &[C]) -> Self
+    /// Lazy access callbacks generate pending loot before acquiring any inventory
+    /// locks in this group. Duplicate containers are deduplicated for locking.
+    /// Ordinary inventory mutex contention waits until the lock is available.
+    ///
+    /// # Errors
+    /// Returns a loot preparation error before acquiring the group's locks if a
+    /// callback fails. `LootResult` describes this preparation, not mutex locking.
+    /// Preparation can currently fail on loot-generation or RNG contention;
+    /// callers must not treat that failure as evidence of an empty inventory.
+    pub fn lock_all<C>(containers: &[C]) -> LootResult<Self>
+    where
+        C: Borrow<ContainerRef>,
+    {
+        for container in containers {
+            if let Some(prepare) = &container.borrow().before_access
+                && let Err(error) = prepare()
+            {
+                log::error!("Could not prepare container access: {error}");
+                return Err(error);
+            }
+        }
+        Ok(Self::lock_storage(containers))
+    }
+
+    /// Locks storage already prepared, known to have no lazy capability, or used
+    /// only for metadata reads. Other content access must use `lock_all`.
+    pub(crate) fn lock_storage<C>(containers: &[C]) -> Self
     where
         C: Borrow<ContainerRef>,
     {
@@ -264,8 +301,7 @@ impl ContainerLockGuard {
     ///
     /// This should only be called when you need to add more containers
     /// mid-operation. All existing references from `get()`/`get_mut()` are invalidated.
-    #[must_use]
-    pub fn relock(self, containers: &[&ContainerRef]) -> Self {
+    pub fn relock(self, containers: &[&ContainerRef]) -> LootResult<Self> {
         // Drop self, releasing all locks
         drop(self);
         // Lock new set
@@ -463,7 +499,26 @@ mod tests {
     };
     use crate::inventory::container::{Container, CraftingContainer, ResultContainer};
     use crate::inventory::slots::{NormalSlot, Slot as _};
+    use crate::loot::LootError;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn lazy_preparation_runs_before_every_inventory_lock_and_failure_aborts_access() {
+        let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
+        let result = Arc::new(SyncMutex::new(ResultContainer::new()));
+        let crafting_storage = Arc::clone(&crafting);
+        let result_storage = Arc::clone(&result);
+        let lazy =
+            ContainerRef::from(Arc::clone(&crafting)).with_access_callback(Arc::new(move || {
+                assert!(crafting_storage.try_lock().is_some());
+                assert!(result_storage.try_lock().is_some());
+                Err(LootError::ContainerChanged)
+            }));
+        let other = ContainerRef::from(Arc::clone(&result));
+        assert!(ContainerLockGuard::lock_all(&[&other, &lazy]).is_err());
+        assert!(crafting.try_lock().is_some());
+        assert!(result.try_lock().is_some());
+    }
 
     #[test]
     fn erased_container_ref_preserves_id_and_typed_access() {
@@ -473,7 +528,8 @@ mod tests {
 
         assert_eq!(container_ref.container_id(), id);
 
-        let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        let mut guard = ContainerLockGuard::lock_all(&[&container_ref])
+            .expect("container access should succeed");
         let Some(typed) = guard.get_typed::<CraftingContainer>(id) else {
             panic!("erased crafting container should retain its concrete type");
         };
@@ -496,7 +552,8 @@ mod tests {
         };
         let id = container_ref.container_id();
 
-        let guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        let guard = ContainerLockGuard::lock_all(&[&container_ref])
+            .expect("container access should succeed");
         assert_eq!(guard.get(id).map(Container::get_container_size), Some(27));
     }
 
@@ -519,7 +576,8 @@ mod tests {
         let result = Arc::new(SyncMutex::new(ResultContainer::new()));
         let crafting_ref = ContainerRef::from(Arc::clone(&crafting));
         let result_ref = ContainerRef::from(Arc::clone(&result));
-        let mut guard = ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref]);
+        let mut guard = ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref])
+            .expect("container access should succeed");
 
         let both_unlocked = guard.run_unlocked(|| {
             let crafting_guard = crafting.try_lock();
@@ -565,7 +623,8 @@ mod tests {
         )
         .expect("barrel should expose a container capability");
         let slot = NormalSlot::new(container_ref.clone(), 0);
-        let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        let mut guard = ContainerLockGuard::lock_all(&[&container_ref])
+            .expect("container access should succeed");
         slot.set_item(&mut guard, ItemStack::new(&vanilla_items::STONE));
         drop(guard);
 

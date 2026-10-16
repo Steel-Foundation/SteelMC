@@ -1,4 +1,9 @@
-use super::{BlockStateId, DyeColor, Identifier, ItemStack, RngExt};
+use super::{LootError, LootTableBehaviorRegistry};
+use crate::{block_entity::BlockEntity, entity::Entity, world::World};
+use steel_registry::{
+    DyeColor, REGISTRY, RegistryExt, equipment::EquipmentSlot, item_stack::ItemStack,
+};
+use steel_utils::{BlockStateId, Identifier, random::RandomSource};
 
 /// Entity target for loot context lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,227 +20,17 @@ pub enum LootContextEntity {
     Interacting,
 }
 
-/// The type of loot table, determining when/how it's used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LootType {
-    Block,
-    Entity,
-    Chest,
-    Fishing,
-    Gift,
-    Archaeology,
-    Vault,
-    Shearing,
-    Equipment,
-    Selector,
-    EntityInteract,
-    BlockInteract,
-    Barter,
-}
-
-/// A number provider that can be constant or random.
-#[derive(Debug, Clone)]
-pub enum NumberProvider {
-    Constant(f32),
-    Uniform {
-        min: f32,
-        max: f32,
-    },
-    Binomial {
-        n: i32,
-        p: f32,
-    },
-    /// Get value from entity scoreboard score.
-    Score {
-        target: ScoreboardTarget,
-        score: &'static str,
-        scale: f32,
-    },
-    /// Get value from command storage.
-    Storage {
-        storage: Identifier,
-        path: &'static str,
-    },
-    /// Get enchantment level from context tool.
-    EnchantmentLevel {
-        enchantment: Identifier,
-    },
-}
-
-/// Target for scoreboard number provider.
-#[derive(Debug, Clone, Copy)]
-pub enum ScoreboardTarget {
-    /// The entity being looted.
-    This,
-    /// The entity that killed the target.
-    Killer,
-    /// The direct killer (e.g., arrow vs player).
-    DirectKiller,
-    /// The player who dealt the last damage.
-    KillerPlayer,
-    /// A fixed entity name.
-    Fixed(&'static str),
-}
-
-impl NumberProvider {
-    /// Get a value from this provider using the given RNG.
-    pub fn get<R: rand::Rng>(&self, rng: &mut R, ctx: Option<&LootContextRef<'_>>) -> f32 {
-        match self {
-            Self::Constant(v) => *v,
-            Self::Uniform { min, max } => rng.random_range(*min..=*max),
-            Self::Binomial { n, p } => {
-                let mut count = 0;
-                for _ in 0..*n {
-                    if rng.random::<f32>() < *p {
-                        count += 1;
-                    }
-                }
-                count as f32
-            }
-            Self::Score { .. } => {
-                // TODO: Implement when scoreboard system is available
-                let _ = ctx;
-                0.0
-            }
-            Self::Storage { .. } => {
-                // TODO: Implement when command storage system is available
-                let _ = ctx;
-                0.0
-            }
-            Self::EnchantmentLevel { enchantment } => ctx
-                .and_then(|c| c.tool)
-                .map_or(0.0, |t| t.get_enchantment_level(enchantment) as f32),
-        }
-    }
-
-    /// Get a value without context (for backwards compatibility).
-    pub fn get_simple(&self, rng: &mut impl rand::Rng) -> f32 {
-        match self {
-            Self::Constant(v) => *v,
-            Self::Uniform { min, max } => rng.random_range(*min..=*max),
-            Self::Binomial { n, p } => {
-                let mut count = 0;
-                for _ in 0..*n {
-                    if rng.random::<f32>() < *p {
-                        count += 1;
-                    }
-                }
-                count as f32
-            }
-            // Context-dependent providers return 0 when no context available
-            Self::Score { .. } | Self::Storage { .. } | Self::EnchantmentLevel { .. } => 0.0,
-        }
-    }
-
-    /// Get the value as an integer.
-    pub fn get_int(&self, rng: &mut impl rand::Rng) -> i32 {
-        match self {
-            Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
-            other => math_round(other.get_simple(rng)),
-        }
-    }
-
-    /// Get the value as an integer with context.
-    pub fn get_int_with_ctx<R: rand::Rng>(
-        &self,
-        rng: &mut R,
-        ctx: Option<&LootContextRef<'_>>,
-    ) -> i32 {
-        match self {
-            Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
-            other => math_round(other.get(rng, ctx)),
-        }
-    }
-}
-
-/// `java.lang.Math.round` semantics for a float.
-fn math_round(value: f32) -> i32 {
-    (value + 0.5).floor() as i32
-}
-
-/// Vanilla `Mth.nextInt(random, min, max)` is inclusive and clamps to `min`
-/// when `min >= max`.
-fn uniform_int(rng: &mut impl rand::Rng, min: i32, max: i32) -> i32 {
-    if min >= max {
-        min
-    } else {
-        rng.random_range(min..=max)
-    }
-}
-
-/// A range for number comparisons (used in `ValueCheck`, `TimeCheck`, `EntityScores`).
-#[derive(Debug, Clone)]
-pub struct NumberProviderRange {
-    pub min: Option<NumberProvider>,
-    pub max: Option<NumberProvider>,
-}
-
-impl NumberProviderRange {
-    /// Check if a value is within this range.
-    pub fn test(&self, value: f32, rng: &mut impl rand::Rng) -> bool {
-        if let Some(min) = &self.min
-            && value < min.get_simple(rng)
-        {
-            return false;
-        }
-        if let Some(max) = &self.max
-            && value > max.get_simple(rng)
-        {
-            return false;
-        }
-        true
-    }
-
-    /// Create an exact match range.
-    #[must_use]
-    pub const fn exact(value: f32) -> Self {
-        Self {
-            min: Some(NumberProvider::Constant(value)),
-            max: Some(NumberProvider::Constant(value)),
-        }
-    }
-
-    /// Create an at-least range.
-    #[must_use]
-    pub const fn at_least(min: f32) -> Self {
-        Self {
-            min: Some(NumberProvider::Constant(min)),
-            max: None,
-        }
-    }
-
-    /// Create an at-most range.
-    #[must_use]
-    pub const fn at_most(max: f32) -> Self {
-        Self {
-            min: None,
-            max: Some(NumberProvider::Constant(max)),
-        }
-    }
-
-    /// Create a between range.
-    #[must_use]
-    pub const fn between(min: f32, max: f32) -> Self {
-        Self {
-            min: Some(NumberProvider::Constant(min)),
-            max: Some(NumberProvider::Constant(max)),
-        }
-    }
-}
-
-/// Reference to loot context for number provider evaluation.
-/// This is a simplified view to avoid circular references.
-pub struct LootContextRef<'a> {
-    pub tool: Option<&'a ItemStack>,
-    // Add more fields as needed for Score/Storage providers
-}
-
 /// Context for loot table evaluation, containing all relevant game state.
 ///
 /// This mirrors vanilla's `LootContext` / `LootParams` system.
-pub struct LootContext<'a, R: rand::Rng> {
+pub struct LootContext<'a> {
+    /// World access for compiled gameplay operations.
+    pub world: Option<&'a World>,
     /// Random number generator.
-    pub rng: &'a mut R,
+    pub rng: &'a mut RandomSource,
+    pub(super) visited: Vec<Identifier>,
+    /// Optional callable registry override, useful for custom compiled tables.
+    pub tables: Option<&'a LootTableBehaviorRegistry>,
     /// Luck value (e.g., from Luck of the Sea enchantment).
     pub luck: f32,
     /// The block state being broken (for block loot tables).
@@ -254,7 +49,7 @@ pub struct LootContext<'a, R: rand::Rng> {
     /// Current weather state.
     pub weather: Option<WeatherState>,
     /// The entity being looted (the killed mob, block entity owner, etc.).
-    /// This is a type-erased pointer; actual entity data depends on game implementation.
+    /// Snapshot and live capability access for entity predicates.
     pub this_entity: Option<EntityRef<'a>>,
     /// The entity that killed `this_entity` (for mob loot tables).
     pub killer_entity: Option<EntityRef<'a>>,
@@ -265,7 +60,7 @@ pub struct LootContext<'a, R: rand::Rng> {
     /// Damage source information for entity deaths.
     pub damage_source: Option<DamageSourceInfo<'a>>,
     /// Block entity reference for container/block loot.
-    pub block_entity: Option<BlockEntityRef<'a>>,
+    pub block_entity: Option<&'a dyn BlockEntity>,
     /// The entity interacting with a block/entity (e.g., player opening a chest).
     pub interacting_entity: Option<EntityRef<'a>>,
 }
@@ -273,14 +68,19 @@ pub struct LootContext<'a, R: rand::Rng> {
 /// Weather state for `WeatherCheck` condition.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WeatherState {
+    /// Whether rain is currently active.
     pub raining: bool,
+    /// Whether thunder is currently active.
     pub thundering: bool,
 }
 
 /// A reference to an entity for loot context.
-/// This is intentionally opaque - the actual entity type depends on game implementation.
-#[derive(Debug, Clone, Copy)]
+/// Snapshot fields avoid holding entity locks during evaluation. Live living-entity
+/// access is available for equipment checks.
+#[derive(Clone, Copy, Default)]
 pub struct EntityRef<'a> {
+    /// Live access for compiled operations requiring additional entity capabilities.
+    pub entity: Option<&'a dyn Entity>,
     /// Type identifier for the entity.
     pub entity_type: Option<&'a Identifier>,
     /// Entity flags for predicate checking.
@@ -301,21 +101,32 @@ pub struct EntityRef<'a> {
 /// Entity flags for predicate checking.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EntityRefFlags {
+    /// Entity is burning.
     pub is_on_fire: bool,
+    /// Entity is crouching.
     pub is_sneaking: bool,
+    /// Entity is sprinting.
     pub is_sprinting: bool,
+    /// Entity is swimming.
     pub is_swimming: bool,
+    /// Entity is a baby.
     pub is_baby: bool,
 }
 
 /// Equipment references for an entity.
 #[derive(Debug, Clone, Copy)]
 pub struct EntityEquipmentRef<'a> {
+    /// Main hand snapshot.
     pub mainhand: Option<&'a ItemStack>,
+    /// Off hand snapshot.
     pub offhand: Option<&'a ItemStack>,
+    /// Head equipment snapshot.
     pub head: Option<&'a ItemStack>,
+    /// Chest equipment snapshot.
     pub chest: Option<&'a ItemStack>,
+    /// Leg equipment snapshot.
     pub legs: Option<&'a ItemStack>,
+    /// Feet equipment snapshot.
     pub feet: Option<&'a ItemStack>,
 }
 
@@ -330,22 +141,14 @@ pub struct DamageSourceInfo<'a> {
     pub is_direct: bool,
 }
 
-/// A reference to a block entity for loot context.
-#[derive(Debug, Clone, Copy)]
-pub struct BlockEntityRef<'a> {
-    /// The block entity type identifier.
-    pub block_entity_type: Option<&'a Identifier>,
-    /// Custom name of the block entity (for `copy_name`).
-    pub custom_name: Option<&'a str>,
-    /// Inventory contents (for dynamic/slots entries).
-    pub inventory: Option<&'a [ItemStack]>,
-}
-
-impl<'a, R: rand::Rng> LootContext<'a, R> {
+impl<'a> LootContext<'a> {
     /// Create a new loot context with just an RNG.
-    pub const fn new(rng: &'a mut R) -> Self {
+    pub const fn new(rng: &'a mut RandomSource) -> Self {
         Self {
+            world: None,
             rng,
+            visited: Vec::new(),
+            tables: None,
             luck: 0.0,
             block_state: None,
             tool: None,
@@ -362,6 +165,13 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
             block_entity: None,
             interacting_entity: None,
         }
+    }
+
+    /// Provides world access without acquiring or retaining a world lock.
+    #[must_use]
+    pub const fn with_world(mut self, world: &'a World) -> Self {
+        self.world = Some(world);
+        self
     }
 
     /// Set the luck value.
@@ -385,6 +195,8 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
         self
     }
 
+    // TODO: Supply the radius from explosion block-drop callers only when the
+    // vanilla interaction mode enables decay.
     /// Set the explosion radius.
     #[must_use]
     pub const fn with_explosion(mut self, radius: f32) -> Self {
@@ -457,7 +269,7 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
 
     /// Set the block entity reference.
     #[must_use]
-    pub const fn with_block_entity(mut self, block_entity: BlockEntityRef<'a>) -> Self {
+    pub const fn with_block_entity(mut self, block_entity: &'a dyn BlockEntity) -> Self {
         self.block_entity = Some(block_entity);
         self
     }
@@ -486,5 +298,41 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
             LootContextEntity::KillerPlayer => self.last_damage_player,
             LootContextEntity::Interacting => self.interacting_entity,
         }
+    }
+}
+
+impl LootContext<'_> {
+    /// Adds table context to an unsupported-operation error.
+    #[must_use]
+    pub fn unsupported(&self, operation: &'static str) -> LootError {
+        LootError::Unsupported {
+            table: self.visited.last().cloned(),
+            operation,
+        }
+    }
+
+    /// Enchantment level over the attacking living entity's applicable equipment slots.
+    #[must_use]
+    pub fn attacker_enchantment_level(&self, key: &Identifier) -> i32 {
+        let Some(entity) = self
+            .killer_entity
+            .and_then(|entity| entity.entity)
+            .and_then(Entity::as_living_entity)
+        else {
+            return 0;
+        };
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            return 0;
+        };
+        let mut best = 0;
+        for slot in EquipmentSlot::ALL {
+            if !enchantment.matching_slot(slot) {
+                continue;
+            }
+            entity.with_equipment_slot(slot, &mut |item| {
+                best = best.max(item.get_enchantment_level(key));
+            });
+        }
+        best
     }
 }

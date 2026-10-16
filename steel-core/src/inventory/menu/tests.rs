@@ -164,7 +164,8 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
     )
     .expect("barrel should expose a container");
     {
-        let mut guard = ContainerLockGuard::lock_all(&[&container]);
+        let mut guard =
+            ContainerLockGuard::lock_all(&[&container]).expect("container access should succeed");
         assert!(guard.set_item(
             container.container_id(),
             0,

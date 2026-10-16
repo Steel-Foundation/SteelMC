@@ -320,7 +320,8 @@ mod tests {
             called: Arc::clone(&called),
         });
         assert!(slot.downcast_ref::<SafeInsertOverrideSlot>().is_some());
-        let mut guard = ContainerLockGuard::lock_all(&[container_ref]);
+        let mut guard = ContainerLockGuard::lock_all(&[container_ref])
+            .expect("container access should succeed");
 
         let remaining = slot.safe_insert(&mut guard, ItemStack::new(&vanilla_items::STONE), 1);
 
