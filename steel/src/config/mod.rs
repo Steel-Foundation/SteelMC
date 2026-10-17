@@ -60,7 +60,7 @@ impl SteelConfig {
             Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
         })
     }
-    
+
     /// Logs warnings about unusual but valid settings. Call after the logger is initialized.
     pub fn log_warnings(&self) {
         if self.server.simulation_distance == 0 {
