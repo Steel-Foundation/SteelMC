@@ -208,7 +208,14 @@ impl MushroomCowEntity {
 
     /// Shears the mooshroom, converting it into a normal cow and dropping vanilla loot.
     pub fn shear(&self, world: &Arc<World>, tool: &ItemStack) {
-        self.play_sound(&sound_events::ENTITY_MOOSHROOM_SHEAR, 1.0, 1.0);
+        world.play_sound_at(
+            &sound_events::ENTITY_MOOSHROOM_SHEAR,
+            SoundSource::Players,
+            self.position(),
+            1.0,
+            1.0,
+            None,
+        );
 
         // FIXME: use the vanilla world loot rng once the foundations are there
         let mut rng = rand::rng();
