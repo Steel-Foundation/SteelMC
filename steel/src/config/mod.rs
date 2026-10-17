@@ -101,6 +101,10 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         config
     };
 
+    if config.server.simulation_distance == 0 {
+        log::warn!("simulation_distance is 0: only the player's own chunk receives entity updates, this can cause frozen activity across chunk borders");
+    }
+
     let worlds_path = path
         .parent()
         .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
