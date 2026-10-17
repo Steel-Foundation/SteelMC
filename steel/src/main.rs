@@ -200,6 +200,9 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
             return;
         }
     };
+
+    steel_config.log_warnings();
+
     shutdown::install(cancel_token.clone());
     let panic_token = cancel_token.clone();
     panic::set_hook(Box::new(move |panic_info| {
