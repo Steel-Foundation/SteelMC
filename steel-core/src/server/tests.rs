@@ -2349,7 +2349,7 @@ impl TwoDomains<'_> {
     /// Makes `player` an operator and returns a command source for it.
     fn operator_source(&self, player: &Arc<Player>) -> CommandSource {
         self.server.player_permission_states.write().set(
-            player.gameprofile.id,
+            player.gameprofile.id(),
             PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
         );
         player.set_permission_state(
@@ -2377,7 +2377,7 @@ impl TwoDomains<'_> {
         let saved = self
             .server
             .player_data_storage
-            .save_domain_data("target", player.gameprofile.id, data)
+            .save_domain_data("target", player.gameprofile.id(), data)
             .await;
         if let Err(error) = saved {
             panic!("target-domain data should save: {error}");
@@ -2731,7 +2731,7 @@ fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
         let (server, target) = (&domains.server, domains.target);
         let vehicle_uuid = [22; 16];
         let player = domains.join_source(77);
-        let player_uuid = player.gameprofile.id;
+        let player_uuid = player.gameprofile.id();
         let mut seeded = domains.saved_in_target(&player);
         seeded.root_vehicle = Some(PersistentRootVehicle {
             attach: vehicle_uuid,
