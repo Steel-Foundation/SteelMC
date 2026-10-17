@@ -12,7 +12,7 @@ allow_extended_view_distance = false
 view_distance = 10
 # Maximum simulation distance in chunks
 simulation_distance = 10
-# Maximum chained neighbor-update tasks. Negative values disable the limit.
+# Maximum chained neighbor-update tasks. Negative values disable the limit. A value of 0 restricts simulation to only the player's current chunk, nearby mobs and other activity may freeze across chunk borders
 max_chained_neighbor_updates = 1000000
 # Whether to use Mojang's authentication service
 online_mode = true
