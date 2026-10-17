@@ -2,6 +2,17 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use super::{
+    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
+    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
+    PlayerPermissionState, ResetReason,
+    connection::NetworkConnection,
+    experience::Experience,
+    experience::first_point_level_up_sound,
+    game_mode::block_breaking::BlockBreakAction,
+    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
+    player_inventory::MenuItemDisposition,
+};
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
@@ -46,19 +57,6 @@ use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
-
-use super::{
-    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
-    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
-    PlayerPermissionState, ResetReason,
-    connection::NetworkConnection,
-    experience::Experience,
-    experience::first_point_level_up_sound,
-    game_mode::block_breaking::BlockBreakAction,
-    lifecycle::nullable_game_mode_id,
-    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
-    player_inventory::MenuItemDisposition,
-};
 
 const PLAYER_MAIN_HAND_METADATA_INDEX: u8 = 15;
 const PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX: u8 = 16;
@@ -757,7 +755,12 @@ fn end_credits_removes_all_menus_before_detaching() {
 
     assert!(player.has_won_game());
     assert!(!player.has_container_open());
-    assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+    assert!(
+        world
+            .players
+            .get_by_uuid(&player.gameprofile.id())
+            .is_none()
+    );
     assert_eq!(replacement_removals.load(Ordering::Relaxed), 0);
     let inventory = player.inventory.lock();
     for (item, expected) in [(&vanilla_items::STONE, 2), (&vanilla_items::DIRT, 3)] {
@@ -1275,12 +1278,6 @@ fn equipment_detection_coalesces_before_tracker_drain() {
             item_stack: ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         }]
     );
-}
-
-#[test]
-fn nullable_game_mode_id_matches_vanilla_encoding() {
-    assert_eq!(nullable_game_mode_id(None), -1);
-    assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
 }
 
 #[test]

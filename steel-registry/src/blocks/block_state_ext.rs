@@ -94,11 +94,11 @@ impl BlockStateExt for BlockStateId {
             .by_state_id(*self)
             .expect("Expected a valid state id")
     }
+
     fn with_properties_of(&self, source: BlockStateId) -> BlockStateId {
-        REGISTRY
-            .blocks
-            .copy_matching_properties(source, self.get_block())
+        REGISTRY.blocks.with_properties_of(*self, source)
     }
+
     fn is_air(&self) -> bool {
         self.get_ticking_metadata().is_air()
     }
@@ -449,11 +449,14 @@ mod tests {
     }
 
     #[test]
-    fn with_properties_of_keeps_target_defaults_for_non_matching_properties() {
+    fn with_properties_of_keeps_target_values_for_non_matching_properties() {
         init_vanilla_registry();
 
         let source = vanilla_blocks::STONE.default_state();
-        let target = vanilla_blocks::CANDLE.default_state();
+        let target = vanilla_blocks::CANDLE
+            .default_state()
+            .set_value(&BlockStateProperties::CANDLES, 3)
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
 
         assert_eq!(target.with_properties_of(source), target);
     }

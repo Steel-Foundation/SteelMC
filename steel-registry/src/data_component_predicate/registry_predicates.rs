@@ -1,7 +1,7 @@
 use super::*;
 
 /// Predicate over armor trim material and pattern holders.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrimPredicate {
     material: Option<RegistryHolderSet<TrimMaterial>>,
     pattern: Option<RegistryHolderSet<TrimPattern>>,
@@ -64,7 +64,7 @@ impl HashComponent for TrimPredicate {
 impl_predicate_downcast_type!(TrimPredicate, "steel:data_component_predicate/trim");
 
 /// Predicate over a jukebox-playable song holder.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JukeboxPlayablePredicate(Option<RegistryHolderSet<JukeboxSong>>);
 
 impl JukeboxPlayablePredicate {
@@ -110,7 +110,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Predicate over registered villager variants.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VillagerTypePredicate(RegistryHolderSet<VillagerType>);
 
 impl VillagerTypePredicate {

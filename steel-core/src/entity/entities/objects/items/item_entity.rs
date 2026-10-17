@@ -312,7 +312,7 @@ impl ItemEntity {
 
         // Check owner restriction
         if let Some(owner_uuid) = self.get_owner()
-            && owner_uuid != player.gameprofile.id
+            && owner_uuid != player.gameprofile.id()
         {
             return false;
         }

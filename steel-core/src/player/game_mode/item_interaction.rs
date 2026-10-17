@@ -1,8 +1,10 @@
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
-    wrap_degrees,
+    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
+    World, wrap_degrees,
 };
+use steel_registry::data_components::vanilla_components::USE_REMAINDER;
+use steel_registry::stat::vanilla_stat_types;
 
 /// Handles using an item on a block.
 ///
@@ -104,6 +106,26 @@ pub fn use_item_on(
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
 
+        if result.should_apply_item_use_side_effects() {
+            player.award_stat(&vanilla_stat_types::ITEM_USED, item_ref);
+
+            let extra = stack_before_use.get(USE_REMAINDER).and_then(|remainder| {
+                context.inv.with_item(|item| {
+                    remainder.convert_into_remainder(
+                        item,
+                        stack_before_use.count(),
+                        player.has_infinite_materials(),
+                    )
+                })
+            });
+
+            if let Some(extra) = extra {
+                player.handle_extra_items_created_on_use(extra);
+            }
+
+            player.apply_item_use_cooldown(&stack_before_use);
+        }
+
         // Restored in both directions: `use_on` can also grow the held stack when
         // its result merges back into the slot it came from.
         if player.has_infinite_materials() {
@@ -115,6 +137,10 @@ pub fn use_item_on(
 
     InteractionResult::Pass
 }
+
+#[cfg(test)]
+#[path = "item_interaction/use_on_tests.rs"]
+mod use_on_tests;
 
 /// Handles using an item (general usage like right-clicking air).
 ///
@@ -174,7 +200,7 @@ impl Player {
 
         log::debug!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.hand,
             packet.sequence,
             packet.y_rot,
@@ -209,11 +235,9 @@ impl Player {
         }
 
         let world = self.get_world();
+        let animation = self.interact_animation(packet.hand);
         let result = use_item(self, &world, packet.hand);
-
-        if result.should_swing_server() {
-            self.swing(packet.hand, true);
-        }
+        self.swing_after_interaction(packet.hand, animation, result);
 
         self.broadcast_inventory_changes();
     }

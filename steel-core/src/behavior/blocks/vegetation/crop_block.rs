@@ -91,7 +91,7 @@ pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: B
     }
 }
 
-pub trait CropLike {
+pub(crate) trait CropLike {
     fn block(&self) -> BlockRef;
     fn age_property(&self) -> &IntProperty;
     fn max_age(&self) -> u8;

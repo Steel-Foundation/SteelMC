@@ -6,7 +6,9 @@ use std::cmp::Ordering;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
-use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, convert_to_rotation_segment};
+use steel_math::{
+    DEGREE_90, DEGREE_180, RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
+};
 use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -15,18 +17,23 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
 };
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId, Downcast as _};
+use steel_registry::{
+    stat::vanilla_stat_types, vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
+};
+use steel_utils::{
+    BlockPos, BlockStateId, Downcast as _,
+    types::{InteractionHand, SignTextSlot},
+};
 
-use crate::behavior::InventoryAccess;
 use crate::behavior::block::{
     BlockBehavior, BlockEntityCreation, schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::block_entity::{BlockEntityTicker, entities::SignBlockEntity};
+use crate::behavior::{ITEM_BEHAVIORS, InventoryAccess, PlacementSource};
+use crate::block_entity::{BlockEntity, BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
 use crate::player::Player;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEventContext};
 
 /// Gets the nearest looking directions from the player's rotation.
 ///
@@ -50,8 +57,7 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
         .iter()
         .map(|&dir| {
             let dir_angle = dir.to_yaw();
-            let diff = (rotation - dir_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
-            (dir, diff.abs())
+            (dir, wrap_degrees(rotation - dir_angle).abs())
         })
         .collect();
 
@@ -73,11 +79,11 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
     directions
 }
 
-/// Calculates whether the player is facing the front of a sign.
+/// Calculates which side of a sign the player is facing.
 ///
 /// Uses the sign's rotation (from block state) and the player's position
 /// relative to the sign to determine which side they're looking at.
-pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> bool {
+pub fn facing_text_slot(state: BlockStateId, pos: BlockPos, player: &Player) -> SignTextSlot {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
@@ -90,8 +96,11 @@ pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player)
     let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
     // Front text if the angle difference is <= 90 degrees
-    let diff = (sign_y_rot - player_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
-    diff.abs() <= DEGREE_90
+    if wrap_degrees(player_angle - sign_y_rot).abs() <= DEGREE_90 {
+        SignTextSlot::Front
+    } else {
+        SignTextSlot::Back
+    }
 }
 
 /// Gets the Y rotation of a sign in degrees from its block state.
@@ -190,27 +199,56 @@ fn can_wall_hanging_sign_survive(
     can_attach_clockwise || can_attach_counter
 }
 
-// TODO: Implement sign applicators (use_with_item):
-// - Dye items: Change sign text color (front or back based on player facing)
-//   - Check if sign is not waxed
-//   - Get the SignText for the side player is facing
-//   - If color differs from dye color, update it and consume the dye
-//   - Play DYE_USE sound
-// - Glow Ink Sac: Make sign text glow
-//   - Check if sign is not waxed
-//   - If text is not already glowing, set has_glowing_text = true
-//   - Consume the ink sac
-//   - Play GLOW_INK_SAC_USE sound
-// - Ink Sac: Remove glow from sign text
-//   - Check if sign is not waxed
-//   - If text is glowing, set has_glowing_text = false
-//   - Consume the ink sac
-//   - Play INK_SAC_USE sound
-// - Honeycomb: Wax the sign (prevents future edits)
-//   - If sign is not already waxed, set is_waxed = true
-//   - Consume the honeycomb
-//   - Play HONEYCOMB_WAX_ON sound
-//   - Spawn WAX_ON particles
+// TODO: Implement dye sign applicators.
+fn try_apply_sign_item(
+    state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+    player: &Player,
+    inv: &mut InventoryAccess,
+) -> InteractionResult {
+    let Some(block_entity) = world.get_block_entity(pos) else {
+        return InteractionResult::Pass;
+    };
+    let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
+        return InteractionResult::Pass;
+    };
+
+    // Keep the inventory unlocked while an applicator changes the world.
+    let stack = inv.with_item(|item| item.clone());
+    let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+    let Some(applicator) = behavior.as_sign_applicator() else {
+        return InteractionResult::TryEmptyHandInteraction;
+    };
+    if !player.abilities.lock().may_build
+        || sign.is_waxed()
+        || sign.is_other_player_editing(player.gameprofile.id())
+    {
+        return InteractionResult::TryEmptyHandInteraction;
+    }
+
+    let slot = facing_text_slot(state, pos, player);
+    if !applicator.can_apply_to_sign(&sign.get_text(slot), &stack, player)
+        || !applicator.try_apply_to_sign(world, sign, slot, &stack, player)
+    {
+        return InteractionResult::TryEmptyHandInteraction;
+    }
+
+    sign.set_changed();
+    if let Some(nbt) = sign.get_update_tag() {
+        world.broadcast_block_entity_update(pos, sign.get_type(), nbt);
+    }
+    player.award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
+    world.game_event(
+        &vanilla_game_events::BLOCK_CHANGE,
+        pos,
+        &GameEventContext::new(Some(player), Some(state)),
+    );
+    let has_infinite_materials = player.has_infinite_materials();
+    inv.with_item(|item| item.consume_one(has_infinite_materials));
+
+    InteractionResult::Success
+}
 
 /// Attempts to open the sign editor for a player.
 ///
@@ -219,6 +257,7 @@ fn can_wall_hanging_sign_survive(
 /// 2. Sign is not waxed
 /// 3. No other player is currently editing
 /// 4. Player has build permission (`may_build`)
+/// 5. Facing side contains only editable text
 ///
 /// Returns `Success` if the editor was opened, `Pass` otherwise.
 fn try_open_sign_editor(
@@ -243,7 +282,7 @@ fn try_open_sign_editor(
     }
 
     // Check 2: Is another player editing?
-    if sign.is_other_player_editing(player.gameprofile.id) {
+    if sign.is_other_player_editing(player.gameprofile.id()) {
         return InteractionResult::Pass;
     }
 
@@ -254,14 +293,34 @@ fn try_open_sign_editor(
     // }
 
     // Determine which side the player is facing
-    let is_front_text = is_facing_front_text(state, pos, player);
+    let slot = facing_text_slot(state, pos, player);
+    if !sign.get_text(slot).has_editable_text() {
+        return InteractionResult::Pass;
+    }
 
-    // Set the editing player lock
-    sign.set_player_who_may_edit(Some(player.gameprofile.id));
-
-    // Open the editor
-    player.open_sign_editor(pos, is_front_text);
+    open_text_edit(sign, player, pos, slot);
     InteractionResult::Success
+}
+
+/// Opens the sign editor for `player`, taking the edit lock.
+fn open_text_edit(sign: &SignBlockEntity, player: &Player, pos: BlockPos, slot: SignTextSlot) {
+    sign.set_player_who_may_edit(Some(player.gameprofile.id()));
+    player.open_sign_editor(pos, slot);
+}
+
+/// Opens the front text editor for the player who just placed the sign.
+fn open_sign_editor_on_place(world: &Arc<World>, pos: BlockPos, player: &Player) {
+    let Some(block_entity) = world.get_block_entity(pos) else {
+        return;
+    };
+    let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
+        return;
+    };
+    if sign.is_waxed() || !sign.get_text(SignTextSlot::Front).has_editable_text() {
+        return;
+    }
+
+    open_text_edit(sign, player, pos, SignTextSlot::Front);
 }
 
 /// Behavior for standing sign blocks (placed on ground).
@@ -338,6 +397,19 @@ impl BlockBehavior for StandingSignBlock {
         )
     }
 
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
+    }
+
     fn use_without_item(
         &self,
         state: BlockStateId,
@@ -348,6 +420,18 @@ impl BlockBehavior for StandingSignBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
+    }
+
+    fn set_placed_by(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            open_sign_editor_on_place(world, pos, player);
+        }
     }
 }
 
@@ -434,6 +518,19 @@ impl BlockBehavior for WallSignBlock {
         )
     }
 
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
+    }
+
     fn use_without_item(
         &self,
         state: BlockStateId,
@@ -444,6 +541,18 @@ impl BlockBehavior for WallSignBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
+    }
+
+    fn set_placed_by(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            open_sign_editor_on_place(world, pos, player);
+        }
     }
 }
 
@@ -565,6 +674,19 @@ impl BlockBehavior for CeilingHangingSignBlock {
         )
     }
 
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
+    }
+
     fn use_without_item(
         &self,
         state: BlockStateId,
@@ -575,6 +697,18 @@ impl BlockBehavior for CeilingHangingSignBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
+    }
+
+    fn set_placed_by(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            open_sign_editor_on_place(world, pos, player);
+        }
     }
 }
 
@@ -679,6 +813,19 @@ impl BlockBehavior for WallHangingSignBlock {
         )
     }
 
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
+    }
+
     fn use_without_item(
         &self,
         state: BlockStateId,
@@ -689,6 +836,18 @@ impl BlockBehavior for WallHangingSignBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
+    }
+
+    fn set_placed_by(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source: &PlacementSource<'_>,
+    ) {
+        if let Some(player) = source.player() {
+            open_sign_editor_on_place(world, pos, player);
+        }
     }
 }
 

@@ -28,6 +28,7 @@ pub mod stats_counter;
 mod tick_state;
 mod title;
 
+use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
 pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
@@ -47,8 +48,7 @@ use movement::{MovementState, TeleportState};
 use permissions::PlayerPermissionState;
 pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
 pub use profile::{
-    GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
-    is_valid_player_name, offline_uuid,
+    GameProfile, KnownPlayer, KnownPlayers, ProfileLookupError, is_valid_player_name, offline_uuid,
 };
 pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
@@ -570,7 +570,7 @@ impl Player {
 
         let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
-        let player_uuid = gameprofile.id;
+        let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         Self {
             gameprofile,
@@ -742,7 +742,8 @@ impl Player {
 
     /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
-        if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
+        let dirty_values = self.entity_data.lock().pack_dirty();
+        if let Some(dirty_values) = dirty_values {
             let packet = CSetEntityData::new(self.id(), dirty_values);
             self.get_world()
                 .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
@@ -914,7 +915,7 @@ impl Player {
             key: death_key.into(),
             fallback: None,
             args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name.clone(),
+                self.gameprofile.name().to_owned(),
             )])),
         }
         .component();
@@ -939,7 +940,7 @@ impl Player {
         if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
             let drops = self.inventory.lock().take_death_drops();
             for item in drops {
-                let _ = self.drop_item(item, true, false);
+                let _ = self.spawn_dropped_item(item, true, false);
             }
 
             let reward = self.experience.lock().death_xp_reward();
@@ -1142,10 +1143,10 @@ impl Player {
 
     /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
     pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
-        debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
+        debug_assert_eq!(self.gameprofile.id(), replacement.gameprofile.id());
         let replacement_entity: SharedEntity = Arc::<Player>::clone(replacement);
         for pearl in self.ender_pearls() {
-            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
+            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id()) {
                 pearl.restore_owner_reference(&replacement_entity);
             }
         }
@@ -1306,29 +1307,29 @@ impl Entity for Player {
     }
 
     fn scoreboard_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn name(&self) -> TextComponent {
-        TextComponent::plain(self.gameprofile.name.clone())
+        TextComponent::plain(self.gameprofile.name().to_owned())
     }
 
     fn display_name(&self) -> TextComponent {
         self.name()
             .click_event(ClickEvent::suggest_command(format!(
                 "/tell {} ",
-                self.gameprofile.name
+                self.gameprofile.name()
             )))
             .hover_event(HoverEvent::show_entity(
                 "minecraft:player",
                 self.uuid(),
                 Some(self.name()),
             ))
-            .insertion(self.gameprofile.name.clone())
+            .insertion(self.gameprofile.name().to_owned())
     }
 
     fn plain_text_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
@@ -1729,7 +1730,10 @@ impl LivingEntity for Player {
         self.tick_sleep_counter();
         if self.is_sleeping() {
             let world = self.get_world();
-            if !self.bed_rule_value_allows(world.dimension_type.bed_rule.can_sleep) {
+            let state = self.sleeping_pos().map(|pos| world.get_block_state(pos));
+            if state.is_some_and(|state| {
+                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
+            }) {
                 self.stop_sleep_in_bed(false, true);
             } else if !self.can_interact_with_level()
                 || self
@@ -2020,7 +2024,7 @@ impl LivingEntity for Player {
     fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
         let leftover = self.inventory.lock().add_or_return(extra);
         if !leftover.is_empty() {
-            let _ = self.drop_item(leftover, false, false);
+            let _ = self.drop_item(leftover, false, Prediction::Predicted);
         }
     }
 

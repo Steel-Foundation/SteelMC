@@ -470,7 +470,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns how vanilla lets this entity respond to piston movement.
     fn piston_push_reaction(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
-            PushReaction::Ignore
+            PushReaction::IgnoreEntity
         } else {
             self.entity_type().flags.piston_push_reaction
         }
@@ -3538,7 +3538,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         let pos = self.position();
-        world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
+        let entity = world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Spawns an item at this entity's location plus a vanilla attachment offset.
@@ -3548,7 +3550,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         offset: DVec3,
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
-        world.spawn_item(self.position() + offset, item)
+        let entity = world.spawn_item(self.position() + offset, item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.

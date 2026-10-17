@@ -25,7 +25,9 @@ pub use steel_registry::items::item::BlockHitResult;
 pub enum InteractionResult {
     /// The interaction succeeded and consumed the action.
     Success,
-    /// The interaction succeeded and the server should broadcast the swing.
+    /// Successful blockside action without automatic item use effects
+    SuccessWithoutItem,
+    /// The interaction succeeded with a swing that the client did not predict
     SuccessServer,
     /// The interaction consumed the action without swinging.
     Consume,
@@ -45,16 +47,22 @@ impl InteractionResult {
         matches!(
             self,
             InteractionResult::Success
+                | InteractionResult::SuccessWithoutItem
                 | InteractionResult::SuccessServer
                 | InteractionResult::Consume
                 | InteractionResult::Fail
         )
     }
 
-    /// Returns true when vanilla requests the server to broadcast the swing.
+    /// Returns whether the interaction starts a predicted or serveronly swing
     #[must_use]
-    pub const fn should_swing_server(self) -> bool {
-        matches!(self, InteractionResult::SuccessServer)
+    pub const fn should_swing(self) -> bool {
+        matches!(
+            self,
+            InteractionResult::Success
+                | InteractionResult::SuccessWithoutItem
+                | InteractionResult::SuccessServer
+        )
     }
 
     /// Returns true for vanilla `InteractionResult.Success` variants that run
@@ -816,6 +824,9 @@ mod tests {
         assert!(InteractionResult::Success.should_apply_item_use_side_effects());
         assert!(InteractionResult::SuccessServer.should_apply_item_use_side_effects());
         assert!(InteractionResult::Consume.should_apply_item_use_side_effects());
+        assert!(InteractionResult::SuccessWithoutItem.consumes_action());
+        assert!(!InteractionResult::SuccessWithoutItem.should_apply_item_use_side_effects());
+        assert!(InteractionResult::SuccessWithoutItem.should_swing());
         assert!(!InteractionResult::Fail.should_apply_item_use_side_effects());
         assert!(!InteractionResult::Pass.should_apply_item_use_side_effects());
         assert!(!InteractionResult::TryEmptyHandInteraction.should_apply_item_use_side_effects());

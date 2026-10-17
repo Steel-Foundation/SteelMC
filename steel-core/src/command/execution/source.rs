@@ -288,7 +288,7 @@ impl CommandSource {
         let authorization = match &sender {
             CommandSender::Player(player) => CommandAuthorizationContext::for_player(
                 world.key.clone(),
-                server.command_permission_snapshot(player.gameprofile.id),
+                server.command_permission_snapshot(player.gameprofile.id()),
             ),
             CommandSender::Console | CommandSender::Rcon => {
                 CommandAuthorizationContext::unrestricted(world.key.clone())
@@ -496,10 +496,13 @@ impl CommandSource {
             .italic(true);
 
         if self.world.get_game_rule(&SEND_COMMAND_FEEDBACK) {
-            let sender_uuid = self.sender.get_player().map(|player| player.gameprofile.id);
+            let sender_uuid = self
+                .sender
+                .get_player()
+                .map(|player| player.gameprofile.id());
             for player in self.server.get_players() {
-                if Some(player.gameprofile.id) != sender_uuid
-                    && self.server.is_operator(player.gameprofile.id)
+                if Some(player.gameprofile.id()) != sender_uuid
+                    && self.server.is_operator(player.gameprofile.id())
                 {
                     player.send_message(&broadcast);
                 }
@@ -572,13 +575,9 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn command_world_names(&self) -> Vec<String> {
-        let domain = self.world.domain();
         let mut names = Vec::new();
         for key in self.server.worlds.keys() {
             names.push(key.to_string());
-            if key.namespace.as_ref() == domain {
-                names.push(key.path.to_string());
-            }
         }
         names
     }
@@ -710,7 +709,7 @@ impl CommandArgumentSource for CommandSource {
                     .command_world_for_player(player)
                     .is_some_and(|world| world.domain() == domain)
             })
-            .map(|player| player.gameprofile.name.clone())
+            .map(|player| player.gameprofile.name().to_owned())
             .collect()
     }
 
@@ -756,7 +755,7 @@ fn profile_argument_uuids(
                 |players| {
                     players
                         .into_iter()
-                        .map(|player| player.gameprofile.id)
+                        .map(|player| player.gameprofile.id())
                         .collect()
                 },
             )
@@ -771,8 +770,8 @@ fn profile_argument_uuids(
                         .server
                         .get_players()
                         .into_iter()
-                        .find(|player| player.gameprofile.name.eq_ignore_ascii_case(value))
-                        .map(|player| player.gameprofile.id)
+                        .find(|player| player.gameprofile.name().eq_ignore_ascii_case(value))
+                        .map(|player| player.gameprofile.id())
                 });
             uuid.into_iter().collect()
         }
@@ -799,8 +798,8 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
     let players = server.get_players();
     let mut names = Vec::new();
     for player in &players {
-        if operator == server.is_operator(player.gameprofile.id) {
-            names.push(player.gameprofile.name.clone());
+        if operator == server.is_operator(player.gameprofile.id()) {
+            names.push(player.gameprofile.name().to_owned());
         }
     }
 
@@ -815,7 +814,7 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
             || players.iter().any(|player| {
                 player
                     .gameprofile
-                    .name
+                    .name()
                     .eq_ignore_ascii_case(known.last_known_name())
             })
         {
@@ -833,7 +832,7 @@ fn all_profile_names(server: &Server) -> Vec<String> {
     let players = server.get_players();
     let mut names = players
         .iter()
-        .map(|player| player.gameprofile.name.clone())
+        .map(|player| player.gameprofile.name().to_owned())
         .collect::<Vec<_>>();
     for known in server.known_players().entries() {
         if names

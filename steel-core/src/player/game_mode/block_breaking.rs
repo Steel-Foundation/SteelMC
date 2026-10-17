@@ -13,7 +13,7 @@ use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
 use steel_registry::{
-    REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
+    REGISTRY, blocks::properties::Direction, item_stack::ItemStack, level_events, vanilla_blocks,
     vanilla_game_events,
 };
 use steel_utils::{
@@ -114,6 +114,8 @@ pub struct BlockBreakingManager {
     destroy_progress_start: u64,
     /// The position of the block being destroyed.
     destroy_pos: BlockPos,
+    /// The face being mined, used as the data value for the destroy-progress level event.
+    destroy_direction: Direction,
     /// The current game tick counter.
     game_ticks: u64,
     /// Whether there's a delayed destroy pending (for slow mining).
@@ -140,6 +142,7 @@ impl BlockBreakingManager {
             is_destroying_block: false,
             destroy_progress_start: 0,
             destroy_pos: BlockPos::new(0, 0, 0),
+            destroy_direction: Direction::Down,
             game_ticks: 0,
             has_delayed_destroy: false,
             delayed_destroy_pos: BlockPos::new(0, 0, 0),
@@ -179,12 +182,26 @@ impl BlockBreakingManager {
                 self.last_sent_state = -1;
                 self.is_destroying_block = false;
             } else {
+                let ticks_spent_destroying =
+                    self.game_ticks.saturating_sub(self.destroy_progress_start);
+                let event = if ticks_spent_destroying.is_multiple_of(4) {
+                    level_events::PARTICLES_AND_SOUND_DESTROY_PROGRESS
+                } else {
+                    level_events::PARTICLES_DESTROY_PROGRESS
+                };
+
                 self.increment_destroy_progress(
                     player,
                     world,
                     state,
                     self.destroy_pos,
                     self.destroy_progress_start,
+                );
+                world.level_event(
+                    event,
+                    self.destroy_pos,
+                    self.destroy_direction.get_3d_data_value(),
+                    None,
                 );
             }
         }
@@ -222,10 +239,13 @@ impl BlockBreakingManager {
         world: &Arc<World>,
         pos: BlockPos,
         action: BlockBreakAction,
-        _direction: Direction,
+        direction: Direction,
     ) {
         // Validate interaction range
         if !player.is_within_block_interaction_range(pos) {
+            if self.is_destroying_block && action == BlockBreakAction::Abort {
+                self.abort_destroy_block(player, world, pos);
+            }
             return;
         }
 
@@ -239,6 +259,10 @@ impl BlockBreakingManager {
         }
 
         match action {
+            BlockBreakAction::ChangeDirection => {
+                self.destroy_direction = direction;
+            }
+
             BlockBreakAction::Start => {
                 // Check may_interact permission
                 if !world.may_interact(player, pos) {
@@ -289,6 +313,7 @@ impl BlockBreakingManager {
 
                         self.is_destroying_block = true;
                         self.destroy_pos = pos;
+                        self.destroy_direction = direction;
                         let state = (progress * 10.0) as i32;
                         world.broadcast_block_destruction(player.id(), pos, state);
                         self.last_sent_state = state;
@@ -325,20 +350,24 @@ impl BlockBreakingManager {
             }
 
             BlockBreakAction::Abort => {
-                self.is_destroying_block = false;
-
-                if self.destroy_pos != pos {
-                    log::warn!(
-                        "Mismatch in destroy block pos: {:?} vs {:?}",
-                        self.destroy_pos,
-                        pos
-                    );
-                    world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
-                }
-
-                world.broadcast_block_destruction(player.id(), pos, -1);
+                self.abort_destroy_block(player, world, pos);
             }
         }
+    }
+
+    fn abort_destroy_block(&mut self, player: &Player, world: &Arc<World>, pos: BlockPos) {
+        self.is_destroying_block = false;
+
+        if self.destroy_pos != pos {
+            log::warn!(
+                "Mismatch in destroy block pos: {:?} vs {:?}",
+                self.destroy_pos,
+                pos
+            );
+            world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
+        }
+
+        world.broadcast_block_destruction(player.id(), pos, -1);
     }
 
     /// Destroys a block and sends appropriate response.
@@ -501,6 +530,8 @@ impl BlockBreakingManager {
 pub enum BlockBreakAction {
     /// Player started breaking a block.
     Start,
+    /// Player redirected the block-break raycast without resetting progress.
+    ChangeDirection,
     /// Player stopped breaking a block (finished or released).
     Stop,
     /// Player aborted breaking a block.
