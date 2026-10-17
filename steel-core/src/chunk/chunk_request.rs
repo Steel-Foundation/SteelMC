@@ -108,6 +108,14 @@ struct ChunkRequestInner {
     ticket_kind: ChunkTicketKind,
 }
 
+impl ChunkRequestInner {
+    fn tickets_committed(&self) -> bool {
+        self.lease
+            .submission_receipt
+            .is_none_or(|receipt| self.lease.chunk_map.is_ticket_receipt_committed(receipt))
+    }
+}
+
 /// Handle for a ticketed chunk request.
 ///
 /// Dropping or cancelling the handle releases its tickets. The handle never
@@ -152,6 +160,15 @@ impl ChunkRequestHandle {
             .map_or(&[], |inner| inner.lease.positions.as_ref())
     }
 
+    /// Whether the request's tickets are committed, so its chunks stay loaded once they are
+    /// available. `false` once the request is cancelled.
+    #[must_use]
+    pub fn tickets_committed(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(ChunkRequestInner::tickets_committed)
+    }
+
     /// Polls request readiness. The chunk-source phase owns chunk holder
     /// creation and generation scheduling.
     #[must_use]
@@ -162,11 +179,8 @@ impl ChunkRequestHandle {
         if inner.lease.positions.is_empty() {
             return ChunkRequestState::Ready;
         }
-        let ticket_receipt_committed = inner
-            .lease
-            .submission_receipt
-            .is_none_or(|receipt| inner.lease.chunk_map.is_ticket_receipt_committed(receipt));
-
+        // Read before the scan: chunks seen ready afterwards stay held by the committed tickets.
+        let tickets_committed = inner.tickets_committed();
         let mut ready = 0;
         for &pos in &inner.lease.positions {
             let Some(holder) = inner
@@ -183,7 +197,7 @@ impl ChunkRequestHandle {
             }
         }
 
-        if ticket_receipt_committed && ready == inner.lease.positions.len() {
+        if tickets_committed && ready == inner.lease.positions.len() {
             ChunkRequestState::Ready
         } else {
             ChunkRequestState::Pending {
@@ -197,11 +211,7 @@ impl ChunkRequestHandle {
     #[must_use]
     pub fn ready_chunks(&self) -> Option<ReadyChunks> {
         let inner = self.inner.as_ref()?;
-        if inner
-            .lease
-            .submission_receipt
-            .is_some_and(|receipt| !inner.lease.chunk_map.is_ticket_receipt_committed(receipt))
-        {
+        if !inner.tickets_committed() {
             return None;
         }
         let mut holders = Vec::with_capacity(inner.lease.positions.len());
@@ -342,8 +352,26 @@ mod tests {
             ChunkRequestState::Pending { ready: 1, total: 1 }
         );
         assert!(second.ready_chunks().is_none());
+        assert!(!second.tickets_committed());
 
         drive_request_until_ready(&world.chunk_map, &second);
         assert!(second.ready_chunks().is_some());
+        assert!(second.tickets_committed());
+    }
+
+    #[test]
+    fn a_cancelled_request_has_no_committed_tickets() {
+        let world_fixture = fresh_test_world("chunk_request_cancel");
+        let world = &world_fixture.world;
+        let mut request = world.chunk_map.request_chunk(
+            ChunkPos::new(1, 1),
+            ChunkStatus::Empty,
+            ChunkTicketKind::Command,
+        );
+        drive_request_until_ready(&world.chunk_map, &request);
+        assert!(request.tickets_committed());
+
+        request.cancel();
+        assert!(!request.tickets_committed());
     }
 }

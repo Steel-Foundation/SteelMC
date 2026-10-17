@@ -2366,6 +2366,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         apply_effects_from_block_movements(entity, &movements);
     }
 
+    /// What vanilla's `/teleport` does once an entity has moved: unless it is gliding, it ends up
+    /// on the ground without vertical motion.
+    fn land_after_teleport(&self) {
+        if self
+            .as_living_entity()
+            .is_none_or(|living| !living.is_fall_flying())
+        {
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
+            self.set_on_ground(true);
+        }
+    }
+
     /// Sets whether the entity is on the ground.
     fn set_on_ground(&self, on_ground: bool) {
         let ground_contact = self.ground_contact_after_movement(on_ground, None);

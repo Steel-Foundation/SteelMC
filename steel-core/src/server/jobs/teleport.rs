@@ -3,11 +3,13 @@ use super::super::{
     ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, NetworkConnection,
     PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch,
     PlayerSpawnSearchPoll, PreparedSpawn, RelativeMovement, RemovalReason, RespawnData, Server,
-    SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World, change_entity_world,
-    end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal, vanilla_entities,
+    SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World, WorldEntry,
+    change_entity_world, end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal,
+    vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
 use crate::entity::LivingEntity as _;
+use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 
 pub(in crate::server) struct RootVehicleRestoreJob {
     player: Arc<Player>,
@@ -16,6 +18,7 @@ pub(in crate::server) struct RootVehicleRestoreJob {
     attach: [u8; 16],
     root_uuid: [u8; 16],
     residence_token: DomainResidenceToken,
+    mount_player: bool,
 }
 
 impl RootVehicleRestoreJob {
@@ -24,6 +27,7 @@ impl RootVehicleRestoreJob {
         world: Arc<World>,
         root_vehicle: &PersistentRootVehicle,
         residence_token: DomainResidenceToken,
+        mount_player: bool,
     ) -> Option<Self> {
         let root_chunk = persistent_entity_chunk(&root_vehicle.entity)?;
         let request = world.chunk_map.request_chunk(
@@ -38,6 +42,7 @@ impl RootVehicleRestoreJob {
             attach: root_vehicle.attach,
             root_uuid: root_vehicle.entity.uuid,
             residence_token,
+            mount_player,
         })
     }
 }
@@ -78,7 +83,12 @@ impl ServerJob for RootVehicleRestoreJob {
                     self.attach,
                     self.root_uuid,
                 ) {
-                    restore_root_vehicle_for_player(&player, &self.world, root_vehicle);
+                    restore_root_vehicle_for_player(
+                        &player,
+                        &self.world,
+                        root_vehicle,
+                        self.mount_player,
+                    );
                 }
                 JobPoll::Finished
             }
@@ -164,14 +174,13 @@ fn poll_portal_chunks_until_ready(
     }
 }
 
-const WORLD_SPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
-
 pub(in crate::server) struct WorldSpawnTeleportJob {
     entity: SharedEntity,
     source_world: Arc<World>,
     target_world: Arc<World>,
     pending_token: PendingWorldChangeToken,
     rotation: (f32, f32),
+    entry: WorldEntry,
     phase: WorldSpawnTeleportPhase,
 }
 
@@ -189,27 +198,46 @@ impl WorldSpawnTeleportJob {
         source_world: Arc<World>,
         target_world: Arc<World>,
         pending_token: PendingWorldChangeToken,
+        prefetch: Option<ChunkRequestHandle>,
+        entry: WorldEntry,
     ) -> Result<Self, String> {
         if entity.as_player().is_none() {
             return Err("world spawn selection does not belong to a player".to_owned());
         }
-        let (spawn_suggestion, rotation) = {
+        let (spawn_suggestion, spawn_rotation) = {
             let level_data = target_world.level_data.read();
             let data = level_data.data();
             (data.spawn_pos(), (data.spawn.angle, 0.0))
         };
-        let search = PlayerSpawnSearch::new(
-            &target_world,
-            spawn_suggestion,
-            target_world.default_gamemode(),
-        )?;
+        let rotation = match entry {
+            WorldEntry::Usual => spawn_rotation,
+            WorldEntry::Rotation(turned) => turned,
+            WorldEntry::Exact(spawn) => spawn.rotation,
+        };
+        let phase = if let WorldEntry::Exact(spawn) = entry {
+            WorldSpawnTeleportPhase::Loading {
+                request: target_world.request_player_spawn_chunks(spawn.position),
+                spawn,
+            }
+        } else {
+            WorldSpawnTeleportPhase::Searching(
+                PlayerSpawnSearch::new(
+                    &target_world,
+                    spawn_suggestion,
+                    target_world.default_gamemode(),
+                )?
+                .with_safe_fallback()
+                .with_prefetch(prefetch),
+            )
+        };
         Ok(Self {
             entity,
             source_world,
             target_world,
             pending_token,
             rotation,
-            phase: WorldSpawnTeleportPhase::Searching(search),
+            entry,
+            phase,
         })
     }
 
@@ -255,10 +283,7 @@ impl ServerJob for WorldSpawnTeleportJob {
         loop {
             match &mut self.phase {
                 WorldSpawnTeleportPhase::Searching(search) => {
-                    match search.poll_with_ready_candidate_budget(
-                        &self.target_world,
-                        WORLD_SPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                    ) {
+                    match search.poll_with_time_budget(&self.target_world, POLL_TIME_BUDGET) {
                         PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
                         PlayerSpawnSearchPoll::Cancelled => {
                             self.finish_pending();
@@ -298,6 +323,12 @@ impl ServerJob for WorldSpawnTeleportJob {
                         };
                         let changed_entity =
                             change_entity_world(Arc::clone(&self.entity), &transition);
+                        // An exact placement lands like `/teleport`.
+                        if matches!(self.entry, WorldEntry::Exact(_))
+                            && let Some(entity) = &changed_entity
+                        {
+                            entity.land_after_teleport();
+                        }
                         return finish_portal_world_change(
                             &self.entity,
                             self.pending_token,
@@ -421,8 +452,6 @@ impl ServerJob for NetherPortalTeleportJob {
         self.request.cancel();
     }
 }
-
-const END_PORTAL_RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
 struct EndPortalRespawnSpawn {
     position: DVec3,
@@ -590,10 +619,7 @@ impl ServerJob for EndPortalTeleportJob {
                     target_world,
                     respawn_data,
                     search,
-                } => match search.poll_with_ready_candidate_budget(
-                    target_world,
-                    END_PORTAL_RESPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                ) {
+                } => match search.poll_with_time_budget(target_world, POLL_TIME_BUDGET) {
                     PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
                     PlayerSpawnSearchPoll::Cancelled => {
                         clear_pending_world_change(&entity, pending_token);
@@ -802,6 +828,7 @@ fn restore_root_vehicle_for_player(
     player: &Arc<Player>,
     world: &Arc<World>,
     root_vehicle: PersistentRootVehicle,
+    mount_player: bool,
 ) {
     let Some(root_chunk) = persistent_entity_chunk(&root_vehicle.entity) else {
         return;
@@ -843,10 +870,12 @@ fn restore_root_vehicle_for_player(
         return;
     }
 
-    let player_entity: SharedEntity = Arc::<Player>::clone(player);
-    EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
-    attach_entity.position_rider(player.as_ref());
-    player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
+    if mount_player {
+        let player_entity: SharedEntity = Arc::<Player>::clone(player);
+        EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
+        attach_entity.position_rider(player.as_ref());
+        player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
+    }
 
     world.mark_chunk_dirty(root_chunk);
     for entity in &entities {
