@@ -333,7 +333,9 @@ impl MushroomCowEntity {
         } else {
             *self.stew_effects.lock() = Some(effects);
             self.play_sound(&sound_events::ENTITY_MOOSHROOM_EAT, 2.0, 1.0);
-            Mob::use_player_item(self, player, hand);
+           if !player.has_infinite_materials() {
+               Mob::use_player_item(self, player, hand);
+           }
             InteractionResult::Success
         }
     }
