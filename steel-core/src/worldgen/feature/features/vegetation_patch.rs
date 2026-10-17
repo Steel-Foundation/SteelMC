@@ -149,7 +149,7 @@ impl FeatureDecorationRunner {
         depth: i32,
     ) -> bool {
         for i in 0..depth {
-            let state_to_place = Self::sample_block_state_provider(
+            let state_to_place = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,

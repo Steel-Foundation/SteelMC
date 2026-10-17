@@ -254,10 +254,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         // and add coordination + cache-clone overhead with no spare cores to use.
         let n_slices = cell_count_xz + 1;
         let mut local_blended = vec![0.0_f32; corners_y];
-        for cx_off in 0..n_slices {
+        for (cx_off, slice) in self.slices[..n_slices].iter_mut().enumerate() {
             let cell_x = first_cell_x + cx_off as i32;
             Self::fill_slice_into(
-                &mut self.slices[cx_off],
+                slice,
                 cell_x,
                 block_ys,
                 &mut local_blended,

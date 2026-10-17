@@ -281,7 +281,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         });
         if let Err(error) = server
             .player_data_storage
-            .save_domain_data("target", saved_player.gameprofile.id, &saved_data)
+            .save_domain_data("target", saved_player.gameprofile.id(), &saved_data)
             .await
         {
             panic!("saved target-domain data should persist: {error}");
@@ -399,7 +399,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         saved_data.world = "target:missing".to_owned();
         if let Err(error) = server
             .player_data_storage
-            .save_domain_data("target", saved_player.gameprofile.id, &saved_data)
+            .save_domain_data("target", saved_player.gameprofile.id(), &saved_data)
             .await
         {
             panic!("unavailable saved-world data should persist: {error}");
@@ -490,7 +490,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         target_data.pos = target_position.to_array();
         let saved = server
             .player_data_storage
-            .save_domain_data("target", player.gameprofile.id, &target_data)
+            .save_domain_data("target", player.gameprofile.id(), &target_data)
             .await;
         if let Err(error) = saved {
             panic!("target-domain data should save: {error}");
@@ -515,13 +515,13 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         assert!(
             source_world
                 .players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .is_none()
         );
         assert!(
             target_world
                 .players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .is_none()
         );
 
@@ -551,13 +551,13 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         assert!(
             source_world
                 .players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .is_none()
         );
         assert!(
             target_world
                 .players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .is_some_and(|current| Arc::ptr_eq(&current, &player))
         );
         assert_eq!(player.position(), target_position);
@@ -670,7 +670,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         let mut pearl_nbt = NbtCompound::new();
         pearl_nbt.insert(
             "Owner",
-            NbtTag::IntArray(old_player.gameprofile.id.to_int_array().to_vec()),
+            NbtTag::IntArray(old_player.gameprofile.id().to_int_array().to_vec()),
         );
         pearl_nbt.write(&mut pearl_entity.nbt_data);
         let pearl = PersistentEnderPearl {
@@ -1013,6 +1013,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         };
 
         let player = test_player(&server, Arc::clone(source_world));
+        let player_id = player.gameprofile.id();
         player.set_health(7.0);
         player
             .base()
@@ -1029,7 +1030,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         server.process_domain_switches();
         assert!(!source_world.contains_player(&player));
         assert_eq!(
-            server.player_admissions.lock().get(&player.gameprofile.id),
+            server.player_admissions.lock().get(&player_id),
             Some(&PlayerAdmissionState::Relocating)
         );
 
@@ -1045,17 +1046,13 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         server.tick_jobs(1, true);
         assert!(server.jobs.is_empty());
         assert_eq!(
-            server.player_admissions.lock().get(&player.gameprofile.id),
+            server.player_admissions.lock().get(&player_id),
             Some(&PlayerAdmissionState::Disconnecting)
         );
         for _ in 0..1_000 {
             server.start_player_disconnect_saves(&mut disconnect_saves);
             if disconnect_saves.is_empty()
-                && server
-                    .player_admissions
-                    .lock()
-                    .get(&player.gameprofile.id)
-                    .is_none()
+                && server.player_admissions.lock().get(&player_id).is_none()
             {
                 break;
             }
@@ -1068,7 +1065,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
 
         let saved = server
             .player_data_storage
-            .load_domain("source", player.gameprofile.id)
+            .load_domain("source", player_id)
             .await;
         let Ok(Some(saved)) = saved else {
             panic!("the source-domain snapshot should be the active save");
@@ -1150,7 +1147,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
         ];
         if let Err(error) = server
             .player_data_storage
-            .save_domain_data("target", player.gameprofile.id, &target_data)
+            .save_domain_data("target", player.gameprofile.id(), &target_data)
             .await
         {
             panic!("target-domain data should save: {error}");
@@ -1206,7 +1203,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
 
         let saved_target = server
             .player_data_storage
-            .load_domain("target", player.gameprofile.id)
+            .load_domain("target", player.gameprofile.id())
             .await;
         let Ok(Some(saved_target)) = saved_target else {
             panic!("failed target state should be persisted");
@@ -1453,7 +1450,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
 
         let target_before_switch = server
             .player_data_storage
-            .load_domain("target", player.gameprofile.id)
+            .load_domain("target", player.gameprofile.id())
             .await;
         assert!(matches!(target_before_switch, Ok(None)));
 
@@ -1737,7 +1734,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         );
         assert_eq!(
             source.selector_player_names(),
-            vec![player.gameprofile.name.clone()]
+            vec![player.gameprofile.name().to_owned()]
         );
         assert!(
             server
@@ -1858,7 +1855,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         assert!(player.finish_pending_world_change(pending_token));
         world.remove_player_for_world_change(&player);
         assert!(server.online_players.remove_player_sync(&player).is_some());
-        let replacement = test_player_with_uuid(&server, Arc::clone(world), player.gameprofile.id);
+        let replacement =
+            test_player_with_uuid(&server, Arc::clone(world), player.gameprofile.id());
         assert!(server.online_players.insert(Arc::clone(&replacement)));
         assert!(world.add_player(Arc::clone(&replacement), ResetReason::InitialJoin));
         assert!(
@@ -2892,13 +2890,13 @@ fn current_respawn_replacement(
 ) -> Arc<Player> {
     let Some(replacement) = server
         .online_players
-        .get_by_uuid(&old_player.gameprofile.id)
+        .get_by_uuid(&old_player.gameprofile.id())
     else {
         panic!("respawn replacement should own the online-player index");
     };
 
     assert!(!Arc::ptr_eq(&replacement, old_player));
-    assert_eq!(replacement.gameprofile.id, old_player.gameprofile.id);
+    assert_eq!(replacement.gameprofile.id(), old_player.gameprofile.id());
     assert_eq!(replacement.id(), old_player.id());
     assert_ne!(replacement.generation(), old_player.generation());
     assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
@@ -2911,7 +2909,7 @@ fn current_respawn_replacement(
     assert!(
         world
             .players
-            .get_by_uuid(&replacement.gameprofile.id)
+            .get_by_uuid(&replacement.gameprofile.id())
             .is_some_and(|current| Arc::ptr_eq(&current, &replacement))
     );
     assert!(
@@ -3205,7 +3203,10 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         });
 
         assert!(
-            world.players.get_by_uuid(&joining.gameprofile.id).is_some(),
+            world
+                .players
+                .get_by_uuid(&joining.gameprofile.id())
+                .is_some(),
             "joining player should enter the world"
         );
         let packet_ids = existing_packets
@@ -3233,7 +3234,7 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             let packets = existing_packets.lock();
             decode_initial_player_info_hat(&packets[player_info_index])
         };
-        assert_eq!(player_info_uuid, joining.gameprofile.id);
+        assert_eq!(player_info_uuid, joining.gameprofile.id());
         assert!(
             !show_hat,
             "initial player info should reflect the joining player's disabled hat layer"
@@ -3298,14 +3299,14 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
             .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
             .map(decode_hat_update)
             .collect::<Vec<_>>();
-        assert_eq!(hat_packets, vec![(player.gameprofile.id, true)]);
+        assert_eq!(hat_packets, vec![(player.gameprofile.id(), true)]);
         let observer_hat_packets = observer_packets
             .lock()
             .iter()
             .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
             .map(decode_hat_update)
             .collect::<Vec<_>>();
-        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id, true)]);
+        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id(), true)]);
 
         sent_packets.lock().clear();
         observer_packets.lock().clear();
@@ -3334,14 +3335,14 @@ fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
             .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
             .map(decode_hat_update)
             .collect::<Vec<_>>();
-        assert_eq!(hat_packets, vec![(player.gameprofile.id, false)]);
+        assert_eq!(hat_packets, vec![(player.gameprofile.id(), false)]);
         let observer_hat_packets = observer_packets
             .lock()
             .iter()
             .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
             .map(decode_hat_update)
             .collect::<Vec<_>>();
-        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id, false)]);
+        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id(), false)]);
 
         drop(observer);
         drop(player);
@@ -3438,10 +3439,15 @@ fn player_disconnect_detaches_before_async_persistence() {
         assert!(
             server
                 .online_players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .is_none()
         );
-        assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+        assert!(
+            world
+                .players
+                .get_by_uuid(&player.gameprofile.id())
+                .is_none()
+        );
         assert!(world.get_entity_by_id(player.id()).is_none());
 
         drop(pending);
@@ -3562,7 +3568,7 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
             }
             let expected = EncodedPacket::from_bare(
                 CRemovePlayerInfo {
-                    uuids: vec![first.gameprofile.id, second.gameprofile.id],
+                    uuids: vec![first.gameprofile.id(), second.gameprofile.id()],
                 },
                 None,
                 ConnectionProtocol::Play,
@@ -3606,7 +3612,12 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
 
         player.show_end_credits();
 
-        assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+        assert!(
+            world
+                .players
+                .get_by_uuid(&player.gameprofile.id())
+                .is_none()
+        );
         assert!(
             server
                 .get_players()
@@ -3618,7 +3629,7 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
         assert!(
             server
                 .online_players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .is_none()
         );
 

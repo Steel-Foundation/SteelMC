@@ -213,7 +213,7 @@ impl FeatureDecorationRunner {
     ) {
         for y in (-3..=2).rev() {
             let cursor = pos.above_n(y);
-            if let Some(state) = Self::sample_block_state_provider_optional(
+            if let Some(state) = BlockStateProviderEvaluator::sample_block_state_provider_optional(
                 region, registry, random, provider, cursor,
             ) {
                 placement.set_decoration(region, cursor, state);
@@ -295,7 +295,9 @@ impl FeatureDecorationRunner {
             return;
         }
 
-        let state = Self::sample_block_state_provider(region, registry, random, provider, above);
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
+            region, registry, random, provider, above,
+        );
         placement.set_decoration(region, above, state);
     }
 
@@ -744,7 +746,7 @@ impl FeatureDecorationRunner {
                 decorator.exclusion_radius_xz,
                 decorator.exclusion_radius_y,
             );
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,
@@ -774,7 +776,7 @@ impl FeatureDecorationRunner {
                 continue;
             }
 
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,

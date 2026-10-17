@@ -28,7 +28,7 @@ impl Server {
     pub(super) async fn load_join_domain(&self, player: &Player) -> Result<String, String> {
         match self
             .player_data_storage
-            .load_global(player.gameprofile.id)
+            .load_global(player.gameprofile.id())
             .await
         {
             Ok(Some(global)) if self.worlds.has_domain(&global.last_active_domain) => {
@@ -37,7 +37,7 @@ impl Server {
             Ok(Some(global)) => {
                 log::warn!(
                     "Player {} last active domain {} no longer exists, using default domain",
-                    player.gameprofile.name,
+                    player.gameprofile.name(),
                     global.last_active_domain
                 );
                 Ok(self.worlds.default_domain().to_owned())
@@ -74,7 +74,7 @@ impl Server {
 
         match self
             .player_data_storage
-            .load_domain(target_domain, player.gameprofile.id)
+            .load_domain(target_domain, player.gameprofile.id())
             .await
         {
             Ok(Some(saved_data)) => {
@@ -82,7 +82,7 @@ impl Server {
                     &saved_data.world,
                     target_domain,
                     explicit_target_world.as_ref().map(|world| &world.key),
-                    &player.gameprofile.name,
+                    player.gameprofile.name(),
                 );
                 let (world, data) = if let Some(saved_world) = saved_world {
                     (
@@ -99,7 +99,7 @@ impl Server {
                         },
                     )
                 };
-                log::info!("Loaded saved data for player {}", player.gameprofile.name);
+                log::info!("Loaded saved data for player {}", player.gameprofile.name());
                 Ok(UnpreparedDomainPlayerState {
                     world,
                     data,
@@ -109,7 +109,7 @@ impl Server {
             Ok(None) => {
                 log::debug!(
                     "No saved data for player {} in domain {}, using defaults",
-                    player.gameprofile.name,
+                    player.gameprofile.name(),
                     target_domain
                 );
                 Ok(UnpreparedDomainPlayerState {
@@ -120,7 +120,8 @@ impl Server {
             }
             Err(e) => Err(format!(
                 "failed to load domain player data for {} in domain {}: {e}",
-                player.gameprofile.name, target_domain
+                player.gameprofile.name(),
+                target_domain
             )),
         }
     }
@@ -367,14 +368,14 @@ impl Server {
         let Ok(key) = world_key.parse::<Identifier>() else {
             log::warn!(
                 "Saved ender pearl world {world_key} for player {} is invalid, skipping",
-                player.gameprofile.name
+                player.gameprofile.name()
             );
             return None;
         };
         let Some(world) = self.worlds.get(&key) else {
             log::warn!(
                 "Saved ender pearl world {key} for player {} is missing, skipping",
-                player.gameprofile.name
+                player.gameprofile.name()
             );
             return None;
         };
@@ -437,7 +438,7 @@ impl Server {
     /// Returns whether this exact player owns the online session for its UUID.
     pub(crate) fn owns_online_player(&self, player: &Player) -> bool {
         self.online_players
-            .get_by_uuid(&player.gameprofile.id)
+            .get_by_uuid(&player.gameprofile.id())
             .is_some_and(|online| ptr::eq(online.as_ref(), player))
     }
 
@@ -495,8 +496,8 @@ impl Server {
             .iter()
             .map(|p| {
                 (
-                    p.gameprofile.name.clone(),
-                    p.gameprofile.id.hyphenated().to_string(),
+                    p.gameprofile.name().to_owned(),
+                    p.gameprofile.id().hyphenated().to_string(),
                 )
             })
             .collect();

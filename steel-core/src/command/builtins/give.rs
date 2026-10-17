@@ -115,7 +115,7 @@ fn give_to_player(player: &Player, prototype: &ItemStack, count: i32) {
             player.broadcast_inventory_changes();
         } else if let Some(item) = player.spawn_dropped_item(stack, false, false) {
             item.set_no_pickup_delay();
-            item.set_owner(Some(player.gameprofile.id));
+            item.set_owner(Some(player.gameprofile.id()));
         }
     }
 }

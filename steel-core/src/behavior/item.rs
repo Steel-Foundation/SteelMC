@@ -15,11 +15,12 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_game_events};
-use steel_utils::types::InteractionHand;
+use steel_utils::types::{InteractionHand, SignTextSlot};
 use text_components::TextComponent;
 
-use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem};
+use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem, block_transformer};
 use crate::behavior::{InteractionResult, InventoryTickContext, UseItemContext, UseOnContext};
+use crate::block_entity::entities::{SignBlockEntity, SignText};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, LivingEntityRef, SharedEntity};
@@ -27,6 +28,24 @@ use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
 pub use steel_registry::data_components::vanilla_components::ItemUseAnimation;
+
+/// Item capability applied by a sign before its editor fallback.
+pub trait SignApplicator: Send + Sync {
+    /// Returns whether this item can change the selected sign text.
+    fn can_apply_to_sign(&self, text: &SignText, _item: &ItemStack, _player: &Player) -> bool {
+        text.has_message()
+    }
+
+    /// Applies the change; the sign handles consumption, statistics and updates.
+    fn try_apply_to_sign(
+        &self,
+        world: &World,
+        sign: &SignBlockEntity,
+        slot: SignTextSlot,
+        item: &ItemStack,
+        player: &Player,
+    ) -> bool;
+}
 
 /// Trait defining the behavior of an item.
 ///
@@ -52,8 +71,8 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Called when this item is used on a block.
-    fn use_on(&self, _context: &mut UseOnContext) -> InteractionResult {
-        InteractionResult::Pass
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        block_transformer::use_on(context)
     }
 
     /// Called when this item is used (e.g. right click in air).
@@ -254,6 +273,11 @@ pub trait ItemBehavior: Send + Sync {
     fn as_spawn_egg(&self) -> Option<&SpawnEggItem> {
         None
     }
+
+    /// Returns the capability used by sign block interactions.
+    fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
+        None
+    }
 }
 
 fn should_emit_consume_particles_and_sounds(consumable: &Consumable, ticks_remaining: i32) -> bool {
@@ -351,22 +375,19 @@ pub(crate) fn finish_consuming_stack(
 /// left (e.g. one honey bottle out of several)
 pub(crate) fn apply_use_remainder(
     original_stack: &ItemStack,
-    used_stack: ItemStack,
+    mut used_stack: ItemStack,
     user: &dyn LivingEntity,
 ) -> ItemStack {
     let Some(remainder) = original_stack.get(USE_REMAINDER) else {
         return used_stack;
     };
-    if user.has_infinite_materials() || used_stack.count() >= original_stack.count() {
-        return used_stack;
+    if let Some(extra) = remainder.convert_into_remainder(
+        &mut used_stack,
+        original_stack.count(),
+        user.has_infinite_materials(),
+    ) {
+        user.handle_extra_items_created_on_use(extra);
     }
-
-    let remainder_stack = remainder.convert_into().create();
-    if used_stack.is_empty() {
-        return remainder_stack;
-    }
-
-    user.handle_extra_items_created_on_use(remainder_stack);
     used_stack
 }
 

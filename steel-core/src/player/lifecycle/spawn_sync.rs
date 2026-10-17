@@ -185,7 +185,7 @@ impl Player {
                 if reason == ResetReason::WorldChange {
                     log::info!(
                         "Player {} changed world to {}",
-                        self.gameprofile.name,
+                        self.gameprofile.name(),
                         world.key
                     );
                 }
@@ -304,7 +304,7 @@ impl Player {
                 Err(error) => {
                     log::error!(
                         "Failed to send default spawn position to player {}: {error}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                 }
             }

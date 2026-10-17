@@ -47,12 +47,7 @@ fn java_test_player(
         Arc::clone(&session),
     )));
     let player = Arc::new(Player::new(
-        GameProfile {
-            id: uuid,
-            name: "TestPlayer".to_owned(),
-            properties: Vec::new(),
-            profile_actions: None,
-        },
+        GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new()).expect("valid test profile"),
         connection,
         Arc::clone(&session),
         world,
@@ -103,10 +98,15 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
             assert!(
                 server
                     .online_players
-                    .get_by_uuid(&player.gameprofile.id)
+                    .get_by_uuid(&player.gameprofile.id())
                     .is_none()
             );
-            assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+            assert!(
+                world
+                    .players
+                    .get_by_uuid(&player.gameprofile.id())
+                    .is_none()
+            );
             assert!(matches!(futures::poll!(&mut sender), Poll::Pending));
 
             drop(pending);
@@ -178,12 +178,8 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         )));
         let session = Arc::new(PlayerSession::new(10, 10));
         let player = Arc::new(Player::new(
-            GameProfile {
-                id: uuid,
-                name: "TestPlayer".to_owned(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
+            GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new())
+                .expect("valid test profile"),
             connection,
             Arc::clone(&session),
             Arc::clone(world),

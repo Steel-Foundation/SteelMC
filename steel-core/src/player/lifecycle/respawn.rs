@@ -210,7 +210,7 @@ impl PlayerRespawnJob {
         }
         if !server.finish_player_packet_transition(transition) {
             tracing::warn!(
-                player = %current_player.gameprofile.name,
+                player = %current_player.gameprofile.name(),
                 "Player respawn packet transition was no longer current"
             );
         }
@@ -271,7 +271,7 @@ impl ServerJob for PlayerRespawnJob {
                         Err(error) => {
                             log::error!(
                                 "Failed to prepare fallback respawn for player {}: {error}",
-                                self.player.gameprofile.name
+                                self.player.gameprofile.name()
                             );
                             self.finish_pending();
                             return JobPoll::Finished;
@@ -472,7 +472,7 @@ impl Player {
             self.finish_respawn_request(pending_token);
             log::error!(
                 "Failed to schedule respawn for player {}: server is gone",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         };
@@ -483,7 +483,7 @@ impl Player {
                     self.finish_respawn_request(pending_token);
                     log::error!(
                         "Failed to schedule respawn for player {}: {error}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                     return;
                 }
@@ -504,7 +504,7 @@ impl Player {
                 self.finish_respawn_request(pending_token);
                 log::error!(
                     "Failed to schedule respawn for player {}: {error}",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
                 return;
             }
@@ -618,7 +618,7 @@ impl Player {
             self.connection.close();
             if !target_world.remove_respawned_player(&replacement) {
                 tracing::error!(
-                    player = %self.gameprofile.name,
+                    player = %self.gameprofile.name(),
                     world = %target_world.key,
                     "Failed to remove a respawn replacement after online-player commit failed"
                 );
@@ -633,13 +633,13 @@ impl Player {
                 && server.remove_online_player_sync(&replacement).is_none()
             {
                 tracing::error!(
-                    player = %self.gameprofile.name,
+                    player = %self.gameprofile.name(),
                     "Failed to remove or roll back online-player ownership after respawn session bind failed"
                 );
             }
             if !target_world.remove_respawned_player(&replacement) {
                 tracing::error!(
-                    player = %self.gameprofile.name,
+                    player = %self.gameprofile.name(),
                     world = %target_world.key,
                     "Failed to remove a respawn replacement after session bind failed"
                 );
@@ -777,7 +777,7 @@ impl Player {
         let Some(server) = self.server.upgrade() else {
             log::error!(
                 "Failed to schedule End credits respawn for player {}: server is gone",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         };
@@ -794,7 +794,7 @@ impl Player {
                     self.finish_respawn_request(pending_token);
                     log::error!(
                         "Failed to schedule End credits respawn for player {}: {error}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                     return;
                 }
@@ -815,7 +815,7 @@ impl Player {
                 self.finish_respawn_request(pending_token);
                 log::error!(
                     "Failed to schedule End credits respawn for player {}: {error}",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
                 return;
             }

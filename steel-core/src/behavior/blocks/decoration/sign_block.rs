@@ -17,18 +17,23 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
 };
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId, Downcast as _, types::SignTextSlot};
+use steel_registry::{
+    stat::vanilla_stat_types, vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
+};
+use steel_utils::{
+    BlockPos, BlockStateId, Downcast as _,
+    types::{InteractionHand, SignTextSlot},
+};
 
 use crate::behavior::block::{
     BlockBehavior, BlockEntityCreation, schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::behavior::{InventoryAccess, PlacementSource};
-use crate::block_entity::{BlockEntityTicker, entities::SignBlockEntity};
+use crate::behavior::{ITEM_BEHAVIORS, InventoryAccess, PlacementSource};
+use crate::block_entity::{BlockEntity, BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
 use crate::player::Player;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEventContext};
 
 /// Gets the nearest looking directions from the player's rotation.
 ///
@@ -194,15 +199,56 @@ fn can_wall_hanging_sign_survive(
     can_attach_clockwise || can_attach_counter
 }
 
-// TODO: Implement sign applicators (use_with_item):
-// - Dye items: Change sign text color (front or back based on player facing)
-//   - Check if sign is not waxed
-//   - Get the SignText for the side player is facing
-//   - If color differs from dye color, update it and consume the dye
-//   - Play DYE_USE sound
-// - Honeycomb: Wax the sign (prevents future edits)
-//   - Play HONEYCOMB_WAX_ON sound
-//   - Spawn WAX_ON particles
+// TODO: Implement dye sign applicators.
+fn try_apply_sign_item(
+    state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+    player: &Player,
+    inv: &mut InventoryAccess,
+) -> InteractionResult {
+    let Some(block_entity) = world.get_block_entity(pos) else {
+        return InteractionResult::Pass;
+    };
+    let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
+        return InteractionResult::Pass;
+    };
+
+    // Keep the inventory unlocked while an applicator changes the world.
+    let stack = inv.with_item(|item| item.clone());
+    let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+    let Some(applicator) = behavior.as_sign_applicator() else {
+        return InteractionResult::TryEmptyHandInteraction;
+    };
+    if !player.abilities.lock().may_build
+        || sign.is_waxed()
+        || sign.is_other_player_editing(player.gameprofile.id())
+    {
+        return InteractionResult::TryEmptyHandInteraction;
+    }
+
+    let slot = facing_text_slot(state, pos, player);
+    if !applicator.can_apply_to_sign(&sign.get_text(slot), &stack, player)
+        || !applicator.try_apply_to_sign(world, sign, slot, &stack, player)
+    {
+        return InteractionResult::TryEmptyHandInteraction;
+    }
+
+    sign.set_changed();
+    if let Some(nbt) = sign.get_update_tag() {
+        world.broadcast_block_entity_update(pos, sign.get_type(), nbt);
+    }
+    player.award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
+    world.game_event(
+        &vanilla_game_events::BLOCK_CHANGE,
+        pos,
+        &GameEventContext::new(Some(player), Some(state)),
+    );
+    let has_infinite_materials = player.has_infinite_materials();
+    inv.with_item(|item| item.consume_one(has_infinite_materials));
+
+    InteractionResult::Success
+}
 
 /// Attempts to open the sign editor for a player.
 ///
@@ -236,7 +282,7 @@ fn try_open_sign_editor(
     }
 
     // Check 2: Is another player editing?
-    if sign.is_other_player_editing(player.gameprofile.id) {
+    if sign.is_other_player_editing(player.gameprofile.id()) {
         return InteractionResult::Pass;
     }
 
@@ -258,7 +304,7 @@ fn try_open_sign_editor(
 
 /// Opens the sign editor for `player`, taking the edit lock.
 fn open_text_edit(sign: &SignBlockEntity, player: &Player, pos: BlockPos, slot: SignTextSlot) {
-    sign.set_player_who_may_edit(Some(player.gameprofile.id));
+    sign.set_player_who_may_edit(Some(player.gameprofile.id()));
     player.open_sign_editor(pos, slot);
 }
 
@@ -349,6 +395,19 @@ impl BlockBehavior for StandingSignBlock {
             block_entity_type,
             &vanilla_block_entity_types::SIGN,
         )
+    }
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
     }
 
     fn use_without_item(
@@ -457,6 +516,19 @@ impl BlockBehavior for WallSignBlock {
             block_entity_type,
             &vanilla_block_entity_types::SIGN,
         )
+    }
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
     }
 
     fn use_without_item(
@@ -602,6 +674,19 @@ impl BlockBehavior for CeilingHangingSignBlock {
         )
     }
 
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
+    }
+
     fn use_without_item(
         &self,
         state: BlockStateId,
@@ -726,6 +811,19 @@ impl BlockBehavior for WallHangingSignBlock {
             block_entity_type,
             &vanilla_block_entity_types::HANGING_SIGN,
         )
+    }
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        try_apply_sign_item(state, world, pos, player, inv)
     }
 
     fn use_without_item(

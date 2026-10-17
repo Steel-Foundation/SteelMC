@@ -27,8 +27,8 @@ impl World {
 
             log::debug!(
                 "Broadcasting to player {} (UUID: {}), global_index={}",
-                recipient.gameprofile.name,
-                recipient.gameprofile.id,
+                recipient.gameprofile.name(),
+                recipient.gameprofile.id(),
                 messages_received
             );
 

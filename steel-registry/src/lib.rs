@@ -51,6 +51,7 @@ pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
 pub mod game_events;
+pub mod game_profile;
 pub mod game_rules;
 pub mod instrument;
 pub mod item_predicate;
@@ -103,12 +104,12 @@ pub use entity_variant::{
     AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
     RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
 };
+pub use game_profile::{GameProfile, ProfileProperty};
 pub use item_stack_template::ItemStackTemplate;
 pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
 pub use potion::{Potion, PotionEffect, PotionRef};
 pub use resolvable_profile::{
-    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
-    ResolvableProfileContents, StoredGameProfile,
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ResolvableProfile, ResolvableProfileContents,
 };
 
 #[expect(warnings)]

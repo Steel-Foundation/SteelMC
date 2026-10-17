@@ -139,11 +139,11 @@ impl EntityMovementTrace {
                 .push(EntityMovement::new(old_position, position));
         }
 
-        self.final_movements_this_tick.as_slice().to_vec()
+        self.final_movements_this_tick.clone()
     }
 
     fn last_for_block_effects(&self) -> Vec<EntityMovement> {
-        self.final_movements_this_tick.as_slice().to_vec()
+        self.final_movements_this_tick.clone()
     }
 }
 
