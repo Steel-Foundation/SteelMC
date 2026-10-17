@@ -391,8 +391,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether vanilla fluid currents can push this entity.
+    ///
+    /// The extractor flattens vanilla's per-subclass overrides into one flag.
+    /// Entities with extra conditions still override, as `Player` does.
     fn is_pushed_by_fluid(&self) -> bool {
-        true
+        self.entity_type().flags.is_pushed_by_fluid
     }
 
     /// Applies bubble-column surface push velocity, dispatching to the
