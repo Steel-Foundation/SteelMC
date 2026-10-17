@@ -60,6 +60,15 @@ impl SteelConfig {
             Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
         })
     }
+
+    /// Logs warnings about unusual but valid settings. Call after the logger is initialized.
+    pub fn log_warnings(&self) {
+        if self.server.simulation_distance == 0 {
+            log::warn!(
+                "simulation_distance is 0: only the player's own chunk receives entity updates, this can cause frozen activity across chunk borders"
+            );
+        }
+    }
 }
 
 const fn empty_worlds_config() -> WorldsConfig {

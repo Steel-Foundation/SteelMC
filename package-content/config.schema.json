@@ -36,8 +36,8 @@
         },
         "simulation_distance": {
           "type": "integer",
-          "description": "Maximum simulation distance in chunks",
-          "minimum": 1,
+          "description": "Maximum simulation distance in chunks. A value of 0 restricts simulation to only the player's current chunk, nearby mobs and other activity may freeze across chunk borders",
+          "minimum": 0,
           "maximum": 128,
           "default": 10
         },
