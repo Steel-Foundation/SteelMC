@@ -49,6 +49,7 @@ use crate::entity::{
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::player::player_inventory::Prediction;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
 
@@ -310,7 +311,7 @@ impl MushroomCowEntity {
         self.play_sound(sound, 1.0, 1.0);
 
         if !overflow.is_empty() {
-            let _ = player.drop_item(overflow, false, false);
+            let _ = player.drop_item(overflow, false, Prediction::Predicted);
         }
 
         true
@@ -397,7 +398,7 @@ impl MushroomCowEntity {
         };
 
         if !overflow.is_empty() {
-            let _ = player.drop_item(overflow, false, false);
+            let _ = player.drop_item(overflow, false, Prediction::Predicted);
         }
 
         true
