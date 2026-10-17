@@ -355,23 +355,11 @@ fn validate_allows_extended_view_distance_with_opt_in() {
 
 #[test]
 fn simulation_distance_zero_is_accepted() {
-    let config: ServerConfig = toml::from_str(
-        r#"
-        [server]
-        server_port = 25565
-        max_players = 20
-        view_distance = 10
-        simulation_distance = 0
-        online_mode = false
-        encryption = false
-        motd = "test"
-        use_favicon = true
-        favicon = "config/favicon.png"
-        "#,
-    )
-    .unwrap();
+    let config_toml = DEFAULT_CONFIG.replace("simulation_distance = 10", "simulation_distance = 0");
+    let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
-    assert!(validate(&config).is_ok(), "simulation_distance = 0 should be accepted");
+    assert_eq!(config.server.simulation_distance, 0);
+    validate(&config.server).expect("zero simulation distance validates");
 }
 
 #[test]
