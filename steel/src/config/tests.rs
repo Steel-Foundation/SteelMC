@@ -354,6 +354,27 @@ fn validate_allows_extended_view_distance_with_opt_in() {
 }
 
 #[test]
+fn simulation_distance_zero_is_accepted() {
+    let config: ServerConfig = toml::from_str(
+        r#"
+        [server]
+        server_port = 25565
+        max_players = 20
+        view_distance = 10
+        simulation_distance = 0
+        online_mode = false
+        encryption = false
+        motd = "test"
+        use_favicon = true
+        favicon = "config/favicon.png"
+        "#,
+    )
+    .unwrap();
+
+    assert!(validate(&config).is_ok(), "simulation_distance = 0 should be accepted");
+}
+
+#[test]
 fn validate_rejects_view_distance_above_supported_ticket_range() {
     let config_toml = DEFAULT_CONFIG
         .replace(
