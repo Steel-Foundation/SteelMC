@@ -70,7 +70,6 @@ const MOOSHROOM_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_a
     EntityAttachments::new(&MOOSHROOM_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
 );
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-/// Vanilla 1 in 1024 chance of mutation when breeding identical variants.
 const MUTATE_CHANCE: u32 = 1024;
 
 /// Vanilla Mooshroom entity.
@@ -244,6 +243,11 @@ impl MushroomCowEntity {
         if self.is_no_ai() {
             cow.set_no_ai(true);
         }
+        cow.set_age(self.get_age());
+        cow.set_age_locked(self.is_age_locked());
+        for effect in self.active_mob_effects() {
+            cow.add_mob_effect(effect);
+        }
 
         let _ = world.try_add_entity(cow);
         self.set_removed(RemovalReason::Discarded);
@@ -333,9 +337,9 @@ impl MushroomCowEntity {
         } else {
             *self.stew_effects.lock() = Some(effects);
             self.play_sound(&sound_events::ENTITY_MOOSHROOM_EAT, 2.0, 1.0);
-           if !player.has_infinite_materials() {
-               Mob::use_player_item(self, player, hand);
-           }
+            if !player.has_infinite_materials() {
+                Mob::use_player_item(self, player, hand);
+            }
             InteractionResult::Success
         }
     }

@@ -14,6 +14,8 @@ use steel_utils::Identifier;
 use steel_utils::types::InteractionHand;
 use uuid::Uuid;
 
+use crate::behavior::init_behaviors;
+use crate::entity::living_base::MobEffectInstance;
 use crate::entity::{Entity, LivingEntity, Mob, next_entity_id};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 use steel_utils::WorldAabb;
@@ -171,6 +173,7 @@ fn mooshroom_thunder_hit_swaps_variant() {
 #[test]
 fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
     init_vanilla_registry();
+    init_behaviors();
 
     let world_fixture = fresh_test_world("mooshroom_shearing");
     let world = &world_fixture.world;
@@ -180,13 +183,21 @@ fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
         .lock()
         .set_selected_item(ItemStack::new(&vanilla_items::SHEARS));
 
-    let mooshroom = MushroomCowEntity::new(
+    let mooshroom_entity = MushroomCowEntity::new(
         &vanilla_entities::MOOSHROOM,
         next_entity_id(),
         DVec3::new(10.0, 64.0, 10.0),
         Arc::downgrade(world),
     );
-    let shared: SharedEntity = Arc::new(mooshroom);
+    mooshroom_entity.set_age(500);
+    mooshroom_entity.set_age_locked(true);
+    let speed_effect = REGISTRY
+        .mob_effects
+        .by_key(&Identifier::vanilla_static("speed"))
+        .expect("speed effect should exist");
+    mooshroom_entity.add_mob_effect(MobEffectInstance::with_duration(speed_effect, 600, 1));
+
+    let shared: SharedEntity = Arc::new(mooshroom_entity);
     insert_ready_full_chunk(world, ChunkPos::from_block_pos(shared.block_position()));
     world
         .try_add_entity(Arc::clone(&shared))
@@ -204,10 +215,20 @@ fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
     assert!(shared.is_removed());
 
     let entities = world.get_entities_in_aabb(&WorldAabb::new(9.0, 63.0, 9.0, 11.0, 66.0, 11.0));
-    let has_cow = entities
+    let cow = entities
         .iter()
-        .any(|entity| entity.entity_type() == &vanilla_entities::COW);
-    assert!(has_cow, "shearing mooshroom must spawn a cow");
+        .find(|entity| entity.entity_type() == &vanilla_entities::COW)
+        .expect("shearing mooshroom must spawn a cow");
+    let cow = cow
+        .downcast_ref::<CowEntity>()
+        .expect("cow entity should be CowEntity");
+    assert_eq!(cow.get_age(), 500);
+    assert!(cow.is_age_locked());
+    let cow_speed = cow
+        .mob_effect(speed_effect)
+        .expect("cow should keep active speed effect");
+    assert_eq!(cow_speed.duration(), 600);
+    assert_eq!(cow_speed.amplifier(), 1);
 }
 
 #[test]
