@@ -57,8 +57,7 @@ use crate::entity::{
     SharedEntity, SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::physics::collision::CollisionWorld;
-use crate::physics::{COLLISION_EPSILON, MoveResult, WorldCollisionProvider};
+use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
@@ -555,11 +554,13 @@ pub trait Mob: LivingEntity + Leashable {
             return false;
         }
 
-        let provider = WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
-        !provider.has_block_collision_with_context(
-            &aabb.deflate(COLLISION_EPSILON),
-            BlockCollisionContext::entity(aabb.min_y(), self.is_descending()),
-        )
+        !world.has_entity_in_aabb_matching(&aabb, |entity| {
+            entity.id() != self.id()
+                && !entity.is_removed()
+                && !entity.is_spectator()
+                && entity.blocks_building()
+                && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
+        })
     }
 
     /// Dispatches held-item, entity, and mob-specific interactions in order.
@@ -1603,6 +1604,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         let slot = self.sun_protection_slot();
+        let has_infinite_materials = self.has_infinite_materials();
         let mut broke_sun_blocker: Option<ItemRef> = None;
         {
             let mut equipment = self.living_base().equipment().lock();
@@ -1614,11 +1616,10 @@ pub trait Mob: LivingEntity + Leashable {
             if equipment.get_ref(slot).is_damageable_item() {
                 let item = equipment.get_ref(slot).item();
                 let sun_blocker = equipment.get_mut(slot);
-                sun_blocker.set_damage_value(
-                    sun_blocker.get_damage_value()
-                        + rand::random_range(0..SUN_BURN_DURABILITY_ROLL_BOUND),
-                );
-                if sun_blocker.get_damage_value() >= sun_blocker.get_max_damage() {
+                if sun_blocker.hurt_and_break(
+                    rand::random_range(0..SUN_BURN_DURABILITY_ROLL_BOUND),
+                    has_infinite_materials,
+                ) {
                     broke_sun_blocker = Some(item);
                 }
             }
@@ -1628,10 +1629,6 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         };
         self.on_equipped_item_broken(item, slot);
-        self.living_base()
-            .equipment()
-            .lock()
-            .set(slot, ItemStack::empty());
     }
 
     /// Runs movement, daylight burning, and item pickup.

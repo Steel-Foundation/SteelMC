@@ -14,7 +14,7 @@ pub type AfterConversion<'a> = dyn Fn(&dyn Mob) + 'a;
 
 /// Controls which state a converted mob inherits.
 ///
-/// Scoreboard-team transfer is omitted until Steel supports teams.
+/// Team membership is not transferred yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionParams {
     /// Whether to replace or split the source mob.
@@ -153,7 +153,7 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
 
     if params.keep_equipment {
         for slot in EquipmentSlot::ALL {
-            let stack = from.equipment_in_slot(slot);
+            let stack = from.living_base().equipment().lock().take(slot);
             if !stack.is_empty() {
                 to.living_base().equipment().lock().set(slot, stack);
                 to.set_equipment_drop_chance(slot, from.equipment_drop_chance(slot));
@@ -442,6 +442,36 @@ mod tests {
         );
         assert!(!passenger.is_removed(), "the passenger survives conversion");
         assert!(pig.is_removed());
+    }
+
+    #[test]
+    fn single_conversion_moves_equipment_before_the_callback() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = conversion_world();
+        let pig = add_pig(&world_fixture.world);
+        let pig_mob = pig.as_mob().expect("pig is a mob");
+        pig_mob.living_base().equipment().lock().set(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::IRON_HELMET),
+        );
+        let after_conversion = |converted: &dyn Mob| {
+            assert!(pig_mob.equipment_in_slot(EquipmentSlot::Head).is_empty());
+            assert_eq!(
+                converted.equipment_in_slot(EquipmentSlot::Head).item().key,
+                vanilla_items::IRON_HELMET.key,
+            );
+        };
+
+        let converted = pig
+            .downcast_ref::<PigEntity>()
+            .expect("pig is concrete")
+            .convert_to(
+                &vanilla_entities::COW,
+                ConversionParams::single(true, false),
+                Some(&after_conversion),
+            );
+        assert!(converted.is_some());
     }
 
     #[test]

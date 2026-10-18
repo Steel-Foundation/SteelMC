@@ -11,7 +11,7 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSource};
-use steel_utils::types::{Difficulty, UpdateFlags};
+use steel_utils::types::{Difficulty, GameType, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
@@ -23,7 +23,7 @@ use crate::entity::entities::PigEntity;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
     Entity, EntityBase, EntitySpawnReason, LivingEntity, LivingEntityBase, Monster, PathfinderMob,
-    SharedEntity, entities::mobs::hostile::EndermiteEntity, next_entity_id,
+    RemovalReason, SharedEntity, entities::mobs::hostile::EndermiteEntity, next_entity_id,
 };
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_with_dimension_type,
@@ -618,8 +618,9 @@ fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
 }
 
 #[test]
-fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
+fn monster_check_spawn_obstruction_rejects_liquids_without_checking_blocks() {
     init_vanilla_registry();
+    init_behaviors();
     let world_fixture = fresh_test_world("monster_spawn_obstruction");
     let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
@@ -652,8 +653,8 @@ fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
         UpdateFlags::UPDATE_ALL,
     ));
     assert!(
-        !mob.check_spawn_obstruction(world),
-        "solid blocks inside the spawn box must reject the spawn"
+        mob.check_spawn_obstruction(world),
+        "block collisions are checked separately from entity spawn obstruction"
     );
 
     assert!(world.set_block(
@@ -661,6 +662,49 @@ fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
         vanilla_blocks::AIR.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
+    assert!(mob.check_spawn_obstruction(world));
+}
+
+#[test]
+fn monster_spawn_obstruction_checks_entities_and_excludes_spectators_and_shared_vehicles() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("monster_spawn_entity_obstruction");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let position = DVec3::new(8.0, 65.0, 8.0);
+    let mob = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        position,
+        Arc::downgrade(world),
+    ));
+    let mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&mob);
+    world
+        .try_add_entity(Arc::clone(&mob_entity))
+        .expect("mob should join world");
+    assert!(mob.check_spawn_obstruction(world));
+
+    let player =
+        TestPlayerBuilder::new(Arc::clone(world), "SpawnBlocker", next_entity_id()).build();
+    player.base().set_position_local(position);
+    let player_entity: SharedEntity = Arc::clone(&player) as SharedEntity;
+    world
+        .try_add_entity(Arc::clone(&player_entity))
+        .expect("player should join world");
+    assert!(!mob.check_spawn_obstruction(world));
+
+    player.restore_game_modes(GameType::Spectator, None);
+    assert!(mob.check_spawn_obstruction(world));
+    player.restore_game_modes(GameType::Survival, None);
+    assert!(!mob.check_spawn_obstruction(world));
+
+    EntityBase::restore_passenger_relationship(&player_entity, &mob_entity);
+    assert!(mob.check_spawn_obstruction(world));
+    mob.stop_riding();
+    assert!(!mob.check_spawn_obstruction(world));
+
+    player.set_removed(RemovalReason::Discarded);
     assert!(mob.check_spawn_obstruction(world));
 }
 
