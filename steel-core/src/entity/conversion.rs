@@ -1,9 +1,4 @@
-//! Vanilla-shaped mob conversion foundations (`ConversionParams`, `ConversionType`).
-//!
-//! Mirrors the `world/entity/ConversionParams.java` and `ConversionType.java`
-//! records that back `Mob.convertTo`. A conversion replaces (or splits) one mob
-//! with a fresh instance of another `EntityType`, transferring the shared state
-//! every converted mob inherits.
+//! Mob replacement and splitting with shared state transfer.
 
 use std::sync::Arc;
 
@@ -16,29 +11,24 @@ use crate::entity::{
 };
 use crate::inventory::equipment::EquipmentSlot;
 
-/// Vanilla `ConversionParams.AfterConversion`: finalizes a freshly converted
-/// mob, mirroring the vanilla functional interface.
+/// Finalizes a freshly converted mob.
 pub type AfterConversion<'a> = dyn Fn(&dyn Mob) + 'a;
 
-/// Vanilla `ConversionParams`: how a converted mob should inherit the original.
+/// Controls which state a converted mob inherits.
 ///
-/// Vanilla's record also carries the original mob's `PlayerTeam`; Steel has no
-/// scoreboard-team foundation yet, so team transfer is not part of this struct
-/// (documented gap).
+/// Scoreboard-team transfer is omitted until Steel supports teams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionParams {
-    /// Vanilla `ConversionParams.type`.
+    /// Whether to replace or split the source mob.
     pub conversion_type: ConversionType,
-    /// Vanilla `ConversionParams.keepEquipment`.
+    /// Whether to copy equipped items and their drop chances.
     pub keep_equipment: bool,
-    /// Vanilla `ConversionParams.preserveCanPickUpLoot`.
+    /// Whether to copy the source mob's loot-pickup setting.
     pub preserve_can_pick_up_loot: bool,
 }
 
 impl ConversionParams {
-    /// Vanilla `ConversionParams.single`: a single-mob conversion replacing the
-    /// original in place. Vanilla also captures the source mob's team here;
-    /// Steel has no scoreboard-team foundation yet (documented gap).
+    /// Creates parameters for replacing the source mob.
     #[must_use]
     pub const fn single(keep_equipment: bool, preserve_can_pick_up_loot: bool) -> Self {
         Self {
@@ -49,25 +39,23 @@ impl ConversionParams {
     }
 }
 
-/// Vanilla `ConversionType`: how `Mob.convertTo` replaces the source mob.
+/// How conversion handles the source mob.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConversionType {
     /// The converted mob replaces the original in place (`SINGLE`).
     Single,
-    /// The original keeps living and the converted mob spawns separately
-    /// (`SPLIT_ON_DEATH`; used by slime splits).
+    /// Spawns a separate mob and keeps the source, as with slime splits.
     SplitOnDeath,
 }
 
 impl ConversionType {
-    /// Returns vanilla `ConversionType.shouldDiscardAfterConversion`.
+    /// Whether conversion discards the source mob.
     #[must_use]
     pub const fn should_discard_after_conversion(self) -> bool {
         matches!(self, Self::Single)
     }
 
-    /// Vanilla `ConversionType.convert`: transfers the conversion state from
-    /// `from` onto the freshly created `to`.
+    /// Transfers shared state to the new mob.
     fn convert(self, from: &dyn Mob, to: &SharedEntity, params: ConversionParams) {
         let Some(to_mob) = to.as_mob() else {
             log::error!(
@@ -84,36 +72,25 @@ impl ConversionType {
     }
 }
 
-/// Vanilla `Mob.convertTo`: creates a fresh `entity_type` mob, transfers the
-/// shared conversion state, runs `after_conversion`, adds the new mob to the
-/// world, and discards `from` for single-mob conversions.
+/// Creates a mob, transfers state, and runs the conversion callback.
 ///
-/// Steel registers the new entity *before* transferring state. Vanilla runs
-/// `ConversionType.convert` and `AfterConversion` first and then discards the
-/// source unconditionally after `addFreshEntity`, with no failure path; Steel
-/// instead keeps `from` alive when the world rejects the new entity, which only
-/// holds if nothing on `from` (its passengers, vehicle, and leash) has been
-/// moved onto `to` yet (documented divergence).
+/// Unlike vanilla, Steel inserts the new mob before transferring state so
+/// rejected insertions leave the source, passengers, and leash untouched.
 ///
-/// Returns `None` when `from` is removed, the world is gone, `entity_type` is
-/// not allowed on the current difficulty (vanilla `EntityType.canSpawn`), has no
-/// registered factory, the created entity is not a mob, or the world rejects the
-/// new entity; `from` is left untouched in all of those cases.
+/// Returns `None` without changing the source if it is removed, its world is
+/// gone, or difficulty, factory, mob-type, or world-insertion checks fail.
 pub(crate) fn convert_to(
     from: &dyn Mob,
     entity_type: EntityTypeRef,
     params: ConversionParams,
     after_conversion: Option<&AfterConversion<'_>>,
 ) -> Option<SharedEntity> {
-    // Vanilla `Mob.convertTo`: a removed mob cannot convert.
     if from.is_removed() {
         return None;
     }
     let world = from.level()?;
-    // Vanilla `EntityType.canSpawn` gates `convertTo`'s `entityType.create`:
-    // types that are not allowed on Peaceful difficulty must not be created.
-    // Steel has no feature-flag foundation yet, so only the peaceful clause of
-    // `canSpawn` is checked here.
+    // Only the difficulty gate of vanilla `EntityType.canSpawn` is checked;
+    // Steel does not yet support feature flags.
     if !entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful {
         return None;
     }
@@ -139,9 +116,7 @@ pub(crate) fn convert_to(
         return None;
     };
 
-    // Register `to` before moving any of `from`'s state onto it, so a world
-    // that rejects the new entity leaves the source (passengers, vehicle, and
-    // leash included) fully untouched.
+    // Insert before transferring state so a rejected conversion leaves `from` intact.
     if let Err(error) = world.try_add_entity(Arc::clone(&to)) {
         log::error!(
             "failed to add converted {} for {}: {error}",
@@ -162,7 +137,7 @@ pub(crate) fn convert_to(
     Some(to)
 }
 
-/// Vanilla `ConversionType.SINGLE.convert`, in statement order.
+/// Transfers replacement state in vanilla order.
 fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: ConversionParams) {
     let root_passenger = from.first_passenger();
 
@@ -199,13 +174,11 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     to.set_fall_distance(from.fall_distance());
     to.set_shared_fall_flying(from.is_fall_flying());
 
-    // Vanilla copies the raw `lastHurtByPlayerMemoryTime` field; Steel stores it
-    // together with the attacking player's UUID, so it is copied as a pair.
+    // Steel stores the damage-memory timer with the attacking player's UUID.
     if let Some(uuid) = from.last_hurt_by_player_uuid() {
         to.set_last_hurt_by_player(uuid, from.last_hurt_by_player_memory_time());
     }
-    // Vanilla also copies `hurtTime` (the visual hurt-flash counter); Steel has
-    // no equivalent field yet, so it is left out (documented gap).
+    // The vanilla `hurtTime` copy is omitted; Steel has no hurt-flash counter yet.
 
     to.set_y_body_rot(from.y_body_rot());
     to.set_on_ground(from.on_ground());
@@ -219,7 +192,7 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     convert_common(from, to, params);
 }
 
-/// Vanilla `ConversionType.SPLIT_ON_DEATH.convert`, in statement order.
+/// Detaches the source's passenger and leash before copying shared state.
 fn convert_split_on_death(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     if let Some(root_passenger) = from.first_passenger() {
         root_passenger.stop_riding();
@@ -231,20 +204,17 @@ fn convert_split_on_death(from: &dyn Mob, to: &dyn Mob, params: ConversionParams
     convert_common(from, to, params);
 }
 
-/// Vanilla `ConversionType.convertCommon`, in statement order.
+/// Copies state shared by both conversion types in vanilla order.
 fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     to.set_absorption_amount(from.living_base().absorption_amount());
 
     for effect in from.active_mob_effects() {
-        // Vanilla `ConversionType.convertCommon` re-adds each effect with
-        // `Mob.addEffect`, so the converted mob re-runs `onEffectStarted` (the
-        // ABSORPTION effect, for example, grants fresh hearts again after the
-        // absorption amount copy above).
+        // Re-adding effects reruns `onEffectStarted`, granting fresh absorption
+        // hearts after the amount copied above, as in vanilla.
         to.add_mob_effect(effect);
     }
 
-    // Vanilla `Mob.setBaby` is a no-op for non-ageable mobs; Steel mirrors that
-    // by only forwarding to ageable targets.
+    // Vanilla `Mob.setBaby` does nothing for non-ageable targets.
     if from.is_baby()
         && let Some(to_ageable) = to.as_ageable_mob()
     {
@@ -259,8 +229,7 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
         converted_ageable.set_forced_age_timer(old_ageable.forced_age_timer());
     }
 
-    // Vanilla copies the `ANGRY_AT` brain memory here; Steel's Brain foundation
-    // is still in flight, so the memory transfer is a documented gap.
+    // The vanilla `ANGRY_AT` memory copy awaits the Brain foundation.
 
     if params.preserve_can_pick_up_loot {
         to.set_can_pick_up_loot(from.can_pick_up_loot());
@@ -273,8 +242,7 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     }
 
     to.set_custom_name_visible(from.is_custom_name_visible());
-    // Vanilla `setSharedFlagOnFire(from.isOnFire())`: keep the fire visual
-    // state rather than restarting an ignition timer.
+    // Copy the fire visual without restarting the ignition timer.
     to.base().set_visual_fire(from.is_on_fire());
     to.set_invulnerable(from.is_invulnerable());
     to.set_no_gravity(from.is_no_gravity());
@@ -284,16 +252,14 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
         to.add_tag(tag);
     }
 
-    // Vanilla copies the `CUSTOM_NAME` and `CUSTOM_DATA` data components.
     to.set_custom_name(from.custom_name());
     to.set_custom_data(from.custom_data());
 
-    // Vanilla moves `to` onto `from`'s scoreboard team; Steel has no
-    // scoreboard-team foundation yet (documented gap). Vanilla's zombie
-    // door-breaking copy is Zombie-specific and stays out of this foundation.
+    // Team transfer awaits scoreboard support; zombie door-breaking state
+    // belongs in the concrete conversion callback.
 }
 
-/// Vanilla `Entity.copyPosition`: copies position and rotation.
+/// Copies position and rotation.
 fn copy_position(from: &dyn Entity, to: &dyn Entity) {
     if let Err(error) = to.try_set_position(from.position()) {
         log::warn!(
@@ -377,9 +343,7 @@ mod tests {
         pig_mob.set_silent(true);
         pig_mob.add_tag("audit_tag".to_owned());
         pig_mob.set_can_pick_up_loot(true);
-        // The modifier lets the source pig hold absorption despite its zero
-        // vanilla max; the ABSORPTION effect gives the converted cow headroom
-        // after the effects are copied.
+        // Raise the pig's zero absorption cap so conversion has an amount to copy.
         pig_mob.attributes().lock().add_modifier(
             vanilla_attributes::MAX_ABSORPTION,
             AttributeModifier {
@@ -444,11 +408,8 @@ mod tests {
         assert!(cow_mob.is_silent());
         assert!(cow_mob.tags().contains(&"audit_tag".to_owned()));
         assert!(cow_mob.can_pick_up_loot());
-        // Vanilla `convertCommon` copies absorption before re-adding the
-        // effects, so the copied amount is clamped away by the cow's pre-effect
-        // max absorption (0); the re-added ABSORPTION effect then applies its
-        // MAX_ABSORPTION modifier and `onEffectStarted` grants
-        // `4 * (1 + amplifier)` fresh hearts, exactly as in vanilla.
+        // The cow's initial zero cap discards copied absorption; re-adding the
+        // effect then grants fresh hearts through `onEffectStarted`.
         assert_eq!(
             cow_mob.living_base().absorption_amount(),
             ABSORPTION_PER_LEVEL * 2.0,

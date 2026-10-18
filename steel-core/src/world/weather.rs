@@ -261,7 +261,7 @@ impl World {
         environment::sun_angle_degrees(self.dimension_type, level_data.world_clocks())
     }
 
-    /// Returns the current vanilla `MONSTERS_BURN` environment attribute.
+    /// Whether the environment currently permits daylight burning.
     pub fn monsters_burn(&self) -> bool {
         let level_data = self.level_data.read();
         environment::monsters_burn(self.dimension_type, level_data.world_clocks())
@@ -298,21 +298,13 @@ impl World {
             && self.dimension_type.key != vanilla_dimension_types::THE_END.key
     }
 
-    /// Returns vanilla `BlockAndLightGetter.canSeeSky`: the sky layer at `pos`
-    /// holds full light. 26.2 stores sky light un-dimmed (time-of-day darkening
-    /// applies at read time), so this is true in the open at any time of day
-    /// and false under roofs that attenuate sky light.
+    /// Whether sky light is full, independent of time-of-day darkening.
     pub fn can_see_sky(&self, pos: BlockPos) -> bool {
         self.light_value_at(LightLayer::Sky, pos) >= MAX_LIGHT_LEVEL
     }
 
-    /// Returns whether the position is exposed to the sky for precipitation.
-    ///
-    /// Mirrors vanilla `Level.precipitationAt`: light-based `canSeeSky` and the
-    /// motion-blocking heightmap gate must both pass. The light gate rejects
-    /// positions whose sky light is attenuated by non-motion-blocking blocks
-    /// (e.g. underwater); the heightmap gate rejects positions under roofs that
-    /// transmit light, such as glass.
+    /// Requires full sky light and an unobstructed motion-blocking heightmap.
+    /// The light check excludes water; the heightmap excludes glass roofs.
     pub(super) fn can_see_sky_for_precipitation(&self, pos: BlockPos) -> bool {
         if !self.can_see_sky(pos) {
             return false;

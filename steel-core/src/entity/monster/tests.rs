@@ -200,9 +200,7 @@ fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
     let world = &world_fixture.world;
     let pos = BlockPos::new(8, 65, 8);
 
-    // Fresh chunks read full sky light, so the sky-light roll must beat 15 to
-    // even reach the brightness test, which the overworld's uniform 0..7 light
-    // test can never pass.
+    // Full sky light cannot pass the overworld's 0..7 brightness test.
     let mut low_roll = RandomSource::Legacy(LegacyRandom::from_seed(5120));
     assert!(
         low_roll.next_i32_bounded(32) < 15,
@@ -236,8 +234,7 @@ fn monster_is_dark_enough_to_spawn_accepts_dark_nether() {
     let world = &world_fixture.world;
     let pos = BlockPos::new(8, 65, 8);
 
-    // The nether has no sky light and its light test accepts 7, so a fresh
-    // chunk is always dark enough regardless of the roll.
+    // Fresh nether chunks are dark enough for every light-test roll.
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(5120));
     assert!(TestMonster::is_dark_enough_to_spawn(
         world,
@@ -363,8 +360,7 @@ fn monster_spawn_rules_combine_light_and_surface_checks() {
             "{name}: natural spawns must also pass the light check"
         );
 
-        // Trial spawners ignore the light requirement and bypass the surface
-        // check entirely (vanilla `checkMobSpawnRules` short-circuits).
+        // Trial spawners bypass both light and surface checks.
         assert!(TestMonster::check_monster_spawn_rules(
             &vanilla_entities::ZOMBIE,
             world,
@@ -489,8 +485,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     ));
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(0));
 
-    // Spawner reasons skip the light and surface checks, so only the
-    // difficulty clause can refuse the spawn on Peaceful.
+    // Spawners bypass light and surface checks, isolating the difficulty gate.
     assert!(TestMonster::check_monster_spawn_rules(
         &vanilla_entities::ZOMBIE,
         world,
@@ -569,9 +564,7 @@ fn monster_walk_target_value_prefers_darkness() {
         bright_monster.get_walk_target_value_monster(pos) < 0.0,
         "bright positions should be penalized"
     );
-    // The `PathfinderMob` default must dispatch hostile mobs to the monster
-    // walk-target value automatically (vanilla `Monster.getWalkTargetValue`
-    // overrides the base), without per-mob boilerplate.
+    // Pathfinder mobs must dispatch to the monster light preference automatically.
     assert!(
         bright_monster.get_walk_target_value(pos) < 0.0,
         "the PathfinderMob default must dispatch monsters to the dark preference"
@@ -603,8 +596,7 @@ fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
     let bright_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&bright_mob);
     bright_mob.ai_step(&bright_mob_entity);
 
-    // Bright light adds 2 via `Monster.updateNoActionTime` plus the standard
-    // per-tick increment from `Mob.serverAiStep`.
+    // Bright light adds two idle ticks alongside the normal AI tick.
     assert_eq!(bright_mob.no_action_time(), 3);
 
     let dark_world_fixture = fresh_test_world_with_dimension_type(

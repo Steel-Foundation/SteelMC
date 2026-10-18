@@ -27,10 +27,8 @@ use crate::world::World;
 
 /// Vanilla `Attributes.STEP_HEIGHT` default, used when the attribute is absent.
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-/// Vanilla `Endermite.MAX_LIFE`: ticks until the mob discards itself when not
-/// persistence-required.
+/// Lifetime cap; persistence prevents the counter from advancing.
 const MAX_LIFETIME: i32 = 2400;
-/// Vanilla `Endermite` constructor: `this.xpReward = 3`.
 const XP_REWARD: i32 = 3;
 
 /// A hostile endermite entity.
@@ -253,8 +251,7 @@ impl LivingEntity for EndermiteEntity {
 
     fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         let result = Monster::monster_ai_step(self, entity);
-        // Vanilla `Endermite.aiStep`: the lifetime grows only while the mob is
-        // not persistence-required, and the discard check runs unconditionally.
+        // Persistence pauses aging but does not bypass the lifetime cap.
         if self.level().is_some() {
             let discard = {
                 let mut lifetime = self.lifetime.lock();
@@ -323,8 +320,6 @@ mod tests {
         let world = &world_fixture.world;
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        // Vanilla `Endermite.aiStep` grows the lifetime each tick and discards
-        // the mob once it reaches 2400.
         let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
             &vanilla_entities::ENDERMITE,
             next_entity_id(),
@@ -348,8 +343,7 @@ mod tests {
         endermite.ai_step(&endermite_entity);
         assert!(endermite.is_removed(), "reaching the cap discards the mob");
 
-        // A persistence-required mob never grows its lifetime, mirroring the
-        // vanilla guard around the increment.
+        // Persistence pauses the lifetime counter.
         let persistent: SharedEntity = Arc::new(EndermiteEntity::new(
             &vanilla_entities::ENDERMITE,
             next_entity_id(),

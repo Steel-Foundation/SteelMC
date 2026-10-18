@@ -52,9 +52,7 @@ fn start_riding_entities_links_passenger_and_vehicle() {
 
 #[test]
 fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
-    // Vanilla `restoreLeashFromSave` clears the leash data directly when the
-    // delayed holder cannot be resolved, without invoking `onLeashRemoved` — so
-    // the home restriction pinned by save data must survive the failed restore.
+    // Failed save restoration bypasses `onLeashRemoved`, preserving home state.
     init_vanilla_registry();
     let world_fixture = fresh_test_world("leash_save_restore_failure");
     let world = &world_fixture.world;

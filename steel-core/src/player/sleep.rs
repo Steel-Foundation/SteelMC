@@ -27,7 +27,7 @@ const MONSTER_SEARCH_Y_RANGE: f64 = 5.0;
 #[derive(Debug)]
 pub(crate) enum BedSleepingProblem {
     OtherProblem,
-    /// Vanilla `Player.BedSleepingProblem.NOT_SAFE`: a monster prevents resting.
+    /// A nearby monster prevents resting.
     NotSafe(Box<TextComponent>),
     Message(Box<TextComponent>),
 }
@@ -43,9 +43,7 @@ impl BedSleepingProblem {
 }
 
 impl Player {
-    /// Vanilla `ServerPlayer.startSleepInBed` monster-rest check: any hostile
-    /// mob within the 8x5x8 box around the bed center keeps this player from
-    /// sleeping.
+    /// Checks for monsters within 8 blocks horizontally and 5 vertically of the bed.
     fn monster_prevents_rest(&self, pos: BlockPos) -> bool {
         let world = self.get_world();
         let center = DVec3::new(

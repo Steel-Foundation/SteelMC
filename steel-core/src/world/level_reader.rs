@@ -57,20 +57,14 @@ pub trait LevelReader {
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;
 
-    /// Returns vanilla `LevelReader.getSkyDarken` (`15 - SKY_LIGHT_LEVEL`).
-    ///
-    /// Lightweight and worldgen views default to `0`, mirroring vanilla
-    /// `WorldGenRegion.getSkyDarken`; the live `World` overrides this with its
-    /// environment-attribute value.
+    /// Sky darkening (`15 - SKY_LIGHT_LEVEL`). Worldgen defaults to zero;
+    /// live worlds use the environment attribute.
     fn sky_darkening(&self) -> u8 {
         0
     }
 
-    /// Returns whether the sky layer at `pos` holds full light.
-    ///
-    /// Mirrors vanilla `BlockAndLightGetter.canSeeSky`; lightweight and worldgen
-    /// views approximate it from raw brightness, while the live `World`
-    /// overrides this with the sky-layer light value.
+    /// Whether sky light is full. Lightweight views approximate from raw
+    /// brightness; live worlds read the sky-light layer directly.
     fn can_see_sky(&self, pos: BlockPos) -> bool {
         self.raw_brightness(pos, 0) >= MAX_LIGHT_LEVEL
     }
@@ -114,9 +108,7 @@ pub trait LevelReader {
         self.raw_brightness(pos, sky_darkening)
     }
 
-    /// Returns vanilla `LevelReader.getLightLevelDependentMagicValue`, whose
-    /// brightness comes from the no-arg `getMaxLocalRawBrightness`, i.e. the
-    /// current `getSkyDarken`.
+    /// Converts brightness after current sky darkening to the curved light value.
     fn light_level_dependent_magic_value(&self, pos: BlockPos) -> f32 {
         let value = f32::from(self.max_local_raw_brightness(pos, self.sky_darkening()))
             / f32::from(MAX_LIGHT_LEVEL);

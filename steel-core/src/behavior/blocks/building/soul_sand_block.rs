@@ -28,8 +28,7 @@ impl BlockBehavior for SoulSandBlock {
         Some(self.block.default_state())
     }
 
-    /// Vanilla soul sand uses `Blocks::always` for `isValidSpawn`: any mob may
-    /// spawn on it (wither skeletons, nether mobs).
+    /// Soul sand accepts all mob types as a spawn surface.
     fn is_valid_spawn(
         &self,
         _state: BlockStateId,

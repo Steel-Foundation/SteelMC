@@ -48,12 +48,9 @@ use crate::world::{
 };
 use steel_registry::vanilla_fluids;
 
-/// Maximum light emission a block may emit while still allowing mobs to spawn
-/// on it, mirroring vanilla `BlockBehaviour`'s default `isValidSpawn` predicate
-/// (`state.getLightEmission() < 14`).
+/// Exclusive block-emission limit for the default mob spawn predicate.
 pub(crate) const MAX_MOB_SPAWN_LIGHT_EMISSION: u8 = 14;
 
-/// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
     context: &BlockPlaceContext<'_>,
@@ -227,13 +224,8 @@ pub trait BlockBehavior: Send + Sync {
         true
     }
 
-    /// Returns whether this block accepts a mob spawning on or inside it.
-    ///
-    /// Vanilla parity: `BlockState.isValidSpawn(BlockGetter, BlockPos, EntityType)`, whose
-    /// default requires a full UP support face and light emission below
-    /// [`MAX_MOB_SPAWN_LIGHT_EMISSION`]. Blocks override it for special spawn surfaces
-    /// (soul sand accepts everything, magma only fire-immune mobs, ...). Consulted by
-    /// `Mob.checkMobSpawnRules`.
+    /// Whether this block accepts a mob spawning on or inside it.
+    /// Defaults to full UP support and emission below [`MAX_MOB_SPAWN_LIGHT_EMISSION`].
     fn is_valid_spawn(
         &self,
         state: BlockStateId,

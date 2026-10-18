@@ -751,9 +751,7 @@ fn mob_tick_leash_applies_default_elastic_pull() {
 
 #[test]
 fn mob_leash_snap_drops_leash_and_disables_move_control() {
-    // Vanilla `Mob.leashTooFarBehaviour`: past the snap distance the lead is
-    // dropped and the MOVE goal control is disabled (staying disabled until
-    // re-leash at close range, like vanilla).
+    // MOVE stays disabled after a snap until re-leashed at close range.
     let mob = Arc::new(DespawnTestMob::with_position(1, DVec3::ZERO, None, false));
     let holder = Arc::new(DespawnTestMob::with_position(
         2,
@@ -781,8 +779,7 @@ fn mob_leash_snap_drops_leash_and_disables_move_control() {
 
 #[test]
 fn pathfinder_leash_attach_pins_home_restriction_to_holder() {
-    // Vanilla `PathfinderMob.whenLeashedTo`: the home restriction snaps to the
-    // holder's position with radius `leashElasticDistance - 1`.
+    // Attaching pins home to the holder with radius `leashElasticDistance - 1`.
     let mob = DespawnTestMob::with_position(1, DVec3::new(0.0, 64.0, 0.0), None, false);
     let holder = Arc::new(DespawnTestMob::with_position(
         2,
@@ -803,8 +800,6 @@ fn pathfinder_leash_attach_pins_home_restriction_to_holder() {
 
 #[test]
 fn mob_on_leash_removed_clears_home_restriction() {
-    // Vanilla `Mob.onLeashRemoved`: once the leash data is gone the home
-    // restriction is cleared.
     let mob = Arc::new(DespawnTestMob::with_position(
         1,
         DVec3::new(0.0, 64.0, 0.0),
@@ -831,8 +826,7 @@ fn mob_on_leash_removed_clears_home_restriction() {
     );
 }
 
-/// Builds a world with a ready chunk and a stone floor strip so pathfinding
-/// can plan walks between the mob and holder positions.
+/// Provides a stone floor for pathfinding between mob and holder.
 fn leash_test_world(name: &'static str) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
@@ -860,9 +854,8 @@ fn leashed_pair(
         &vanilla_entities::PIG,
         world,
     ));
-    // The holder sits one block past the wanted distance, which keeps the
-    // mob within close range (below the elastic boundary) so the walk-back
-    // path actually starts.
+    // Keep the holder past the wanted distance but below the elastic boundary
+    // so close-range following starts.
     let holder_x = 8.0 + LEASH_CLOSE_RANGE_WANTED_DISTANCE + 1.0;
     let holder: SharedEntity = Arc::new(DespawnTestMob::with_world_and_entity_type(
         holder_id,
@@ -880,8 +873,6 @@ fn leashed_pair(
 
 #[test]
 fn pathfinder_close_range_leash_navigates_toward_holder() {
-    // Vanilla `PathfinderMob.closeRangeLeashBehaviour`: at close range the mob
-    // re-enables MOVE and walks back toward the holder.
     let world_fixture = leash_test_world("mob_leash_close_range");
     let world = &world_fixture.world;
     let (mob, holder) = leashed_pair(world, 1, 2);
@@ -904,9 +895,7 @@ fn pathfinder_close_range_leash_navigates_toward_holder() {
         "close-range leash behaviour re-enables the MOVE goal control"
     );
 }
-/// A deterministic stand-in for a running `PanicGoal`, so the shared
-/// close-range leash panic gate can be tested without the vanilla random-pos
-/// search (which only accepts ~1/9 of directions and is inherently flaky).
+/// Exercises the panic gate without random-position search failures.
 struct TestPanicGoal;
 
 impl Goal for TestPanicGoal {
@@ -925,8 +914,6 @@ impl Goal for TestPanicGoal {
 
 #[test]
 fn pathfinder_close_range_leash_skips_following_while_panicking() {
-    // Vanilla `PathfinderMob.closeRangeLeashBehaviour` skips the walk-back
-    // while the mob is panicking (a running panic goal).
     let mob = Arc::new(DespawnTestMob::with_position(
         1,
         DVec3::new(0.0, 64.0, 0.0),
@@ -951,8 +938,7 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         .tick(mob.as_ref(), &mob_entity);
     assert!(mob.is_panicking());
 
-    // Leave MOVE disabled as a snapped leash would, then confirm the panic
-    // gate neither re-enables it nor starts navigating.
+    // Panic must leave MOVE disabled and navigation idle.
     mob.mob_base()
         .goal_selector()
         .lock()
@@ -1537,12 +1523,10 @@ fn ground_path_target_solid_rewrites_to_first_open_block_above() {
 
 const OVERWORLD_DAY_TICKS: i64 = 6_000;
 const OVERWORLD_NIGHT_TICKS: i64 = 18_000;
-/// Bounded re-roll cap: at full daylight the per-tick ignition chance is 4%, so
-/// this cap leaves the "never ignites" failure odds below one in a quadrillion.
+/// At a 4% daylight ignition chance, 1000 misses have probability below 1e-15.
 const BURN_ROLL_ATTEMPTS: i32 = 1_000;
 
-/// Builds an overworld test world with a ready chunk, the clock pinned to a
-/// fixed time of day, and a stone floor under the mob position.
+/// Pins overworld time and places a stone floor under the mob.
 fn daylight_test_world(name: &'static str, total_ticks: i64) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();

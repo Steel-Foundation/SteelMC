@@ -9,8 +9,6 @@ use super::clock::WorldClockManager;
 
 const SKY_LIGHT_LEVEL_ATTRIBUTE: &str = "minecraft:gameplay/sky_light_level";
 const SUN_ANGLE_ATTRIBUTE: &str = "minecraft:visual/sun_angle";
-/// Vanilla `EnvironmentAttributes.MONSTERS_BURN`, the boolean environment
-/// attribute the overworld's `day` timeline keeps true during daylight.
 const MONSTERS_BURN_ATTRIBUTE: &str = "minecraft:gameplay/monsters_burn";
 const DEFAULT_SKY_LIGHT_LEVEL: f32 = 15.0;
 const DEFAULT_SUN_ANGLE: f32 = 0.0;
@@ -74,11 +72,7 @@ fn apply_timeline_float_attribute(
     value
 }
 
-/// Returns vanilla `EnvironmentAttributes.MONSTERS_BURN` for a dimension.
-///
-/// The environment attribute defaults to `false`; the overworld's `day`
-/// timeline turns it on during daylight through its boolean `or`-modified
-/// track, so dimensions outside that timeline never burn undead mobs.
+/// Samples `MONSTERS_BURN`: false by default, enabled by the overworld day timeline.
 #[must_use]
 pub(super) fn monsters_burn(
     dimension_type: DimensionTypeRef,
@@ -91,8 +85,7 @@ pub(super) fn monsters_burn(
     value
 }
 
-/// Runs `visit` over every timeline the dimension references, whether a single
-/// timeline key or a `#`-prefixed timeline tag.
+/// Visits dimension timelines referenced by key or tag.
 fn for_each_timeline(dimension_type: DimensionTypeRef, mut visit: impl FnMut(TimelineRef)) {
     let Some(timelines) = dimension_type.timelines else {
         return;
@@ -139,12 +132,8 @@ fn apply_timeline_bool_track(
     }
 }
 
-/// Samples a boolean timeline track.
-///
-/// Vanilla registers boolean environment attributes as non-interpolated
-/// (`AttributeType.ofNotInterpolated`), whose constant lerp returns the segment
-/// start until the destination keyframe tick is reached exactly. The easing is
-/// therefore irrelevant: the value holds and then snaps at each keyframe.
+/// Boolean tracks hold the segment start until the next keyframe,
+/// ignoring easing, as with vanilla's non-interpolated attribute type.
 fn sample_bool_track(track: &Track, period_ticks: Option<i64>, ticks: i64) -> Option<bool> {
     let keyframes = track.keyframes;
     match keyframes.len() {
@@ -575,9 +564,7 @@ mod tests {
     fn monsters_burn_follows_the_generated_daylight_window() {
         init_vanilla_registry();
 
-        // The overworld `day` timeline's `monsters_burn` track snaps true at
-        // sunrise (23460) and false at sunset (12542), so it holds true across
-        // the whole daylight stretch including the period wrap at midnight.
+        // Daylight spans the period wrap: sunrise at 23460, sunset at 12542.
         for ticks in [0, 6_000, 12_000, 12_541, 23_460, 23_999] {
             assert!(
                 monsters_burn(&OVERWORLD, &clock_manager_at(ticks)),
@@ -596,8 +583,7 @@ mod tests {
     fn monsters_burn_snaps_at_keyframes_instead_of_interpolating() {
         init_vanilla_registry();
 
-        // Boolean environment attributes are non-interpolated: the value holds
-        // until the destination keyframe tick is reached exactly, then snaps.
+        // Boolean tracks snap at the destination keyframe.
         assert!(!monsters_burn(&OVERWORLD, &clock_manager_at(23_459)));
         assert!(monsters_burn(&OVERWORLD, &clock_manager_at(23_460)));
     }

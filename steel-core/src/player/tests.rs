@@ -69,7 +69,7 @@ const HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID: i32 = 42;
 
 const MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET: u8 = 0xff;
 const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
-/// Midnight day time (`18_000`), deep enough that `skyDarkening` keeps monsters awake.
+/// Midnight, when sky darkening permits sleep.
 const NIGHT_TIME: i64 = 18_000;
 
 #[test]

@@ -192,10 +192,7 @@ impl GoalSelector {
             .push(WrappedGoal::new(priority, Box::new(goal)));
     }
 
-    /// Removes every goal matching `predicate`, stopping running matches first.
-    ///
-    /// Mirrors vanilla `GoalSelector.removeAllGoals`. The mob is required only
-    /// because Steel's `Goal.stop` receives the mob for its stop hook.
+    /// Stops and removes matching goals. `mob` supplies the stop-hook context.
     pub fn remove_all_goals(
         &mut self,
         mob: &dyn PathfinderMob,

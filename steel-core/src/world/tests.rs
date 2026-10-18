@@ -660,8 +660,7 @@ fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
 
-    // 26.2 stores sky light un-dimmed: open air holds full sky light, so the
-    // position sees the sky regardless of the time of day.
+    // Open sky has full sky light regardless of time of day.
     assert!(world.can_see_sky(pos));
 
     // A solid roof attenuates the sky layer below full: no longer sky-visible.
@@ -684,8 +683,7 @@ fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
 
-    // Open sky: vanilla `precipitationAt` gates (light-based canSeeSky plus
-    // the motion-blocking heightmap) both pass.
+    // Open sky passes both the light and heightmap gates.
     assert!(world.can_see_sky_for_precipitation(pos));
 
     // A solid roof is rejected by the light gate.
@@ -697,8 +695,7 @@ fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
     world.chunk_map.broadcast_changed_chunks();
     assert!(!world.can_see_sky_for_precipitation(pos));
 
-    // A light-transmitting glass roof keeps full sky light but still fails the
-    // motion-blocking heightmap gate.
+    // Glass passes the light gate but blocks the heightmap gate.
     assert!(world.set_block(
         pos.above(),
         vanilla_blocks::GLASS.default_state(),
@@ -708,8 +705,7 @@ fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
     assert!(world.can_see_sky(pos));
     assert!(!world.can_see_sky_for_precipitation(pos));
 
-    // Water attenuates sky light below full: the light gate rejects the
-    // position even though the heightmap column stays unobstructed.
+    // Water fails the light gate despite an unobstructed heightmap.
     assert!(world.set_block(
         pos.above(),
         vanilla_blocks::AIR.default_state(),

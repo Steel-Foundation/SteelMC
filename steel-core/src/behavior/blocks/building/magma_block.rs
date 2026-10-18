@@ -43,8 +43,7 @@ impl BlockBehavior for MagmaBlock {
         Some(self.block.default_state())
     }
 
-    /// Vanilla magma registers `isValidSpawn(entityType -> entityType.fireImmune())`:
-    /// only fire-immune mobs (magma cubes, blazes) spawn on it.
+    /// Only fire-immune mobs may spawn on magma.
     fn is_valid_spawn(
         &self,
         _state: BlockStateId,
