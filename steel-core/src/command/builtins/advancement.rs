@@ -269,7 +269,7 @@ fn perform_error_generator(
                     Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_ONE_FAILURE,
                     Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_ONE_FAILURE,
                 }
-                    .message([first_advancement.name(), first_player.display_name()]),
+                .message([first_advancement.name(), first_player.display_name()]),
             ))
         } else {
             Err(CommandSyntaxError::dynamic(
@@ -279,7 +279,7 @@ fn perform_error_generator(
                         &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_MANY_FAILURE
                     }
                 }
-                    .message([first_advancement.name(), targets.len().to_string().into()]),
+                .message([first_advancement.name(), targets.len().to_string().into()]),
             ))
         }
     } else if let [first_player] = targets {
@@ -288,10 +288,10 @@ fn perform_error_generator(
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_MANY_TO_ONE_FAILURE,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_MANY_TO_ONE_FAILURE,
             }
-                .message([
-                    advancements.len().to_string().into(),
-                    first_player.display_name(),
-                ]),
+            .message([
+                advancements.len().to_string().into(),
+                first_player.display_name(),
+            ]),
         ))
     } else {
         Err(CommandSyntaxError::dynamic(
@@ -299,10 +299,10 @@ fn perform_error_generator(
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_MANY_TO_MANY_FAILURE,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_MANY_TO_MANY_FAILURE,
             }
-                .message([
-                    TextComponent::from(advancements.len().to_string()),
-                    TextComponent::from(targets.len().to_string()),
-                ]),
+            .message([
+                TextComponent::from(advancements.len().to_string()),
+                TextComponent::from(targets.len().to_string()),
+            ]),
         ))
     }
 }
@@ -333,36 +333,36 @@ fn perform(
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_ONE_SUCCESS,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_ONE_SUCCESS,
             }
-                .message([first_advancement.name(), first_player.display_name()])
-                .component()
+            .message([first_advancement.name(), first_player.display_name()])
+            .component()
         } else {
             match action {
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_MANY_SUCCESS,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_MANY_SUCCESS,
             }
-                .message([first_advancement.name(), player_count.to_string().into()])
-                .component()
+            .message([first_advancement.name(), player_count.to_string().into()])
+            .component()
         }
     } else if let [first_player] = players[..] {
         match action {
             Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_MANY_TO_ONE_SUCCESS,
             Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_MANY_TO_ONE_SUCCESS,
         }
-            .message([
-                advancements.len().to_string().into(),
-                first_player.display_name(),
-            ])
-            .component()
+        .message([
+            advancements.len().to_string().into(),
+            first_player.display_name(),
+        ])
+        .component()
     } else {
         match action {
             Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_MANY_TO_MANY_SUCCESS,
             Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_MANY_TO_MANY_SUCCESS,
         }
-            .message([
-                TextComponent::from(advancements.len().to_string()),
-                TextComponent::from(player_count.to_string()),
-            ])
-            .component()
+        .message([
+            TextComponent::from(advancements.len().to_string()),
+            TextComponent::from(player_count.to_string()),
+        ])
+        .component()
     };
     context.send_success(&translate, true);
     Ok(advancement_count)
@@ -399,11 +399,11 @@ pub fn perform_criterion(
                         &translations::COMMANDS_ADVANCEMENT_REVOKE_CRITERION_TO_ONE_FAILURE
                     }
                 }
-                    .message([
-                        criterion.to_owned().into(),
-                        advancement.name(),
-                        first_player.display_name(),
-                    ]),
+                .message([
+                    criterion.to_owned().into(),
+                    advancement.name(),
+                    first_player.display_name(),
+                ]),
             ))
         } else {
             Err(CommandSyntaxError::dynamic(
@@ -415,11 +415,11 @@ pub fn perform_criterion(
                         &translations::COMMANDS_ADVANCEMENT_REVOKE_CRITERION_TO_MANY_FAILURE
                     }
                 }
-                    .message([
-                        criterion.to_owned().into(),
-                        advancement.name(),
-                        targets.len().to_string().into(),
-                    ]),
+                .message([
+                    criterion.to_owned().into(),
+                    advancement.name(),
+                    targets.len().to_string().into(),
+                ]),
             ))
         }
     } else {
@@ -430,12 +430,12 @@ pub fn perform_criterion(
                     &translations::COMMANDS_ADVANCEMENT_REVOKE_CRITERION_TO_ONE_SUCCESS
                 }
             }
-                .message([
-                    criterion.to_owned().into(),
-                    advancement.name(),
-                    first_player.display_name(),
-                ])
-                .component()
+            .message([
+                criterion.to_owned().into(),
+                advancement.name(),
+                first_player.display_name(),
+            ])
+            .component()
         } else {
             match action {
                 Action::Grant => {
@@ -445,12 +445,12 @@ pub fn perform_criterion(
                     &translations::COMMANDS_ADVANCEMENT_REVOKE_CRITERION_TO_MANY_SUCCESS
                 }
             }
-                .message([
-                    criterion.to_owned().into(),
-                    advancement.name(),
-                    player_count.to_string().into(),
-                ])
-                .component()
+            .message([
+                criterion.to_owned().into(),
+                advancement.name(),
+                player_count.to_string().into(),
+            ])
+            .component()
         };
         context.send_success(&translate, true);
         Ok(player_count)
