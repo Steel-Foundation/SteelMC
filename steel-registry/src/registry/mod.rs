@@ -20,6 +20,7 @@ use crate::{
     banner_pattern::BannerPatternRegistry,
     biome::BiomeRegistry,
     block_entity_type::BlockEntityTypeRegistry,
+    block_transformer::BlockTransformerRegistry,
     blocks::BlockRegistry,
     carver::ConfiguredCarverRegistry,
     cat_sound_variant::CatSoundVariantRegistry,
@@ -33,14 +34,15 @@ use crate::{
     damage_type::DamageTypeRegistry,
     data_component_predicate::{self, DataComponentPredicateTypeRegistry},
     data_components::{DataComponentRegistry, vanilla_components},
+    decorated_pot_pattern::DecoratedPotPatternRegistry,
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
     enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
     entity_type::EntityTypeRegistry,
     feature::{
-        ConfiguredFeatureKind, ConfiguredFeatureRef, ConfiguredFeatureRegistry, PlacedFeatureData,
-        PlacedFeatureRef, PlacedFeatureRegistry,
+        BlockStateProviderRegistry, ConfiguredFeatureKind, ConfiguredFeatureRef,
+        ConfiguredFeatureRegistry, PlacedFeatureData, PlacedFeatureRef, PlacedFeatureRegistry,
     },
     fluid::FluidRegistry,
     frog_variant::FrogVariantRegistry,
@@ -72,22 +74,23 @@ use crate::{
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
     vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns, vanilla_biome_tags,
-    vanilla_biomes, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
-    vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
-    vanilla_chicken_sound_variants, vanilla_chicken_variants, vanilla_configured_carvers,
-    vanilla_configured_features, vanilla_cow_sound_variants, vanilla_cow_variants,
-    vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
-    vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags, vanilla_enchantments,
-    vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags, vanilla_fluids,
-    vanilla_frog_variants, vanilla_game_events, vanilla_game_rules, vanilla_instrument_tags,
-    vanilla_instruments, vanilla_item_tags, vanilla_items, vanilla_jukebox_songs,
-    vanilla_loot_tables, vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
-    vanilla_painting_variant_tags, vanilla_painting_variants, vanilla_particle_types,
-    vanilla_pig_sound_variants, vanilla_pig_variants, vanilla_placed_features,
-    vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
-    vanilla_potions, vanilla_recipes, vanilla_structure_processors, vanilla_structure_tags,
-    vanilla_structures, vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags,
-    vanilla_timelines, vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
+    vanilla_biomes, vanilla_block_entity_types, vanilla_block_state_providers, vanilla_block_tags,
+    vanilla_block_transformers, vanilla_blocks, vanilla_cat_sound_variants, vanilla_cat_variants,
+    vanilla_chat_types, vanilla_chicken_sound_variants, vanilla_chicken_variants,
+    vanilla_configured_carvers, vanilla_configured_features, vanilla_cow_sound_variants,
+    vanilla_cow_variants, vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types,
+    vanilla_decorated_pot_patterns, vanilla_dialog_tags, vanilla_dialogs, vanilla_dimension_types,
+    vanilla_enchantment_tags, vanilla_enchantments, vanilla_entities, vanilla_entity_type_tags,
+    vanilla_fluid_tags, vanilla_fluids, vanilla_frog_variants, vanilla_game_events,
+    vanilla_game_rules, vanilla_instrument_tags, vanilla_instruments, vanilla_item_tags,
+    vanilla_items, vanilla_jukebox_songs, vanilla_loot_tables, vanilla_map_decoration_types,
+    vanilla_menu_types, vanilla_mob_effects, vanilla_painting_variant_tags,
+    vanilla_painting_variants, vanilla_particle_types, vanilla_pig_sound_variants,
+    vanilla_pig_variants, vanilla_placed_features, vanilla_poi_type_tags, vanilla_poi_types,
+    vanilla_position_source_types, vanilla_potion_tags, vanilla_potions, vanilla_recipes,
+    vanilla_structure_processors, vanilla_structure_tags, vanilla_structures,
+    vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags, vanilla_timelines,
+    vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
     vanilla_villager_types, vanilla_wolf_sound_variants, vanilla_wolf_variants,
     vanilla_world_clocks, vanilla_zombie_nautilus_variants,
     villager_profession::VillagerProfessionRegistry,
@@ -178,6 +181,8 @@ pub const BIOMES_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/bio
 pub const CHAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("chat_type");
 pub const TRIM_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("trim_pattern");
 pub const TRIM_MATERIAL_REGISTRY: Identifier = Identifier::vanilla_static("trim_material");
+pub const DECORATED_POT_PATTERN_REGISTRY: Identifier =
+    Identifier::vanilla_static("decorated_pot_pattern");
 pub const WOLF_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("wolf_variant");
 pub const WOLF_SOUND_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("wolf_sound_variant");
@@ -225,6 +230,9 @@ pub const CONFIGURED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/configured_feature");
 pub const PLACED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/placed_feature");
+pub const BLOCK_STATE_PROVIDER_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/block_state_provider");
+pub const BLOCK_TRANSFORMER_REGISTRY: Identifier = Identifier::vanilla_static("block_transformer");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
@@ -244,6 +252,7 @@ pub struct Registry {
     pub chat_types: ChatTypeRegistry,
     pub trim_patterns: TrimPatternRegistry,
     pub trim_materials: TrimMaterialRegistry,
+    pub decorated_pot_patterns: DecoratedPotPatternRegistry,
     pub wolf_variants: WolfVariantRegistry,
     pub wolf_sound_variants: WolfSoundVariantRegistry,
     pub pig_sound_variants: PigSoundVariantRegistry,
@@ -262,6 +271,7 @@ pub struct Registry {
     pub villager_professions: VillagerProfessionRegistry,
     pub dimension_types: DimensionTypeRegistry,
     pub damage_types: DamageTypeRegistry,
+    pub block_transformers: BlockTransformerRegistry,
     pub banner_patterns: BannerPatternRegistry,
     pub jukebox_songs: JukeboxSongRegistry,
     pub instruments: InstrumentRegistry,
@@ -286,6 +296,7 @@ pub struct Registry {
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
     pub configured_carvers: ConfiguredCarverRegistry,
+    pub block_state_providers: BlockStateProviderRegistry,
     pub configured_features: ConfiguredFeatureRegistry,
     pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
@@ -333,6 +344,9 @@ impl Registry {
         vanilla_chat_types::register_chat_types(&mut registry.chat_types);
         vanilla_trim_patterns::register_trim_patterns(&mut registry.trim_patterns);
         vanilla_trim_materials::register_trim_materials(&mut registry.trim_materials);
+        vanilla_decorated_pot_patterns::register_decorated_pot_patterns(
+            &mut registry.decorated_pot_patterns,
+        );
         vanilla_wolf_variants::register_wolf_variants(&mut registry.wolf_variants);
         vanilla_wolf_sound_variants::register_wolf_sound_variants(
             &mut registry.wolf_sound_variants,
@@ -365,6 +379,7 @@ impl Registry {
         vanilla_damage_type_tags::DamageTypeTag::register_damage_type_tags(
             &mut registry.damage_types,
         );
+        vanilla_block_transformers::register_block_transformers(&mut registry.block_transformers);
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
         vanilla_banner_pattern_tags::BannerPatternTag::register_banner_pattern_tags(
             &mut registry.banner_patterns,
@@ -418,6 +433,10 @@ impl Registry {
             &mut registry.structure_processors,
         );
 
+        vanilla_block_state_providers::register_block_state_providers(
+            &mut registry.block_state_providers,
+        );
+
         vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
         vanilla_configured_features::register_configured_features(
             &mut registry.configured_features,
@@ -447,6 +466,7 @@ impl Registry {
         self.chat_types.freeze();
         self.trim_patterns.freeze();
         self.trim_materials.freeze();
+        self.decorated_pot_patterns.freeze();
         self.wolf_variants.freeze();
         self.wolf_sound_variants.freeze();
         self.pig_variants.freeze();
@@ -465,6 +485,7 @@ impl Registry {
         self.villager_professions.freeze();
         self.dimension_types.freeze();
         self.damage_types.freeze();
+        self.block_transformers.freeze();
         self.banner_patterns.freeze();
         self.jukebox_songs.freeze();
         self.instruments.freeze();
@@ -489,6 +510,7 @@ impl Registry {
         self.enchantments.freeze();
         self.world_clocks.freeze();
         self.configured_carvers.freeze();
+        self.block_state_providers.freeze();
         self.configured_features.freeze();
         self.placed_features.freeze();
         self.structures.freeze();
@@ -708,6 +730,7 @@ impl Registry {
             chat_types: ChatTypeRegistry::new(),
             trim_patterns: TrimPatternRegistry::new(),
             trim_materials: TrimMaterialRegistry::new(),
+            decorated_pot_patterns: DecoratedPotPatternRegistry::new(),
             wolf_variants: WolfVariantRegistry::new(),
             wolf_sound_variants: WolfSoundVariantRegistry::new(),
             pig_variants: PigVariantRegistry::new(),
@@ -726,6 +749,7 @@ impl Registry {
             villager_professions: VillagerProfessionRegistry::new(),
             dimension_types: DimensionTypeRegistry::new(),
             damage_types: DamageTypeRegistry::new(),
+            block_transformers: BlockTransformerRegistry::new(),
             banner_patterns: BannerPatternRegistry::new(),
             jukebox_songs: JukeboxSongRegistry::new(),
             instruments: InstrumentRegistry::new(),
@@ -750,6 +774,7 @@ impl Registry {
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
             configured_carvers: ConfiguredCarverRegistry::new(),
+            block_state_providers: BlockStateProviderRegistry::new(),
             configured_features: ConfiguredFeatureRegistry::new(),
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),

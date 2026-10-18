@@ -156,7 +156,7 @@ fn set_flying_speed(source: &CommandSource, targets: &[Arc<Player>], multiplier:
         source.send_success(
             &TextComponent::plain(format!(
                 "Set flying speed for player '{}' to {multiplier:.1}x ({speed:.3})",
-                target.gameprofile.name
+                target.gameprofile.name()
             )),
             true,
         );
@@ -170,7 +170,7 @@ fn query_flying_speed(source: &CommandSource, targets: &[Arc<Player>]) {
         source.send_success(
             &TextComponent::plain(format!(
                 "Current flying speed for player '{}': {multiplier:.1}x ({speed:.3})",
-                target.gameprofile.name
+                target.gameprofile.name()
             )),
             false,
         );

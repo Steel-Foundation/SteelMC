@@ -16,9 +16,9 @@ impl FeatureDecorationRunner {
         let mut shape = FxHashSet::default();
         for pos in placement
             .decorations
-            .insertion_order()
+            .java_order()
             .copied()
-            .chain(placement.roots.insertion_order().copied())
+            .chain(placement.roots.java_order().copied())
         {
             if bounds.contains(pos) {
                 shape.insert(pos);
@@ -28,7 +28,7 @@ impl FeatureDecorationRunner {
         let mut frontiers = (0..LEAF_DISTANCE_LIMIT)
             .map(|_| JavaBlockPosSet::default())
             .collect::<Vec<_>>();
-        for pos in placement.trunks.insertion_order().copied() {
+        for pos in placement.trunks.java_order().copied() {
             frontiers[0].insert(pos);
         }
         let mut smallest_distance = 0;

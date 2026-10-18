@@ -392,7 +392,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity handles and consumes an attack before normal damage.
-    fn skip_attack_interaction(&self, _source: &dyn Entity) -> bool {
+    fn skip_attack_interaction(&self, _source: &SharedEntity) -> bool {
         false
     }
 
@@ -486,7 +486,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns how vanilla lets this entity respond to piston movement.
     fn piston_push_reaction(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
-            PushReaction::Ignore
+            PushReaction::IgnoreEntity
         } else {
             self.entity_type().flags.piston_push_reaction
         }
@@ -2453,8 +2453,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
+    ///
+    /// For the base method, see [`Entity::try_set_position_base`]
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position_base(pos)
+    }
+
+    /// The base method to set the entity's position through world lifecycle validation.
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
+    fn try_set_position_base(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
     }
 
@@ -3554,7 +3562,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         let pos = self.position();
-        world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
+        let entity = world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Spawns an item at this entity's location plus a vanilla attachment offset.
@@ -3564,7 +3574,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         offset: DVec3,
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
-        world.spawn_item(self.position() + offset, item)
+        let entity = world.spawn_item(self.position() + offset, item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.

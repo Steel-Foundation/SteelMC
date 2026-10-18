@@ -1,7 +1,11 @@
 use glam::DVec3;
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_entities,
-    vanilla_entity_data::PlayerEntityData, vanilla_items, vanilla_mob_effects,
+    data_components::vanilla_components::{SwingAnimation, SwingAnimationType},
+    init_vanilla_registry,
+    item_stack::ItemStack,
+    vanilla_attributes, vanilla_entities,
+    vanilla_entity_data::PlayerEntityData,
+    vanilla_items, vanilla_mob_effects,
 };
 use steel_utils::{BlockPos, types::InteractionHand};
 
@@ -9,8 +13,8 @@ use crate::behavior::init_behaviors;
 use crate::inventory::equipment::EquipmentSlot;
 
 use super::{
-    ActiveMobEffect, DEFAULT_SWING_DURATION, LivingEntityBase, LivingTravelInput,
-    MobEffectInstance, MobEffectSyncChange, POST_IMPULSE_GRACE_TICKS,
+    ActiveMobEffect, LivingEntityBase, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
+    POST_IMPULSE_GRACE_TICKS,
 };
 
 #[test]
@@ -217,58 +221,122 @@ fn living_rotation_is_base_tick_snapshot_state() {
 fn living_swing_uses_vanilla_restart_gate() {
     init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let animation = SwingAnimation::DEFAULT;
 
-    assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
-    let state = base.swing_state();
-    assert!(state.swinging());
-    assert_eq!(state.swinging_arm(), Some(InteractionHand::MainHand));
-    assert_eq!(state.swing_time(), -1);
-
-    base.update_swing_time(DEFAULT_SWING_DURATION);
-    assert!(!base.start_swing(InteractionHand::OffHand, DEFAULT_SWING_DURATION));
+    assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+    // A swing can be replaced before its first tick.
+    assert!(base.start_swing(InteractionHand::OffHand, animation, animation.duration));
+    for _ in 0..animation.duration / 2 {
+        base.tick_swing_state();
+        assert!(!base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+    }
+    base.tick_swing_state();
+    assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+    assert_eq!(base.swing_state().swing_time(), 0);
     assert_eq!(
         base.swing_state().swinging_arm(),
         Some(InteractionHand::MainHand)
     );
-
-    for _ in 0..3 {
-        base.update_swing_time(DEFAULT_SWING_DURATION);
-    }
-    assert!(base.start_swing(InteractionHand::OffHand, DEFAULT_SWING_DURATION));
-    let state = base.swing_state();
-    assert_eq!(state.swinging_arm(), Some(InteractionHand::OffHand));
-    assert_eq!(state.swing_time(), -1);
 }
 
 #[test]
-fn living_swing_time_updates_attack_animation() {
+fn living_swing_tick_keeps_full_progress_until_after_duration() {
     init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let animation = SwingAnimation::DEFAULT;
+    assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
 
-    assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
-    base.update_swing_time(DEFAULT_SWING_DURATION);
-    base.update_swing_time(DEFAULT_SWING_DURATION);
-    let state = base.swing_state();
-    assert!(state.swinging());
-    assert_eq!(state.swing_time(), 1);
+    base.tick_swing_state();
+    assert_eq!(base.swing_state().attack_anim(), 0.0);
+    base.tick_swing_state();
     assert_eq!(
-        state.attack_anim().to_bits(),
-        (1.0_f32 / DEFAULT_SWING_DURATION as f32).to_bits()
+        base.swing_state().attack_anim(),
+        1.0 / animation.duration as f32
     );
+    assert_eq!(base.swing_state().old_attack_anim(), 0.0);
 
-    base.advance_attack_animation_for_base_tick();
-    assert_eq!(
-        base.swing_state().old_attack_anim().to_bits(),
-        (1.0_f32 / DEFAULT_SWING_DURATION as f32).to_bits()
-    );
-
-    for _ in 0..5 {
-        base.update_swing_time(DEFAULT_SWING_DURATION);
+    for _ in 0..animation.duration - 1 {
+        base.tick_swing_state();
     }
-    let state = base.swing_state();
-    assert!(!state.swinging());
-    assert_eq!(state.swing_time(), 0);
-    assert_eq!(state.attack_anim().to_bits(), 0.0_f32.to_bits());
+    assert!(base.swing_state().swinging());
+    assert_eq!(base.swing_state().attack_anim(), 1.0);
+    base.tick_swing_state();
+    assert!(!base.swing_state().swinging());
+    assert_eq!(base.swing_state().swinging_arm(), None);
+    assert_eq!(base.swing_state().attack_anim(), 0.0);
+    assert_eq!(base.swing_state().old_attack_anim(), 1.0);
+    base.tick_swing_state();
+    assert_eq!(base.swing_state().old_attack_anim(), 0.0);
+}
+
+#[test]
+fn living_swing_restart_preserves_progress_only_for_same_description() {
+    init_vanilla_registry();
+    let animation = SwingAnimation::DEFAULT;
+    let changed_animation = SwingAnimation::new(SwingAnimationType::Stab, animation.duration);
+    for (hand, next_animation, next_duration, resets) in [
+        (
+            InteractionHand::MainHand,
+            animation,
+            animation.duration,
+            false,
+        ),
+        (
+            InteractionHand::OffHand,
+            animation,
+            animation.duration,
+            true,
+        ),
+        (
+            InteractionHand::MainHand,
+            changed_animation,
+            animation.duration,
+            true,
+        ),
+        (
+            InteractionHand::MainHand,
+            animation,
+            animation.duration + 1,
+            true,
+        ),
+    ] {
+        let base = LivingEntityBase::new(&vanilla_entities::PIG);
+        assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
+        for _ in 0..4 {
+            base.tick_swing_state();
+        }
+        let previous = base.swing_state();
+        assert!(base.start_swing(hand, next_animation, next_duration));
+        let restarted = base.swing_state();
+        assert_eq!(restarted.swing_time(), 0);
+        assert_eq!(
+            restarted.attack_anim(),
+            if resets { 0.0 } else { previous.attack_anim() }
+        );
+        assert_eq!(
+            restarted.old_attack_anim(),
+            if resets {
+                0.0
+            } else {
+                previous.old_attack_anim()
+            }
+        );
+    }
+}
+
+#[test]
+fn living_swing_nonpositive_duration_never_divides_by_zero() {
+    init_vanilla_registry();
+    for duration in [0, -1] {
+        let base = LivingEntityBase::new(&vanilla_entities::PIG);
+        assert!(base.start_swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, duration));
+        base.tick_swing_state();
+        assert_eq!(base.swing_state().attack_anim(), 0.0);
+        assert_eq!(base.swing_state().swinging(), duration == 0);
+        base.tick_swing_state();
+        assert!(!base.swing_state().swinging());
+        assert_eq!(base.swing_state().attack_anim(), 0.0);
+    }
 }
 
 #[test]

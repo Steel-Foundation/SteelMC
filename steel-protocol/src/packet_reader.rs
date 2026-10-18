@@ -111,7 +111,7 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
         let packet_len = VarInt::read_async(&mut self.reader).await? as usize;
 
         if packet_len > MAX_PACKET_SIZE {
-            Err(PacketError::OutOfBounds)?;
+            return Err(PacketError::OutOfBounds);
         }
 
         // Read the entire packet data into a buffer
@@ -128,7 +128,7 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
             let raw_packet_len = packet_len - VarInt::written_size(decompressed_len as i32);
 
             if decompressed_len > MAX_PACKET_DATA_SIZE {
-                Err(PacketError::TooLong(decompressed_len))?;
+                return Err(PacketError::TooLong(decompressed_len));
             }
 
             if decompressed_len > 0 {
@@ -144,15 +144,15 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
                     .map_err(|e| PacketError::DecompressionFailed(e.to_string()))?
                     != 0
                 {
-                    Err(PacketError::DecompressionFailed(format!(
+                    return Err(PacketError::DecompressionFailed(format!(
                         "decompressed packet exceeds declared length of {decompressed_len}"
-                    )))?;
+                    )));
                 }
                 (decompressed, 0)
             } else {
                 // Validate that we are not less than the compression threshold
                 if raw_packet_len > threshold.get() as _ {
-                    Err(PacketError::NotCompressed)?;
+                    return Err(PacketError::NotCompressed);
                 }
 
                 // The rest of the packet data is uncompressed.

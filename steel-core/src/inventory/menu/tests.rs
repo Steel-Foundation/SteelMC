@@ -92,7 +92,7 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
     let target_ref = ContainerRef::from(Arc::clone(&target));
     let mut builder = MenuBuilder::new(None, 1);
     let target_slots = builder.custom_section([SingleItemSlot {
-        base: NormalSlot::new(target_ref.clone(), 0),
+        base: NormalSlot::new(target_ref, 0),
     }]);
     let mut menu = builder.build(BasicKind {});
     menu.clicked(
@@ -230,7 +230,7 @@ fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
 #[test]
 fn partial_swap_overflow_marks_displaced_item_as_thrown() {
     let fixture = perform_partial_swap("menu_partial_swap_overflow", GameType::Survival);
-    let player_id = fixture.player.gameprofile.id;
+    let player_id = fixture.player.gameprofile.id();
 
     assert_eq!(fixture.player.inventory.lock().get_item(0).count(), 1);
     let target_item = fixture.target.lock().get_item(0).clone();

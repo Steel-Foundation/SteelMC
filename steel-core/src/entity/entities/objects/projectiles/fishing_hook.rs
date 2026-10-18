@@ -550,7 +550,7 @@ impl FishingHookEntity {
                             return damage;
                         };
 
-                        self.spawn_loot_award_stat(items, Arc::clone(&world), Arc::clone(&owner));
+                        self.spawn_loot_award_stat(items, &world, owner.as_ref());
 
                         let orb_pos = DVec3::new(
                             player.position().x,
@@ -626,12 +626,7 @@ impl FishingHookEntity {
 
     // I added this fn because I thought it would be cleaner this way, it's not in the vanilla src, but how I use it ensures vanilla behavior
     /// Loops through a `vec` of `ItemStack`s (the fishing loot), spawns them as `ItemEntity`s in the world and awards the stat `FISH_CAUGHT`
-    fn spawn_loot_award_stat(
-        &self,
-        items: Vec<ItemStack>,
-        world: Arc<World>,
-        owner: Arc<dyn Entity>,
-    ) {
+    fn spawn_loot_award_stat(&self, items: Vec<ItemStack>, world: &Arc<World>, owner: &dyn Entity) {
         for item_stack in items {
             const SPEED: f64 = 0.1;
             const INVERSE_CUBE: f64 = 0.08;
@@ -647,7 +642,7 @@ impl FishingHookEntity {
                     za * SPEED,
                 );
 
-                World::spawn_item_with_velocity(&world, self.position(), item_stack.clone(), vel);
+                World::spawn_item_with_velocity(world, self.position(), item_stack.clone(), vel);
 
                 if item_stack.item().has_tag(&ItemTag::FISHES) {
                     player.award_custom_stat(&vanilla_custom_stats::FISH_CAUGHT);
@@ -987,7 +982,9 @@ mod tests {
     fn spawn_data_identifies_the_owning_player() {
         let world_fixture = fresh_test_world("fishing_hook_spawn_data");
         let world = &world_fixture.world;
-        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), 37).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 37)
+            .uuid(Uuid::from_u128(1))
+            .build();
         let owner: SharedEntity = player;
         let hook = test_hook(world, 38);
         hook.set_owner_entity(Some(&owner));
@@ -999,7 +996,9 @@ mod tests {
     fn removal_only_clears_the_matching_active_hook() {
         let world_fixture = fresh_test_world("fishing_hook_owner_lifecycle");
         let world = &world_fixture.world;
-        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(2), 40).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 40)
+            .uuid(Uuid::from_u128(2))
+            .build();
         let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
         let first = test_hook(world, 41);
@@ -1028,7 +1027,9 @@ mod tests {
     fn retrieving_discards_the_active_hook() {
         let world_fixture = fresh_test_world("fishing_hook_retrieve_lifecycle");
         let world = &world_fixture.world;
-        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(3), 50).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 50)
+            .uuid(Uuid::from_u128(3))
+            .build();
         player
             .inventory
             .lock()
@@ -1050,8 +1051,9 @@ mod tests {
         let world = &world_fixture.world;
 
         // Straight down: pitch = 90.0, yaw = 0.0 -> Y velocity must be negative (downwards)
-        let player_down =
-            TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(10), 100).build();
+        let player_down = TestPlayerBuilder::new(Arc::clone(world), "Player", 100)
+            .uuid(Uuid::from_u128(10))
+            .build();
         player_down.set_rotation((0.0, 90.0));
         let hook_down = test_hook(world, 101);
         hook_down.shoot_from_player(&player_down, 0, 0);
@@ -1062,7 +1064,9 @@ mod tests {
         );
 
         // Straight up: pitch = -90.0, yaw = 0.0 -> Y velocity must be positive (upwards)
-        let player_up = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(11), 110).build();
+        let player_up = TestPlayerBuilder::new(Arc::clone(world), "Player", 110)
+            .uuid(Uuid::from_u128(11))
+            .build();
         player_up.set_rotation((0.0, -90.0));
         let hook_up = test_hook(world, 111);
         hook_up.shoot_from_player(&player_up, 0, 0);
@@ -1073,8 +1077,9 @@ mod tests {
         );
 
         // West: yaw = 90.0, pitch = 0.0 -> X velocity must be negative (-X is West)
-        let player_west =
-            TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(12), 120).build();
+        let player_west = TestPlayerBuilder::new(Arc::clone(world), "Player", 120)
+            .uuid(Uuid::from_u128(12))
+            .build();
         player_west.set_rotation((90.0, 0.0));
         let hook_west = test_hook(world, 121);
         hook_west.shoot_from_player(&player_west, 0, 0);
@@ -1085,8 +1090,9 @@ mod tests {
         );
 
         // East: yaw = -90.0, pitch = 0.0 -> X velocity must be positive (+X is East)
-        let player_east =
-            TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(13), 130).build();
+        let player_east = TestPlayerBuilder::new(Arc::clone(world), "Player", 130)
+            .uuid(Uuid::from_u128(13))
+            .build();
         player_east.set_rotation((-90.0, 0.0));
         let hook_east = test_hook(world, 131);
         hook_east.shoot_from_player(&player_east, 0, 0);
@@ -1104,7 +1110,9 @@ mod tests {
 
         let world_fixture = fresh_test_world("fishing_hook_grounded_owner");
         let world = &world_fixture.world;
-        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(20), 200).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 200)
+            .uuid(Uuid::from_u128(20))
+            .build();
         player
             .inventory
             .lock()
@@ -1148,7 +1156,9 @@ mod tests {
         world.set_block(pos_submerged, water, UpdateFlags::UPDATE_NONE);
         world.set_block(pos_above, water, UpdateFlags::UPDATE_NONE);
 
-        let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(30), 300).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 300)
+            .uuid(Uuid::from_u128(30))
+            .build();
         player
             .try_set_position(DVec3::new(0.5, 61.0, 0.5))
             .expect("should position player near water");
