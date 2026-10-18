@@ -33,7 +33,9 @@ use steel_registry::{
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{
+    BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
+};
 
 use crate::behavior::items::SpawnEggItem;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
@@ -83,12 +85,13 @@ const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
 const SUN_BURN_IGNITE_SECONDS: f32 = 8.0;
-const SUN_BURN_IGNITE_TICKS: i32 = (SUN_BURN_IGNITE_SECONDS * 20.0) as i32;
+const SUN_BURN_IGNITE_TICKS: i32 = (SUN_BURN_IGNITE_SECONDS * TICKS_PER_SECOND as f32) as i32;
 /// Brightness threshold shared by daylight burning and monster idle-time growth.
 pub(crate) const LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE: f32 = 0.5;
 const SUN_BURN_RANDOM_SCALE: f32 = 30.0;
 const SUN_BURN_LIGHT_OFFSET: f32 = 0.4;
 const SUN_BURN_LIGHT_GAIN: f32 = 2.0;
+const SUN_BURN_DURABILITY_ROLL_BOUND: i32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -1611,8 +1614,10 @@ pub trait Mob: LivingEntity + Leashable {
             if equipment.get_ref(slot).is_damageable_item() {
                 let item = equipment.get_ref(slot).item();
                 let sun_blocker = equipment.get_mut(slot);
-                sun_blocker
-                    .set_damage_value(sun_blocker.get_damage_value() + rand::random_range(0..2));
+                sun_blocker.set_damage_value(
+                    sun_blocker.get_damage_value()
+                        + rand::random_range(0..SUN_BURN_DURABILITY_ROLL_BOUND),
+                );
                 if sun_blocker.get_damage_value() >= sun_blocker.get_max_damage() {
                     broke_sun_blocker = Some(item);
                 }

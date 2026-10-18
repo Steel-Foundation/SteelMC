@@ -15,8 +15,9 @@ use steel_utils::types::{Difficulty, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
-use super::DEFAULT_XP_REWARD;
+use super::{DEFAULT_XP_REWARD, SKY_LIGHT_SPAWN_ROLL_BOUND};
 use crate::behavior::init_behaviors;
+use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::PigEntity;
 use crate::entity::mob::{Mob, MobBase};
@@ -29,6 +30,10 @@ use crate::test_support::{
     insert_ready_full_chunk, test_world,
 };
 use crate::world::{LevelReader, World};
+
+const INITIAL_TEST_HEALTH: f32 = 20.0;
+const LOW_SKY_LIGHT_ROLL_SEED: u64 = 5_120;
+const HIGH_SKY_LIGHT_ROLL_SEED: u64 = 14_880;
 
 struct TestMonster {
     base: EntityBase,
@@ -57,7 +62,7 @@ impl TestMonster {
             living_base: LivingEntityBase::new(&vanilla_entities::PIG),
             mob_base: MobBase::new(),
             mob_flags: SyncMutex::new(0),
-            health: SyncMutex::new(20.0),
+            health: SyncMutex::new(INITIAL_TEST_HEALTH),
         }
     }
 }
@@ -198,9 +203,9 @@ fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
     let pos = BlockPos::new(8, 65, 8);
 
     // Full sky light cannot pass the overworld's 0..7 brightness test.
-    let mut low_roll = RandomSource::Legacy(LegacyRandom::from_seed(5120));
+    let mut low_roll = RandomSource::Legacy(LegacyRandom::from_seed(LOW_SKY_LIGHT_ROLL_SEED));
     assert!(
-        low_roll.next_i32_bounded(32) < 15,
+        low_roll.next_i32_bounded(SKY_LIGHT_SPAWN_ROLL_BOUND) < i32::from(MAX_LIGHT_LEVEL),
         "test seed must roll under the sky-light value"
     );
     assert!(!TestMonster::is_dark_enough_to_spawn(
@@ -209,9 +214,9 @@ fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
         &mut low_roll
     ));
 
-    let mut high_roll = RandomSource::Legacy(LegacyRandom::from_seed(14880));
+    let mut high_roll = RandomSource::Legacy(LegacyRandom::from_seed(HIGH_SKY_LIGHT_ROLL_SEED));
     assert!(
-        high_roll.next_i32_bounded(32) >= 15,
+        high_roll.next_i32_bounded(SKY_LIGHT_SPAWN_ROLL_BOUND) >= i32::from(MAX_LIGHT_LEVEL),
         "test seed must roll at or above the sky-light value"
     );
     assert!(!TestMonster::is_dark_enough_to_spawn(
@@ -232,7 +237,7 @@ fn monster_is_dark_enough_to_spawn_accepts_dark_nether() {
     let pos = BlockPos::new(8, 65, 8);
 
     // Fresh nether chunks are dark enough for every light-test roll.
-    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(5120));
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(LOW_SKY_LIGHT_ROLL_SEED));
     assert!(TestMonster::is_dark_enough_to_spawn(
         world,
         pos,

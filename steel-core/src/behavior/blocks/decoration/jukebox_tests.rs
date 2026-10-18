@@ -21,7 +21,9 @@ use steel_utils::codec::VarInt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, WorldAabb};
+use steel_utils::{
+    BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, TICKS_PER_SECOND, WorldAabb,
+};
 use text_components::TextComponent;
 
 use super::JukeboxBlock;
@@ -50,7 +52,6 @@ const JUKEBOX_EJECTION_HORIZONTAL_RADIUS: f64 = 0.35;
 const ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT: f64 = 0.1;
 const ITEM_EJECTION_UPWARD_SPEED: f64 = 0.2;
 const DEFAULT_ITEM_PICKUP_DELAY_TICKS: i32 = 10;
-const TICKS_PER_SECOND: f32 = 20.0;
 const PLAY_EVENT_INTERVAL_TICKS: i64 = 20;
 const SONG_END_PADDING_TICKS: i64 = 20;
 const SAVED_PLAYBACK_TICKS: i32 = 37;
@@ -579,8 +580,8 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
         2,
     );
 
-    let finish_ticks =
-        (song.value().length_in_seconds * TICKS_PER_SECOND).ceil() as i64 + SONG_END_PADDING_TICKS;
+    let finish_ticks = (song.value().length_in_seconds * TICKS_PER_SECOND as f32).ceil() as i64
+        + SONG_END_PADDING_TICKS;
     tick_block_entities(world, finish_ticks - (PLAY_EVENT_INTERVAL_TICKS + 1));
     assert!(jukebox.is_record_playing());
     tick_block_entities(world, 1);

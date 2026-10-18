@@ -11,7 +11,7 @@ use steel_utils::BlockPos;
 use steel_utils::random::Random;
 use steel_utils::types::Difficulty;
 
-use crate::chunk::light::LightLayer;
+use crate::chunk::light::{LightLayer, MAX_LIGHT_LEVEL};
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE;
 use crate::entity::{EntitySpawnReason, Mob, PathfinderMob, SharedEntity};
@@ -22,6 +22,8 @@ use crate::world::{LevelReader, World};
 pub const DEFAULT_XP_REWARD: i32 = 5;
 
 const THUNDERING_SKY_DARKENING: u8 = 10;
+const BRIGHT_LIGHT_NO_ACTION_TIME_INCREMENT: i32 = 2;
+const SKY_LIGHT_SPAWN_ROLL_BOUND: i32 = 32;
 
 /// Marks hostile entities, including those outside the `Monster` hierarchy.
 /// Shared rules use this marker to reject leashing.
@@ -72,7 +74,7 @@ pub trait Monster: PathfinderMob + Enemy {
             fast_floor(self.position().z),
         );
         if world.light_level_dependent_magic_value(eye_pos) > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE {
-            self.set_no_action_time(self.no_action_time() + 2);
+            self.set_no_action_time(self.no_action_time() + BRIGHT_LIGHT_NO_ACTION_TIME_INCREMENT);
         }
     }
 
@@ -107,13 +109,15 @@ pub trait Monster: PathfinderMob + Enemy {
     where
         Self: Sized,
     {
-        if i32::from(level.light_value_at(LightLayer::Sky, pos)) > random.next_i32_bounded(32) {
+        if i32::from(level.light_value_at(LightLayer::Sky, pos))
+            > random.next_i32_bounded(SKY_LIGHT_SPAWN_ROLL_BOUND)
+        {
             return false;
         }
 
         let dimension_type = &level.dimension_type;
         let block_light_limit = dimension_type.monster_spawn_block_light_limit;
-        if block_light_limit < 15
+        if block_light_limit < i32::from(MAX_LIGHT_LEVEL)
             && i32::from(level.light_value_at(LightLayer::Block, pos)) > block_light_limit
         {
             return false;

@@ -40,6 +40,8 @@ use crate::world::{LevelReader, World};
 use steel_registry::vanilla_dimension_types;
 use steel_utils::types::UpdateFlags;
 
+const INITIAL_TEST_HEALTH: f32 = 10.0;
+
 #[test]
 fn equipment_drop_attempt_gate_matches_vanilla_conditions() {
     assert!(!can_attempt_equipment_drop(0.0, true, true));
@@ -147,7 +149,7 @@ impl DespawnTestMob {
             mob_base: MobBase::new(),
             flags: SyncMutex::new(0),
             can_be_leashed: SyncMutex::new(true),
-            health: SyncMutex::new(10.0),
+            health: SyncMutex::new(INITIAL_TEST_HEALTH),
             nearest_player_distance_sqr,
             remove_when_far_away,
             controlling_passenger: SyncMutex::new(None),
@@ -170,7 +172,7 @@ impl DespawnTestMob {
             mob_base: MobBase::new(),
             flags: SyncMutex::new(0),
             can_be_leashed: SyncMutex::new(true),
-            health: SyncMutex::new(10.0),
+            health: SyncMutex::new(INITIAL_TEST_HEALTH),
             nearest_player_distance_sqr: None,
             remove_when_far_away: false,
             controlling_passenger: SyncMutex::new(None),
@@ -237,7 +239,7 @@ impl HiddenTarget {
                 Weak::new(),
             ),
             living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-            health: SyncMutex::new(10.0),
+            health: SyncMutex::new(INITIAL_TEST_HEALTH),
         })
     }
 }

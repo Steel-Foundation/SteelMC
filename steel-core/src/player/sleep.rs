@@ -43,11 +43,7 @@ impl Player {
     /// Checks for monsters within 8 blocks horizontally and 5 vertically of the bed.
     fn monster_prevents_rest(&self, pos: BlockPos) -> bool {
         let world = self.get_world();
-        let center = DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()),
-            f64::from(pos.z()) + 0.5,
-        );
+        let center = DVec3::from(pos.get_bottom_center());
         let search = WorldAabb::new(
             center.x - MONSTER_SEARCH_XZ_RANGE,
             center.y - MONSTER_SEARCH_Y_RANGE,
