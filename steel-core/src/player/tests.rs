@@ -755,7 +755,12 @@ fn end_credits_removes_all_menus_before_detaching() {
 
     assert!(player.has_won_game());
     assert!(!player.has_container_open());
-    assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+    assert!(
+        world
+            .players
+            .get_by_uuid(&player.gameprofile.id())
+            .is_none()
+    );
     assert_eq!(replacement_removals.load(Ordering::Relaxed), 0);
     let inventory = player.inventory.lock();
     for (item, expected) in [(&vanilla_items::STONE, 2), (&vanilla_items::DIRT, 3)] {

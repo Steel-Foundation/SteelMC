@@ -507,7 +507,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
 
 #[test]
 fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
-    let recording = recording_player("ReplacementOverlayViewer", 23);
+    let recording = recording_player("ReplacingViewer", 23);
     recording
         .player
         .inventory

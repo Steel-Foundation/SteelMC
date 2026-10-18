@@ -141,7 +141,7 @@ pub trait Animal: AgeableMob {
     fn set_in_love(&self, player: Option<&Player>) {
         self.set_in_love_time(IN_LOVE_TIME);
         if let Some(player) = player {
-            self.set_love_cause_uuid(Some(player.gameprofile.id));
+            self.set_love_cause_uuid(Some(player.gameprofile.id()));
         }
 
         self.broadcast_entity_event(EntityStatus::InLoveHearts);

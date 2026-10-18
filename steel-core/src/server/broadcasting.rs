@@ -88,8 +88,8 @@ impl Server {
     ) {
         let display_name = player.display_name();
         // Fallback to the current name when the cache has no prior entry.
-        let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
-        let message: TextComponent = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
+        let old_name = previous_name.unwrap_or(player.gameprofile.name());
+        let message: TextComponent = if player.gameprofile.name().eq_ignore_ascii_case(old_name) {
             translations::MULTIPLAYER_PLAYER_JOINED
                 .message([display_name])
                 .into()
@@ -99,7 +99,7 @@ impl Server {
                 .into()
         };
         let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message, Some(player.gameprofile.id));
+        self.broadcast_system_chat(&message, Some(player.gameprofile.id()));
     }
 
     pub(super) fn broadcast_player_leave_message(&self, player: &Player) {
@@ -163,21 +163,21 @@ impl Server {
         let server = player.server();
         if !Arc::ptr_eq(&server, self) {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 "cannot project commands from a different server"
             );
             return;
         }
-        let Some(shared_player) = self.online_players.get_by_uuid(&player.gameprofile.id) else {
+        let Some(shared_player) = self.online_players.get_by_uuid(&player.gameprofile.id()) else {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 "cannot project commands for a player outside the online player map"
             );
             return;
         };
         if !Arc::ptr_eq(&shared_player, player) {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 "cannot project commands for a stale player handle"
             );
             return;
@@ -190,7 +190,7 @@ impl Server {
         match commands {
             Ok(commands) => player.send_packet(commands),
             Err(error) => tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 %error,
                 "failed to project the player's command tree"
             ),

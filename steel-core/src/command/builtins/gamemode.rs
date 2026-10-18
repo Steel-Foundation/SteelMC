@@ -147,7 +147,7 @@ pub(crate) fn handle_client_request(
     if !player_can_change_game_mode(player, &world, game_mode) {
         log::warn!(
             "Player {} tried to change game mode to {} without permission",
-            player.gameprofile.name,
+            player.gameprofile.name(),
             game_mode.name()
         );
         return;
@@ -160,7 +160,7 @@ pub(crate) fn handle_client_request(
     if let Err(error) = set_game_mode(&source, slice::from_ref(player), game_mode) {
         log::error!(
             "Failed to apply client game-mode change for {}: {error}",
-            player.gameprofile.name
+            player.gameprofile.name()
         );
     }
 }
