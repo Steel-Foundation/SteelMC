@@ -92,7 +92,7 @@ impl PlayerMap {
     /// session-unique; accepting a duplicate would break entity lookup and
     /// packet routing invariants.
     pub fn insert(&self, player: Arc<Player>) -> bool {
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         let entity_id = player.id();
         let _mutation = self.mutations.lock();
         let slot = Arc::new(PlayerSlot::new(player));
@@ -152,7 +152,7 @@ impl PlayerMap {
 
     /// Removes this exact player from both maps synchronously.
     pub fn remove_player_sync(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         let _mutation = self.mutations.lock();
         let slot = self
             .by_uuid
@@ -183,9 +183,9 @@ impl PlayerMap {
     /// so concurrent attempts using the same expected player cannot both
     /// succeed.
     pub fn replace_player(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
-        let uuid = expected.gameprofile.id;
+        let uuid = expected.gameprofile.id();
         let entity_id = expected.id();
-        if replacement.gameprofile.id != uuid || replacement.id() != entity_id {
+        if replacement.gameprofile.id() != uuid || replacement.id() != entity_id {
             return false;
         }
 

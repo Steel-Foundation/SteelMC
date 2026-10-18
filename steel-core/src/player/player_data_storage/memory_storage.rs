@@ -24,7 +24,7 @@ struct MemoryState {
 impl MemoryPlayerDataStorage {
     pub(crate) fn save_domain(&self, domain: &str, player: &Player) {
         let data = PersistentPlayerData::from_player(player);
-        self.save_domain_data(domain, player.gameprofile.id, &data);
+        self.save_domain_data(domain, player.gameprofile.id(), &data);
     }
 
     pub(crate) fn save_domain_data(&self, domain: &str, uuid: Uuid, data: &PersistentPlayerData) {

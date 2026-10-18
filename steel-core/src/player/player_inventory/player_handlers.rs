@@ -208,7 +208,7 @@ impl Player {
         ) else {
             log::warn!(
                 "Player {} sent an unknown beacon effect id",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
             return;
@@ -220,7 +220,7 @@ impl Player {
         if !menu.still_valid(self) {
             log::debug!(
                 "Player {} interacted with invalid menu",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             self.finish_open_menu_callback(menu);
             return;
@@ -228,7 +228,7 @@ impl Player {
         if !menu.update_effects(primary, secondary, &self.connection) {
             log::warn!(
                 "Player {} tried to set invalid beacon effects",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             self.finish_open_menu_callback(menu);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
@@ -241,7 +241,7 @@ impl Player {
     pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
         log::debug!(
             "Player {} clicked button {} in container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.button_id,
             packet.container_id
         );
@@ -285,7 +285,7 @@ impl Player {
         if !menu.still_valid(self) {
             log::debug!(
                 "Player {} interacted with invalid menu",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -299,7 +299,7 @@ impl Player {
         if !packet_slot_is_valid {
             log::debug!(
                 "Player {} clicked invalid slot index: {}, available slots: {}",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 packet.slot_num,
                 slot_count
             );
@@ -318,7 +318,7 @@ impl Player {
         if click.is_none() {
             log::debug!(
                 "Player {} sent malformed container click (slot {}, button {}, {:?})",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 packet.slot_num,
                 packet.button_num,
                 packet.click_type
@@ -380,7 +380,7 @@ impl Player {
     pub fn handle_container_close(&self, packet: SContainerClose) {
         log::debug!(
             "Player {} closed container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.container_id
         );
 
@@ -426,7 +426,7 @@ impl Player {
     pub fn handle_container_slot_state_changed(&self, packet: SContainerSlotStateChanged) {
         log::debug!(
             "Player {} changed slot {} state to {} in container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.slot_id,
             packet.new_state,
             packet.container_id
@@ -472,7 +472,7 @@ impl Player {
                 } else {
                     log::warn!(
                         "Player {} was dropping items too fast in creative mode; ignoring",
-                        self.gameprofile.name,
+                        self.gameprofile.name(),
                     );
                     return;
                 }
@@ -491,7 +491,7 @@ impl Player {
         {
             log::warn!(
                 "{} tried to set an invalid carried item",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
         } else {
             self.reset_last_action_time();
@@ -1079,7 +1079,7 @@ impl Player {
             .spawn_item_with_velocity(spawn_pos, item, velocity)?;
         entity.set_pickup_delay(40);
         if thrown_from_hand {
-            entity.set_thrower(self.gameprofile.id);
+            entity.set_thrower(self.gameprofile.id());
             self.award_stat_with_count(&vanilla_stat_types::ITEM_DROPPED, item_ref, item_count);
             self.award_custom_stat(&vanilla_custom_stats::DROP);
         }

@@ -141,6 +141,7 @@ pub use c_player_abilities::{CPlayerAbilities, ability_flags};
 pub use c_player_combat_kill::CPlayerCombatKill;
 pub use c_player_info_update::{
     CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS, PlayerInfoAction, PlayerInfoEntry,
+    PlayerInfoTarget,
 };
 pub use c_player_look_at::{CPlayerLookAt, LookAtAnchor};
 pub use c_player_position::{CPlayerPosition, RelativeMovement};

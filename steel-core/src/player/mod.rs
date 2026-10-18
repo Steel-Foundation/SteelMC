@@ -48,8 +48,7 @@ use movement::{MovementState, TeleportState};
 use permissions::PlayerPermissionState;
 pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
 pub use profile::{
-    GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
-    is_valid_player_name, offline_uuid,
+    GameProfile, KnownPlayer, KnownPlayers, ProfileLookupError, is_valid_player_name, offline_uuid,
 };
 pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
@@ -571,7 +570,7 @@ impl Player {
 
         let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
-        let player_uuid = gameprofile.id;
+        let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         Self {
             gameprofile,
@@ -916,7 +915,7 @@ impl Player {
             key: death_key.into(),
             fallback: None,
             args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name.clone(),
+                self.gameprofile.name().to_owned(),
             )])),
         }
         .component();
@@ -1144,10 +1143,10 @@ impl Player {
 
     /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
     pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
-        debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
+        debug_assert_eq!(self.gameprofile.id(), replacement.gameprofile.id());
         let replacement_entity: SharedEntity = Arc::<Player>::clone(replacement);
         for pearl in self.ender_pearls() {
-            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
+            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id()) {
                 pearl.restore_owner_reference(&replacement_entity);
             }
         }
@@ -1308,29 +1307,29 @@ impl Entity for Player {
     }
 
     fn scoreboard_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn name(&self) -> TextComponent {
-        TextComponent::plain(self.gameprofile.name.clone())
+        TextComponent::plain(self.gameprofile.name().to_owned())
     }
 
     fn display_name(&self) -> TextComponent {
         self.name()
             .click_event(ClickEvent::suggest_command(format!(
                 "/tell {} ",
-                self.gameprofile.name
+                self.gameprofile.name()
             )))
             .hover_event(HoverEvent::show_entity(
                 "minecraft:player",
                 self.uuid(),
                 Some(self.name()),
             ))
-            .insertion(self.gameprofile.name.clone())
+            .insertion(self.gameprofile.name().to_owned())
     }
 
     fn plain_text_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
