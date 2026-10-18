@@ -17,7 +17,6 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
-/// Preferred distance from the leash holder.
 pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f64 = 2.0;
 
 pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
@@ -289,17 +288,14 @@ pub trait PathfinderMob: Mob {
             .has_running_panic_goal()
     }
 
-    /// Whether this mob follows its leash holder.
     fn should_stay_close_to_leash_holder(&self) -> bool {
         true
     }
 
-    /// Speed used to follow the leash holder.
     fn follow_leash_speed(&self) -> f64 {
         1.0
     }
 
-    /// Pins the home restriction to the holder and sends the attach notification.
     fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {
         let radius = self.leash_elastic_distance() as i32 - 1;
         self.set_home_to(holder.block_position(), radius);
@@ -337,7 +333,6 @@ pub trait PathfinderMob: Mob {
             .remove_all_goals(self, predicate);
     }
 
-    /// Clears every goal.
     fn remove_free_will(&self)
     where
         Self: Sized,

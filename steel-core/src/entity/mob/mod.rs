@@ -82,16 +82,12 @@ const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
 /// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
-/// Fire duration for an unprotected mob burning in daylight.
 const SUN_BURN_IGNITE_SECONDS: f32 = 8.0;
 const SUN_BURN_IGNITE_TICKS: i32 = (SUN_BURN_IGNITE_SECONDS * 20.0) as i32;
 /// Brightness threshold shared by daylight burning and monster idle-time growth.
 pub(crate) const LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE: f32 = 0.5;
-/// Scale of the random daylight-burning roll.
 const SUN_BURN_RANDOM_SCALE: f32 = 30.0;
-/// Brightness offset for the daylight-burning chance.
 const SUN_BURN_LIGHT_OFFSET: f32 = 0.4;
-/// Brightness multiplier for the daylight-burning chance.
 const SUN_BURN_LIGHT_GAIN: f32 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -550,7 +546,6 @@ pub trait Mob: LivingEntity + Leashable {
             .is_valid_spawn(state, level, below, entity_type)
     }
 
-    /// Requires the bounding box to be free of liquids and block collisions.
     fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
         let aabb = self.bounding_box();
         if aabb_contains_any_liquid(world, aabb) {
@@ -699,7 +694,6 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_base().drop_chances().lock().by_equipment(slot)
     }
 
-    /// Sets the equipment drop chance for a slot.
     fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) {
         self.mob_base()
             .drop_chances()
@@ -1594,7 +1588,6 @@ pub trait Mob: LivingEntity + Leashable {
             && world.can_see_sky(eye_pos)
     }
 
-    /// Returns the equipment slot that protects against daylight burning.
     fn sun_protection_slot(&self) -> EquipmentSlot {
         EquipmentSlot::Head
     }
@@ -1897,7 +1890,6 @@ impl<T: Mob> Leashable for T {
         self.mob_can_be_leashed()
     }
 
-    /// Clears the home restriction once the leash holder is gone.
     fn on_leash_removed(&self) {
         if self.leash_holder().is_none() {
             self.clear_home();
@@ -1913,7 +1905,6 @@ impl<T: Mob> Leashable for T {
             .disable_control(GoalControl::Move);
     }
 
-    /// Pins pathfinder mobs' home restriction and notifies the holder.
     fn when_leashed_to(&self, holder: &dyn Entity) {
         if let Some(pathfinder) = self.as_pathfinder_mob() {
             pathfinder.when_leashed_to_pathfinder(holder);
@@ -1922,7 +1913,6 @@ impl<T: Mob> Leashable for T {
         }
     }
 
-    /// Lets pathfinder mobs walk back toward a nearby leash holder.
     fn close_range_leash_behaviour(&self, holder: &dyn Entity) {
         if let Some(pathfinder) = self.as_pathfinder_mob() {
             pathfinder.close_range_leash_behaviour_pathfinder(holder);

@@ -69,7 +69,6 @@ const HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID: i32 = 42;
 
 const MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET: u8 = 0xff;
 const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
-/// Midnight, when sky darkening permits sleep.
 const NIGHT_TIME: i64 = 18_000;
 
 #[test]
@@ -1761,7 +1760,6 @@ fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
     let player = test_player(Arc::clone(world));
     player.base.set_position_local(DVec3::new(8.5, 65.0, 8.5));
 
-    // Without monsters the night-time bed rule admits the player.
     assert!(
         player
             .start_sleep_in_bed(
@@ -1774,7 +1772,6 @@ fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
     assert!(player.is_sleeping());
     player.stop_sleep_in_bed(false, false);
 
-    // A hostile mob within the vanilla 8x5x8 rest box keeps the player up.
     let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),

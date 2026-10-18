@@ -85,7 +85,6 @@ pub(super) fn monsters_burn(
     value
 }
 
-/// Visits dimension timelines referenced by key or tag.
 fn for_each_timeline(dimension_type: DimensionTypeRef, mut visit: impl FnMut(TimelineRef)) {
     let Some(timelines) = dimension_type.timelines else {
         return;
@@ -583,7 +582,6 @@ mod tests {
     fn monsters_burn_snaps_at_keyframes_instead_of_interpolating() {
         init_vanilla_registry();
 
-        // Boolean tracks snap at the destination keyframe.
         assert!(!monsters_burn(&OVERWORLD, &clock_manager_at(23_459)));
         assert!(monsters_burn(&OVERWORLD, &clock_manager_at(23_460)));
     }

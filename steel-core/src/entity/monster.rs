@@ -19,10 +19,8 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
-/// Default hostile-mob experience reward; constructors may override it.
 pub const DEFAULT_XP_REWARD: i32 = 5;
 
-/// Fixed sky darkening used for monster spawning during thunderstorms.
 const THUNDERING_SKY_DARKENING: u8 = 10;
 
 /// Marks hostile entities, including those outside the `Monster` hierarchy.
@@ -34,27 +32,22 @@ impl<T: Monster + ?Sized> Enemy for T {}
 /// Shared hostile-mob behavior. Concrete mobs delegate to `_monster` hooks
 /// to avoid name collisions with base-trait methods.
 pub trait Monster: PathfinderMob + Enemy {
-    /// Default experience reward, assigned by constructors via [`Mob::set_xp_reward`].
     fn default_xp_reward_monster(&self) -> i32 {
         DEFAULT_XP_REWARD
     }
 
-    /// Returns the hostile sound category.
     fn sound_source_monster(&self) -> SoundSource {
         SoundSource::Hostile
     }
 
-    /// Returns the default hostile hurt sound.
     fn hurt_sound_monster(&self, _source: &DamageSource) -> Option<SoundEventRef> {
         Some(&sound_events::ENTITY_HOSTILE_HURT)
     }
 
-    /// Returns the default hostile death sound.
     fn death_sound_monster(&self) -> Option<SoundEventRef> {
         Some(&sound_events::ENTITY_HOSTILE_DEATH)
     }
 
-    /// Returns the default small and large fall sounds.
     fn fall_sounds_monster(&self) -> (SoundEventRef, SoundEventRef) {
         (
             &sound_events::ENTITY_HOSTILE_SMALL_FALL,
@@ -73,7 +66,6 @@ pub trait Monster: PathfinderMob + Enemy {
         let Some(world) = self.level() else {
             return;
         };
-        // Vanilla samples brightness at eye height.
         let eye_pos = BlockPos::new(
             fast_floor(self.position().x),
             fast_floor(self.get_eye_y()),
@@ -84,7 +76,6 @@ pub trait Monster: PathfinderMob + Enemy {
         }
     }
 
-    /// Applies light-based no-action-time growth before the standard mob AI step.
     fn monster_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         self.update_no_action_time();
         self.mob_ai_step(entity)
@@ -98,12 +89,10 @@ pub trait Monster: PathfinderMob + Enemy {
         -world.pathfinding_cost_from_light_levels(pos)
     }
 
-    /// Whether this monster prevents nearby players from sleeping.
     fn is_preventing_player_rest(&self, _level: &World, _player: &Player) -> bool {
         true
     }
 
-    /// Whether this monster drops experience.
     fn should_drop_experience_monster(&self) -> bool {
         true
     }
@@ -130,7 +119,6 @@ pub trait Monster: PathfinderMob + Enemy {
             return false;
         }
 
-        // Thunderstorms use fixed darkening; other weather uses the current sky value.
         let sky_darkening = if level.is_thundering() {
             THUNDERING_SKY_DARKENING
         } else {

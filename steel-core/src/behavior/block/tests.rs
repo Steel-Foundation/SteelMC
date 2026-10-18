@@ -20,7 +20,6 @@ fn default_spawn_rule_requires_full_up_support_and_low_light_emission() {
     let pos = BlockPos::new(3, 64, 5);
     let entity_type = &vanilla_entities::ZOMBIE;
 
-    // Stone is a full support surface with no light emission: mobs may spawn.
     let stone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::STONE);
     assert!(stone.is_valid_spawn(
         vanilla_blocks::STONE.default_state(),
@@ -29,7 +28,6 @@ fn default_spawn_rule_requires_full_up_support_and_low_light_emission() {
         entity_type
     ));
 
-    // Glowstone is full-support but emits light at or above the gate: blocked.
     let glowstone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::GLOWSTONE);
     assert!(!glowstone.is_valid_spawn(
         vanilla_blocks::GLOWSTONE.default_state(),
@@ -38,7 +36,6 @@ fn default_spawn_rule_requires_full_up_support_and_low_light_emission() {
         entity_type
     ));
 
-    // A torch has no full UP support face: blocked even though it is dark.
     let torch = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TORCH);
     assert!(!torch.is_valid_spawn(
         vanilla_blocks::TORCH.default_state(),

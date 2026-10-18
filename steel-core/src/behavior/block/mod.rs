@@ -233,7 +233,6 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         _entity_type: EntityTypeRef,
     ) -> bool {
-        // Vanilla evaluation order: full UP support first, then the light-emission gate.
         world.is_face_sturdy_for(state, pos, Direction::Up, SupportType::Full)
             && state.get_light_emission() < MAX_MOB_SPAWN_LIGHT_EMISSION
     }

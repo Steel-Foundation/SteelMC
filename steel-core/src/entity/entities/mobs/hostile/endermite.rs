@@ -25,9 +25,7 @@ use crate::entity::{
 use crate::physics::MoveResult;
 use crate::world::World;
 
-/// Vanilla `Attributes.STEP_HEIGHT` default, used when the attribute is absent.
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-/// Lifetime cap; persistence prevents the counter from advancing.
 const MAX_LIFETIME: i32 = 2400;
 const XP_REWARD: i32 = 3;
 
@@ -333,7 +331,6 @@ mod tests {
         let endermite = endermite_entity
             .downcast_ref::<EndermiteEntity>()
             .expect("endermite is concrete");
-        // One tick below the cap stays alive; the next tick crosses it.
         endermite.set_lifetime(MAX_LIFETIME - 2);
         endermite.ai_step(&endermite_entity);
         assert!(
@@ -343,7 +340,6 @@ mod tests {
         endermite.ai_step(&endermite_entity);
         assert!(endermite.is_removed(), "reaching the cap discards the mob");
 
-        // Persistence pauses the lifetime counter.
         let persistent: SharedEntity = Arc::new(EndermiteEntity::new(
             &vanilla_entities::ENDERMITE,
             next_entity_id(),

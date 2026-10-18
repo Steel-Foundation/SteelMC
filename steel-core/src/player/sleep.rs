@@ -19,15 +19,12 @@ use crate::{
 
 const BED_INTERACTION_XZ_RANGE: f64 = 3.0;
 const BED_INTERACTION_Y_RANGE: f64 = 2.0;
-/// Horizontal half-extent of the vanilla monster-rest search box.
 const MONSTER_SEARCH_XZ_RANGE: f64 = 8.0;
-/// Vertical half-extent of the vanilla monster-rest search box.
 const MONSTER_SEARCH_Y_RANGE: f64 = 5.0;
 
 #[derive(Debug)]
 pub(crate) enum BedSleepingProblem {
     OtherProblem,
-    /// A nearby monster prevents resting.
     NotSafe(Box<TextComponent>),
     Message(Box<TextComponent>),
 }

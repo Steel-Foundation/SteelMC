@@ -28,7 +28,6 @@ impl BlockBehavior for SoulSandBlock {
         Some(self.block.default_state())
     }
 
-    /// Soul sand accepts all mob types as a spawn surface.
     fn is_valid_spawn(
         &self,
         _state: BlockStateId,

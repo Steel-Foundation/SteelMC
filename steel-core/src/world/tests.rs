@@ -663,7 +663,6 @@ fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
     // Open sky has full sky light regardless of time of day.
     assert!(world.can_see_sky(pos));
 
-    // A solid roof attenuates the sky layer below full: no longer sky-visible.
     assert!(world.set_block(
         pos.above(),
         vanilla_blocks::STONE.default_state(),
@@ -683,10 +682,8 @@ fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
 
-    // Open sky passes both the light and heightmap gates.
     assert!(world.can_see_sky_for_precipitation(pos));
 
-    // A solid roof is rejected by the light gate.
     assert!(world.set_block(
         pos.above(),
         vanilla_blocks::STONE.default_state(),

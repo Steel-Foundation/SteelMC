@@ -43,7 +43,6 @@ impl BlockBehavior for MagmaBlock {
         Some(self.block.default_state())
     }
 
-    /// Only fire-immune mobs may spawn on magma.
     fn is_valid_spawn(
         &self,
         _state: BlockStateId,

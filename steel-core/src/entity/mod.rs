@@ -945,7 +945,6 @@ pub(crate) fn start_riding_entities(
 
     passenger.set_pose(EntityPose::Standing);
     EntityBase::start_riding_relationship(entity_to_ride, passenger);
-    // Vanilla `Mob.startRiding` drops the leash when a leashed mob starts riding.
     if let Some(mob) = passenger.as_mob()
         && mob.is_leashed()
     {

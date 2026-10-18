@@ -91,7 +91,6 @@ fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
 
 #[test]
 fn mob_start_riding_drops_attached_leash() {
-    // Vanilla `Mob.startRiding`: starting to ride drops the leash.
     init_vanilla_registry();
 
     let passenger: SharedEntity = Arc::new(PigEntity::new(

@@ -1,5 +1,3 @@
-//! Tests for the shared hostile-mob (`Monster`) foundation.
-
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -108,7 +106,6 @@ impl PathfinderMob for TestMonster {}
 
 impl Monster for TestMonster {}
 
-/// A fake level whose block surface can be scripted for spawn-surface checks.
 struct SpawnSurfaceLevel {
     default_state: BlockStateId,
     states: Vec<(BlockPos, BlockStateId)>,
@@ -269,7 +266,6 @@ fn monster_spawn_rules_accept_only_sturdy_non_glowing_surfaces() {
         pos
     ));
 
-    // Glowstone emits 15 light, so it never counts as a spawn surface.
     let surface = SpawnSurfaceLevel::new(air).with(surface_pos, glowstone);
     assert!(!TestMonster::check_mob_spawn_rules(
         &vanilla_entities::ZOMBIE,
@@ -278,7 +274,6 @@ fn monster_spawn_rules_accept_only_sturdy_non_glowing_surfaces() {
         pos
     ));
 
-    // A spawner skips the surface requirement entirely.
     let surface = SpawnSurfaceLevel::new(air);
     assert!(TestMonster::check_mob_spawn_rules(
         &vanilla_entities::ZOMBIE,
@@ -298,7 +293,6 @@ fn monster_spawn_rules_consult_block_specific_spawn_surfaces() {
     let pos = BlockPos::new(8, 65, 8);
     let surface_pos = pos.below();
 
-    // Soul sand accepts any mob (vanilla `Blocks::always`).
     let surface = SpawnSurfaceLevel::new(air).with(surface_pos, soul_sand);
     assert!(TestMonster::check_mob_spawn_rules(
         &vanilla_entities::ZOMBIE,
@@ -307,7 +301,6 @@ fn monster_spawn_rules_consult_block_specific_spawn_surfaces() {
         pos
     ));
 
-    // Magma accepts only fire-immune mobs (vanilla `entityType.fireImmune()`).
     let surface = SpawnSurfaceLevel::new(air).with(surface_pos, magma);
     assert!(!TestMonster::check_mob_spawn_rules(
         &vanilla_entities::ZOMBIE,
@@ -360,7 +353,6 @@ fn monster_spawn_rules_combine_light_and_surface_checks() {
             "{name}: natural spawns must also pass the light check"
         );
 
-        // Trial spawners bypass both light and surface checks.
         assert!(TestMonster::check_monster_spawn_rules(
             &vanilla_entities::ZOMBIE,
             world,
@@ -453,7 +445,6 @@ fn monster_surface_spawn_rules_require_sky_visibility_or_spawner() {
         &mut random,
     ));
 
-    // The bright overworld fails on the light requirement.
     insert_ready_full_chunk(overworld, ChunkPos::new(0, 0));
     let overworld_pos = BlockPos::new(8, 65, 8);
     assert!(overworld.set_block(
@@ -564,7 +555,6 @@ fn monster_walk_target_value_prefers_darkness() {
         bright_monster.get_walk_target_value_monster(pos) < 0.0,
         "bright positions should be penalized"
     );
-    // Pathfinder mobs must dispatch to the monster light preference automatically.
     assert!(
         bright_monster.get_walk_target_value(pos) < 0.0,
         "the PathfinderMob default must dispatch monsters to the dark preference"

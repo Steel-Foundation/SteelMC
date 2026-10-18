@@ -1,5 +1,3 @@
-//! Mob replacement and splitting with shared state transfer.
-
 use std::sync::Arc;
 
 use steel_registry::entity_type::EntityTypeRef;
@@ -55,7 +53,6 @@ impl ConversionType {
         matches!(self, Self::Single)
     }
 
-    /// Transfers shared state to the new mob.
     fn convert(self, from: &dyn Mob, to: &SharedEntity, params: ConversionParams) {
         let Some(to_mob) = to.as_mob() else {
             log::error!(
@@ -72,13 +69,8 @@ impl ConversionType {
     }
 }
 
-/// Creates a mob, transfers state, and runs the conversion callback.
-///
-/// Unlike vanilla, Steel inserts the new mob before transferring state so
+/// Unlike vanilla, inserts the new mob before transferring state so
 /// rejected insertions leave the source, passengers, and leash untouched.
-///
-/// Returns `None` without changing the source if it is removed, its world is
-/// gone, or difficulty, factory, mob-type, or world-insertion checks fail.
 pub(crate) fn convert_to(
     from: &dyn Mob,
     entity_type: EntityTypeRef,
@@ -116,7 +108,6 @@ pub(crate) fn convert_to(
         return None;
     };
 
-    // Insert before transferring state so a rejected conversion leaves `from` intact.
     if let Err(error) = world.try_add_entity(Arc::clone(&to)) {
         log::error!(
             "failed to add converted {} for {}: {error}",
@@ -137,7 +128,6 @@ pub(crate) fn convert_to(
     Some(to)
 }
 
-/// Transfers replacement state in vanilla order.
 fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: ConversionParams) {
     let root_passenger = from.first_passenger();
 
@@ -174,7 +164,6 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     to.set_fall_distance(from.fall_distance());
     to.set_shared_fall_flying(from.is_fall_flying());
 
-    // Steel stores the damage-memory timer with the attacking player's UUID.
     if let Some(uuid) = from.last_hurt_by_player_uuid() {
         to.set_last_hurt_by_player(uuid, from.last_hurt_by_player_memory_time());
     }
@@ -192,7 +181,6 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     convert_common(from, to, params);
 }
 
-/// Detaches the source's passenger and leash before copying shared state.
 fn convert_split_on_death(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     if let Some(root_passenger) = from.first_passenger() {
         root_passenger.stop_riding();
@@ -204,7 +192,6 @@ fn convert_split_on_death(from: &dyn Mob, to: &dyn Mob, params: ConversionParams
     convert_common(from, to, params);
 }
 
-/// Copies state shared by both conversion types in vanilla order.
 fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     to.set_absorption_amount(from.living_base().absorption_amount());
 
@@ -214,7 +201,6 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
         to.add_mob_effect(effect);
     }
 
-    // Vanilla `Mob.setBaby` does nothing for non-ageable targets.
     if from.is_baby()
         && let Some(to_ageable) = to.as_ageable_mob()
     {
@@ -242,7 +228,6 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     }
 
     to.set_custom_name_visible(from.is_custom_name_visible());
-    // Copy the fire visual without restarting the ignition timer.
     to.base().set_visual_fire(from.is_on_fire());
     to.set_invulnerable(from.is_invulnerable());
     to.set_no_gravity(from.is_no_gravity());
@@ -255,11 +240,9 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     to.set_custom_name(from.custom_name());
     to.set_custom_data(from.custom_data());
 
-    // Team transfer awaits scoreboard support; zombie door-breaking state
-    // belongs in the concrete conversion callback.
+    // Zombie door-breaking state belongs in the concrete conversion callback.
 }
 
-/// Copies position and rotation.
 fn copy_position(from: &dyn Entity, to: &dyn Entity) {
     if let Err(error) = to.try_set_position(from.position()) {
         log::warn!(
@@ -343,7 +326,6 @@ mod tests {
         pig_mob.set_silent(true);
         pig_mob.add_tag("audit_tag".to_owned());
         pig_mob.set_can_pick_up_loot(true);
-        // Raise the pig's zero absorption cap so conversion has an amount to copy.
         pig_mob.attributes().lock().add_modifier(
             vanilla_attributes::MAX_ABSORPTION,
             AttributeModifier {
@@ -408,8 +390,6 @@ mod tests {
         assert!(cow_mob.is_silent());
         assert!(cow_mob.tags().contains(&"audit_tag".to_owned()));
         assert!(cow_mob.can_pick_up_loot());
-        // The cow's initial zero cap discards copied absorption; re-adding the
-        // effect then grants fresh hearts through `onEffectStarted`.
         assert_eq!(
             cow_mob.living_base().absorption_amount(),
             ABSORPTION_PER_LEVEL * 2.0,
@@ -628,7 +608,6 @@ mod tests {
         let world_fixture = conversion_world();
         let world = &world_fixture.world;
 
-        // Peaceful: the registered hostile endermite factory must be refused.
         world.set_difficulty(Difficulty::Peaceful);
         let pig = add_pig(world);
         let pig_mob = pig.as_mob().expect("pig is a mob");
@@ -648,7 +627,6 @@ mod tests {
             "refused conversions leave the source untouched"
         );
 
-        // Control: the same conversion is permitted off peaceful.
         world.set_difficulty(Difficulty::Normal);
         let other_pig = add_pig(world);
         assert!(

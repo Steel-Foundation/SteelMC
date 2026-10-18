@@ -751,7 +751,6 @@ fn mob_tick_leash_applies_default_elastic_pull() {
 
 #[test]
 fn mob_leash_snap_drops_leash_and_disables_move_control() {
-    // MOVE stays disabled after a snap until re-leashed at close range.
     let mob = Arc::new(DespawnTestMob::with_position(1, DVec3::ZERO, None, false));
     let holder = Arc::new(DespawnTestMob::with_position(
         2,
@@ -779,7 +778,6 @@ fn mob_leash_snap_drops_leash_and_disables_move_control() {
 
 #[test]
 fn pathfinder_leash_attach_pins_home_restriction_to_holder() {
-    // Attaching pins home to the holder with radius `leashElasticDistance - 1`.
     let mob = DespawnTestMob::with_position(1, DVec3::new(0.0, 64.0, 0.0), None, false);
     let holder = Arc::new(DespawnTestMob::with_position(
         2,
@@ -826,7 +824,6 @@ fn mob_on_leash_removed_clears_home_restriction() {
     );
 }
 
-/// Provides a stone floor for pathfinding between mob and holder.
 fn leash_test_world(name: &'static str) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
@@ -938,7 +935,6 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         .tick(mob.as_ref(), &mob_entity);
     assert!(mob.is_panicking());
 
-    // Panic must leave MOVE disabled and navigation idle.
     mob.mob_base()
         .goal_selector()
         .lock()
@@ -1526,7 +1522,6 @@ const OVERWORLD_NIGHT_TICKS: i64 = 18_000;
 /// At a 4% daylight ignition chance, 1000 misses have probability below 1e-15.
 const BURN_ROLL_ATTEMPTS: i32 = 1_000;
 
-/// Pins overworld time and places a stone floor under the mob.
 fn daylight_test_world(name: &'static str, total_ticks: i64) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
