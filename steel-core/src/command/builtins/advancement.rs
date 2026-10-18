@@ -382,11 +382,11 @@ pub fn perform_criterion(
         ));
     }
 
-    let player_count = targets
+    let changed_targets = targets
         .iter()
-        .map(|player| action.perform_criterion(player, advancement, criterion))
-        .filter(|&success| success)
-        .count() as i32;
+        .filter(|player| action.perform_criterion(player, advancement, criterion))
+        .collect::<Vec<_>>();
+    let player_count = changed_targets.len() as i32;
 
     if player_count == 0 {
         if let [first_player] = targets {
@@ -423,6 +423,7 @@ pub fn perform_criterion(
             ))
         }
     } else {
+        let targets = changed_targets.as_slice();
         let translate = if let [first_player] = targets {
             match action {
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_CRITERION_TO_ONE_SUCCESS,
