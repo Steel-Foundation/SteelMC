@@ -1,7 +1,10 @@
 use super::*;
 
+use steel_registry::RegistryEntry as _;
+use steel_registry::vanilla_biomes;
+
 #[test]
-#[should_panic(expected = "persisted chunk status must match its Full runtime state")]
+#[should_panic(expected = "a chunk persisted as Full must have its Full runtime state initialized")]
 fn chunk_save_rejects_full_status_for_proto_data() {
     init_vanilla_registry();
 
@@ -13,6 +16,25 @@ fn chunk_save_rejects_full_status_for_proto_data() {
         Weak::new(),
     );
     let _ = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Full, &[], true);
+}
+
+#[test]
+fn chunk_save_abandons_a_proto_status_snapshot_of_a_promoted_chunk() {
+    init_vanilla_registry();
+
+    let chunk = Chunk::new(
+        single_empty_section(),
+        ChunkPos::new(0, 0),
+        0,
+        16,
+        Weak::new(),
+    );
+    let _ = chunk.promote_to_full();
+
+    assert!(
+        ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Biomes, &[], true).is_none(),
+        "a proto-status snapshot of a promoted chunk must be abandoned"
+    );
 }
 
 #[test]
@@ -87,7 +109,7 @@ fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
     );
     let chunk = proto;
 
-    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Noise, &[], false)
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Biomes, &[], false)
     else {
         panic!("dirty proto chunk should prepare for saving");
     };
@@ -100,7 +122,7 @@ fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
     let loaded = ChunkStorage::persistent_to_chunk(
         &prepared.persistent,
         pos,
-        ChunkStatus::Noise,
+        ChunkStatus::Biomes,
         0,
         16,
         Weak::new(),
@@ -112,7 +134,7 @@ fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
 }
 
 #[test]
-fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
+fn terrain_heightmap_save_excludes_stale_worldgen_maps() {
     init_vanilla_registry();
 
     let proto = Chunk::new(
@@ -129,7 +151,7 @@ fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
     }
     let chunk = proto;
 
-    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Carvers, &[], false)
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Terrain, &[], false)
     else {
         panic!("dirty proto chunk should prepare for saving");
     };
@@ -140,34 +162,6 @@ fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
     );
 }
 
-#[test]
-fn proto_carving_mask_presence_roundtrips_when_empty() {
-    init_vanilla_registry();
-
-    let pos = ChunkPos::new(3, -4);
-    let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-    drop(proto.get_or_create_carving_mask());
-    let chunk = proto;
-
-    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Carvers, &[], false)
-    else {
-        panic!("dirty proto chunk should prepare for saving");
-    };
-    assert_eq!(prepared.persistent.carving_mask, Some(Vec::new()));
-
-    let loaded = ChunkStorage::persistent_to_chunk(
-        &prepared.persistent,
-        pos,
-        ChunkStatus::Carvers,
-        0,
-        16,
-        Weak::new(),
-    );
-    let loaded_proto = loaded.chunk;
-
-    assert!(loaded_proto.carving_mask.read().is_some());
-}
-
 #[tokio::test]
 async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
     init_vanilla_registry();
@@ -175,7 +169,7 @@ async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
     let chunk = proto;
-    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Carvers, &[], false)
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Terrain, &[], false)
     else {
         panic!("dirty proto chunk should prepare for saving");
     };
@@ -188,49 +182,7 @@ async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
         panic!("saved chunk should load from RAM storage");
     };
 
-    assert_eq!(loaded.status, ChunkStatus::Carvers);
-}
-
-#[test]
-fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
-    init_vanilla_registry();
-
-    let pos = ChunkPos::new(3, -4);
-    let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-    {
-        let mut mask = proto.get_or_create_carving_mask();
-        mask.set(7, 5, 11);
-    }
-    let chunk = proto;
-
-    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Carvers, &[], false)
-    else {
-        panic!("dirty proto chunk should prepare for saving");
-    };
-    assert!(
-        prepared
-            .persistent
-            .carving_mask
-            .as_ref()
-            .is_some_and(|packed| !packed.is_empty())
-    );
-
-    let loaded = ChunkStorage::persistent_to_chunk(
-        &prepared.persistent,
-        pos,
-        ChunkStatus::Carvers,
-        0,
-        16,
-        Weak::new(),
-    );
-    let loaded_proto = loaded.chunk;
-
-    let mask_guard = loaded_proto.carving_mask.read();
-    let Some(mask) = mask_guard.as_ref() else {
-        panic!("carving mask should restore from persistent chunk");
-    };
-    assert!(mask.get(7, 5, 11));
-    assert!(!mask.get(8, 5, 11));
+    assert_eq!(loaded.status, ChunkStatus::Terrain);
 }
 
 #[test]
@@ -244,7 +196,7 @@ fn proto_postprocessing_roundtrips_through_persistent_chunk() {
     let packed = Chunk::pack_postprocessing_offset(marked);
     let chunk = proto;
 
-    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Noise, &[], false)
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Terrain, &[], false)
     else {
         panic!("dirty proto chunk should prepare for saving");
     };
@@ -254,7 +206,7 @@ fn proto_postprocessing_roundtrips_through_persistent_chunk() {
     let loaded = ChunkStorage::persistent_to_chunk(
         &prepared.persistent,
         pos,
-        ChunkStatus::Noise,
+        ChunkStatus::Terrain,
         -64,
         16,
         Weak::new(),
@@ -266,7 +218,7 @@ fn proto_postprocessing_roundtrips_through_persistent_chunk() {
 
 #[test]
 fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(-2, 1);
     let marked = BlockPos::new(-17, -63, 31);
@@ -280,7 +232,6 @@ fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
         Vec::new(),
         Vec::new(),
         PersistentLightData::default(),
-        None,
         vec![vec![packed]],
         Vec::new(),
         Vec::new(),
@@ -310,4 +261,54 @@ fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
     };
 
     assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
+}
+
+#[test]
+fn heterogeneous_biome_section_roundtrips_through_persistent_chunk() {
+    init_vanilla_registry();
+
+    let pos = ChunkPos::new(0, 0);
+    let mut section = ChunkSection::new_empty();
+    let desert = vanilla_biomes::DESERT.id() as u16;
+    // Change both ends of the 4x4x4 biome cube while leaving the other cells at
+    // their default biome. Saving and loading this heterogeneous section checks
+    // the packed length and preserves the biome values across the whole cube.
+    section.biomes.set(0, 0, 0, desert);
+    section.biomes.set(3, 3, 3, desert);
+    let chunk = Chunk::new(
+        Sections::from_owned(vec![section].into_boxed_slice()),
+        pos,
+        0,
+        16,
+        Weak::new(),
+    );
+    let expected = chunk.sections.read_all_biomes();
+    assert!(expected.contains(&desert));
+
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Empty, &[], true)
+    else {
+        panic!("forced chunk save should produce a payload");
+    };
+    let Some(section) = prepared.persistent.sections.first() else {
+        panic!("a saved chunk keeps every section");
+    };
+    let biomes = match section {
+        PersistentSection::Homogeneous { biomes, .. }
+        | PersistentSection::Heterogeneous { biomes, .. } => biomes,
+    };
+    assert!(matches!(biomes, PersistentBiomeData::Heterogeneous { .. }));
+
+    let loaded = ChunkStorage::try_persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Empty,
+        0,
+        16,
+        Weak::new(),
+    );
+    let loaded = loaded.expect("heterogeneous biome data must keep its exact packed entry count");
+    assert_eq!(
+        loaded.chunk.sections.read_all_biomes().as_ref(),
+        expected.as_ref()
+    );
 }

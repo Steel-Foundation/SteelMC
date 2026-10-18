@@ -142,7 +142,7 @@ pub(crate) fn convert_to(
     // Register `to` before moving any of `from`'s state onto it, so a world
     // that rejects the new entity leaves the source (passengers, vehicle, and
     // leash included) fully untouched.
-    if let Err(error) = world.try_add_entity(to.clone()) {
+    if let Err(error) = world.try_add_entity(Arc::clone(&to)) {
         log::error!(
             "failed to add converted {} for {}: {error}",
             to_mob.entity_type().key,
@@ -330,13 +330,14 @@ mod tests {
         AgeableMob, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
     };
     use crate::inventory::equipment::EquipmentSlot;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
 
-    fn conversion_world() -> Arc<World> {
-        let world = fresh_test_world("conversion");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        world
+    fn conversion_world() -> TestWorld {
+        let world_fixture = fresh_test_world("conversion");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        world_fixture
     }
 
     fn add_pig(world: &Arc<World>) -> SharedEntity {
@@ -357,8 +358,8 @@ mod tests {
         init_vanilla_registry();
         init_entities();
         init_behaviors();
-        let world = conversion_world();
-        let pig = add_pig(&world);
+        let world_fixture = conversion_world();
+        let pig = add_pig(&world_fixture.world);
         let pig_mob = pig.as_mob().expect("pig is a mob");
 
         pig_mob.set_rotation((45.0, -10.0));
@@ -419,7 +420,7 @@ mod tests {
         assert_eq!(cow.entity_type(), &vanilla_entities::COW);
         assert!(pig.is_removed(), "single conversion discards the source");
         assert!(
-            world.get_entity_by_id(cow.id()).is_some(),
+            world_fixture.world.get_entity_by_id(cow.id()).is_some(),
             "the converted mob joins the world"
         );
         assert_eq!(cow.position(), DVec3::new(1.0, 64.0, 1.0));
@@ -473,9 +474,10 @@ mod tests {
     fn single_conversion_reboards_the_root_passenger() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let pig = add_pig(&world);
-        let passenger = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let pig = add_pig(world);
+        let passenger = add_pig(world);
         assert!(
             passenger.start_riding(&pig),
             "passenger should ride the pig"
@@ -505,8 +507,9 @@ mod tests {
     fn split_on_death_conversion_keeps_the_source_living() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let pig = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let pig = add_pig(world);
 
         let cow = pig
             .downcast_ref::<PigEntity>()
@@ -531,8 +534,9 @@ mod tests {
     fn convert_to_fails_without_a_registered_factory() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let pig = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let pig = add_pig(world);
 
         let converted = pig
             .downcast_ref::<PigEntity>()
@@ -557,9 +561,10 @@ mod tests {
     fn refused_conversion_keeps_the_source_passenger_mounted() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let source = add_pig(&world);
-        let passenger = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let source = add_pig(world);
+        let passenger = add_pig(world);
         assert!(
             passenger.start_riding(&source),
             "the passenger should ride the source"
@@ -590,9 +595,10 @@ mod tests {
     fn refused_conversion_keeps_the_source_on_its_vehicle() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let source = add_pig(&world);
-        let vehicle = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let source = add_pig(world);
+        let vehicle = add_pig(world);
         assert!(
             source.start_riding(&vehicle),
             "the source should ride its vehicle"
@@ -623,9 +629,10 @@ mod tests {
     fn refused_conversion_keeps_the_source_leash() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let source = add_pig(&world);
-        let holder = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let source = add_pig(world);
+        let holder = add_pig(world);
         let source_mob = source.as_mob().expect("pig is a mob");
         assert!(
             source_mob.set_leashed_to(&holder),
@@ -657,11 +664,12 @@ mod tests {
     fn convert_to_refuses_hostile_types_on_peaceful_difficulty() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
 
         // Peaceful: the registered hostile endermite factory must be refused.
         world.set_difficulty(Difficulty::Peaceful);
-        let pig = add_pig(&world);
+        let pig = add_pig(world);
         let pig_mob = pig.as_mob().expect("pig is a mob");
         assert!(
             pig.downcast_ref::<PigEntity>()
@@ -681,7 +689,7 @@ mod tests {
 
         // Control: the same conversion is permitted off peaceful.
         world.set_difficulty(Difficulty::Normal);
-        let other_pig = add_pig(&world);
+        let other_pig = add_pig(world);
         assert!(
             other_pig
                 .downcast_ref::<PigEntity>()
@@ -700,8 +708,9 @@ mod tests {
     fn conversion_skips_equipment_when_not_requested() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let pig = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let pig = add_pig(world);
         let pig_mob = pig.as_mob().expect("pig is a mob");
         pig_mob.living_base().equipment().lock().set(
             EquipmentSlot::Head,
@@ -729,8 +738,9 @@ mod tests {
     fn after_conversion_callback_receives_the_new_mob() {
         init_vanilla_registry();
         init_entities();
-        let world = conversion_world();
-        let pig = add_pig(&world);
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+        let pig = add_pig(world);
         let finalized = Cell::new(false);
         let after_conversion = |mob: &dyn Mob| {
             assert_eq!(mob.entity_type(), &vanilla_entities::COW);

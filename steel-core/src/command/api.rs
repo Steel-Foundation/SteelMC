@@ -175,22 +175,6 @@ impl CommandNode {
         }
     }
 
-    /// Creates a typed argument node.
-    #[must_use]
-    pub fn argument_with_suggestions(
-        name: impl Into<Box<str>>,
-        argument: CommandArgument,
-        custom_suggestions: &'static (impl SuggestionProvider + 'static),
-    ) -> Self {
-        Self {
-            inner: CommandNodeBuilder::argument_with_suggestions_arc(
-                name,
-                argument.inner,
-                Arc::new(SuggestionProviderWrapper(custom_suggestions)),
-            ),
-        }
-    }
-
     /// Adds a child while preserving declaration order.
     #[must_use]
     pub fn then(mut self, child: Self) -> Self {
@@ -244,6 +228,14 @@ impl CommandNode {
             .requires(CommandRequirement::contextual(move |source| {
                 requirement(CommandSource { inner: source })
             }));
+        self
+    }
+
+    /// Add a custom [`SuggestionProvider`] to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub fn suggests(mut self, suggestion: &'static (impl SuggestionProvider + 'static)) -> Self {
+        self.inner = self.inner.suggests(SuggestionProviderWrapper(suggestion));
         self
     }
 }
@@ -802,24 +794,6 @@ impl<'input> CommandReader<'_, 'input> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::CommandReader;
-    use crate::command::brigadier::StringReader;
-
-    #[test]
-    fn command_reader_cursor_is_a_utf8_byte_offset() {
-        let mut inner = StringReader::new("é🦀");
-        let mut reader = CommandReader { inner: &mut inner };
-
-        assert_eq!(reader.read(), Some('é'));
-        assert_eq!(reader.cursor(), 2);
-        assert_eq!(reader.read(), Some('🦀'));
-        assert_eq!(reader.cursor(), 6);
-        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
-    }
-}
-
 /// Read-only source facts available while a custom argument is parsed.
 #[derive(Clone, Copy)]
 pub struct CommandParserSource<'source> {
@@ -948,5 +922,23 @@ where
 
     fn cancel(&mut self) {
         self.0.cancel();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandReader;
+    use crate::command::brigadier::StringReader;
+
+    #[test]
+    fn command_reader_cursor_is_a_utf8_byte_offset() {
+        let mut inner = StringReader::new("é🦀");
+        let mut reader = CommandReader { inner: &mut inner };
+
+        assert_eq!(reader.read(), Some('é'));
+        assert_eq!(reader.cursor(), 2);
+        assert_eq!(reader.read(), Some('🦀'));
+        assert_eq!(reader.cursor(), 6);
+        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }

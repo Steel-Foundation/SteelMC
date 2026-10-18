@@ -29,10 +29,11 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
 ) {
     let (target, speed_modifier) = {
         let mut navigation = mob.mob_base().navigation().lock();
-        let mob_position =
+        let ground_mob_position =
             ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float());
         let context = NavigationTickContext {
-            mob_position,
+            ground_mob_position,
+            mob_position: mob.position(),
             mob_bounding_box_width: mob.bounding_box().width(),
             mob_speed: mob.get_speed(),
             game_time,
@@ -119,13 +120,6 @@ pub trait PathfinderMob: Mob {
         }
     }
 
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
-    }
-
     fn can_update_path(&self) -> bool {
         self.on_ground() || self.is_in_water() || self.is_in_lava() || self.is_passenger()
     }
@@ -166,7 +160,7 @@ pub trait PathfinderMob: Mob {
         tick_path_navigation_target(self, &world, game_time, self.can_update_path());
     }
 
-    fn tick_pathfinder_goal_selectors(&self)
+    fn tick_pathfinder_goal_selectors(&self, entity: &SharedEntity)
     where
         Self: Sized,
     {
@@ -174,11 +168,11 @@ pub trait PathfinderMob: Mob {
         let mut target_selector = self.mob_base().target_selector().lock();
         let mut goal_selector = self.mob_base().goal_selector().lock();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(self, false);
-            goal_selector.tick_running_goals(self, false);
+            target_selector.tick_running_goals(self, entity, false);
+            goal_selector.tick_running_goals(self, entity, false);
         } else {
-            target_selector.tick(self);
-            goal_selector.tick(self);
+            target_selector.tick(self, entity);
+            goal_selector.tick(self, entity);
         }
     }
 

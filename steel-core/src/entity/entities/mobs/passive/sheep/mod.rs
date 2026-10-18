@@ -6,22 +6,19 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::biome::BiomeRef;
-use steel_registry::data_components::vanilla_components::DYE;
+use steel_registry::data_components::vanilla_components::{DYE, SHEEP_COLOR};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::vanilla_biome_tags;
 use steel_registry::vanilla_entity_data::SheepEntityData;
 use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_loot_tables;
 use steel_registry::{DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
@@ -36,12 +33,15 @@ use crate::entity::living_entity::shearing_loot_items_with_rng;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::inventory::recipe_manager;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
+
+use color_spawn_rules::TEMPERATE_SPAWN_CONFIGURATION;
+mod color_spawn_rules;
 
 const SHEEP_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5625, 0.0)];
@@ -58,33 +58,6 @@ const COLOR_ID_MASK: i8 = 0x0F;
 const SHEARED_BIT: i8 = 0x10;
 /// Vanilla `Sheep.ate` ages babies up by this many seconds (`ageUp(60)`).
 const ATE_AGE_UP_SECONDS: i32 = 60;
-
-/// Vanilla `SheepColorSpawnRules` weighted tables, mirroring the warm/cold/temperate
-/// configurations with their exact vanilla weights.
-const TEMPERATE_SPAWN_COLORS: &[(DyeColor, i32)] = &[
-    (DyeColor::Black, 5),
-    (DyeColor::Gray, 5),
-    (DyeColor::LightGray, 5),
-    (DyeColor::Brown, 3),
-    (DyeColor::White, 499),
-    (DyeColor::Pink, 1),
-];
-const WARM_SPAWN_COLORS: &[(DyeColor, i32)] = &[
-    (DyeColor::Gray, 5),
-    (DyeColor::LightGray, 5),
-    (DyeColor::White, 5),
-    (DyeColor::Black, 3),
-    (DyeColor::Brown, 499),
-    (DyeColor::Pink, 1),
-];
-const COLD_SPAWN_COLORS: &[(DyeColor, i32)] = &[
-    (DyeColor::LightGray, 5),
-    (DyeColor::Gray, 5),
-    (DyeColor::White, 5),
-    (DyeColor::Brown, 3),
-    (DyeColor::Black, 499),
-    (DyeColor::Pink, 1),
-];
 
 /// Vanilla sheep entity.
 #[entity_behavior(class = "Sheep")]
@@ -229,7 +202,8 @@ impl SheepEntity {
         entity_data.wool.set(next);
     }
 
-    /// Returns vanilla `Sheep.readyForShearing`.
+    /// Returns whether this sheep can currently be sheared: not already
+    /// sheared and not a baby.
     #[must_use]
     pub fn ready_for_shearing(&self) -> bool {
         !self.is_sheared() && !AgeableMob::is_baby(self)
@@ -266,7 +240,7 @@ impl SheepEntity {
             };
             let jitter = DVec3::new(
                 (rand::random::<f64>() - rand::random::<f64>()) * 0.1,
-                rand::random::<f64>() * 0.05,
+                rand::random_range(0.0..0.05),
                 (rand::random::<f64>() - rand::random::<f64>()) * 0.1,
             );
             item_entity.set_velocity(item_entity.velocity() + jitter);
@@ -331,33 +305,6 @@ impl SheepEntity {
 
         None
     }
-
-    /// Returns vanilla `SheepColorSpawnRules.getSheepColor` for the biome.
-    #[must_use]
-    pub fn random_sheep_color(biome: BiomeRef, random: &mut impl Random) -> DyeColor {
-        if biome.has_tag(&vanilla_biome_tags::BiomeTag::SPAWNS_WARM_VARIANT_FARM_ANIMALS) {
-            Self::pick_spawn_color(WARM_SPAWN_COLORS, random)
-        } else if biome.has_tag(&vanilla_biome_tags::BiomeTag::SPAWNS_COLD_VARIANT_FARM_ANIMALS) {
-            Self::pick_spawn_color(COLD_SPAWN_COLORS, random)
-        } else {
-            Self::pick_spawn_color(TEMPERATE_SPAWN_COLORS, random)
-        }
-    }
-
-    /// Picks a color from a vanilla weighted table using `WeightedList.get` semantics.
-    fn pick_spawn_color(table: &[(DyeColor, i32)], random: &mut impl Random) -> DyeColor {
-        let total = table.iter().map(|(_, weight)| weight).sum::<i32>();
-        let mut roll = random.next_i32_bounded(total);
-        let mut last = DyeColor::White;
-        for (color, weight) in table {
-            roll -= weight;
-            last = *color;
-            if roll < 0 {
-                return last;
-            }
-        }
-        last
-    }
 }
 
 impl Entity for SheepEntity {
@@ -367,6 +314,12 @@ impl Entity for SheepEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(color) = item_stack.get(SHEEP_COLOR) {
+            self.set_color(*color);
+        }
     }
 
     fn base_tick(&self) {
@@ -449,12 +402,12 @@ impl LivingEntity for SheepEntity {
         Some((self.color(), self.is_sheared()))
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -486,18 +439,8 @@ impl AgeableMob for SheepEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
-}
 
-impl Animal for SheepEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        SheepEntity::is_food(item_stack)
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
         let parent1_color = self.color();
         let parent2_color = partner
             .downcast_ref::<SheepEntity>()
@@ -509,13 +452,23 @@ impl Animal for SheepEntity {
     }
 }
 
+impl Animal for SheepEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        SheepEntity::is_food(item_stack)
+    }
+}
+
 impl Mob for SheepEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {
@@ -547,8 +500,9 @@ impl Mob for SheepEntity {
         let mut random = LegacyRandom::from_seed(rand::random());
         let color = match world.biome_at(self.block_position()) {
             Some(biome) => SheepEntity::random_sheep_color(biome, &mut random),
-            None => SheepEntity::pick_spawn_color(TEMPERATE_SPAWN_COLORS, &mut random),
+            None => TEMPERATE_SPAWN_CONFIGURATION.get(&mut random),
         };
+
         self.set_color(color);
 
         self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)

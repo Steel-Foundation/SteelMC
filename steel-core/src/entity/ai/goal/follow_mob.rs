@@ -72,7 +72,7 @@ impl Goal for FollowMobGoal {
         };
 
         let search_box = mob.bounding_box().inflate(f64::from(self.area_size));
-        let mut candidates = world.get_entities_in_aabb_matching(&search_box, |entity| {
+        let candidates = world.get_entities_in_aabb_matching(&search_box, |entity| {
             if entity.uuid() == mob.uuid() {
                 return false;
             }
@@ -82,7 +82,7 @@ impl Goal for FollowMobGoal {
             !candidate_mob.is_invisible() && (self.follow_predicate)(mob, candidate_mob)
         });
 
-        let Some(following_mob) = candidates.drain(..).next() else {
+        let Some(following_mob) = candidates.into_iter().next() else {
             return false;
         };
         self.following_mob = Some(following_mob);
@@ -110,7 +110,7 @@ impl Goal for FollowMobGoal {
         mob.set_pathfinding_malus(PathType::Water, self.old_water_cost);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(following_mob) = &self.following_mob else {
             return;
         };
@@ -224,7 +224,13 @@ mod tests {
     fn follow_mob_goal_looks_at_following_mob() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         let following_mob: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
@@ -233,7 +239,7 @@ mod tests {
         ));
         goal.following_mob = Some(Arc::clone(&following_mob));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         let wanted_position = mob
             .mob_base()

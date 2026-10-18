@@ -43,7 +43,7 @@ pub(crate) use queue::{CommandSuspension, CommandSuspensionPoll, EntryAction, Fr
 pub(crate) use runtime::{CustomCommandExecutor, CustomModifierExecutor};
 pub(crate) use runtime::{
     SteelCommandContext, SteelCommandRuntime, SteelContextChain, SteelExecutor, SteelModifier,
-    argument, argument_with_suggestions, literal,
+    argument, literal,
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
 #[cfg(test)]

@@ -1,5 +1,6 @@
 //! Vanilla chiseled bookshelf placement, interaction, and comparator behavior.
 
+use crate::player::player_inventory::Prediction;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -226,7 +227,7 @@ impl BlockBehavior for ChiseledBookShelfBlock {
             Self::SOUND_PITCH,
             None,
         );
-        player.add_item_or_drop(removed);
+        player.add_item_or_drop(removed, Prediction::ServerOnly);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
@@ -297,7 +298,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::PlacementOrientation;
-    use crate::bootstrap::init_globals_once;
+    use crate::bootstrap::init_globals;
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -393,7 +394,7 @@ mod tests {
 
     #[test]
     fn all_six_hit_regions_map_identically_for_every_horizontal_facing() {
-        init_globals_once();
+        init_globals();
         let column_hits = [LEFT_COLUMN_HIT, MIDDLE_COLUMN_HIT, RIGHT_COLUMN_HIT];
         for facing in Direction::HORIZONTAL {
             let state = state_facing(facing);
@@ -420,7 +421,7 @@ mod tests {
 
     #[test]
     fn hit_boundaries_use_vanilla_pixel_sections() {
-        init_globals_once();
+        init_globals();
         let facing = INTERACTION_FACING;
         let state = state_facing(facing);
 
@@ -458,8 +459,9 @@ mod tests {
 
     #[test]
     fn placement_faces_the_player_and_uses_the_extracted_full_block_shape() {
-        init_globals_once();
-        let world = fresh_test_world("chiseled_bookshelf_placement");
+        init_globals();
+        let world_fixture = fresh_test_world("chiseled_bookshelf_placement");
+        let world = &world_fixture.world;
         let behavior = ChiseledBookShelfBlock::new(&vanilla_blocks::CHISELED_BOOKSHELF);
 
         for facing in Direction::HORIZONTAL {
@@ -473,7 +475,7 @@ mod tests {
                 is_secondary_use_active,
             );
             let context = BlockPlaceContext::new(
-                &world,
+                world,
                 source,
                 &bookshelf_hit(facing, FACE_CENTER_HIT, FACE_CENTER_HIT),
             );
@@ -567,20 +569,20 @@ mod tests {
 
     #[test]
     fn interactions_update_inventory_occupied_state_and_comparator() {
-        init_globals_once();
-        let world = fresh_test_world("chiseled_bookshelf_interactions");
-        let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(TEST_POS));
+        init_globals();
+        let world_fixture = fresh_test_world("chiseled_bookshelf_interactions");
+        let world = &world_fixture.world;
+        let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(TEST_POS));
         let state = state_facing(INTERACTION_FACING);
         assert!(world.set_block(TEST_POS, state, UpdateFlags::UPDATE_ALL));
         let behavior = ChiseledBookShelfBlock::new(&vanilla_blocks::CHISELED_BOOKSHELF);
-        let player = test_player(&world);
+        let player = test_player(world);
         let mut inventory =
             InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
 
-        assert_invalid_item_is_rejected(&behavior, &world, state, &player, &mut inventory);
+        assert_invalid_item_is_rejected(&behavior, world, state, &player, &mut inventory);
 
         let revision = holder.packet_content_revision();
-        let facing = state.get_value(HORIZONTAL_FACING);
         player
             .inventory
             .lock()
@@ -591,11 +593,11 @@ mod tests {
         assert_eq!(
             behavior.use_item_on(
                 state,
-                &world,
+                world,
                 TEST_POS,
                 &player,
                 InteractionHand::MainHand,
-                &bookshelf_hit(facing, LEFT_COLUMN_HIT, TOP_ROW_HIT),
+                &bookshelf_hit(INTERACTION_FACING, LEFT_COLUMN_HIT, TOP_ROW_HIT),
                 &mut inventory,
             ),
             InteractionResult::Success,
@@ -613,7 +615,7 @@ mod tests {
         assert_eq!(
             behavior.get_analog_output_signal(
                 world.get_block_state(TEST_POS),
-                &world,
+                world.as_ref(),
                 TEST_POS,
                 ARBITRARY_COMPARATOR_QUERY_DIRECTION,
             ),
@@ -629,7 +631,7 @@ mod tests {
         assert_eq!(
             behavior.use_item_on(
                 world.get_block_state(TEST_POS),
-                &world,
+                world,
                 TEST_POS,
                 &player,
                 InteractionHand::MainHand,
@@ -663,7 +665,7 @@ mod tests {
             assert_eq!(
                 behavior.get_analog_output_signal(
                     world.get_block_state(TEST_POS),
-                    &world,
+                    world.as_ref(),
                     TEST_POS,
                     ARBITRARY_COMPARATOR_QUERY_DIRECTION,
                 ),
@@ -671,12 +673,12 @@ mod tests {
             );
         }
 
-        assert_top_left_slot_removal_returns_book(&behavior, &world, &player, &mut inventory);
+        assert_top_left_slot_removal_returns_book(&behavior, world, &player, &mut inventory);
     }
 
     #[test]
     fn enchanted_books_select_the_enchanted_insert_and_pickup_sounds() {
-        init_globals_once();
+        init_globals();
         assert_eq!(
             ChiseledBookShelfBlock::insert_sound(&ItemStack::new(&vanilla_items::BOOK)).key,
             sound_events::BLOCK_CHISELED_BOOKSHELF_INSERT.key,
@@ -699,9 +701,10 @@ mod tests {
 
     #[test]
     fn placement_applies_the_container_component_to_the_block_entity() {
-        init_globals_once();
-        let world = fresh_test_world("chiseled_bookshelf_component_placement");
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(TEST_POS));
+        init_globals();
+        let world_fixture = fresh_test_world("chiseled_bookshelf_component_placement");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(TEST_POS));
         let state = state_facing(COMPONENT_PLACER_FACING.opposite());
         assert!(world.set_block(TEST_POS, state, UpdateFlags::UPDATE_ALL));
         let behavior = ChiseledBookShelfBlock::new(&vanilla_blocks::CHISELED_BOOKSHELF);
@@ -732,7 +735,7 @@ mod tests {
             },
             is_secondary_use_active,
         );
-        behavior.set_placed_by(state, &world, TEST_POS, &source);
+        behavior.set_placed_by(state, world, TEST_POS, &source);
 
         let block_entity = world
             .get_block_entity(TEST_POS)
@@ -763,9 +766,10 @@ mod tests {
 
     #[test]
     fn destruction_drains_and_drops_every_stored_book() {
-        init_globals_once();
-        let world = fresh_test_world("chiseled_bookshelf_drops");
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(TEST_POS));
+        init_globals();
+        let world_fixture = fresh_test_world("chiseled_bookshelf_drops");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(TEST_POS));
         let state = state_facing(INTERACTION_FACING);
         assert!(world.set_block(TEST_POS, state, UpdateFlags::UPDATE_ALL));
         let block_entity = world

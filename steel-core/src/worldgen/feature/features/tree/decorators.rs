@@ -9,22 +9,25 @@ use steel_utils::Downcast as _;
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::super::super::vanilla_collections::JavaBlockPosSet;
-use super::TreePlacement;
+use super::{NestedFeaturePlacer, TreePlacement};
 
 use crate::block_entity::entities::BeehiveBlockEntity;
 
 const BEEHIVE_WORLDGEN_FACING: Direction = Direction::South;
 const BEEHIVE_SPAWN_DIRECTIONS: [Direction; 3] =
     [Direction::East, Direction::South, Direction::West];
+const COCOA_PER_SIDE_PLACEMENT_CHANCE: f32 = 0.25;
+const SHELF_MUSHROOM_PER_SIDE_PLACEMENT_CHANCE: f32 = 0.25;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_tree_decorators(
-        region: &mut WorldGenRegion<'_>,
+    pub(super) fn place_tree_decorators<L: LevelAccessor>(
+        region: &mut L,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorators: &[TreeDecorator],
         placement: &mut TreePlacement,
         biome_zoom_seed: i64,
+        place_nested: NestedFeaturePlacer<L>,
     ) {
         for decorator in decorators {
             match decorator {
@@ -86,10 +89,20 @@ impl FeatureDecorationRunner {
                         *ground_probability,
                         placement,
                         biome_zoom_seed,
+                        place_nested,
                     );
                 }
                 TreeDecorator::CreakingHeart { probability } => {
                     Self::place_creaking_heart_tree_decorator(
+                        region,
+                        registry,
+                        random,
+                        *probability,
+                        placement,
+                    );
+                }
+                TreeDecorator::ShelfMushroom { probability } => {
+                    Self::place_shelf_mushroom_tree_decorator(
                         region,
                         registry,
                         random,
@@ -102,10 +115,10 @@ impl FeatureDecorationRunner {
     }
 
     fn place_alter_ground_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         placement: &mut TreePlacement,
     ) {
         let positions = Self::lowest_tree_trunks_or_roots(placement);
@@ -167,10 +180,10 @@ impl FeatureDecorationRunner {
     }
 
     fn place_alter_ground_circle(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
@@ -191,30 +204,30 @@ impl FeatureDecorationRunner {
     }
 
     fn place_alter_ground_block_at(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
         for y in (-3..=2).rev() {
             let cursor = pos.above_n(y);
-            if let Some(state) = Self::sample_block_state_provider_optional(
+            if let Some(state) = BlockStateProviderEvaluator::sample_block_state_provider_optional(
                 region, registry, random, provider, cursor,
             ) {
                 placement.set_decoration(region, cursor, state);
                 break;
             }
 
-            if !region.block_state(cursor).is_air() && y < 0 {
+            if !region.get_block_state(cursor).is_air() && y < 0 {
                 break;
             }
         }
     }
 
     fn place_on_ground_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorator: &PlaceOnGroundDecorator,
@@ -245,7 +258,6 @@ impl FeatureDecorationRunner {
         max_z += decorator.radius;
         let min_y = min_y - decorator.height;
         let max_y = min_y + decorator.height * 2;
-
         for _ in 0..decorator.tries {
             let pos = BlockPos::new(
                 random.next_i32_between(min_x, max_x),
@@ -264,31 +276,33 @@ impl FeatureDecorationRunner {
     }
 
     fn attempt_place_tree_ground_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
         let above = pos.above();
-        let above_state = region.block_state(above);
+        let above_state = region.get_block_state(above);
         if !above_state.is_air() && above_state.get_block() != &vanilla_blocks::VINE {
             return;
         }
-        if !region.block_state(pos).is_solid_render() {
+        if !region.get_block_state(pos).is_solid_render() {
             return;
         }
         if region.height_at(HeightmapType::MotionBlockingNoLeaves, pos.x(), pos.z()) > above.y() {
             return;
         }
 
-        let state = Self::sample_block_state_provider(region, registry, random, provider, above);
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
+            region, registry, random, provider, above,
+        );
         placement.set_decoration(region, above, state);
     }
 
     fn place_trunk_vine_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         random: &mut WorldgenRandom,
         placement: &mut TreePlacement,
     ) {
@@ -329,7 +343,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_leave_vine_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         random: &mut WorldgenRandom,
         probability: f32,
         placement: &mut TreePlacement,
@@ -371,7 +385,7 @@ impl FeatureDecorationRunner {
     }
 
     fn try_place_hanging_tree_vine(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         placement: &mut TreePlacement,
         pos: BlockPos,
         vine_face: Direction,
@@ -382,7 +396,7 @@ impl FeatureDecorationRunner {
 
         let mut pos = pos.below();
         let mut max_length = 4;
-        while region.block_state(pos).is_air() && max_length > 0 {
+        while region.get_block_state(pos).is_air() && max_length > 0 {
             Self::place_tree_vine(region, placement, pos, vine_face);
             pos = pos.below();
             max_length -= 1;
@@ -390,7 +404,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_cocoa_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         probability: f32,
@@ -408,12 +422,12 @@ impl FeatureDecorationRunner {
 
         for log in logs.into_iter().filter(|pos| pos.y() - tree_y <= 2) {
             for direction in Self::VANILLA_HORIZONTAL_DIRECTIONS {
-                if random.next_f32() > 0.25 {
+                if random.next_f32() > COCOA_PER_SIDE_PLACEMENT_CHANCE {
                     continue;
                 }
 
                 let cocoa_pos = log.relative(direction.opposite());
-                if !region.block_state(cocoa_pos).is_air() {
+                if !region.get_block_state(cocoa_pos).is_air() {
                     continue;
                 }
 
@@ -428,13 +442,181 @@ impl FeatureDecorationRunner {
         }
     }
 
+    fn place_shelf_mushroom_tree_decorator(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        probability: f32,
+        placement: &mut TreePlacement,
+    ) {
+        if random.next_f32() >= probability {
+            return;
+        }
+
+        let logs = Self::sorted_tree_positions(&placement.trunks);
+        let Some(first_log) = logs.first() else {
+            return;
+        };
+        let Some(last_log) = logs.last() else {
+            return;
+        };
+
+        if first_log.y() == last_log.y() {
+            Self::place_shelf_mushrooms_on_fallen_log(region, registry, random, &logs, placement);
+        } else {
+            Self::place_shelf_mushrooms_on_standing_tree(
+                region, registry, random, &logs, placement,
+            );
+        }
+    }
+
+    fn place_shelf_mushrooms_on_standing_tree(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        logs: &[BlockPos],
+        placement: &mut TreePlacement,
+    ) {
+        let first_direction = Self::random_horizontal_direction(random);
+        let directions = [first_direction, first_direction.rotate_y_clockwise()];
+        let tree_base_y = logs[0].y();
+
+        for &log_pos in logs {
+            let height = log_pos.y() - tree_base_y;
+            if !(1..=4).contains(&height) {
+                continue;
+            }
+
+            for facing in directions {
+                if random.next_f32() <= SHELF_MUSHROOM_PER_SIDE_PLACEMENT_CHANCE
+                    && Self::try_place_shelf_mushroom_on_standing_tree(
+                        region, registry, random, log_pos, facing, placement,
+                    )
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn place_shelf_mushrooms_on_fallen_log(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        logs: &[BlockPos],
+        placement: &mut TreePlacement,
+    ) {
+        let Some(last_log) = logs.last() else {
+            return;
+        };
+        let directions = if logs[0].x() == last_log.x() {
+            [Direction::East, Direction::West]
+        } else {
+            [Direction::North, Direction::South]
+        };
+
+        for &log_pos in logs {
+            for facing in directions {
+                if random.next_f32() <= SHELF_MUSHROOM_PER_SIDE_PLACEMENT_CHANCE {
+                    Self::try_place_shelf_mushroom_on_fallen_log(
+                        region, registry, random, log_pos, facing, placement,
+                    );
+                }
+            }
+        }
+    }
+
+    fn try_place_shelf_mushroom_on_standing_tree(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        log_pos: BlockPos,
+        facing: Direction,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        let mushroom_pos = log_pos.relative(facing);
+        if !Self::is_replaceable_with_shelf_mushroom(region, mushroom_pos)
+            || Self::has_shelf_mushroom_at(region, mushroom_pos.below())
+        {
+            return false;
+        }
+
+        Self::place_shelf_mushroom(region, registry, random, mushroom_pos, facing, placement);
+        true
+    }
+
+    fn try_place_shelf_mushroom_on_fallen_log(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        log_pos: BlockPos,
+        facing: Direction,
+        placement: &mut TreePlacement,
+    ) {
+        let mushroom_pos = log_pos.relative(facing);
+        if !Self::is_replaceable_with_shelf_mushroom(region, mushroom_pos)
+            || Self::has_horizontally_adjacent_shelf_mushroom(region, mushroom_pos)
+            || Self::has_horizontally_adjacent_shelf_mushroom(region, log_pos)
+        {
+            return;
+        }
+
+        Self::place_shelf_mushroom(region, registry, random, mushroom_pos, facing, placement);
+    }
+
+    fn place_shelf_mushroom(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        pos: BlockPos,
+        facing: Direction,
+        placement: &mut TreePlacement,
+    ) {
+        let state = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SHELF_MUSHROOM)
+            .set_value(
+                &BlockStateProperties::AGE_1,
+                random.next_i32_bounded(2) as u8,
+            )
+            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing);
+        placement.set_decoration(region, pos, state);
+    }
+
+    fn is_replaceable_with_shelf_mushroom(region: &impl LevelReader, pos: BlockPos) -> bool {
+        region.get_block_state(pos).is_replaceable() && !Self::is_water_or_water_nearby(region, pos)
+    }
+
+    fn is_water_or_water_nearby(region: &impl LevelReader, pos: BlockPos) -> bool {
+        [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ]
+        .into_iter()
+        .any(|direction| {
+            region.get_block_state(pos.relative(direction)).get_block() == &vanilla_blocks::WATER
+        }) || region.get_block_state(pos).get_block() == &vanilla_blocks::WATER
+    }
+
+    fn has_shelf_mushroom_at(region: &impl LevelReader, pos: BlockPos) -> bool {
+        region.get_block_state(pos).get_block() == &vanilla_blocks::SHELF_MUSHROOM
+    }
+
+    fn has_horizontally_adjacent_shelf_mushroom(region: &impl LevelReader, pos: BlockPos) -> bool {
+        Self::VANILLA_HORIZONTAL_DIRECTIONS
+            .into_iter()
+            .any(|direction| Self::has_shelf_mushroom_at(region, pos.relative(direction)))
+    }
+
     fn try_place_tree_vine(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         placement: &mut TreePlacement,
         pos: BlockPos,
         vine_face: Direction,
     ) -> bool {
-        if !region.block_state(pos).is_air() {
+        if !region.get_block_state(pos).is_air() {
             return false;
         }
 
@@ -443,7 +625,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_vine(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         placement: &mut TreePlacement,
         pos: BlockPos,
         vine_face: Direction,
@@ -468,7 +650,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_beehive_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         probability: f32,
@@ -501,9 +683,9 @@ impl FeatureDecorationRunner {
 
         Self::shuffle_tree_positions(random, &mut hive_placements);
         let hive_pos = hive_placements.into_iter().find(|pos| {
-            region.block_state(*pos).is_air()
+            region.get_block_state(*pos).is_air()
                 && region
-                    .block_state(pos.relative(BEEHIVE_WORLDGEN_FACING))
+                    .get_block_state(pos.relative(BEEHIVE_WORLDGEN_FACING))
                     .is_air()
         });
         let Some(hive_pos) = hive_pos else {
@@ -519,7 +701,7 @@ impl FeatureDecorationRunner {
             );
         placement.set_decoration(region, hive_pos, hive_state);
 
-        let Some(block_entity) = region.block_entity(hive_pos) else {
+        let Some(block_entity) = region.get_block_entity(hive_pos) else {
             return;
         };
         let Some(beehive) = block_entity.downcast_ref::<BeehiveBlockEntity>() else {
@@ -533,7 +715,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_attached_to_leaves_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorator: &AttachedToLeavesDecorator,
@@ -564,7 +746,7 @@ impl FeatureDecorationRunner {
                 decorator.exclusion_radius_xz,
                 decorator.exclusion_radius_y,
             );
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,
@@ -576,7 +758,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_attached_to_logs_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorator: &AttachedToLogsDecorator,
@@ -588,12 +770,13 @@ impl FeatureDecorationRunner {
         for log in logs {
             let direction = Self::random_tree_decorator_direction(random, &decorator.directions);
             let place_pos = log.relative(direction);
-            if random.next_f32() > decorator.probability || !region.block_state(place_pos).is_air()
+            if random.next_f32() > decorator.probability
+                || !region.get_block_state(place_pos).is_air()
             {
                 continue;
             }
 
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,
@@ -604,8 +787,8 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn place_pale_moss_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+    fn place_pale_moss_tree_decorator<L: LevelAccessor>(
+        region: &mut L,
         registry: &Registry,
         random: &mut WorldgenRandom,
         leaves_probability: f32,
@@ -613,6 +796,7 @@ impl FeatureDecorationRunner {
         ground_probability: f32,
         placement: &mut TreePlacement,
         biome_zoom_seed: i64,
+        place_nested: NestedFeaturePlacer<L>,
     ) {
         let mut shuffled_logs = Self::sorted_tree_positions(&placement.trunks);
         Self::shuffle_tree_positions(random, &mut shuffled_logs);
@@ -628,7 +812,7 @@ impl FeatureDecorationRunner {
                     "pale moss tree decorator references unknown configured feature {pale_moss_patch_key}"
                 );
             };
-            Self::place_configured_feature_kind(
+            place_nested(
                 region,
                 registry,
                 random,
@@ -641,7 +825,7 @@ impl FeatureDecorationRunner {
         for log in Self::sorted_tree_positions(&placement.trunks) {
             if random.next_f32() < trunk_probability {
                 let down = log.below();
-                if region.block_state(down).is_air() {
+                if region.get_block_state(down).is_air() {
                     Self::add_pale_moss_hanger(region, random, down, placement);
                 }
             }
@@ -650,7 +834,7 @@ impl FeatureDecorationRunner {
         for leaf in Self::sorted_tree_positions(&placement.foliage) {
             if random.next_f32() < leaves_probability {
                 let down = leaf.below();
-                if region.block_state(down).is_air() {
+                if region.get_block_state(down).is_air() {
                     Self::add_pale_moss_hanger(region, random, down, placement);
                 }
             }
@@ -658,7 +842,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_creaking_heart_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         probability: f32,
@@ -673,7 +857,7 @@ impl FeatureDecorationRunner {
         let Some(target_pos) = heart_placements.into_iter().find(|pos| {
             Self::VANILLA_DIRECTION_VALUES.iter().all(|direction| {
                 region
-                    .block_state(pos.relative(*direction))
+                    .get_block_state(pos.relative(*direction))
                     .get_block()
                     .has_tag(&BlockTag::LOGS)
             })
@@ -693,12 +877,12 @@ impl FeatureDecorationRunner {
     }
 
     fn add_pale_moss_hanger(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         random: &mut WorldgenRandom,
         mut pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
-        while region.block_state(pos.below()).is_air() {
+        while region.get_block_state(pos.below()).is_air() {
             if random.next_f32() < 0.5 {
                 break;
             }
@@ -717,14 +901,14 @@ impl FeatureDecorationRunner {
     }
 
     fn tree_decorator_has_required_empty_blocks(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         leaf: BlockPos,
         direction: Direction,
         required_empty_blocks: i32,
     ) -> bool {
         (1..=required_empty_blocks).all(|offset| {
             region
-                .block_state(leaf.relative_n(direction, offset))
+                .get_block_state(leaf.relative_n(direction, offset))
                 .is_air()
         })
     }

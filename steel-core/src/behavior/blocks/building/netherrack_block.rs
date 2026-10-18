@@ -17,7 +17,7 @@ use crate::world::{LevelReader, World};
 /// Chance to pick `Warped Nylium` when both nylium types are nearby.
 const WARPED_VS_CRIMSON_CHANCE: f64 = 0.5;
 
-/// Vanilla `NetherrackBlock`.
+/// Netherrack block behavior.
 #[block_behavior]
 pub struct NetherrackBlock {
     block: BlockRef,

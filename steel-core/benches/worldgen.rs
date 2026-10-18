@@ -1,4 +1,6 @@
 #![feature(portable_simd)]
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -12,7 +14,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
-use steel_core::bootstrap::init_globals_once;
+use steel_core::bootstrap::init_globals;
 use steel_core::chunk::Chunk;
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
@@ -22,7 +24,8 @@ use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::chunk::status::ChunkStatus;
-use steel_core::level_data::WorldGenerationSettings;
+use steel_core::entity::damage::DamageHistory;
+use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::generator::generation_benchmark_support;
 use steel_core::worldgen::{
@@ -35,6 +38,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use steel_worldgen::noise::Beardifier;
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
@@ -217,7 +221,7 @@ fn bench_end_biome(c: &mut Criterion) {
 // ── Noise benchmarks ────────────────────────────────────────────────────────
 
 fn bench_overworld_noise(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -231,7 +235,7 @@ fn bench_overworld_noise(c: &mut Criterion) {
 }
 
 fn bench_nether_noise(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -245,7 +249,7 @@ fn bench_nether_noise(c: &mut Criterion) {
 }
 
 fn bench_end_noise(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -261,7 +265,7 @@ fn bench_end_noise(c: &mut Criterion) {
 // ── Surface benchmarks ──────────────────────────────────────────────────────
 
 fn bench_overworld_surface(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -284,7 +288,7 @@ fn bench_overworld_surface(c: &mut Criterion) {
 }
 
 fn bench_nether_surface(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -307,7 +311,7 @@ fn bench_nether_surface(c: &mut Criterion) {
 }
 
 fn bench_end_surface(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -335,7 +339,7 @@ fn bench_end_surface(c: &mut Criterion) {
 /// when chunks load from disk. This tracks the palette-counting path over a full
 /// overworld chunk's section set.
 fn bench_overworld_recalculate_counts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -361,7 +365,7 @@ fn bench_overworld_recalculate_counts(c: &mut Criterion) {
 // ── Carvers benchmarks ──────────────────────────────────────────────────────
 
 fn bench_overworld_carvers(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -387,7 +391,7 @@ fn bench_overworld_carvers(c: &mut Criterion) {
 }
 
 fn bench_nether_carvers(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -413,7 +417,7 @@ fn bench_nether_carvers(c: &mut Criterion) {
 }
 
 fn bench_end_carvers(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -479,7 +483,7 @@ fn make_holder_for_features(
     if distance <= 1 {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
-            ChunkStatus::Carvers,
+            ChunkStatus::Terrain,
         );
     } else {
         let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
@@ -514,7 +518,7 @@ fn make_holder_for_feature_centers(
     if needs_carvers {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
-            ChunkStatus::Carvers,
+            ChunkStatus::Terrain,
         );
     } else {
         let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
@@ -530,6 +534,7 @@ struct FeatureFixture {
     cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
     target: Arc<ChunkHolder>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
@@ -567,10 +572,13 @@ fn build_feature_fixture_at(
             .build()
             .expect("feature benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
+        game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
-        generator: generator.clone(),
+        generator: Arc::clone(&generator),
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
@@ -584,7 +592,7 @@ fn build_feature_fixture_at(
     let world_key = Identifier::new("bench", format!("{}_features", generator_key.path));
     let world = chunk_runtime
         .block_on(World::new_with_config(
-            chunk_runtime.clone(),
+            Arc::clone(&chunk_runtime),
             world_key,
             dim,
             seed,
@@ -592,22 +600,23 @@ fn build_feature_fixture_at(
             generation_pool,
         ))
         .expect("feature benchmark world should build");
-    let context = world.chunk_map.world_gen_context.clone();
+    let context = Arc::clone(&world.chunk_map.world_gen_context);
 
-    let generator_for_factory = generator.clone();
+    let generator_for_factory = Arc::clone(&generator);
     let cache = Arc::new(StaticCache2D::create(
         center.0.x,
         center.0.y,
         8,
         move |x, z| make_holder_for_features(center, x, z, dim, generator_for_factory.as_ref()),
     ));
-    let target = cache.get(center.0.x, center.0.y).clone();
+    let target = Arc::clone(cache.get(center.0.x, center.0.y));
 
     FeatureFixture {
         context,
         cache,
         target,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -617,6 +626,7 @@ struct ConcurrentFeatureFixture {
     targets: Vec<Arc<ChunkHolder>>,
     generation_pool: Arc<rayon::ThreadPool>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -638,6 +648,7 @@ struct ConcurrentFullPipelineFixture {
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 struct ConcurrentLightFixture {
@@ -649,6 +660,7 @@ struct ConcurrentLightFixture {
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
     _world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
 }
 
 #[derive(Clone, Copy)]
@@ -681,7 +693,7 @@ fn bench_features(c: &mut Criterion, name: &str, generator_key: Identifier) {
 }
 
 fn bench_overworld_features(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     bench_features(
         c,
         "overworld_generate_features",
@@ -695,28 +707,24 @@ const CONCURRENT_FEATURE_GRID_MAX: i32 = 2;
 const CONCURRENT_FEATURE_THREAD_COUNT: usize = 8;
 const FULL_PIPELINE_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
 const LIGHT_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
-const FULL_PIPELINE_STATUSES: [ChunkStatus; 12] = [
+const FULL_PIPELINE_STATUSES: [ChunkStatus; 10] = [
     ChunkStatus::Empty,
     ChunkStatus::StructureStarts,
     ChunkStatus::StructureReferences,
     ChunkStatus::Biomes,
-    ChunkStatus::Noise,
-    ChunkStatus::Surface,
-    ChunkStatus::Carvers,
+    ChunkStatus::Terrain,
     ChunkStatus::Features,
     ChunkStatus::InitializeLight,
     ChunkStatus::Light,
     ChunkStatus::Spawn,
     ChunkStatus::Full,
 ];
-const LIGHT_SETUP_STATUSES: [ChunkStatus; 9] = [
+const LIGHT_SETUP_STATUSES: [ChunkStatus; 7] = [
     ChunkStatus::Empty,
     ChunkStatus::StructureStarts,
     ChunkStatus::StructureReferences,
     ChunkStatus::Biomes,
-    ChunkStatus::Noise,
-    ChunkStatus::Surface,
-    ChunkStatus::Carvers,
+    ChunkStatus::Terrain,
     ChunkStatus::Features,
     ChunkStatus::InitializeLight,
 ];
@@ -788,7 +796,7 @@ fn pipeline_stages_for_statuses(
         .map(|status| {
             let holders = pipeline_positions_for_status(centers, target_step, status)
                 .into_iter()
-                .map(|pos| cache.get(pos.0.x, pos.0.y).clone())
+                .map(|pos| Arc::clone(cache.get(pos.0.x, pos.0.y)))
                 .collect();
 
             FullPipelineStage {
@@ -837,10 +845,13 @@ fn build_concurrent_feature_fixture(
             .build()
             .expect("feature benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
+        game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
-        generator: generator.clone(),
+        generator: Arc::clone(&generator),
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
@@ -857,20 +868,20 @@ fn build_concurrent_feature_fixture(
     );
     let world = chunk_runtime
         .block_on(World::new_with_config(
-            chunk_runtime.clone(),
+            Arc::clone(&chunk_runtime),
             world_key,
             dim,
             seed,
             world_config,
-            generation_pool.clone(),
+            Arc::clone(&generation_pool),
         ))
         .expect("feature benchmark world should build");
-    let context = world.chunk_map.world_gen_context.clone();
+    let context = Arc::clone(&world.chunk_map.world_gen_context);
 
     let centers: Arc<[ChunkPos]> = concurrent_feature_centers().into();
     let cache_radius = concurrent_feature_cache_radius(&centers);
-    let generator_for_factory = generator.clone();
-    let centers_for_factory = centers.clone();
+    let generator_for_factory = Arc::clone(&generator);
+    let centers_for_factory = Arc::clone(&centers);
     let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
         make_holder_for_feature_centers(
             &centers_for_factory,
@@ -882,7 +893,7 @@ fn build_concurrent_feature_fixture(
     }));
     let targets = centers
         .iter()
-        .map(|center| cache.get(center.0.x, center.0.y).clone())
+        .map(|center| Arc::clone(cache.get(center.0.x, center.0.y)))
         .collect();
 
     ConcurrentFeatureFixture {
@@ -891,6 +902,7 @@ fn build_concurrent_feature_fixture(
         targets,
         generation_pool,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -927,10 +939,13 @@ fn build_concurrent_full_pipeline_fixture(
             .build()
             .expect("full-pipeline benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
+        game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
-        generator: generator.clone(),
+        generator: Arc::clone(&generator),
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
@@ -947,18 +962,18 @@ fn build_concurrent_full_pipeline_fixture(
     );
     let world = chunk_runtime
         .block_on(World::new_with_config(
-            chunk_runtime.clone(),
+            Arc::clone(&chunk_runtime),
             world_key,
             dim,
             seed,
             world_config,
-            generation_pool.clone(),
+            Arc::clone(&generation_pool),
         ))
         .expect("full-pipeline benchmark world should build");
-    let chunk_map = world.chunk_map.clone();
+    let chunk_map = Arc::clone(&world.chunk_map);
 
     let cache_radius = concurrent_pipeline_cache_radius(&centers, ChunkStatus::Full);
-    let chunk_map_for_factory = chunk_map.clone();
+    let chunk_map_for_factory = Arc::clone(&chunk_map);
     let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
         let pos = ChunkPos::new(x, z);
         let holder = Arc::new(ChunkHolder::new(
@@ -968,13 +983,13 @@ fn build_concurrent_full_pipeline_fixture(
             dim.min_y,
             dim.height,
         ));
-        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, Arc::clone(&holder));
         holder
     }));
     let stages = full_pipeline_stages(&cache, &centers);
     let targets = centers
         .iter()
-        .map(|center| cache.get(center.0.x, center.0.y).clone())
+        .map(|center| Arc::clone(cache.get(center.0.x, center.0.y)))
         .collect();
 
     ConcurrentFullPipelineFixture {
@@ -985,6 +1000,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_pool,
         targets,
         _world: world,
+        _damage_history: damage_history,
     }
 }
 
@@ -1021,10 +1037,13 @@ fn build_concurrent_light_fixture(
             .build()
             .expect("light benchmark generation pool should build"),
     );
+    let damage_history = Arc::new(DamageHistory::default());
     let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
+        game_time_source: GameTimeSource::Primary,
         storage: WorldStorageConfig::RamOnly,
         level_data_path: None,
-        generator: generator.clone(),
+        generator: Arc::clone(&generator),
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
@@ -1038,18 +1057,18 @@ fn build_concurrent_light_fixture(
     let world_key = Identifier::new("bench", format!("{}_light_concurrent", generator_key.path));
     let world = chunk_runtime
         .block_on(World::new_with_config(
-            chunk_runtime.clone(),
+            Arc::clone(&chunk_runtime),
             world_key,
             dim,
             seed,
             world_config,
-            generation_pool.clone(),
+            Arc::clone(&generation_pool),
         ))
         .expect("light benchmark world should build");
-    let chunk_map = world.chunk_map.clone();
+    let chunk_map = Arc::clone(&world.chunk_map);
 
     let cache_radius = concurrent_pipeline_cache_radius(&centers, ChunkStatus::Light);
-    let chunk_map_for_factory = chunk_map.clone();
+    let chunk_map_for_factory = Arc::clone(&chunk_map);
     let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
         let pos = ChunkPos::new(x, z);
         let holder = Arc::new(ChunkHolder::new(
@@ -1059,7 +1078,7 @@ fn build_concurrent_light_fixture(
             dim.min_y,
             dim.height,
         ));
-        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, Arc::clone(&holder));
         holder
     }));
     let setup_stages =
@@ -1069,12 +1088,12 @@ fn build_concurrent_light_fixture(
         step: target_step,
         holders: pipeline_positions_for_status(&centers, target_step, ChunkStatus::Light)
             .into_iter()
-            .map(|pos| cache.get(pos.0.x, pos.0.y).clone())
+            .map(|pos| Arc::clone(cache.get(pos.0.x, pos.0.y)))
             .collect(),
     };
     let targets = centers
         .iter()
-        .map(|center| cache.get(center.0.x, center.0.y).clone())
+        .map(|center| Arc::clone(cache.get(center.0.x, center.0.y)))
         .collect();
 
     let fixture = ConcurrentLightFixture {
@@ -1086,13 +1105,14 @@ fn build_concurrent_light_fixture(
         generation_pool,
         targets,
         _world: world,
+        _damage_history: damage_history,
     };
     run_concurrent_light_setup(&fixture);
     fixture
 }
 
 fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
 
     c.bench_function("overworld_generate_features_concurrent_overlap", |b| {
@@ -1109,9 +1129,9 @@ fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
                 } else {
                     fixture.generation_pool.scope(|scope| {
                         for target in &fixture.targets {
-                            let context = fixture.context.clone();
-                            let cache = fixture.cache.clone();
-                            let target = target.clone();
+                            let context = Arc::clone(&fixture.context);
+                            let cache = Arc::clone(&fixture.cache);
+                            let target = Arc::clone(target);
                             scope.spawn(move |_| {
                                 ChunkStatusTasks::generate_features(context, step, &cache, target);
                             });
@@ -1125,7 +1145,7 @@ fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
 }
 
 fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
 
     c.bench_function("overworld_full_pipeline_concurrent_overlap", |b| {
         b.iter_batched(
@@ -1150,7 +1170,7 @@ fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
 /// neighbors), so this measures the honest end-to-end cost of producing one
 /// finished chunk rather than a single isolated step.
 fn bench_overworld_full_chunk(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
 
     c.bench_function("overworld_full_chunk", |b| {
         b.iter_batched(
@@ -1174,7 +1194,7 @@ fn bench_overworld_full_chunk(c: &mut Criterion) {
 /// Same workload shape as `overworld_full_pipeline_concurrent_overlap`, but
 /// expressed as a throughput group so criterion reports elements/sec per chunk.
 fn bench_overworld_full_chunk_concurrent(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let chunk_count = concurrent_feature_centers().len() as u64;
 
     let mut group = c.benchmark_group("overworld_full_chunk_concurrent");
@@ -1197,7 +1217,7 @@ fn bench_overworld_full_chunk_concurrent(c: &mut Criterion) {
 }
 
 fn bench_overworld_light(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
 
     c.bench_function("overworld_light", |b| {
         b.iter_batched(
@@ -1216,7 +1236,7 @@ fn bench_overworld_light(c: &mut Criterion) {
 }
 
 fn bench_overworld_light_concurrent(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let chunk_count = concurrent_feature_centers().len() as u64;
 
     let mut group = c.benchmark_group("overworld_light_concurrent");
@@ -1243,10 +1263,10 @@ fn run_concurrent_feature_batch_profiled(fixture: ConcurrentFeatureFixture, step
     let batch_started_at = Instant::now();
     fixture.generation_pool.scope(|scope| {
         for target in &fixture.targets {
-            let context = fixture.context.clone();
-            let cache = fixture.cache.clone();
-            let target = target.clone();
-            let task_times = task_times.clone();
+            let context = Arc::clone(&fixture.context);
+            let cache = Arc::clone(&fixture.cache);
+            let target = Arc::clone(target);
+            let task_times = Arc::clone(&task_times);
             scope.spawn(move |_| {
                 let pos = target.get_pos();
                 let started_at = Instant::now();
@@ -1424,7 +1444,7 @@ fn run_pipeline_stage(
             .holders
             .iter()
             .filter_map(|holder| {
-                holder.apply_step(stage.step, chunk_map, cache, generation_pool.clone())
+                holder.apply_step(stage.step, chunk_map, cache, Arc::clone(generation_pool))
             })
             .collect::<Vec<_>>();
 
@@ -1487,7 +1507,7 @@ fn duration_ms(duration: Duration) -> f64 {
 }
 
 fn bench_nether_features(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     bench_features(
         c,
         "nether_generate_features",
@@ -1496,7 +1516,7 @@ fn bench_nether_features(c: &mut Criterion) {
 }
 
 fn bench_end_features(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     bench_features(
         c,
         "end_generate_features",
@@ -1524,7 +1544,7 @@ fn run_grid<G: ChunkGenerator>(generator: &G, chunks: &[Chunk]) {
 }
 
 fn bench_overworld_structure_starts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1539,7 +1559,7 @@ fn bench_overworld_structure_starts(c: &mut Criterion) {
 }
 
 fn bench_nether_structure_starts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1554,7 +1574,7 @@ fn bench_nether_structure_starts(c: &mut Criterion) {
 }
 
 fn bench_end_structure_starts(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1618,18 +1638,18 @@ fn build_references_fixture(
 ) {
     let generator_arc = Arc::new(generator);
     let context = Arc::new(WorldGenContext::new(
-        generator_arc.clone(),
+        Arc::clone(&generator_arc),
         Weak::new(),
         dim.min_y,
         dim.height,
-        63, // overworld sea level (bench is overworld)
+        OverworldNoiseSettings::SEA_LEVEL,
     ));
 
-    let gen_for_factory = generator_arc.clone();
+    let gen_for_factory = Arc::clone(&generator_arc);
     let cache = Arc::new(StaticCache2D::create(0, 0, 8, move |x, z| {
         make_holder_with_starts(x, z, dim, &gen_for_factory)
     }));
-    let target = cache.get(0, 0).clone();
+    let target = Arc::clone(cache.get(0, 0));
     (context, cache, target)
 }
 
@@ -1651,10 +1671,10 @@ fn bench_references(c: &mut Criterion, name: &str, context_fixture: ReferencesFi
             },
             |()| {
                 ChunkStatusTasks::generate_structure_references(
-                    context.clone(),
+                    Arc::clone(&context),
                     &step,
                     &cache,
-                    target.clone(),
+                    Arc::clone(&target),
                 );
             },
             criterion::BatchSize::SmallInput,
@@ -1669,7 +1689,7 @@ struct ReferencesFixture {
 }
 
 fn bench_overworld_structure_references(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let generator = OverworldGenerator::new(
         None,
@@ -1691,7 +1711,7 @@ fn bench_overworld_structure_references(c: &mut Criterion) {
 }
 
 fn bench_nether_structure_references(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let generator = NetherGenerator::new(
         None,
@@ -1713,7 +1733,7 @@ fn bench_nether_structure_references(c: &mut Criterion) {
 }
 
 fn bench_end_structure_references(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let generator = EndGenerator::new(
         None,
@@ -1737,7 +1757,7 @@ fn bench_end_structure_references(c: &mut Criterion) {
 // ── Full-pipeline benchmarks (biomes + noise + surface + carvers) ──────────
 
 fn bench_overworld_full(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1757,7 +1777,7 @@ fn bench_overworld_full(c: &mut Criterion) {
 }
 
 fn bench_nether_full(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1777,7 +1797,7 @@ fn bench_nether_full(c: &mut Criterion) {
 }
 
 fn bench_end_full(c: &mut Criterion) {
-    init_globals_once();
+    init_globals();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
@@ -1801,7 +1821,7 @@ fn bench_end_full(c: &mut Criterion) {
 /// the kernel's heavy scalar permutation-gather floor. Each variant computes
 /// the same 8 Y samples per column across a fixed set of columns.
 fn bench_noise_kernel(c: &mut Criterion) {
-    use std::simd::{f64x4, f64x8};
+    use std::simd::{f32x4, f32x8, f64x4, f64x8};
     use steel_utils::random::xoroshiro::Xoroshiro;
     use steel_worldgen::noise::ImprovedNoise;
 
@@ -1823,7 +1843,7 @@ fn bench_noise_kernel(c: &mut Criterion) {
     // Current production path: generic 4 lanes, two calls per 8 Ys.
     group.bench_function("y_scale_4x_generic", |b| {
         b.iter(|| {
-            let mut acc = f64x4::splat(0.0);
+            let mut acc = f32x4::splat(0.0);
             for &(x, z) in &columns {
                 acc += noise.noise_with_y_scale_simd(
                     black_box(x),
@@ -1847,7 +1867,7 @@ fn bench_noise_kernel(c: &mut Criterion) {
     // 8-wide (AVX-512 on Zen 5), one call per 8 Ys.
     group.bench_function("y_scale_8x_generic", |b| {
         b.iter(|| {
-            let mut acc = f64x8::splat(0.0);
+            let mut acc = f32x8::splat(0.0);
             for &(x, z) in &columns {
                 acc += noise.noise_with_y_scale_simd::<8>(
                     black_box(x),

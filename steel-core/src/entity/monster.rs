@@ -14,7 +14,7 @@ use steel_utils::types::Difficulty;
 use crate::chunk::light::LightLayer;
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE;
-use crate::entity::{EntitySpawnReason, Mob, PathfinderMob};
+use crate::entity::{EntitySpawnReason, Mob, PathfinderMob, SharedEntity};
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -117,16 +117,10 @@ pub trait Monster: PathfinderMob + Enemy {
         }
     }
 
-    /// Vanilla `Monster.aiStep`: advance the swing timer, apply light-based
-    /// no-action-time growth, then the standard mob `aiStep`.
-    ///
-    /// Vanilla advances `LivingEntity.updateSwingTime` from `Monster.aiStep`
-    /// (and from `Player` and `Mannequin`); passive mobs never swing their
-    /// animation, so hostile mobs are the only mobs that do.
-    fn monster_ai_step(&self) -> Option<MoveResult> {
-        self.update_swing_time();
+    /// Applies light-based no-action-time growth before the standard mob AI step.
+    fn monster_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         self.update_no_action_time();
-        self.mob_ai_step()
+        self.mob_ai_step(entity)
     }
 
     /// Vanilla `Monster.getWalkTargetValue`: monsters prefer darker positions.

@@ -20,7 +20,7 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason,
+    LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason, SharedEntity,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
@@ -247,12 +247,12 @@ impl LivingEntity for EndermiteEntity {
         Monster::should_drop_loot_monster(self, world)
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Monster::monster_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Monster::monster_ai_step(self, entity);
         // Vanilla `Endermite.aiStep`: the lifetime grows only while the mob is
         // not persistence-required, and the discard check runs unconditionally.
         if self.level().is_some() {
@@ -276,8 +276,8 @@ impl Mob for EndermiteEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {
@@ -319,8 +319,9 @@ mod tests {
     #[test]
     fn endermite_discards_after_max_lifetime_unless_persistence_required() {
         init_vanilla_registry();
-        let world = fresh_test_world("endermite_lifetime");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("endermite_lifetime");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         // Vanilla `Endermite.aiStep` grows the lifetime each tick and discards
         // the mob once it reaches 2400.
@@ -328,22 +329,23 @@ mod tests {
             &vanilla_entities::ENDERMITE,
             next_entity_id(),
             DVec3::new(8.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         world
             .try_add_entity(Arc::clone(&endermite))
             .expect("test endermite should attach to the loaded chunk");
-        let endermite = endermite
+        let endermite_entity = endermite;
+        let endermite = endermite_entity
             .downcast_ref::<EndermiteEntity>()
             .expect("endermite is concrete");
         // One tick below the cap stays alive; the next tick crosses it.
         endermite.set_lifetime(MAX_LIFETIME - 2);
-        endermite.ai_step();
+        endermite.ai_step(&endermite_entity);
         assert!(
             !endermite.is_removed(),
             "lifetime below the cap keeps the mob alive"
         );
-        endermite.ai_step();
+        endermite.ai_step(&endermite_entity);
         assert!(endermite.is_removed(), "reaching the cap discards the mob");
 
         // A persistence-required mob never grows its lifetime, mirroring the
@@ -352,17 +354,18 @@ mod tests {
             &vanilla_entities::ENDERMITE,
             next_entity_id(),
             DVec3::new(9.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         world
             .try_add_entity(Arc::clone(&persistent))
             .expect("test endermite should attach to the loaded chunk");
-        let persistent = persistent
+        let persistent_entity = persistent;
+        let persistent = persistent_entity
             .downcast_ref::<EndermiteEntity>()
             .expect("endermite is concrete");
         persistent.set_persistence_required();
         persistent.set_lifetime(MAX_LIFETIME - 1);
-        persistent.ai_step();
+        persistent.ai_step(&persistent_entity);
         assert!(
             !persistent.is_removed(),
             "persistence-required endermites must not expire"

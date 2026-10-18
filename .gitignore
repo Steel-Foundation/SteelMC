@@ -9,6 +9,7 @@
 /steel-utils/build_assets/.asset-extract.lock
 /steel-utils/build_assets/en_us.json
 /steel-utils/build_assets/deprecated.json
+/steel-utils/build_assets/version.json
 
 # Config
 /config

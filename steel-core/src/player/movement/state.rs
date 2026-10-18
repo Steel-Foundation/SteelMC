@@ -13,8 +13,12 @@ pub struct MovementState {
     client_vehicle_movement: ClientAuthoredMovementState,
     /// Whether vanilla accepted player-authored movement during the current client tick.
     received_movement_this_tick: bool,
+    /// Whether a valid positional packet arrived during the current client tick
+    received_position_this_tick: bool,
     /// Entity id of the controlled root vehicle tracked this tick.
     client_vehicle_id: Option<i32>,
+    /// Server tick of the last correction for a non controlling passenger
+    pub(in crate::player) vehicle_position_last_reset_at: i32,
     /// Latest vanilla client input snapshot sent by the player.
     last_client_input: PlayerInput,
 }
@@ -26,7 +30,9 @@ impl MovementState {
             client_movement: ClientAuthoredMovementState::new(),
             client_vehicle_movement: ClientAuthoredMovementState::new(),
             received_movement_this_tick: false,
+            received_position_this_tick: false,
             client_vehicle_id: None,
+            vehicle_position_last_reset_at: 0,
             last_client_input: PlayerInput::EMPTY,
         }
     }
@@ -93,6 +99,15 @@ impl MovementState {
         self.client_movement.record_move_packet_delta()
     }
 
+    /// Claims the positional allowance including packets ignored by movement gates
+    pub(in crate::player) const fn record_position_packet(&mut self) -> bool {
+        if self.received_position_this_tick {
+            return false;
+        }
+        self.received_position_this_tick = true;
+        true
+    }
+
     /// Marks a movement target as the latest accepted vanilla last-good position.
     pub(in crate::player) const fn mark_last_good_position(&mut self, position: DVec3) {
         self.client_movement.mark_last_good_position(position);
@@ -129,6 +144,7 @@ impl MovementState {
             self.client_movement.reset_last_known_client_movement();
         }
         self.received_movement_this_tick = false;
+        self.received_position_this_tick = false;
     }
 
     /// Returns the last accepted client movement vector.

@@ -691,7 +691,7 @@ mod tests {
             reenter_on_remove: AtomicBool::new(true),
             events: SyncMutex::new(Vec::new()),
         });
-        let entity: SharedBlockEntity = concrete.clone();
+        let entity: SharedBlockEntity = Arc::<ReentrantLifecycleBlockEntity>::clone(&concrete);
         let storage = BlockEntityStorage::new();
         storage.add_and_register(entity);
 
@@ -734,7 +734,7 @@ mod tests {
             reenter_on_remove: AtomicBool::new(false),
             events: SyncMutex::new(Vec::new()),
         });
-        let entity: SharedBlockEntity = concrete.clone();
+        let entity: SharedBlockEntity = Arc::<ReentrantLifecycleBlockEntity>::clone(&concrete);
         let storage = BlockEntityStorage::new();
         storage.add_and_register(Arc::clone(&entity));
 
@@ -776,7 +776,7 @@ mod tests {
             reenter_on_remove: AtomicBool::new(false),
             events: SyncMutex::new(Vec::new()),
         });
-        let entity: SharedBlockEntity = concrete.clone();
+        let entity: SharedBlockEntity = Arc::<ReentrantLifecycleBlockEntity>::clone(&concrete);
         let storage = BlockEntityStorage::new();
         storage.add_and_register(Arc::clone(&entity));
 

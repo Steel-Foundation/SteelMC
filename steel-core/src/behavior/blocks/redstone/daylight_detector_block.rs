@@ -4,7 +4,7 @@ use std::f32::consts::{PI, TAU};
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
-use steel_math::trig;
+use steel_math::{DEG_TO_RAD, trig};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -23,10 +23,7 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
 
-// `(float) (Math.PI / 180.0)` in vanilla.
-const DEGREES_TO_RADIANS: f32 = 0.017_453_292;
-
-/// Vanilla `DaylightDetectorBlock` behavior.
+/// Daylight detector block behavior.
 #[block_behavior]
 pub struct DaylightDetectorBlock {
     block: BlockRef,
@@ -59,7 +56,7 @@ impl DaylightDetectorBlock {
             return MIN_REDSTONE_SIGNAL as u8;
         }
 
-        let mut sun_angle = sun_angle_degrees * DEGREES_TO_RADIANS;
+        let mut sun_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
         java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle)))
@@ -165,11 +162,12 @@ mod tests {
     #[test]
     fn daylight_detector_selects_vanilla_server_ticker_in_skylight_dimensions() {
         init_vanilla_registry();
-        let world = fresh_test_world("daylight_detector_block_entity");
+        let world_fixture = fresh_test_world("daylight_detector_block_entity");
+        let world = &world_fixture.world;
         let state = vanilla_blocks::DAYLIGHT_DETECTOR.default_state();
         let behavior = DaylightDetectorBlock::new(&vanilla_blocks::DAYLIGHT_DETECTOR);
         let entity = behavior
-            .new_block_entity(Arc::downgrade(&world), BlockPos::ZERO, state)
+            .new_block_entity(Arc::downgrade(world), BlockPos::ZERO, state)
             .into_created()
             .expect("daylight detector should create block entity");
         assert_eq!(
@@ -180,7 +178,7 @@ mod tests {
         assert!(
             behavior
                 .get_block_entity_ticker(
-                    &world,
+                    world,
                     state,
                     &vanilla_block_entity_types::DAYLIGHT_DETECTOR,
                 )
@@ -188,7 +186,7 @@ mod tests {
         );
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::CHEST)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::CHEST)
                 .is_none()
         );
     }
@@ -222,7 +220,8 @@ mod tests {
     #[test]
     fn vanilla_trig_table_controls_overworld_rounding_boundary() {
         init_vanilla_registry();
-        let world = fresh_test_world("daylight_detector_trig_boundary");
+        let world_fixture = fresh_test_world("daylight_detector_trig_boundary");
+        let world = &world_fixture.world;
         assert_eq!(
             world
                 .level_data
@@ -233,7 +232,7 @@ mod tests {
         );
         let sun_angle_degrees = world.sun_angle_degrees();
 
-        let mut adjusted_angle = sun_angle_degrees * DEGREES_TO_RADIANS;
+        let mut adjusted_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if adjusted_angle < PI { 0.0 } else { TAU };
         adjusted_angle += (offset - adjusted_angle) * 0.2;
         assert_eq!(java_round(11.0 * adjusted_angle.cos()), 7);

@@ -12,6 +12,7 @@ use steel_registry::{
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
 use super::{
     can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
@@ -32,7 +33,8 @@ use crate::entity::{
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::test_support::{
-    fresh_test_world, fresh_test_world_with_dimension_type, insert_ready_full_chunk, test_world,
+    TestWorld, fresh_test_world, fresh_test_world_with_dimension_type, insert_ready_full_chunk,
+    test_world,
 };
 use crate::world::{LevelReader, World};
 use steel_registry::vanilla_dimension_types;
@@ -78,11 +80,15 @@ impl LevelReader for SurfaceLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        OverworldNoiseSettings::MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        OverworldNoiseSettings::HEIGHT
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 
@@ -97,6 +103,7 @@ struct DespawnTestMob {
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
     preferred_weapon_type: SyncMutex<Option<Identifier>>,
+    can_be_leashed: SyncMutex<bool>,
 }
 
 impl DespawnTestMob {
@@ -139,6 +146,7 @@ impl DespawnTestMob {
             living_base: LivingEntityBase::new(entity_type),
             mob_base: MobBase::new(),
             flags: SyncMutex::new(0),
+            can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(10.0),
             nearest_player_distance_sqr,
             remove_when_far_away,
@@ -161,6 +169,7 @@ impl DespawnTestMob {
             living_base: LivingEntityBase::new(entity_type),
             mob_base: MobBase::new(),
             flags: SyncMutex::new(0),
+            can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(10.0),
             nearest_player_distance_sqr: None,
             remove_when_far_away: false,
@@ -287,6 +296,10 @@ impl Mob for DespawnTestMob {
     fn get_preferred_weapon_type(&self) -> Option<Identifier> {
         self.preferred_weapon_type.lock().clone()
     }
+
+    fn mob_can_be_leashed(&self) -> bool {
+        *self.can_be_leashed.lock()
+    }
 }
 
 impl PathfinderMob for DespawnTestMob {}
@@ -346,10 +359,11 @@ fn pathfinder_mob_reads_below_surface_capability_from_navigation() {
 
 #[test]
 fn mob_server_ai_step_increments_no_action_time() {
-    let mob = DespawnTestMob::new(None, false);
+    let mob = Arc::new(DespawnTestMob::new(None, false));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
 
     mob.set_no_action_time(12);
-    mob.mob_server_ai_step();
+    mob.mob_server_ai_step(&mob_entity);
 
     assert_eq!(mob.no_action_time(), 13);
 }
@@ -390,7 +404,7 @@ fn mob_control_flags_disable_goals_for_mob_controller() {
 #[test]
 fn mob_control_flags_disable_jump_when_riding_boat() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let boat: SharedEntity = Arc::new(MobControlVehicleEntity::new(2, &vanilla_entities::OAK_BOAT));
     EntityBase::restore_passenger_relationship(&boat, &mob_entity);
 
@@ -404,14 +418,21 @@ fn mob_control_flags_disable_jump_when_riding_boat() {
 
 #[test]
 fn mob_attack_damage_source_uses_item_damage_type_component() {
-    let mob = DespawnTestMob::new(None, false);
+    let mob = Arc::new(DespawnTestMob::new(None, false));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let spear = ItemStack::new(&vanilla_items::WOODEN_SPEAR);
 
-    let source = mob.mob_attack_damage_source(&spear, &mob);
+    let source = mob.mob_attack_damage_source(&spear, &mob_entity);
 
     assert_eq!(source.damage_type.key, vanilla_damage_types::SPEAR.key);
-    assert_eq!(source.causing_entity_id, Some(mob.id()));
-    assert_eq!(source.direct_entity_id, Some(mob.id()));
+    assert_eq!(
+        source.causing_entity().map(|entity| entity.id()),
+        Some(mob.id())
+    );
+    assert_eq!(
+        source.direct_entity().map(|entity| entity.id()),
+        Some(mob.id())
+    );
 }
 
 #[test]
@@ -520,7 +541,7 @@ fn melee_attack_range_uses_vehicle_expanded_attack_box() {
 
     assert!(!mob.is_within_melee_attack_range(&target));
 
-    let mob_entity: SharedEntity = mob.clone();
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let vehicle: SharedEntity = Arc::new(MobControlVehicleEntity::new(3, &vanilla_entities::PIG));
     EntityBase::restore_passenger_relationship(&vehicle, &mob_entity);
 
@@ -593,8 +614,14 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
     init_vanilla_registry();
     init_behaviors();
 
-    let mob =
-        DespawnTestMob::with_entity_type(1, DVec3::ZERO, &vanilla_entities::ZOMBIE, None, false);
+    let mob = Arc::new(DespawnTestMob::with_entity_type(
+        1,
+        DVec3::ZERO,
+        &vanilla_entities::ZOMBIE,
+        None,
+        false,
+    ));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     mob.attributes()
         .lock()
         .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
@@ -604,9 +631,10 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         None,
         false,
     ));
-    let target_entity: SharedEntity = target.clone();
+    target.base().set_world(Arc::downgrade(test_world()));
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
-    assert!(mob.do_hurt_target(test_world(), &target_entity));
+    assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
 
     assert_eq!(target.get_health().to_bits(), 6.0_f32.to_bits());
     let stored_target = mob
@@ -620,8 +648,14 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
     init_vanilla_registry();
     init_behaviors();
 
-    let mob =
-        DespawnTestMob::with_entity_type(1, DVec3::ZERO, &vanilla_entities::ZOMBIE, None, false);
+    let mob = Arc::new(DespawnTestMob::with_entity_type(
+        1,
+        DVec3::ZERO,
+        &vanilla_entities::ZOMBIE,
+        None,
+        false,
+    ));
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     {
         let mut attributes = mob.attributes().lock();
         attributes.set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
@@ -634,9 +668,10 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         None,
         false,
     ));
-    let target_entity: SharedEntity = target.clone();
+    target.base().set_world(Arc::downgrade(test_world()));
+    let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
-    assert!(mob.do_hurt_target(test_world(), &target_entity));
+    assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
 
     assert_eq!(mob.velocity().x.to_bits(), 0.6_f64.to_bits());
     assert_eq!(mob.velocity().z.to_bits(), 0.6_f64.to_bits());
@@ -702,7 +737,7 @@ fn mob_tick_leash_applies_default_elastic_pull() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&holder);
     assert!(mob.set_leashed_to(&holder_entity));
 
     mob.tick_leash();
@@ -726,7 +761,7 @@ fn mob_leash_snap_drops_leash_and_disables_move_control() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = holder;
     assert!(mob.set_leashed_to(&holder_entity));
 
     mob.tick_leash();
@@ -755,7 +790,7 @@ fn pathfinder_leash_attach_pins_home_restriction_to_holder() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = holder;
     assert!(mob.set_leashed_to(&holder_entity));
 
     mob.tick_leash();
@@ -782,7 +817,7 @@ fn mob_on_leash_removed_clears_home_restriction() {
         None,
         false,
     ));
-    let holder_entity: SharedEntity = holder.clone();
+    let holder_entity: SharedEntity = holder;
     assert!(mob.set_leashed_to(&holder_entity));
     mob.tick_leash();
     assert!(mob.has_home());
@@ -798,11 +833,12 @@ fn mob_on_leash_removed_clears_home_restriction() {
 
 /// Builds a world with a ready chunk and a stone floor strip so pathfinding
 /// can plan walks between the mob and holder positions.
-fn leash_test_world(name: &'static str) -> Arc<World> {
+fn leash_test_world(name: &'static str) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(name);
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world(name);
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     for x in 7..=12 {
         assert!(world.set_block(
             BlockPos::new(x, 64, 8),
@@ -810,7 +846,7 @@ fn leash_test_world(name: &'static str) -> Arc<World> {
             UpdateFlags::UPDATE_ALL,
         ));
     }
-    world
+    world_fixture
 }
 
 fn leashed_pair(
@@ -846,8 +882,9 @@ fn leashed_pair(
 fn pathfinder_close_range_leash_navigates_toward_holder() {
     // Vanilla `PathfinderMob.closeRangeLeashBehaviour`: at close range the mob
     // re-enables MOVE and walks back toward the holder.
-    let world = leash_test_world("mob_leash_close_range");
-    let (mob, holder) = leashed_pair(&world, 1, 2);
+    let world_fixture = leash_test_world("mob_leash_close_range");
+    let world = &world_fixture.world;
+    let (mob, holder) = leashed_pair(world, 1, 2);
 
     mob.set_on_ground(true);
     assert!(mob.set_leashed_to(&holder));
@@ -907,7 +944,11 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         .goal_selector()
         .lock()
         .add_goal(1, TestPanicGoal);
-    mob.mob_base().goal_selector().lock().tick(mob.as_ref());
+    let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
+    mob.mob_base()
+        .goal_selector()
+        .lock()
+        .tick(mob.as_ref(), &mob_entity);
     assert!(mob.is_panicking());
 
     // Leave MOVE disabled as a snapped leash would, then confirm the panic
@@ -925,6 +966,17 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
             .lock()
             .is_control_disabled(GoalControl::Move)
     );
+}
+
+#[test]
+fn mob_that_cannot_be_leashed_refuses_a_lead() {
+    let mob = DespawnTestMob::new(None, false);
+    let holder = DespawnTestMob::with_position(2, DVec3::new(2.0, 0.0, 0.0), None, false);
+    assert!(mob.can_have_a_leash_attached_to(&holder));
+
+    *mob.can_be_leashed.lock() = false;
+
+    assert!(!mob.can_have_a_leash_attached_to(&holder));
 }
 
 #[test]
@@ -979,14 +1031,15 @@ fn mob_home_restriction_uses_vanilla_radius() {
 fn looting_collects_nearby_item_into_main_hand() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_looting_pickup");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_looting_pickup");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     mob.set_can_pick_up_loot(true);
 
@@ -995,7 +1048,7 @@ fn looting_collects_nearby_item_into_main_hand() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::STONE),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -1036,15 +1089,17 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
     // regressing behind the `isEffectiveAi` gate that skips the goal ticks.
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_looting_no_ai");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_looting_no_ai");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
+    let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
     mob.set_can_pick_up_loot(true);
     mob.set_no_ai(true);
     assert!(
@@ -1057,7 +1112,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::STONE),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -1070,7 +1125,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::mob_ai_step(mob.as_ref());
+    Mob::mob_ai_step(mob.as_ref(), &mob_entity);
 
     assert!(
         item.is_removed(),
@@ -1090,15 +1145,16 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
 fn looting_skips_when_mob_cannot_pick_up_loot() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_looting_disabled");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_looting_disabled");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     // A mob leaves `canPickUpLoot` off by default, so it should ignore the item.
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
 
     let item = Arc::new(ItemEntity::with_item(
@@ -1106,7 +1162,7 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::STONE),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -1194,17 +1250,18 @@ fn equip_routes_armor_to_its_armor_slot() {
 fn equip_replaces_worse_armor_and_drops_the_old_piece() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_equip_upgrade");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_equip_upgrade");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     world
-        .try_add_entity(Arc::clone(&mob) as SharedEntity)
+        .try_add_entity(Arc::<PigEntity>::clone(&mob))
         .expect("test mob should attach to the loaded chunk");
 
     // Wear a leather helmet and force it to always drop, so the swap is
@@ -1345,14 +1402,15 @@ fn equip_respects_prevent_armor_change_on_worn_gear() {
 fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("mob_equip_partial");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("mob_equip_partial");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     mob.set_can_pick_up_loot(true);
 
@@ -1363,7 +1421,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
         2,
         DVec3::new(8.0, 65.0, 8.0),
         ItemStack::new(&vanilla_items::IRON_HELMET).copy_with_count(3),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     item.set_no_pickup_delay();
 
@@ -1376,7 +1434,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::pick_up_item(mob.as_ref(), &world, &item);
+    Mob::pick_up_item(mob.as_ref(), world, &item);
 
     assert!(
         !item.is_removed(),
@@ -1485,18 +1543,19 @@ const BURN_ROLL_ATTEMPTS: i32 = 1_000;
 
 /// Builds an overworld test world with a ready chunk, the clock pinned to a
 /// fixed time of day, and a stone floor under the mob position.
-fn daylight_test_world(name: &'static str, total_ticks: i64) -> Arc<World> {
+fn daylight_test_world(name: &'static str, total_ticks: i64) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(name);
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world(name);
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     world.set_clock_total_ticks(&vanilla_world_clocks::OVERWORLD, total_ticks);
     assert!(world.set_block(
         BlockPos::new(8, 64, 8),
         vanilla_blocks::STONE.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    Arc::clone(&world)
+    world_fixture
 }
 
 fn daylit_mob(world: &Arc<World>, entity_type: EntityTypeRef) -> Arc<DespawnTestMob> {
@@ -1510,12 +1569,13 @@ fn daylit_mob(world: &Arc<World>, entity_type: EntityTypeRef) -> Arc<DespawnTest
 
 #[test]
 fn daylight_burning_ignites_unprotected_mob_in_burn_in_daylight_tag() {
-    let world = daylight_test_world("daylight_burn_ignite", OVERWORLD_DAY_TICKS);
+    let world_fixture = daylight_test_world("daylight_burn_ignite", OVERWORLD_DAY_TICKS);
+    let world = &world_fixture.world;
     assert!(
         world.monsters_burn(),
         "the pinned noon clock must enable MONSTERS_BURN"
     );
-    let mob = daylit_mob(&world, &vanilla_entities::ZOMBIE);
+    let mob = daylit_mob(world, &vanilla_entities::ZOMBIE);
 
     for _ in 0..BURN_ROLL_ATTEMPTS {
         Mob::tick_daylight_burning(mob.as_ref());
@@ -1532,8 +1592,9 @@ fn daylight_burning_ignites_unprotected_mob_in_burn_in_daylight_tag() {
 
 #[test]
 fn daylight_burning_damages_a_protecting_helmet_without_igniting() {
-    let world = daylight_test_world("daylight_burn_helmet", OVERWORLD_DAY_TICKS);
-    let mob = daylit_mob(&world, &vanilla_entities::ZOMBIE);
+    let world_fixture = daylight_test_world("daylight_burn_helmet", OVERWORLD_DAY_TICKS);
+    let world = &world_fixture.world;
+    let mob = daylit_mob(world, &vanilla_entities::ZOMBIE);
     let mut helmet = ItemStack::new(&vanilla_items::IRON_HELMET);
     assert!(
         helmet.is_damageable_item(),
@@ -1572,8 +1633,9 @@ fn daylight_burning_damages_a_protecting_helmet_without_igniting() {
 
 #[test]
 fn daylight_burning_is_gated_off_at_night_and_in_the_nether() {
-    let night_world = daylight_test_world("daylight_burn_night", OVERWORLD_NIGHT_TICKS);
-    let night_mob = daylit_mob(&night_world, &vanilla_entities::ZOMBIE);
+    let night_world_fixture = daylight_test_world("daylight_burn_night", OVERWORLD_NIGHT_TICKS);
+    let night_world = &night_world_fixture.world;
+    let night_mob = daylit_mob(night_world, &vanilla_entities::ZOMBIE);
     assert!(
         !night_world.monsters_burn(),
         "the pinned midnight clock must disable MONSTERS_BURN"
@@ -1587,13 +1649,14 @@ fn daylight_burning_is_gated_off_at_night_and_in_the_nether() {
     }
 
     init_vanilla_registry();
-    let nether = fresh_test_world_with_dimension_type(
+    let nether_fixture = fresh_test_world_with_dimension_type(
         "mob",
         "daylight_burn_nether",
         &vanilla_dimension_types::THE_NETHER,
     );
-    insert_ready_full_chunk(&nether, ChunkPos::new(0, 0));
-    let nether_mob = daylit_mob(&nether, &vanilla_entities::ZOMBIE);
+    let nether = &nether_fixture.world;
+    insert_ready_full_chunk(nether, ChunkPos::new(0, 0));
+    let nether_mob = daylit_mob(nether, &vanilla_entities::ZOMBIE);
     for _ in 0..BURN_ROLL_ATTEMPTS {
         Mob::tick_daylight_burning(nether_mob.as_ref());
         assert!(
@@ -1605,11 +1668,13 @@ fn daylight_burning_is_gated_off_at_night_and_in_the_nether() {
 
 #[test]
 fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
-    let world = daylight_test_world("daylight_burn_gate", OVERWORLD_DAY_TICKS);
+    let world_fixture = daylight_test_world("daylight_burn_gate", OVERWORLD_DAY_TICKS);
+    let world = &world_fixture.world;
 
-    let zombie = daylit_mob(&world, &vanilla_entities::ZOMBIE);
+    let zombie = daylit_mob(world, &vanilla_entities::ZOMBIE);
+    let zombie_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&zombie);
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::mob_ai_step(zombie.as_ref());
+        Mob::mob_ai_step(zombie.as_ref(), &zombie_entity);
         if zombie.is_on_fire() {
             break;
         }
@@ -1619,8 +1684,9 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
         "aiStep should burn a mob tagged burn_in_daylight"
     );
 
-    let pig = daylit_mob(&world, &vanilla_entities::PIG);
-    Mob::mob_ai_step(pig.as_ref());
+    let pig = daylit_mob(world, &vanilla_entities::PIG);
+    let pig_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&pig);
+    Mob::mob_ai_step(pig.as_ref(), &pig_entity);
     assert!(
         !pig.is_on_fire(),
         "aiStep must not burn a mob outside the burn_in_daylight tag"

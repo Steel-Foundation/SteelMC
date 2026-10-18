@@ -5,6 +5,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
+use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -153,7 +154,7 @@ use collision::world_aabb_bounds;
 /// - State changes
 pub trait BlockBehavior: Send + Sync {
     /// Returns the Rust type name of the concrete behavior implementation.
-    #[cfg(feature = "flint")]
+    #[cfg(feature = "test-framework")]
     #[must_use]
     #[expect(clippy::absolute_paths, reason = "easier for features")]
     fn type_name(&self) -> &'static str {
@@ -355,8 +356,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Called after a player successfully removes this block.
-    ///
-    /// Mirrors vanilla `Block.destroy(LevelAccessor, BlockPos, BlockState)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -631,6 +630,31 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns whether this behavior implements `BedBlock`
     fn is_bed(&self) -> bool {
+        false
+    }
+
+    /// Sleep height
+    ///
+    /// `None` rejects sleeping
+    #[expect(unused_variables, reason = "only bed behaviors provide a sleep height")]
+    fn get_sleep_height(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> Option<f64> {
+        None
+    }
+
+    /// Sleep exit hook
+    #[expect(
+        unused_variables,
+        reason = "only blocks with leave-sleep behavior override this hook"
+    )]
+    fn on_stop_sleeping(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {}
+
+    /// Returns whether this behavior implements vanilla `LiquidBlock`.
+    fn is_liquid_block(&self) -> bool {
         false
     }
 
@@ -1052,6 +1076,17 @@ pub trait BlockBehavior: Send + Sync {
         BlockEntityCreation::Unimplemented
     }
 
+    /// Returns the beam tint this block contributes to a beacon beam passing through it.
+    ///
+    /// Steel models Vanilla's `BeaconBeamBlock` marker interface as a trait method so third
+    /// party blocks can join a beacon beam without a new interface: `None` means the block is
+    /// not a beam block, matching a Vanilla class that does not implement `BeaconBeamBlock`.
+    ///
+    /// Vanilla parity: `BeaconBeamBlock.getColor()`.
+    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        None
+    }
+
     /// Returns the server ticker selected by this live block state and entity type.
     ///
     /// Mirrors Vanilla `EntityBlock.getTicker`. Selection runs without chunk,
@@ -1243,6 +1278,15 @@ pub trait BlockBehavior: Send + Sync {
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
         None
+    }
+
+    /// Whether this block's item may be stored inside container items such as
+    /// shulker boxes and bundles.
+    ///
+    /// Vanilla gates this on the item class, but shulker boxes share
+    /// `BlockItem`, so the rule lives on the block instead.
+    fn fits_inside_container_items(&self) -> bool {
+        true
     }
 }
 

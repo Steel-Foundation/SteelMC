@@ -8,7 +8,7 @@ use text_components::TextComponent;
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryEntry, RegistryExt, RegistryTags, TaggedRegistryExt,
+    REGISTRY, RegistryExt, RegistryTags, TaggedRegistryExt,
     blocks::BlockRef,
     data_components::{
         DataComponentMap,
@@ -22,6 +22,8 @@ use crate::{
 pub struct Item {
     pub key: Identifier,
     pub components: DataComponentMap,
+    /// The block held by vanilla `BlockItem`
+    pub block: Option<BlockRef>,
     /// The item key returned when this item is used in crafting (e.g., "bucket" from `milk_bucket`).
     /// Stored as an Identifier to avoid circular reference issues during initialization.
     pub craft_remainder: Option<Identifier>,
@@ -49,6 +51,7 @@ impl Item {
         Self {
             key,
             components,
+            block: None,
             craft_remainder,
             id: OnceLock::new(),
         }
@@ -56,16 +59,20 @@ impl Item {
 
     #[must_use]
     pub fn from_block(block: BlockRef, item_name: TextComponent) -> Self {
-        Self::new(block.key.clone(), item_name, None)
+        let mut item = Self::new(block.key.clone(), item_name, None);
+        item.block = Some(block);
+        item
     }
 
     #[must_use]
     pub fn from_block_custom_name(
-        _block: BlockRef,
+        block: BlockRef,
         name: &'static str,
         item_name: TextComponent,
     ) -> Self {
-        Self::new(Identifier::vanilla_static(name), item_name, None)
+        let mut item = Self::new(Identifier::vanilla_static(name), item_name, None);
+        item.block = Some(block);
+        item
     }
 
     /// Builder method to set a component on this item. Used during static initialization.
@@ -107,7 +114,6 @@ pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
     items_by_key: FxHashMap<Identifier, usize>,
     items_by_block: FxHashMap<Identifier, usize>,
-    block_items_by_id: Vec<bool>,
     tags: RegistryTags,
     allows_registering: bool,
 }
@@ -130,7 +136,6 @@ impl ItemRegistry {
             items_by_id: Vec::new(),
             items_by_key: FxHashMap::default(),
             items_by_block: FxHashMap::default(),
-            block_items_by_id: Vec::new(),
             tags: RegistryTags::default(),
             allows_registering: true,
         }
@@ -147,7 +152,6 @@ impl ItemRegistry {
         assert_eq!(*cached, id, "item registered with conflicting id");
         self.items_by_key.insert(item.key.clone(), id);
         self.items_by_id.push(item);
-        self.block_items_by_id.push(false);
 
         id
     }
@@ -162,18 +166,14 @@ impl ItemRegistry {
             panic!("Cannot associate an unregistered item with a block");
         };
         self.items_by_block.insert(block.key.clone(), item_id);
-        self.block_items_by_id[item_id] = true;
     }
 
     /// Returns whether this item is Vanilla's `BlockItem` or one of its subclasses.
     ///
-    /// `BlockItem` construction registers its block-to-item association, so the
-    /// extracted association is also the complete class-hierarchy capability.
+    /// The extracted blockItem target identifies the class capability
     #[must_use]
-    pub fn is_block_item(&self, item: ItemRef) -> bool {
-        self.block_items_by_id
-            .get(item.id())
-            .is_some_and(|&is_block_item| is_block_item)
+    pub const fn is_block_item(&self, item: ItemRef) -> bool {
+        item.block.is_some()
     }
 
     /// Returns the item associated with this block, or air when it has no block item.

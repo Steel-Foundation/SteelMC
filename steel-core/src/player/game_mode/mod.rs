@@ -7,6 +7,7 @@ use std::mem::swap;
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent, COpenSignEditor,
     CPlayerInfoUpdate, CSetCamera, CSetEntityMotion, CSetHeldSlot, GameEventType, PlayerAction,
@@ -17,11 +18,12 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::damage_type::DamageType;
 use steel_registry::data_components::components::PiercingWeapon;
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
-use steel_utils::types::{Difficulty, GameType, InteractionHand};
+use steel_utils::types::{Difficulty, GameType, InteractionHand, SignTextSlot};
 use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
@@ -40,17 +42,18 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;
-use crate::player::movement::wrap_degrees;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 use steel_utils::axis::Axis;
 
+mod adventure_mode;
 pub mod block_breaking;
 mod block_interaction;
 mod entity_interaction;
 mod item_interaction;
 mod player_methods;
 mod raycast;
+mod swing;
 
 pub(super) use block_breaking::BlockBreakingManager;
 pub use item_interaction::{use_item, use_item_on};

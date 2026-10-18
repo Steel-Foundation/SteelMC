@@ -6,6 +6,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
+use steel_math::DEGREE_360;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
@@ -132,7 +133,8 @@ impl ExperienceOrbEntity {
         }
     }
 
-    /// Vanilla `ExperienceOrb.getExperienceValue`.
+    /// Splits a total XP amount into the largest single orb value at most
+    /// `max_value`, from a fixed tier table capped at 2477.
     #[must_use]
     pub const fn get_experience_value(max_value: i32) -> i32 {
         if max_value >= 2477 {
@@ -195,11 +197,11 @@ impl ExperienceOrbEntity {
     }
 
     fn initialize_spawn_movement(&self) {
-        let yaw = rand::random::<f32>() * 360.0;
+        let yaw = rand::random_range(0.0..DEGREE_360);
         let velocity = DVec3::new(
-            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
-            f64::from(rand::random::<f32>()) * 0.2 * 2.0,
-            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+            f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
+            f64::from(rand::random_range(0.0f32..0.2)) * 2.0,
+            f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
         );
         self.base.set_rotation((yaw, 0.0));
         self.base.set_velocity(velocity);
@@ -400,7 +402,7 @@ impl Entity for ExperienceOrbEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         self.set_old_position_to_current();
 
@@ -440,7 +442,7 @@ impl Entity for ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if self
+        if Arc::clone(&self)
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {

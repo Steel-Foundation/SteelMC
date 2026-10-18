@@ -36,7 +36,7 @@ fn committed_move_updates_chunk_index_for_loaded_destination() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -67,7 +67,7 @@ fn validate_move_rejects_manager_owned_unloaded_destination() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -97,7 +97,7 @@ fn commit_move_rejects_destination_unloaded_after_validation() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -132,7 +132,7 @@ fn chunk_recovery_restores_same_entity_arc_before_final_unload() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -195,7 +195,7 @@ fn live_or_unloading_membership_excludes_removed_live_entities() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(manager.contains_live_or_unloading_entity(&entity));
@@ -217,7 +217,7 @@ fn live_or_unloading_membership_includes_unload_retained_entities() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -241,12 +241,12 @@ fn chunk_unload_retains_manager_owned_passenger_tree() {
 
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -296,12 +296,12 @@ fn passenger_chunk_unload_hides_passenger_without_unloading_vehicle_tree() {
 
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -351,7 +351,7 @@ fn loaded_entity_tree_can_restore_passenger_in_hidden_chunk() {
 
     let changes = manager
         .add_live_entity_tree(
-            &[vehicle.clone(), passenger.clone()],
+            &[Arc::clone(&vehicle), Arc::clone(&passenger)],
             EntityOwnership::ManagerOwned,
         )
         .expect("persisted tree should restore even when passenger chunk is hidden");
@@ -377,12 +377,12 @@ fn attached_passenger_can_move_while_its_own_chunk_is_hidden() {
 
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -417,12 +417,12 @@ fn passenger_move_from_hidden_to_loaded_chunk_becomes_accessible() {
 
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -458,12 +458,12 @@ fn passenger_move_from_loaded_to_hidden_chunk_becomes_inaccessible() {
 
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -500,12 +500,12 @@ fn hidden_chunk_passenger_is_not_ticked_by_loaded_vehicle() {
 
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -546,7 +546,7 @@ fn non_passenger_tick_snapshots_old_position_and_rotation_before_tick() {
     entity.base().set_old_rotation((-30.0, -10.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -579,12 +579,12 @@ fn passenger_tick_snapshots_old_position_and_rotation_before_ride_tick() {
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 

@@ -698,3 +698,130 @@ fn duplicate_stat_fails_conversion() {
     PlayerStatsFile::from_persistent_stats(&stats)
         .expect_err("conversion should have failed with duplicate stat");
 }
+
+#[tokio::test]
+async fn in_memory_player_data_round_trips_per_domain() {
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(7);
+    let data = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("player file should convert");
+
+    storage
+        .save_domain_data("lobby", uuid, &data)
+        .await
+        .expect("player data should be stored");
+
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("player data should load")
+        .expect("player data should be present");
+    assert_eq!(loaded.pos, data.pos);
+    assert_eq!(loaded.game_mode, data.game_mode);
+
+    assert!(
+        storage
+            .load_domain("other", uuid)
+            .await
+            .expect("player data should load")
+            .is_none(),
+        "domains must not share player data"
+    );
+    assert!(
+        storage
+            .load_domain("lobby", Uuid::from_u128(8))
+            .await
+            .expect("player data should load")
+            .is_none(),
+        "an unsaved player must have no data"
+    );
+
+    storage
+        .save_global(
+            uuid,
+            &GlobalPlayerData {
+                last_active_domain: "lobby".to_owned(),
+            },
+        )
+        .await
+        .expect("global data should be stored");
+    assert_eq!(
+        storage
+            .load_global(uuid)
+            .await
+            .expect("global data should load")
+            .map(|data| data.last_active_domain),
+        Some("lobby".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn in_memory_known_player_cache_rejects_stale_writes() {
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(42);
+    let players =
+        KnownPlayers::from_entries([KnownPlayer::with_expiration(uuid, "Steve", 1_234_567)]);
+
+    let stale = storage
+        .save_known_players_if_current(&players, || false)
+        .await;
+    assert!(matches!(stale, Ok(false)));
+    assert_eq!(
+        storage
+            .load_known_players()
+            .await
+            .expect("known players should load")
+            .by_uuid(uuid)
+            .map(KnownPlayer::last_known_name),
+        None
+    );
+
+    let saved = storage
+        .save_known_players_if_current(&players, || true)
+        .await;
+    assert!(matches!(saved, Ok(true)));
+    assert_eq!(
+        storage
+            .load_known_players()
+            .await
+            .expect("known players should load")
+            .by_uuid(uuid)
+            .map(KnownPlayer::last_known_name),
+        Some("Steve")
+    );
+}
+
+#[tokio::test]
+async fn in_memory_permission_subjects_round_trip() {
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(3);
+    let mut subjects = PermissionSubjectIndex::new();
+    subjects.set(
+        uuid,
+        PermissionSubjectState::new(vec!["builder".to_owned()], PermissionSet::new()),
+    );
+
+    assert!(
+        storage
+            .load_permission_subjects()
+            .await
+            .expect("permission subjects should load")
+            .entries()
+            .next()
+            .is_none(),
+        "a fresh storage must hold no permission subjects"
+    );
+
+    storage
+        .save_permission_subjects(&subjects)
+        .await
+        .expect("permission subjects should be stored");
+    assert_eq!(
+        storage
+            .load_permission_subjects()
+            .await
+            .expect("permission subjects should load"),
+        subjects
+    );
+}

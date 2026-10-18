@@ -15,6 +15,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSource};
 use steel_utils::types::{Difficulty, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
 use super::DEFAULT_XP_REWARD;
 use crate::behavior::init_behaviors;
@@ -140,11 +141,15 @@ impl LevelReader for SpawnSurfaceLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        OverworldNoiseSettings::MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        OverworldNoiseSettings::HEIGHT
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 
@@ -191,7 +196,8 @@ fn monster_constructor_defaults_match_vanilla() {
 
 #[test]
 fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
-    let world = fresh_test_world("monster_spawn_bright_overworld");
+    let world_fixture = fresh_test_world("monster_spawn_bright_overworld");
+    let world = &world_fixture.world;
     let pos = BlockPos::new(8, 65, 8);
 
     // Fresh chunks read full sky light, so the sky-light roll must beat 15 to
@@ -203,7 +209,7 @@ fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
         "test seed must roll under the sky-light value"
     );
     assert!(!TestMonster::is_dark_enough_to_spawn(
-        &world,
+        world,
         pos,
         &mut low_roll
     ));
@@ -214,7 +220,7 @@ fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
         "test seed must roll at or above the sky-light value"
     );
     assert!(!TestMonster::is_dark_enough_to_spawn(
-        &world,
+        world,
         pos,
         &mut high_roll
     ));
@@ -222,18 +228,19 @@ fn monster_is_dark_enough_to_spawn_rejects_bright_overworld() {
 
 #[test]
 fn monster_is_dark_enough_to_spawn_accepts_dark_nether() {
-    let world = fresh_test_world_with_dimension_type(
+    let world_fixture = fresh_test_world_with_dimension_type(
         "monster",
         "nether_spawn_dark",
         &vanilla_dimension_types::THE_NETHER,
     );
+    let world = &world_fixture.world;
     let pos = BlockPos::new(8, 65, 8);
 
     // The nether has no sky light and its light test accepts 7, so a fresh
     // chunk is always dark enough regardless of the roll.
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(5120));
     assert!(TestMonster::is_dark_enough_to_spawn(
-        &world,
+        world,
         pos,
         &mut random
     ));
@@ -323,13 +330,15 @@ fn monster_spawn_rules_consult_block_specific_spawn_surfaces() {
 fn monster_spawn_rules_combine_light_and_surface_checks() {
     init_vanilla_registry();
     init_behaviors();
-    let overworld = fresh_test_world("monster_spawn_rules_overworld");
-    let nether = fresh_test_world_with_dimension_type(
+    let overworld_fixture = fresh_test_world("monster_spawn_rules_overworld");
+    let overworld = &overworld_fixture.world;
+    let nether_fixture = fresh_test_world_with_dimension_type(
         "monster",
         "monster_spawn_rules_nether",
         &vanilla_dimension_types::THE_NETHER,
     );
-    for (name, world) in [("overworld", &overworld), ("nether", &nether)] {
+    let nether = &nether_fixture.world;
+    for (name, world) in [("overworld", overworld), ("nether", nether)] {
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let pos = BlockPos::new(8, 65, 8);
         assert!(
@@ -377,12 +386,13 @@ fn monster_spawn_rules_combine_light_and_surface_checks() {
 fn monster_any_light_spawn_rules_skip_light_but_keep_surface_checks() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world_with_dimension_type(
+    let world_fixture = fresh_test_world_with_dimension_type(
         "monster",
         "any_light_spawn_rules",
         &vanilla_dimension_types::THE_NETHER,
     );
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
     assert!(world.set_block(
         pos.below(),
@@ -392,19 +402,19 @@ fn monster_any_light_spawn_rules_skip_light_but_keep_surface_checks() {
 
     assert!(!TestMonster::check_any_light_monster_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &world,
+        world,
         EntitySpawnReason::Natural,
         BlockPos::new(12, 65, 8),
     ));
     assert!(TestMonster::check_any_light_monster_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &world,
+        world,
         EntitySpawnReason::Natural,
         pos,
     ));
     assert!(TestMonster::check_any_light_monster_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &world,
+        world,
         EntitySpawnReason::Spawner,
         BlockPos::new(12, 65, 8),
     ));
@@ -414,16 +424,18 @@ fn monster_any_light_spawn_rules_skip_light_but_keep_surface_checks() {
 fn monster_surface_spawn_rules_require_sky_visibility_or_spawner() {
     init_vanilla_registry();
     init_behaviors();
-    let overworld = fresh_test_world("monster_surface_spawn_rules");
-    let nether = fresh_test_world_with_dimension_type(
+    let overworld_fixture = fresh_test_world("monster_surface_spawn_rules");
+    let overworld = &overworld_fixture.world;
+    let nether_fixture = fresh_test_world_with_dimension_type(
         "monster",
         "monster_surface_spawn_rules_nether",
         &vanilla_dimension_types::THE_NETHER,
     );
+    let nether = &nether_fixture.world;
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(0));
 
     // The nether never sees the sky, so even a valid dark surface fails.
-    insert_ready_full_chunk(&nether, ChunkPos::new(0, 0));
+    insert_ready_full_chunk(nether, ChunkPos::new(0, 0));
     let nether_pos = BlockPos::new(8, 65, 8);
     assert!(nether.set_block(
         nether_pos.below(),
@@ -432,21 +444,21 @@ fn monster_surface_spawn_rules_require_sky_visibility_or_spawner() {
     ));
     assert!(!TestMonster::check_surface_monsters_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &nether,
+        nether,
         EntitySpawnReason::Natural,
         nether_pos,
         &mut random,
     ));
     assert!(TestMonster::check_surface_monsters_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &nether,
+        nether,
         EntitySpawnReason::Spawner,
         nether_pos,
         &mut random,
     ));
 
     // The bright overworld fails on the light requirement.
-    insert_ready_full_chunk(&overworld, ChunkPos::new(0, 0));
+    insert_ready_full_chunk(overworld, ChunkPos::new(0, 0));
     let overworld_pos = BlockPos::new(8, 65, 8);
     assert!(overworld.set_block(
         overworld_pos.below(),
@@ -455,7 +467,7 @@ fn monster_surface_spawn_rules_require_sky_visibility_or_spawner() {
     ));
     assert!(!TestMonster::check_surface_monsters_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &overworld,
+        overworld,
         EntitySpawnReason::Natural,
         overworld_pos,
         &mut random,
@@ -466,8 +478,9 @@ fn monster_surface_spawn_rules_require_sky_visibility_or_spawner() {
 fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("monster_peaceful_spawn_rules");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("monster_peaceful_spawn_rules");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
     assert!(world.set_block(
         pos.below(),
@@ -480,7 +493,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     // difficulty clause can refuse the spawn on Peaceful.
     assert!(TestMonster::check_monster_spawn_rules(
         &vanilla_entities::ZOMBIE,
-        &world,
+        world,
         EntitySpawnReason::TrialSpawner,
         pos,
         &mut random,
@@ -490,7 +503,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     assert!(
         !TestMonster::check_monster_spawn_rules(
             &vanilla_entities::ZOMBIE,
-            &world,
+            world,
             EntitySpawnReason::TrialSpawner,
             pos,
             &mut random,
@@ -500,7 +513,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     assert!(
         !TestMonster::check_any_light_monster_spawn_rules(
             &vanilla_entities::ZOMBIE,
-            &world,
+            world,
             EntitySpawnReason::TrialSpawner,
             pos,
         ),
@@ -509,7 +522,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     assert!(
         !TestMonster::check_surface_monsters_spawn_rules(
             &vanilla_entities::ZOMBIE,
-            &world,
+            world,
             EntitySpawnReason::Spawner,
             pos,
             &mut random,
@@ -519,7 +532,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     assert!(
         TestMonster::check_any_light_monster_spawn_rules(
             &vanilla_entities::COW,
-            &world,
+            world,
             EntitySpawnReason::TrialSpawner,
             pos,
         ),
@@ -530,7 +543,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     assert!(
         TestMonster::check_monster_spawn_rules(
             &vanilla_entities::ZOMBIE,
-            &world,
+            world,
             EntitySpawnReason::TrialSpawner,
             pos,
             &mut random,
@@ -541,15 +554,17 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
 
 #[test]
 fn monster_walk_target_value_prefers_darkness() {
-    let overworld = fresh_test_world("monster_walk_target_overworld");
-    let nether = fresh_test_world_with_dimension_type(
+    let overworld_fixture = fresh_test_world("monster_walk_target_overworld");
+    let overworld = &overworld_fixture.world;
+    let nether_fixture = fresh_test_world_with_dimension_type(
         "monster",
         "monster_walk_target_nether",
         &vanilla_dimension_types::THE_NETHER,
     );
+    let nether = &nether_fixture.world;
     let pos = BlockPos::new(8, 65, 8);
 
-    let bright_monster = TestMonster::with_world(Some(&overworld));
+    let bright_monster = TestMonster::with_world(Some(overworld));
     assert!(
         bright_monster.get_walk_target_value_monster(pos) < 0.0,
         "bright positions should be penalized"
@@ -561,7 +576,7 @@ fn monster_walk_target_value_prefers_darkness() {
         bright_monster.get_walk_target_value(pos) < 0.0,
         "the PathfinderMob default must dispatch monsters to the dark preference"
     );
-    let dark_monster = TestMonster::with_world(Some(&nether));
+    let dark_monster = TestMonster::with_world(Some(nether));
     assert!(
         dark_monster.get_walk_target_value_monster(pos) > 0.0,
         "dark positions should be preferred"
@@ -572,41 +587,45 @@ fn monster_walk_target_value_prefers_darkness() {
 fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
     init_vanilla_registry();
     init_behaviors();
-    let bright_world = fresh_test_world("monster_ai_step_bright");
-    insert_ready_full_chunk(&bright_world, ChunkPos::new(0, 0));
+    let bright_world_fixture = fresh_test_world("monster_ai_step_bright");
+    let bright_world = &bright_world_fixture.world;
+    insert_ready_full_chunk(bright_world, ChunkPos::new(0, 0));
     let bright_mob = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&bright_world),
+        Arc::downgrade(bright_world),
     ));
     bright_world
         .try_add_entity(Arc::clone(&bright_mob) as SharedEntity)
         .expect("test endermite should attach to the loaded chunk");
 
-    bright_mob.ai_step();
+    let bright_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&bright_mob);
+    bright_mob.ai_step(&bright_mob_entity);
 
     // Bright light adds 2 via `Monster.updateNoActionTime` plus the standard
     // per-tick increment from `Mob.serverAiStep`.
     assert_eq!(bright_mob.no_action_time(), 3);
 
-    let dark_world = fresh_test_world_with_dimension_type(
+    let dark_world_fixture = fresh_test_world_with_dimension_type(
         "monster",
         "monster_ai_step_dark",
         &vanilla_dimension_types::THE_NETHER,
     );
-    insert_ready_full_chunk(&dark_world, ChunkPos::new(0, 0));
+    let dark_world = &dark_world_fixture.world;
+    insert_ready_full_chunk(dark_world, ChunkPos::new(0, 0));
     let dark_mob = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&dark_world),
+        Arc::downgrade(dark_world),
     ));
     dark_world
         .try_add_entity(Arc::clone(&dark_mob) as SharedEntity)
         .expect("test endermite should attach to the loaded chunk");
 
-    dark_mob.ai_step();
+    let dark_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&dark_mob);
+    dark_mob.ai_step(&dark_mob_entity);
 
     assert_eq!(dark_mob.no_action_time(), 1);
 }
@@ -614,18 +633,19 @@ fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
 #[test]
 fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
     init_vanilla_registry();
-    let world = fresh_test_world("monster_spawn_obstruction");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("monster_spawn_obstruction");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let mob = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
     let mob_pos = mob.block_position();
 
     assert!(
-        mob.check_spawn_obstruction(&world),
+        mob.check_spawn_obstruction(world),
         "an empty spawn box should be unobstructed"
     );
 
@@ -635,7 +655,7 @@ fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
         UpdateFlags::UPDATE_ALL,
     ));
     assert!(
-        !mob.check_spawn_obstruction(&world),
+        !mob.check_spawn_obstruction(world),
         "liquid inside the spawn box must reject the spawn"
     );
 
@@ -645,7 +665,7 @@ fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
         UpdateFlags::UPDATE_ALL,
     ));
     assert!(
-        !mob.check_spawn_obstruction(&world),
+        !mob.check_spawn_obstruction(world),
         "solid blocks inside the spawn box must reject the spawn"
     );
 
@@ -654,24 +674,25 @@ fn monster_check_spawn_obstruction_rejects_blocks_and_liquids() {
         vanilla_blocks::AIR.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    assert!(mob.check_spawn_obstruction(&world));
+    assert!(mob.check_spawn_obstruction(world));
 }
 
 #[test]
 fn enemy_monsters_cannot_be_leashed() {
     init_vanilla_registry();
-    let world = fresh_test_world("enemy_leash");
+    let world_fixture = fresh_test_world("enemy_leash");
+    let world = &world_fixture.world;
     let hostile: SharedEntity = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
     let pig: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(2.0, 0.0, 0.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
 
     assert!(hostile.is_enemy(), "monsters are vanilla `Enemy`s");
@@ -705,12 +726,13 @@ fn enemy_monsters_cannot_be_leashed() {
 #[test]
 fn monster_downcasts_from_shared_entity() {
     init_vanilla_registry();
-    let world = fresh_test_world("monster_downcast");
+    let world_fixture = fresh_test_world("monster_downcast");
+    let world = &world_fixture.world;
     let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     ));
 
     assert!(endermite.is_monster());

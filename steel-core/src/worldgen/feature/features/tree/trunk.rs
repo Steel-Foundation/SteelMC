@@ -29,6 +29,12 @@ impl FeatureDecorationRunner {
                 base.height_rand_a,
                 base.height_rand_b,
             ),
+            TrunkPlacer::Poplar(base) => Self::sample_tree_height(
+                random,
+                base.base_height,
+                base.height_rand_a,
+                base.height_rand_b,
+            ),
             TrunkPlacer::Bending(placer) => Self::sample_tree_height(
                 random,
                 placer.base_height,
@@ -62,7 +68,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn place_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -155,11 +161,21 @@ impl FeatureDecorationRunner {
                 placer,
                 placement,
             ),
+            TrunkPlacer::Poplar(placer) => Self::place_poplar_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placer,
+                placement,
+            ),
         }
     }
 
     fn place_straight_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -181,8 +197,56 @@ impl FeatureDecorationRunner {
         }]
     }
 
+    fn place_poplar_tree_trunk(
+        region: &mut impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placer: &PoplarTrunkPlacer,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
+        let trunk_height_up_to_foliage_branches =
+            tree_height - placer.trunk_height_above_branches.sample(random);
+
+        for y in 0..tree_height {
+            let log_pos = origin.above_n(y);
+            let _ = Self::place_tree_log(region, registry, random, log_pos, config, placement);
+            let directions = Self::shuffled_directions(random, Self::VANILLA_DIRECTION_VALUES);
+
+            if trunk_height_up_to_foliage_branches - 1 != y {
+                continue;
+            }
+
+            let branches = placer.branch_amount.sample(random);
+            for direction in directions
+                .into_iter()
+                .filter(|direction| direction.axis() != Axis::Y)
+                .take(branches as usize)
+            {
+                let _ = Self::place_tree_log_with_axis(
+                    region,
+                    registry,
+                    random,
+                    log_pos.relative(direction),
+                    direction.axis(),
+                    config,
+                    placement,
+                );
+            }
+        }
+
+        vec![FoliageAttachment {
+            pos: origin.above_n(trunk_height_up_to_foliage_branches),
+            radius_offset: 0,
+            double_trunk: false,
+        }]
+    }
+
     fn place_forking_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -260,7 +324,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_giant_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -340,7 +404,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_mega_jungle_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -383,7 +447,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_bending_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -431,7 +495,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_upwards_branching_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -491,7 +555,7 @@ impl FeatureDecorationRunner {
 
     #[expect(clippy::too_many_arguments, reason = "mirrors vanilla branch state")]
     fn place_upwards_branching_tree_branch(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -557,7 +621,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_cherry_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -647,7 +711,7 @@ impl FeatureDecorationRunner {
 
     #[expect(clippy::too_many_arguments, reason = "mirrors vanilla branch state")]
     fn generate_cherry_tree_branch(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -725,7 +789,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_dark_oak_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -842,7 +906,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_fancy_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -953,7 +1017,7 @@ impl FeatureDecorationRunner {
     }
 
     fn make_fancy_tree_limb(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         start_pos: BlockPos,
@@ -1036,7 +1100,7 @@ impl FeatureDecorationRunner {
     }
 
     fn make_fancy_tree_branches(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         height: i32,
@@ -1065,7 +1129,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log_with_axis(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1077,7 +1141,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,
@@ -1090,7 +1154,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_fancy_tree_log(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1101,7 +1165,7 @@ impl FeatureDecorationRunner {
         Self::place_tree_log_with_axis(region, registry, random, pos, axis, config, placement)
     }
 
-    fn with_axis_if_present(state: BlockStateId, axis: Axis) -> BlockStateId {
+    pub(super) fn with_axis_if_present(state: BlockStateId, axis: Axis) -> BlockStateId {
         if state.try_get_value(&BlockStateProperties::AXIS).is_some() {
             state.set_value(&BlockStateProperties::AXIS, axis)
         } else {
@@ -1127,14 +1191,14 @@ impl FeatureDecorationRunner {
     }
 
     fn place_below_trunk_block(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) {
-        let Some(state) = Self::sample_block_state_provider_optional(
+        let Some(state) = BlockStateProviderEvaluator::sample_block_state_provider_optional(
             region,
             registry,
             random,
@@ -1147,7 +1211,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1158,7 +1222,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,
@@ -1170,7 +1234,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log_if_free(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1185,7 +1249,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log_growing_through(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1197,7 +1261,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::sample_block_state_provider(
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,

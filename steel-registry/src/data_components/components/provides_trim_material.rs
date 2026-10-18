@@ -66,13 +66,11 @@ impl HashComponent for ProvidesTrimMaterial {
 mod tests {
     use std::io::Cursor;
 
-    use rustc_hash::FxHashMap;
     use simdnbt::borrow::read_tag;
     use simdnbt::{FromNbtTag as _, ToNbtTag as _};
     use steel_utils::Identifier;
-    use steel_utils::codec::VarInt;
     use steel_utils::hash::HashComponent as _;
-    use steel_utils::serial::{PrefixedWrite as _, ReadFrom as _, WriteTo as _};
+    use steel_utils::serial::{ReadFrom as _, WriteTo as _};
     use text_components::{TextComponent, format::Color};
 
     use super::ProvidesTrimMaterial;
@@ -80,7 +78,7 @@ mod tests {
     use crate::data_components::vanilla_components::PROVIDES_TRIM_MATERIAL;
     use crate::init_vanilla_registry;
     use crate::item_stack::ItemStack;
-    use crate::trim_material::{MaterialAssetGroup, MaterialAssetInfo, TrimMaterialValue};
+    use crate::trim_material::TrimMaterialValue;
     use crate::{REGISTRY, vanilla_items, vanilla_trim_materials};
 
     fn parse_component(tag: simdnbt::owned::NbtTag) -> Option<ProvidesTrimMaterial> {
@@ -93,15 +91,8 @@ mod tests {
     fn inline_component() -> ProvidesTrimMaterial {
         let mut description = TextComponent::plain("Custom trim material");
         description.format.color = Some(Color::Rgb(0x12, 0x34, 0x56));
-        let overrides = FxHashMap::from_iter([(
-            Identifier::vanilla_static("iron"),
-            MaterialAssetInfo::new("custom_darker").expect("test suffix should be valid"),
-        )]);
         ProvidesTrimMaterial::new(RegistryHolder::direct(TrimMaterialValue::new(
-            MaterialAssetGroup::new(
-                MaterialAssetInfo::new("custom").expect("test suffix should be valid"),
-                overrides,
-            ),
+            Identifier::vanilla_static("trim/custom"),
             description,
         )))
     }
@@ -156,32 +147,6 @@ mod tests {
                 .map(|color| color.to_str().into_owned()),
             Some("#123456".to_owned())
         );
-    }
-
-    #[test]
-    fn invalid_asset_suffixes_are_rejected_by_both_codecs() {
-        init_vanilla_registry();
-        assert!(MaterialAssetInfo::new("Bad Suffix").is_err());
-
-        let mut network = Vec::new();
-        VarInt(0)
-            .write(&mut network)
-            .expect("direct holder discriminator should encode");
-        "Bad Suffix"
-            .write_prefixed::<VarInt>(&mut network)
-            .expect("invalid test suffix should encode as a string");
-        VarInt(0)
-            .write(&mut network)
-            .expect("empty override map should encode");
-        TextComponent::plain("Invalid material")
-            .write(&mut network)
-            .expect("description should encode");
-        assert!(ProvidesTrimMaterial::read(&mut Cursor::new(network.as_slice())).is_err());
-
-        let mut invalid = simdnbt::owned::NbtCompound::new();
-        invalid.insert("asset_name", "Bad Suffix");
-        invalid.insert("description", "Invalid material");
-        assert!(parse_component(simdnbt::owned::NbtTag::Compound(invalid)).is_none());
     }
 
     #[test]

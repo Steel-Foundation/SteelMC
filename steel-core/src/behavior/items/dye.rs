@@ -40,7 +40,7 @@ impl ItemBehavior for DyeItem {
 
         sheep.play_sound(&ITEM_DYE_USE, 1.0, 1.0);
         sheep.set_color(dye_color);
-        stack.shrink(1);
+        stack.shrink_one();
 
         InteractionResult::Success
     }

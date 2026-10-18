@@ -1,4 +1,3 @@
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 use crate::entity::entities::LeashFenceKnotEntity;
@@ -6,6 +5,7 @@ use crate::entity::{Entity, Mob, SharedEntity, WeakEntity};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::DEG_TO_RAD;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
@@ -210,7 +210,7 @@ pub trait Leashable: Entity {
         BASE_HORIZONTAL_FRICTION
     }
 
-    /// Returns whether this entity can have a leash attached to another. Mirrors Vanilla's `Leashable.canHaveALeashAttachedTo`.
+    /// Returns whether this entity can have a leash attached to another.
     fn can_have_a_leash_attached_to(&self, holder: &dyn Entity) -> bool {
         self.id() != holder.id()
             && self.leash_distance_to(holder) <= self.leash_snap_distance()
@@ -272,7 +272,7 @@ pub trait Leashable: Entity {
         }
     }
 
-    /// Ticks the leash *holding* this entity. Mirrors Vanilla's `Leashable.tickLeash`.
+    /// Ticks the leash *holding* this entity.
     fn tick_leash(&self) {
         self.restore_leash_from_save();
 
@@ -325,7 +325,7 @@ pub trait Leashable: Entity {
         }
     }
 
-    /// Breaks the leash and drops a lead item. Mirrors Vanilla's `Leashable.dropLeash`.
+    /// Breaks the leash and drops a lead item.
     fn drop_leash(&self) {
         if self.leash_holder().is_none() {
             return;
@@ -341,7 +341,7 @@ pub trait Leashable: Entity {
         }
     }
 
-    /// Removes the leash without dropping a lead item. Mirrors Vanilla's `Leashable.removeLeash`.
+    /// Removes the leash without dropping a lead item.
     fn remove_leash(&self) {
         if self.leash_holder().is_some()
             && let Some(holder) = self.remove_leash_state()
@@ -529,14 +529,14 @@ pub(super) fn compute_elastic_interaction(
     holder: &dyn Entity,
     slack_distance: f64,
 ) -> Option<LeashWrench> {
-    let entity_y_rot = entity.rotation().0 * PI / 180.0;
+    let entity_y_rot = entity.rotation().0 * DEG_TO_RAD;
     let entity_attach_vector = rotate_y(
         ENTITY_LEASH_ATTACHMENT_POINT * leash_dimensions(entity),
         -entity_y_rot,
     );
     let entity_attach_pos = entity.position() + entity_attach_vector;
 
-    let holder_y_rot = holder.rotation().0 * PI / 180.0;
+    let holder_y_rot = holder.rotation().0 * DEG_TO_RAD;
     let holder_attach_vector = rotate_y(
         LEASHER_ATTACHMENT_POINT * leash_dimensions(holder),
         -holder_y_rot,

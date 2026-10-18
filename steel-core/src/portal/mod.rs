@@ -9,6 +9,7 @@ use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
+use steel_math::DEGREE_90;
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::vanilla_game_rules::{
@@ -37,7 +38,8 @@ pub enum PortalKind {
 }
 
 impl PortalKind {
-    /// Returns vanilla `Portal.getPortalTransitionTime`.
+    /// Returns the number of ticks an entity must stand in this portal before
+    /// it triggers, accounting for whether the entity is invulnerable.
     #[must_use]
     pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
         let player_invulnerable = entity
@@ -295,7 +297,7 @@ impl TeleportTransition {
     #[must_use]
     pub fn with_position(&self, position: DVec3) -> Self {
         Self {
-            target_world: self.target_world.clone(),
+            target_world: Arc::clone(&self.target_world),
             position,
             rotation: self.rotation,
             velocity: self.velocity,
@@ -379,7 +381,7 @@ fn resolve_rotation(
 }
 
 const fn clamp_pitch(pitch: f32) -> f32 {
-    pitch.clamp(-90.0, 90.0)
+    pitch.clamp(-DEGREE_90, DEGREE_90)
 }
 
 fn resolve_velocity(

@@ -625,8 +625,6 @@ pub fn has_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool {
 }
 
 /// Returns whether `new_aabb` collides with shapes that `old_aabb` did not.
-///
-/// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
 #[must_use]
 pub fn is_colliding_with_new_shapes(
     world: &impl CollisionWorld,
@@ -955,8 +953,9 @@ mod tests {
     fn live_block_collisions_use_bounded_region_reads() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("bounded_collision_reads");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("bounded_collision_reads");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let block_pos = BlockPos::new(0, 64, 0);
         assert!(world.set_block(
             block_pos,
@@ -964,7 +963,7 @@ mod tests {
             UpdateFlags::UPDATE_NONE,
         ));
 
-        let collisions = WorldCollisionProvider::new(&world)
+        let collisions = WorldCollisionProvider::new(world)
             .get_block_collisions(&WorldAabb::new(0.25, 64.0, 0.25, 0.75, 65.0, 0.75));
 
         assert!(collisions.contains(&WorldAabb::new(0.0, 64.0, 0.0, 1.0, 65.0, 1.0)));
