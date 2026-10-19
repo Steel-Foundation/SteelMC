@@ -60,15 +60,6 @@ impl SteelConfig {
             Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
         })
     }
-
-    /// Logs warnings about unusual but valid settings. Call after the logger is initialized.
-    pub fn log_warnings(&self) {
-        if self.server.simulation_distance == 0 {
-            log::warn!(
-                "simulation_distance is 0: only the player's own chunk receives entity updates, this can cause frozen activity across chunk borders"
-            );
-        }
-    }
 }
 
 const fn empty_worlds_config() -> WorldsConfig {
@@ -84,7 +75,7 @@ const fn empty_worlds_config() -> WorldsConfig {
 }
 
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.
-pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
+pub fn load_or_create(path: &Path) -> Result<(SteelConfig, Vec<String>), String> {
     let mut config = if path.exists() {
         let config_str = fs::read_to_string(path)
             .map_err(|e| format!("failed to read config file {}: {e}", path.display()))?;
@@ -133,7 +124,13 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         })?;
     }
 
-    Ok(config)
+    // Create a list of warnings for config settings
+    let mut warnings = Vec::new();
+    if config.server.simulation_distance == 0 {
+        warnings.push("simulation_distance is 0: only the player's own chunk receives entity updates, this can cause frozen activity across chunk borders".to_string())
+    }
+
+    Ok((config, warnings))
 }
 
 fn load_or_create_worlds(path: &Path) -> Result<WorldsConfig, String> {

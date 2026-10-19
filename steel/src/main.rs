@@ -151,13 +151,14 @@ fn steel_main() {
     let _profiler = dhat::Profiler::new_heap();
 
     // Load config once at startup
-    let steel_config = match config::load_or_create(Path::new("config/config.toml")) {
-        Ok(config) => config,
-        Err(error) => {
-            eprintln!("Failed to load configuration: {error}");
-            return;
-        }
-    };
+    let (steel_config, config_warnings) =
+        match config::load_or_create(Path::new("config/config.toml")) {
+            Ok(config) => config,
+            Err(error) => {
+                eprintln!("Failed to load configuration: {error}");
+                return;
+            }
+        };
 
     let main_worker_threads = worker_threads_for_available(
         steel_config.server.threads.main_runtime,
@@ -184,13 +185,21 @@ fn steel_main() {
         .build()
         .unwrap();
 
-    main_runtime.block_on(main_async(Arc::clone(&chunk_runtime), steel_config));
+    main_runtime.block_on(main_async(
+        Arc::clone(&chunk_runtime),
+        steel_config,
+        config_warnings,
+    ));
 
     drop(main_runtime);
     drop(chunk_runtime);
 }
 
-async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {
+async fn main_async(
+    chunk_runtime: Arc<Runtime>,
+    steel_config: config::SteelConfig,
+    config_warnings: Vec<String>,
+) {
     let cancel_token = CancellationToken::new();
 
     let logger = match init_tracing(cancel_token.clone(), steel_config.log.clone()).await {
@@ -201,7 +210,9 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
         }
     };
 
-    steel_config.log_warnings();
+    for warning in &config_warnings {
+        log::warn!("{warning}");
+    }
 
     shutdown::install(cancel_token.clone());
     let panic_token = cancel_token.clone();
