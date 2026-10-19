@@ -72,6 +72,7 @@ const MOOSHROOM_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_a
 );
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const MUTATE_CHANCE: u32 = 1024;
+const MYCELIUM_WALK_TARGET_VALUE: f32 = 10.0;
 
 /// Vanilla Mooshroom entity.
 #[entity_behavior(class = "MushroomCow")]
@@ -217,7 +218,6 @@ impl MushroomCowEntity {
             None,
         );
 
-        // FIXME: use the vanilla world loot rng once the foundations are there
         let mut rng = rand::rng();
         for drop in shearing_loot_items_with_rng(
             self,
@@ -300,11 +300,6 @@ impl MushroomCowEntity {
                 player.has_infinite_materials(),
                 false,
             );
-            if player.has_infinite_materials()
-                && inventory.get_item_in_hand(hand).is(&vanilla_items::BOWL)
-            {
-                // If player is in creative, vanilla still keeps the hand updated or drops overflow.
-            }
             overflow
         };
 
@@ -615,7 +610,7 @@ impl Animal for MushroomCowEntity {
         };
 
         if world.get_block_state(pos.below()).get_block() == &vanilla_blocks::MYCELIUM {
-            10.0
+            MYCELIUM_WALK_TARGET_VALUE
         } else {
             world.pathfinding_cost_from_light_levels(pos)
         }
