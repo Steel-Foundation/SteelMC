@@ -346,7 +346,7 @@ pub struct EntityLandingContext {
     /// The gravity applied to the entity.
     pub gravity: f64,
     /// The air drag of the entity.
-    pub air_drag: f32,
+    pub air_drag: f64,
 }
 
 /// Entity facts needed by `Block.fallOn`.
@@ -497,7 +497,7 @@ impl EntityLandingContext {
         is_living_entity: bool,
         suppresses_bounce: bool,
         gravity: f64,
-        air_drag: f32,
+        air_drag: f64,
     ) -> Self {
         Self {
             velocity,
@@ -526,7 +526,7 @@ impl EntityLandingContext {
         };
 
         let gravity_compensation = portion_with_movement * self.gravity;
-        let effective_drag = lerp(portion_with_movement, 1.0, f64::from(self.air_drag));
+        let effective_drag = lerp(portion_with_movement, 1.0, self.air_drag);
 
         let entity_factor: f32 = if self.is_living_entity { 1.0 } else { 0.8 };
         let restitution = f64::from(restitution * entity_factor);

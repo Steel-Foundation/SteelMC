@@ -12,8 +12,6 @@ const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
-const DEFAULT_AIR_DRAG_VALUE: f32 = 0.98f32;
-
 fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;
     let &[x, y, z, ..] = values.as_slice() else {
@@ -3196,16 +3194,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// get the air drag value of the entity
-    fn get_air_drag(&self) -> f32 {
+    fn get_air_drag(&self) -> f64 {
         let Some(entity) = self.as_living_entity() else {
-            return DEFAULT_AIR_DRAG_VALUE;
+            return DEFAULT_AIR_DRAG;
         };
         compute_modified_friction(
-            DEFAULT_AIR_DRAG_VALUE,
+            DEFAULT_AIR_DRAG,
             entity
                 .attributes()
                 .lock()
-                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
         )
     }
 
@@ -3780,7 +3778,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 }
 
-fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
+fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
