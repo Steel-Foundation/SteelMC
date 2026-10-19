@@ -49,7 +49,7 @@ impl ToTokens for AdvancementRewardsJson {
         let loots = generate_vec(&self.loots, |loot| {
             let name = Ident::new(&loot.path.to_shouty_snake_case(), Span::call_site());
             quote! {
-                &*vanilla_lo::#name
+                &*vanilla_loot_tables::#name
             }
         });
         let function = generate_option(&self.function, generate_identifier);
