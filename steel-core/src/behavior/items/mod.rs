@@ -5,6 +5,7 @@
 
 mod air;
 mod block_item;
+pub(crate) mod block_transformer;
 mod bonemeal;
 mod bottle;
 mod brush;

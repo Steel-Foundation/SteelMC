@@ -174,41 +174,6 @@ pub enum StructureSpawnBoundingBox {
     Piece,
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{Registry, TaggedRegistryExt};
-
-    use super::*;
-
-    #[test]
-    fn vanilla_structure_tags_are_registered() {
-        let registry = Registry::new_vanilla();
-        let village_tag = Identifier::vanilla_static("village");
-        let villages = registry.structures.get_tag(&village_tag);
-        assert!(villages.as_ref().is_some_and(|entries| {
-            entries
-                .iter()
-                .any(|structure| structure.key == Identifier::vanilla_static("village_plains"))
-        }));
-    }
-
-    #[test]
-    fn structure_generation_steps_use_vanilla_decoration_ordinals() {
-        assert_eq!(
-            StructureGenerationStep::UndergroundStructures.decoration_ordinal(),
-            3
-        );
-        assert_eq!(
-            StructureGenerationStep::SurfaceStructures.decoration_ordinal(),
-            4
-        );
-        assert_eq!(
-            StructureGenerationStep::UndergroundDecoration.decoration_ordinal(),
-            7
-        );
-    }
-}
-
 /// A structure mob spawn override for one mob category.
 #[derive(Debug, Clone)]
 pub struct StructureSpawnOverrideData {
@@ -395,4 +360,39 @@ pub enum HeightProviderData {
         min_inclusive: VerticalAnchorData,
         max_inclusive: VerticalAnchorData,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Registry, TaggedRegistryExt};
+
+    use super::*;
+
+    #[test]
+    fn vanilla_structure_tags_are_registered() {
+        let registry = Registry::new_vanilla();
+        let village_tag = Identifier::vanilla_static("village");
+        let villages = registry.structures.get_tag(&village_tag);
+        assert!(villages.as_ref().is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|structure| structure.key == Identifier::vanilla_static("village_plains"))
+        }));
+    }
+
+    #[test]
+    fn structure_generation_steps_use_vanilla_decoration_ordinals() {
+        assert_eq!(
+            StructureGenerationStep::UndergroundStructures.decoration_ordinal(),
+            3
+        );
+        assert_eq!(
+            StructureGenerationStep::SurfaceStructures.decoration_ordinal(),
+            4
+        );
+        assert_eq!(
+            StructureGenerationStep::UndergroundDecoration.decoration_ordinal(),
+            7
+        );
+    }
 }

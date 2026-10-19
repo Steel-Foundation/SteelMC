@@ -450,8 +450,7 @@ impl StructureTemplate {
             }
             let metadata = nbt
                 .string("metadata")
-                .map(|metadata| metadata.to_str().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|metadata| metadata.to_str().into_owned());
             markers.push(StructureDataMarker {
                 metadata,
                 pos: world_pos,

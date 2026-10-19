@@ -8,8 +8,7 @@ pub(super) fn generate_entry(entry: &LootEntryJson) -> TokenStream {
     let functions: Vec<TokenStream> = entry
         .modifier
         .as_ref()
-        .map(ModifierJson::functions)
-        .unwrap_or_default()
+        .map_or_default(ModifierJson::functions)
         .into_iter()
         .map(generate_function)
         .collect();
@@ -164,8 +163,7 @@ pub(super) fn generate_pool(pool: &LootPoolJson) -> TokenStream {
     let functions: Vec<TokenStream> = pool
         .modifier
         .as_ref()
-        .map(ModifierJson::functions)
-        .unwrap_or_default()
+        .map_or_default(ModifierJson::functions)
         .into_iter()
         .map(generate_function)
         .collect();

@@ -82,7 +82,7 @@ impl CommandExecutionOwner {
     pub(crate) fn suggestion_key(&self) -> CommandSuggestionKey {
         match &self.sender {
             CommandSender::Player(player) => CommandSuggestionKey::Player {
-                uuid: player.gameprofile.id,
+                uuid: player.gameprofile.id(),
                 // The owner retains this Arc while queued, so its allocation
                 // address cannot be reused by a replacement session.
                 session_address: Arc::as_ptr(player) as usize,
@@ -112,7 +112,7 @@ impl CommandExecutionOwner {
 impl CommandSender {
     pub(crate) fn key(&self) -> CommandSenderKey {
         match self {
-            Self::Player(player) => CommandSenderKey::Player(player.gameprofile.id),
+            Self::Player(player) => CommandSenderKey::Player(player.gameprofile.id()),
             Self::Console => CommandSenderKey::Console,
             Self::Rcon => CommandSenderKey::Rcon,
         }
@@ -144,7 +144,7 @@ impl fmt::Display for CommandSender {
             f,
             "{}",
             match self {
-                Self::Player(p) => &p.gameprofile.name,
+                Self::Player(p) => &p.gameprofile.name(),
                 Self::Console => "Server",
                 Self::Rcon => "Rcon",
             }

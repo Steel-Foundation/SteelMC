@@ -32,15 +32,15 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
         let (slow, _) = test_player_with_packets(&server, Arc::clone(world), "Slow", 1);
         let (fast, _) = test_player_with_packets(&server, Arc::clone(world), "Fast", 2);
 
-        let slow_reservation = server.try_reserve_player_join(slow.gameprofile.id);
-        let fast_reservation = server.try_reserve_player_join(fast.gameprofile.id);
+        let slow_reservation = server.try_reserve_player_join(slow.gameprofile.id());
+        let fast_reservation = server.try_reserve_player_join(fast.gameprofile.id());
         assert!(slow_reservation.is_some());
         assert!(fast_reservation.is_some());
-        assert!(!server.is_player_limit_reached(fast.gameprofile.id));
+        assert!(!server.is_player_limit_reached(fast.gameprofile.id()));
 
         assert_eq!(server.admit_reserved_player(Arc::clone(&fast)), Ok(()));
-        assert!(server.is_player_limit_reached(slow.gameprofile.id));
-        assert!(server.is_player_limit_reached(fast.gameprofile.id));
+        assert!(server.is_player_limit_reached(slow.gameprofile.id()));
+        assert!(server.is_player_limit_reached(fast.gameprofile.id()));
         assert_eq!(
             server.admit_reserved_player(Arc::clone(&slow)),
             Err(PlayerJoinError::ServerFull),
@@ -50,15 +50,15 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
             !server
                 .player_admissions
                 .lock()
-                .contains_key(&slow.gameprofile.id)
+                .contains_key(&slow.gameprofile.id())
         );
         drop(slow_reservation);
         drop(fast_reservation);
 
         assert!(server.reserve_player_disconnect(&fast));
         assert!(server.remove_online_player_sync(&fast).is_some());
-        assert!(!server.is_player_limit_reached(slow.gameprofile.id));
-        let retry = server.try_reserve_player_join(slow.gameprofile.id);
+        assert!(!server.is_player_limit_reached(slow.gameprofile.id()));
+        let retry = server.try_reserve_player_join(slow.gameprofile.id());
         assert!(retry.is_some());
         assert_eq!(server.admit_reserved_player(slow), Ok(()));
         drop(retry);
@@ -136,7 +136,7 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
             1,
             handles.connection,
         );
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         assert!(server.is_player_limit_reached(uuid));
         assert!(server.reserve_player_join(&player));
         let position = player.position();

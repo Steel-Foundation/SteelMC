@@ -15,14 +15,16 @@ use crate::{
     player::{Player, connection::NetworkConnection as _},
 };
 use glam::DVec3;
+use steel_protocol::packets::game::SSeenAdvancement::Opened;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetBeacon,
-    SSetCarriedItem, SSetCreativeModeSlot,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSeenAdvancement,
+    SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SoundSource,
 };
 use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_custom_stats;
 use steel_registry::{REGISTRY, RegistryExt};
@@ -208,7 +210,7 @@ impl Player {
         ) else {
             log::warn!(
                 "Player {} sent an unknown beacon effect id",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
             return;
@@ -220,7 +222,7 @@ impl Player {
         if !menu.still_valid(self) {
             log::debug!(
                 "Player {} interacted with invalid menu",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             self.finish_open_menu_callback(menu);
             return;
@@ -228,7 +230,7 @@ impl Player {
         if !menu.update_effects(primary, secondary, &self.connection) {
             log::warn!(
                 "Player {} tried to set invalid beacon effects",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             self.finish_open_menu_callback(menu);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
@@ -241,7 +243,7 @@ impl Player {
     pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
         log::debug!(
             "Player {} clicked button {} in container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.button_id,
             packet.container_id
         );
@@ -285,7 +287,7 @@ impl Player {
         if !menu.still_valid(self) {
             log::debug!(
                 "Player {} interacted with invalid menu",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -299,7 +301,7 @@ impl Player {
         if !packet_slot_is_valid {
             log::debug!(
                 "Player {} clicked invalid slot index: {}, available slots: {}",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 packet.slot_num,
                 slot_count
             );
@@ -318,7 +320,7 @@ impl Player {
         if click.is_none() {
             log::debug!(
                 "Player {} sent malformed container click (slot {}, button {}, {:?})",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 packet.slot_num,
                 packet.button_num,
                 packet.click_type
@@ -380,7 +382,7 @@ impl Player {
     pub fn handle_container_close(&self, packet: SContainerClose) {
         log::debug!(
             "Player {} closed container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.container_id
         );
 
@@ -426,7 +428,7 @@ impl Player {
     pub fn handle_container_slot_state_changed(&self, packet: SContainerSlotStateChanged) {
         log::debug!(
             "Player {} changed slot {} state to {} in container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.slot_id,
             packet.new_state,
             packet.container_id
@@ -472,7 +474,7 @@ impl Player {
                 } else {
                     log::warn!(
                         "Player {} was dropping items too fast in creative mode; ignoring",
-                        self.gameprofile.name,
+                        self.gameprofile.name(),
                     );
                     return;
                 }
@@ -491,10 +493,20 @@ impl Player {
         {
             log::warn!(
                 "{} tried to set an invalid carried item",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
         } else {
             self.reset_last_action_time();
+        }
+    }
+
+    /// Set the selected advancement
+    pub fn handle_seen_advancement(&self, packet: SSeenAdvancement) {
+        if let Opened(tab_id) = packet {
+            let advancement = REGISTRY.advancements.value_by_key(&tab_id);
+            if advancement.is_some() {
+                self.advancements.lock().set_selected_tab(self, advancement);
+            }
         }
     }
 
@@ -1079,7 +1091,7 @@ impl Player {
             .spawn_item_with_velocity(spawn_pos, item, velocity)?;
         entity.set_pickup_delay(40);
         if thrown_from_hand {
-            entity.set_thrower(self.gameprofile.id);
+            entity.set_thrower(self.gameprofile.id());
             self.award_stat_with_count(&vanilla_stat_types::ITEM_DROPPED, item_ref, item_count);
             self.award_custom_stat(&vanilla_custom_stats::DROP);
         }
@@ -1126,6 +1138,28 @@ impl Player {
         } else {
             MenuItemDisposition::ReturnToInventory
         }
+    }
+
+    /// Tries to add an item to the player's inventory, playing the vanilla item-pickup
+    /// sound when the entire stack fits.
+    ///
+    /// Returns true if the whole stack was added; otherwise the stack keeps the remainder.
+    /// Mirrors the shared vanilla `Inventory.add` + `SoundEvents.ITEM_PICKUP` flow used by
+    /// `/give` and advancement rewards: the sound only plays once the stack is fully consumed.
+    pub fn add_item_with_sound(&self, stack: &mut ItemStack) -> bool {
+        let added = self.inventory.lock().add(stack);
+        if added {
+            let pitch = ((rand::random::<f32>() - rand::random::<f32>()) * 0.7 + 1.0) * 2.0;
+            self.get_world().play_sound_at(
+                &sound_events::ENTITY_ITEM_PICKUP,
+                SoundSource::Players,
+                self.position(),
+                0.2,
+                pitch,
+                None,
+            );
+        }
+        added
     }
 
     /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.

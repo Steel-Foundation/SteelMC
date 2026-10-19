@@ -33,10 +33,8 @@ fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
             let block = condition.blocks.as_deref().unwrap_or("minecraft:air");
             let block = block.strip_prefix("minecraft:").unwrap_or(block);
 
-            let properties: Vec<TokenStream> = condition
-                .properties
-                .as_ref()
-                .map(|props| {
+            let properties: Vec<TokenStream> =
+                condition.properties.as_ref().map_or_default(|props| {
                     props
                         .iter()
                         .map(|(name, value)| {
@@ -54,8 +52,7 @@ fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
                             quote! { PropertyCheck { name: #name, value: #value_str } }
                         })
                         .collect()
-                })
-                .unwrap_or_default();
+                });
 
             quote! {
                 LootCondition::MatchBlock {
@@ -80,8 +77,7 @@ fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
             let chances: Vec<TokenStream> = condition
                 .chances
                 .as_ref()
-                .map(|c| c.iter().map(|v| quote! { #v }).collect())
-                .unwrap_or_default();
+                .map_or_default(|c| c.iter().map(|v| quote! { #v }).collect());
 
             quote! {
                 LootCondition::TableBonus {
@@ -102,8 +98,7 @@ fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
             let terms: Vec<TokenStream> = condition
                 .terms
                 .as_ref()
-                .map(|t| t.iter().map(generate_condition).collect())
-                .unwrap_or_default();
+                .map_or_default(|t| t.iter().map(generate_condition).collect());
 
             quote! { LootCondition::AnyOf(&[#(#terms),*]) }
         }
@@ -111,8 +106,7 @@ fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
             let terms: Vec<TokenStream> = condition
                 .terms
                 .as_ref()
-                .map(|t| t.iter().map(generate_condition).collect())
-                .unwrap_or_default();
+                .map_or_default(|t| t.iter().map(generate_condition).collect());
 
             quote! { LootCondition::AllOf(&[#(#terms),*]) }
         }
