@@ -321,10 +321,7 @@ fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSav
             .map(|tag| tag.to_str().into_owned())
             .collect::<BTreeSet<_>>();
     }
-    save_data.custom_data = nbt
-        .compound("data")
-        .map(|data| data.to_owned())
-        .unwrap_or_default();
+    save_data.custom_data = nbt.compound("data").map_or_default(|data| data.to_owned());
     save_data
 }
 
