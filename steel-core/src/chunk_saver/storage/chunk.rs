@@ -251,6 +251,10 @@ impl ChunkStorage {
     }
 
     /// Converts a runtime section to persistent format.
+    ///
+    /// # Panics
+    /// If the section holds a value missing from its palette, rather than saving a different
+    /// block or biome in its place.
     pub(super) fn section_to_persistent(
         section: &SectionHolder,
         builder: &mut ChunkBuilder,
@@ -288,9 +292,12 @@ impl ChunkStorage {
                     .map(|(index, (block_id, _))| (*block_id, index as u32))
                     .collect();
                 let block_data = pack_indices_from_iter(
-                    data.values()
-                        .iter()
-                        .map(|block_id| palette_indices.get(block_id).copied().unwrap_or(0)),
+                    data.values().iter().map(|block_id| {
+                        let Some(&index) = palette_indices.get(block_id) else {
+                            panic!("section block state {block_id:?} is missing from its palette");
+                        };
+                        index
+                    }),
                     bits,
                 );
 
@@ -308,6 +315,10 @@ impl ChunkStorage {
     }
 
     /// Converts runtime biome data to persistent format.
+    ///
+    /// # Panics
+    /// If the container is still in worldgen Building mode or holds a value missing from its
+    /// palette.
     pub(super) fn biomes_to_persistent(
         biomes: &PalettedContainer<u16, 4>,
         builder: &mut ChunkBuilder,
@@ -334,9 +345,12 @@ impl ChunkStorage {
                     .map(|(index, (biome_id, _))| (*biome_id, index as u32))
                     .collect();
                 let biome_data = pack_indices_from_iter(
-                    data.values()
-                        .iter()
-                        .map(|biome_id| palette_indices.get(biome_id).copied().unwrap_or(0)),
+                    data.values().iter().map(|biome_id| {
+                        let Some(&index) = palette_indices.get(biome_id) else {
+                            panic!("section biome {biome_id:?} is missing from its palette");
+                        };
+                        index
+                    }),
                     bits,
                 );
 
