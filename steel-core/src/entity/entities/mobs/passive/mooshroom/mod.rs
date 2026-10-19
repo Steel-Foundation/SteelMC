@@ -201,12 +201,6 @@ impl MushroomCowEntity {
         self.play_sound(&sound_events::ENTITY_MOOSHROOM_CONVERT, 2.0, 1.0);
     }
 
-    /// Returns whether the mooshroom can currently be sheared.
-    #[must_use]
-    pub fn ready_for_shearing(&self) -> bool {
-        !AgeableMob::is_baby(self)
-    }
-
     /// Shears the mooshroom, converting it into a normal cow and dropping vanilla loot.
     pub fn shear(&self, world: &Arc<World>, tool: &ItemStack) {
         world.play_sound_at(
@@ -341,7 +335,7 @@ impl MushroomCowEntity {
     }
 
     fn try_interact_shears(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
-        if !self.ready_for_shearing() {
+        if AgeableMob::is_baby(self) {
             return InteractionResult::Pass;
         }
 
