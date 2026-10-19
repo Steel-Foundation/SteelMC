@@ -127,7 +127,7 @@ pub fn load_or_create(path: &Path) -> Result<(SteelConfig, Vec<String>), String>
     // Create a list of warnings for config settings
     let mut warnings = Vec::new();
     if config.server.simulation_distance == 0 {
-        warnings.push("simulation_distance is 0: only the player's own chunk receives entity updates, this can cause frozen activity across chunk borders".to_string())
+        warnings.push("simulation_distance is 0: only the player's own chunk receives entity updates, this can cause frozen activity across chunk borders".to_string());
     }
 
     Ok((config, warnings))
