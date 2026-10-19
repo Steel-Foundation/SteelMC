@@ -3,7 +3,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::mem::take;
 use steel_utils::Identifier;
 use steel_utils::serial::WriteTo;
 
@@ -229,8 +228,8 @@ impl AdvancementRegistry {
 
     /// Updates the advancement tree by loading and connecting all unloaded advancements.
     pub(crate) fn update_tree(&mut self) {
-        let advancements = take(&mut self.unloaded_advancement);
-        self.register_all(advancements.into_iter().collect());
+        let advancements = self.unloaded_advancement.drain().collect();
+        self.register_all(advancements);
         for advancement_idx in self.roots.clone() {
             let node = self.adv_nodes.get(advancement_idx);
             let Some(node) = node else {
