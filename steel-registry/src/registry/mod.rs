@@ -102,6 +102,7 @@ use crate::{
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
 use std::{
+
     fmt::Debug,
     ops::Deref,
     sync::{Once, OnceLock},
@@ -323,7 +324,6 @@ impl Registry {
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
         vanilla_advancements::register_advancements(&mut registry.advancements);
-        registry.advancements.update_tree();
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
@@ -523,6 +523,7 @@ impl Registry {
         self.custom_stats.freeze();
         self.stat_types.freeze();
         self.ticket_types.freeze();
+        self.advancements.update_tree();
     }
 
     fn validate_references(&self) {

@@ -1,5 +1,5 @@
 use crate::advancement::{Advancement, positioner};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
@@ -101,11 +101,21 @@ impl Hash for AdvancementNode {
 }
 
 /// equivalent of the `AdvancementTree` of the minecraft source code
+///
+/// TODO add Dynamic allocated Advancement with a enum :
+/// ```rust
+/// enum AdvancementHolder {
+///    Static(AdvancementRef),
+///    Dynamic(Box<Advancement>),
+/// }
+/// ```
+/// TODO add the ability to reload the registry.
+/// TODO made the registry behind a `ArcSwap` and the `unloaded_advancement` behind a `Mutex` to allow for dynamic reloading of advancements.
 #[derive(Default, Debug)]
 pub struct AdvancementRegistry {
     pub(crate) advancements: Vec<AdvancementRef>,
     pub(crate) adv_nodes: Vec<AdvancementNode>,
-    pub(crate) unloaded_advancement: Vec<AdvancementRef>,
+    pub(crate) unloaded_advancement: FxHashSet<AdvancementRef>,
     pub(crate) by_key: FxHashMap<Identifier, usize>,
     pub(crate) roots: Vec<usize>,
     pub(crate) tasks: Vec<usize>,
@@ -182,8 +192,10 @@ impl AdvancementRegistry {
         }
     }
 
-    pub fn register(&mut self, advancement: AdvancementRef) {
-        self.unloaded_advancement.push(advancement);
+    /// Registers an advancement in the registry. Returns true if the advancement was added to the
+    /// unloaded advancements set, false if it was already present.
+    pub fn register(&mut self, advancement: AdvancementRef) -> bool {
+        self.unloaded_advancement.insert(advancement)
     }
 
     #[cfg(test)]
@@ -215,9 +227,10 @@ impl AdvancementRegistry {
         self.adv_nodes.iter().enumerate()
     }
 
-    pub fn update_tree(&mut self) {
+    /// Updates the advancement tree by loading and connecting all unloaded advancements.
+    pub(crate) fn update_tree(&mut self) {
         let advancements = take(&mut self.unloaded_advancement);
-        self.register_all(advancements);
+        self.register_all(advancements.into_iter().collect());
         for advancement_idx in self.roots.clone() {
             let node = self.adv_nodes.get(advancement_idx);
             let Some(node) = node else {
@@ -240,5 +253,10 @@ impl AdvancementRegistry {
             advancement_node = &self.adv_nodes[*parent];
         }
         advancement_node
+    }
+
+    pub fn remove_unloaded_advancement(&mut self, advancement: &Identifier) {
+        self.unloaded_advancement
+            .retain(|adv| adv.key() != advancement);
     }
 }
