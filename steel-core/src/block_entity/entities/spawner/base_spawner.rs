@@ -35,17 +35,44 @@ const DEFAULT_MAX_NEARBY_ENTITIES: i32 = 6;
 const DEFAULT_REQUIRED_PLAYER_RANGE: i32 = 16;
 const DEFAULT_SPAWN_RANGE: i32 = 4;
 
+/// Spawn-cycle limits of a [`BaseSpawner`]: delays, mob counts and ranges.
+///
+/// Vanilla keeps these as separate fields on `BaseSpawner`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BaseSpawnerConfig {
+    /// Lower bound of the delay between spawn cycles, in ticks.
+    pub min_spawn_delay: i32,
+    /// Upper bound of the delay between spawn cycles, in ticks.
+    pub max_spawn_delay: i32,
+    /// Spawn attempts per cycle.
+    pub spawn_count: i32,
+    /// Same-type entities allowed around the spawner before a cycle is skipped.
+    pub max_nearby_entities: i32,
+    /// Distance a player must be within for the spawner to tick.
+    pub required_player_range: i32,
+    /// Horizontal radius of the spawn area.
+    pub spawn_range: i32,
+}
+
+impl Default for BaseSpawnerConfig {
+    fn default() -> Self {
+        Self {
+            min_spawn_delay: DEFAULT_MIN_SPAWN_DELAY,
+            max_spawn_delay: DEFAULT_MAX_SPAWN_DELAY,
+            spawn_count: DEFAULT_SPAWN_COUNT,
+            max_nearby_entities: DEFAULT_MAX_NEARBY_ENTITIES,
+            required_player_range: DEFAULT_REQUIRED_PLAYER_RANGE,
+            spawn_range: DEFAULT_SPAWN_RANGE,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct SpawnerState {
     spawn_delay: i32,
     spawn_potentials: Vec<WeightedSpawnData>,
     next_spawn_data: Option<SpawnData>,
-    min_spawn_delay: i32,
-    max_spawn_delay: i32,
-    spawn_count: i32,
-    max_nearby_entities: i32,
-    required_player_range: i32,
-    spawn_range: i32,
+    config: BaseSpawnerConfig,
 }
 
 #[derive(Debug, Default)]
@@ -60,12 +87,7 @@ impl Default for SpawnerState {
             spawn_delay: DEFAULT_SPAWN_DELAY,
             spawn_potentials: Vec::new(),
             next_spawn_data: None,
-            min_spawn_delay: DEFAULT_MIN_SPAWN_DELAY,
-            max_spawn_delay: DEFAULT_MAX_SPAWN_DELAY,
-            spawn_count: DEFAULT_SPAWN_COUNT,
-            max_nearby_entities: DEFAULT_MAX_NEARBY_ENTITIES,
-            required_player_range: DEFAULT_REQUIRED_PLAYER_RANGE,
-            spawn_range: DEFAULT_SPAWN_RANGE,
+            config: BaseSpawnerConfig::default(),
         }
     }
 }
@@ -126,27 +148,27 @@ impl BaseSpawner {
                 data: state.next_spawn_data.clone().unwrap_or_default(),
             }]
         });
-        state.min_spawn_delay = nbt
+        state.config.min_spawn_delay = nbt
             .get("MinSpawnDelay")
             .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_MIN_SPAWN_DELAY);
-        state.max_spawn_delay = nbt
+        state.config.max_spawn_delay = nbt
             .get("MaxSpawnDelay")
             .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_MAX_SPAWN_DELAY);
-        state.spawn_count = nbt
+        state.config.spawn_count = nbt
             .get("SpawnCount")
             .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_SPAWN_COUNT);
-        state.max_nearby_entities = nbt
+        state.config.max_nearby_entities = nbt
             .get("MaxNearbyEntities")
             .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_MAX_NEARBY_ENTITIES);
-        state.required_player_range = nbt
+        state.config.required_player_range = nbt
             .get("RequiredPlayerRange")
             .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_REQUIRED_PLAYER_RANGE);
-        state.spawn_range = nbt
+        state.config.spawn_range = nbt
             .get("SpawnRange")
             .and_then(|tag| tag.int_value())
             .unwrap_or(DEFAULT_SPAWN_RANGE);
@@ -156,12 +178,15 @@ impl BaseSpawner {
     pub fn save(&self, nbt: &mut NbtCompound) {
         let state = self.state.lock();
         nbt.insert("Delay", state.spawn_delay as i16);
-        nbt.insert("MinSpawnDelay", state.min_spawn_delay as i16);
-        nbt.insert("MaxSpawnDelay", state.max_spawn_delay as i16);
-        nbt.insert("SpawnCount", state.spawn_count as i16);
-        nbt.insert("MaxNearbyEntities", state.max_nearby_entities as i16);
-        nbt.insert("RequiredPlayerRange", state.required_player_range as i16);
-        nbt.insert("SpawnRange", state.spawn_range as i16);
+        nbt.insert("MinSpawnDelay", state.config.min_spawn_delay as i16);
+        nbt.insert("MaxSpawnDelay", state.config.max_spawn_delay as i16);
+        nbt.insert("SpawnCount", state.config.spawn_count as i16);
+        nbt.insert("MaxNearbyEntities", state.config.max_nearby_entities as i16);
+        nbt.insert(
+            "RequiredPlayerRange",
+            state.config.required_player_range as i16,
+        );
+        nbt.insert("SpawnRange", state.config.spawn_range as i16);
         if let Some(next_spawn_data) = &state.next_spawn_data {
             nbt.insert("SpawnData", next_spawn_data.to_nbt());
         }
@@ -222,10 +247,50 @@ impl BaseSpawner {
         event == EVENT_SPAWN
     }
 
-    /// Returns the configured delay for diagnostics and focused tests.
+    /// Returns the ticks left until the next spawn cycle. `-1` means a new delay is rolled
+    /// on the next tick.
     #[must_use]
     pub fn spawn_delay(&self) -> i32 {
         self.state.lock().spawn_delay
+    }
+
+    /// Sets the ticks left until the next spawn cycle.
+    pub fn set_spawn_delay(&self, delay: i32) {
+        self.state.lock().spawn_delay = delay;
+    }
+
+    /// Returns the spawn-cycle limits.
+    #[must_use]
+    pub fn config(&self) -> BaseSpawnerConfig {
+        self.state.lock().config
+    }
+
+    /// Replaces the spawn-cycle limits.
+    pub fn set_config(&self, config: BaseSpawnerConfig) {
+        self.state.lock().config = config;
+    }
+
+    /// Returns the weighted entries the next spawn data is picked from.
+    #[must_use]
+    pub fn spawn_potentials(&self) -> Vec<WeightedSpawnData> {
+        self.state.lock().spawn_potentials.clone()
+    }
+
+    /// Replaces the weighted entries the next spawn data is picked from. The active
+    /// spawn data is kept until the next delay roll.
+    pub fn set_spawn_potentials(&self, potentials: Vec<WeightedSpawnData>) {
+        self.state.lock().spawn_potentials = potentials;
+    }
+
+    /// Returns the active spawn data, if one has been selected.
+    #[must_use]
+    pub fn next_spawn_data(&self) -> Option<SpawnData> {
+        self.state.lock().next_spawn_data.clone()
+    }
+
+    /// Replaces the active spawn data.
+    pub fn set_next_spawn_data(&self, data: SpawnData) {
+        self.state.lock().next_spawn_data = Some(data);
     }
 
     #[expect(
@@ -238,8 +303,9 @@ impl BaseSpawner {
             f64::from(pos.y()) + 0.5,
             f64::from(pos.z()) + 0.5,
         );
+        let config = self.config();
         let Some(_) =
-            world.nearest_player(center, f64::from(self.required_player_range()), |player| {
+            world.nearest_player(center, f64::from(config.required_player_range), |player| {
                 player.is_alive() && !player.is_spectator()
             })
         else {
@@ -263,9 +329,12 @@ impl BaseSpawner {
             self.get_or_create_next_spawn_data_with_rng(&mut random);
         result.next_spawn_data_changed |= selected_data_changed;
         result.state_changed |= selected_data_changed;
-        let spawn_count = self.spawn_count();
-        let spawn_range = self.spawn_range();
-        let max_nearby_entities = self.max_nearby_entities();
+        let BaseSpawnerConfig {
+            spawn_count,
+            spawn_range,
+            max_nearby_entities,
+            ..
+        } = config;
         let mut spawned_any = false;
 
         for _ in 0..spawn_count {
@@ -410,11 +479,16 @@ impl BaseSpawner {
         };
         {
             let mut state = self.state.lock();
-            let delay = state.max_spawn_delay.saturating_sub(state.min_spawn_delay);
+            let BaseSpawnerConfig {
+                min_spawn_delay,
+                max_spawn_delay,
+                ..
+            } = state.config;
+            let delay = max_spawn_delay.saturating_sub(min_spawn_delay);
             state.spawn_delay = if delay <= 0 {
-                state.min_spawn_delay
+                min_spawn_delay
             } else {
-                state.min_spawn_delay + random.random_range(0..delay)
+                min_spawn_delay + random.random_range(0..delay)
             };
             if let Some(next_spawn_data) = choose_weighted(&state.spawn_potentials, random)
                 && state.next_spawn_data.as_ref() != Some(&next_spawn_data)
@@ -435,22 +509,6 @@ impl BaseSpawner {
         } else {
             false
         }
-    }
-
-    fn required_player_range(&self) -> i32 {
-        self.state.lock().required_player_range
-    }
-
-    fn spawn_count(&self) -> i32 {
-        self.state.lock().spawn_count
-    }
-
-    fn max_nearby_entities(&self) -> i32 {
-        self.state.lock().max_nearby_entities
-    }
-
-    fn spawn_range(&self) -> i32 {
-        self.state.lock().spawn_range
     }
 }
 
