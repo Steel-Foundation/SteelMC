@@ -272,7 +272,7 @@ impl ChunkStorage {
             PalettedContainer::Heterogeneous(data) => {
                 // Build section-local palette (indices into chunk's block_states)
                 let palette: Vec<u16> = data
-                    .palette
+                    .palette()
                     .iter()
                     .map(|(block_id, _)| builder.ensure_block_state(*block_id))
                     .collect();
@@ -282,15 +282,13 @@ impl ChunkStorage {
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous section should have palette length >= 2");
                 let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, BlockStateId, u32> = data
-                    .palette
+                    .palette()
                     .iter()
                     .enumerate()
                     .map(|(index, (block_id, _))| (*block_id, index as u32))
                     .collect();
                 let block_data = pack_indices_from_iter(
-                    data.cube
-                        .as_flattened()
-                        .as_flattened()
+                    data.values()
                         .iter()
                         .map(|block_id| palette_indices.get(block_id).copied().unwrap_or(0)),
                     bits,
@@ -322,7 +320,7 @@ impl ChunkStorage {
             PalettedContainer::Heterogeneous(data) => {
                 // Build section-local palette (indices into chunk's biomes)
                 let palette: Vec<u16> = data
-                    .palette
+                    .palette()
                     .iter()
                     .map(|(biome_id, _)| builder.ensure_biome(*biome_id))
                     .collect();
@@ -330,15 +328,13 @@ impl ChunkStorage {
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous biome data should have palette length >= 2");
                 let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, u16, u32> = data
-                    .palette
+                    .palette()
                     .iter()
                     .enumerate()
                     .map(|(index, (biome_id, _))| (*biome_id, index as u32))
                     .collect();
                 let biome_data = pack_indices_from_iter(
-                    data.cube
-                        .as_flattened()
-                        .as_flattened()
+                    data.values()
                         .iter()
                         .map(|biome_id| palette_indices.get(biome_id).copied().unwrap_or(0)),
                     bits,

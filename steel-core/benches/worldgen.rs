@@ -1890,7 +1890,9 @@ fn bench_noise_kernel(c: &mut Criterion) {
 /// building a chunk packet before compression.
 ///
 /// `real_chunks` encodes every section of a 4×4 batch of generated overworld chunks. The
-/// synthetic cases cover the best and worst inputs for each palette strategy.
+/// synthetic cases cover the best and worst inputs for each palette strategy. Encoders keep
+/// per-thread scratch state between calls, so these measure the warm steady state of a
+/// chunk-encoding thread.
 fn bench_section_encoding(c: &mut Criterion) {
     init_globals();
 
