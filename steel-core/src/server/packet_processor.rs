@@ -73,7 +73,7 @@ impl PacketProcessor {
         packet: ScheduledPlayPacket,
         payload_bytes: usize,
     ) {
-        let player_id = player.gameprofile.id;
+        let player_id = player.gameprofile.id();
         let lane_key = PlayerPacketLaneKey::new(&player.session);
         if player.connection.closed() {
             self.queued.discard_lane(lane_key);

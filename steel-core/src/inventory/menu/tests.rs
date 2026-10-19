@@ -230,7 +230,7 @@ fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
 #[test]
 fn partial_swap_overflow_marks_displaced_item_as_thrown() {
     let fixture = perform_partial_swap("menu_partial_swap_overflow", GameType::Survival);
-    let player_id = fixture.player.gameprofile.id;
+    let player_id = fixture.player.gameprofile.id();
 
     assert_eq!(fixture.player.inventory.lock().get_item(0).count(), 1);
     let target_item = fixture.target.lock().get_item(0).clone();

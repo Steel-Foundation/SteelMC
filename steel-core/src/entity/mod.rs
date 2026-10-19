@@ -753,6 +753,7 @@ pub(crate) mod ai;
 mod animal;
 pub mod attribute;
 mod base;
+mod block_attached_entity;
 mod block_effects;
 mod callback;
 mod combat_rules;
@@ -826,7 +827,7 @@ pub use living_base::{
     LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
     MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::LivingEntity;
+pub use living_entity::{LivingEntity, living_entity_loot_ref};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,

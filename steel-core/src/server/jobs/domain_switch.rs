@@ -87,7 +87,7 @@ impl DomainSwitchJob {
                     .player_data_storage
                     .save_domain_data(
                         &task_source_domain,
-                        task_player.gameprofile.id,
+                        task_player.gameprofile.id(),
                         task_source_data.as_ref(),
                     )
                     .await
@@ -131,7 +131,7 @@ impl DomainSwitchJob {
         if let Some(error) = error {
             log::error!(
                 "Failed to switch {} domain: {error}",
-                self.player.gameprofile.name
+                self.player.gameprofile.name()
             );
             if !self.player.connection.closed() {
                 self.player.disconnect("Failed to switch domain");
@@ -273,13 +273,13 @@ impl DomainSwitchJob {
         self.source_data = None;
         if !self.player.finish_pending_world_change(self.pending_token) {
             tracing::error!(
-                player = %self.player.gameprofile.name,
+                player = %self.player.gameprofile.name(),
                 "Domain switch lost its relocation lease during target admission"
             );
             self.player.finish_domain_switch(self.pending_token);
             self.player.connection.close();
             server.release_player_admission(
-                self.player.gameprofile.id,
+                self.player.gameprofile.id(),
                 PlayerAdmissionState::Relocating,
             );
             server.queue_player_disconnect(Arc::clone(&self.player));
@@ -287,26 +287,28 @@ impl DomainSwitchJob {
         }
         if !self.player.mark_domain_switch_live(self.pending_token) {
             tracing::error!(
-                player = %self.player.gameprofile.name,
+                player = %self.player.gameprofile.name(),
                 "Domain switch lost ownership after target insertion"
             );
             self.player.finish_domain_switch(self.pending_token);
             self.player.connection.close();
             server.release_player_admission(
-                self.player.gameprofile.id,
+                self.player.gameprofile.id(),
                 PlayerAdmissionState::Relocating,
             );
             server.queue_player_disconnect(Arc::clone(&self.player));
             return JobPoll::Finished;
         }
-        server
-            .release_player_admission(self.player.gameprofile.id, PlayerAdmissionState::Relocating);
+        server.release_player_admission(
+            self.player.gameprofile.id(),
+            PlayerAdmissionState::Relocating,
+        );
         server.schedule_domain_restores(&self.player, self.residence_token, restores);
 
         let (sender, receiver) = mpsc::channel();
         let task_server = Arc::clone(server);
         let task_target_domain = self.target_domain.clone();
-        let uuid = self.player.gameprofile.id;
+        let uuid = self.player.gameprofile.id();
         let task = tokio::spawn(async move {
             let result = task_server
                 .player_data_storage
@@ -443,7 +445,7 @@ impl ServerJob for DomainSwitchJob {
                         Err(mpsc::TryRecvError::Disconnected) => {
                             log::error!(
                                 "Active-domain save task for {} ended without a result",
-                                self.player.gameprofile.name
+                                self.player.gameprofile.name()
                             );
                             self.player.finish_domain_switch(self.pending_token);
                             return JobPoll::Finished;
@@ -453,7 +455,7 @@ impl ServerJob for DomainSwitchJob {
                     if let Err(error) = result {
                         log::error!(
                             "Failed to save global player data for {} after domain switch: {error}",
-                            self.player.gameprofile.name
+                            self.player.gameprofile.name()
                         );
                     }
                     self.player.finish_domain_switch(self.pending_token);
@@ -480,7 +482,7 @@ impl ServerJob for DomainSwitchJob {
             self.player.finish_pending_world_change(self.pending_token);
             if let Some(server) = self.server.upgrade() {
                 server.release_player_admission(
-                    self.player.gameprofile.id,
+                    self.player.gameprofile.id(),
                     PlayerAdmissionState::Relocating,
                 );
             }
