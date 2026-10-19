@@ -98,7 +98,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         c.source(),
                         &c.players("targets")?,
                         $action,
-                        &REGISTRY.advancements.advancements,
+                        REGISTRY.advancements.advancements(),
                         false,
                     )
                 })))
@@ -224,7 +224,9 @@ fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
             if mode.parents() {
                 let mut parent = target_node.parent();
                 while let Some(parent_id) = parent {
-                    let current_node = &tree.adv_nodes[parent_id];
+                    let current_node = tree
+                        .get_by_idx(parent_id)
+                        .expect("unable to get the parent node");
                     advancements.push(current_node.value());
                     parent = current_node.parent();
                 }
@@ -240,7 +242,10 @@ fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
 
 fn add_children(parent: &AdvancementNode, output: &mut Vec<&Advancement>) {
     for child in parent.children() {
-        let node = &REGISTRY.advancements.adv_nodes[child];
+        let node = REGISTRY
+            .advancements
+            .get_by_idx(child)
+            .expect("invalid child index in the parent node");
         output.push(node.value());
         add_children(node, output);
     }

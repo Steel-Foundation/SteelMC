@@ -49,7 +49,7 @@ pub(super) fn evaluate_visibility_with_rules(
     is_done_test: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef) -> bool,
     output: &mut impl FnMut(&mut PlayerAdvancement, AdvancementNodeRef, bool),
 ) -> bool {
-    let tree = &REGISTRY.advancements.adv_nodes;
+    let tree = REGISTRY.advancements.nodes();
     let is_self_done = is_done_test(player_advancement, node);
     let descendant_visibility = evaluate_visibility_rule(node.value(), is_self_done);
     let mut is_self_or_descendant_done = is_self_done;

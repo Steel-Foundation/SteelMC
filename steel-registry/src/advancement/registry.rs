@@ -103,12 +103,12 @@ impl Hash for AdvancementNode {
 /// equivalent of the `AdvancementTree` of the minecraft source code
 #[derive(Default, Debug)]
 pub struct AdvancementRegistry {
-    pub advancements: Vec<AdvancementRef>,
-    pub adv_nodes: Vec<AdvancementNode>,
-    pub unloaded_advancement: Vec<AdvancementRef>,
-    pub by_key: FxHashMap<Identifier, usize>,
-    pub roots: Vec<usize>,
-    pub tasks: Vec<usize>,
+    pub(crate) advancements: Vec<AdvancementRef>,
+    pub(crate) adv_nodes: Vec<AdvancementNode>,
+    pub(crate) unloaded_advancement: Vec<AdvancementRef>,
+    pub(crate) by_key: FxHashMap<Identifier, usize>,
+    pub(crate) roots: Vec<usize>,
+    pub(crate) tasks: Vec<usize>,
 }
 
 impl AdvancementRegistry {
@@ -116,6 +116,16 @@ impl AdvancementRegistry {
     #[inline]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    #[must_use]
+    pub fn advancements(&self) -> &[AdvancementRef] {
+        &self.advancements
+    }
+
+    #[must_use]
+    pub fn nodes(&self) -> &[AdvancementNode] {
+        &self.adv_nodes
     }
 
     fn register_with_parent(&mut self, advancement: AdvancementRef, parent_idx: Option<usize>) {

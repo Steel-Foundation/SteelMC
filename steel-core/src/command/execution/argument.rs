@@ -1080,7 +1080,7 @@ unit_argument_parser!(
         suggest_resources(
             REGISTRY
                 .advancements
-                .advancements
+                .advancements()
                 .iter()
                 .map(|adv| adv.key()),
             builder,
