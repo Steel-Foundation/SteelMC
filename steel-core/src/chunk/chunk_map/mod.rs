@@ -34,7 +34,7 @@ use crate::chunk::chunk_holder::{
 };
 use crate::chunk::chunk_request::ChunkRequestLease;
 pub use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark-support"))]
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
 use crate::chunk::chunk_scheduler::{ChunkSchedulingCoordinator, ChunkTicketReceipt};
 use crate::chunk::chunk_ticket_manager::{
@@ -124,6 +124,17 @@ const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
 /// `ENDER_PEARL_TICKET_TIMEOUT - 1` ticks while it flies.
 pub const ENDER_PEARL_TICKET_TIMEOUT: i64 = ENDER_PEARL_TICKET_TIMEOUT_TICKS;
+
+/// How far one chunk has loaded, for player chunk-loading benchmarks.
+#[doc(hidden)]
+#[cfg(feature = "benchmark-support")]
+#[derive(Debug, Clone, Copy)]
+pub struct BenchmarkChunkProgress {
+    /// The chunk has published `Full`.
+    pub full: bool,
+    /// The chunk can be sent to players: it is `Full` and block ticking.
+    pub sendable: bool,
+}
 
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
@@ -554,6 +565,42 @@ impl ChunkMap {
         assert!(holder.simulation_level().is_none());
         assert!(self.ticking_chunks.load().block.is_empty());
         let _ = self.chunks.insert_sync(pos, holder);
+    }
+
+    /// Adds a player's chunk tickets at `pos` for player chunk-loading benchmarks.
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    pub fn add_benchmark_player_tickets(&self, pos: ChunkPos, player_id: uuid::Uuid) {
+        let _ = self
+            .scheduling
+            .queue_player_ticket_operation(PlayerTicketOperation::Add { pos, player_id });
+    }
+
+    /// Runs the chunk-source phase a game tick runs, for player chunk-loading benchmarks.
+    ///
+    /// Must not overlap a live game tick; see [`Self::advance_scheduling`].
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    pub fn advance_benchmark_scheduling(self: &Arc<Self>) {
+        let _ = self.advance_scheduling();
+    }
+
+    /// How far the chunk at `pos` has loaded, for player chunk-loading benchmarks.
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    #[must_use]
+    pub fn benchmark_chunk_progress(&self, pos: ChunkPos) -> BenchmarkChunkProgress {
+        let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
+            return BenchmarkChunkProgress {
+                full: false,
+                sendable: false,
+            };
+        };
+        let full = holder.published_status() == Some(ChunkStatus::Full);
+        BenchmarkChunkProgress {
+            full,
+            sendable: full && holder.ticking_readiness_snapshot().is_block_ticking(),
+        }
     }
 
     #[inline]

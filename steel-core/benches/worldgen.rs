@@ -3,16 +3,19 @@
 #![recursion_limit = "256"]
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{Criterion, SamplingMode, Throughput, criterion_group, criterion_main};
 use futures::future::join_all;
 use glam::IVec3;
+use std::cell::RefCell;
 use std::cmp::Reverse;
+use std::collections::VecDeque;
 use std::env;
 use std::hint::black_box;
 use std::sync::{
     Arc, LazyLock, Weak,
     atomic::{AtomicU64, Ordering},
 };
+use std::thread;
 use std::time::{Duration, Instant};
 use steel_core::bootstrap::init_globals;
 use steel_core::chunk::Chunk;
@@ -1884,6 +1887,261 @@ fn bench_noise_kernel(c: &mut Criterion) {
     group.finish();
 }
 
+/// View and simulation distance for the player-join benchmark (vanilla's defaults).
+const PLAYER_JOIN_VIEW_DISTANCE: u8 = 10;
+/// A live server runs the chunk-source phase once per 50 ms game tick.
+const PLAYER_JOIN_TICK: Duration = Duration::from_millis(50);
+/// How often the benchmark thread checks chunk readiness between ticks.
+const PLAYER_JOIN_POLL: Duration = Duration::from_millis(1);
+/// Fails the benchmark instead of hanging if generation stops making progress.
+const PLAYER_JOIN_TIMEOUT: Duration = Duration::from_secs(300);
+static PLAYER_JOIN_PROFILE: LazyLock<bool> =
+    LazyLock::new(|| env::var_os("STEEL_PLAYER_JOIN_PROFILE").is_some());
+
+struct PlayerJoinWorld {
+    chunk_runtime: Arc<Runtime>,
+    world: Arc<World>,
+    _damage_history: Arc<DamageHistory>,
+}
+
+impl Drop for PlayerJoinWorld {
+    /// Generation of chunks just outside view distance can still be running; it needs the
+    /// world, so it must finish before the world is dropped.
+    fn drop(&mut self) {
+        let chunk_map = &self.world.chunk_map;
+        chunk_map.stop_generation_refill_loop();
+        chunk_map.task_tracker.close();
+        self.chunk_runtime.block_on(chunk_map.task_tracker.wait());
+    }
+}
+
+/// When chunks became ready after a player's tickets appeared in fresh terrain.
+struct PlayerJoinTimes {
+    player_chunk_sendable: Duration,
+    view_area_full: Duration,
+    /// Latest time any chunk at each chessboard distance from the player reached `Full`.
+    ring_full: Vec<Duration>,
+}
+
+fn build_player_join_world(thread_count: usize) -> PlayerJoinWorld {
+    let generator_key = Identifier::vanilla_static("overworld");
+    let output = create_benchmark_generator(
+        &generator_key,
+        CONCURRENT_OVERWORLD_SEED,
+        "player-join benchmark should use a built-in generator",
+    );
+    let dim = output.dimension_type;
+    let generator = Arc::new(output.generator);
+    let generation_settings = WorldGenerationSettings::from_generator_config(
+        generator_key,
+        &output.config,
+        dim.key.clone(),
+        dim.min_y,
+        dim.height,
+    );
+    // Generation tasks run on this runtime in the background while the benchmark thread
+    // ticks the chunk source, as they do beside a live server's tick loop.
+    let chunk_runtime = Arc::new(
+        RuntimeBuilder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("player-join benchmark runtime should build"),
+    );
+    let generation_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(thread_count)
+            .thread_name(|index| format!("bench-player-join-{index}"))
+            .build()
+            .expect("player-join benchmark generation pool should build"),
+    );
+    let damage_history = Arc::new(DamageHistory::default());
+    let world_config = WorldConfig {
+        damage_history: Arc::clone(&damage_history),
+        game_time_source: GameTimeSource::Primary,
+        storage: WorldStorageConfig::RamOnly,
+        level_data_path: None,
+        generator,
+        generation_settings,
+        view_distance: PLAYER_JOIN_VIEW_DISTANCE,
+        simulation_distance: PLAYER_JOIN_VIEW_DISTANCE,
+        max_chained_neighbor_updates: 1_000_000,
+        compression: None,
+        is_flat: false,
+        sea_level: output.sea_level,
+        default_gamemode: GameType::Survival,
+        difficulty: Difficulty::Normal,
+    };
+    let world = chunk_runtime
+        .block_on(World::new_with_config(
+            Arc::clone(&chunk_runtime),
+            Identifier::new("bench", "overworld_player_join"),
+            dim,
+            CONCURRENT_OVERWORLD_SEED,
+            world_config,
+            generation_pool,
+        ))
+        .expect("player-join benchmark world should build");
+
+    PlayerJoinWorld {
+        chunk_runtime,
+        world,
+        _damage_history: damage_history,
+    }
+}
+
+/// Which player-loading situation to time.
+#[derive(Clone, Copy)]
+enum PlayerJoinScenario {
+    /// One player joins fresh terrain at the origin.
+    Join,
+    /// Another player joins at the origin first; two ticks later, while that player's view
+    /// area is still mostly queued, the timed player joins fresh terrain far away, competing
+    /// with that backlog.
+    JoinBesideBacklog,
+}
+
+/// Distance in chunks from the backlog player to the timed player in
+/// [`PlayerJoinScenario::JoinBesideBacklog`]; far enough that their view areas are disjoint.
+const PLAYER_JOIN_BACKLOG_DISTANCE: i32 = 64;
+
+/// Adds the timed player's tickets and ticks the chunk source every 50 ms until that
+/// player's chunk can be sent and every chunk in its view distance is `Full`.
+fn run_player_join(fixture: &PlayerJoinWorld, scenario: PlayerJoinScenario) -> PlayerJoinTimes {
+    let chunk_map = &fixture.world.chunk_map;
+    let center = match scenario {
+        PlayerJoinScenario::Join => ChunkPos::new(0, 0),
+        PlayerJoinScenario::JoinBesideBacklog => {
+            chunk_map.add_benchmark_player_tickets(ChunkPos::new(0, 0), uuid::Uuid::from_u128(2));
+            for _ in 0..2 {
+                chunk_map.advance_benchmark_scheduling();
+                thread::sleep(PLAYER_JOIN_TICK);
+            }
+            ChunkPos::new(PLAYER_JOIN_BACKLOG_DISTANCE, 0)
+        }
+    };
+    let radius = i32::from(PLAYER_JOIN_VIEW_DISTANCE);
+    let view_area = (-radius..=radius)
+        .flat_map(|dz| {
+            (-radius..=radius).map(move |dx| ChunkPos::new(center.0.x + dx, center.0.y + dz))
+        })
+        .collect::<Vec<_>>();
+    let mut full_at = vec![None; view_area.len()];
+    let mut player_chunk_sendable = None;
+
+    chunk_map.add_benchmark_player_tickets(center, uuid::Uuid::from_u128(1));
+    let start = Instant::now();
+    let mut next_tick = start;
+    loop {
+        let now = Instant::now();
+        assert!(
+            now - start < PLAYER_JOIN_TIMEOUT,
+            "player join did not finish within {PLAYER_JOIN_TIMEOUT:?}"
+        );
+        if now >= next_tick {
+            chunk_map.advance_benchmark_scheduling();
+            next_tick += PLAYER_JOIN_TICK;
+        }
+        let elapsed = start.elapsed();
+        for (pos, full_at) in view_area.iter().zip(&mut full_at) {
+            if full_at.is_none() && chunk_map.benchmark_chunk_progress(*pos).full {
+                *full_at = Some(elapsed);
+            }
+        }
+        if player_chunk_sendable.is_none() && chunk_map.benchmark_chunk_progress(center).sendable {
+            player_chunk_sendable = Some(elapsed);
+        }
+        if let (Some(sendable), true) = (player_chunk_sendable, full_at.iter().all(Option::is_some))
+        {
+            let mut ring_full = vec![Duration::ZERO; radius as usize + 1];
+            for (pos, full_at) in view_area.iter().zip(&full_at) {
+                let ring = (pos.0.x - center.0.x)
+                    .unsigned_abs()
+                    .max((pos.0.y - center.0.y).unsigned_abs()) as usize;
+                ring_full[ring] = ring_full[ring].max(full_at.unwrap_or_default());
+            }
+            let times = PlayerJoinTimes {
+                player_chunk_sendable: sendable,
+                view_area_full: ring_full.iter().copied().max().unwrap_or_default(),
+                ring_full,
+            };
+            log_player_join_profile(&times);
+            return times;
+        }
+        thread::sleep(PLAYER_JOIN_POLL);
+    }
+}
+
+fn log_player_join_profile(times: &PlayerJoinTimes) {
+    if !*PLAYER_JOIN_PROFILE {
+        return;
+    }
+    let rings = times
+        .ring_full
+        .iter()
+        .enumerate()
+        .map(|(ring, full)| format!("{ring}:{:.0}ms", duration_ms(*full)))
+        .collect::<Vec<_>>()
+        .join(",");
+    eprintln!(
+        "player join profile player_chunk_sendable_ms={:.0} view_area_full_ms={:.0} ring_full=[{}]",
+        duration_ms(times.player_chunk_sendable),
+        duration_ms(times.view_area_full),
+        rings
+    );
+}
+
+/// A player loading fresh overworld terrain at view distance 10, with the chunk source
+/// ticked every 50 ms like a live server. `player_chunk_sendable` is how long until the
+/// player's own chunk can be sent; `view_area_full` until all 441 chunks in view are `Full`.
+/// The `join_beside_backlog` cases time a player joining while another player's view area is
+/// still being generated. Every sample generates fresh worlds, so the group takes several
+/// minutes per scenario.
+fn bench_overworld_player_join(c: &mut Criterion) {
+    init_globals();
+
+    let mut group = c.benchmark_group("overworld_player_join");
+    // Each iteration generates a whole view area, so every sample runs the same few.
+    group.sampling_mode(SamplingMode::Flat);
+    for (scenario_name, scenario) in [
+        ("join", PlayerJoinScenario::Join),
+        ("join_beside_backlog", PlayerJoinScenario::JoinBesideBacklog),
+    ] {
+        let run_fresh = || {
+            let fixture = build_player_join_world(FULL_PIPELINE_THREAD_COUNT);
+            run_player_join(&fixture, scenario)
+        };
+        // Every run yields both times, so `view_area_full` takes the times of the runs
+        // already made for `player_chunk_sendable` and only generates fresh worlds when
+        // those run out (or when it runs alone).
+        let unused_view_area_full = RefCell::new(VecDeque::new());
+        group.bench_function(format!("{scenario_name}/player_chunk_sendable"), |b| {
+            b.iter_custom(|iterations| {
+                (0..iterations)
+                    .map(|_| {
+                        let times = run_fresh();
+                        unused_view_area_full
+                            .borrow_mut()
+                            .push_back(times.view_area_full);
+                        times.player_chunk_sendable
+                    })
+                    .sum()
+            });
+        });
+        group.bench_function(format!("{scenario_name}/view_area_full"), |b| {
+            b.iter_custom(|iterations| {
+                (0..iterations)
+                    .map(|_| {
+                        let unused = unused_view_area_full.borrow_mut().pop_front();
+                        unused.unwrap_or_else(|| run_fresh().view_area_full)
+                    })
+                    .sum()
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -1961,8 +2219,17 @@ criterion_group! {
         .measurement_time(Duration::from_secs(5));
     targets = bench_noise_kernel
 }
+criterion_group! {
+    name = player_join_benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(30));
+    targets = bench_overworld_player_join
+}
 criterion_main!(
     benches,
+    player_join_benches,
     feature_distribution_benches,
     full_pipeline_benches,
     full_chunk_benches,
