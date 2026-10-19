@@ -153,6 +153,7 @@ impl DesertPyramidPlacer<'_, '_> {
         if self.data.height_position.is_some() {
             return true;
         }
+        StructurePiecePlacer::debug_assert_order_dependent_piece_span(self.bounding_box);
 
         let mut lowest_ground_height = self.region.max_y_exclusive() + 1;
         let mut found_position_within_bounding_box = false;

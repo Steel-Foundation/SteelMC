@@ -49,6 +49,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         if height_position.is_some() {
             return true;
         }
+        StructurePiecePlacer::debug_assert_order_dependent_piece_span(self.bounding_box);
 
         let mut total = 0;
         let mut count = 0;
