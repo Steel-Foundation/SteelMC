@@ -1891,6 +1891,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
+dependencies = [
+ "proc-macro2",
+ "syn 3.0.3",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2846,6 +2856,7 @@ dependencies = [
  "glam",
  "heck",
  "log",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "rand 0.10.3",
@@ -2856,6 +2867,7 @@ dependencies = [
  "smallvec",
  "steel-math",
  "steel-utils",
+ "syn 3.0.3",
  "text_components",
  "tracing",
  "uuid",
@@ -2876,6 +2888,7 @@ dependencies = [
  "parking_lot",
  "phf 0.14.0",
  "phf_codegen 0.14.0",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "rand 0.10.3",
@@ -2888,6 +2901,7 @@ dependencies = [
  "simdnbt",
  "steel-macros",
  "steel-math",
+ "syn 3.0.3",
  "text_components",
  "tokio",
  "toml",
@@ -2904,6 +2918,7 @@ version = "0.16.0+mc26.3"
 dependencies = [
  "criterion",
  "glam",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "rayon",
@@ -2914,6 +2929,7 @@ dependencies = [
  "steel-math",
  "steel-registry",
  "steel-utils",
+ "syn 3.0.3",
  "tracing",
  "wincode",
 ]

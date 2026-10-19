@@ -120,6 +120,14 @@ typos
 Nix and NixOS users can get the pinned toolchain, `lld`, `prek`, and `typos` in one
 step with `nix develop` (or `direnv allow`, using the checked-in `.envrc`).
 
+Generated Rust formatting is disabled by default. Enable the `fmt` feature on
+`steel-registry`, `steel-utils`, and `steel-worldgen` to format their generated files
+with prettyplease during compilation:
+
+```bash
+cargo build --features steel-registry/fmt,steel-utils/fmt,steel-worldgen/fmt
+```
+
 Generated documentation for SteelMC's Rust crates is available in the
 [Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).
 
