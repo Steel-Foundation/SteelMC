@@ -100,6 +100,15 @@ impl Advancement {
     pub const fn rewards(&self) -> &AdvancementRewards {
         &self.rewards
     }
+
+    #[must_use]
+    pub const fn send_telemetry_event(&self) -> bool {
+        self.send_telemetry_event
+    }
+
+    pub const fn parent(&self) -> Option<&Identifier> {
+        self.parent.as_ref()
+    }
 }
 
 impl Hash for Advancement {
