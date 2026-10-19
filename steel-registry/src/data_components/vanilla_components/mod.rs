@@ -41,12 +41,12 @@ pub use crate::chicken_variant::ChickenVariant;
 pub use crate::cow_sound_variant::CowSoundVariant;
 pub use crate::cow_variant::CowVariant;
 pub use crate::frog_variant::FrogVariant;
+pub use crate::game_profile::{GameProfile, ProfileProperty};
 pub use crate::item_predicate::{AdventureModePredicate, BlockPredicate, ItemPredicate, LockCode};
 pub use crate::pig_sound_variant::PigSoundVariant;
 pub use crate::pig_variant::PigVariant;
 pub use crate::resolvable_profile::{
-    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
-    ResolvableProfileContents, StoredGameProfile,
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ResolvableProfile, ResolvableProfileContents,
 };
 pub use crate::sound_event::SoundEventHolder;
 pub use crate::villager_type::VillagerType;

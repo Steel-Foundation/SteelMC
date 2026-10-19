@@ -50,6 +50,7 @@ pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
 pub mod game_events;
+pub mod game_profile;
 pub mod game_rules;
 pub mod instrument;
 pub mod item_predicate;
@@ -83,6 +84,7 @@ pub mod structure;
 pub use structure::processor as structure_processor;
 pub use structure::set as structure_set;
 pub use structure::template_pool;
+pub mod advancement;
 pub mod ticket_type;
 pub mod timeline;
 pub mod trim_material;
@@ -101,12 +103,12 @@ pub use entity_variant::{
     AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
     RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
 };
+pub use game_profile::{GameProfile, ProfileProperty};
 pub use item_stack_template::ItemStackTemplate;
 pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
 pub use potion::{Potion, PotionEffect, PotionRef};
 pub use resolvable_profile::{
-    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
-    ResolvableProfileContents, StoredGameProfile,
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ResolvableProfile, ResolvableProfileContents,
 };
 
 #[expect(warnings)]
@@ -487,3 +489,8 @@ pub mod vanilla_block_state_providers;
 #[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_advancements.rs"]
+pub mod vanilla_advancements;

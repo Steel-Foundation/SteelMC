@@ -384,8 +384,9 @@ impl Player {
         self.play_sound(sound, 1.0, 1.0);
     }
 
-    fn cannot_attack(&self, entity: &dyn Entity) -> bool {
-        !entity.attackable() || entity.skip_attack_interaction(self)
+    fn cannot_attack(self: &Arc<Self>, entity: &dyn Entity) -> bool {
+        !entity.attackable()
+            || entity.skip_attack_interaction(&(Arc::clone(self) as Arc<dyn Entity>))
     }
 
     /// Attacks an entity with the player's main-hand base damage.
@@ -625,7 +626,7 @@ impl Player {
             self.disconnect(Self::invalid_entity_attacked_message());
             log::warn!(
                 "Player {} tried to attack an invalid entity",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }

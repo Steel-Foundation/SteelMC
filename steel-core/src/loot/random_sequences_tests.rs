@@ -212,6 +212,62 @@ fn zero_seed_barrels_share_the_named_stream_for_generation_and_placement() {
 }
 
 #[test]
+fn advancement_rewards_continue_the_named_loot_stream() {
+    use crate::{
+        inventory::container::Container as _,
+        loot::LootContext,
+        player::{advancement::rewards::grant_reward, player_inventory::PlayerInventory},
+        test_support::{TestPlayerBuilder, test_domain},
+    };
+    use steel_registry::advancement::AdvancementRewards;
+
+    let worlds = test_domain("advancement_sequences", &["overworld"]);
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let _domains = runtime
+        .block_on(DomainRandomSequences::load(&worlds))
+        .expect("bind streams");
+    let world = worlds
+        .default_world("advancement_sequences")
+        .expect("world");
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 1).build();
+    let expected = RandomSequences::from_persistent(
+        world.level_data.read().seed(),
+        PersistentRandomSequences::default(),
+    )
+    .expect("settings");
+    let table = &vanilla_loot_tables::CHESTS_SPAWN_BONUS_CHEST;
+    let sequence = table.random_sequence.as_ref().expect("named sequence");
+    let reward = AdvancementRewards {
+        loots: vec![table.key.clone()],
+        ..AdvancementRewards::default()
+    };
+    let mut inventory = PlayerInventory::new();
+    for _ in 0..2 {
+        expected
+            .with_random(sequence, |random| {
+                let mut context = LootContext::new(random).with_world(world);
+                for mut item in table.get_random_items(&mut context)? {
+                    assert!(inventory.add(&mut item));
+                }
+                Ok(())
+            })
+            .expect("expected reward");
+        grant_reward(&player, &reward);
+        assert_eq!(player.inventory.lock().items(), inventory.items());
+    }
+    let actual = world
+        .random_sequences
+        .read()
+        .as_ref()
+        .cloned()
+        .expect("bound");
+    assert_eq!(draw(&actual, sequence), draw(&expected, sequence));
+}
+
+#[test]
 fn domain_worlds_share_sequences_and_domains_stay_isolated() {
     use crate::server::worlds::WorldMap;
     use crate::{config::ResolvedDomainConfig, test_support::test_domain};

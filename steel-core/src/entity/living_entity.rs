@@ -3206,8 +3206,8 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
         }
     }
 }
-
-fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
+/// create an entity reference that can be used inside a lootTable as a source
+pub fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
     let sheep = entity.sheep_loot_state();
     EntityRef {
         entity: entity

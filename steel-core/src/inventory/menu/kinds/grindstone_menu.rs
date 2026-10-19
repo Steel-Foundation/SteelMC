@@ -108,7 +108,7 @@ impl GrindstoneKind {
     ///
     /// # Panics
     /// Panics if the input container is not exactly two slots.
-    #[tracing::instrument(skip(self, _behavior, player, guard), level = "info", fields(player = %player.gameprofile.name))]
+    #[tracing::instrument(skip(self, _behavior, player, guard), level = "info", fields(player = %player.gameprofile.name()))]
     pub(crate) fn create_result(
         &mut self,
         _behavior: &mut MenuBehavior,

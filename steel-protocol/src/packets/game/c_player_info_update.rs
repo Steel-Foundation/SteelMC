@@ -1,4 +1,5 @@
 use steel_macros::ClientPacket;
+use steel_registry::GameProfile;
 use steel_registry::packets::play::C_PLAYER_INFO_UPDATE;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::PrefixedWrite;
@@ -7,7 +8,6 @@ use uuid::Uuid;
 
 // Import RemoteChatSessionData for chat session transmission
 use super::ProtocolRemoteChatSessionData;
-use crate::packets::login::GameProfileProperty;
 
 /// Actions for the player info update packet.
 /// These match the vanilla Java ClientboundPlayerInfoUpdatePacket.Action enum.
@@ -53,11 +53,29 @@ impl From<Option<TextComponent>> for PlayerDisplayName {
     }
 }
 
+/// The player a [`PlayerInfoEntry`] refers to.
+#[derive(Debug, Clone)]
+pub enum PlayerInfoTarget {
+    /// A player the client already knows
+    Uuid(Uuid),
+    /// Required when the packet actions include the add player action
+    Profile(GameProfile),
+}
+
+impl PlayerInfoTarget {
+    /// The UUID sent for this entry.
+    #[must_use]
+    pub const fn uuid(&self) -> Uuid {
+        match self {
+            Self::Uuid(uuid) => *uuid,
+            Self::Profile(profile) => profile.id(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PlayerInfoEntry {
-    pub uuid: Uuid,
-    pub name: Option<String>,
-    pub properties: Vec<GameProfileProperty>,
+    pub target: PlayerInfoTarget,
     pub chat_session: Option<ProtocolRemoteChatSessionData>,
     pub game_mode: Option<VarInt>,
     pub listed: Option<bool>,
@@ -72,9 +90,7 @@ impl PlayerInfoEntry {
     #[must_use]
     pub const fn new(uuid: Uuid) -> Self {
         Self {
-            uuid,
-            name: None,
-            properties: Vec::new(),
+            target: PlayerInfoTarget::Uuid(uuid),
             chat_session: None,
             game_mode: None,
             listed: None,
@@ -147,9 +163,7 @@ impl CPlayerInfoUpdate {
     /// This is sent when a player joins to add them to the tab list.
     #[must_use]
     pub fn create_player_initializing(
-        uuid: Uuid,
-        name: String,
-        properties: Vec<GameProfileProperty>,
+        profile: GameProfile,
         game_mode: i32,
         latency: i32,
         display_name: Option<TextComponent>,
@@ -158,9 +172,7 @@ impl CPlayerInfoUpdate {
         Self {
             actions: PLAYER_INFO_INIT_ACTIONS,
             entries: vec![PlayerInfoEntry {
-                uuid,
-                name: Some(name),
-                properties,
+                target: PlayerInfoTarget::Profile(profile),
                 chat_session: None,
                 game_mode: Some(VarInt(game_mode)),
                 listed: Some(true),
@@ -246,17 +258,16 @@ impl steel_utils::serial::WriteTo for CPlayerInfoUpdate {
         VarInt(self.entries.len() as i32).write(writer)?;
 
         for entry in &self.entries {
-            entry.uuid.write(writer)?;
+            entry.target.uuid().write(writer)?;
 
-            if self.actions & (PlayerInfoAction::AddPlayer as u8) != 0
-                && let Some(name) = &entry.name
-            {
-                name.write_prefixed::<VarInt>(writer)?;
-                // Write properties (including skin textures)
-                VarInt(entry.properties.len() as i32).write(writer)?;
-                for prop in &entry.properties {
-                    prop.write(writer)?;
-                }
+            if self.actions & (PlayerInfoAction::AddPlayer as u8) != 0 {
+                let PlayerInfoTarget::Profile(profile) = &entry.target else {
+                    return Err(std::io::Error::other(
+                        "AddPlayer entry requires a game profile",
+                    ));
+                };
+                profile.name().write_prefixed::<VarInt>(writer)?;
+                profile.write_properties(writer)?;
             }
 
             if self.actions & (PlayerInfoAction::InitializeChat as u8) != 0 {
@@ -322,24 +333,27 @@ mod tests {
     };
     use uuid::Uuid;
 
-    use super::{CPlayerInfoUpdate, GameProfileProperty, PLAYER_INFO_INIT_ACTIONS};
+    use steel_registry::{GameProfile, ProfileProperty};
+
+    use super::{CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS};
 
     #[test]
     fn initial_player_info_preserves_signed_texture_property() {
         let uuid = Uuid::from_u128(1);
-        let packet = CPlayerInfoUpdate::create_player_initializing(
+        let profile = GameProfile::new(
             uuid,
             "CapePlayer".to_owned(),
-            vec![GameProfileProperty {
-                name: "textures".to_owned(),
-                value: "signed-texture-payload".to_owned(),
-                signature: Some("texture-signature".to_owned()),
-            }],
-            0,
-            0,
-            None,
-            true,
-        );
+            vec![
+                ProfileProperty::new(
+                    "textures".to_owned(),
+                    "signed-texture-payload".to_owned(),
+                    Some("texture-signature".to_owned()),
+                )
+                .expect("valid property"),
+            ],
+        )
+        .expect("valid profile");
+        let packet = CPlayerInfoUpdate::create_player_initializing(profile, 0, 0, None, true);
         let mut bytes = Vec::new();
         packet.write(&mut bytes).expect("player info should encode");
 

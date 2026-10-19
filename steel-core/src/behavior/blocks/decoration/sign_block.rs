@@ -222,7 +222,7 @@ fn try_apply_sign_item(
     };
     if !player.abilities.lock().may_build
         || sign.is_waxed()
-        || sign.is_other_player_editing(player.gameprofile.id)
+        || sign.is_other_player_editing(player.gameprofile.id())
     {
         return InteractionResult::TryEmptyHandInteraction;
     }
@@ -282,7 +282,7 @@ fn try_open_sign_editor(
     }
 
     // Check 2: Is another player editing?
-    if sign.is_other_player_editing(player.gameprofile.id) {
+    if sign.is_other_player_editing(player.gameprofile.id()) {
         return InteractionResult::Pass;
     }
 
@@ -304,7 +304,7 @@ fn try_open_sign_editor(
 
 /// Opens the sign editor for `player`, taking the edit lock.
 fn open_text_edit(sign: &SignBlockEntity, player: &Player, pos: BlockPos, slot: SignTextSlot) {
-    sign.set_player_who_may_edit(Some(player.gameprofile.id));
+    sign.set_player_who_may_edit(Some(player.gameprofile.id()));
     player.open_sign_editor(pos, slot);
 }
 

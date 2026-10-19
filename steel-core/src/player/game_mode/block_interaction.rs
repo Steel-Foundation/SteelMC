@@ -50,7 +50,7 @@ impl Player {
         if !location_is_valid {
             log::warn!(
                 "Rejecting UseItemOnPacket from {}: location {:?} too far from block {:?}",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 location,
                 pos
             );
@@ -265,10 +265,10 @@ impl Player {
             return;
         }
 
-        if sign.get_player_who_may_edit() != Some(self.gameprofile.id) {
+        if sign.get_player_who_may_edit() != Some(self.gameprofile.id()) {
             log::warn!(
                 "Player {} tried to edit sign they're not allowed to edit",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -305,7 +305,7 @@ impl Player {
         if let Some(block_entity) = world.get_block_entity(pos)
             && let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>()
         {
-            sign.set_player_who_may_edit(Some(self.gameprofile.id));
+            sign.set_player_who_may_edit(Some(self.gameprofile.id()));
         }
 
         let state = world.get_block_state(pos);

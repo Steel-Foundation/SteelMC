@@ -1,5 +1,6 @@
 //! This module contains all things player-related.
 mod abilities;
+pub mod advancement;
 pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
@@ -48,8 +49,7 @@ use movement::{MovementState, TeleportState};
 use permissions::PlayerPermissionState;
 pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
 pub use profile::{
-    GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
-    is_valid_player_name, offline_uuid,
+    GameProfile, KnownPlayer, KnownPlayers, ProfileLookupError, is_valid_player_name, offline_uuid,
 };
 pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
@@ -156,6 +156,7 @@ const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
+use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
@@ -283,6 +284,9 @@ pub struct Player {
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+
+    /// Manage the advancements of the player
+    pub advancements: SyncMutex<PlayerAdvancement>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -571,7 +575,7 @@ impl Player {
 
         let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
-        let player_uuid = gameprofile.id;
+        let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         Self {
             gameprofile,
@@ -627,6 +631,7 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            advancements: SyncMutex::new(PlayerAdvancement::default()), // TODO save the advancement
         }
     }
 
@@ -916,7 +921,7 @@ impl Player {
             key: death_key.into(),
             fallback: None,
             args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name.clone(),
+                self.gameprofile.name().to_owned(),
             )])),
         }
         .component();
@@ -1144,10 +1149,10 @@ impl Player {
 
     /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
     pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
-        debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
+        debug_assert_eq!(self.gameprofile.id(), replacement.gameprofile.id());
         let replacement_entity: SharedEntity = Arc::<Player>::clone(replacement);
         for pearl in self.ender_pearls() {
-            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
+            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id()) {
                 pearl.restore_owner_reference(&replacement_entity);
             }
         }
@@ -1308,29 +1313,29 @@ impl Entity for Player {
     }
 
     fn scoreboard_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn name(&self) -> TextComponent {
-        TextComponent::plain(self.gameprofile.name.clone())
+        TextComponent::plain(self.gameprofile.name().to_owned())
     }
 
     fn display_name(&self) -> TextComponent {
         self.name()
             .click_event(ClickEvent::suggest_command(format!(
                 "/tell {} ",
-                self.gameprofile.name
+                self.gameprofile.name()
             )))
             .hover_event(HoverEvent::show_entity(
                 "minecraft:player",
                 self.uuid(),
                 Some(self.name()),
             ))
-            .insertion(self.gameprofile.name.clone())
+            .insertion(self.gameprofile.name().to_owned())
     }
 
     fn plain_text_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
@@ -1785,6 +1790,7 @@ impl LivingEntity for Player {
             self.block_breaking.lock().tick(self, &world);
 
             self.update_player_attributes();
+            self.advancements.lock().flush_dirty(self, true);
             self.living_base.refresh_speed_from_attributes();
             self.tick_food_data();
 
