@@ -81,8 +81,7 @@ pub(crate) fn convert_to(
         return None;
     }
     let world = from.level()?;
-    // Only the difficulty gate of vanilla `EntityType.canSpawn` is checked;
-    // Steel does not yet support feature flags.
+    // TODO: Check feature flags once supported cause currently only checks difficulty
     if !entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful {
         return None;
     }
@@ -162,12 +161,12 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     }
 
     to.set_fall_distance(from.fall_distance());
-    to.set_shared_fall_flying(from.is_fall_flying());
+    to.set_fall_flying(from.is_fall_flying());
 
     if let Some(uuid) = from.last_hurt_by_player_uuid() {
         to.set_last_hurt_by_player(uuid, from.last_hurt_by_player_memory_time());
     }
-    // The vanilla `hurtTime` copy is omitted; Steel has no hurt-flash counter yet.
+    // TODO: Copy vanilla `hurtTime` once Steel supports the hurt-flash counter.
 
     to.set_y_body_rot(from.y_body_rot());
     to.set_on_ground(from.on_ground());
@@ -228,7 +227,9 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     }
 
     to.set_custom_name_visible(from.is_custom_name_visible());
-    to.base().set_visual_fire(from.is_on_fire());
+    if let Some(data) = to.synced_data() {
+        data.set_base_on_fire_flag(from.is_on_fire() || to.has_visual_fire());
+    }
     to.set_invulnerable(from.is_invulnerable());
     to.set_no_gravity(from.is_no_gravity());
     to.set_portal_cooldown(from.portal_cooldown());
