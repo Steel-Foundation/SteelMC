@@ -17,10 +17,12 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem, SSetBeacon,
-    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem,
+    SSeenAdvancement, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
+    SSpectatorAction, SUseItem, SUseItemOn,
 };
 
+use crate::command::{handle_client_request, sender::CommandSender};
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
@@ -34,8 +36,6 @@ use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
-
-use crate::command::{handle_client_request, sender::CommandSender};
 
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerSession};
@@ -115,6 +115,7 @@ enum ScheduledPlayPacketKind {
     ClientCommand(SClientCommand),
     ChangeGameMode(SChangeGameMode),
     ChangeDifficulty(SChangeDifficulty),
+    UpdateSelectedTab(SSeenAdvancement),
 }
 
 enum ImmediatePlayPacket {
@@ -217,7 +218,8 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
-            | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Serialized,
+            | ScheduledPlayPacketKind::ChangeDifficulty(_)
+            | ScheduledPlayPacketKind::UpdateSelectedTab(_) => ScheduledPacketExecution::Serialized,
             // Combat spans source and target state, custom payloads have no constrained resource
             // contract, and the unimplemented menu handlers have no auditable transaction yet.
             ScheduledPlayPacketKind::Attack(_)
@@ -350,6 +352,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ChangeDifficulty(packet) => {
                 player.handle_change_difficulty(packet.difficulty);
+            }
+            ScheduledPlayPacketKind::UpdateSelectedTab(packet) => {
+                player.handle_seen_advancement(packet);
             }
         }
     }
@@ -814,6 +819,9 @@ impl JavaConnection {
             )),
             play::S_CHANGE_DIFFICULTY => scheduled(ScheduledPlayPacketKind::ChangeDifficulty(
                 SChangeDifficulty::read_packet(data)?,
+            )),
+            play::S_SEEN_ADVANCEMENTS => scheduled(ScheduledPlayPacketKind::UpdateSelectedTab(
+                SSeenAdvancement::read_packet(data)?,
             )),
             id => DecodedPlayPacket::Immediate(ImmediatePlayPacket::Unknown(id)),
         })

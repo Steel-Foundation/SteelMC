@@ -72,6 +72,7 @@ impl Player {
             let old_stats = old_player.stats.lock();
             self.stats.lock().stats.clone_from(&old_stats.stats);
         }
+        *self.advancements.lock() = old_player.advancements.lock().clone();
         *self.seen_credits.lock() = *old_player.seen_credits.lock();
         let residence = old_player.residence.lock().clone();
         *self.residence.lock() = residence;
