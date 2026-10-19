@@ -103,6 +103,9 @@ impl Hash for AdvancementNode {
 ///
 /// TODO add Dynamic allocated Advancement with a enum :
 /// ```rust
+/// use steel_registry::advancement::Advancement;
+/// use steel_registry::advancement::registry::AdvancementRef;
+///
 /// enum AdvancementHolder {
 ///    Static(AdvancementRef),
 ///    Dynamic(Box<Advancement>),
