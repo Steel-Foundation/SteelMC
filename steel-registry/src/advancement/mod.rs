@@ -106,6 +106,7 @@ impl Advancement {
         self.send_telemetry_event
     }
 
+    #[must_use]
     pub const fn parent(&self) -> Option<&Identifier> {
         self.parent.as_ref()
     }
