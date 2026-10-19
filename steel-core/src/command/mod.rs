@@ -8,6 +8,7 @@ mod protocol;
 mod queue;
 mod registration;
 pub mod sender;
+pub(crate) mod signing_context;
 pub(crate) mod storage;
 
 pub use api::{
