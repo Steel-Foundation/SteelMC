@@ -11,11 +11,11 @@ pub type AdvancementRef = &'static Advancement;
 
 #[derive(Debug)]
 pub struct AdvancementNode {
-    pub children: Vec<usize>,
-    pub parent: Option<usize>,
-    pub value: AdvancementRef,
-    pub x: f32,
-    pub y: f32,
+    children: Vec<usize>,
+    parent: Option<usize>,
+    value: AdvancementRef,
+    x: f32,
+    y: f32,
 }
 
 pub type AdvancementNodeRef = &'static AdvancementNode;
@@ -55,6 +55,30 @@ impl AdvancementNode {
         self.x = x;
         self.y = y;
     }
+
+    #[inline]
+    #[must_use]
+    pub const fn get_location(&self) -> (f32, f32) {
+        (self.x, self.y)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn value(&self) -> AdvancementRef {
+        self.value
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn children(&self) -> Vec<usize> {
+        self.children.clone()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn parent(&self) -> Option<usize> {
+        self.parent
+    }
 }
 
 impl PartialEq<Self> for AdvancementNode {
@@ -89,6 +113,7 @@ pub struct AdvancementRegistry {
 
 impl AdvancementRegistry {
     #[must_use]
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
@@ -125,7 +150,7 @@ impl AdvancementRegistry {
         None
     }
 
-    pub(crate) fn register_all(&mut self, mut advancements_to_add: Vec<AdvancementRef>) {
+    fn register_all(&mut self, mut advancements_to_add: Vec<AdvancementRef>) {
         while !advancements_to_add.is_empty() {
             let len_before = advancements_to_add.len();
 

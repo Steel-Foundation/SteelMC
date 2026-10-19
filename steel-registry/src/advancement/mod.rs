@@ -23,13 +23,13 @@ pub mod registry;
 
 #[derive(Default)]
 pub struct Advancement {
-    pub key: Identifier,
-    pub parent: Option<Identifier>,
-    pub criteria: BTreeMap<String, Box<dyn AnyCriterion>>,
-    pub display: Option<DisplayInfo>,
-    pub send_telemetry_event: bool,
-    pub requirements: AdvancementRequirement,
-    pub rewards: AdvancementRewards,
+    pub(crate) key: Identifier,
+    pub(crate) parent: Option<Identifier>,
+    pub(crate) criteria: BTreeMap<String, Box<dyn AnyCriterion>>,
+    pub(crate) display: Option<DisplayInfo>,
+    pub(crate) send_telemetry_event: bool,
+    pub(crate) requirements: AdvancementRequirement,
+    pub(crate) rewards: AdvancementRewards,
 }
 
 impl Advancement {
@@ -64,6 +64,41 @@ impl Advancement {
             }
             None => None,
         }
+    }
+
+    #[must_use]
+    pub const fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    #[must_use]
+    pub fn has_criterion(&self, criterion: &str) -> bool {
+        self.criteria.contains_key(criterion)
+    }
+
+    #[must_use]
+    pub fn get_criterion(&self, criterion: &str) -> Option<&dyn AnyCriterion> {
+        self.criteria.get(criterion).map(Box::as_ref)
+    }
+
+    #[must_use]
+    pub fn criteria_ids(&self) -> impl IntoIterator<Item = &str> {
+        self.criteria.keys().map(String::as_str)
+    }
+
+    #[must_use]
+    pub const fn requirements(&self) -> &AdvancementRequirement {
+        &self.requirements
+    }
+
+    #[must_use]
+    pub const fn display(&self) -> Option<&DisplayInfo> {
+        self.display.as_ref()
+    }
+
+    #[must_use]
+    pub const fn rewards(&self) -> &AdvancementRewards {
+        &self.rewards
     }
 }
 

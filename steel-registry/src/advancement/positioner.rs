@@ -24,7 +24,7 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), Posi
     };
     if !root_node.has_display() {
         return Err(PositionError::RootMustHaveDisplay(
-            root_node.value.key.to_string(),
+            root_node.value().key.to_string(),
         ));
     }
     //store everything inside a vector to not have to deal with pointer
@@ -47,7 +47,7 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), Posi
     });
 
     let mut previous_idx = None;
-    for child in root_node.children.clone() {
+    for child in root_node.children() {
         previous_idx = TreeNodePosition::add_child(&mut nodes, tree, root_idx, child, previous_idx);
     }
 
@@ -112,14 +112,14 @@ impl TreeNodePosition {
             });
 
             let mut child_prev = None;
-            for child in adv_node.children.clone() {
+            for child in adv_node.children() {
                 child_prev = Self::add_child(nodes, tree, child_idx, child, child_prev);
             }
 
             Some(child_idx)
         } else {
-            for grandchild in &adv_node.children.clone() {
-                previous_idx = Self::add_child(nodes, tree, parent_idx, *grandchild, previous_idx);
+            for grandchild in adv_node.children() {
+                previous_idx = Self::add_child(nodes, tree, parent_idx, grandchild, previous_idx);
             }
             previous_idx
         }
@@ -331,12 +331,12 @@ impl TreeNodePosition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::advancement::registry::AdvancementRef;
+    use crate::advancement::registry::{AdvancementNode, AdvancementRef};
     use crate::vanilla_advancements::*;
     use steel_utils::Identifier;
 
     fn get_location(registry: &AdvancementRegistry, key: &Identifier) -> (f32, f32) {
-        let loc: Option<(f32, f32)> = registry.by_key(key).map(|val| (val.x, val.y));
+        let loc: Option<(f32, f32)> = registry.by_key(key).map(AdvancementNode::get_location);
         loc.unwrap_or_else(|| panic!("unbale to get the location of {key}"))
     }
 

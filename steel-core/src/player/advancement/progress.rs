@@ -23,7 +23,7 @@ impl AdvancementProgressMap {
     ) -> &mut AdvancementProgress {
         let idx = self.map.entry(advancement).or_insert_with(|| {
             let mut progress = AdvancementProgress::default();
-            progress.update(&advancement.requirements);
+            progress.update(advancement.requirements());
             self.order.push((advancement, progress));
             self.order.len() - 1
         });

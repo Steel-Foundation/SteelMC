@@ -5,8 +5,8 @@ use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
 static VISIBILITY_DEPTH: usize = 3;
 
 fn evaluate_visibility_rule(advancement: AdvancementRef, is_done: bool) -> VisibilityRule {
-    let display = &advancement.display;
-    display.as_ref().map_or(VisibilityRule::Hide, |display| {
+    let display = advancement.display();
+    display.map_or(VisibilityRule::Hide, |display| {
         if is_done {
             VisibilityRule::Show
         } else if display.hidden {
@@ -51,13 +51,13 @@ pub(super) fn evaluate_visibility_with_rules(
 ) -> bool {
     let tree = &REGISTRY.advancements.adv_nodes;
     let is_self_done = is_done_test(player_advancement, node);
-    let descendant_visibility = evaluate_visibility_rule(node.value, is_self_done);
+    let descendant_visibility = evaluate_visibility_rule(node.value(), is_self_done);
     let mut is_self_or_descendant_done = is_self_done;
     ascendants.push(descendant_visibility);
 
-    for child in &node.children {
+    for child in node.children() {
         is_self_or_descendant_done |= evaluate_visibility_with_rules(
-            &tree[*child],
+            &tree[child],
             player_advancement,
             ascendants,
             is_done_test,

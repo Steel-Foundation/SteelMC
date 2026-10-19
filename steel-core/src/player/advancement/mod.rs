@@ -65,8 +65,8 @@ impl PlayerAdvancement {
             self.progress_changed.insert(advancement);
             result = true;
             if !was_done && progress.is_done() {
-                grant_reward(player, &advancement.rewards);
-                if let Some(display) = &advancement.display
+                grant_reward(player, advancement.rewards());
+                if let Some(display) = advancement.display()
                     && display.announce_chat
                     && player
                         .level()
@@ -108,7 +108,7 @@ impl PlayerAdvancement {
 
     /// mark the advancement to be sent to the client next tick
     fn mark_for_visibility_update(&mut self, advancement: AdvancementRef) {
-        let node = REGISTRY.advancements.by_key(&advancement.key);
+        let node = REGISTRY.advancements.by_key(advancement.key());
         if let Some(node) = node {
             self.roots_to_update
                 .insert(REGISTRY.advancements.root(node));
@@ -128,11 +128,11 @@ impl PlayerAdvancement {
             &mut |player_advancement, node| {
                 player_advancement
                     .progress
-                    .get_mut_or_start_progress(node.value)
+                    .get_mut_or_start_progress(node.value())
                     .is_done()
             },
             &mut move |player_advancement, node, should_be_visible| {
-                let advancement = node.value;
+                let advancement = node.value();
                 if should_be_visible {
                     if player_advancement.visible.insert(advancement) {
                         added.push(node);
@@ -141,7 +141,7 @@ impl PlayerAdvancement {
                         }
                     }
                 } else if player_advancement.visible.remove(advancement) {
-                    removed.push(advancement.key.clone());
+                    removed.push(advancement.key().clone());
                 }
             },
         );
@@ -163,7 +163,7 @@ impl PlayerAdvancement {
             for advancement in &self.progress_changed {
                 if self.visible.contains(advancement) {
                     progress.insert(
-                        advancement.key.clone(),
+                        advancement.key().clone(),
                         self.progress.get_progress(advancement).unwrap_or_else(|| {
                             unreachable!("progress changed should only contains valid advancement")
                         }),
@@ -206,7 +206,7 @@ impl PlayerAdvancement {
         let old = self.last_selected_tab;
         if let Some(value) = advancement
             && value.is_root()
-            && value.display.is_some()
+            && value.display().is_some()
         {
             self.last_selected_tab = advancement;
         } else {
@@ -215,7 +215,7 @@ impl PlayerAdvancement {
 
         if old != self.last_selected_tab {
             player.send_packet(CSelectAdvancementsTab::new(
-                self.last_selected_tab.map(|e| e.key.clone()),
+                self.last_selected_tab.map(|e| e.key().clone()),
             ));
         }
     }

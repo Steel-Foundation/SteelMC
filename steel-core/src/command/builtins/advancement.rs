@@ -47,7 +47,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                                 |c: &SteelSuggestionContext<'_, CommandSource>,
                                 b: &mut SuggestionsBuilder<'_>| {
                                     if let Ok(advancement) = c.advancement("advancement")  {
-                                        suggest_list(b, advancement.criteria.keys());
+                                        suggest_list(b, advancement.criteria_ids());
                                     };
                                 },
                             )
@@ -216,17 +216,17 @@ impl Mode {
 
 fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
     let tree = &REGISTRY.advancements;
-    let target_node = tree.by_key(&target.key);
+    let target_node = tree.by_key(target.key());
     target_node.map_or_else(
         || vec![target],
         |target_node| {
             let mut advancements = Vec::new();
             if mode.parents() {
-                let mut parent = target_node.parent;
+                let mut parent = target_node.parent();
                 while let Some(parent_id) = parent {
                     let current_node = &tree.adv_nodes[parent_id];
-                    advancements.push(current_node.value);
-                    parent = current_node.parent;
+                    advancements.push(current_node.value());
+                    parent = current_node.parent();
                 }
             }
             advancements.push(target);
@@ -239,9 +239,9 @@ fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
 }
 
 fn add_children(parent: &AdvancementNode, output: &mut Vec<&Advancement>) {
-    for child in &parent.children {
-        let node = &REGISTRY.advancements.adv_nodes[*child];
-        output.push(node.value);
+    for child in parent.children() {
+        let node = &REGISTRY.advancements.adv_nodes[child];
+        output.push(node.value());
         add_children(node, output);
     }
 }
@@ -375,7 +375,7 @@ pub fn perform_criterion(
     advancement: AdvancementRef,
     criterion: &str,
 ) -> Result<i32, CommandSyntaxError> {
-    if !advancement.criteria.contains_key(criterion) {
+    if !advancement.has_criterion(criterion) {
         return Err(CommandSyntaxError::dynamic(
             translations::COMMANDS_ADVANCEMENT_CRITERION_NOT_FOUND
                 .message([advancement.name(), criterion.to_owned().into()]),

@@ -1082,7 +1082,7 @@ unit_argument_parser!(
                 .advancements
                 .advancements
                 .iter()
-                .map(|adv| &adv.key),
+                .map(|adv| adv.key()),
             builder,
         );
     },
@@ -1484,7 +1484,7 @@ fn parse_advancement(reader: &mut StringReader<'_>) -> Result<AdvancementRef, Co
                     ADVANCEMENT_ADVANCEMENT_NOT_FOUND.message([key.to_string()]),
                 ),
             )))),
-            |val| Ok(val.value),
+            |val| Ok(val.value()),
         )
     })
 }
