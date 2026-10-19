@@ -141,7 +141,7 @@ pub trait Animal: AgeableMob {
     fn set_in_love(&self, player: Option<&Player>) {
         self.set_in_love_time(IN_LOVE_TIME);
         if let Some(player) = player {
-            self.set_love_cause_uuid(Some(player.gameprofile.id));
+            self.set_love_cause_uuid(Some(player.gameprofile.id()));
         }
 
         self.broadcast_entity_event(EntityStatus::InLoveHearts);
@@ -377,6 +377,7 @@ pub trait Animal: AgeableMob {
 mod tests {
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockStateId;
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -401,11 +402,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 

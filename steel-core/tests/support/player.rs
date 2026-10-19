@@ -46,12 +46,8 @@ enum TestPlayerContext {
 impl TestPlayerBuilder {
     pub(crate) fn new(world: Arc<World>, name: impl Into<String>, entity_id: i32) -> Self {
         Self {
-            profile: GameProfile {
-                id: Uuid::new_v4(),
-                name: name.into(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
+            profile: GameProfile::new(Uuid::new_v4(), name.into(), Vec::new())
+                .expect("test player name should be valid"),
             connection: Arc::new(PlayerConnection::Other(Box::new(TestConnection::default()))),
             world,
             context: TestPlayerContext::Detached(test_runtime_config(1)),
@@ -61,7 +57,12 @@ impl TestPlayerBuilder {
     }
 
     pub(crate) fn uuid(mut self, uuid: Uuid) -> Self {
-        self.profile.id = uuid;
+        self.profile = GameProfile::new(
+            uuid,
+            self.profile.name().to_owned(),
+            self.profile.properties().to_vec(),
+        )
+        .expect("test player profile should stay valid");
         self
     }
 

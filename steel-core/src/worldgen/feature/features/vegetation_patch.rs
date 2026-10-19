@@ -42,7 +42,7 @@ impl FeatureDecorationRunner {
             region, registry, random, config, origin, x_radius, z_radius,
         );
         let water_surface = Self::waterlogged_vegetation_patch_surface(region, &surface);
-        for surface_pos in water_surface.insertion_order().copied() {
+        for surface_pos in water_surface.java_order().copied() {
             let _ = region.set_block_state(
                 surface_pos,
                 vanilla_blocks::WATER.default_state(),
@@ -149,7 +149,7 @@ impl FeatureDecorationRunner {
         depth: i32,
     ) -> bool {
         for i in 0..depth {
-            let state_to_place = Self::sample_block_state_provider(
+            let state_to_place = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,
@@ -187,7 +187,7 @@ impl FeatureDecorationRunner {
         }
 
         let outwards = Self::vegetation_patch_surface_direction(config.surface).opposite();
-        for surface_pos in surface.insertion_order().copied() {
+        for surface_pos in surface.java_order().copied() {
             if random.next_f32() >= config.vegetation_chance {
                 continue;
             }
@@ -223,7 +223,7 @@ impl FeatureDecorationRunner {
         surface: &JavaBlockPosSet,
     ) -> JavaBlockPosSet {
         let mut water_surface = JavaBlockPosSet::default();
-        for pos in surface.insertion_order().copied() {
+        for pos in surface.java_order().copied() {
             if !Self::vegetation_patch_surface_exposed(region, pos) {
                 water_surface.insert(pos);
             }

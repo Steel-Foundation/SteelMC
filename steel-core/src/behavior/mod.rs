@@ -51,11 +51,6 @@ pub mod item_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
-#[path = "generated/strippables.rs"]
-pub mod strippables;
-
-#[expect(warnings)]
-#[rustfmt::skip]
 #[path = "generated/waxables.rs"]
 pub mod waxables;
 
@@ -78,12 +73,11 @@ pub use context::{
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub(crate) use item::apply_use_remainder;
-pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation, SignApplicator};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
-    HangingSignItem, ScaffoldingBlockItem, ShovelItem, SignItem, SolidBucketItem,
-    StandingAndWallBlockItem,
+    BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
+    ScaffoldingBlockItem, ShieldItem, SolidBucketItem, StandingAndWallBlockItem,
 };
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;

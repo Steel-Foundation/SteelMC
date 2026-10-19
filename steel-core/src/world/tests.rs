@@ -5,6 +5,7 @@ use std::{
 };
 
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::{
     init_vanilla_registry, sound_events, stat::vanilla_stat_types, vanilla_custom_stats,
     vanilla_entities, vanilla_fluids, vanilla_game_rules, vanilla_items,
@@ -110,10 +111,10 @@ fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool)
 #[test]
 fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
     init_vanilla_registry();
-    let sound = &sound_events::ENTITY_PLAYER_LEVELUP;
+    let sound = SoundEventHolder::Registry(&sound_events::ENTITY_PLAYER_LEVELUP);
 
-    assert!(sound_is_within_range(sound, 0.75, 255.0));
-    assert!(!sound_is_within_range(sound, 0.75, 256.0));
+    assert!(sound_is_within_range(&sound, 0.75, 255.0));
+    assert!(!sound_is_within_range(&sound, 0.75, 256.0));
 }
 
 #[test]

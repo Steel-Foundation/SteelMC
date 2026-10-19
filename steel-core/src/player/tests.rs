@@ -2,6 +2,17 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use super::{
+    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
+    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
+    PlayerPermissionState, ResetReason,
+    connection::NetworkConnection,
+    experience::Experience,
+    experience::first_point_level_up_sound,
+    game_mode::block_breaking::BlockBreakAction,
+    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
+    player_inventory::MenuItemDisposition,
+};
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
@@ -46,19 +57,6 @@ use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
-
-use super::{
-    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
-    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
-    PlayerPermissionState, ResetReason,
-    connection::NetworkConnection,
-    experience::Experience,
-    experience::first_point_level_up_sound,
-    game_mode::block_breaking::BlockBreakAction,
-    lifecycle::nullable_game_mode_id,
-    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
-    player_inventory::MenuItemDisposition,
-};
 
 const PLAYER_MAIN_HAND_METADATA_INDEX: u8 = 15;
 const PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX: u8 = 16;
@@ -757,7 +755,12 @@ fn end_credits_removes_all_menus_before_detaching() {
 
     assert!(player.has_won_game());
     assert!(!player.has_container_open());
-    assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+    assert!(
+        world
+            .players
+            .get_by_uuid(&player.gameprofile.id())
+            .is_none()
+    );
     assert_eq!(replacement_removals.load(Ordering::Relaxed), 0);
     let inventory = player.inventory.lock();
     for (item, expected) in [(&vanilla_items::STONE, 2), (&vanilla_items::DIRT, 3)] {
@@ -1278,12 +1281,6 @@ fn equipment_detection_coalesces_before_tracker_drain() {
 }
 
 #[test]
-fn nullable_game_mode_id_matches_vanilla_encoding() {
-    assert_eq!(nullable_game_mode_id(None), -1);
-    assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
-}
-
-#[test]
 fn clear_matching_items_uses_inventory_crafting_then_carried_order() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
@@ -1462,6 +1459,73 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
         world
             .get_block_state(pos)
             .get_value(&BlockStateProperties::LIT)
+    );
+}
+
+#[test]
+fn block_action_restriction_is_rechecked_before_block_destruction() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("block_action_restriction_before_destruction");
+    let world = &world_fixture.world;
+    let pos = BlockPos::new(1, 64, 0);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+
+    let player = test_player(Arc::clone(world));
+    player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
+    player.restore_game_modes(GameType::Adventure, None);
+    player
+        .abilities
+        .lock()
+        .update_for_game_mode(GameType::Adventure);
+
+    let predicate = BlockPredicate::new(
+        Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::STONE])),
+        None,
+        None,
+        DataComponentMatchers::ANY,
+    );
+    let mut allowed_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
+    allowed_tool.set(
+        CAN_BREAK,
+        AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid"),
+    );
+    player.inventory.lock().set_selected_item(allowed_tool);
+
+    {
+        let mut breaking = player.block_breaking.lock();
+        breaking.handle_block_break_action(
+            &player,
+            world,
+            pos,
+            BlockBreakAction::Start,
+            Direction::Up,
+        );
+        for _ in 0..3 {
+            breaking.tick(&player, world);
+        }
+    }
+
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_PICKAXE));
+    player.block_breaking.lock().handle_block_break_action(
+        &player,
+        world,
+        pos,
+        BlockBreakAction::Stop,
+        Direction::Up,
+    );
+
+    assert_eq!(
+        world.get_block_state(pos),
+        vanilla_blocks::STONE.default_state()
     );
 }
 

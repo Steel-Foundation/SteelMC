@@ -168,7 +168,7 @@ impl ItemBehavior for SpawnEggItem {
             clicked_face.relative(clicked_pos)
         };
 
-        let result = Self::spawn_mob(
+        Self::spawn_mob(
             context.world,
             context.player,
             &context.inv,
@@ -176,13 +176,7 @@ impl ItemBehavior for SpawnEggItem {
             spawn_pos,
             true,
             spawn_pos != clicked_pos && clicked_face == steel_utils::Direction::Up,
-        );
-        if result == InteractionResult::Success {
-            context
-                .player
-                .award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
-        }
-        result
+        )
     }
 
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {

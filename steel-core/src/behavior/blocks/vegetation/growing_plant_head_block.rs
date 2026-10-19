@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// Shared behavior for growing plant head blocks.
-pub struct GrowingPlantHeadBlock {
+pub(crate) struct GrowingPlantHeadBlock {
     block: BlockRef,
     growth_direction: Direction,
     schedule_fluid_ticks: bool,

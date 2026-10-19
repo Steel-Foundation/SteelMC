@@ -103,6 +103,10 @@ fn generate_write_code(
                 (-1i8).write(writer)?;
             }
         },
+        // Vanilla's `ByteBufCodecs.OPTIONAL_VAR_INT`: 0 for empty, id + 1 for present.
+        "OptionVarInt" => quote! {
+            steel_utils::codec::VarInt(#value.map_or(0, |value| value as i32 + 1)).write(writer)?;
+        },
         // Registry holder reference format: write (id + 1) as VarInt
         // Minecraft uses 0 for "direct" (inline value) and N>0 for "reference" (registry id = N-1)
         "RegistryHolder" => quote! {
@@ -177,7 +181,7 @@ fn generate_write_code(
         }
         s => panic!(
             "Unknown write strategy: `{s}`. \
-            Expected one of: VarInt, VarLong, Byte, I64, Json, OptionByte, RegistryHolder, Prefixed, Unprefixed, NoPrefixVec"
+            Expected one of: VarInt, VarLong, Byte, I64, Json, OptionByte, OptionVarInt, RegistryHolder, Prefixed, Unprefixed, NoPrefixVec"
         ),
     }
 }

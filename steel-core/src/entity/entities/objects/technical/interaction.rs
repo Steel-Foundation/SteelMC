@@ -1,6 +1,6 @@
 use crate::behavior::InteractionResult;
-use crate::entity::BorrowedNbtCompoundView;
 use crate::entity::damage::DamageSource;
+use crate::entity::{BorrowedNbtCompoundView, SharedEntity};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::player::Player;
 use crate::world::World;
@@ -145,7 +145,7 @@ impl Entity for InteractionEntity {
         true
     }
 
-    fn skip_attack_interaction(&self, source: &dyn Entity) -> bool {
+    fn skip_attack_interaction(&self, source: &SharedEntity) -> bool {
         let Some(player) = source.as_player() else {
             return false;
         };
@@ -164,7 +164,7 @@ impl Entity for InteractionEntity {
     }
 
     fn piston_push_reaction(&self) -> PushReaction {
-        PushReaction::Ignore
+        PushReaction::IgnoreEntity
     }
 
     fn can_be_hit_by_projectile(&self) -> bool {
@@ -368,11 +368,12 @@ impl InteractionEntityDataView<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::Entity;
     use crate::entity::entities::InteractionEntity;
     use crate::entity::entities::objects::technical::interaction::{
         DEFAULT_HEIGHT, DEFAULT_WIDTH, PlayerAction, TAG_HEIGHT, TAG_WIDTH,
     };
+    use crate::entity::{Entity, SharedEntity};
+    use crate::player::Player;
     use crate::test_support::tick_test_world;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
     use glam::DVec3;
@@ -405,8 +406,9 @@ mod tests {
         );
         response_true_interaction.with_entity_data(|data| data.set_response(true));
 
-        assert!(response_false_interaction.skip_attack_interaction(player.as_ref()));
-        assert!(!response_true_interaction.skip_attack_interaction(player.as_ref()));
+        let shared_player: SharedEntity = Arc::<Player>::clone(&player);
+        assert!(response_false_interaction.skip_attack_interaction(&shared_player));
+        assert!(!response_true_interaction.skip_attack_interaction(&shared_player));
     }
 
     #[test]
@@ -429,7 +431,8 @@ mod tests {
         tick_test_world(world, 1, true);
         tick_test_world(world, 2, true);
 
-        interaction.skip_attack_interaction(player.as_ref());
+        let shared_player: SharedEntity = Arc::<Player>::clone(&player);
+        interaction.skip_attack_interaction(&shared_player);
         assert_eq!(
             interaction.last_attack(),
             Some(PlayerAction {
@@ -460,7 +463,7 @@ mod tests {
 
         tick_test_world(world, 5, true);
 
-        interaction.skip_attack_interaction(player.as_ref());
+        interaction.skip_attack_interaction(&shared_player);
         assert_eq!(
             interaction.last_attack(),
             Some(PlayerAction {

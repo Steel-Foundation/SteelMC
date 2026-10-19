@@ -1,18 +1,24 @@
 use steel_macros::item_behavior;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{
-    REGISTRY, blocks::block_state_ext::BlockStateExt, level_events, vanilla_game_events,
+    REGISTRY, blocks::block_state_ext::BlockStateExt, level_events,
+    sound_events::ITEM_HONEYCOMB_WAX_ON, vanilla_game_events,
 };
-use steel_utils::Downcast as _;
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{SignTextSlot, UpdateFlags};
 
 use crate::{
     behavior::{
-        InteractionResult, ItemBehavior, UseOnContext, waxables::get_waxed_from_normal_variant,
+        InteractionResult, ItemBehavior, SignApplicator, UseOnContext,
+        waxables::get_waxed_from_normal_variant,
     },
-    block_entity::{BlockEntity, entities::SignBlockEntity},
+    block_entity::{
+        BlockEntity,
+        entities::{SignBlockEntity, SignText},
+    },
     entity::Entity,
-    world::game_event::GameEventContext,
+    player::Player,
+    world::{World, game_event::GameEventContext},
 };
 
 use super::copper_chest_events::emit_connected_chest_block_change;
@@ -42,7 +48,7 @@ impl ItemBehavior for HoneycombItem {
                 &GameEventContext::new(Some(context.player.as_ref()), Some(waxed_state)),
             );
             context.world.level_event(
-                level_events::PARTICLES_AND_SOUND_WAX_ON,
+                level_events::PARTICLES_WAX_ON,
                 pos,
                 0,
                 Some(context.player.id()),
@@ -52,32 +58,45 @@ impl ItemBehavior for HoneycombItem {
                 pos,
                 old_block_state,
                 context.player,
-                Some(level_events::PARTICLES_AND_SOUND_WAX_ON),
+                Some(level_events::PARTICLES_WAX_ON),
             );
             return InteractionResult::Success;
         }
 
-        // Fall through to sign waxing
-        let Some(block_entity) = context.world.get_block_entity(pos) else {
-            return InteractionResult::Pass;
-        };
+        InteractionResult::Pass
+    }
 
-        let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
-            return InteractionResult::Pass;
-        };
+    fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
+        Some(self)
+    }
+}
 
+impl SignApplicator for HoneycombItem {
+    fn can_apply_to_sign(&self, _text: &SignText, _item: &ItemStack, _player: &Player) -> bool {
+        true
+    }
+
+    fn try_apply_to_sign(
+        &self,
+        world: &World,
+        sign: &SignBlockEntity,
+        _slot: SignTextSlot,
+        _item: &ItemStack,
+        _player: &Player,
+    ) -> bool {
         if !sign.wax() {
-            return InteractionResult::Pass;
+            return false;
         }
-
-        sign.set_changed();
-        context.inv.with_item(ItemStack::shrink_one);
-        context.world.level_event(
-            level_events::PARTICLES_AND_SOUND_WAX_ON,
+        let pos = sign.get_block_pos();
+        world.level_event(level_events::PARTICLES_WAX_ON, pos, 0, None);
+        world.play_sound(
+            &ITEM_HONEYCOMB_WAX_ON,
+            SoundSource::Blocks,
             pos,
-            0,
-            Some(context.player.id()),
+            1.0,
+            1.0,
+            None,
         );
-        InteractionResult::Success
+        true
     }
 }

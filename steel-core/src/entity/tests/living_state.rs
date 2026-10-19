@@ -2,6 +2,7 @@ use super::*;
 use crate::entity::get_kill_credit;
 use crate::test_support::TestPlayerBuilder;
 use std::sync::{Arc, Weak};
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
@@ -75,38 +76,50 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
 }
 
 #[test]
-fn living_tick_state_updates_swing_time() {
+fn living_base_tick_advances_swing_before_living_state() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.swing(InteractionHand::MainHand, false);
-    assert_eq!(entity.living_swing_state().swing_time(), -1);
+    assert!(entity.swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, false));
+    assert_eq!(entity.living_swing_state().swing_time(), 0);
 
+    entity.base_tick_living_entity();
     entity.tick_living_state();
+    assert!(!entity.swing(InteractionHand::OffHand, SwingAnimation::DEFAULT, false));
 
     let swing = entity.living_swing_state();
     assert!(swing.swinging());
-    assert_eq!(swing.swing_time(), 0);
+    assert_eq!(swing.swing_time(), 1);
     assert_eq!(swing.attack_anim().to_bits(), 0.0_f32.to_bits());
 }
 
 #[test]
-fn current_swing_duration_uses_vanilla_dig_effects() {
+fn modified_swing_duration_uses_vanilla_dig_effects() {
     init_vanilla_registry();
     init_behaviors();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION);
+    let default = SwingAnimation::DEFAULT;
+    assert_eq!(
+        entity.modified_swing_duration(default),
+        DEFAULT_SWING_DURATION
+    );
 
     entity.set_mob_effect(vanilla_mob_effects::MINING_FATIGUE, 2);
-    assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION + 6);
+    assert_eq!(
+        entity.modified_swing_duration(default),
+        DEFAULT_SWING_DURATION + 6
+    );
 
     entity.set_mob_effect(vanilla_mob_effects::HASTE, 1);
-    assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION - 2);
+    assert_eq!(
+        entity.modified_swing_duration(default),
+        DEFAULT_SWING_DURATION - 2
+    );
 }
 
 #[test]
-fn current_swing_duration_uses_held_item_component() {
+fn attack_animation_uses_held_item_component() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
@@ -115,7 +128,14 @@ fn current_swing_duration_uses_held_item_component() {
         ItemStack::new(&vanilla_items::WOODEN_SPEAR),
     );
 
-    assert_eq!(entity.current_swing_duration(), 13);
+    assert_eq!(
+        entity.attack_animation(InteractionHand::MainHand).duration,
+        13
+    );
+    assert_eq!(
+        entity.interact_animation(InteractionHand::MainHand),
+        SwingAnimation::DEFAULT
+    );
 }
 
 #[test]

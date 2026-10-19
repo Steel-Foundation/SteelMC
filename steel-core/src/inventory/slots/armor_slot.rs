@@ -78,13 +78,9 @@ impl Slot for ArmorSlot {
 
     fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
         let item = self.get_item(guard);
-        if !item.is_empty()
-            && !player.has_infinite_materials()
-            && item.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
-        {
-            return false;
-        }
-        true
+        item.is_empty()
+            || player.has_infinite_materials()
+            || !item.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
     }
 
     fn get_max_stack_size(&self, _guard: &ContainerLockGuard) -> i32 {

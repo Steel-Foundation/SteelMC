@@ -140,7 +140,7 @@ impl Server {
         log::info!("Saving player data...");
         let mut saved = 0;
         for (player, domain, data) in players_to_save {
-            let uuid = player.gameprofile.id;
+            let uuid = player.gameprofile.id();
             match self
                 .player_data_storage
                 .save_domain_data(&domain, uuid, &data)

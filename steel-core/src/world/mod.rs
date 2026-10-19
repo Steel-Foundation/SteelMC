@@ -5,7 +5,7 @@ use std::{
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI8, Ordering},
     },
     time::Duration,
 };
@@ -33,7 +33,8 @@ use steel_protocol::packets::game::{
     CBlockDestruction, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
     CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
     CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
-    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
+    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, RandomizationType,
+    SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -112,6 +113,7 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod domain_entity_directory;
 mod entity_management;
 mod environment;
 mod events;
@@ -145,6 +147,7 @@ use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
+pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
 use entity_management::nearest_player_distance_in_range;
@@ -272,7 +275,7 @@ pub struct World {
     /// Sea level sent in login/respawn packets.
     pub sea_level: i32,
     /// Default game mode for first-visit player data.
-    pub default_gamemode: GameType,
+    default_gamemode: AtomicI8,
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
@@ -284,6 +287,7 @@ pub struct World {
     neighbor_updater: CollectingNeighborUpdater,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
+    domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
     /// Physical entries retained by this world's chunk-owned game-event registries.
@@ -438,12 +442,13 @@ impl World {
                 compression,
                 is_flat,
                 sea_level,
-                default_gamemode,
+                default_gamemode: AtomicI8::new(default_gamemode.into()),
                 tick_runs_normally: AtomicBool::new(true),
                 handling_tick: AtomicBool::new(false),
                 block_events: SyncMutex::new(BlockEventQueue::default()),
                 neighbor_updater: CollectingNeighborUpdater::new(max_chained_neighbor_updates),
                 entity_manager: WorldEntityManager::new(),
+                domain_entity_directory: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
@@ -493,6 +498,21 @@ impl World {
     #[must_use]
     pub fn domain(&self) -> &str {
         self.key.namespace.as_ref()
+    }
+
+    pub(crate) fn set_domain_entity_directory(&self, directory: Arc<DomainEntityDirectory>) {
+        *self.domain_entity_directory.write() = Some(directory);
+    }
+
+    /// Gets an entity by UUID, checking this world before other loaded worlds in its domain.
+    #[must_use]
+    pub fn get_entity_in_domain_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
+        self.get_entity_by_uuid(uuid).or_else(|| {
+            self.domain_entity_directory
+                .read()
+                .as_ref()
+                .and_then(|directory| directory.get_entity_by_uuid(uuid))
+        })
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
@@ -714,6 +734,10 @@ impl LevelReader for World {
     fn height(&self) -> i32 {
         self.get_height()
     }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
 }
 
 impl LevelReader for Arc<World> {
@@ -765,6 +789,10 @@ impl LevelReader for Arc<World> {
 
     fn height(&self) -> i32 {
         self.as_ref().get_height()
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.as_ref().sea_level
     }
 }
 

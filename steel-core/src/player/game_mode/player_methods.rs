@@ -7,7 +7,8 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
-use steel_protocol::packets::game::SSwing;
+use steel_protocol::packets::game::SPunch;
+use steel_utils::types::InteractionHand;
 
 impl Player {
     /// Default reach distance for block interactions, in blocks.
@@ -40,7 +41,7 @@ impl Player {
         self.update_game_mode_invisibility();
 
         let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
+            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id(), gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
         self.get_world().update_sleeping_player_list();
@@ -128,7 +129,7 @@ impl Player {
         if !player_can_change_difficulty(self, &world) {
             log::warn!(
                 "Player {} tried to change difficulty to {difficulty:?} without permission",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -317,9 +318,15 @@ impl Player {
         self.is_crouching()
     }
 
-    /// Handles a player swing packet.
-    pub fn handle_animate(&self, packet: SSwing) {
+    /// Handles a player punch packet. The punch always swings the main hand
+    /// with the held item's attack animation.
+    pub fn handle_punch(&self, _packet: &SPunch) {
         self.reset_last_action_time();
-        self.swing(packet.hand, false);
+        self.swing(
+            InteractionHand::MainHand,
+            self.attack_animation(InteractionHand::MainHand),
+            false,
+        );
+        self.reset_attack_strength_ticker();
     }
 }

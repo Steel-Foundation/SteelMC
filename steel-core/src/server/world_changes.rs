@@ -398,12 +398,12 @@ impl Server {
     pub fn queue_player_world_selection(
         &self,
         player: Arc<Player>,
-        target_world: Arc<World>,
+        target_world: &Arc<World>,
     ) -> Result<(), String> {
         let target_world = self
             .worlds
             .get(&target_world.key)
-            .filter(|registered| Arc::ptr_eq(registered, &target_world))
+            .filter(|registered| Arc::ptr_eq(registered, target_world))
             .cloned()
             .ok_or_else(|| "target world is not the registered loaded world".to_owned())?;
         let target_domain = target_world.domain().to_owned();
@@ -475,7 +475,7 @@ impl Server {
 
         for request in switches {
             let player = Arc::clone(&request.player);
-            let player_name = player.gameprofile.name.clone();
+            let player_name = player.gameprofile.name().to_owned();
             let pending_token = request.pending_token;
             if let Err(error) = self.start_domain_switch(request) {
                 player.finish_domain_switch(pending_token);
@@ -534,13 +534,19 @@ impl Server {
             return Err("domain switch could not reserve player persistence".to_owned());
         }
         if !player.mark_domain_switch_detached(pending_token) {
-            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            self.release_player_admission(
+                player.gameprofile.id(),
+                PlayerAdmissionState::Relocating,
+            );
             return Err("domain switch lost ownership before detaching".to_owned());
         }
         let Some((current_data, residence_token)) =
             current_world.detach_player_for_domain_switch(&player)
         else {
-            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            self.release_player_admission(
+                player.gameprofile.id(),
+                PlayerAdmissionState::Relocating,
+            );
             return Err("player is not present in the current world".to_owned());
         };
         self.jobs.spawn(DomainSwitchJob::new(

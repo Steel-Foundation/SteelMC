@@ -4,8 +4,6 @@
     "key": "minecraft:player",
     "asset_id": "minecraft:player",
     "show_on_item_frame": false,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -13,8 +11,6 @@
     "key": "minecraft:frame",
     "asset_id": "minecraft:frame",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -22,8 +18,6 @@
     "key": "minecraft:red_marker",
     "asset_id": "minecraft:red_marker",
     "show_on_item_frame": false,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -31,8 +25,6 @@
     "key": "minecraft:blue_marker",
     "asset_id": "minecraft:blue_marker",
     "show_on_item_frame": false,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -40,8 +32,6 @@
     "key": "minecraft:target_x",
     "asset_id": "minecraft:target_x",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": false
   },
   {
@@ -49,8 +39,6 @@
     "key": "minecraft:target_point",
     "asset_id": "minecraft:target_point",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": false
   },
   {
@@ -58,8 +46,6 @@
     "key": "minecraft:player_off_map",
     "asset_id": "minecraft:player_off_map",
     "show_on_item_frame": false,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -67,8 +53,6 @@
     "key": "minecraft:player_off_limits",
     "asset_id": "minecraft:player_off_limits",
     "show_on_item_frame": false,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -76,8 +60,6 @@
     "key": "minecraft:mansion",
     "asset_id": "minecraft:woodland_mansion",
     "show_on_item_frame": true,
-    "map_color": 5393476,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -85,8 +67,6 @@
     "key": "minecraft:monument",
     "asset_id": "minecraft:ocean_monument",
     "show_on_item_frame": true,
-    "map_color": 3830373,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -94,8 +74,6 @@
     "key": "minecraft:banner_white",
     "asset_id": "minecraft:white_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -103,8 +81,6 @@
     "key": "minecraft:banner_orange",
     "asset_id": "minecraft:orange_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -112,8 +88,6 @@
     "key": "minecraft:banner_magenta",
     "asset_id": "minecraft:magenta_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -121,8 +95,6 @@
     "key": "minecraft:banner_light_blue",
     "asset_id": "minecraft:light_blue_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -130,8 +102,6 @@
     "key": "minecraft:banner_yellow",
     "asset_id": "minecraft:yellow_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -139,8 +109,6 @@
     "key": "minecraft:banner_lime",
     "asset_id": "minecraft:lime_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -148,8 +116,6 @@
     "key": "minecraft:banner_pink",
     "asset_id": "minecraft:pink_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -157,8 +123,6 @@
     "key": "minecraft:banner_gray",
     "asset_id": "minecraft:gray_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -166,8 +130,6 @@
     "key": "minecraft:banner_light_gray",
     "asset_id": "minecraft:light_gray_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -175,8 +137,6 @@
     "key": "minecraft:banner_cyan",
     "asset_id": "minecraft:cyan_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -184,8 +144,6 @@
     "key": "minecraft:banner_purple",
     "asset_id": "minecraft:purple_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -193,8 +151,6 @@
     "key": "minecraft:banner_blue",
     "asset_id": "minecraft:blue_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -202,8 +158,6 @@
     "key": "minecraft:banner_brown",
     "asset_id": "minecraft:brown_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -211,8 +165,6 @@
     "key": "minecraft:banner_green",
     "asset_id": "minecraft:green_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -220,8 +172,6 @@
     "key": "minecraft:banner_red",
     "asset_id": "minecraft:red_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -229,8 +179,6 @@
     "key": "minecraft:banner_black",
     "asset_id": "minecraft:black_banner",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": true
   },
   {
@@ -238,8 +186,6 @@
     "key": "minecraft:red_x",
     "asset_id": "minecraft:red_x",
     "show_on_item_frame": true,
-    "map_color": -1,
-    "exploration_map_element": false,
     "track_count": false
   },
   {
@@ -247,8 +193,6 @@
     "key": "minecraft:village_desert",
     "asset_id": "minecraft:desert_village",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -256,8 +200,6 @@
     "key": "minecraft:village_plains",
     "asset_id": "minecraft:plains_village",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -265,8 +207,6 @@
     "key": "minecraft:village_savanna",
     "asset_id": "minecraft:savanna_village",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -274,8 +214,6 @@
     "key": "minecraft:village_snowy",
     "asset_id": "minecraft:snowy_village",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -283,8 +221,6 @@
     "key": "minecraft:village_taiga",
     "asset_id": "minecraft:taiga_village",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -292,8 +228,6 @@
     "key": "minecraft:jungle_temple",
     "asset_id": "minecraft:jungle_temple",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -301,8 +235,6 @@
     "key": "minecraft:swamp_hut",
     "asset_id": "minecraft:swamp_hut",
     "show_on_item_frame": true,
-    "map_color": 10066329,
-    "exploration_map_element": true,
     "track_count": false
   },
   {
@@ -310,8 +242,41 @@
     "key": "minecraft:trial_chambers",
     "asset_id": "minecraft:trial_chambers",
     "show_on_item_frame": true,
-    "map_color": 12741452,
-    "exploration_map_element": true,
+    "track_count": false
+  },
+  {
+    "id": 35,
+    "key": "minecraft:abandoned_camp",
+    "asset_id": "minecraft:abandoned_camp",
+    "show_on_item_frame": true,
+    "track_count": false
+  },
+  {
+    "id": 36,
+    "key": "minecraft:ancient_city",
+    "asset_id": "minecraft:ancient_city",
+    "show_on_item_frame": true,
+    "track_count": false
+  },
+  {
+    "id": 37,
+    "key": "minecraft:desert_pyramid",
+    "asset_id": "minecraft:desert_pyramid",
+    "show_on_item_frame": true,
+    "track_count": false
+  },
+  {
+    "id": 38,
+    "key": "minecraft:mineshaft",
+    "asset_id": "minecraft:mineshaft",
+    "show_on_item_frame": true,
+    "track_count": false
+  },
+  {
+    "id": 39,
+    "key": "minecraft:ocean_ruin_warm",
+    "asset_id": "minecraft:warm_ocean_ruins",
+    "show_on_item_frame": true,
     "track_count": false
   }
 ]
