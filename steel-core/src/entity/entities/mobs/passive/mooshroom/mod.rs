@@ -266,11 +266,12 @@ impl MushroomCowEntity {
             return false;
         }
 
-        let is_bowl = {
-            let inventory = player.inventory.lock();
-            inventory.get_item_in_hand(hand).is(&vanilla_items::BOWL)
-        };
-        if !is_bowl {
+        if !player
+            .inventory
+            .lock()
+            .get_item_in_hand(hand)
+            .is(&vanilla_items::BOWL)
+        {
             return false;
         }
 
@@ -327,9 +328,9 @@ impl MushroomCowEntity {
         } else {
             *self.stew_effects.lock() = Some(effects);
             self.play_sound(&sound_events::ENTITY_MOOSHROOM_EAT, 2.0, 1.0);
-            if !player.has_infinite_materials() {
-                Mob::use_player_item(self, player, hand);
-            }
+            player.inventory.lock().mutate_item_in_hand(hand, |item| {
+                item.consume_one(player.has_infinite_materials());
+            });
             InteractionResult::Success
         }
     }
@@ -366,11 +367,12 @@ impl MushroomCowEntity {
             return false;
         }
 
-        let is_bucket = {
-            let inventory = player.inventory.lock();
-            inventory.get_item_in_hand(hand).is(&vanilla_items::BUCKET)
-        };
-        if !is_bucket {
+        if !player
+            .inventory
+            .lock()
+            .get_item_in_hand(hand)
+            .is(&vanilla_items::BUCKET)
+        {
             return false;
         }
 
