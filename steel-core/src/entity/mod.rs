@@ -83,6 +83,9 @@ use entities::ExperienceOrbEntity;
 pub(crate) const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
 pub(crate) const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
 
+/// The default air drag value for entities.
+pub const DEFAULT_AIR_DRAG: f64 = 0.98;
+
 /// Clamps an entity position using vanilla's load-time world-bound limits.
 pub(crate) fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
     DVec3::new(
@@ -753,6 +756,7 @@ pub(crate) mod ai;
 mod animal;
 pub mod attribute;
 mod base;
+mod block_attached_entity;
 mod block_effects;
 mod callback;
 mod combat_rules;
@@ -826,7 +830,7 @@ pub use living_base::{
     LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
     MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::LivingEntity;
+pub use living_entity::{LivingEntity, living_entity_loot_ref};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,

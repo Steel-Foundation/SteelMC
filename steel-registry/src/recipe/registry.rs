@@ -11,7 +11,7 @@ use super::{
 /// Type-erased recipe reference returned by all-recipe and key lookup APIs.
 #[derive(Clone, Copy)]
 pub struct UntypedRecipeRef {
-    recipe: &'static dyn ErasedRecipe,
+    pub(crate) recipe: &'static dyn ErasedRecipe,
 }
 
 impl UntypedRecipeRef {
