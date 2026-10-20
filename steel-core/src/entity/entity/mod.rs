@@ -376,7 +376,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity handles and consumes an attack before normal damage.
-    fn skip_attack_interaction(&self, _source: &dyn Entity) -> bool {
+    fn skip_attack_interaction(&self, _source: &SharedEntity) -> bool {
         false
     }
 
@@ -2437,8 +2437,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
+    ///
+    /// For the base method, see [`Entity::try_set_position_base`]
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position_base(pos)
+    }
+
+    /// The base method to set the entity's position through world lifecycle validation.
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
+    fn try_set_position_base(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
     }
 
@@ -3185,6 +3193,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
+    /// get the air drag value of the entity
+    fn get_air_drag(&self) -> f64 {
+        let Some(entity) = self.as_living_entity() else {
+            return DEFAULT_AIR_DRAG;
+        };
+        compute_modified_friction(
+            DEFAULT_AIR_DRAG,
+            entity
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
+        )
+    }
+
     /// Applies gravity to the entity's velocity.
     fn apply_gravity(&self) {
         let gravity = self.get_gravity();
@@ -3323,19 +3345,36 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
                 velocity,
+                result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
+                self.as_living_entity()
+                    .map_or_else(|| self.get_gravity(), LivingEntity::get_effective_gravity),
+                self.get_air_drag(),
             );
+
             let next_velocity =
                 if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
                     let effect_state = world.get_block_state(effect_pos);
                     let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-                    behavior.update_entity_movement_after_fall_on(
+                    let (res, bounced) = behavior.update_entity_movement_after_fall_on(
                         effect_state,
                         &world,
                         effect_pos,
                         landing_context,
-                    )
+                    );
+                    if bounced {
+                        behavior.bounce_on(
+                            effect_state,
+                            &world,
+                            effect_pos,
+                            EntityFallOnContext::from_entity(
+                                self.fall_distance(),
+                                self.as_entity_event_source(),
+                            ),
+                        );
+                    }
+                    res
                 } else {
                     landing_context.default_velocity_after_fall_on()
                 };
@@ -3737,6 +3776,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
         // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
     }
+}
+
+fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+    (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
 /// Repositions a direct passenger from the vehicle's attachment point.

@@ -134,6 +134,7 @@ heck = "0.5.0"
 
 # Build dependencies
 phf_codegen = "0.14.0"
+prettyplease = "0.3.0"
 
 # Dev/Bench dependencies
 criterion = "0.8.2"

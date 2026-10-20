@@ -7,6 +7,7 @@ use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
+use crate::entity::DEFAULT_AIR_DRAG;
 use crate::{
     behavior::{
         BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
@@ -22,7 +23,6 @@ const THROTTLE_SLIDE_SPEED_TO: f64 = 0.05;
 const HONEY_BLOCK_TOP: f64 = 0.9375;
 const HONEY_EDGE_OVERLAP_BASE: f64 = 0.4375;
 const SLIDE_EPSILON: f64 = 1.0e-7;
-const VANILLA_ENTITY_DRAG: f64 = 0.980_000_019_073_486_3;
 const SHAPE_BOXES: &[BlockLocalAabb] = &[BlockLocalAabb::new(
     0.0625, 0.0, 0.0625, 0.9375, 0.9375, 0.9375,
 )];
@@ -43,12 +43,12 @@ impl HoneyBlock {
 
     #[must_use]
     fn old_delta_y(delta_y: f64) -> f64 {
-        delta_y / VANILLA_ENTITY_DRAG + 0.08
+        delta_y / DEFAULT_AIR_DRAG + 0.08
     }
 
     #[must_use]
     fn new_delta_y(delta_y: f64) -> f64 {
-        (delta_y - 0.08) * VANILLA_ENTITY_DRAG
+        (delta_y - 0.08) * DEFAULT_AIR_DRAG
     }
 
     #[must_use]
