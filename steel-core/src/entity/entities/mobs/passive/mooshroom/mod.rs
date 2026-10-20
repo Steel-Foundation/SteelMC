@@ -289,13 +289,8 @@ impl MushroomCowEntity {
 
         let overflow = {
             let mut inventory = player.inventory.lock();
-            
-            inventory.apply_filled_result(
-                hand,
-                stew_stack,
-                player.has_infinite_materials(),
-                false,
-            )
+
+            inventory.apply_filled_result(hand, stew_stack, player.has_infinite_materials(), false)
         };
 
         self.play_sound(sound, 1.0, 1.0);
