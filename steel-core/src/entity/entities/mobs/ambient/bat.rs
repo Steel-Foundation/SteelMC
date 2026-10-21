@@ -20,7 +20,7 @@ use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySyncedData,
-    LivingEntity, LivingEntityBase, LivingTravelInput, Mob, MobBase,
+    LivingEntity, LivingEntityBase, LivingTravelInput, Mob, MobBase, SharedEntity,
 };
 use crate::physics::MoveResult;
 use crate::world::{World, is_redstone_conductor};
@@ -258,8 +258,9 @@ impl Entity for BatEntity {
         Mob::base_tick_mob(self);
     }
 
-    fn tick(&self) {
-        LivingEntity::tick_living_entity(self);
+    fn tick(self: Arc<Self>) {
+        let entity: SharedEntity = Arc::<Self>::clone(&self);
+        self.tick_living_entity(&entity);
 
         if self.is_resting() {
             self.set_velocity(DVec3::ZERO);
@@ -321,7 +322,7 @@ impl Entity for BatEntity {
     }
 
     fn check_fall_damage(
-        &self,
+        self: Arc<Self>,
         _vertical_movement: f64,
         _on_ground: bool,
         _on_state: BlockStateId,
@@ -392,12 +393,12 @@ impl LivingEntity for BatEntity {
 
     fn push_entities(&self) {}
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        Mob::mob_ai_step(self)
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        Mob::mob_ai_step(self, entity)
     }
 }
 
