@@ -49,8 +49,8 @@ impl GameProfileArgument {
                 Ok(players
                     .into_iter()
                     .map(|player| ResolvedGameProfile {
-                        uuid: player.gameprofile.id,
-                        name: player.gameprofile.name.clone(),
+                        uuid: player.gameprofile.id(),
+                        name: player.gameprofile.name().to_owned(),
                     })
                     .collect())
             }

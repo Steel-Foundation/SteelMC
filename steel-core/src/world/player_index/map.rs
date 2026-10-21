@@ -10,23 +10,42 @@ use uuid::Uuid;
 use crate::{entity::Entity, player::Player};
 
 struct PlayerSlot {
-    player: ArcSwap<Player>,
+    player: ArcSwap<RegisteredPlayer>,
+}
+
+struct RegisteredPlayer {
+    player: Arc<Player>,
+    _damage_history_owner: Arc<()>,
+}
+
+impl RegisteredPlayer {
+    fn new(player: Arc<Player>) -> Self {
+        Self {
+            _damage_history_owner: player.base().damage_history().retain_owner(),
+            player,
+        }
+    }
 }
 
 impl PlayerSlot {
     fn new(player: Arc<Player>) -> Self {
         Self {
-            player: ArcSwap::new(player),
+            player: ArcSwap::from_pointee(RegisteredPlayer::new(player)),
         }
     }
 
     fn load(&self) -> Arc<Player> {
-        self.player.load_full()
+        Arc::clone(&self.player.load().player)
     }
 
     fn replace(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
-        let previous = self.player.compare_and_swap(expected, replacement);
-        Arc::ptr_eq(&previous, expected)
+        let current = self.player.load_full();
+        if !Arc::ptr_eq(&current.player, expected) {
+            return false;
+        }
+        let replacement = Arc::new(RegisteredPlayer::new(replacement));
+        let previous = self.player.compare_and_swap(&current, replacement);
+        Arc::ptr_eq(&previous, &current)
     }
 }
 
@@ -73,7 +92,7 @@ impl PlayerMap {
     /// session-unique; accepting a duplicate would break entity lookup and
     /// packet routing invariants.
     pub fn insert(&self, player: Arc<Player>) -> bool {
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         let entity_id = player.id();
         let _mutation = self.mutations.lock();
         let slot = Arc::new(PlayerSlot::new(player));
@@ -133,7 +152,7 @@ impl PlayerMap {
 
     /// Removes this exact player from both maps synchronously.
     pub fn remove_player_sync(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         let _mutation = self.mutations.lock();
         let slot = self
             .by_uuid
@@ -164,9 +183,9 @@ impl PlayerMap {
     /// so concurrent attempts using the same expected player cannot both
     /// succeed.
     pub fn replace_player(&self, expected: &Arc<Player>, replacement: Arc<Player>) -> bool {
-        let uuid = expected.gameprofile.id;
+        let uuid = expected.gameprofile.id();
         let entity_id = expected.id();
-        if replacement.gameprofile.id != uuid || replacement.id() != entity_id {
+        if replacement.gameprofile.id() != uuid || replacement.id() != entity_id {
             return false;
         }
 

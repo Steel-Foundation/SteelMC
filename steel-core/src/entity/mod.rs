@@ -1,9 +1,10 @@
 //! This module contains entity-related traits and types.
 
+use std::sync::Weak;
 use std::{
     any::try_as_dyn,
     borrow::Cow,
-    sync::{Arc, LazyLock, Weak},
+    sync::{Arc, LazyLock},
 };
 
 use glam::DVec3;
@@ -13,15 +14,16 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
-    AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CSwingAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     behavior::PushReaction, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
+use steel_registry::data_components::DataComponentType;
 use steel_registry::data_components::vanilla_components::{
-    GLIDER, SWING_ANIMATION, SwingAnimation,
+    ATTACK_ANIMATION, GLIDER, INTERACT_ANIMATION, SwingAnimation,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose, HumanoidArm};
@@ -81,6 +83,9 @@ use entities::ExperienceOrbEntity;
 pub(crate) const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
 pub(crate) const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
 
+/// The default air drag value for entities.
+pub const DEFAULT_AIR_DRAG: f64 = 0.98;
+
 /// Clamps an entity position using vanilla's load-time world-bound limits.
 pub(crate) fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
     DVec3::new(
@@ -128,8 +133,8 @@ fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
 
 /// Global counter for allocating unique entity IDs.
 ///
-/// Mirrors vanilla's `Entity.ENTITY_COUNTER`. Each new entity increments this
-/// counter to get a unique network ID. Starts at 1 (0 is reserved).
+/// Each new entity increments this counter to get a unique network ID. Starts
+/// at 1 (0 is reserved).
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -593,7 +598,6 @@ fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
     }
 }
 
-/// Matches vanilla `LivingEntity.resetForwardDirectionOfRelativePortalPosition`.
 #[must_use]
 pub(crate) const fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
     DVec3::new(offsets.x, offsets.y, 0.0)
@@ -752,6 +756,7 @@ pub(crate) mod ai;
 mod animal;
 pub mod attribute;
 mod base;
+mod block_attached_entity;
 mod block_effects;
 mod callback;
 mod combat_rules;
@@ -776,12 +781,14 @@ mod item_frame;
 mod leash;
 mod living_base;
 mod living_entity;
+mod living_reference;
 mod manager;
 mod mob;
 pub mod mob_effect;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
+mod reference;
 mod registry;
 mod spawn;
 mod storage;
@@ -823,7 +830,7 @@ pub use living_base::{
     LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
     MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::LivingEntity;
+pub use living_entity::{LivingEntity, living_entity_loot_ref};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
@@ -842,6 +849,7 @@ pub use projectile::{
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
+pub use reference::EntityReference;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
@@ -871,7 +879,9 @@ macro_rules! impl_test_downcast_type {
 #[cfg(test)]
 pub(crate) use impl_test_downcast_type;
 
-/// Type alias for a shared entity reference.
+pub use living_reference::LivingEntityRef;
+
+/// Shared ownership of an entity through its gameplay interface.
 pub type SharedEntity = Arc<dyn Entity>;
 
 /// Type alias for a weak entity reference.
@@ -1146,12 +1156,12 @@ fn teleport_entity_cross_world(
     };
 
     let target_level = Arc::downgrade(&teleport_transition.target_world);
-    let mut new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
+    let new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
         &persistent,
         ChunkPos::from_entity_pos(entity.position()),
         &target_level,
     );
-    let Some(new_entity) = new_entities.drain(..).next() else {
+    let Some(new_entity) = new_entities.into_iter().next() else {
         tracing::warn!(
             entity_id = entity.id(),
             entity_type = ?entity.entity_type().key,
@@ -1393,11 +1403,8 @@ pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
     entity: &E,
     world: &World,
 ) -> Option<SharedEntity> {
-    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
-        world
-            .players
-            .get_by_uuid(&uuid)
-            .and_then(|player| world.get_entity_by_id(player.id()))
+    if entity.last_hurt_by_player_uuid().is_some() {
+        entity.living_base().last_hurt_by_player(world)
     } else {
         entity.last_hurt_by_mob()
     }

@@ -31,7 +31,7 @@ impl ShearsItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
-            &GameEventContext::new(Some(context.player), Some(new_state)),
+            &GameEventContext::new(Some(context.player.as_ref()), Some(new_state)),
         );
     }
 }
@@ -95,7 +95,9 @@ mod tests {
     use crate::entity::Entity;
     use crate::player::connection::NetworkConnection;
     use crate::player::{Player, PlayerConnection, ResetReason};
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{
+        TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+    };
     use crate::world::World;
     use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 
@@ -160,7 +162,7 @@ mod tests {
     }
 
     struct ShearsFixture {
-        world: Arc<World>,
+        world_fixture: TestWorld,
         _holder: Arc<ChunkHolder>,
         player: Arc<Player>,
         _observer: Arc<Player>,
@@ -186,15 +188,16 @@ mod tests {
 
     fn create_fixture(key: &'static str, age: u8) -> ShearsFixture {
         init_globals();
-        let world = fresh_test_world(key);
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::KELP
             .default_state()
             .set_value(&BlockStateProperties::AGE_25, age);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "ShearsTester", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "ShearsTester", 1).build();
         player.inventory.lock().set_item_in_hand(
             InteractionHand::MainHand,
             ItemStack::new(&vanilla_items::SHEARS),
@@ -204,7 +207,7 @@ mod tests {
         let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
             packets: Arc::clone(&packets),
         })));
-        let observer = TestPlayerBuilder::new(Arc::clone(&world), "ShearsObserver", 2)
+        let observer = TestPlayerBuilder::new(Arc::clone(world), "ShearsObserver", 2)
             .connection(connection)
             .build();
         assert!(observer.try_set_position(block_center(pos)).is_ok());
@@ -219,7 +222,7 @@ mod tests {
         world.register_game_event_listener(SectionPos::from_block_pos(pos), listener);
 
         ShearsFixture {
-            world,
+            world_fixture,
             _holder: holder,
             player,
             _observer: observer,
@@ -249,7 +252,7 @@ mod tests {
             &fixture.player,
             InteractionHand::MainHand,
             hit_result(fixture.pos),
-            &fixture.world,
+            &fixture.world_fixture.world,
             Arc::clone(&fixture.player.inventory),
         );
         ShearsItem.use_on(&mut context)
@@ -263,6 +266,7 @@ mod tests {
         assert_eq!(use_shears(&fixture), InteractionResult::Success);
         assert_eq!(
             fixture
+                .world_fixture
                 .world
                 .get_block_state(fixture.pos)
                 .get_value(&BlockStateProperties::AGE_25),
@@ -290,10 +294,13 @@ mod tests {
     #[test]
     fn use_on_max_age_head_passes_without_effects() {
         let fixture = create_fixture("shears_max_age", MAX_AGE);
-        let original_state = fixture.world.get_block_state(fixture.pos);
+        let original_state = fixture.world_fixture.world.get_block_state(fixture.pos);
 
         assert_eq!(use_shears(&fixture), InteractionResult::Pass);
-        assert_eq!(fixture.world.get_block_state(fixture.pos), original_state);
+        assert_eq!(
+            fixture.world_fixture.world.get_block_state(fixture.pos),
+            original_state
+        );
         assert_eq!(
             fixture
                 .player

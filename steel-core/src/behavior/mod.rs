@@ -51,11 +51,6 @@ pub mod item_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
-#[path = "generated/strippables.rs"]
-pub mod strippables;
-
-#[expect(warnings)]
-#[rustfmt::skip]
 #[path = "generated/waxables.rs"]
 pub mod waxables;
 
@@ -78,12 +73,11 @@ pub use context::{
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub(crate) use item::apply_use_remainder;
-pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation, SignApplicator};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
-    HangingSignItem, ScaffoldingBlockItem, ShovelItem, SignItem, SolidBucketItem,
-    StandingAndWallBlockItem,
+    BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
+    ScaffoldingBlockItem, ShieldItem, SolidBucketItem, StandingAndWallBlockItem,
 };
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;
@@ -134,7 +128,8 @@ impl Deref for ItemBehaviorLock {
 /// This is separate from `BlockStateExt` (in steel-registry) because these methods
 /// require access to the behavior registry which lives in steel-core.
 pub trait BlockStateBehaviorExt {
-    /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
+    /// Returns whether this block state can hold a fluid inside it, such as
+    /// a waterlogged block, cauldron, or seagrass.
     fn is_liquid_container(&self) -> bool;
 
     /// Returns whether this block state can be replaced by the given fluid block.

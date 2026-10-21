@@ -73,7 +73,6 @@ impl EntityAttachmentPoint {
     }
 }
 
-/// Vanilla `EntityAttachments`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityAttachments {
     pub passenger: &'static [EntityAttachmentPoint],
@@ -253,7 +252,7 @@ impl EntityDimensions {
 }
 
 /// Behavioral flags for entity collision and interaction.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityFlags {
     pub is_pushable: bool,
     pub is_attackable: bool,

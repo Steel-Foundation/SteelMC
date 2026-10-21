@@ -80,7 +80,7 @@ impl ItemBehavior for FishingRodItem {
 
             let player_arc = world
                 .players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .expect("Failed to obtain `player_arc` for launching fishing hook: `player` must be registered in the world.");
 
             hook.shoot_from_player(&player_arc, luck as i32, lure_speed as i32);
@@ -113,8 +113,11 @@ mod tests {
 
     #[test]
     fn retrieving_grounded_hook_does_not_relock_inventory() {
-        let world = fresh_test_world("fishing_rod_grounded_retrieve");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), 1).build();
+        let world_fixture = fresh_test_world("fishing_rod_grounded_retrieve");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player
             .inventory
             .lock()
@@ -126,7 +129,7 @@ mod tests {
             &vanilla_entities::FISHING_BOBBER,
             2,
             DVec3::ZERO,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         hook.set_owner(&owner);
         hook.set_on_ground(true);
@@ -134,7 +137,7 @@ mod tests {
         let mut context = UseItemContext::new(
             &player,
             InteractionHand::MainHand,
-            &world,
+            world,
             Arc::clone(&player.inventory),
         );
 
@@ -152,9 +155,12 @@ mod tests {
         use crate::test_support::insert_ready_full_chunk;
         use steel_utils::ChunkPos;
 
-        let world = fresh_test_world("fishing_rod_cast");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(2), 10).build();
+        let world_fixture = fresh_test_world("fishing_rod_cast");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 10)
+            .uuid(Uuid::from_u128(2))
+            .build();
         player
             .try_set_position(DVec3::new(8.0, 64.0, 8.0))
             .expect("should position player in center of chunk");
@@ -167,7 +173,7 @@ mod tests {
         let mut context = UseItemContext::new(
             &player,
             InteractionHand::MainHand,
-            &world,
+            world,
             Arc::clone(&player.inventory),
         );
 

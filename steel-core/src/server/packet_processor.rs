@@ -73,7 +73,7 @@ impl PacketProcessor {
         packet: ScheduledPlayPacket,
         payload_bytes: usize,
     ) {
-        let player_id = player.gameprofile.id;
+        let player_id = player.gameprofile.id();
         let lane_key = PlayerPacketLaneKey::new(&player.session);
         if player.connection.closed() {
             self.queued.discard_lane(lane_key);
@@ -334,8 +334,7 @@ where
         let (player_packets, player_bytes) = state
             .lanes
             .get(&key)
-            .map(|lane| (lane.outstanding_packets, lane.outstanding_bytes))
-            .unwrap_or_default();
+            .map_or_default(|lane| (lane.outstanding_packets, lane.outstanding_bytes));
         if player_packets >= self.limits.per_player_packets {
             return Err(PacketAdmissionError::PlayerPacketLimit);
         }
@@ -1113,8 +1112,9 @@ mod tests {
 
     #[test]
     fn scheduled_respawn_is_retained_if_domain_switch_queues_before_worker_gate() {
-        let world = fresh_test_world("scheduled_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
+        let world_fixture = fresh_test_world("scheduled_domain_switch_respawn_packet");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "RespawnTester", 1).build();
         let packet = ScheduledPlayPacket::perform_respawn_for_test();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
@@ -1133,8 +1133,9 @@ mod tests {
 
     #[test]
     fn queued_packets_resolve_the_player_bound_when_they_start() {
-        let world = fresh_test_world("packet_session_replacement_resolution");
-        let original = TestPlayerBuilder::new(world, "Original", 1).build();
+        let world_fixture = fresh_test_world("packet_session_replacement_resolution");
+        let world = &world_fixture.world;
+        let original = TestPlayerBuilder::new(Arc::clone(world), "Original", 1).build();
         let replacement = replacement_for(&original);
         let session = Arc::clone(&original.session);
         let processor = PacketProcessor::new();
@@ -1336,9 +1337,10 @@ mod tests {
 
     #[test]
     fn pausing_active_player_session_defers_its_tail_until_exact_resume() {
-        let world = fresh_test_world("packet_active_session_pause");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Paused", 1).build();
-        let unrelated_player = TestPlayerBuilder::new(world, "Unrelated", 2).build();
+        let world_fixture = fresh_test_world("packet_active_session_pause");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Paused", 1).build();
+        let unrelated_player = TestPlayerBuilder::new(Arc::clone(world), "Unrelated", 2).build();
         let processor = PacketProcessor::new();
         processor.schedule(
             Arc::clone(&player),

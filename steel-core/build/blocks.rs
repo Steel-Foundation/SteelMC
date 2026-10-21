@@ -23,7 +23,6 @@ pub struct BlockClass {
 
 pub fn build(blocks: &[BlockClass]) -> String {
     let discovered = scan_object_behaviors("blocks", "block_behavior");
-
     let mut explicit_enum_imports: BTreeMap<String, String> = BTreeMap::new();
     let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
     let mut registrations = Vec::new();

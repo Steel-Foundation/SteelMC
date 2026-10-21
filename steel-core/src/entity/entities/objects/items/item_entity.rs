@@ -21,7 +21,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
+    DEFAULT_AIR_DRAG, Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData,
+    RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -53,11 +54,10 @@ const INFINITE_LIFETIME: i32 = -32768;
 /// Default health (damage resistance).
 const DEFAULT_HEALTH: i32 = 5;
 
-/// Gravity applied per tick (blocks/tick^2). Vanilla: `ItemEntity.getDefaultGravity()`
+/// Gravity applied per tick (blocks/tick^2).
 const DEFAULT_GRAVITY: f64 = 0.04;
 
 /// Air/vertical drag multiplier per tick.
-const AIR_DRAG: f64 = 0.98;
 const FLUID_VERTICAL_NUDGE: f64 = 5.0e-4;
 const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
 const ITEM_WATER_DRAG: f64 = 0.99;
@@ -155,8 +155,6 @@ impl ItemEntity {
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
-    ///
-    /// Mirrors vanilla's `ItemEntity(Level, double, double, double, ItemStack, double, double, double)`.
     #[must_use]
     pub fn with_item_and_velocity(
         entity_type: EntityTypeRef,
@@ -306,8 +304,6 @@ impl ItemEntity {
     ///
     /// Returns `true` if the item was fully picked up (and the entity should be removed),
     /// `false` if pickup failed or was only partial.
-    ///
-    /// Mirrors vanilla's `ItemEntity.playerTouch(Player)`.
     pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
         // Check pickup delay
         if self.has_pickup_delay() {
@@ -316,7 +312,7 @@ impl ItemEntity {
 
         // Check owner restriction
         if let Some(owner_uuid) = self.get_owner()
-            && owner_uuid != player.gameprofile.id
+            && owner_uuid != player.gameprofile.id()
         {
             return false;
         }
@@ -372,7 +368,6 @@ impl ItemEntity {
 
     /// Returns true if this item entity can be merged with others.
     ///
-    /// Mirrors vanilla's `ItemEntity.isMergeable()`.
     /// An item is mergeable if:
     /// - It's not removed
     /// - It doesn't have infinite pickup delay (32767)
@@ -392,7 +387,6 @@ impl ItemEntity {
 
     /// Checks if two item stacks can be merged together.
     ///
-    /// Mirrors vanilla's `ItemEntity.areMergeable()`.
     /// Returns true if the items are the same type with the same components,
     /// and their combined count wouldn't exceed max stack size.
     #[must_use]
@@ -407,7 +401,6 @@ impl ItemEntity {
 
     /// Attempts to merge with another item entity.
     ///
-    /// Mirrors vanilla's `ItemEntity.tryToMerge()`.
     /// The item with fewer items is merged into the one with more.
     fn try_to_merge(&self, other: &Self) {
         let this_stack = self.get_item();
@@ -431,8 +424,6 @@ impl ItemEntity {
     }
 
     /// Merges the `from_item`'s stack into the `to_item`'s stack.
-    ///
-    /// Mirrors vanilla's `ItemEntity.merge(ItemEntity, ItemStack, ItemEntity, ItemStack)`.
     fn merge_stacks(
         to_item: &Self,
         to_stack: &ItemStack,
@@ -476,7 +467,6 @@ impl ItemEntity {
 
     /// Attempts to merge this item with nearby item entities.
     ///
-    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbors()`.
     /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
     pub fn merge_with_neighbors(&self, world: &Arc<World>) {
@@ -543,7 +533,7 @@ impl Entity for ItemEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         // Check if item is empty
         if self.get_item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
@@ -584,7 +574,9 @@ impl Entity for ItemEntity {
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
-            if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
+            if let Some(result) =
+                Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity())
+            {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {
                     return;
@@ -597,15 +589,15 @@ impl Entity for ItemEntity {
                         && let Some(block_pos) = self.block_pos_below_that_affects_movement()
                     {
                         let block_state = world.get_block_state(block_pos);
-                        f64::from(block_state.get_block().config.friction) * AIR_DRAG
+                        f64::from(block_state.get_block().config.friction) * DEFAULT_AIR_DRAG
                     } else {
-                        AIR_DRAG
+                        DEFAULT_AIR_DRAG
                     };
 
                     let mut velocity = self.velocity();
                     velocity.x *= friction;
                     velocity.z *= friction;
-                    velocity.y *= AIR_DRAG;
+                    velocity.y *= DEFAULT_AIR_DRAG;
 
                     // Bounce when landing on ground (vanilla: ItemEntity.tick lines 145-149)
                     if result.on_ground && velocity.y < 0.0 {
@@ -638,7 +630,6 @@ impl Entity for ItemEntity {
         }
 
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)
-        // Vanilla: if (getDeltaMovement().subtract(oldMovement).lengthSqr() > 0.01) needsSync = true
         let new_movement = self.velocity();
         let diff = DVec3::new(
             new_movement.x - old_movement.x,

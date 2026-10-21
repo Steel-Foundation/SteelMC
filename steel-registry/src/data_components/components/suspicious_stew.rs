@@ -149,6 +149,12 @@ impl ReadFrom for SuspiciousStewEffects {
 
 impl ToNbtTag for SuspiciousStewEffects {
     fn to_nbt_tag(self) -> NbtTag {
+        (&self).to_nbt_tag()
+    }
+}
+
+impl ToNbtTag for &SuspiciousStewEffects {
+    fn to_nbt_tag(self) -> NbtTag {
         if self.effects.is_empty() {
             NbtTag::List(NbtList::Empty)
         } else {

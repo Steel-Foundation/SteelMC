@@ -900,7 +900,8 @@ mod tests {
     fn deferred_listener_destruction_runs_without_storage_lock() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("listener_drop_reentrancy");
+        let world_fixture = fresh_test_world("listener_drop_reentrancy");
+        let world = &world_fixture.world;
         let storage = Arc::new(GameEventListenerStorage::new());
         let section_y = SectionPos::block_to_section_coord(64);
         let replacement: SharedGameEventListener = Arc::new(FixedListener {
@@ -918,7 +919,7 @@ mod tests {
 
         let context = GameEventContext::default();
         let mut dispatcher = GameEventDispatcher::new(
-            &world,
+            world,
             &vanilla_game_events::BLOCK_CHANGE,
             DVec3::new(0.5, 64.5, 0.5),
             &context,
@@ -935,9 +936,10 @@ mod tests {
     fn world_dispatch_uses_vanilla_chunk_order_not_registration_order() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("game_event_chunk_order");
-        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(-1, 0));
-        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("game_event_chunk_order");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, steel_utils::ChunkPos::new(-1, 0));
+        insert_ready_full_chunk(world, steel_utils::ChunkPos::new(0, 0));
         let events = Arc::new(SyncMutex::new(Vec::new()));
         let left_pos = DVec3::new(-0.5, 64.5, 0.5);
         let right_pos = DVec3::new(0.5, 64.5, 0.5);
@@ -975,9 +977,10 @@ mod tests {
     fn equal_distance_delivery_keeps_vanilla_traversal_order() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("equal_distance_game_event_order");
-        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(-1, 0));
-        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("equal_distance_game_event_order");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, steel_utils::ChunkPos::new(-1, 0));
+        insert_ready_full_chunk(world, steel_utils::ChunkPos::new(0, 0));
         let events = Arc::new(SyncMutex::new(Vec::new()));
         let left_pos = DVec3::new(-0.5, 64.5, 0.5);
         let right_pos = DVec3::new(0.5, 64.5, 0.5);

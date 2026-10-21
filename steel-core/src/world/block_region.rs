@@ -279,10 +279,11 @@ mod tests {
 
     #[test]
     fn region_reuses_section_reads_across_chunk_and_section_boundaries() {
-        let world = fresh_test_world("block_region_reads");
+        let world_fixture = fresh_test_world("block_region_reads");
+        let world = &world_fixture.world;
         init_behaviors();
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        insert_ready_full_chunk(&world, ChunkPos::new(1, 0));
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(world, ChunkPos::new(1, 0));
 
         let first = BlockPos::new(15, 64, 0);
         let second = BlockPos::new(16, 80, 0);
@@ -346,9 +347,10 @@ mod tests {
 
     #[test]
     fn oversized_region_uses_streaming_reads() {
-        let world = fresh_test_world("oversized_block_region_reads");
+        let world_fixture = fresh_test_world("oversized_block_region_reads");
+        let world = &world_fixture.world;
         init_behaviors();
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let first = BlockPos::new(0, 64, 0);
         assert!(world.set_block(
@@ -359,7 +361,7 @@ mod tests {
 
         let oversized_bounds =
             BlockRegionBounds::from_corners(first, BlockPos::new(16 * 64, first.y(), first.z()));
-        assert!(BlockRegionWorkset::try_new(&world, oversized_bounds).is_none());
+        assert!(BlockRegionWorkset::try_new(world, oversized_bounds).is_none());
         assert!(!world.block_states_in_aabb_are_air(WorldAabb::new(
             f64::from(first.x()),
             f64::from(first.y()),

@@ -38,7 +38,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData, entity_loot_ref, position_rider_default,
+    PathfinderMob, SharedEntity, SpawnGroupData, entity_loot_ref, position_rider_default,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -286,13 +286,13 @@ impl ChickenEntity {
             .is_in_tag(item_stack.item(), &ItemTag::CHICKEN_FOOD)
     }
 
-    /// Returns vanilla `Chicken.isChickenJockey`.
+    /// Returns whether this chicken is currently ridden by a chicken jockey mob.
     #[must_use]
     pub fn is_chicken_jockey(&self) -> bool {
         self.chicken_state.lock().is_chicken_jockey
     }
 
-    /// Sets vanilla `Chicken.isChickenJockey`.
+    /// Sets whether this chicken is a chicken jockey mount.
     pub fn set_chicken_jockey(&self, is_chicken_jockey: bool) {
         self.chicken_state.lock().is_chicken_jockey = is_chicken_jockey;
     }
@@ -530,12 +530,12 @@ impl LivingEntity for ChickenEntity {
         }
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -610,8 +610,8 @@ impl Mob for ChickenEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {

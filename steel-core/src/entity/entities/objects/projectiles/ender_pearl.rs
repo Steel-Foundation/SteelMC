@@ -168,7 +168,9 @@ impl EnderPearlEntity {
         !owner_alive && !owner_won_game && vanish_on_death_rule
     }
 
-    /// Vanilla `ThrownEnderpearl.isAllowedToTeleportOwner`.
+    /// Returns whether the owner may be teleported to: if still in the
+    /// pearl's world they must be alive and not sleeping, otherwise a
+    /// cross-dimension teleport requires portal permission.
     fn is_allowed_to_teleport_owner(world: &Arc<World>, player: &Player) -> bool {
         let player_world = player.get_world();
         if Arc::ptr_eq(&player_world, world) {
@@ -179,8 +181,6 @@ impl EnderPearlEntity {
     }
 
     /// Teleports the owning player and applies the pearl's effects.
-    ///
-    /// Mirrors the `ServerPlayer` branch of vanilla `ThrownEnderpearl.onHit`.
     fn teleport_owner(
         &self,
         world: &Arc<World>,
@@ -251,7 +251,7 @@ impl Entity for EnderPearlEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         // Vanilla `ThrownEnderpearl.tick`: vanish if the owner died (gamerule),
         // otherwise run the throwable projectile movement/collision loop and keep
         // the pearl's chunk loaded via the ENDER_PEARL ticket.
@@ -266,7 +266,7 @@ impl Entity for EnderPearlEntity {
             return;
         }
 
-        self.throwable_projectile_tick();
+        Arc::clone(&self).throwable_projectile_tick();
 
         if self.is_alive() {
             self.update_ender_pearl_ticket(&world);
@@ -329,22 +329,22 @@ impl Projectile for EnderPearlEntity {
         &self.projectile_base
     }
 
-    fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+    fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         // Vanilla `ThrownEnderpearl.onHitEntity`: deal 0 damage with a `thrown`
         // source so the hit entity registers the impact without being hurt.
-        let mut damage =
-            DamageSource::environment(&vanilla_damage_types::THROWN).with_direct_entity(self.id());
+        let mut damage = DamageSource::environment(&vanilla_damage_types::THROWN)
+            .with_direct_entity(Arc::<Self>::clone(&self));
         if let Some(owner) = self.get_owner() {
-            damage = damage.with_causing_entity(owner.id());
+            damage = damage.with_causing_entity(owner);
         }
         if let Some(world) = entity.level() {
             entity.hurt(&world, &damage, 0.0);
         }
     }
 
-    fn on_hit(&self, hit: &ProjectileHit) {
+    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        self.projectile_on_hit(hit);
+        Arc::clone(&self).projectile_on_hit(hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {
@@ -475,15 +475,16 @@ mod tests {
     fn ticket_renewal_registers_with_the_resolved_owner() {
         init_vanilla_registry();
 
-        let world = fresh_test_world("ender_pearl_ticket_owner");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
+        let world_fixture = fresh_test_world("ender_pearl_ticket_owner");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Owner", 1).build();
         let owner: SharedEntity = Arc::<Player>::clone(&player);
         let pearl = Arc::new(EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(0.5, 64.0, 0.5),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         pearl.set_owner_entity(Some(&owner));
         let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
@@ -492,7 +493,7 @@ mod tests {
         }
 
         assert!(player.ender_pearls().is_empty());
-        pearl.update_ender_pearl_ticket(&world);
+        pearl.update_ender_pearl_ticket(world);
 
         let registered = player.ender_pearls();
         assert_eq!(registered.len(), 1);

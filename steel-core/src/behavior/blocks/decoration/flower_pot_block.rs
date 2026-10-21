@@ -4,6 +4,7 @@
 //! Vanilla reads `EnvironmentAttributes.EYEBLOSSOM_OPEN`, which Steel lacks
 //! (the same gap documented on `EyeblossomBlock`).
 
+use crate::player::player_inventory::Prediction;
 use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashMap;
@@ -107,7 +108,10 @@ impl BlockBehavior for FlowerPotBlock {
             return InteractionResult::Consume;
         }
 
-        player.add_item_or_drop(ItemStack::new(REGISTRY.items.by_block(self.potted)));
+        player.add_item_or_drop(
+            ItemStack::new(REGISTRY.items.by_block(self.potted)),
+            Prediction::Predicted,
+        );
         world.set_block(
             pos,
             vanilla_blocks::FLOWER_POT.default_state(),
@@ -205,9 +209,10 @@ mod tests {
     #[test]
     fn placing_and_removing_a_plant_swaps_the_potted_state() {
         init_globals();
-        let world = fresh_test_world("flower_pot_interaction");
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(TEST_POS));
-        let player = test_player(&world);
+        let world_fixture = fresh_test_world("flower_pot_interaction");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(TEST_POS));
+        let player = test_player(world);
         let mut inventory =
             InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
 
@@ -224,7 +229,7 @@ mod tests {
         assert_eq!(
             empty_pot().use_item_on(
                 world.get_block_state(TEST_POS),
-                &world,
+                world,
                 TEST_POS,
                 &player,
                 InteractionHand::MainHand,
@@ -246,7 +251,7 @@ mod tests {
         assert_eq!(
             potted_dandelion().use_item_on(
                 world.get_block_state(TEST_POS),
-                &world,
+                world,
                 TEST_POS,
                 &player,
                 InteractionHand::MainHand,
@@ -258,7 +263,7 @@ mod tests {
         assert_eq!(
             potted_dandelion().use_without_item(
                 world.get_block_state(TEST_POS),
-                &world,
+                world,
                 TEST_POS,
                 &player,
                 &interaction_hit(),
@@ -282,7 +287,7 @@ mod tests {
         assert_eq!(
             empty_pot().use_without_item(
                 world.get_block_state(TEST_POS),
-                &world,
+                world,
                 TEST_POS,
                 &player,
                 &interaction_hit(),

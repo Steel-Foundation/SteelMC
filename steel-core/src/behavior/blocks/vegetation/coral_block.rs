@@ -43,7 +43,6 @@ impl CoralBlock {
         world.is_face_sturdy(below, below_pos, Direction::Up)
     }
 
-    /// Vanilla `BaseCoralPlantTypeBlock.scanForWater`.
     pub(super) fn scan_for_water(
         state: BlockStateId,
         world: &dyn LevelReader,
@@ -61,7 +60,6 @@ impl CoralBlock {
         })
     }
 
-    /// Vanilla `BaseCoralPlantTypeBlock.tryScheduleDieTick`.
     pub(super) fn schedule_die_tick(
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,

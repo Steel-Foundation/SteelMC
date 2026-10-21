@@ -166,7 +166,7 @@ impl World {
 
     /// Sets this world's weather timers and flags.
     ///
-    /// Minecraft 26.2 owns this state at server scope. Steel intentionally owns
+    /// Vanilla owns this state at server scope. Steel intentionally owns
     /// it per world so multiple worlds in one domain can have independent weather.
     pub(crate) fn set_weather_parameters(
         &self,
@@ -227,7 +227,8 @@ impl World {
         guard.rain_level * guard.thunder_level > 0.9 && self.can_have_weather()
     }
 
-    /// Returns the current vanilla `SKY_LIGHT_LEVEL` environment attribute.
+    /// Returns this dimension's current sky light level, dimmed by rain and
+    /// thunder when the dimension has weather.
     pub fn sky_light_level(&self) -> f32 {
         let (rain_level, thunder_level) = if self.can_have_weather() {
             let weather = self.weather.lock();
@@ -246,7 +247,8 @@ impl World {
         )
     }
 
-    /// Returns vanilla `Level.skyDarken`.
+    /// Returns how much the sky light level is currently dimmed, rising as
+    /// the sky light level drops from its daytime maximum.
     pub fn sky_darkening(&self) -> u8 {
         environment::sky_darkening(self.sky_light_level())
     }
@@ -269,12 +271,14 @@ impl World {
             .saturating_sub(self.sky_darkening())
     }
 
-    /// Returns vanilla `Level.isBrightOutside`.
+    /// Returns whether it is currently bright enough outside for daytime
+    /// mob behavior (dimensions with a fixed time are never "bright").
     pub fn is_bright_outside(&self) -> bool {
         self.dimension_type.fixed_time.is_none() && self.sky_darkening() < 4
     }
 
-    /// Returns vanilla `Level.isDarkOutside`.
+    /// Returns whether it is currently dark enough outside for hostile mobs
+    /// to spawn in daylight (dimensions with a fixed time are never "dark").
     pub fn is_dark_outside(&self) -> bool {
         self.dimension_type.fixed_time.is_none() && !self.is_bright_outside()
     }
@@ -375,19 +379,23 @@ impl World {
         let modified_temp = match biome.temperature_modifier {
             TemperatureModifier::None => biome.temperature,
             TemperatureModifier::Frozen => {
-                let large = FROZEN_BIOME_TEMPERATURE_NOISE
-                    .get_value(f64::from(pos.x()) * 0.05, f64::from(pos.z()) * 0.05)
-                    * 7.0;
-                let edge =
-                    BIOME_INFO_NOISE.get_value(f64::from(pos.x()) * 0.2, f64::from(pos.z()) * 0.2);
+                let large = f64::from(
+                    FROZEN_BIOME_TEMPERATURE_NOISE
+                        .get_value(f64::from(pos.x()) * 0.05, f64::from(pos.z()) * 0.05)
+                        * 7.0,
+                );
+                let edge = f64::from(
+                    BIOME_INFO_NOISE.get_value(f64::from(pos.x()) * 0.2, f64::from(pos.z()) * 0.2),
+                );
                 if large + edge < 0.3 {
-                    let small = BIOME_INFO_NOISE
-                        .get_value(f64::from(pos.x()) * 0.09, f64::from(pos.z()) * 0.09);
-                    if small < 0.8 {
-                        return 0.2;
-                    }
+                    let small = f64::from(
+                        BIOME_INFO_NOISE
+                            .get_value(f64::from(pos.x()) * 0.09, f64::from(pos.z()) * 0.09),
+                    );
+                    if small < 0.8 { 0.2 } else { biome.temperature }
+                } else {
+                    biome.temperature
                 }
-                biome.temperature
             }
         };
 
@@ -396,10 +404,10 @@ impl World {
             return modified_temp;
         }
 
-        let noise = BIOME_TEMPERATURE_NOISE
-            .get_value(f64::from(pos.x()) / 8.0, f64::from(pos.z()) / 8.0)
-            as f32
-            * 8.0;
+        let noise = BIOME_TEMPERATURE_NOISE.get_value(
+            f64::from(pos.x() as f32 / 8.0),
+            f64::from(pos.z() as f32 / 8.0),
+        ) * 8.0;
         modified_temp - (noise + pos.y() as f32 - snow_level as f32) * 0.05 / 40.0
     }
 }

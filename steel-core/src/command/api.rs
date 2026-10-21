@@ -794,24 +794,6 @@ impl<'input> CommandReader<'_, 'input> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::CommandReader;
-    use crate::command::brigadier::StringReader;
-
-    #[test]
-    fn command_reader_cursor_is_a_utf8_byte_offset() {
-        let mut inner = StringReader::new("é🦀");
-        let mut reader = CommandReader { inner: &mut inner };
-
-        assert_eq!(reader.read(), Some('é'));
-        assert_eq!(reader.cursor(), 2);
-        assert_eq!(reader.read(), Some('🦀'));
-        assert_eq!(reader.cursor(), 6);
-        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
-    }
-}
-
 /// Read-only source facts available while a custom argument is parsed.
 #[derive(Clone, Copy)]
 pub struct CommandParserSource<'source> {
@@ -940,5 +922,23 @@ where
 
     fn cancel(&mut self) {
         self.0.cancel();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandReader;
+    use crate::command::brigadier::StringReader;
+
+    #[test]
+    fn command_reader_cursor_is_a_utf8_byte_offset() {
+        let mut inner = StringReader::new("é🦀");
+        let mut reader = CommandReader { inner: &mut inner };
+
+        assert_eq!(reader.read(), Some('é'));
+        assert_eq!(reader.cursor(), 2);
+        assert_eq!(reader.read(), Some('🦀'));
+        assert_eq!(reader.cursor(), 6);
+        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }
