@@ -82,7 +82,7 @@ impl Player {
         *last_item = main_hand_item;
     }
 
-    fn reset_attack_strength_ticker(&self) {
+    pub(crate) fn reset_attack_strength_ticker(&self) {
         self.tick_state.lock().reset_attack_strength_ticker();
     }
 
@@ -310,7 +310,11 @@ impl Player {
             self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
         }
         self.play_sound_holder(piercing_weapon.sound.as_ref());
-        self.swing(InteractionHand::MainHand, false);
+        self.swing(
+            InteractionHand::MainHand,
+            self.attack_animation(InteractionHand::MainHand),
+            false,
+        );
     }
 
     fn stab_attack(
@@ -380,8 +384,9 @@ impl Player {
         self.play_sound(sound, 1.0, 1.0);
     }
 
-    fn cannot_attack(&self, entity: &dyn Entity) -> bool {
-        !entity.attackable() || entity.skip_attack_interaction(self)
+    fn cannot_attack(self: &Arc<Self>, entity: &dyn Entity) -> bool {
+        !entity.attackable()
+            || entity.skip_attack_interaction(&(Arc::clone(self) as Arc<dyn Entity>))
     }
 
     /// Attacks an entity with the player's main-hand base damage.
@@ -621,7 +626,7 @@ impl Player {
             self.disconnect(Self::invalid_entity_attacked_message());
             log::warn!(
                 "Player {} tried to attack an invalid entity",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -686,10 +691,9 @@ impl Player {
             return;
         }
 
+        let animation = self.interact_animation(packet.hand);
         let result = self.interact_on(target.as_ref(), packet.hand, packet.location);
-        if result.should_swing_server() {
-            self.swing(packet.hand, true);
-        }
+        self.swing_after_interaction(packet.hand, animation, result);
         self.broadcast_inventory_changes();
     }
 

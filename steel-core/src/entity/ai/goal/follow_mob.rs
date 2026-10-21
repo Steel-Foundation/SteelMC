@@ -72,7 +72,7 @@ impl Goal for FollowMobGoal {
         };
 
         let search_box = mob.bounding_box().inflate(f64::from(self.area_size));
-        let mut candidates = world.get_entities_in_aabb_matching(&search_box, |entity| {
+        let candidates = world.get_entities_in_aabb_matching(&search_box, |entity| {
             if entity.uuid() == mob.uuid() {
                 return false;
             }
@@ -82,7 +82,7 @@ impl Goal for FollowMobGoal {
             !candidate_mob.is_invisible() && (self.follow_predicate)(mob, candidate_mob)
         });
 
-        let Some(following_mob) = candidates.drain(..).next() else {
+        let Some(following_mob) = candidates.into_iter().next() else {
             return false;
         };
         self.following_mob = Some(following_mob);

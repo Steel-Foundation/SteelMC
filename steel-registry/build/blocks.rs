@@ -30,6 +30,8 @@ pub struct BlockConfig {
     pub friction: f32,
     pub speed_factor: f32,
     pub jump_factor: f32,
+    pub bounce_restitution: f32,
+    pub fall_distance_reduction: f32,
     pub dynamic_shape: bool,
     pub offset_type: Cow<'static, str>,
     pub max_horizontal_offset: f32,
@@ -55,10 +57,12 @@ impl BlockConfig {
             is_randomly_ticking: false,
             force_solid_off: false,
             force_solid_on: false,
-            push_reaction: Cow::Borrowed("NORMAL"),
+            push_reaction: Cow::Borrowed("PUSH_PULL"),
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,
+            bounce_restitution: 0.0,
+            fall_distance_reduction: 0.0,
             dynamic_shape: false,
             offset_type: Cow::Borrowed("NONE"),
             max_horizontal_offset: 0.25,
@@ -185,11 +189,11 @@ pub struct BlockAssets {
 /// Converts a push reaction string to a `TokenStream` representing the enum variant
 fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
     match reaction {
-        "NORMAL" => quote! { PushReaction::Normal },
-        "DESTROY" => quote! { PushReaction::Destroy },
-        "BLOCK" => quote! { PushReaction::Block },
-        "IGNORE" => quote! { PushReaction::Ignore },
-        "PUSH_ONLY" => quote! { PushReaction::PushOnly },
+        "PUSH_PULL" => quote! { PushReaction::PushPull },
+        "POPPED" => quote! { PushReaction::Popped },
+        "IMMOVEABLE" => quote! { PushReaction::Immoveable },
+        "IGNORE_ENTITY" => quote! { PushReaction::IgnoreEntity },
+        "PUSH" => quote! { PushReaction::Push },
         _ => panic!("Unknown push reaction: {reaction}"),
     }
 }
@@ -284,6 +288,14 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     if bp.jump_factor != default_props.jump_factor {
         let val = bp.jump_factor;
         builder_calls.push(quote! { .jump_factor(#val) });
+    }
+    if bp.bounce_restitution != default_props.bounce_restitution {
+        let val = bp.bounce_restitution;
+        builder_calls.push(quote! { .bounce_restitution(#val) });
+    }
+    if bp.fall_distance_reduction != default_props.fall_distance_reduction {
+        let val = bp.fall_distance_reduction;
+        builder_calls.push(quote! { .fall_distance_reduction(#val) });
     }
     if bp.dynamic_shape != default_props.dynamic_shape {
         let val = bp.dynamic_shape;

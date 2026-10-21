@@ -1,8 +1,10 @@
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
-    wrap_degrees,
+    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
+    World, adventure_mode, wrap_degrees,
 };
+use steel_registry::data_components::vanilla_components::USE_REMAINDER;
+use steel_registry::stat::vanilla_stat_types;
 
 /// Handles using an item on a block.
 ///
@@ -93,6 +95,11 @@ pub fn use_item_on(
         if player.is_item_on_cooldown(&stack_before_use) {
             return InteractionResult::Pass;
         }
+        if !player.abilities.lock().may_build
+            && !adventure_mode::can_place_on(&stack_before_use, world, pos)
+        {
+            return InteractionResult::Pass;
+        }
 
         let mut context = UseOnContext::new(
             player,
@@ -103,6 +110,26 @@ pub fn use_item_on(
         );
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
+
+        if result.should_apply_item_use_side_effects() {
+            player.award_stat(&vanilla_stat_types::ITEM_USED, item_ref);
+
+            let extra = stack_before_use.get(USE_REMAINDER).and_then(|remainder| {
+                context.inv.with_item(|item| {
+                    remainder.convert_into_remainder(
+                        item,
+                        stack_before_use.count(),
+                        player.has_infinite_materials(),
+                    )
+                })
+            });
+
+            if let Some(extra) = extra {
+                player.handle_extra_items_created_on_use(extra);
+            }
+
+            player.apply_item_use_cooldown(&stack_before_use);
+        }
 
         // Restored in both directions: `use_on` can also grow the held stack when
         // its result merges back into the slot it came from.
@@ -115,6 +142,10 @@ pub fn use_item_on(
 
     InteractionResult::Pass
 }
+
+#[cfg(test)]
+#[path = "item_interaction/use_on_tests.rs"]
+mod use_on_tests;
 
 /// Handles using an item (general usage like right-clicking air).
 ///
@@ -174,7 +205,7 @@ impl Player {
 
         log::debug!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.hand,
             packet.sequence,
             packet.y_rot,
@@ -209,11 +240,9 @@ impl Player {
         }
 
         let world = self.get_world();
+        let animation = self.interact_animation(packet.hand);
         let result = use_item(self, &world, packet.hand);
-
-        if result.should_swing_server() {
-            self.swing(packet.hand, true);
-        }
+        self.swing_after_interaction(packet.hand, animation, result);
 
         self.broadcast_inventory_changes();
     }
@@ -227,10 +256,26 @@ mod tests {
     use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
     use crate::player::connection::NetworkConnection as _;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use glam::DVec3;
     use steel_protocol::packets::game::SUseItem;
-    use steel_registry::{item_stack::ItemStack, vanilla_items};
-    use steel_utils::types::InteractionHand;
+    use steel_registry::{
+        RegistryHolderSet,
+        blocks::properties::Direction,
+        data_component_predicate::DataComponentMatchers,
+        data_components::{
+            AdventureModePredicate, BlockPredicate, vanilla_components::CAN_PLACE_ON,
+        },
+        item_stack::ItemStack,
+        items::item::BlockHitResult,
+        vanilla_blocks, vanilla_items,
+    };
+    use steel_utils::{
+        BlockPos, ChunkPos,
+        types::{GameType, InteractionHand, UpdateFlags},
+    };
+
+    use super::use_item_on;
 
     #[test]
     fn use_item_discards_non_finite_rotation_components() {
@@ -259,6 +304,70 @@ mod tests {
             assert_eq!(player.rotation(), expected);
         }
         assert!(!player.connection.closed());
+    }
+
+    #[test]
+    fn adventure_mode_requires_can_place_on_before_item_use() {
+        let world_fixture = fresh_test_world("adventure_mode_can_place_on");
+        let world = &world_fixture.world;
+        init_behaviors();
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
+        player.restore_game_modes(GameType::Adventure, None);
+        player
+            .abilities
+            .lock()
+            .update_for_game_mode(GameType::Adventure);
+
+        let hit_result = BlockHitResult {
+            location: DVec3::new(1.5, 64.5, 0.5),
+            direction: Direction::Up,
+            block_pos: pos,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::DIRT));
+        assert!(
+            !use_item_on(&player, world, InteractionHand::MainHand, &hit_result).consumes_action()
+        );
+        assert_eq!(
+            world.get_block_state(pos.above()),
+            vanilla_blocks::AIR.default_state()
+        );
+        assert_eq!(player.inventory.lock().get_selected_item().count(), 1);
+
+        let predicate = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::STONE])),
+            None,
+            None,
+            DataComponentMatchers::ANY,
+        );
+        let can_place_on =
+            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid");
+        let mut dirt = ItemStack::new(&vanilla_items::DIRT);
+        dirt.set(CAN_PLACE_ON, can_place_on);
+        player.inventory.lock().set_selected_item(dirt);
+
+        assert!(
+            use_item_on(&player, world, InteractionHand::MainHand, &hit_result).consumes_action()
+        );
+        assert_eq!(
+            world.get_block_state(pos.above()),
+            vanilla_blocks::DIRT.default_state()
+        );
+        assert_eq!(player.inventory.lock().get_selected_item().count(), 0);
     }
 
     /// A player at full hunger cannot start eating a normal food item —

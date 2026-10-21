@@ -1,22 +1,40 @@
+use std::fs;
+
 use super::{
-    EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson, TokenStream,
-    generate_damage_source_predicate, generate_entity_predicate, generate_location_predicate,
-    generate_loot_context_entity, generate_tool_predicate, quote,
+    ConditionRefJson, EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson,
+    TokenStream, generate_damage_source_predicate, generate_entity_predicate,
+    generate_location_predicate, generate_loot_context_entity, generate_tool_predicate, quote,
 };
 
-pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
+pub(super) fn generate_condition(condition: &ConditionRefJson) -> TokenStream {
+    match condition {
+        ConditionRefJson::Reference(name) => generate_condition_object(&load_predicate(name)),
+        ConditionRefJson::Inline(condition) => generate_condition_object(condition),
+    }
+}
+
+fn load_predicate(name: &str) -> LootConditionJson {
+    let path_name = name.strip_prefix("minecraft:").unwrap_or(name);
+    let path = format!(
+        "../steel-utils/build_assets/builtin_datapacks/minecraft/predicate/{path_name}.json"
+    );
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read predicate {name} at {path}: {e}"));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse predicate {name}: {e}"))
+}
+
+fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
     match condition.condition.as_str() {
         "minecraft:survives_explosion" => {
             quote! { LootCondition::SurvivesExplosion }
         }
-        "minecraft:block_state_property" => {
-            let block = condition.block.as_deref().unwrap_or("minecraft:air");
+        "minecraft:match_block" => {
+            let block = condition.blocks.as_deref().unwrap_or("minecraft:air");
             let block = block.strip_prefix("minecraft:").unwrap_or(block);
 
-            let properties: Vec<TokenStream> = condition
-                .properties
-                .as_ref()
-                .map(|props| {
+            let properties: Vec<TokenStream> =
+                condition.properties.as_ref().map_or_default(|props| {
                     props
                         .iter()
                         .map(|(name, value)| {
@@ -34,11 +52,10 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                             quote! { PropertyCheck { name: #name, value: #value_str } }
                         })
                         .collect()
-                })
-                .unwrap_or_default();
+                });
 
             quote! {
-                LootCondition::BlockStateProperty {
+                LootCondition::MatchBlock {
                     block: Identifier::vanilla_static(#block),
                     properties: &[#(#properties),*],
                 }
@@ -60,8 +77,7 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let chances: Vec<TokenStream> = condition
                 .chances
                 .as_ref()
-                .map(|c| c.iter().map(|v| quote! { #v }).collect())
-                .unwrap_or_default();
+                .map_or_default(|c| c.iter().map(|v| quote! { #v }).collect());
 
             quote! {
                 LootCondition::TableBonus {
@@ -82,8 +98,7 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let terms: Vec<TokenStream> = condition
                 .terms
                 .as_ref()
-                .map(|t| t.iter().map(generate_condition).collect())
-                .unwrap_or_default();
+                .map_or_default(|t| t.iter().map(generate_condition).collect());
 
             quote! { LootCondition::AnyOf(&[#(#terms),*]) }
         }
@@ -91,8 +106,7 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             let terms: Vec<TokenStream> = condition
                 .terms
                 .as_ref()
-                .map(|t| t.iter().map(generate_condition).collect())
-                .unwrap_or_default();
+                .map_or_default(|t| t.iter().map(generate_condition).collect());
 
             quote! { LootCondition::AllOf(&[#(#terms),*]) }
         }

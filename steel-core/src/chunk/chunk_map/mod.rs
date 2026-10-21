@@ -1312,8 +1312,7 @@ impl ChunkMap {
             let mut lifecycle_dispatchers = unload
                 .holder
                 .try_full_chunk()
-                .map(|chunk| chunk.deactivate_block_entities(&unload.holder))
-                .unwrap_or_default();
+                .map_or_default(|chunk| chunk.deactivate_block_entities(&unload.holder));
             world
                 .block_entity_tickers()
                 .remove_positions(&unload.holder, &unload.positions);

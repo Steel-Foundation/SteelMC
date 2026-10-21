@@ -17,11 +17,12 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetBeacon,
-    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
-    SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem,
+    SSeenAdvancement, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
+    SSpectatorAction, SUseItem, SUseItemOn,
 };
 
+use crate::command::{handle_client_request, sender::CommandSender};
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
@@ -35,8 +36,6 @@ use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
-
-use crate::command::{handle_client_request, sender::CommandSender};
 
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerSession};
@@ -108,7 +107,7 @@ enum ScheduledPlayPacketKind {
     UseItem(SUseItem),
     SetBeacon(SSetBeacon),
     SetCarriedItem(SSetCarriedItem),
-    Swing(SSwing),
+    Punch(SPunch),
     PlayerAction(SPlayerAction),
     PickItemFromBlock(SPickItemFromBlock),
     SignUpdate(SSignUpdate),
@@ -116,6 +115,7 @@ enum ScheduledPlayPacketKind {
     ClientCommand(SClientCommand),
     ChangeGameMode(SChangeGameMode),
     ChangeDifficulty(SChangeDifficulty),
+    UpdateSelectedTab(SSeenAdvancement),
 }
 
 enum ImmediatePlayPacket {
@@ -175,7 +175,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::PlayerInput(_)
             | ScheduledPlayPacketKind::PlayerAbilities(_)
             | ScheduledPlayPacketKind::SetCarriedItem(_)
-            | ScheduledPlayPacketKind::Swing(_)
+            | ScheduledPlayPacketKind::Punch(_)
             | ScheduledPlayPacketKind::PickItemFromBlock(_)
             | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
             ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
@@ -194,6 +194,7 @@ impl ScheduledPlayPacket {
                     ScheduledPacketExecution::PlayerLocal
                 }
                 PlayerAction::StartDestroyBlock
+                | PlayerAction::ChangeDestroyDirection
                 | PlayerAction::StopDestroyBlock
                 | PlayerAction::DropAllItems
                 | PlayerAction::DropItem => ScheduledPacketExecution::Serialized,
@@ -217,7 +218,8 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
-            | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Serialized,
+            | ScheduledPlayPacketKind::ChangeDifficulty(_)
+            | ScheduledPlayPacketKind::UpdateSelectedTab(_) => ScheduledPacketExecution::Serialized,
             // Combat spans source and target state, custom payloads have no constrained resource
             // contract, and the unimplemented menu handlers have no auditable transaction yet.
             ScheduledPlayPacketKind::Attack(_)
@@ -263,7 +265,7 @@ impl ScheduledPlayPacket {
                 player.handle_custom_payload(packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
-                player.handle_chat(*packet, Arc::clone(&player));
+                player.handle_chat(*packet);
             }
             ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
             ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
@@ -331,7 +333,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
                 player.handle_set_carried_item(packet);
             }
-            ScheduledPlayPacketKind::Swing(packet) => player.handle_animate(packet),
+            ScheduledPlayPacketKind::Punch(packet) => player.handle_punch(&packet),
             ScheduledPlayPacketKind::PlayerAction(packet) => {
                 player.handle_player_action(packet);
             }
@@ -350,6 +352,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ChangeDifficulty(packet) => {
                 player.handle_change_difficulty(packet.difficulty);
+            }
+            ScheduledPlayPacketKind::UpdateSelectedTab(packet) => {
+                player.handle_seen_advancement(packet);
             }
         }
     }
@@ -790,7 +795,7 @@ impl JavaConnection {
             play::S_SET_CARRIED_ITEM => scheduled(ScheduledPlayPacketKind::SetCarriedItem(
                 SSetCarriedItem::read_packet(data)?,
             )),
-            play::S_SWING => scheduled(ScheduledPlayPacketKind::Swing(SSwing::read_packet(data)?)),
+            play::S_PUNCH => scheduled(ScheduledPlayPacketKind::Punch(SPunch::read_packet(data)?)),
             play::S_PLAYER_ACTION => scheduled(ScheduledPlayPacketKind::PlayerAction(
                 SPlayerAction::read_packet(data)?,
             )),
@@ -814,6 +819,9 @@ impl JavaConnection {
             )),
             play::S_CHANGE_DIFFICULTY => scheduled(ScheduledPlayPacketKind::ChangeDifficulty(
                 SChangeDifficulty::read_packet(data)?,
+            )),
+            play::S_SEEN_ADVANCEMENTS => scheduled(ScheduledPlayPacketKind::UpdateSelectedTab(
+                SSeenAdvancement::read_packet(data)?,
             )),
             id => DecodedPlayPacket::Immediate(ImmediatePlayPacket::Unknown(id)),
         })
@@ -992,7 +1000,7 @@ mod tests {
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
+    use steel_utils::{BlockPos, codec::VarInt, types::SignTextSlot};
     use tokio::{
         io::{AsyncReadExt as _, duplex},
         sync::mpsc,
@@ -1102,7 +1110,10 @@ mod tests {
 
     #[test]
     fn scheduled_domain_handshake_classification_is_narrow() {
-        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, vec![0]));
+        // Teleport id, then the acknowledged position and rotation.
+        let mut accept_payload = vec![0];
+        accept_payload.extend_from_slice(&[0; size_of::<f64>() * 3 + size_of::<f32>() * 2]);
+        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, accept_payload));
         let DecodedPlayPacket::Scheduled(accept) = accept else {
             panic!("teleport acknowledgement should be scheduled");
         };
@@ -1285,7 +1296,14 @@ mod tests {
     fn audited_handlers_use_the_narrowest_safe_execution_class() {
         assert_eq!(
             execution(ScheduledPlayPacketKind::AcceptTeleportation(
-                SAcceptTeleportation { teleport_id: 1 },
+                SAcceptTeleportation {
+                    teleport_id: 1,
+                    x: 0.0,
+                    y: 64.0,
+                    z: 0.0,
+                    y_rot: 0.0,
+                    x_rot: 0.0,
+                },
             )),
             ScheduledPacketExecution::Serialized
         );
@@ -1340,15 +1358,13 @@ mod tests {
         assert_eq!(
             execution(ScheduledPlayPacketKind::SignUpdate(SSignUpdate {
                 pos: BlockPos::new(0, 64, 0),
-                is_front_text: true,
                 lines: array::from_fn(|_| String::new()),
+                slot: SignTextSlot::Front,
             })),
             ScheduledPacketExecution::Serialized
         );
         assert_eq!(
-            execution(ScheduledPlayPacketKind::Swing(SSwing {
-                hand: InteractionHand::MainHand,
-            })),
+            execution(ScheduledPlayPacketKind::Punch(SPunch {})),
             ScheduledPacketExecution::PlayerLocal
         );
         assert_eq!(

@@ -18,7 +18,8 @@ use crate::command::brigadier::{
     CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
 };
 
-use super::argument::{matches_substring, parse_identifier};
+use super::argument::parse_identifier;
+use super::suggestions::matches_substring;
 
 pub(super) fn parse_item_stack(
     reader: &mut StringReader<'_>,

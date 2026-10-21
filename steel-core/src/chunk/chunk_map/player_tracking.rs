@@ -10,7 +10,7 @@ impl ChunkMap {
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
         let world = self.world_gen_context.world();
-        let player_id = player.gameprofile.id;
+        let player_id = player.gameprofile.id();
         let mut last_view_guard = player.last_tracking_view.lock();
 
         if last_view_guard.as_ref() != Some(&new_view) {
@@ -113,7 +113,7 @@ impl ChunkMap {
         }
 
         if let Some(removed_view) = removed_view {
-            let player_id = player.gameprofile.id;
+            let player_id = player.gameprofile.id();
             self.scheduling
                 .queue_player_ticket_operation(PlayerTicketOperation::Remove {
                     pos: removed_view.center,

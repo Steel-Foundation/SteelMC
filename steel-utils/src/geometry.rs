@@ -22,7 +22,7 @@ pub trait Space {
 }
 
 /// Marker type for block-local AABBs.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockLocal;
 
 impl Space for BlockLocal {
@@ -30,7 +30,7 @@ impl Space for BlockLocal {
 }
 
 /// Marker type for world-space AABBs.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct World;
 
 impl Space for World {

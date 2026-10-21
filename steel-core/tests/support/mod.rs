@@ -18,6 +18,9 @@ use steel_registry::{
 };
 use steel_utils::types::{Difficulty, GameType, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_worldgen::density_functions::{
+    end::EndNoiseSettings, nether::NetherNoiseSettings, overworld::OverworldNoiseSettings,
+};
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
@@ -301,6 +304,13 @@ pub(crate) fn create_test_world_with_damage_history(
         dimension_type.min_y,
         dimension_type.height,
     );
+    let sea_level = if dimension_type == &vanilla_dimension_types::THE_NETHER {
+        NetherNoiseSettings::SEA_LEVEL
+    } else if dimension_type == &vanilla_dimension_types::THE_END {
+        EndNoiseSettings::SEA_LEVEL
+    } else {
+        OverworldNoiseSettings::SEA_LEVEL
+    };
 
     resources
         .runtime
@@ -321,7 +331,7 @@ pub(crate) fn create_test_world_with_damage_history(
                 max_chained_neighbor_updates: 1_000_000,
                 compression: None,
                 is_flat: false,
-                sea_level: 63,
+                sea_level,
                 default_gamemode: GameType::Survival,
                 difficulty,
             },
@@ -388,8 +398,8 @@ impl Default for TestLevel {
             blocks: RefCell::new(Vec::new()),
             default_block_state: RefCell::new(None),
             raw_brightness: Cell::new(0),
-            min_y: Cell::new(-64),
-            height: Cell::new(384),
+            min_y: Cell::new(OverworldNoiseSettings::MIN_Y),
+            height: Cell::new(OverworldNoiseSettings::HEIGHT),
             fluid_tick_delay: Cell::new(5),
             placed_blocks: RefCell::new(Vec::new()),
             scheduled_block_ticks: RefCell::new(Vec::new()),
@@ -477,6 +487,10 @@ impl LevelReader for TestLevel {
 
     fn height(&self) -> i32 {
         self.height.get()
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 

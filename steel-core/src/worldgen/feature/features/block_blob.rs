@@ -10,7 +10,12 @@ impl FeatureDecorationRunner {
         mut origin: BlockPos,
     ) -> bool {
         while origin.y() > region.min_y() + 3
-            && !Self::test_block_predicate(region, registry, &config.can_place_on, origin.below())
+            && !BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                &config.can_place_on,
+                origin.below(),
+            )
         {
             origin = origin.below();
         }
@@ -19,7 +24,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let state = Self::block_state_from_data(registry, &config.state);
+        let state = BlockStateProviderEvaluator::block_state_from_data(registry, &config.state);
         for _ in 0..3 {
             let x_radius = random.next_i32_bounded(2);
             let y_radius = random.next_i32_bounded(2);

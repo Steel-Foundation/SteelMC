@@ -608,6 +608,26 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
+    /// Sleep height
+    ///
+    /// `None` rejects sleeping
+    #[expect(unused_variables, reason = "only bed behaviors provide a sleep height")]
+    fn get_sleep_height(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> Option<f64> {
+        None
+    }
+
+    /// Sleep exit hook
+    #[expect(
+        unused_variables,
+        reason = "only blocks with leave-sleep behavior override this hook"
+    )]
+    fn on_stop_sleeping(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {}
+
     /// Returns whether this behavior implements vanilla `LiquidBlock`.
     fn is_liquid_block(&self) -> bool {
         false
@@ -913,7 +933,8 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
-            context.fall_distance,
+            context.fall_distance
+                * f64::from(1f32 - state.get_block().config.fall_distance_reduction),
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
@@ -930,6 +951,21 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, context)
+    }
+
+    /// called when an entity bounce on the block.
+    /// only works if the block has a restitution > 0.0 and the entity is not suppressing bounce
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn bounce_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) {
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
@@ -980,8 +1016,21 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         context: EntityLandingContext,
-    ) -> DVec3 {
-        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+    ) -> (DVec3, bool) {
+        let restitution = state.get_block().config.bounce_restitution;
+        if context.velocity.y >= 0.0
+            || restitution <= 0.0
+            || context.suppresses_bounce
+            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
+            || -context.velocity.y <= context.gravity
+        {
+            (
+                self.default_update_entity_movement_after_fall_on(state, world, pos, context),
+                false,
+            )
+        } else {
+            (context.velocity_after_bounce(restitution), true)
+        }
     }
 
     /// Default step-on hook.

@@ -15,7 +15,6 @@ mod candle_cakes;
 mod common;
 mod entities;
 mod items;
-mod strippables;
 mod waxables;
 mod weathering;
 
@@ -56,10 +55,6 @@ pub fn main() {
     write_if_changed(
         format!("{behavior_out_dir}/weathering.rs"),
         weathering::build(),
-    );
-    write_if_changed(
-        format!("{behavior_out_dir}/strippables.rs"),
-        strippables::build(),
     );
     write_if_changed(
         format!("{entity_out_dir}/entities.rs"),

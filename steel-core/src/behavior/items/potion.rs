@@ -62,7 +62,7 @@ pub(super) fn potion_default_instance(item: ItemRef) -> ItemStack {
 }
 
 /// Converts the block hit into mud when the held stack is a water bottle
-/// over a `CONVERTABLE_TO_MUD` block.
+/// over a `CONVERTIBLE_TO_MUD` block.
 pub(super) fn potion_use_on(context: &mut UseOnContext) -> InteractionResult {
     if context.hit_result.direction == Direction::Down {
         return InteractionResult::Pass;
@@ -72,7 +72,7 @@ pub(super) fn potion_use_on(context: &mut UseOnContext) -> InteractionResult {
     let block_state = context.world.get_block_state(pos);
     if !block_state
         .get_block()
-        .has_tag(&BlockTag::CONVERTABLE_TO_MUD)
+        .has_tag(&BlockTag::CONVERTIBLE_TO_MUD)
     {
         return InteractionResult::Pass;
     }
