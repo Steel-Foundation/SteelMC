@@ -41,6 +41,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
+use crate::ban::BanListManager;
 use crate::behavior::init_behaviors;
 use crate::command::execution::{
     CommandArgumentSource, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
@@ -67,6 +68,7 @@ use crate::test_support::{
     TestPlayerBuilder, fresh_test_derived_world, fresh_test_world, fresh_test_world_in_domain,
     insert_ready_full_chunk,
 };
+use crate::whitelist::WhitelistManager;
 use crate::world::World;
 use steel_registry::vanilla_damage_types;
 
@@ -3803,6 +3805,8 @@ default = true
         worlds_config,
         PermissionGroupManager::transient(PermissionGroupsConfig::default())
             .expect("default permission groups should resolve"),
+        BanListManager::transient(),
+        WhitelistManager::transient(),
     )
     .await
 }

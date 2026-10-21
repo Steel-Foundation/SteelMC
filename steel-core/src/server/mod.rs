@@ -41,6 +41,7 @@ use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
 
+use crate::ban::BanListManager;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
@@ -71,6 +72,7 @@ pub(crate) use crate::server::packet_processor::PlayerPacketTransition;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::service_keys::ServiceKeyStore;
 use crate::server::worlds::WorldMap;
+use crate::whitelist::WhitelistManager;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{PlayerMap, World, WorldConfig};
 use crate::worldgen::WorldGeneratorRegistry;
@@ -239,6 +241,8 @@ pub async fn test_server_with_worlds_and_config(
         damage_history,
         config,
         permission_groups,
+        ban_list: BanListManager::transient(),
+        whitelist: WhitelistManager::transient(),
         cancel_token: CancellationToken::new(),
         key_store: KeyStore::create(),
         registry_cache,
@@ -471,6 +475,10 @@ pub struct Server {
     pub config: Arc<RuntimeConfig>,
     /// Runtime permission groups and their persistence boundary.
     pub permission_groups: PermissionGroupManager,
+    /// Runtime player ban list and its persistence boundary.
+    pub ban_list: BanListManager,
+    /// Runtime whitelist and its persistence boundary.
+    pub whitelist: WhitelistManager,
     /// The cancellation token for graceful shutdown.
     pub cancel_token: CancellationToken,
     /// The key store for the server.
@@ -616,6 +624,8 @@ impl Server {
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
+        ban_list: BanListManager,
+        whitelist: WhitelistManager,
     ) -> Result<Self, String> {
         Self::new_with_commands(
             chunk_runtime,
@@ -623,6 +633,8 @@ impl Server {
             config,
             worlds_config,
             permission_groups,
+            ban_list,
+            whitelist,
             CommandRegistry::new(),
         )
         .await
@@ -633,12 +645,18 @@ impl Server {
         clippy::too_many_lines,
         reason = "server initialization is a single cohesive flow"
     )]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is an independently constructed startup dependency"
+    )]
     pub async fn new_with_commands(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
+        ban_list: BanListManager,
+        whitelist: WhitelistManager,
         command_registry: CommandRegistry,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
@@ -826,6 +844,8 @@ impl Server {
             damage_history,
             config,
             permission_groups,
+            ban_list,
+            whitelist,
             cancel_token,
             key_store: KeyStore::create(),
             worlds,

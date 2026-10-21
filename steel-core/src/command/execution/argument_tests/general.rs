@@ -426,3 +426,29 @@ fn swizzle_argument_retains_unique_axes_and_rejects_duplicates() {
         );
     }
 }
+
+#[test]
+fn message_argument_scans_selectors_leniently_but_fails_on_malformed_ones() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::message());
+
+    for text in [
+        "hello world",
+        "@a is a fine friend",
+        "user@domain.com",
+        "trailing @",
+        "unknown @z type",
+    ] {
+        let command = format!("resource {text}");
+        let parse = dispatcher.parse(&command, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("{text:?} should parse as a message");
+        };
+        assert_eq!(chain.top_context().message_text("value"), Ok(text));
+    }
+
+    let parse = dispatcher.parse("resource say hi @a[", TestSource::new());
+    assert!(
+        dispatcher.context_chain(parse).is_err(),
+        "an unterminated selector should still fail to parse"
+    );
+}

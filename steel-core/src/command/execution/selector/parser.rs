@@ -197,19 +197,11 @@ fn parse_selector_type(
         ));
     };
 
-    let selector_type = match selector_type {
-        'a' => SelectorType::AllPlayers,
-        'e' => SelectorType::AllEntities,
-        'n' => SelectorType::NearestEntity,
-        'p' => SelectorType::NearestPlayer,
-        'r' => SelectorType::RandomPlayer,
-        's' => SelectorType::SelfEntity,
-        other => {
-            return Err(SelectorParseError::invalid_at(
-                format!("unknown selector type '@{other}'"),
-                selector_start,
-            ));
-        }
+    let Some(selector_type) = SelectorType::from_letter(selector_type) else {
+        return Err(SelectorParseError::invalid_at(
+            format!("unknown selector type '@{selector_type}'"),
+            selector_start,
+        ));
     };
     let mut selector = EntitySelector::for_selector_type(selector_type);
 

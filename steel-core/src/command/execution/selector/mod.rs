@@ -113,13 +113,28 @@ enum SelectorKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SelectorType {
+pub(crate) enum SelectorType {
     AllPlayers,
     AllEntities,
     NearestEntity,
     NearestPlayer,
     RandomPlayer,
     SelfEntity,
+}
+
+impl SelectorType {
+    /// Maps the character right after `@` to its selector type.
+    pub(crate) const fn from_letter(letter: char) -> Option<Self> {
+        match letter {
+            'a' => Some(Self::AllPlayers),
+            'e' => Some(Self::AllEntities),
+            'n' => Some(Self::NearestEntity),
+            'p' => Some(Self::NearestPlayer),
+            'r' => Some(Self::RandomPlayer),
+            's' => Some(Self::SelfEntity),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

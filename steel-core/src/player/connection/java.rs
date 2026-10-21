@@ -13,8 +13,8 @@ use steel_protocol::packets::common::{
 use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
     SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
-    SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
-    SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
+    SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
+    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
     SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem,
@@ -747,6 +747,12 @@ impl JavaConnection {
             play::S_CHAT_COMMAND => scheduled(ScheduledPlayPacketKind::ChatCommand(
                 SChatCommand::read_packet(data)?,
             )),
+            play::S_CHAT_COMMAND_SIGNED => {
+                let signed = SChatCommandSigned::read_packet(data)?;
+                scheduled(ScheduledPlayPacketKind::ChatCommand(SChatCommand {
+                    command: signed.command,
+                }))
+            }
             play::S_COMMAND_SUGGESTION => scheduled(ScheduledPlayPacketKind::CommandSuggestion(
                 SCommandSuggestion::read_packet(data)?,
             )),
@@ -1402,6 +1408,36 @@ mod tests {
                     desired_chunks_per_tick: 12.5
                 }
             ))
+        ));
+    }
+
+    #[test]
+    fn signed_chat_command_decodes_to_the_same_kind_as_the_unsigned_one() {
+        use steel_utils::serial::{PrefixedWrite as _, WriteTo as _};
+
+        let mut payload = Vec::new();
+        "/ban Steve griefing"
+            .write_prefixed::<VarInt>(&mut payload)
+            .expect("command should write");
+        0i64.write(&mut payload).expect("timestamp should write");
+        0i64.write(&mut payload).expect("salt should write");
+        VarInt(0)
+            .write(&mut payload)
+            .expect("argument signature count should write");
+        VarInt(0)
+            .write(&mut payload)
+            .expect("last-seen offset should write");
+        payload.extend_from_slice(&[0u8; 3]);
+        0u8.write(&mut payload)
+            .expect("last-seen checksum should write");
+
+        let decoded = decode(RawPacket::new(play::S_CHAT_COMMAND_SIGNED, payload));
+
+        assert!(matches!(
+            decoded,
+            DecodedPlayPacket::Scheduled(ScheduledPlayPacket(ScheduledPlayPacketKind::ChatCommand(
+                SChatCommand { command }
+            ))) if command == "/ban Steve griefing"
         ));
     }
 
