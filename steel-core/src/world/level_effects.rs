@@ -258,15 +258,13 @@ impl World {
 
     /// Broadcasts block destruction particles and sound for a destroyed block.
     ///
-    /// This is a convenience method that sends the `PARTICLES_DESTROY_BLOCK` level event.
-    ///
     /// # Arguments
     /// * `pos` - The position of the destroyed block
     /// * `block_state_id` - The block state ID of the destroyed block
     /// * `exclude` - Optional entity ID to exclude from receiving the event
     pub fn destroy_block_effect(&self, pos: BlockPos, block_state_id: u32, exclude: Option<i32>) {
         self.level_event(
-            level_events::PARTICLES_DESTROY_BLOCK,
+            level_events::PARTICLES_AND_SOUND_DESTROY_BLOCK,
             pos,
             block_state_id as i32,
             exclude,

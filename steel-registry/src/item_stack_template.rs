@@ -1,11 +1,10 @@
 //! Non-empty item stack templates used by recursive Vanilla codecs.
 
+use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::{FromNbtTag, ToNbtTag};
 use std::cell::Cell;
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
-
-use simdnbt::owned::{NbtCompound, NbtTag};
-use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
@@ -61,6 +60,12 @@ pub struct ItemStackTemplate {
     components_hash: Option<i32>,
 }
 
+impl Default for ItemStackTemplate {
+    fn default() -> Self {
+        Self::new(&vanilla_items::STONE)
+    }
+}
+
 impl ItemStackTemplate {
     pub const MIN_COUNT: i32 = 1;
     pub const MAX_COUNT: i32 = 99;
@@ -68,8 +73,9 @@ impl ItemStackTemplate {
     /// Creates the common count-one template with no component changes.
     #[must_use]
     pub fn new(item: ItemRef) -> Self {
-        assert!(
-            item != &*vanilla_items::AIR,
+        assert_ne!(
+            item,
+            &*vanilla_items::AIR,
             "Item stack template item must be non-empty"
         );
         Self {
