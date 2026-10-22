@@ -37,9 +37,8 @@ impl DispenseItemBehavior for BucketDispenseBehavior {
                     &GameEventContext::new(None, None),
                 );
                 return result.filled_bucket;
-            } else {
-                return DefaultDispenseBehavior.dispense(world, pos, state, item);
             }
+            return DefaultDispenseBehavior.dispense(world, pos, state, item);
         }
 
         let fluid_block = if item.item() == &*vanilla_items::WATER_BUCKET {

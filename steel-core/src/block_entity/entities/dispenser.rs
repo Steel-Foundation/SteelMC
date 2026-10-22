@@ -64,7 +64,8 @@ impl SharedDispenserState {
             loot_table: None,
             loot_table_seed: 0,
         }));
-        let shared_container: SharedContainer = container.clone();
+        let shared_container: SharedContainer =
+            Arc::<SyncMutex<DispenserContainer>>::clone(&container);
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
             base,

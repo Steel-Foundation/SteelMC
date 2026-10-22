@@ -32,8 +32,8 @@ impl BoneMealItem {
                 .game_event(&vanilla_game_events::ITEM_INTERACT_FINISH);
         }
     }
-    /// Attempts to grow the block at the given position.
 
+    /// Attempts to grow the block at the given position.
     pub fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {

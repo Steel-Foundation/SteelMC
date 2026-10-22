@@ -64,12 +64,7 @@ impl DispenseItemBehavior for HoneycombDispenseBehavior {
         });
         if let Some(waxed) = maybe_waxed {
             world.set_block(target_pos, waxed, UpdateFlags::UPDATE_ALL);
-            world.level_event(
-                level_events::PARTICLES_AND_SOUND_WAX_ON,
-                target_pos,
-                0,
-                None,
-            );
+            world.level_event(level_events::PARTICLES_WAX_ON, target_pos, 0, None);
             ItemStack::empty()
         } else {
             DefaultDispenseBehavior.dispense(world, pos, state, item)
@@ -130,10 +125,11 @@ mod tests {
         init_block_entities();
         init_behaviors();
 
-        let world = fresh_test_world("dispenser_bonemeal_crop");
+        let world_fixture = fresh_test_world("dispenser_bonemeal_crop");
+        let world = &world_fixture.world;
         let dispenser_pos = BlockPos::new(8, 64, 8);
         let crop_pos = dispenser_pos.relative(Direction::North);
-        let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(dispenser_pos));
+        let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(dispenser_pos));
 
         world.set_block(
             crop_pos.below(),
@@ -150,7 +146,7 @@ mod tests {
             .default_state()
             .set_value(FACING, Direction::North);
         let entity = Arc::new(DispenserBlockEntity::new(
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             dispenser_pos,
             state,
         ));
@@ -160,9 +156,9 @@ mod tests {
             .lock()
             .set_item(0, ItemStack::with_count(&vanilla_items::BONE_MEAL, 1));
         world.set_block(dispenser_pos, state, UpdateFlags::UPDATE_ALL);
-        world.set_block_entity(entity.clone());
+        world.set_block_entity(Arc::<DispenserBlockEntity>::clone(&entity));
 
-        DispenserBlock::dispense_from(&world, dispenser_pos, state);
+        DispenserBlock::dispense_from(world, dispenser_pos, state);
 
         assert_eq!(entity.state.container().lock().get_item(0).count(), 0);
         let grown = world.get_block_state(crop_pos);

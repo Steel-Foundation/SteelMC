@@ -116,7 +116,7 @@ impl BlockBehavior for DropperBlock {
             return InteractionResult::Pass;
         };
 
-        let inventory = player.inventory.clone();
+        let inventory = Arc::clone(&player.inventory);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_DROPPER.msg()),
             move |context| generic_3x3_menu(inventory, context.container_id, container_ref),
@@ -263,7 +263,7 @@ impl BlockBehavior for DispenserBlock {
             return InteractionResult::Pass;
         };
 
-        let inventory = player.inventory.clone();
+        let inventory = Arc::clone(&player.inventory);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_DISPENSER.msg()),
             move |context| generic_3x3_menu(inventory, context.container_id, container_ref),
@@ -402,6 +402,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
+    use crate::entity::init_entities;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
@@ -422,27 +423,28 @@ mod tests {
         assert!(dropper_block.has_analog_output_signal(dropper_state));
         assert!(dispenser_block.has_analog_output_signal(dispenser_state));
 
-        let world = fresh_test_world("dispenser_test");
+        let world_fixture = fresh_test_world("dispenser_test");
+        let world = &world_fixture.world;
         let pos1 = BlockPos::new(0, 64, 0);
         let pos2 = BlockPos::new(2, 64, 0);
-        let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos1));
+        let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos1));
 
         let created_dropper =
-            dropper_block.new_block_entity(Arc::downgrade(&world), pos1, dropper_state);
+            dropper_block.new_block_entity(Arc::downgrade(world), pos1, dropper_state);
         let created_dispenser =
-            dispenser_block.new_block_entity(Arc::downgrade(&world), pos2, dispenser_state);
+            dispenser_block.new_block_entity(Arc::downgrade(world), pos2, dispenser_state);
 
         assert!(created_dropper.into_created().is_some());
         assert!(created_dispenser.into_created().is_some());
 
         assert_eq!(
-            dropper_block.get_analog_output_signal(dropper_state, &*world, pos1, Direction::North),
+            dropper_block.get_analog_output_signal(dropper_state, world, pos1, Direction::North),
             0
         );
         assert_eq!(
             dispenser_block.get_analog_output_signal(
                 dispenser_state,
-                &*world,
+                world,
                 pos2,
                 Direction::North
             ),
@@ -456,17 +458,18 @@ mod tests {
         init_block_entities();
         init_behaviors();
 
-        let world = fresh_test_world("dropper_transfer_test");
+        let world_fixture = fresh_test_world("dropper_transfer_test");
+        let world = &world_fixture.world;
         let dropper_pos = BlockPos::new(0, 64, 0);
         let target_pos = BlockPos::new(0, 64, 1);
-        let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(dropper_pos));
+        let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(dropper_pos));
 
         let dropper_state = vanilla_blocks::DROPPER
             .default_state()
             .set_value(FACING, Direction::South);
 
         let dropper_entity = Arc::new(DropperBlockEntity::new(
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             dropper_pos,
             dropper_state,
         ));
@@ -477,21 +480,21 @@ mod tests {
             .set_item(0, ItemStack::with_count(&vanilla_items::DIAMOND, 5));
 
         let target_entity = Arc::new(DropperBlockEntity::new(
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             target_pos,
             vanilla_blocks::DROPPER.default_state(),
         ));
 
         world.set_block(dropper_pos, dropper_state, UpdateFlags::UPDATE_ALL);
-        world.set_block_entity(dropper_entity.clone());
+        world.set_block_entity(Arc::<DropperBlockEntity>::clone(&dropper_entity));
         world.set_block(
             target_pos,
             vanilla_blocks::DROPPER.default_state(),
             UpdateFlags::UPDATE_ALL,
         );
-        world.set_block_entity(target_entity.clone());
+        world.set_block_entity(Arc::<DropperBlockEntity>::clone(&target_entity));
 
-        DropperBlock::dispense_from(&world, dropper_pos, dropper_state);
+        DropperBlock::dispense_from(world, dropper_pos, dropper_state);
 
         assert_eq!(
             dropper_entity.state.container().lock().get_item(0).count(),
@@ -512,20 +515,18 @@ mod tests {
         init_vanilla_registry();
         init_block_entities();
         init_behaviors();
+        init_entities();
 
-        let world = fresh_test_world("dispenser_eject_test");
+        let world_fixture = fresh_test_world("dispenser_eject_test");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(0, 64, 0);
-        let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let state = vanilla_blocks::DISPENSER
             .default_state()
             .set_value(FACING, Direction::North);
 
-        let entity = Arc::new(DispenserBlockEntity::new(
-            Arc::downgrade(&world),
-            pos,
-            state,
-        ));
+        let entity = Arc::new(DispenserBlockEntity::new(Arc::downgrade(world), pos, state));
         entity
             .state
             .container()
@@ -533,9 +534,9 @@ mod tests {
             .set_item(0, ItemStack::with_count(&vanilla_items::ARROW, 10));
 
         world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
-        world.set_block_entity(entity.clone());
+        world.set_block_entity(Arc::<DispenserBlockEntity>::clone(&entity));
 
-        DispenserBlock::dispense_from(&world, pos, state);
+        DispenserBlock::dispense_from(world, pos, state);
 
         assert_eq!(entity.state.container().lock().get_item(0).count(), 9);
         assert_eq!(

@@ -9,6 +9,7 @@ use steel_utils::BlockStateId;
 
 use super::DispenseItemBehavior;
 use crate::behavior::blocks::container::dispenser_block::FACING;
+use crate::entity::{ENTITIES, next_entity_id};
 use crate::world::World;
 
 pub struct TntDispenseBehavior;
@@ -25,18 +26,15 @@ impl DispenseItemBehavior for TntDispenseBehavior {
         let target_pos = pos.relative(facing);
 
         let spawn_pos = DVec3::new(
-            target_pos.x() as f64 + 0.5,
-            target_pos.y() as f64,
-            target_pos.z() as f64 + 0.5,
+            f64::from(target_pos.x()) + 0.5,
+            f64::from(target_pos.y()),
+            f64::from(target_pos.z()) + 0.5,
         );
 
-        let id = crate::entity::next_entity_id();
-        if let Some(entity) = crate::entity::ENTITIES.create(
-            &vanilla_entities::TNT,
-            id,
-            spawn_pos,
-            Arc::downgrade(world),
-        ) {
+        let id = next_entity_id();
+        if let Some(entity) =
+            ENTITIES.create(&vanilla_entities::TNT, id, spawn_pos, Arc::downgrade(world))
+        {
             let _ = world.try_add_entity(entity);
             world.play_sound(
                 &sound_events::ENTITY_TNT_PRIMED,

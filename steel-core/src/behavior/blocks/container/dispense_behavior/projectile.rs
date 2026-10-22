@@ -10,12 +10,14 @@ use steel_utils::BlockStateId;
 use super::DefaultDispenseBehavior;
 use super::DispenseItemBehavior;
 use crate::behavior::blocks::container::dispenser_block::FACING;
+use crate::entity::{ENTITIES, Entity, next_entity_id};
 use crate::world::World;
 
 pub struct ProjectileDispenseBehavior {
     entity_type: EntityTypeRef,
     power: f32,
     uncertainty: f32,
+    on_spawn: Option<fn(&dyn Entity, &ItemStack)>,
 }
 
 impl ProjectileDispenseBehavior {
@@ -24,7 +26,14 @@ impl ProjectileDispenseBehavior {
             entity_type,
             power,
             uncertainty,
+            on_spawn: None,
         }
+    }
+
+    #[must_use]
+    pub const fn with_item_setter(mut self, on_spawn: fn(&dyn Entity, &ItemStack)) -> Self {
+        self.on_spawn = Some(on_spawn);
+        self
     }
 }
 
@@ -40,21 +49,28 @@ impl DispenseItemBehavior for ProjectileDispenseBehavior {
         let offset = facing.offset_vec();
 
         let spawn_pos = DVec3::new(
-            pos.x() as f64 + 0.5 + (offset.x as f64 * 0.7),
-            pos.y() as f64 + 0.5 + (offset.y as f64 * 0.7),
-            pos.z() as f64 + 0.5 + (offset.z as f64 * 0.7),
+            f64::from(pos.x()) + 0.5 + (f64::from(offset.x) * 0.7),
+            f64::from(pos.y()) + 0.5 + (f64::from(offset.y) * 0.7),
+            f64::from(pos.z()) + 0.5 + (f64::from(offset.z) * 0.7),
         );
 
-        let id = crate::entity::next_entity_id();
-        let Some(entity) =
-            crate::entity::ENTITIES.create(self.entity_type, id, spawn_pos, Arc::downgrade(world))
+        let id = next_entity_id();
+        let Some(entity) = ENTITIES.create(self.entity_type, id, spawn_pos, Arc::downgrade(world))
         else {
             return DefaultDispenseBehavior.dispense(world, pos, state, item);
         };
 
+        if let Some(on_spawn) = self.on_spawn {
+            on_spawn(entity.as_ref(), &item);
+        }
+
         if let Some(projectile) = entity.as_projectile() {
-            let direction =
-                DVec3::new(offset.x as f64, offset.y as f64, offset.z as f64).normalize();
+            let direction = DVec3::new(
+                f64::from(offset.x),
+                f64::from(offset.y),
+                f64::from(offset.z),
+            )
+            .normalize();
             // Default Minecraft uses power=1.1, uncertainty=6.0 for eggs/snowballs
             projectile.shoot(direction, self.power, self.uncertainty);
         }

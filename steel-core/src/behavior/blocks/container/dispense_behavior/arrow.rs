@@ -10,6 +10,7 @@ use steel_utils::BlockStateId;
 use super::DefaultDispenseBehavior;
 use super::DispenseItemBehavior;
 use crate::behavior::blocks::container::dispenser_block::FACING;
+use crate::entity::{ENTITIES, next_entity_id};
 use crate::world::World;
 
 pub struct ArrowDispenseBehavior {
@@ -17,7 +18,7 @@ pub struct ArrowDispenseBehavior {
 }
 
 impl ArrowDispenseBehavior {
-    pub fn new(entity_type: EntityTypeRef) -> Self {
+    pub const fn new(entity_type: EntityTypeRef) -> Self {
         Self { entity_type }
     }
 }
@@ -34,21 +35,24 @@ impl DispenseItemBehavior for ArrowDispenseBehavior {
         let offset = facing.offset_vec();
 
         let spawn_pos = DVec3::new(
-            pos.x() as f64 + 0.5 + (offset.x as f64 * 0.7),
-            pos.y() as f64 + 0.5 + (offset.y as f64 * 0.7),
-            pos.z() as f64 + 0.5 + (offset.z as f64 * 0.7),
+            f64::from(pos.x()) + 0.5 + (f64::from(offset.x) * 0.7),
+            f64::from(pos.y()) + 0.5 + (f64::from(offset.y) * 0.7),
+            f64::from(pos.z()) + 0.5 + (f64::from(offset.z) * 0.7),
         );
 
-        let id = crate::entity::next_entity_id();
-        let Some(entity) =
-            crate::entity::ENTITIES.create(self.entity_type, id, spawn_pos, Arc::downgrade(world))
+        let id = next_entity_id();
+        let Some(entity) = ENTITIES.create(self.entity_type, id, spawn_pos, Arc::downgrade(world))
         else {
             return DefaultDispenseBehavior.dispense(world, pos, state, item);
         };
 
         if let Some(projectile) = entity.as_projectile() {
-            let direction =
-                DVec3::new(offset.x as f64, offset.y as f64, offset.z as f64).normalize();
+            let direction = DVec3::new(
+                f64::from(offset.x),
+                f64::from(offset.y),
+                f64::from(offset.z),
+            )
+            .normalize();
             // Arrow specific defaults
             projectile.shoot(direction, 1.1, 6.0);
 

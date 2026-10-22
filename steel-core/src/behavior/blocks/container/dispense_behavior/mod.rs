@@ -8,7 +8,10 @@ use steel_registry::vanilla_items;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
+use steel_utils::Downcast as _;
 
+use crate::entity::entities::ThrownEggEntity;
+use crate::entity::projectile::ThrowableItemProjectile;
 use crate::world::World;
 
 pub mod armor;
@@ -141,31 +144,24 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     // verification that the tag exists in Steel.
 
     // projectile
-    registry.set_behavior(
+    for egg in [
         &vanilla_items::EGG,
-        Box::new(ProjectileDispenseBehavior::new(
-            &vanilla_entities::EGG,
-            1.1,
-            6.0,
-        )),
-    );
-    // TODO implement blue and brown egg entities
-    registry.set_behavior(
         &vanilla_items::BLUE_EGG,
-        Box::new(ProjectileDispenseBehavior::new(
-            &vanilla_entities::EGG,
-            1.1,
-            6.0,
-        )),
-    );
-    registry.set_behavior(
         &vanilla_items::BROWN_EGG,
-        Box::new(ProjectileDispenseBehavior::new(
-            &vanilla_entities::EGG,
-            1.1,
-            6.0,
-        )),
-    );
+    ] {
+        registry.set_behavior(
+            egg,
+            Box::new(
+                ProjectileDispenseBehavior::new(&vanilla_entities::EGG, 1.1, 6.0).with_item_setter(
+                    |entity, item| {
+                        if let Some(egg) = entity.downcast_ref::<ThrownEggEntity>() {
+                            egg.set_item_clamped(item.clone());
+                        }
+                    },
+                ),
+            ),
+        );
+    }
     registry.set_behavior(
         &vanilla_items::SNOWBALL,
         Box::new(ProjectileDispenseBehavior::new(
