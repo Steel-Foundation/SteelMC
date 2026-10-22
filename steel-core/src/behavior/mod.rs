@@ -59,6 +59,11 @@ pub mod waxables;
 #[path = "generated/weathering.rs"]
 pub mod weathering;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/skull_types.rs"]
+pub mod skull_types;
+
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
     BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,

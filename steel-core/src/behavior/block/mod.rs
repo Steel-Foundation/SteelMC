@@ -577,15 +577,17 @@ pub trait BlockBehavior: Send + Sync {
     /// # Arguments
     /// * `block` - The block being picked
     /// * `_state` - The block state (some blocks vary pick item based on state)
+    /// * `_block_entity` - An optional block entity (some blocks vary pick item based on block entity data)
     /// * `_include_data` - Whether to include block entity data (creative + Ctrl)
     #[expect(
         unused_variables,
-        reason = "default implementation only uses `block`; state/include_data are for overrides"
+        reason = "default implementation only uses `block`; state/block_entity/include_data are for overrides"
     )]
     fn get_clone_item_stack(
         &self,
         block: BlockRef,
         state: BlockStateId,
+        block_entity: Option<SharedBlockEntity>,
         include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(REGISTRY.items.by_block(block)))
@@ -933,7 +935,8 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
-            context.fall_distance,
+            context.fall_distance
+                * f64::from(1f32 - state.get_block().config.fall_distance_reduction),
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
@@ -950,6 +953,21 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, context)
+    }
+
+    /// called when an entity bounce on the block.
+    /// only works if the block has a restitution > 0.0 and the entity is not suppressing bounce
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn bounce_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) {
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
@@ -1000,8 +1018,21 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         context: EntityLandingContext,
-    ) -> DVec3 {
-        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+    ) -> (DVec3, bool) {
+        let restitution = state.get_block().config.bounce_restitution;
+        if context.velocity.y >= 0.0
+            || restitution <= 0.0
+            || context.suppresses_bounce
+            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
+            || -context.velocity.y <= context.gravity
+        {
+            (
+                self.default_update_entity_movement_after_fall_on(state, world, pos, context),
+                false,
+            )
+        } else {
+            (context.velocity_after_bounce(restitution), true)
+        }
     }
 
     /// Default step-on hook.

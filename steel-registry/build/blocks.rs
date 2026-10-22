@@ -30,6 +30,8 @@ pub struct BlockConfig {
     pub friction: f32,
     pub speed_factor: f32,
     pub jump_factor: f32,
+    pub bounce_restitution: f32,
+    pub fall_distance_reduction: f32,
     pub dynamic_shape: bool,
     pub offset_type: Cow<'static, str>,
     pub max_horizontal_offset: f32,
@@ -59,6 +61,8 @@ impl BlockConfig {
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,
+            bounce_restitution: 0.0,
+            fall_distance_reduction: 0.0,
             dynamic_shape: false,
             offset_type: Cow::Borrowed("NONE"),
             max_horizontal_offset: 0.25,
@@ -284,6 +288,14 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     if bp.jump_factor != default_props.jump_factor {
         let val = bp.jump_factor;
         builder_calls.push(quote! { .jump_factor(#val) });
+    }
+    if bp.bounce_restitution != default_props.bounce_restitution {
+        let val = bp.bounce_restitution;
+        builder_calls.push(quote! { .bounce_restitution(#val) });
+    }
+    if bp.fall_distance_reduction != default_props.fall_distance_reduction {
+        let val = bp.fall_distance_reduction;
+        builder_calls.push(quote! { .fall_distance_reduction(#val) });
     }
     if bp.dynamic_shape != default_props.dynamic_shape {
         let val = bp.dynamic_shape;

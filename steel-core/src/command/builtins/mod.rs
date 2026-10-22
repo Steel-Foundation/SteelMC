@@ -1,5 +1,6 @@
 //! Steel-owned built-in command declarations.
 
+pub mod advancement;
 mod clear;
 mod damage;
 mod defaultgamemode;
@@ -69,6 +70,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
+    builder.register(advancement::registration())?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
@@ -151,6 +153,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "advancement",
                 "clear",
                 "deop",
                 "damage",

@@ -30,7 +30,7 @@ pub trait ThrowableProjectile: Projectile {
             // VANILLA CLIENT-LOCAL: `ThrowableProjectile.tick` creates the trailing bubbles.
             WATER_INERTIA
         } else {
-            f64::from(self.get_air_drag())
+            f64::from(ThrowableProjectile::get_air_drag(self))
         };
         self.set_velocity(self.velocity() * inertia);
     }
