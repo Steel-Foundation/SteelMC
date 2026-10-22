@@ -538,7 +538,7 @@ impl FishingHookEntity {
                         let mut loot_ctx = LootContext::new(&mut rng)
                             .with_origin(self.position().x, self.position().y, self.position().z)
                             .with_tool(rod)
-                            .with_this_entity(entity_loot_ref(self))
+                            .with_this_entity(entity_loot_ref(self, None))
                             .with_luck(luck as f32 + player.get_luck());
 
                         let items =

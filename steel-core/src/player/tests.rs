@@ -12,12 +12,15 @@ use super::{
     game_mode::block_breaking::BlockBreakAction,
     player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
     player_inventory::MenuItemDisposition,
+    sleep::BedSleepingProblem,
 };
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
-    damage::DamageSource, entities::ItemEntity, next_entity_id,
+    damage::DamageSource,
+    entities::{EndermiteEntity, ItemEntity},
+    next_entity_id,
 };
 use crate::inventory::{
     click::{Click, DragKind, QuickCraft},
@@ -49,6 +52,7 @@ use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
     vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
     vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
+    vanilla_world_clocks,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, SyncMutex};
@@ -65,6 +69,7 @@ const HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID: i32 = 42;
 
 const MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET: u8 = 0xff;
 const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
+const NIGHT_TIME: i64 = 18_000;
 
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
@@ -1736,6 +1741,57 @@ fn throttle_player_dropping_items_from_creative_menu() {
     Arc::clone(&player).tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
+}
+
+#[test]
+fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("monster_prevents_rest");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    world.set_clock_total_ticks(&vanilla_world_clocks::OVERWORLD, NIGHT_TIME);
+    let bed_pos = BlockPos::new(8, 65, 8);
+    assert!(world.set_block(
+        bed_pos,
+        vanilla_blocks::WHITE_BED.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    let player = test_player(Arc::clone(world));
+    player.base.set_position_local(DVec3::new(8.5, 65.0, 8.5));
+
+    assert!(
+        player
+            .start_sleep_in_bed(
+                bed_pos,
+                &world.dimension_type.bed_rule,
+                &vanilla_custom_stats::SLEEP_IN_BED
+            )
+            .is_ok()
+    );
+    assert!(player.is_sleeping());
+    player.stop_sleep_in_bed(false, false);
+
+    let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        DVec3::new(11.0, 65.0, 8.0),
+        Arc::downgrade(world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&endermite))
+        .expect("test endermite should attach to the loaded chunk");
+
+    let result = player.start_sleep_in_bed(
+        bed_pos,
+        &world.dimension_type.bed_rule,
+        &vanilla_custom_stats::SLEEP_IN_BED,
+    );
+    assert!(
+        matches!(result, Err(BedSleepingProblem::NotSafe(_))),
+        "a monster nearby must yield the not-safe problem, got {result:?}"
+    );
+    assert!(!player.is_sleeping());
 }
 
 #[test]

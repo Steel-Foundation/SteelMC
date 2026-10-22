@@ -33,7 +33,8 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::loot_table::{
-    DamageSourceInfo, EntityRef, EntityRefFlags, LootContext, LootTableRef,
+    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
+    LootContext, LootTableRef,
 };
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -289,7 +290,7 @@ pub(crate) fn equipment_items_to_packet_items(
         .collect()
 }
 
-fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
+pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
     (aabb.min_x().floor() as i32..aabb.max_x().ceil() as i32).any(|x| {
         (aabb.min_y().floor() as i32..aabb.max_y().ceil() as i32).any(|y| {
             (aabb.min_z().floor() as i32..aabb.max_z().ceil() as i32)
@@ -761,6 +762,7 @@ mod block_effects;
 mod callback;
 mod combat_rules;
 pub mod consume_effect;
+mod conversion;
 pub mod damage;
 pub(crate) mod dismount_helper;
 pub mod entities;
@@ -785,6 +787,7 @@ mod living_reference;
 mod manager;
 mod mob;
 pub mod mob_effect;
+mod monster;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
@@ -813,6 +816,7 @@ pub use callback::{
     EntityChunkCallback, EntityLevelCallback, InactiveEntityCallback, NullEntityCallback,
     PlayerEntityCallback, RemovalReason,
 };
+pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
@@ -830,12 +834,13 @@ pub use living_base::{
     LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
     MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::{LivingEntity, living_entity_loot_ref};
+pub use living_entity::LivingEntity;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
 pub(crate) use mob::{Mob, MobBase, PathfinderMob};
+pub(crate) use monster::{Enemy, Monster};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -946,6 +951,11 @@ pub(crate) fn start_riding_entities(
 
     passenger.set_pose(EntityPose::Standing);
     EntityBase::start_riding_relationship(entity_to_ride, passenger);
+    if let Some(mob) = passenger.as_mob()
+        && mob.is_leashed()
+    {
+        mob.drop_leash();
+    }
     // TODO: Emit ENTITY_MOUNT game event and riding advancement trigger once those foundations exist.
     true
 }
@@ -1362,7 +1372,24 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
     }
 }
 
-pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
+/// Clones every equipment slot of `entity` so loot predicates can read it without holding
+/// the equipment lock while the table rolls.
+///
+/// Locks the entity's equipment (a player's inventory), so callers must not already hold it.
+pub(crate) fn living_loot_equipment<E: LivingEntity + ?Sized>(entity: &E) -> EntityEquipmentSlots {
+    // TODO: Read live equipment once loot contexts can do so safely.
+    entity.living_base().equipment().lock().snapshot()
+}
+
+/// [`living_loot_equipment`] for any entity; `None` for non-living entities.
+pub(crate) fn loot_equipment(entity: &dyn Entity) -> Option<EntityEquipmentSlots> {
+    entity.as_living_entity().map(living_loot_equipment)
+}
+
+pub(crate) fn entity_loot_ref<'a>(
+    entity: &'a dyn Entity,
+    equipment: Option<&'a EntityEquipmentSlots>,
+) -> EntityRef<'a> {
     let living_entity = entity.as_living_entity();
     let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
@@ -1374,8 +1401,8 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
             is_swimming: entity.is_swimming(),
             is_baby: living_entity.is_some_and(LivingEntity::is_baby),
         },
-        // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
-        equipment: None,
+        equipment: equipment.map(EntityEquipmentRef::new),
+        // TODO: Include custom name once loot contexts can snapshot entity data.
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
