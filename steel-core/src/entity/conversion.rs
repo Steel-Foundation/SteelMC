@@ -230,6 +230,7 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
         data.set_base_on_fire_flag(from.is_on_fire() || to.has_visual_fire());
     }
     to.set_invulnerable(from.is_invulnerable());
+    to.set_invulnerable_time(from.invulnerable_time());
     to.set_no_gravity(from.is_no_gravity());
     to.set_portal_cooldown(from.portal_cooldown());
     to.set_silent(from.is_silent());
@@ -321,6 +322,7 @@ mod tests {
         pig_mob.set_custom_name(Some(TextComponent::plain("converted")));
         pig_mob.set_custom_name_visible(true);
         pig_mob.set_invulnerable(true);
+        pig_mob.set_invulnerable_time(13);
         pig_mob.set_no_gravity(true);
         pig_mob.set_portal_cooldown(7);
         pig_mob.set_silent(true);
@@ -386,6 +388,7 @@ mod tests {
         );
         assert!(cow_mob.is_custom_name_visible());
         assert!(cow_mob.is_invulnerable());
+        assert_eq!(cow_mob.invulnerable_time(), 13);
         assert!(cow_mob.is_no_gravity());
         assert_eq!(cow_mob.portal_cooldown(), 7);
         assert!(cow_mob.is_silent());

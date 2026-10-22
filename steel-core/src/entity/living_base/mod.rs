@@ -1499,6 +1499,16 @@ impl LivingEntityBase {
             .floor() as i32
     }
 
+    /// Returns the remaining hurt-cooldown ticks.
+    pub fn invulnerable_time(&self) -> i32 {
+        self.state.lock().invulnerable_time
+    }
+
+    /// Sets the remaining hurt-cooldown ticks.
+    pub fn set_invulnerable_time(&self, invulnerable_time: i32) {
+        self.state.lock().invulnerable_time = invulnerable_time;
+    }
+
     /// Decrements remaining invulnerability ticks by one if any are active.
     pub fn decrement_invulnerable_time(&self) {
         let mut state = self.state.lock();
