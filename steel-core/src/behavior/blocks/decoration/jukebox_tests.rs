@@ -21,9 +21,7 @@ use steel_utils::codec::VarInt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
-use steel_utils::{
-    BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, TICKS_PER_SECOND, WorldAabb,
-};
+use steel_utils::{BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, TICKS_PER_SECOND};
 use text_components::TextComponent;
 
 use super::JukeboxBlock;
