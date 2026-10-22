@@ -51,8 +51,6 @@ impl DispenseItemBehavior for ShulkerBoxDispenseBehavior {
     }
 }
 
-// TODO: chest — needs ChestBlock, which doesn't exist yet.
-
 #[cfg(test)]
 mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};

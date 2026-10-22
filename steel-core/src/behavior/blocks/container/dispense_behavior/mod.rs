@@ -22,7 +22,6 @@ pub mod container;
 pub mod default;
 pub mod potion;
 pub mod projectile;
-pub mod tnt;
 pub mod tools;
 
 pub use armor::ArmorDispenseBehavior;
@@ -35,7 +34,6 @@ pub use container::ShulkerBoxDispenseBehavior;
 pub use default::DefaultDispenseBehavior;
 pub use potion::GlassBottleDispenseBehavior;
 pub use projectile::ProjectileDispenseBehavior;
-pub use tnt::TntDispenseBehavior;
 pub use tools::FlintAndSteelDispenseBehavior;
 
 pub trait DispenseItemBehavior: Send + Sync {
@@ -179,15 +177,14 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         )),
     );
 
-    // tnt
-    registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
+    // TODO: tnt - needs the PrimedTnt entity.
 
     // tools
     registry.set_behavior(
         &vanilla_items::FLINT_AND_STEEL,
         Box::new(FlintAndSteelDispenseBehavior),
     );
-    // TODO: shears, brush — see tools.rs
+    // TODO: shears, brush - see tools.rs
 
     // container
     for item in REGISTRY.items.iter_tag(&ItemTag::SHULKER_BOXES) {
@@ -196,15 +193,15 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         };
         registry.set_behavior(item, Box::new(ShulkerBoxDispenseBehavior::new(block)));
     }
-    // TODO: chest — needs ChestBlock, which doesn't exist.
+    // TODO: chest - equips tamed donkeys/mules/llamas; needs those entities.
 
-    // minecarts (blocked — see minecarts.rs plan in PR)
-    // TODO: minecart, chest/furnace/hopper/tnt/command-block minecarts —
+    // minecarts (blocked - see minecarts.rs plan in PR)
+    // TODO: minecart, chest/furnace/hopper/tnt/command-block minecarts -
     // need minecart entities plus rail-slope detection for the
     // drop-vs-place branch, neither of which is ported yet.
 
-    // spawn_egg (blocked — see spawn_egg.rs plan in PR)
-    // TODO: armor stand — needs the ArmorStand entity.
+    // spawn_egg (blocked - see spawn_egg.rs plan in PR)
+    // TODO: armor stand - needs the ArmorStand entity.
 
     registry
 });
