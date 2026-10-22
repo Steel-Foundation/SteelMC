@@ -3,7 +3,7 @@ use crate::behavior::BlockStateBehaviorExt;
 use std::sync::Arc;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{vanilla_blocks, vanilla_game_events, vanilla_items};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -39,6 +39,30 @@ impl DispenseItemBehavior for BucketDispenseBehavior {
                 return result.filled_bucket;
             }
             return DefaultDispenseBehavior.dispense(world, pos, state, item);
+        }
+
+        if item.item() == &*vanilla_items::POWDER_SNOW_BUCKET {
+            if !world.is_in_world_bounds(target_pos) || !target_state.is_air() {
+                return DefaultDispenseBehavior.dispense(world, pos, state, item);
+            }
+            world.set_block(
+                target_pos,
+                vanilla_blocks::POWDER_SNOW.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
+            world.game_event(
+                &vanilla_game_events::FLUID_PLACE,
+                target_pos,
+                &GameEventContext::new(None, None),
+            );
+            world.play_block_sound(
+                &sound_events::ITEM_BUCKET_EMPTY_POWDER_SNOW,
+                target_pos,
+                1.0,
+                1.0,
+                None,
+            );
+            return ItemStack::new(&vanilla_items::BUCKET);
         }
 
         let fluid_block = if item.item() == &*vanilla_items::WATER_BUCKET {

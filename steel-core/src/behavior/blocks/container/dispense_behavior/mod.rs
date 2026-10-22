@@ -112,8 +112,12 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         Box::new(BucketDispenseBehavior),
     );
     registry.set_behavior(&vanilla_items::BUCKET, Box::new(BucketDispenseBehavior));
+    registry.set_behavior(
+        &vanilla_items::POWDER_SNOW_BUCKET,
+        Box::new(BucketDispenseBehavior),
+    );
     // TODO: mob buckets (salmon, cod, pufferfish, tropical fish, axolotl,
-    // sulfur cube, tadpole, powder snow) — vanilla empties them into a mob
+    // sulfur cube, tadpole) — vanilla empties them into a mob
     // entity at the target block, but none of those entities/spawn paths
     // are ported yet. Currently fall through to DefaultDispenseBehavior.
 
