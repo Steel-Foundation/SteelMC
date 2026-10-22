@@ -163,9 +163,8 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     to.set_fall_distance(from.fall_distance());
     to.set_fall_flying(from.is_fall_flying());
 
-    if let Some(uuid) = from.last_hurt_by_player_uuid() {
-        to.set_last_hurt_by_player(uuid, from.last_hurt_by_player_memory_time());
-    }
+    // Vanilla copies only the timer, not the remembered player.
+    to.set_last_hurt_by_player_memory_time(from.last_hurt_by_player_memory_time());
     // TODO: Copy vanilla `hurtTime` once Steel supports the hurt-flash counter.
 
     to.set_y_body_rot(from.y_body_rot());
@@ -327,6 +326,7 @@ mod tests {
         pig_mob.set_silent(true);
         pig_mob.add_tag("audit_tag".to_owned());
         pig_mob.set_can_pick_up_loot(true);
+        pig_mob.set_last_hurt_by_player(uuid::Uuid::from_u128(1), 60);
         pig_mob.attributes().lock().add_modifier(
             vanilla_attributes::MAX_ABSORPTION,
             AttributeModifier {
@@ -391,6 +391,12 @@ mod tests {
         assert!(cow_mob.is_silent());
         assert!(cow_mob.tags().contains(&"audit_tag".to_owned()));
         assert!(cow_mob.can_pick_up_loot());
+        assert_eq!(cow_mob.last_hurt_by_player_memory_time(), 60);
+        assert_eq!(
+            cow_mob.last_hurt_by_player_uuid(),
+            None,
+            "vanilla copies the memory timer but not the player"
+        );
         assert_eq!(
             cow_mob.living_base().absorption_amount(),
             ABSORPTION_PER_LEVEL * 2.0,

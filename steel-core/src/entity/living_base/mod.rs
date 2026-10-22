@@ -1544,6 +1544,11 @@ impl LivingEntityBase {
         state.last_hurt_by_player_memory_time = time_to_remember;
     }
 
+    /// Sets the remaining memory time without touching the remembered player.
+    pub fn set_last_hurt_by_player_memory_time(&self, time_to_remember: i32) {
+        self.state.lock().last_hurt_by_player_memory_time = time_to_remember;
+    }
+
     /// Remembers the live player independently of which world it occupies.
     pub(crate) fn set_last_hurt_by_player_entity(
         &self,
