@@ -304,6 +304,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture asserts every field SINGLE conversion transfers"
+    )]
     fn single_conversion_transfers_shared_state_and_discards_source() {
         init_vanilla_registry();
         init_entities();
