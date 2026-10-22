@@ -782,10 +782,7 @@ impl LivingEntityBase {
 
     /// Collects equipment changes against Vanilla's previous-tick snapshots.
     pub fn collect_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack, ItemStack)> {
-        let current_items: [ItemStack; EquipmentSlot::ALL.len()] = {
-            let equipment = self.equipment.lock();
-            array::from_fn(|index| equipment.get_ref(EquipmentSlot::ALL[index]).clone())
-        };
+        let current_items = self.equipment.lock().snapshot();
         let mut last_items = self.last_equipment_items.lock();
         let mut changes = Vec::new();
 
