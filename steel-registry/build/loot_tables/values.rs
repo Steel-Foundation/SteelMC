@@ -383,24 +383,20 @@ pub(super) fn generate_entity_predicate(predicate: &EntityPredicateJson) -> Toke
 pub(super) fn generate_damage_source_predicate(
     predicate: &DamageSourcePredicateJson,
 ) -> TokenStream {
-    let tags: Vec<TokenStream> = predicate
-        .tags
-        .as_ref()
-        .map(|t| {
-            t.iter()
-                .map(|tag| {
-                    let id = tag.id.strip_prefix("minecraft:").unwrap_or(&tag.id);
-                    let expected = tag.expected;
-                    quote! {
-                        DamageTagPredicate {
-                            id: Identifier::vanilla_static(#id),
-                            expected: #expected,
-                        }
+    let tags: Vec<TokenStream> = predicate.tags.as_ref().map_or_default(|t| {
+        t.iter()
+            .map(|tag| {
+                let id = tag.id.strip_prefix("minecraft:").unwrap_or(&tag.id);
+                let expected = tag.expected;
+                quote! {
+                    DamageTagPredicate {
+                        id: Identifier::vanilla_static(#id),
+                        expected: #expected,
                     }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+                }
+            })
+            .collect()
+    });
 
     let source_entity = if let Some(e) = &predicate.source_entity {
         let pred = generate_entity_predicate(e);
@@ -440,18 +436,14 @@ pub(super) fn generate_block_predicate(predicate: &BlockPredicateJson) -> TokenS
         quote! { None }
     };
 
-    let state: Vec<TokenStream> = predicate
-        .state
-        .as_ref()
-        .map(|props| {
-            props
-                .iter()
-                .map(|(name, value)| {
-                    quote! { (#name, #value) }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let state: Vec<TokenStream> = predicate.state.as_ref().map_or_default(|props| {
+        props
+            .iter()
+            .map(|(name, value)| {
+                quote! { (#name, #value) }
+            })
+            .collect()
+    });
 
     quote! {
         BlockPredicate {

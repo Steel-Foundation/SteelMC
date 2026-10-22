@@ -256,7 +256,7 @@ where
                     return;
                 };
                 if cache.owner == owner {
-                    cache.insert(pos, holder.as_ref().map(Arc::clone));
+                    cache.insert(pos, holder.clone());
                 }
             });
             holder

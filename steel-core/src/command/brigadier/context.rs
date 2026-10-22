@@ -159,11 +159,11 @@ where
             source: Arc::clone(&self.source),
             root: self.root,
             arguments: self.arguments.clone(),
-            executor: self.executor.as_ref().map(Arc::clone),
+            executor: self.executor.clone(),
             nodes: self.nodes.clone(),
             range: self.range,
             child: self.child.as_ref().map(|child| Box::new(child.branch())),
-            modifier: self.modifier.as_ref().map(Arc::clone),
+            modifier: self.modifier.clone(),
             forks: self.forks,
         }
     }
@@ -200,7 +200,7 @@ where
         self.range = StringRange::encompassing(self.range, range);
         self.modifier = redirect
             .and_then(|redirect| redirect.modifier.as_ref())
-            .map(Arc::clone);
+            .cloned();
         self.forks = redirect.is_some_and(|redirect| redirect.forks);
     }
 
@@ -421,11 +421,11 @@ where
             input: Arc::clone(&self.input),
             root: self.root,
             arguments: Arc::clone(&self.arguments),
-            executor: self.executor.as_ref().map(Arc::clone),
+            executor: self.executor.clone(),
             nodes: Arc::clone(&self.nodes),
             range: self.range,
-            child: self.child.as_ref().map(Arc::clone),
-            modifier: self.modifier.as_ref().map(Arc::clone),
+            child: self.child.clone(),
+            modifier: self.modifier.clone(),
             forks: self.forks,
         }
     }

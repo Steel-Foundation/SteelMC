@@ -21,25 +21,26 @@ use super::{
 
 #[test]
 fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), String> {
-    let world = fresh_test_world("player_limit_preparation");
+    let world_fixture = fresh_test_world("player_limit_preparation");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| error.to_string())?;
     runtime.block_on(async {
-        let server = test_server(Arc::clone(&world), PermissionSubjectIndex::new()).await?;
-        let (slow, _) = test_player_with_packets(&server, Arc::clone(&world), "Slow", 1);
-        let (fast, _) = test_player_with_packets(&server, world, "Fast", 2);
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await?;
+        let (slow, _) = test_player_with_packets(&server, Arc::clone(world), "Slow", 1);
+        let (fast, _) = test_player_with_packets(&server, Arc::clone(world), "Fast", 2);
 
-        let slow_reservation = server.try_reserve_player_join(slow.gameprofile.id);
-        let fast_reservation = server.try_reserve_player_join(fast.gameprofile.id);
+        let slow_reservation = server.try_reserve_player_join(slow.gameprofile.id());
+        let fast_reservation = server.try_reserve_player_join(fast.gameprofile.id());
         assert!(slow_reservation.is_some());
         assert!(fast_reservation.is_some());
-        assert!(!server.is_player_limit_reached(fast.gameprofile.id));
+        assert!(!server.is_player_limit_reached(fast.gameprofile.id()));
 
         assert_eq!(server.admit_reserved_player(Arc::clone(&fast)), Ok(()));
-        assert!(server.is_player_limit_reached(slow.gameprofile.id));
-        assert!(server.is_player_limit_reached(fast.gameprofile.id));
+        assert!(server.is_player_limit_reached(slow.gameprofile.id()));
+        assert!(server.is_player_limit_reached(fast.gameprofile.id()));
         assert_eq!(
             server.admit_reserved_player(Arc::clone(&slow)),
             Err(PlayerJoinError::ServerFull),
@@ -49,15 +50,15 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
             !server
                 .player_admissions
                 .lock()
-                .contains_key(&slow.gameprofile.id)
+                .contains_key(&slow.gameprofile.id())
         );
         drop(slow_reservation);
         drop(fast_reservation);
 
         assert!(server.reserve_player_disconnect(&fast));
         assert!(server.remove_online_player_sync(&fast).is_some());
-        assert!(!server.is_player_limit_reached(slow.gameprofile.id));
-        let retry = server.try_reserve_player_join(slow.gameprofile.id);
+        assert!(!server.is_player_limit_reached(slow.gameprofile.id()));
+        let retry = server.try_reserve_player_join(slow.gameprofile.id());
         assert!(retry.is_some());
         assert_eq!(server.admit_reserved_player(slow), Ok(()));
         drop(retry);
@@ -68,7 +69,8 @@ fn max_players_counts_admitted_players_not_pending_preparation() -> Result<(), S
 
 #[test]
 fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
-    let world = fresh_test_world("player_limit_bypass_refresh");
+    let world_fixture = fresh_test_world("player_limit_bypass_refresh");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -80,7 +82,7 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
             uuid,
             PermissionSubjectState::new(vec!["reserved".to_owned()], PermissionSet::new()),
         );
-        let server = test_server_with_max_players(Arc::clone(&world), subjects, 0).await?;
+        let server = test_server_with_max_players(Arc::clone(world), subjects, 0).await?;
         let mut groups = PermissionGroupsConfig::default();
         groups.groups.insert(
             "reserved".to_owned(),
@@ -97,7 +99,8 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
             .await
             .map_err(|error| error.to_string())?;
         assert!(!server.is_player_limit_reached(uuid));
-        let (player, _) = test_player_with_uuid_and_packets(&server, world, uuid, "Candidate", 1);
+        let (player, _) =
+            test_player_with_uuid_and_packets(&server, Arc::clone(world), uuid, "Candidate", 1);
         assert!(server.reserve_player_join(&player));
 
         server
@@ -115,29 +118,30 @@ fn max_players_rechecks_group_bypass_after_preparation() -> Result<(), String> {
 
 #[test]
 fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<(), String> {
-    let world = fresh_test_world("player_limit_disconnect");
+    let world_fixture = fresh_test_world("player_limit_disconnect");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| error.to_string())?;
     runtime.block_on(async {
         let server =
-            test_server_with_max_players(Arc::clone(&world), PermissionSubjectIndex::new(), 0)
+            test_server_with_max_players(Arc::clone(world), PermissionSubjectIndex::new(), 0)
                 .await?;
         let handles = test_connection();
         let player = test_player_with_connection(
             &server,
-            Arc::clone(&world),
+            Arc::clone(world),
             "Rejected",
             1,
             handles.connection,
         );
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         assert!(server.is_player_limit_reached(uuid));
         assert!(server.reserve_player_join(&player));
         let position = player.position();
         let state = DomainPlayerState {
-            world: Arc::clone(&world),
+            world: Arc::clone(world),
             data: DomainPlayerData::FirstVisit {
                 spawn: PreparedSpawn {
                     position,
@@ -168,7 +172,8 @@ fn max_players_rejected_prepared_join_disconnects_and_releases_uuid() -> Result<
 
 #[test]
 fn max_players_bypass_requires_explicit_boolean_metadata() -> Result<(), String> {
-    let world = fresh_test_world("player_limit_bypass");
+    let world_fixture = fresh_test_world("player_limit_bypass");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -201,13 +206,13 @@ fn max_players_bypass_requires_explicit_boolean_metadata() -> Result<(), String>
                 ),
             );
         }
-        let server = test_server_with_max_players(Arc::clone(&world), subjects, 0).await?;
+        let server = test_server_with_max_players(Arc::clone(world), subjects, 0).await?;
         for (id, bypasses) in candidates {
             let uuid = Uuid::from_u128(id);
             assert_eq!(server.is_player_limit_reached(uuid), !bypasses);
             let (player, _) = test_player_with_uuid_and_packets(
                 &server,
-                Arc::clone(&world),
+                Arc::clone(world),
                 uuid,
                 "Candidate",
                 id as i32,

@@ -23,6 +23,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         blocks::{CakeBlock, CandleBlock},
     },
+    block_entity::SharedBlockEntity,
     entity::{Entity, projectile::Projectile},
     player::Player,
     world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
@@ -163,6 +164,7 @@ impl BlockBehavior for CandleCakeBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::CAKE))

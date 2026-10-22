@@ -26,6 +26,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
+use crate::entity::DEFAULT_AIR_DRAG;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
@@ -38,7 +39,6 @@ use crate::world::{ClipBlockShape, ClipFluid, World};
 const DEFAULT_FALL_DAMAGE_PER_DISTANCE: f32 = 0.0;
 const DEFAULT_MAX_FALL_DAMAGE: i32 = 40;
 const DEFAULT_GRAVITY: f64 = 0.04;
-const AIR_DRAG: f64 = 0.98;
 const LANDED_HORIZONTAL_DRAG: f64 = 0.7;
 const LANDED_VERTICAL_BOUNCE: f64 = -0.5;
 
@@ -154,7 +154,7 @@ impl FallingBlockEntity {
             fluid_state_to_block(state.get_fluid_state()),
             UpdateFlags::UPDATE_ALL,
         );
-        if let Err(error) = world.try_add_entity(Arc::clone(&entity) as Arc<dyn Entity>) {
+        if let Err(error) = world.try_add_entity(Arc::<FallingBlockEntity>::clone(&entity)) {
             log::error!("failed to add falling block entity: {error}");
         }
         entity
@@ -390,7 +390,7 @@ impl Entity for FallingBlockEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         let block_state = self.block_state();
         if block_state.is_air() {
             self.set_removed(RemovalReason::Discarded);
@@ -403,7 +403,7 @@ impl Entity for FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = self.move_entity(MoverType::SelfMovement, self.velocity());
+        let _ = Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
         if let Some(world) = self.level()
@@ -411,7 +411,7 @@ impl Entity for FallingBlockEntity {
         {
             self.tick_server(&world, block);
         }
-        self.set_velocity(self.velocity() * AIR_DRAG);
+        self.set_velocity(self.velocity() * DEFAULT_AIR_DRAG);
     }
 
     fn get_default_gravity(&self) -> f64 {
@@ -450,7 +450,7 @@ impl Entity for FallingBlockEntity {
     }
 
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         _damage_modifier: f32,
         _source: &DamageSource,
@@ -477,11 +477,12 @@ impl Entity for FallingBlockEntity {
             .as_fallable()
             .map_or_else(
                 || {
-                    DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
-                        .with_direct_entity(self.id())
-                        .with_causing_entity(self.id())
+                    DamageSource::direct(
+                        &vanilla_damage_types::FALLING_BLOCK,
+                        Arc::<FallingBlockEntity>::clone(&self),
+                    )
                 },
-                |fallable| fallable.get_fall_damage_source(self),
+                |fallable| fallable.get_fall_damage_source(&self),
             );
         let damage = (fall_distance as f32 * damage_per_distance)
             .floor()

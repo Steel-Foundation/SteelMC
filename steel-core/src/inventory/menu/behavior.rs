@@ -1,5 +1,6 @@
 //! Slots, client-sync state, and click handling shared by every menu.
 
+use crate::player::player_inventory::Prediction;
 use std::fmt;
 use std::{mem, sync::Arc};
 
@@ -694,10 +695,10 @@ impl MenuBehavior {
         match button {
             MouseButton::Left => {
                 let to_drop = mem::take(&mut self.carried);
-                let _ = player.drop_item(to_drop, false, true);
+                let _ = player.drop_item(to_drop, true, Prediction::Predicted);
             }
             MouseButton::Right => {
-                let _ = player.drop_item(self.carried.split(1), false, true);
+                let _ = player.drop_item(self.carried.split(1), true, Prediction::Predicted);
             }
         }
     }
@@ -733,7 +734,11 @@ impl MenuBehavior {
 
             if let Some(taken) = slot.try_remove(&mut guard, amount, i32::MAX, player) {
                 if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
-                    player.add_item_or_drop_with_guard(&mut guard, remainder);
+                    player.add_item_or_drop_with_guard(
+                        &mut guard,
+                        remainder,
+                        Prediction::Predicted,
+                    );
                 }
                 self.carried = taken;
             }
@@ -755,7 +760,11 @@ impl MenuBehavior {
                             slot.try_remove(&mut guard, slot_item.count, space, player)
                         {
                             if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
-                                player.add_item_or_drop_with_guard(&mut guard, remainder);
+                                player.add_item_or_drop_with_guard(
+                                    &mut guard,
+                                    remainder,
+                                    Prediction::Predicted,
+                                );
                             }
                             let mut new_carried = carried;
                             new_carried.grow(taken.count);
@@ -828,7 +837,8 @@ impl MenuBehavior {
 
         let dropped = slot.safe_take(&mut guard, amount, i32::MAX, player);
         if !dropped.is_empty() {
-            let _ = guard.run_unlocked(|| player.drop_item(dropped.clone(), false, true));
+            let _ = guard
+                .run_unlocked(|| player.drop_item(dropped.clone(), true, Prediction::Predicted));
         }
 
         // Ctrl+Q: keep dropping while the slot refills with the same item.
@@ -848,7 +858,8 @@ impl MenuBehavior {
                 if more_dropped.is_empty() {
                     break;
                 }
-                let _ = guard.run_unlocked(|| player.drop_item(more_dropped, false, true));
+                let _ = guard
+                    .run_unlocked(|| player.drop_item(more_dropped, true, Prediction::Predicted));
             }
         }
     }

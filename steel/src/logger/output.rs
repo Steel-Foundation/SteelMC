@@ -1,12 +1,19 @@
 use crossterm::cursor::{MoveRight, SetCursorStyle::BlinkingBar};
 use std::io::{Result, Stdout, Write, stdout};
 
+/// Prefix rendered before the input line.
+pub const PROMPT: &str = "> ";
+/// Replaces [`PROMPT`] while the input is scrolled; must stay the same width as above.
+pub const SCROLLED_PROMPT: &str = "◄ ";
+
 pub struct Output {
     pub text: String,
     pub length: usize,
     pub pos: usize,
     pub start: usize,
     pub replace: bool,
+    /// Character width of the prefix the input is drawn after.
+    pub prompt_width: usize,
     out: Stdout,
 }
 
@@ -32,6 +39,7 @@ impl Output {
             pos: 0,
             start: 0,
             replace: false,
+            prompt_width: PROMPT.chars().count(),
             out,
         }
     }
@@ -55,8 +63,10 @@ impl Output {
             .expect("Character position out of range!");
         (pos, char.len_utf8())
     }
-    pub fn visible_input_width() -> usize {
-        super::terminal_width().saturating_sub(4).max(1)
+    pub fn visible_input_width(&self) -> usize {
+        super::terminal_width()
+            .saturating_sub(self.prompt_width + 2)
+            .max(1)
     }
     pub fn cursor_to(&mut self, to: usize) -> Result<()> {
         if to > 0 {
@@ -68,7 +78,11 @@ impl Output {
     pub fn cursor_to_relative(&mut self, to: usize) -> Result<()> {
         let visible_pos = to
             .saturating_sub(self.start)
-            .min(Self::visible_input_width());
-        write!(self.out, "\r{}", MoveRight((visible_pos + 2) as u16))
+            .min(self.visible_input_width());
+        write!(
+            self.out,
+            "\r{}",
+            MoveRight((visible_pos + self.prompt_width) as u16)
+        )
     }
 }

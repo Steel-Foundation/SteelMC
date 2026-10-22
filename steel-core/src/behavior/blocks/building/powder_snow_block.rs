@@ -50,7 +50,6 @@ impl PowderSnowBlock {
         Self { block }
     }
 
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
     pub(crate) fn can_entity_walk_on_powder_snow<E: Entity + ?Sized>(entity: &E) -> bool {
         if REGISTRY.entity_types.is_in_tag(
             entity.entity_type(),

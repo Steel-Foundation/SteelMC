@@ -179,26 +179,27 @@ mod tests {
     fn targets_attacker_and_alerts_unassigned_same_type_mobs() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("hurt_by_target_goal");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("hurt_by_target_goal");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let hunter = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         let ally = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         let attacker = Arc::new(CowEntity::new(
             &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
 
         let hunter_entity: SharedEntity = Arc::<PigEntity>::clone(&hunter);
