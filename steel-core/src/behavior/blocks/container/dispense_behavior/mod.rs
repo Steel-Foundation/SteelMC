@@ -26,7 +26,7 @@ pub mod tools;
 
 pub use armor::ArmorDispenseBehavior;
 pub use arrow::ArrowDispenseBehavior;
-pub use bucket::BucketDispenseBehavior;
+pub use bucket::{EmptyBucketDispenseBehavior, FilledBucketDispenseBehavior};
 pub use consumables::{
     BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
 };
@@ -105,16 +105,19 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     // bucket
     registry.set_behavior(
         &vanilla_items::WATER_BUCKET,
-        Box::new(BucketDispenseBehavior),
+        Box::new(FilledBucketDispenseBehavior),
     );
     registry.set_behavior(
         &vanilla_items::LAVA_BUCKET,
-        Box::new(BucketDispenseBehavior),
+        Box::new(FilledBucketDispenseBehavior),
     );
-    registry.set_behavior(&vanilla_items::BUCKET, Box::new(BucketDispenseBehavior));
     registry.set_behavior(
         &vanilla_items::POWDER_SNOW_BUCKET,
-        Box::new(BucketDispenseBehavior),
+        Box::new(FilledBucketDispenseBehavior),
+    );
+    registry.set_behavior(
+        &vanilla_items::BUCKET,
+        Box::new(EmptyBucketDispenseBehavior),
     );
     // TODO: mob buckets (salmon, cod, pufferfish, tropical fish, axolotl,
     // sulfur cube, tadpole) — vanilla empties them into a mob

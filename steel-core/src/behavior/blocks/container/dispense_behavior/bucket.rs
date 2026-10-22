@@ -13,9 +13,10 @@ use super::DispenseItemBehavior;
 use crate::behavior::blocks::container::dispenser_block::FACING;
 use crate::world::{World, game_event::GameEventContext};
 
-pub struct BucketDispenseBehavior;
+pub struct EmptyBucketDispenseBehavior;
+pub struct FilledBucketDispenseBehavior;
 
-impl DispenseItemBehavior for BucketDispenseBehavior {
+impl DispenseItemBehavior for EmptyBucketDispenseBehavior {
     fn dispense(
         &self,
         world: &Arc<World>,
@@ -40,6 +41,21 @@ impl DispenseItemBehavior for BucketDispenseBehavior {
             }
             return DefaultDispenseBehavior.dispense(world, pos, state, item);
         }
+        DefaultDispenseBehavior.dispense(world, pos, state, item)
+    }
+}
+
+impl DispenseItemBehavior for FilledBucketDispenseBehavior {
+    fn dispense(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        item: ItemStack,
+    ) -> ItemStack {
+        let facing = state.get_value(FACING);
+        let target_pos = pos.relative(facing);
+        let target_state = world.get_block_state(target_pos);
 
         if item.item() == &*vanilla_items::POWDER_SNOW_BUCKET {
             if !world.is_in_world_bounds(target_pos) || !target_state.is_air() {
