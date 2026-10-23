@@ -67,10 +67,16 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         let has_instant_effects = contents
             .potion()
             .is_some_and(|potion| potion_has_instant_effects(potion.value()));
-        let event_type = if has_instant_effects {
-            level_events::PARTICLES_INSTANT_POTION_SPLASH
+        let (event_type, sound_event) = if has_instant_effects {
+            (
+                level_events::PARTICLES_INSTANT_POTION_SPLASH,
+                level_events::SOUND_INSTANT_POTION_SPLASH,
+            )
         } else {
-            level_events::PARTICLES_SPELL_POTION_SPLASH
+            (
+                level_events::PARTICLES_SPELL_POTION_SPLASH,
+                level_events::SOUND_SPELL_POTION_SPLASH,
+            )
         };
         world.level_event(
             event_type,
@@ -78,6 +84,9 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
             contents.get_color(),
             None,
         );
+        if !self.is_silent() {
+            world.level_event(sound_event, self.block_position(), 0, None);
+        }
         self.set_removed(RemovalReason::Discarded);
     }
 
