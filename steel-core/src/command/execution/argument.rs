@@ -17,6 +17,7 @@ use super::{
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
     suggestions::{matches_substring_ignore_case, suggest_resources},
+    swing_animation::SwingAnimationParser,
     text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
 };
@@ -171,6 +172,10 @@ impl SteelArgumentType {
 
     pub(crate) fn time(minimum: i32) -> Self {
         Self::new(TimeParser { minimum })
+    }
+
+    pub(crate) fn swing_animation() -> Self {
+        Self::new(SwingAnimationParser)
     }
 
     pub(crate) fn block_pos() -> Self {
