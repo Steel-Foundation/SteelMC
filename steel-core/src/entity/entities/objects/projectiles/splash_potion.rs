@@ -21,8 +21,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::potion_contents::to_runtime_instance_icon_from_visibility;
 use crate::entity::{
     AbstractThrownPotion, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity,
-    Projectile, ProjectileBase, ProjectileHit, SPLASH_RANGE_SQ, SharedEntity,
-    ThrowableItemProjectile, ThrowableProjectile, compute_margin,
+    Projectile, ProjectileBase, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
+    SPLASH_VERTICAL_REACH, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
+    compute_margin,
 };
 use crate::world::{ClipHitResult, World};
 
@@ -221,7 +222,11 @@ impl AbstractThrownPotion for SplashPotionEntity {
         let potion_aabb = self
             .bounding_box()
             .translate(hit.location() - self.position());
-        let effect_aabb = potion_aabb.inflate_xyz(4.0, 2.0, 4.0);
+        let effect_aabb = potion_aabb.inflate_xyz(
+            SPLASH_HORIZONTAL_REACH,
+            SPLASH_VERTICAL_REACH,
+            SPLASH_HORIZONTAL_REACH,
+        );
         let entities =
             world.get_entities_in_aabb_matching(&effect_aabb, |entity| !entity.is_spectator());
         if entities.is_empty() {

@@ -48,7 +48,9 @@ use super::{
 
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
-pub use thrown_potion::{AbstractThrownPotion, SPLASH_RANGE_SQ};
+pub use thrown_potion::{
+    AbstractThrownPotion, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,
+};
 
 /// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;

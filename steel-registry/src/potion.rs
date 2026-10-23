@@ -34,6 +34,7 @@ impl Potion {
     }
 
     /// Returns `true` if this potion is tagged with the given tag.
+    #[must_use]
     pub fn has_tag(&'static self, tag: &Identifier) -> bool {
         REGISTRY.potions.is_in_tag(self, tag)
     }

@@ -22,6 +22,10 @@ use crate::world::World;
 
 /// Squared distance within which a splash reaches an entity.
 pub const SPLASH_RANGE_SQ: f64 = 16.0;
+/// How far the splash search box extends past the potion's box on the X and Z axes.
+pub const SPLASH_HORIZONTAL_REACH: f64 = 4.0;
+/// How far the splash search box extends past the potion's box on the Y axis.
+pub const SPLASH_VERTICAL_REACH: f64 = 2.0;
 /// Gravity of a thrown potion.
 const DEFAULT_GRAVITY: f64 = 0.05;
 
@@ -104,7 +108,11 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
             return;
         }
 
-        let aabb = self.bounding_box().inflate_xyz(4.0, 2.0, 4.0);
+        let aabb = self.bounding_box().inflate_xyz(
+            SPLASH_HORIZONTAL_REACH,
+            SPLASH_VERTICAL_REACH,
+            SPLASH_HORIZONTAL_REACH,
+        );
         let potion_pos = self.position();
 
         for entity in world.get_entities_in_aabb(&aabb) {

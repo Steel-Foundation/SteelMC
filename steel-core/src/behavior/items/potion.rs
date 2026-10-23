@@ -25,6 +25,9 @@ use text_components::TextComponent;
 
 use super::dynamic_name::potion_name;
 
+/// Splash particles spawned when a water bottle turns a block into mud.
+const MUD_SPLASH_PARTICLE_COUNT: usize = 5;
+
 /// Potion behavior providing Vanilla's potion-content-dependent name and
 /// water default instance.
 #[item_behavior]
@@ -102,7 +105,7 @@ pub(super) fn potion_use_on(context: &mut UseOnContext) -> InteractionResult {
             true,
         );
     });
-    for _ in 0..5 {
+    for _ in 0..MUD_SPLASH_PARTICLE_COUNT {
         context.world.send_particles(
             ParticleData::simple(&vanilla_particle_types::SPLASH),
             DVec3::new(
