@@ -850,8 +850,9 @@ pub use movement_sync::{
 };
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,
+    ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
+    SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use reference::EntityReference;
