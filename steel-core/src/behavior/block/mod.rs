@@ -37,7 +37,9 @@ use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
-use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref};
+use crate::entity::{
+    Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref, loot_equipment,
+};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
@@ -47,6 +49,9 @@ use crate::world::{
     SignalQueryContext, World,
 };
 use steel_registry::vanilla_fluids;
+
+/// Exclusive block-emission limit for the default mob spawn predicate.
+pub(crate) const MAX_MOB_SPAWN_LIGHT_EMISSION: u8 = 14;
 
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
@@ -73,8 +78,12 @@ pub(crate) fn drop_from_block_interact_loot_table(
 
     // TODO: Add the block entity to the context when it can be done.
 
+    let interacting_equipment = interacting_entity.and_then(loot_equipment);
     if let Some(interacting_entity) = interacting_entity {
-        ctx = ctx.with_interacting_entity(entity_loot_ref(interacting_entity));
+        ctx = ctx.with_interacting_entity(entity_loot_ref(
+            interacting_entity,
+            interacting_equipment.as_ref(),
+        ));
     }
 
     if let Some(tool) = tool {
@@ -219,6 +228,20 @@ pub trait BlockBehavior: Send + Sync {
     /// (torches, buttons, candles, cactus, etc.).
     fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
+    }
+
+    /// Whether this block accepts a mob spawning on or inside it.
+    /// Defaults to full UP support and emission below [`MAX_MOB_SPAWN_LIGHT_EMISSION`].
+    fn is_valid_spawn(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        _entity_type: EntityTypeRef,
+    ) -> bool {
+        // TODO: extract the correct rules from block spawn rule
+        world.is_face_sturdy_for(state, pos, Direction::Up, SupportType::Full)
+            && state.get_light_emission() < MAX_MOB_SPAWN_LIGHT_EMISSION
     }
 
     /// Returns whether this block can be occupied by a forced respawn position
@@ -577,15 +600,17 @@ pub trait BlockBehavior: Send + Sync {
     /// # Arguments
     /// * `block` - The block being picked
     /// * `_state` - The block state (some blocks vary pick item based on state)
+    /// * `_block_entity` - An optional block entity (some blocks vary pick item based on block entity data)
     /// * `_include_data` - Whether to include block entity data (creative + Ctrl)
     #[expect(
         unused_variables,
-        reason = "default implementation only uses `block`; state/include_data are for overrides"
+        reason = "default implementation only uses `block`; state/block_entity/include_data are for overrides"
     )]
     fn get_clone_item_stack(
         &self,
         block: BlockRef,
         state: BlockStateId,
+        block_entity: Option<SharedBlockEntity>,
         include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(REGISTRY.items.by_block(block)))

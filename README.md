@@ -32,7 +32,7 @@
 ## What is SteelMC?
 
 SteelMC is an independent implementation of the Minecraft Java Edition server. It
-tracks the latest Java Edition release and currently targets **Minecraft 26.2**.
+tracks the latest Java Edition release and currently targets **Minecraft 26.3**.
 
 The goal is to match vanilla behavior while making better use of modern multicore
 hardware. Gameplay updates remain synchronous, while chunk generation, lighting,

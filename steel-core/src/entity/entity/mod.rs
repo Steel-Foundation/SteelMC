@@ -1509,6 +1509,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Animal>(self)
     }
 
+    /// Returns true for entities that implement vanilla hostile-mob behavior.
+    fn is_monster(&self) -> bool {
+        self.as_monster().is_some()
+    }
+
+    /// Returns the `Monster` capability, equivalent to vanilla's `instanceof Monster`.
+    fn as_monster(&self) -> Option<&dyn Monster> {
+        try_as_dyn::<Self, dyn Monster>(self)
+    }
+
+    /// Whether this entity implements the `Enemy` marker.
+    fn is_enemy(&self) -> bool {
+        self.as_enemy().is_some()
+    }
+
+    /// Returns the `Enemy` marker, equivalent to vanilla's `instanceof Enemy`.
+    fn as_enemy(&self) -> Option<&dyn Enemy> {
+        try_as_dyn::<Self, dyn Enemy>(self)
+    }
+
     /// Returns true for entities that implement vanilla ageable-mob behavior.
     fn is_ageable_mob(&self) -> bool {
         self.as_ageable_mob().is_some()

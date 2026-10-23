@@ -25,6 +25,8 @@ pub const ENTITY_LEASH_ATTACHMENT_POINT: DVec3 = DVec3::new(0.0, 0.5, 0.5);
 pub const LEASHER_ATTACHMENT_POINT: DVec3 = DVec3::new(0.0, 0.5, 0.0);
 pub const DELAYED_LEASH_DROP_TICKS: i32 = 100;
 pub const BASE_HORIZONTAL_FRICTION: f64 = 0.91;
+/// Angular leash friction in water or lava.
+pub const LEASH_LIQUID_ANGULAR_FRICTION: f64 = 0.8;
 
 /// Vanilla behavior shared by entities that extend `Leashable`.
 ///
@@ -38,11 +40,8 @@ pub trait Leashable: Entity {
         self.leash_holder().is_some()
     }
 
-    /// Returns whether this entity can be leashed with respect to its leash state.
-    ///
-    /// In other words, this returns `false` if the entity is already leashed and `true` if not.
-    ///
-    /// See also: [`Leashable::can_be_leashed`]
+    /// Whether leash data exists, including pending save restoration.
+    /// This follows vanilla's `mayBeLeashed`; permission is [`Self::can_be_leashed`].
     fn may_be_leashed(&self) -> bool {
         self.leash_data().lock().is_some()
     }
@@ -67,11 +66,8 @@ pub trait Leashable: Entity {
         self.remove_leash();
     }
 
-    /// Returns whether this entity can be leashed with respect to the entity's type or classification.
-    ///
-    /// For example, mobs like dolphins and hoglins return `true` for this, while `villagers` return `false`.
-    ///
-    /// See also: [`Leashable::may_be_leashed`]
+    /// Whether the entity type permits leashing. Mobs reject `Enemy` types
+    /// by default; [`Self::may_be_leashed`] checks existing leash data.
     fn can_be_leashed(&self) -> bool {
         true
     }
@@ -99,6 +95,9 @@ pub trait Leashable: Entity {
     fn when_leashed_to(&self, holder: &dyn Entity) {
         holder.notify_leash_holder(self.as_entity_event_source());
     }
+
+    /// Called by leash-drop paths after clearing leash data.
+    fn on_leash_removed(&self) {}
 
     /// Called every tick this entity's leash is stretched too far (this entity is too far from its holder).
     fn leash_too_far_behaviour(&self) {
@@ -189,7 +188,7 @@ pub trait Leashable: Entity {
         }
 
         if self.is_in_water() || self.is_in_lava() {
-            return 0.8;
+            return LEASH_LIQUID_ANGULAR_FRICTION;
         }
 
         BASE_HORIZONTAL_FRICTION
@@ -317,6 +316,7 @@ pub trait Leashable: Entity {
         }
 
         let holder = self.remove_leash_state();
+        self.on_leash_removed();
         let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
         if let Some(holder) = holder {
             holder.notify_leashee_removed(self.as_entity_event_source());
@@ -328,11 +328,13 @@ pub trait Leashable: Entity {
         if self.leash_holder().is_some()
             && let Some(holder) = self.remove_leash_state()
         {
+            self.on_leash_removed();
             holder.notify_leashee_removed(self.as_entity_event_source());
         }
     }
 
-    /// Removes the leash state of this entity, returning its holder before the leash's removal, if any.
+    /// Clears leash data and returns the former holder without calling
+    /// [`Self::on_leash_removed`], preserving home state on failed save restoration.
     fn remove_leash_state(&self) -> Option<SharedEntity> {
         self.leash_data()
             .lock()
