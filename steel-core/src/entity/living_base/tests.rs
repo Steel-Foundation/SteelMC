@@ -17,8 +17,7 @@ use super::{
     POST_IMPULSE_GRACE_TICKS,
 };
 
-/// Mirrors vanilla `MobEffectInstance.endsWithin`: an infinite-duration effect
-/// never "ends within" anything, and the bound is inclusive.
+/// An infinite-duration effect never "ends within" anything, and the bound is inclusive.
 #[test]
 fn ends_within_treats_infinite_duration_as_never_ending() {
     init_vanilla_registry();
