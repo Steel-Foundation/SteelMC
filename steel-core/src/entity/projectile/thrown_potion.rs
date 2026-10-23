@@ -8,7 +8,8 @@ use steel_registry::data_components::{PotionContents, vanilla_components};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::potion::Potion;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{level_events, vanilla_damage_types, vanilla_potions};
+use steel_registry::vanilla_potion_tags::PotionTag;
+use steel_registry::{level_events, vanilla_damage_types};
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
@@ -58,9 +59,8 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         let potion_item = self.get_item();
         let contents = potion_item
             .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
-        if contents.is(&vanilla_potions::WATER) {
-            self.on_hit_as_water(&world);
-        } else if contents.has_effects() {
+        self.affect_entities_around(&world, &contents);
+        if contents.has_effects() {
             self.on_hit_as_potion(&world, &potion_item, hit);
         }
 
@@ -90,12 +90,20 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         self.set_removed(RemovalReason::Discarded);
     }
 
-    /// Splashes water: hurts water-sensitive entities in range and
-    /// extinguishes burning ones.
-    fn on_hit_as_water(self: &Arc<Self>, world: &Arc<World>)
+    /// Hurts water-sensitive entities in range and extinguishes burning ones,
+    /// as allowed by the potion's tags.
+    fn affect_entities_around(self: &Arc<Self>, world: &Arc<World>, contents: &PotionContents)
     where
         Self: Sized + 'static,
     {
+        let hurts_water_sensitive = contents.is_in_tag(&PotionTag::HURTS_WATER_SENSITIVE_ENTITIES);
+        let extinguishes = contents.is_in_tag(&PotionTag::EXTINGUISHES_ENTITIES);
+        // TODO: rehydrate nearby Axolotl entities for `REHYDRATES_AXOLOTLS` once
+        // Axolotl is implemented.
+        if !hurts_water_sensitive && !extinguishes {
+            return;
+        }
+
         let aabb = self.bounding_box().inflate_xyz(4.0, 2.0, 4.0);
         let potion_pos = self.position();
 
@@ -111,7 +119,7 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
                 continue;
             }
 
-            if sensitive_to_water {
+            if hurts_water_sensitive && sensitive_to_water {
                 let mut damage = DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
                     .with_direct_entity(Arc::<Self>::clone(self));
                 if let Some(owner) = self.get_owner() {
@@ -120,16 +128,13 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
                 entity.hurt(world, &damage, 1.0);
             }
 
-            if entity.is_on_fire() && entity.is_alive() {
+            if extinguishes && entity.is_on_fire() && entity.is_alive() {
                 entity.extinguish_fire();
             }
         }
-
-        // TODO: rehydrate nearby Axolotl entities once Axolotl is implemented
-        // (vanilla `AbstractThrownPotion.onHitAsWater` also calls `Axolotl.rehydrate()`).
     }
 
-    /// Handles block impact and nearby fire dowsing for water potions
+    /// Handles block impact and douses nearby fire for `DOUSES_FIRE` potions.
     fn thrown_potion_on_hit_block(&self, hit: &ClipHitResult) {
         self.projectile_on_hit_block(hit);
         let Some(world) = self.level() else {
@@ -139,27 +144,27 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         let contents = self
             .get_item()
             .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
-        if !contents.is(&vanilla_potions::WATER) {
+        if !contents.is_in_tag(&PotionTag::DOUSES_FIRE) {
             return;
         }
 
         let block_effect_pos = hit.direction.relative(hit.block_pos);
-        self.dowse_fire(&world, block_effect_pos);
-        self.dowse_fire(&world, hit.direction.opposite().relative(block_effect_pos));
+        self.douse_fire(&world, block_effect_pos);
+        self.douse_fire(&world, hit.direction.opposite().relative(block_effect_pos));
         for direction in Direction::HORIZONTAL {
-            self.dowse_fire(&world, direction.relative(block_effect_pos));
+            self.douse_fire(&world, direction.relative(block_effect_pos));
         }
     }
 
     /// Puts out fire, lit campfires and lit candles at `pos`.
-    fn dowse_fire(&self, world: &Arc<World>, pos: BlockPos) {
+    fn douse_fire(&self, world: &Arc<World>, pos: BlockPos) {
         let state = world.get_block_state(pos);
         if state.get_block().has_tag(&BlockTag::FIRE) {
             world.destroy_block_by_entity(pos, false, self.as_entity_event_source());
         } else if CandleBlock::is_lit(state) {
             CandleBlock::extinguish(None, state, world, pos);
         } else if CampfireBlock::is_lit_campfire(state) {
-            dowse_lit_campfire(world, pos, state, self.get_owner());
+            douse_lit_campfire(world, pos, state, self.get_owner());
         }
     }
 }
@@ -174,15 +179,15 @@ fn potion_has_instant_effects(potion: &Potion) -> bool {
     })
 }
 
-/// Plays the extinguish event dowses the campfire and clears `LIT`
-fn dowse_lit_campfire(
+/// Plays the extinguish event, douses the campfire and clears `LIT`.
+fn douse_lit_campfire(
     world: &Arc<World>,
     pos: BlockPos,
     state: BlockStateId,
     owner: Option<SharedEntity>,
 ) {
     world.level_event(level_events::SOUND_EXTINGUISH_FIRE, pos, 0, None);
-    CampfireBlock::dowse(owner.as_deref(), world, pos);
+    CampfireBlock::douse(owner.as_deref(), world, pos);
     world.set_block(
         pos,
         state.set_value(&BlockStateProperties::LIT, false),

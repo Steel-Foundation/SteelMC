@@ -108,7 +108,7 @@ impl CampfireBlock {
 
     /// The shared part of putting out a campfire (shovels, water potions,
     /// water flowing in).
-    pub fn dowse(source: Option<&dyn Entity>, level: &dyn LevelAccessor, pos: BlockPos) {
+    pub fn douse(source: Option<&dyn Entity>, level: &dyn LevelAccessor, pos: BlockPos) {
         level.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
@@ -240,7 +240,7 @@ impl BlockBehavior for CampfireBlock {
                 1.0,
                 None,
             );
-            Self::dowse(None, level, pos);
+            Self::douse(None, level, pos);
         }
 
         level.set_block_state(
@@ -464,12 +464,12 @@ mod tests {
     }
 
     #[test]
-    fn dowse_emits_block_change_without_touching_the_block() {
+    fn douse_emits_block_change_without_touching_the_block() {
         init_vanilla_registry();
         let level = TestLevel::default();
         let pos = BlockPos::new(1, 2, 3);
 
-        CampfireBlock::dowse(None, &level, pos);
+        CampfireBlock::douse(None, &level, pos);
 
         assert!(level.last_placed_state().is_none());
         let events = level.game_events.borrow();

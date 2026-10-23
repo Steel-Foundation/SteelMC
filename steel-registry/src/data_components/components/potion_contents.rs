@@ -5,6 +5,7 @@ use std::num::Wrapping;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
+use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
@@ -95,6 +96,12 @@ impl PotionContents {
     #[must_use]
     pub fn is(&self, potion: &Potion) -> bool {
         self.potion.is_some_and(|p| p.value().key == potion.key) && self.custom_effects.is_empty()
+    }
+
+    /// Whether the base potion is in `tag` and there are no custom effects.
+    #[must_use]
+    pub fn is_in_tag(&self, tag: &Identifier) -> bool {
+        self.custom_effects.is_empty() && self.potion.is_some_and(|p| p.value().has_tag(tag))
     }
 
     /// Returns vanilla `PotionContents.getAllEffects()`: the base potion's
