@@ -1,11 +1,34 @@
 use std::io::{Cursor, Error, Write};
 
+#[cfg(all(target_arch = "x86_64", target_feature = "bmi2"))]
+use std::arch::x86_64::_pdep_u64;
+
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::{
     FrontVec,
     serial::{ReadFrom, WriteTo},
 };
+
+// Pack the low 56 payload bits into eight byte lanes, leaving continuation bits clear
+#[cfg(all(target_arch = "x86_64", target_feature = "bmi2"))]
+#[inline]
+fn pack_payload(value: u64) -> u64 {
+    // SAFETY: ts impl is compiled only for targets with BMI2
+    unsafe { _pdep_u64(value, 0x7f7f_7f7f_7f7f_7f7f) }
+}
+
+#[cfg(not(all(target_arch = "x86_64", target_feature = "bmi2")))]
+const fn pack_payload(value: u64) -> u64 {
+    (value & 0x7f)
+        | ((value & 0x3f80) << 1)
+        | ((value & 0x001f_c000) << 2)
+        | ((value & 0x0fe0_0000) << 3)
+        | ((value & 0x0000_0007_f000_0000) << 4)
+        | ((value & 0x0000_03f8_0000_0000) << 5)
+        | ((value & 0x0001_fc00_0000_0000) << 6)
+        | ((value & 0x00fe_0000_0000_0000) << 7)
+}
 
 /// A variable-length integer.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -44,18 +67,16 @@ impl VarInt {
         Err(Error::other("VarInt"))
     }
 
-    // We could just get the written size in place,
-    // but in our use case its already calculated
     /// Sets the `VarInt` in front of a `FrontVec`.
     ///
     /// # Panics
-    /// - If the `VarInt` fails to write to the buffer.
+    /// - If the size exceeds [`Self::MAX_SIZE`] or the reserved front space.
     pub fn set_in_front(self, vec: &mut FrontVec, varint_size: usize) {
-        // No heap allocation :)
-        let mut buf = [0; Self::MAX_SIZE];
-        self.write(&mut Cursor::new(&mut buf[..]))
-            .expect("writing to a buffer should not fail");
-        vec.set_in_front(&buf[..varint_size]);
+        let size = Self::written_size(self.0);
+        let continuation = 0x0080_8080_8080_8080_u64 >> ((8 - size) * 8);
+        let bytes = (pack_payload(u64::from(self.0 as u32)) | continuation).to_le_bytes();
+
+        vec.set_in_front(&bytes[..Self::MAX_SIZE][..varint_size]);
     }
 }
 
@@ -65,27 +86,46 @@ impl ReadFrom for VarInt {
         for i in 0..Self::MAX_SIZE {
             let byte = u8::read(read)?;
             val |= (i32::from(byte) & 0x7F) << (i * 7);
+
             if byte & 0x80 == 0 {
                 return Ok(Self(val));
             }
         }
+
         Err(Error::other("VarInt to long"))
     }
 }
 
 impl WriteTo for VarInt {
+    #[expect(
+        clippy::inline_always,
+        reason = "codec benchmarks show these fixed-size writes need to inline into packet serializers"
+    )]
+    #[inline(always)]
     fn write(&self, writer: &mut impl Write) -> Result<(), Error> {
-        let mut val = self.0 as u32;
-        loop {
-            let b: u8 = val as u8 & 0x7F;
-            val >>= 7;
-            if val == 0 {
-                b.write(writer)?;
-                break;
-            }
-            (b | 0x80).write(writer)?;
+        let value = self.0 as u32;
+        if value < 0x80 {
+            return writer.write_all(&[value as u8]);
         }
-        Ok(())
+
+        if value < 0x4000 {
+            return writer.write_all(&[value as u8 | 0x80, (value >> 7) as u8]);
+        }
+
+        if value < 0x20_0000 {
+            return writer.write_all(&[
+                value as u8 | 0x80,
+                (value >> 7) as u8 | 0x80,
+                (value >> 14) as u8,
+            ]);
+        }
+
+        let packed = pack_payload(u64::from(value));
+        if value < (1 << 28) {
+            writer.write_all(&(packed | 0x0080_8080).to_le_bytes()[..4])
+        } else {
+            writer.write_all(&(packed | 0x8080_8080).to_le_bytes()[..5])
+        }
     }
 }
 
@@ -136,6 +176,7 @@ mod var_int_tests {
         assert_eq!(read_val, val);
     }
 }
+
 /// A variable-length long integer.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VarLong(pub i64);
@@ -160,18 +201,54 @@ impl ReadFrom for VarLong {
 }
 
 impl WriteTo for VarLong {
+    #[expect(
+        clippy::inline_always,
+        reason = "codec benchmarks show these fixed-size writes need to inline into packet serializers"
+    )]
+    #[inline(always)]
     fn write(&self, writer: &mut impl Write) -> Result<(), Error> {
-        let mut val = self.0 as u64;
-        loop {
-            let b: u8 = val as u8 & 0x7F;
-            val >>= 7;
-            if val == 0 {
-                b.write(writer)?;
-                break;
-            }
-            (b | 0x80).write(writer)?;
+        let value = self.0 as u64;
+        if value < 0x80 {
+            return writer.write_all(&[value as u8]);
         }
-        Ok(())
+
+        if let Ok(value) = u32::try_from(value) {
+            return VarInt(value as i32).write(writer);
+        }
+
+        let packed = pack_payload(value);
+        if value >= (1 << 56) {
+            let low = (packed | 0x8080_8080_8080_8080).to_le_bytes();
+            let bytes = [
+                low[0],
+                low[1],
+                low[2],
+                low[3],
+                low[4],
+                low[5],
+                low[6],
+                low[7],
+                (value >> 56) as u8,
+                1,
+            ];
+
+            return if self.0 >= 0 {
+                writer.write_all(&bytes[..9])
+            } else {
+                writer.write_all(&bytes)
+            };
+        }
+
+        let size = (64 - value.leading_zeros() as usize).div_ceil(7);
+        let continuation = 0x0080_8080_8080_8080_u64 >> ((8 - size) * 8);
+        let bytes = (packed | continuation).to_le_bytes();
+
+        match size {
+            5 => writer.write_all(&bytes[..5]),
+            6 => writer.write_all(&bytes[..6]),
+            7 => writer.write_all(&bytes[..7]),
+            _ => writer.write_all(&bytes),
+        }
     }
 }
 
@@ -217,6 +294,7 @@ mod var_long_tests {
         }
     }
 }
+
 /// A variable-length unsigned integer.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VarUint(pub u32);
