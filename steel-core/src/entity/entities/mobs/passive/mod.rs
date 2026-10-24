@@ -5,9 +5,11 @@ mod cow;
 mod mooshroom;
 mod pig;
 mod sheep;
+mod squid;
 
 pub use chicken::ChickenEntity;
 pub use cow::CowEntity;
 pub use mooshroom::MushroomCowEntity;
 pub use pig::PigEntity;
 pub use sheep::SheepEntity;
+pub use squid::SquidEntity;
