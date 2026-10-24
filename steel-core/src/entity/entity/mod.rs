@@ -3632,7 +3632,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if on_ground && self.fall_distance() > 0.0 {
             self.send_landing_particles(world, on_state, pos);
         }
-      
+
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }
