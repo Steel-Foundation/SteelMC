@@ -38,7 +38,7 @@ use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
     LivingEntityBase, LivingEntitySyncedData, Mob, MobBase, MoveResult, PathfinderMob,
-    SharedEntity, SpawnGroupData,
+    SharedEntity, SpawnGroupData, SpawnRule,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -54,7 +54,7 @@ const PIG_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 );
 
 /// Vanilla pig entity.
-#[entity_behavior(class = "Pig")]
+#[entity_behavior(class = "Pig", spawn_rule)]
 pub struct PigEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -72,6 +72,9 @@ unsafe impl DowncastType for PigEntity {
 }
 
 impl PigEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = <Self as Animal>::check_animal_spawn_rules;
+
     /// Creates a new pig entity.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {

@@ -59,6 +59,7 @@ pub(crate) use storage::{
     DetachedBlockEntity, LifecycleDispatchers,
 };
 
+use crate::block_entity::entities::Spawner;
 use crate::inventory::lock::ContainerRef;
 use crate::player::Player;
 
@@ -395,6 +396,11 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     /// Handles a block event delegated by the owning block behavior.
     fn trigger_event(&self, _param_a: i32, _param_b: i32) -> bool {
         false
+    }
+
+    /// Returns this block entity as a spawner.
+    fn as_spawner(&self) -> Option<&dyn Spawner> {
+        None
     }
 
     /// Called before the block entity is removed to handle side effects.
