@@ -1,3 +1,5 @@
+use crate::loot::LootContext;
+use crate::loot::vanilla_loot_tables;
 use rand::{Rng, RngExt};
 use std::sync::Arc;
 use steel_macros::block_behavior;
@@ -6,10 +8,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
-use steel_registry::loot_table::LootContext;
-use steel_registry::{
-    sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
-};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -82,17 +82,29 @@ impl CaveVinesBlock {
         if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
-        let mut rng = rand::rng();
+        let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
         let equipment = loot_equipment(source_entity);
-        let mut ctx = LootContext::new(&mut rng)
+        let mut ctx = LootContext::new(&mut loot_rng)
+            .with_world(world)
+            .with_origin(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            )
             .with_block_state(state)
             .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
 
-        let items = vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx);
+        let items = match vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx) {
+            Ok(items) => items,
+            Err(error) => {
+                log::error!("Failed to generate cave-vine loot: {error}");
+                return InteractionResult::Fail;
+            }
+        };
         for item in items {
             world.pop_resource(pos, item);
         }
-        let pitch = rng.random_range(0.8..1.2);
+        let pitch = rand::rng().random_range(0.8..1.2);
         world.play_sound(
             &sound_events::BLOCK_CAVE_VINES_PICK_BERRIES,
             SoundSource::Blocks,

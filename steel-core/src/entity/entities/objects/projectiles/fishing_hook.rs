@@ -5,6 +5,8 @@ use crate::entity::{
     RemovalReason, SharedEntity, ThrowableProjectile, entity_loot_ref, next_entity_id,
 };
 use crate::fluid::get_height;
+use crate::loot::LootContext;
+use crate::loot::vanilla_loot_tables;
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -20,19 +22,17 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::LootContext;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::vanilla_entity_data::FishingBobberEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_particle_types::{BUBBLE, FISHING, SPLASH};
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_entities, vanilla_items,
-    vanilla_loot_tables,
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random;
-use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast, DowncastType, DowncastTypeKey};
 
@@ -534,15 +534,28 @@ impl FishingHookEntity {
                     if let Some(luck) = luck {
                         let mut rng = rng();
 
+                        let mut loot_rng =
+                            RandomSource::Legacy(LegacyRandom::from_seed(rng.random()));
                         // This is equivalent to `LootParams params` in the java src.
-                        let mut loot_ctx = LootContext::new(&mut rng)
+                        let mut loot_ctx = LootContext::new(&mut loot_rng)
                             .with_origin(self.position().x, self.position().y, self.position().z)
                             .with_tool(rod)
                             .with_this_entity(entity_loot_ref(self, None))
                             .with_luck(luck as f32 + player.get_luck());
 
-                        let items =
-                            vanilla_loot_tables::GAMEPLAY_FISHING.get_random_items(&mut loot_ctx);
+                        let level = self.level();
+                        if let Some(world) = level.as_deref() {
+                            loot_ctx = loot_ctx.with_world(world);
+                        }
+                        let items = match vanilla_loot_tables::GAMEPLAY_FISHING
+                            .get_random_items(&mut loot_ctx)
+                        {
+                            Ok(items) => items,
+                            Err(error) => {
+                                log::error!("Failed to generate fishing loot: {error}");
+                                return damage;
+                            }
+                        };
 
                         // TODO: criteria triggers (advancements)
 

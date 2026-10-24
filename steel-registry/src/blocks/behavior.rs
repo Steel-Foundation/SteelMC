@@ -4,9 +4,8 @@
 //! has been moved to `steel-core::behavior`.
 
 pub use crate::blocks::properties::NoteBlockInstrument;
-use crate::loot_table::LootTableRef;
 use glam::DVec3;
-use steel_utils::{BlockPos, random::get_seed};
+use steel_utils::{BlockPos, Identifier, random::get_seed};
 
 use crate::sound_types::SoundType;
 
@@ -57,7 +56,8 @@ pub struct BlockConfig {
     pub instrument: NoteBlockInstrument,
     pub replaceable: bool,
     pub sound_type: SoundType,
-    pub loot_table: Option<LootTableRef>,
+    /// Key resolved by the loot registry in `steel-core`.
+    pub loot_table: Option<&'static Identifier>,
 }
 
 impl BlockConfig {
@@ -238,7 +238,7 @@ impl BlockConfig {
     }
 
     #[must_use]
-    pub const fn loot_table(mut self, loot_table: Option<LootTableRef>) -> Self {
+    pub const fn loot_table(mut self, loot_table: Option<&'static Identifier>) -> Self {
         self.loot_table = loot_table;
         self
     }

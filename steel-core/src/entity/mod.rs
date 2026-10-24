@@ -1,5 +1,8 @@
 //! This module contains entity-related traits and types.
 
+mod container_user;
+pub use container_user::ContainerUser;
+
 use std::sync::Weak;
 use std::{
     any::try_as_dyn,
@@ -7,8 +10,12 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use crate::loot::LootTableRef;
+use crate::loot::{
+    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
+    LootContext,
+};
 use glam::DVec3;
-use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -32,10 +39,6 @@ use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::loot_table::{
-    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
-    LootContext, LootTableRef,
-};
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;
@@ -53,6 +56,7 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
@@ -1378,7 +1382,6 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
 ///
 /// Locks the entity's equipment (a player's inventory), so callers must not already hold it.
 pub(crate) fn living_loot_equipment<E: LivingEntity + ?Sized>(entity: &E) -> EntityEquipmentSlots {
-    // TODO: Read live equipment once loot contexts can do so safely.
     entity.living_base().equipment().lock().snapshot()
 }
 
@@ -1394,6 +1397,7 @@ pub(crate) fn entity_loot_ref<'a>(
     let living_entity = entity.as_living_entity();
     let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
+        entity: Some(entity),
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
             is_on_fire: entity.is_on_fire(),
@@ -1408,6 +1412,7 @@ pub(crate) fn entity_loot_ref<'a>(
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
         chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
+        mooshroom_variant: living_entity.and_then(LivingEntity::mooshroom_loot_variant),
     }
 }
 

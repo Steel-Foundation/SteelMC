@@ -1,5 +1,6 @@
 //! Slots, client-sync state, and click handling shared by every menu.
 
+use crate::loot::LootResult;
 use crate::player::player_inventory::Prediction;
 use std::fmt;
 use std::{mem, sync::Arc};
@@ -100,15 +101,28 @@ impl MenuBehavior {
         }
     }
 
-    /// Locks all containers referenced by slots in this menu.
-    #[must_use]
-    pub fn lock_all_containers(&self) -> ContainerLockGuard {
+    /// Prepares and locks all containers referenced by slots in this menu.
+    ///
+    /// Generates pending loot before acquiring the group's inventory locks.
+    /// Ordinary inventory mutex contention waits until the lock is available.
+    ///
+    /// # Errors
+    /// Returns a loot preparation error if an access callback fails; the group's
+    /// inventory locks have not yet been acquired.
+    pub fn lock_all_containers(&self) -> LootResult<ContainerLockGuard> {
         ContainerLockGuard::lock_all(&self.container_refs)
     }
 
-    /// Locks the menu containers together with one additional container.
-    #[must_use]
-    pub(crate) fn lock_all_containers_with(&self, additional: ContainerRef) -> ContainerLockGuard {
+    /// Prepares and locks the menu containers together with one additional container.
+    ///
+    /// Uses the same preparation and locking behavior as [`Self::lock_all_containers`].
+    ///
+    /// # Errors
+    /// Returns a loot preparation error if any container's access callback fails.
+    pub(crate) fn lock_all_containers_with(
+        &self,
+        additional: ContainerRef,
+    ) -> LootResult<ContainerLockGuard> {
         let mut container_refs = self.container_refs.clone();
         container_refs.push(additional);
         ContainerLockGuard::lock_all(&container_refs)
@@ -395,7 +409,9 @@ impl MenuBehavior {
     /// Sends every slot, the carried item and all data slots to the client and
     /// marks them synced.
     pub(crate) fn send_all_data_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
-        let guard = self.lock_all_containers();
+        let Ok(guard) = self.lock_all_containers() else {
+            return;
+        };
 
         let items: Vec<ItemStack> = self
             .slots
@@ -433,7 +449,9 @@ impl MenuBehavior {
     /// Syncs only the changed slots, carried item and data slots to the client,
     /// once per tick.
     pub fn broadcast_changes(&mut self, connection: &Arc<PlayerConnection>) {
-        let guard = self.lock_all_containers();
+        let Ok(guard) = self.lock_all_containers() else {
+            return;
+        };
 
         let mut changed: Vec<(usize, ItemStack)> = Vec::new();
         for index in 0..self.slots.len() {
@@ -599,7 +617,9 @@ impl MenuBehavior {
             QuickCraft::AddSlot { slot: slot_index } => {
                 let slot = &self.slots[slot_index];
 
-                let guard = self.lock_all_containers();
+                let Ok(guard) = self.lock_all_containers() else {
+                    return;
+                };
                 let slot_item = slot.get_item(&guard).clone();
 
                 if can_item_quick_replace(&slot_item, &self.carried, true)
@@ -648,7 +668,9 @@ impl MenuBehavior {
             let mut remaining = self.carried.count;
             let quickcraft_slots = self.quickcraft_slots.clone();
 
-            let mut guard = self.lock_all_containers();
+            let Ok(mut guard) = self.lock_all_containers() else {
+                return;
+            };
 
             for &slot_index in &quickcraft_slots {
                 let slot = &self.slots[slot_index];
@@ -705,7 +727,9 @@ impl MenuBehavior {
 
     /// Handles a pickup click (left/right click to pick up or place items).
     pub(crate) fn do_pickup(&mut self, slot_index: usize, button: MouseButton, player: &Player) {
-        let mut guard = self.lock_all_containers();
+        let Ok(mut guard) = self.lock_all_containers() else {
+            return;
+        };
 
         let slot = &self.slots[slot_index];
 
@@ -802,7 +826,9 @@ impl MenuBehavior {
             return;
         }
 
-        let guard = self.lock_all_containers();
+        let Ok(guard) = self.lock_all_containers() else {
+            return;
+        };
         let slot = &self.slots[slot_index];
         let slot_item = slot.get_item(&guard);
 
@@ -818,7 +844,9 @@ impl MenuBehavior {
             return;
         }
 
-        let mut guard = self.lock_all_containers();
+        let Ok(mut guard) = self.lock_all_containers() else {
+            return;
+        };
         let slot = &self.slots[slot_index];
 
         if !slot.may_pickup(&guard, player) {
@@ -1083,7 +1111,9 @@ mod tests {
         let (menu, container_ref) = recording_menu();
         let behavior = menu.behavior();
         let container_id = container_ref.container_id();
-        let mut guard = behavior.lock_all_containers();
+        let mut guard = behavior
+            .lock_all_containers()
+            .expect("container access should succeed");
         let previous = ItemStack::with_count(&vanilla_items::STONE, 5);
         let remainder = ItemStack::with_count(&vanilla_items::STONE, 2);
 
@@ -1109,7 +1139,9 @@ mod tests {
         let (menu, container_ref) = recording_menu();
         let behavior = menu.behavior();
         let container_id = container_ref.container_id();
-        let mut guard = behavior.lock_all_containers();
+        let mut guard = behavior
+            .lock_all_containers()
+            .expect("container access should succeed");
 
         let remainder = behavior.slots()[0].safe_insert(
             &mut guard,
@@ -1144,7 +1176,9 @@ mod tests {
         ]);
         let menu = builder.build(BasicKind);
         let behavior = menu.behavior();
-        let mut guard = behavior.lock_all_containers();
+        let mut guard = behavior
+            .lock_all_containers()
+            .expect("container access should succeed");
         let clicked = behavior.slots()[0].get_item(&guard).clone();
         let mut remaining = clicked.clone();
 

@@ -4,11 +4,8 @@
 )]
 #![expect(
     clippy::absolute_paths,
-    clippy::allow_attributes_without_reason,
-    clippy::collapsible_match,
     clippy::float_cmp,
     clippy::items_after_statements,
-    clippy::manual_let_else,
     clippy::many_single_char_names,
     clippy::match_same_arms,
     clippy::match_wild_err_arm,
@@ -67,7 +64,6 @@ mod instruments;
 mod items;
 mod jukebox_songs;
 mod level_events;
-mod loot_tables;
 mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
@@ -161,7 +157,6 @@ const POI_TYPES: &str = "poi_types";
 
 const ENCHANTMENT_TAGS: &str = "enchantment_tags";
 const ENCHANTMENTS: &str = "enchantments";
-const LOOT_TABLES: &str = "loot_tables";
 const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
 const GAME_RULES: &str = "game_rules";
 const GAME_EVENTS: &str = "game_events";
@@ -245,7 +240,6 @@ pub fn main() {
         (entity_data::build(), ENTITY_DATA),
         (fluids::build(), FLUIDS),
         (tags::fluid(), FLUID_TAGS),
-        (loot_tables::build(), LOOT_TABLES),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),
         (game_rules::build(), GAME_RULES),
         (game_events::build(), GAME_EVENTS),

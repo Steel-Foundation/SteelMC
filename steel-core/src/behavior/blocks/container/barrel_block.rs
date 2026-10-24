@@ -16,7 +16,8 @@ use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::BLOCK_ENTITIES;
-use crate::inventory::container::calculate_redstone_signal_from_container;
+use crate::entity::Entity as _;
+use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::chest;
 use crate::player::Player;
@@ -63,8 +64,16 @@ impl BlockBehavior for BarrelBlock {
             return InteractionResult::Pass;
         };
 
-        // Create a container reference from the block entity
-        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+        if let Some(randomizable) = block_entity.as_randomizable_container() {
+            if player.is_spectator() && randomizable.loot_table().is_some() {
+                return InteractionResult::Success;
+            }
+            if let Err(error) = randomizable.unpack_loot_table(Some(player)) {
+                log::error!("Could not unpack barrel loot at {pos:?}: {error}");
+                return InteractionResult::Success;
+            }
+        }
+        let Some(container_ref) = block_entity.container_ref() else {
             return InteractionResult::Pass;
         };
 
@@ -116,11 +125,12 @@ impl BlockBehavior for BarrelBlock {
         else {
             return 0;
         };
-        let guard = ContainerLockGuard::lock_all(&[&container_ref]);
-        guard
-            .get(container_ref.container_id())
-            .map_or(0, |container| {
-                calculate_redstone_signal_from_container(container)
-            })
+        let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
+            // TODO: Preserve vanilla access ordering so loot-generation contention
+            // cannot become a false zero comparator signal. Returning zero here
+            // also hides generation failures; distinguish them from empty contents.
+            return 0;
+        };
+        calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
     }
 }

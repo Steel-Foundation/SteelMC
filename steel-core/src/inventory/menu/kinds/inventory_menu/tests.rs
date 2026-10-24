@@ -42,6 +42,7 @@ fn partial_result_overflow_has_no_thrower() {
     let result = menu
         .behavior()
         .lock_all_containers()
+        .expect("container access should succeed")
         .get(result_id)
         .expect("result container is registered with the menu")
         .get_item(0)
@@ -65,6 +66,7 @@ fn partial_result_overflow_has_no_thrower() {
     assert!(
         menu.behavior()
             .lock_all_containers()
+            .expect("container access should succeed")
             .get(result_id)
             .expect("result container is registered with the menu")
             .get_item(0)

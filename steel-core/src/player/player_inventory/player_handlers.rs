@@ -1,7 +1,7 @@
 use std::{f32::consts::TAU, mem, sync::Arc};
 
 use crate::{
-    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
+    entity::{ContainerUser, Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
         click::Click,
         container::{Container, CraftingContainer, clear_or_count_matching_stack},
@@ -68,6 +68,7 @@ impl Player {
         open_menu.dispatch = Some(OpenMenuDispatch {
             container_id,
             overrides_player_slots,
+            opened_containers: menu.kind().opened_containers(),
             actions: Vec::new(),
         });
         Ok(menu)
@@ -454,7 +455,9 @@ impl Player {
             let slot_index = packet.slot_num as usize;
 
             {
-                let mut guard = menu.behavior().lock_all_containers();
+                let Ok(mut guard) = menu.behavior().lock_all_containers() else {
+                    return;
+                };
                 if let Some(slot) = menu.behavior().slots().get(slot_index) {
                     let previous = slot.get_item(&guard).clone();
                     slot.set_by_player(&mut guard, item_stack.clone(), &previous);
@@ -639,6 +642,7 @@ impl Player {
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
                 overrides_player_slots: menu.overrides_player_slots(),
+                opened_containers: menu.kind().opened_containers(),
                 actions: Vec::new(),
             });
             break;
@@ -816,6 +820,7 @@ impl Player {
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
                 overrides_player_slots: menu.overrides_player_slots(),
+                opened_containers: menu.kind().opened_containers(),
                 actions: Vec::new(),
             });
             menu
@@ -1201,5 +1206,22 @@ impl Player {
         if should_drop {
             let _ = guard.run_unlocked(|| self.drop_item(item, false, prediction));
         }
+    }
+}
+
+impl ContainerUser for Player {
+    fn has_container_open_for(&self, container: ContainerId) -> bool {
+        let state = self.open_menu.lock();
+        if let Some(menu) = &state.menu {
+            return menu.kind().opened_containers().contains(&container);
+        }
+        state
+            .dispatch
+            .as_ref()
+            .is_some_and(|dispatch| dispatch.opened_containers.contains(&container))
+    }
+
+    fn container_interaction_range(&self) -> f64 {
+        self.block_interaction_range()
     }
 }

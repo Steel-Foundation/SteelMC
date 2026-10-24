@@ -1,12 +1,15 @@
-use std::ptr;
+use crate::loot::LOOT_TABLES;
+use std::{borrow::Cow, ptr};
+use steel_utils::Identifier;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
     GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext, NetworkConnection,
-    ParticleData, Player, REGISTRY, RandomizationType, RegistryExt, SectionPos, SoundEventRef,
-    SoundSource, UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block,
-    level_events, vanilla_blocks, vanilla_game_events,
+    ParticleData, Player, RandomizationType, RegistryExt, SectionPos, SoundEventRef, SoundSource,
+    UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
+    vanilla_blocks, vanilla_game_events,
 };
 use crate::entity::loot_equipment;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -346,7 +349,9 @@ impl World {
             if let Some(block_entity) = self.get_block_entity(pos)
                 && let Some(container_ref) = ContainerRef::from_block_entity(block_entity)
             {
-                let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+                let Ok(mut guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
+                    return false;
+                };
                 if let Some(container) = guard.get_mut(container_ref.container_id()) {
                     for slot in 0..container.get_container_size() {
                         let item = container.remove_item_no_update(slot);
@@ -415,34 +420,42 @@ impl World {
         context: &BlockLootContext<'_>,
     ) -> Vec<ItemStack> {
         let block = state.get_block();
-        let loot_table = if let Some(loot_table) = block.config.loot_table {
-            loot_table
-        } else {
-            let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
-            let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
-                return Vec::new();
-            };
-            loot_table
+        let loot_key = block.config.loot_table.map_or_else(
+            || Cow::Owned(Identifier::vanilla(format!("blocks/{}", block.key.path))),
+            Cow::Borrowed,
+        );
+        let Some(loot_table) = LOOT_TABLES.by_key(&loot_key) else {
+            return Vec::new();
         };
 
-        let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng)
+        let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
+        let empty_tool = ItemStack::empty();
+        let block_entity = context.world().get_block_entity(context.pos());
+        let mut ctx = LootContext::new(&mut loot_rng)
+            .with_world(context.world())
+            .with_tool(context.tool().unwrap_or(&empty_tool))
             .with_luck(context.luck())
             .with_block_state(state)
             .with_origin(
-                f64::from(context.pos().x()),
-                f64::from(context.pos().y()),
-                f64::from(context.pos().z()),
+                f64::from(context.pos().x()) + 0.5,
+                f64::from(context.pos().y()) + 0.5,
+                f64::from(context.pos().z()) + 0.5,
             );
-        if let Some(tool) = context.tool() {
-            ctx = ctx.with_tool(tool);
+        if let Some(block_entity) = &block_entity {
+            ctx = ctx.with_block_entity(block_entity.as_ref());
         }
         let entity_equipment = context.entity().and_then(loot_equipment);
         if let Some(entity) = context.entity() {
             ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
         }
 
-        loot_table.get_random_items(&mut ctx)
+        match loot_table.get_random_items(&mut ctx) {
+            Ok(items) => items,
+            Err(error) => {
+                log::error!("Failed to generate block loot {}: {error}", loot_table.key);
+                Vec::new()
+            }
+        }
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.

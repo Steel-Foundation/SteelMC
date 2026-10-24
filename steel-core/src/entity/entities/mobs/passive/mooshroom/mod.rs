@@ -26,10 +26,10 @@ use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_blocks,
-    vanilla_entities, vanilla_items, vanilla_loot_tables, vanilla_particle_types,
-    vanilla_suspicious_stew_effects,
+    vanilla_entities, vanilla_items, vanilla_particle_types, vanilla_suspicious_stew_effects,
 };
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
@@ -47,6 +47,7 @@ use crate::entity::{
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
     PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData, next_entity_id,
 };
+use crate::loot::vanilla_loot_tables;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::player::player_inventory::Prediction;
@@ -212,7 +213,7 @@ impl MushroomCowEntity {
             None,
         );
 
-        let mut rng = rand::rng();
+        let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
         for drop in shearing_loot_items_with_rng(
             self,
             &vanilla_loot_tables::SHEARING_MOOSHROOM,
@@ -491,6 +492,10 @@ impl Entity for MushroomCowEntity {
 }
 
 impl LivingEntity for MushroomCowEntity {
+    fn mooshroom_loot_variant(&self) -> Option<MooshroomVariant> {
+        Some(self.variant())
+    }
+
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
     }
