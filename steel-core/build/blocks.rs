@@ -23,7 +23,6 @@ pub struct BlockClass {
 
 pub fn build(blocks: &[BlockClass]) -> String {
     let discovered = scan_object_behaviors("blocks", "block_behavior");
-
     let mut imports = GeneratedImports::default();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();

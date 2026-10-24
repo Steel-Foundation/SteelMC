@@ -26,6 +26,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
+use crate::entity::DEFAULT_AIR_DRAG;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
@@ -38,7 +39,6 @@ use crate::world::{ClipBlockShape, ClipFluid, World};
 const DEFAULT_FALL_DAMAGE_PER_DISTANCE: f32 = 0.0;
 const DEFAULT_MAX_FALL_DAMAGE: i32 = 40;
 const DEFAULT_GRAVITY: f64 = 0.04;
-const AIR_DRAG: f64 = 0.98;
 const LANDED_HORIZONTAL_DRAG: f64 = 0.7;
 const LANDED_VERTICAL_BOUNCE: f64 = -0.5;
 
@@ -411,7 +411,7 @@ impl Entity for FallingBlockEntity {
         {
             self.tick_server(&world, block);
         }
-        self.set_velocity(self.velocity() * AIR_DRAG);
+        self.set_velocity(self.velocity() * DEFAULT_AIR_DRAG);
     }
 
     fn get_default_gravity(&self) -> f64 {
