@@ -55,11 +55,11 @@ pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::f32::consts::PI;
 use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use steel_math::RAD_TO_DEG_F64;
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -1730,7 +1730,7 @@ impl LivingEntity for Player {
 
     fn indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
-        let hurt_dir = zd.atan2(xd) * 180.0 / f64::from(PI) - f64::from(y_rot);
+        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
             entity_id: self.id(),
             yaw: hurt_dir as f32,
