@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TickKind"],"fn":["collect_registered_ticks","prepare_ready_containers"],"struct":["ActiveChunkRank","ActiveTickContainer","ReadyContainer","RegisteredChunkTicks","TickHeadUpdate","WorldTickScheduler","WorldTickSchedulerState"]};

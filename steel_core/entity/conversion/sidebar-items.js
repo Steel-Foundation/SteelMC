@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConversionType"],"fn":["convert_common","convert_single","convert_split_on_death","convert_to","copy_position"],"struct":["ConversionParams"],"type":["AfterConversion"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_zombie_nautilus_variants"],"static":["TEMPERATE","WARM"]};

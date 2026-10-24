@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UNCARVABLE_TAG"],"fn":["can_reach","can_replace_block","horizontal_tunnel_radius","steep_material_condition"],"mod":["canyon","cave","mask"],"static":["UNCARVABLE_STATES"],"struct":["CarveRun","CarverBlockIds","CarverReplaceableStates","CarvingContext","CarvingMask","PreliminarySurfaceCorners","SourceChunk"],"trait":["CarveSkipChecker"]};

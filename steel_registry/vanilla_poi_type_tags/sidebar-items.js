@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["ACQUIRABLE_JOB_SITE_TAG_LIST","BEE_HOME_TAG_LIST","VILLAGE_TAG_LIST"],"struct":["PoiTag"]};

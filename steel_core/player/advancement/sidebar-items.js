@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["progress","rewards","visibility_evaluator"],"struct":["PlayerAdvancement"]};

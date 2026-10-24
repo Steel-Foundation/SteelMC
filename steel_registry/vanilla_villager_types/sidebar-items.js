@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_villager_types"],"static":["DESERT","JUNGLE","PLAINS","SAVANNA","SNOW","SWAMP","TAIGA"]};

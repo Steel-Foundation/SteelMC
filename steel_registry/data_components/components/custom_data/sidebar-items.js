@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_NBT_QUOTA"],"fn":["read_network_tag"],"struct":["CustomData"]};

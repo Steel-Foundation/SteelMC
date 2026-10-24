@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DuplicatePlayerWaitError","PlayerAdmissionState","PlayerJoinError"],"struct":["PendingPlayerDisconnect","PendingPlayerJoin","PlayerDisconnectQueue","PlayerJoinQueue","PlayerJoinReservation"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLAZE_HIT_DAMAGE"],"struct":["SnowballEntity"]};

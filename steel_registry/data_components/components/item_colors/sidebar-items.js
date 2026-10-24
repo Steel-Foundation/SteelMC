@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["rgb_channels"],"struct":["DyedItemColor","MapId","MapItemColor"]};

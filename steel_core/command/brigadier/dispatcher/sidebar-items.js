@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["NEXT_DISPATCHER_ID"],"struct":["CommandDispatcher"]};

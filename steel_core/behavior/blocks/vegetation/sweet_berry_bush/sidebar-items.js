@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE","DAMAGE_MOVEMENT_THRESHOLD"],"struct":["SweetBerryBushBlock"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ItemUseAnimation"],"fn":["default_eat_sound","float_equals","hash_entries","is_default_eat_sound","is_non_negative_float","optional_f32","push_hash_entry","read_effect_list","write_effect_list"],"struct":["Consumable","ConsumeEffectList","DeathProtection"]};

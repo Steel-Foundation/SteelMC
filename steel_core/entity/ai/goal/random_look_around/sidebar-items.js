@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RANDOM_LOOK_AROUND_CHANCE"],"struct":["RandomLookAroundGoal"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["OFFHAND_INVENTORY_SLOT","SLOT_CLICKED_OUTSIDE"],"enum":["Click","ClickOutcome","DragKind","MouseButton","QuickCraft","SwapTarget"],"fn":["can_item_quick_replace"]};

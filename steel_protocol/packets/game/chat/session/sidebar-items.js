@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_KEY_SIGNATURE_SIZE","MAX_PUBLIC_KEY_SIZE"],"struct":["ProtocolRemoteChatSessionData","SChatSessionUpdate"]};

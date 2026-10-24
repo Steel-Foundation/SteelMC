@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["char_position_to_byte","display_suggestion","reserve_completion_rows","utf16_position_to_char"],"struct":["Completer","Completion"]};

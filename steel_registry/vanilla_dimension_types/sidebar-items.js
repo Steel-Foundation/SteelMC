@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_dimension_types"],"static":["OVERWORLD","OVERWORLD_CAVES","THE_END","THE_NETHER"]};

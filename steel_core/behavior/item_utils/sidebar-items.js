@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_filled_result","get_player_pov_hit_result"]};

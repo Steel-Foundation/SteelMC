@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["configured","features","instrumentation","placed","placement","predicates","prelude","runner","sorter","state","vanilla_collections","weather"]};

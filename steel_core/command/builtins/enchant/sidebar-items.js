@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EnchantTargetResult"],"fn":["command","enchant","enchant_default_level","enchant_main_hand","enchant_with_level","enchantment_display_name","incompatible_error","itemless_error","not_living_error","registration"]};

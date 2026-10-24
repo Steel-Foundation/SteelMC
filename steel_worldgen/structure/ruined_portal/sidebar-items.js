@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GIANT_PORTAL_TEMPLATES","PORTAL_TEMPLATES"],"enum":["TerrainQuery","TerrainResult"],"fn":["biome_temperature","cold_enough_to_snow","find_generation_point","make_ruined_portal_piece"],"static":["BIOME_INFO_NOISE","FROZEN_TEMPERATURE_NOISE","TEMPERATURE_NOISE"],"struct":["PortalResult","RuinedPortalStructure"]};

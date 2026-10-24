@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["collection_field_nbt","decode_list","encode_list","hash_list_with","hash_nbt_codec","hash_optional_collection_field","owned_string"],"struct":["CollectionCountPredicate","CollectionPredicate"]};

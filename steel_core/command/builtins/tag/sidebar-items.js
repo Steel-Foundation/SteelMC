@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TagChange"],"fn":["add_tag","change_tags","command","format_list","list_tags","registration","remove_tag"]};

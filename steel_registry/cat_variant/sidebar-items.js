@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SpawnCondition"],"struct":["CatVariant","CatVariantRegistry","SpawnConditionEntry"],"type":["CatVariantRef"]};

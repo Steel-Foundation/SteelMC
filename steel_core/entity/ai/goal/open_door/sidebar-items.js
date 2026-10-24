@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FORGET_TICKS"],"struct":["OpenDoorGoal"]};
