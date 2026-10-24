@@ -246,12 +246,7 @@ fn add_collisions_along_travel(
                 corner_block,
                 opposite_corner,
                 travel,
-                |pos| {
-                    if visited.insert(pos) && !visitor(pos, iterations) {
-                        return false;
-                    }
-                    true
-                },
+                |pos| !visited.insert(pos) || visitor(pos, iterations),
             ) {
                 return None;
             }

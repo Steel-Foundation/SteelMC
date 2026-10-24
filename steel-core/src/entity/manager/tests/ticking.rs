@@ -35,7 +35,8 @@ impl RelationshipTickTestEntity {
     }
 
     fn run_action(&self) {
-        match mem::take(&mut *self.action.lock()) {
+        let action = mem::take(&mut *self.action.lock());
+        match action {
             RelationshipTickAction::None => {}
             RelationshipTickAction::StopRiding => self.stop_riding(),
         }
