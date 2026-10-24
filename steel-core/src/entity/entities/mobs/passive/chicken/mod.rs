@@ -38,8 +38,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, entity_loot_ref,
-    living_loot_equipment,
+    PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, entity_loot_ref, living_loot_equipment,
     position_rider_default,
 };
 use crate::physics::MoveResult;
