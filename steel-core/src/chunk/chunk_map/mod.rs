@@ -34,7 +34,7 @@ use crate::chunk::chunk_holder::{
 };
 use crate::chunk::chunk_request::ChunkRequestLease;
 pub use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark-support"))]
 use crate::chunk::chunk_scheduler::PlayerTicketOperation;
 use crate::chunk::chunk_scheduler::{ChunkSchedulingCoordinator, ChunkTicketReceipt};
 use crate::chunk::chunk_ticket_manager::{
@@ -55,7 +55,7 @@ use crate::chunk::gameplay_chunk_lookup_cache::{
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
-    LightSectionEmptinessChange, LightSectionRange, LightWorkWindowGate, LightWorkset,
+    LightSectionEmptinessChange, LightSectionRange, LightWorkset,
     build_chunk_light_update_packet_for_sections,
     propagate_block_light_changes_with_empty_sections,
     propagate_sky_light_changes_with_empty_sections,
@@ -65,9 +65,11 @@ use crate::chunk::simulation_ticket_manager::SimulationLevelChange;
 use crate::chunk::{
     Chunk,
     chunk_generation_task::ChunkGenerationTask,
+    chunk_pyramid::{ChunkPyramid, ChunkStep, GENERATION_PYRAMID, LOADING_PYRAMID},
     full_chunk::{BlockRandomPositionGenerator, FullChunkRef},
     section::RandomTickSectionBits,
     status::ChunkStatus,
+    window_gate::ChunkWindowGate,
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::player::connection::NetworkConnection;
@@ -88,6 +90,33 @@ use light_update_state::PendingLightUpdates;
 use light_update_state::{InFlightLightUpdates, LightUpdateState, PendingChunkLightUpdates};
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
+
+/// Window radius of the gate shared by every step that writes into neighboring chunks.
+const NEIGHBOR_WRITE_RADIUS: i32 = GENERATION_PYRAMID
+    .get_step_to(ChunkStatus::Features)
+    .block_state_write_radius;
+
+/// Whether every neighbor-writing step of `pyramid` writes exactly as far as
+/// [`NEIGHBOR_WRITE_RADIUS`]. They all share one gate, so a wider step would let overlapping
+/// windows run together.
+const fn neighbor_writes_fit_the_shared_gate(pyramid: &ChunkPyramid) -> bool {
+    let mut index = 0;
+    while let Some(status) = ChunkStatus::from_index(index) {
+        let radius = pyramid.get_step_to(status).block_state_write_radius;
+        if radius > 0 && radius != NEIGHBOR_WRITE_RADIUS {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+const _: () = assert!(
+    neighbor_writes_fit_the_shared_gate(GENERATION_PYRAMID)
+        && neighbor_writes_fit_the_shared_gate(LOADING_PYRAMID),
+    "every neighbor-writing step must share the gate's window radius"
+);
+
 // Vanilla applies this limit independently to block ticks and fluid ticks.
 const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
 
@@ -95,6 +124,17 @@ const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
 /// `ENDER_PEARL_TICKET_TIMEOUT - 1` ticks while it flies.
 pub const ENDER_PEARL_TICKET_TIMEOUT: i64 = ENDER_PEARL_TICKET_TIMEOUT_TICKS;
+
+/// How far one chunk has loaded, for player chunk-loading benchmarks.
+#[doc(hidden)]
+#[cfg(feature = "benchmark-support")]
+#[derive(Debug, Clone, Copy)]
+pub struct BenchmarkChunkProgress {
+    /// The chunk has published `Full`.
+    pub full: bool,
+    /// The chunk can be sent to players: it is `Full` and block ticking.
+    pub sendable: bool,
+}
 
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
@@ -256,7 +296,14 @@ pub struct ChunkMap {
     /// Notifies save barriers when in-flight light propagation state changes.
     light_updates_progress_notify: Notify,
     /// Radius-2 work-window gate for light-engine worksets.
-    light_work_window_gate: Arc<LightWorkWindowGate>,
+    ///
+    /// Light worksets can write light data across their full 5x5 cache window. Chunk-light
+    /// status work must publish `ChunkStatus::Light` before overlapping work builds its light
+    /// cache, and queued light updates must not interleave with either operation.
+    light_work_window_gate: Arc<ChunkWindowGate>,
+    /// Serializes steps that write blocks into neighboring chunks (features) whose windows
+    /// overlap. See [`Self::window_gate_for_step`].
+    neighbor_write_gate: Arc<ChunkWindowGate>,
     /// Number of top-level generation tasks currently running.
     running_generation_tasks: AtomicUsize,
     /// Wakes the generation refill loop when pending/running task state changes.
@@ -401,7 +448,8 @@ impl ChunkMap {
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
             light_updates: SyncMutex::new(LightUpdateState::default()),
             light_updates_progress_notify: Notify::new(),
-            light_work_window_gate: Arc::new(LightWorkWindowGate::new()),
+            light_work_window_gate: Arc::new(ChunkWindowGate::new(LIGHT_CACHE_RADIUS)),
+            neighbor_write_gate: Arc::new(ChunkWindowGate::new(NEIGHBOR_WRITE_RADIUS)),
             running_generation_tasks: AtomicUsize::new(0),
             generation_refill_notify: Notify::new(),
             generation_refill_cancel_token: CancellationToken::new(),
@@ -411,8 +459,27 @@ impl ChunkMap {
         }
     }
 
-    pub(crate) fn light_work_window_gate(&self) -> Arc<LightWorkWindowGate> {
-        Arc::clone(&self.light_work_window_gate)
+    /// The gate in which `step` must reserve its window before running, if any.
+    ///
+    /// Light worksets write light across their whole cache window. Steps that write blocks
+    /// into neighboring chunks (features) run one at a time in vanilla, on its `worldgen`
+    /// `ConsecutiveExecutor`; Steel runs them in parallel, so ones whose windows overlap are
+    /// serialized here and the rest still run concurrently.
+    ///
+    /// Features can also update a structure start owned by a chunk up to 8 chunks away, which
+    /// chunks with disjoint windows may do in either order. That stays serializable because a
+    /// piece whose placement depends on which chunk places it first is small enough that every
+    /// chunk placing it overlaps the others' windows; structure placement checks this in debug
+    /// builds.
+    pub(crate) fn window_gate_for_step(&self, step: &ChunkStep) -> Option<Arc<ChunkWindowGate>> {
+        if step.target_status == ChunkStatus::Light {
+            return Some(Arc::clone(&self.light_work_window_gate));
+        }
+        // Every such step writes exactly `NEIGHBOR_WRITE_RADIUS` far; checked at compile time.
+        if step.block_state_write_radius > 0 {
+            return Some(Arc::clone(&self.neighbor_write_gate));
+        }
+        None
     }
 
     /// Starts the notify-driven generation refill loop for this chunk map.
@@ -498,6 +565,42 @@ impl ChunkMap {
         assert!(holder.simulation_level().is_none());
         assert!(self.ticking_chunks.load().block.is_empty());
         let _ = self.chunks.insert_sync(pos, holder);
+    }
+
+    /// Adds a player's chunk tickets at `pos` for player chunk-loading benchmarks.
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    pub fn add_benchmark_player_tickets(&self, pos: ChunkPos, player_id: uuid::Uuid) {
+        let _ = self
+            .scheduling
+            .queue_player_ticket_operation(PlayerTicketOperation::Add { pos, player_id });
+    }
+
+    /// Runs the chunk-source phase a game tick runs, for player chunk-loading benchmarks.
+    ///
+    /// Must not overlap a live game tick; see [`Self::advance_scheduling`].
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    pub fn advance_benchmark_scheduling(self: &Arc<Self>) {
+        let _ = self.advance_scheduling();
+    }
+
+    /// How far the chunk at `pos` has loaded, for player chunk-loading benchmarks.
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    #[must_use]
+    pub fn benchmark_chunk_progress(&self, pos: ChunkPos) -> BenchmarkChunkProgress {
+        let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
+            return BenchmarkChunkProgress {
+                full: false,
+                sendable: false,
+            };
+        };
+        let full = holder.published_status() == Some(ChunkStatus::Full);
+        BenchmarkChunkProgress {
+            full,
+            sendable: full && holder.ticking_readiness_snapshot().is_block_ticking(),
+        }
     }
 
     #[inline]

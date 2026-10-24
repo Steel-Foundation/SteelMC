@@ -5,7 +5,7 @@
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     sync::{Arc, Weak},
     time::Instant,
 };
@@ -58,6 +58,8 @@ pub struct WorldGenRegion<'a> {
     chunks: RefCell<Box<[Option<CachedWorldGenChunk<'a>>]>>,
     worldgen_heightmaps: RefCell<Box<[CachedWorldgenHeightmaps]>>,
     random: RandomSource,
+    /// Whether an unsafe terrain read was already logged for this region.
+    reported_unsafe_read: Cell<bool>,
 }
 
 /// Size of 8 is fine here because analysis showed that 91.7% only ever reach <=2 and the largest one ever grew was 6.
@@ -232,6 +234,7 @@ impl<'a> WorldGenRegion<'a> {
             chunks: RefCell::new(chunks),
             worldgen_heightmaps: RefCell::new(worldgen_heightmaps),
             random,
+            reported_unsafe_read: Cell::new(false),
         }
     }
 
@@ -329,6 +332,52 @@ impl<'a> WorldGenRegion<'a> {
         radius >= 0
             && (chunk_x - self.center.0.x).abs() <= radius
             && (chunk_z - self.center.0.y).abs() <= radius
+    }
+
+    /// Flags a terrain read outside the write zone of a step that writes into neighboring
+    /// chunks.
+    ///
+    /// The window gate (`ChunkWindowGate`) keeps such steps apart from each other only by
+    /// their write windows, so a chunk outside the zone may be written by another chunk's
+    /// step at the same moment and the read could see half of that write. Unlike vanilla,
+    /// which checks every step, only these steps are checked, and only in test and debug
+    /// builds because the check is on the hot read path.
+    #[inline]
+    fn warn_if_read_outside_write_zone(&self, chunk_x: i32, chunk_z: i32) {
+        if cfg!(any(test, debug_assertions))
+            && self.step.block_state_write_radius > 0
+            && !self.can_write_to_chunk(chunk_x, chunk_z)
+        {
+            self.report_read_outside_write_zone(chunk_x, chunk_z);
+        }
+    }
+
+    #[cold]
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "fails only in tests, so the parity tests show no feature reads outside its window"
+    )]
+    fn report_read_outside_write_zone(&self, chunk_x: i32, chunk_z: i32) {
+        let distance = Self::chessboard_distance(self.center, chunk_x, chunk_z);
+        assert!(
+            !cfg!(test),
+            "Unsafe terrain read from chunk ({chunk_x}, {chunk_z}) while generating {:?} for \
+             ({}, {}) (distance {distance}, write radius {})",
+            self.step.target_status,
+            self.center.0.x,
+            self.center.0.y,
+            self.step.block_state_write_radius,
+        );
+        if !self.reported_unsafe_read.replace(true) {
+            tracing::error!(
+                chunk = ?(chunk_x, chunk_z),
+                center = ?self.center,
+                step = ?self.step.target_status,
+                distance,
+                write_radius = self.step.block_state_write_radius,
+                "Unsafe terrain read outside the worldgen write zone"
+            );
+        }
     }
 
     /// Gets a chunk if the step declares enough direct dependency status for it.
@@ -445,6 +494,7 @@ impl<'a> WorldGenRegion<'a> {
     pub fn block_state(&self, pos: BlockPos) -> BlockStateId {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        self.warn_if_read_outside_write_zone(chunk_x, chunk_z);
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
             chunk.chunk.get_block_state(pos)
         })
@@ -458,6 +508,7 @@ impl<'a> WorldGenRegion<'a> {
     pub fn block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        self.warn_if_read_outside_write_zone(chunk_x, chunk_z);
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
             let block_entity = match chunk.access_mode {
                 WorldGenAccessMode::ReadOnlyFull => {
@@ -718,6 +769,7 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_z = SectionPos::block_to_section_coord(z);
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
+        self.warn_if_read_outside_write_zone(chunk_x, chunk_z);
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
             match chunk.access_mode {
                 // Never copy a Full heightmap into the region cache. Runtime
@@ -1122,6 +1174,8 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        self.region
+            .warn_if_read_outside_write_zone(chunk_x, chunk_z);
         let chunk = self.chunk(chunk_x, chunk_z, ChunkStatus::Empty);
         let Some(section) = Self::section_for_read(chunk, section_index) else {
             Self::record_ore_read_time(ore_profile, started_at);

@@ -29,5 +29,6 @@ pub mod full_chunk;
 pub mod paletted_container;
 pub mod section;
 pub mod status;
+pub(crate) mod window_gate;
 
 pub use data::Chunk;
