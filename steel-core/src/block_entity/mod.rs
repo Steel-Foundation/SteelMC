@@ -24,6 +24,7 @@
 //! ```
 
 pub(crate) mod block_state_nbt;
+mod components;
 pub mod entities;
 mod registry;
 mod storage;
@@ -53,12 +54,14 @@ use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
 };
 
+pub use components::ImplicitComponentGetter;
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub(crate) use storage::{
     BlockEntityInsert, BlockEntityLookup, BlockEntityStorage, ClearedBlockEntities,
     DetachedBlockEntity, LifecycleDispatchers,
 };
 
+use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::lock::ContainerRef;
 use crate::player::Player;
 
@@ -315,6 +318,10 @@ impl BlockEntityBase {
         self.components.read().clone()
     }
 
+    fn set_components(&self, components: DataComponentMap) {
+        *self.components.write() = components;
+    }
+
     pub(crate) fn is_valid_container_for(&self, player: &Player) -> bool {
         if self.is_removed() {
             return false;
@@ -326,7 +333,10 @@ impl BlockEntityBase {
             return false;
         };
         ptr::eq(current.base(), self)
-            && player.is_within_block_interaction_range_with_buffer(self.pos, 4.0)
+            && player.is_within_block_interaction_range_with_buffer(
+                self.pos,
+                f64::from(DEFAULT_DISTANCE_BUFFER),
+            )
     }
 }
 
@@ -424,6 +434,36 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         self.base().load_components(nbt);
     }
 
+    /// Reads the components this entity represents through its own fields.
+    ///
+    /// Every component read is excluded from the stored component map.
+    fn apply_implicit_components(&self, _components: &mut ImplicitComponentGetter<'_>) {}
+
+    /// Adds the components this entity represents through its own fields.
+    ///
+    /// The inverse of [`Self::apply_implicit_components`].
+    fn collect_implicit_components(&self, _components: &mut DataComponentMap) {}
+
+    /// Applies the placed stack's components: implicit ones through
+    /// [`Self::apply_implicit_components`], the rest into the stored component map.
+    ///
+    /// Do not override; customize [`Self::apply_implicit_components`] instead.
+    fn apply_components_from_item_stack(&self, stack: &ItemStack) {
+        let mut getter = ImplicitComponentGetter::new(stack);
+        self.apply_implicit_components(&mut getter);
+        self.base()
+            .set_components(getter.remaining_stored_components());
+    }
+
+    /// Returns the stored components together with the implicit ones.
+    ///
+    /// Do not override; customize [`Self::collect_implicit_components`] instead.
+    fn collect_components(&self) -> DataComponentMap {
+        let mut components = self.base().stored_components();
+        self.collect_implicit_components(&mut components);
+        components
+    }
+
     /// Loads entity data from an owned command/runtime compound.
     ///
     /// `simdnbt` keeps its read-facing representation borrowed, so this
@@ -464,10 +504,7 @@ pub trait BlockEntity: ErasedType + Send + Sync {
 
     /// Saves command-visible data together with vanilla block-entity metadata.
     fn save_with_full_metadata(&self) -> NbtCompound {
-        // TODO: Include stored block-entity components once Steel has Vanilla's
-        // block-entity component foundation. NBT predicates targeting the
-        // `components` field cannot match exactly until then.
-        let mut nbt = self.save_custom_only();
+        let mut nbt = self.save_without_metadata();
         let pos = self.get_block_pos();
         nbt.insert("id", self.get_type().key.to_string());
         nbt.insert("x", pos.x());
@@ -506,13 +543,6 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn game_event_listener(&self) -> Option<SharedGameEventListener> {
         None
     }
-
-    /// Called in `BlockItem.place` before `placedState.getBlock().setPlacedBy`
-    #[expect(
-        unused_variables,
-        reason = "default trait impl; parameters used by overrides"
-    )]
-    fn apply_components_from_item(&self, item: &ItemStack) {}
 }
 
 /// Final block-entity common-state operations.

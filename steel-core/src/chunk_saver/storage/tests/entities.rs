@@ -1,6 +1,9 @@
 use super::*;
 use crate::entity::{ENTITY_LOAD_MAX_HORIZONTAL_POSITION, ENTITY_LOAD_MAX_VERTICAL_POSITION};
 use steel_registry::RegistryEntry as _;
+use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, REPAIR_COST};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
 
 fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
     PersistentEntity {
@@ -70,6 +73,121 @@ fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
             )
             .is_none()
         );
+}
+
+#[test]
+fn block_entity_stored_components_survive_chunk_save_load() {
+    init_globals();
+
+    let pos = ChunkPos::new(0, 0);
+    let block_pos = BlockPos::new(3, 4, 5);
+    let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+    let state = vanilla_blocks::ENCHANTING_TABLE.default_state();
+    chunk.set_block_state_for_generation(
+        ChunkStatus::Features,
+        block_pos,
+        state,
+        UpdateFlags::UPDATE_NONE,
+    );
+    let entity = BLOCK_ENTITIES.create_or_unimplemented(
+        &vanilla_block_entity_types::ENCHANTING_TABLE,
+        Weak::new(),
+        block_pos,
+        state,
+    );
+    let name = TextComponent::from("Arcane Desk".to_owned());
+    let mut item = ItemStack::new(&vanilla_items::ENCHANTING_TABLE);
+    item.set(CUSTOM_NAME, name.clone());
+    item.set(REPAIR_COST, 3);
+    entity.apply_components_from_item_stack(&item);
+    assert!(chunk.set_block_entity(entity));
+
+    let prepared = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Features, &[], false)
+        .expect("dirty chunk should prepare for saving");
+    let saved = read_borrowed_compound(&mut Cursor::new(
+        &prepared.persistent.block_entities[0].nbt_data,
+    ))
+    .expect("saved block entity should contain valid NBT");
+    let saved = simdnbt::borrow::NbtCompound::from(&saved);
+    assert_eq!(
+        saved
+            .compound("components")
+            .and_then(|data| data.int("minecraft:repair_cost")),
+        Some(3)
+    );
+
+    let loaded = ChunkStorage::persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Features,
+        0,
+        16,
+        Weak::new(),
+    );
+    let loaded_entity = loaded
+        .chunk
+        .get_block_entity(block_pos)
+        .expect("enchanting table should survive chunk load");
+    let components = loaded_entity.collect_components();
+    assert_eq!(components.get(CUSTOM_NAME), Some(name));
+    assert_eq!(components.get(REPAIR_COST), Some(3));
+    let full = loaded_entity.save_with_full_metadata();
+    assert_eq!(
+        full.compound("components")
+            .and_then(|data| data.int("minecraft:repair_cost")),
+        Some(3)
+    );
+}
+
+#[test]
+fn owned_block_entity_load_preserves_stored_components() {
+    init_globals();
+
+    for (entity_type, state) in [
+        (
+            &vanilla_block_entity_types::ENCHANTING_TABLE,
+            vanilla_blocks::ENCHANTING_TABLE.default_state(),
+        ),
+        (
+            &vanilla_block_entity_types::MOB_SPAWNER,
+            vanilla_blocks::SPAWNER.default_state(),
+        ),
+    ] {
+        let mut components = NbtCompound::new();
+        components.insert("minecraft:repair_cost", 3_i32);
+        let mut nbt = NbtCompound::new();
+        nbt.insert("components", components);
+        nbt.insert("marker", 7_i32);
+        let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
+            entity_type,
+            Weak::new(),
+            BlockPos::new(3, 4, 5),
+            state,
+            nbt,
+        );
+        assert_eq!(entity.collect_components().get(REPAIR_COST), Some(3));
+
+        let mut item = ItemStack::new(REGISTRY.items.by_block(state.get_block()));
+        item.set(REPAIR_COST, 5);
+        entity.apply_components_from_item_stack(&item);
+        let saved = entity.save_without_metadata();
+        assert_eq!(
+            saved
+                .compound("components")
+                .and_then(|data| data.int("minecraft:repair_cost")),
+            Some(5)
+        );
+        assert_eq!(
+            saved
+                .keys()
+                .filter(|key| key.to_str() == "components")
+                .count(),
+            1
+        );
+        if entity_type == &vanilla_block_entity_types::MOB_SPAWNER {
+            assert_eq!(saved.int("marker"), Some(7));
+        }
+    }
 }
 
 #[test]
@@ -521,6 +639,9 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     let mut nbt = NbtCompound::new();
     nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
     nbt.insert("LootTableSeed", 42_i64);
+    let mut components = NbtCompound::new();
+    components.insert("minecraft:repair_cost", 3_i32);
+    nbt.insert("components", components);
     let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
         &vanilla_block_entity_types::MOB_SPAWNER,
         proto.level_weak(),
@@ -563,4 +684,5 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
         Some("minecraft:chests/simple_dungeon".to_owned())
     );
     assert_eq!(saved.long("LootTableSeed"), Some(42));
+    assert_eq!(loaded_entity.collect_components().get(REPAIR_COST), Some(3));
 }

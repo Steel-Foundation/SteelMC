@@ -440,13 +440,16 @@ fn copper_chest_transformation_preserves_entity_identity() {
     );
     let mut data = NbtCompound::new();
     data.insert("test_marker", 37_i32);
-    let original: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::with_data(
-        &vanilla_block_entity_types::CHEST,
-        Weak::new(),
-        pos,
-        copper,
-        data,
-    ));
+    let original: SharedBlockEntity = Arc::new(
+        UnimplementedBlockEntity::with_data(
+            &vanilla_block_entity_types::CHEST,
+            Weak::new(),
+            pos,
+            copper,
+            data,
+        )
+        .expect("fallback block entity should load owned NBT"),
+    );
     assert!(chunk.add_and_register_block_entity(Arc::clone(&original)));
 
     assert_eq!(

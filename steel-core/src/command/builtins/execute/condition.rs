@@ -645,13 +645,16 @@ mod tests {
             data.insert("other", 11_i32);
         }
         data.insert("x", pos.x());
-        Arc::new(UnimplementedBlockEntity::with_data(
-            &vanilla_block_entity_types::BARREL,
-            Weak::new(),
-            pos,
-            vanilla_blocks::BARREL.default_state(),
-            data,
-        ))
+        Arc::new(
+            UnimplementedBlockEntity::with_data(
+                &vanilla_block_entity_types::BARREL,
+                Weak::new(),
+                pos,
+                vanilla_blocks::BARREL.default_state(),
+                data,
+            )
+            .expect("fallback block entity should load owned NBT"),
+        )
     }
 
     #[test]
