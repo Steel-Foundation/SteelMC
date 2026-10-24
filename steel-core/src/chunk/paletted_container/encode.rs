@@ -9,7 +9,7 @@ use std::io::{Error, ErrorKind, Result};
 use super::ToGlobalId;
 
 /// Largest packed payload: a 16×16×16 section at 16 bits per entry.
-pub(super) const MAX_PACKED_BYTES: usize = 4096 / (64 / 16) * 8;
+pub(super) const MAX_PACKED_BYTES: usize = super::BlockPalette::VOLUME.div_ceil(64 / 16) * 8;
 /// Global ids are `u16`-backed, so a table indexed by global id has this many slots.
 const INDEX_TABLE_LEN: usize = 1 << 16;
 /// Marks an index-table slot whose global id is not in the palette being encoded.
@@ -120,22 +120,20 @@ fn pack<'buffer, V: Copy>(
     macro_rules! pack_with_width {
         ($($width:literal)*) => {
             match bits {
-                $($width => pack_longs::<V, $width>(values, lookup, buffer)?,)*
-                _ => return Err(invalid_data("unsupported bits per entry")),
+                $($width => pack_longs::<V, $width>(values, lookup, buffer),)*
+                _ => Err(invalid_data("unsupported bits per entry")),
             }
         };
     }
     pack_with_width!(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
-        .ok_or_else(|| invalid_data("container holds a value its palette cannot encode"))
 }
 
-/// Packs `values` into the front of `buffer`. Returns the packed bytes, or `None` if a value
-/// had no entry.
+/// Packs `values` into the front of `buffer`, failing if a value has no entry.
 fn pack_longs<'buffer, V: Copy, const BITS: usize>(
     values: &[V],
     mut lookup: impl FnMut(V) -> Option<u32>,
     buffer: &'buffer mut [u8; MAX_PACKED_BYTES],
-) -> Result<Option<&'buffer [u8]>> {
+) -> Result<&'buffer [u8]> {
     let values_per_long = 64 / BITS;
     let len = values.len().div_ceil(values_per_long) * 8;
     let packed = buffer
@@ -155,7 +153,12 @@ fn pack_longs<'buffer, V: Copy, const BITS: usize>(
         }
         *long_bytes = long.to_be_bytes();
     }
-    Ok((!missing).then_some(&*packed))
+    if missing {
+        return Err(invalid_data(
+            "container holds a value its palette cannot encode",
+        ));
+    }
+    Ok(packed)
 }
 
 fn invalid_data(message: &'static str) -> Error {

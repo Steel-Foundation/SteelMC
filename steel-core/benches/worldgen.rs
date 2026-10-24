@@ -1900,17 +1900,21 @@ fn bench_section_encoding(c: &mut Criterion) {
     group.throughput(Throughput::Elements(
         concurrent_feature_centers().len() as u64
     ));
+    // Built on first use: Criterion reruns this closure per sample, and filtered runs skip it.
+    let mut fixture = None;
     group.bench_function("real_chunks", |b| {
-        // Generated here so runs filtered to other benchmarks skip it.
-        let fixture = build_concurrent_full_pipeline_fixture(
-            Identifier::vanilla_static("overworld"),
-            CONCURRENT_OVERWORLD_SEED,
-            concurrent_feature_centers(),
-            FULL_PIPELINE_THREAD_COUNT,
-        );
-        for stage in &fixture.stages {
-            run_full_pipeline_stage(&fixture, stage);
-        }
+        let fixture = fixture.get_or_insert_with(|| {
+            let fixture = build_concurrent_full_pipeline_fixture(
+                Identifier::vanilla_static("overworld"),
+                CONCURRENT_OVERWORLD_SEED,
+                concurrent_feature_centers(),
+                FULL_PIPELINE_THREAD_COUNT,
+            );
+            for stage in &fixture.stages {
+                run_full_pipeline_stage(&fixture, stage);
+            }
+            fixture
+        });
         let chunks: Vec<&Chunk> = fixture
             .targets
             .iter()
