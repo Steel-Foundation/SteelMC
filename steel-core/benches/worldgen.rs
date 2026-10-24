@@ -9,6 +9,7 @@ use glam::IVec3;
 use std::cmp::Reverse;
 use std::env;
 use std::hint::black_box;
+use std::io::Cursor;
 use std::sync::{
     Arc, LazyLock, Weak,
     atomic::{AtomicU64, Ordering},
@@ -22,6 +23,7 @@ use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use steel_core::chunk::paletted_container::BlockPalette;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::chunk::status::ChunkStatus;
 use steel_core::entity::damage::DamageHistory;
@@ -36,7 +38,7 @@ use steel_registry::dimension_type::DimensionType;
 use steel_registry::vanilla_dimension_types;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
-use steel_utils::{ChunkPos, Identifier};
+use steel_utils::{BlockStateId, ChunkPos, Identifier};
 use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use steel_worldgen::noise::Beardifier;
@@ -1884,6 +1886,106 @@ fn bench_noise_kernel(c: &mut Criterion) {
     group.finish();
 }
 
+/// Network encoding of chunk sections (`ChunkSection::write`), the per-chunk work of
+/// building a chunk packet before compression.
+///
+/// `real_chunks` encodes every section of a 4×4 batch of generated overworld chunks. The
+/// synthetic cases cover the best and worst inputs for each palette strategy. Encoders keep
+/// per-thread scratch state between calls, so these measure the warm steady state of a
+/// chunk-encoding thread.
+fn bench_section_encoding(c: &mut Criterion) {
+    init_globals();
+
+    let mut group = c.benchmark_group("section_encoding");
+    group.throughput(Throughput::Elements(
+        concurrent_feature_centers().len() as u64
+    ));
+    // Built on first use: Criterion reruns this closure per sample, and filtered runs skip it.
+    let mut fixture = None;
+    group.bench_function("real_chunks", |b| {
+        let fixture = fixture.get_or_insert_with(|| {
+            let fixture = build_concurrent_full_pipeline_fixture(
+                Identifier::vanilla_static("overworld"),
+                CONCURRENT_OVERWORLD_SEED,
+                concurrent_feature_centers(),
+                FULL_PIPELINE_THREAD_COUNT,
+            );
+            for stage in &fixture.stages {
+                run_full_pipeline_stage(&fixture, stage);
+            }
+            fixture
+        });
+        let chunks: Vec<&Chunk> = fixture
+            .targets
+            .iter()
+            .map(|holder| {
+                holder
+                    .try_chunk(ChunkStatus::Full)
+                    .expect("section-encoding benchmark chunk should reach Full")
+            })
+            .collect();
+        let mut cursor = Cursor::new(Vec::with_capacity(chunks.len() * 32 * 1024));
+        b.iter(|| {
+            cursor.get_mut().clear();
+            cursor.set_position(0);
+            for chunk in &chunks {
+                for section in &chunk.sections().sections {
+                    section.read().write(&mut cursor);
+                }
+            }
+            black_box(cursor.get_ref().len())
+        });
+    });
+
+    group.throughput(Throughput::Elements(1));
+    for (name, palette) in synthetic_section_palettes() {
+        group.bench_function(name, |b| {
+            let mut out = Vec::with_capacity(16 * 1024);
+            b.iter(|| {
+                out.clear();
+                palette
+                    .write(&mut out)
+                    .expect("synthetic section should encode");
+                black_box(out.len())
+            });
+        });
+    }
+    group.finish();
+}
+
+/// Single sections at the extremes of each palette strategy.
+fn synthetic_section_palettes() -> Vec<(&'static str, BlockPalette)> {
+    fn section(mut state_at: impl FnMut(usize) -> u16) -> BlockPalette {
+        let mut cube = Box::new([[[BlockStateId::default(); 16]; 16]; 16]);
+        for index in 0..BlockPalette::VOLUME {
+            cube[index >> 8][(index >> 4) & 15][index & 15] = BlockStateId(state_at(index));
+        }
+        BlockPalette::from_cube(cube)
+    }
+    let mut rng_state = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next_random = move || {
+        rng_state ^= rng_state << 13;
+        rng_state ^= rng_state >> 7;
+        rng_state ^= rng_state << 17;
+        rng_state
+    };
+    vec![
+        (
+            "two_states_one_odd_block",
+            section(|index| if index == 2000 { 2 } else { 1 }),
+        ),
+        (
+            "16_states_random",
+            section(|_| 1 + (next_random() % 16) as u16),
+        ),
+        (
+            "256_states_random",
+            section(|_| 1 + (next_random() % 256) as u16),
+        ),
+        ("global_palette", section(|index| 1 + index as u16)),
+    ]
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -1961,8 +2063,17 @@ criterion_group! {
         .measurement_time(Duration::from_secs(5));
     targets = bench_noise_kernel
 }
+criterion_group! {
+    name = section_encoding_benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = bench_section_encoding
+}
 criterion_main!(
     benches,
+    section_encoding_benches,
     feature_distribution_benches,
     full_pipeline_benches,
     full_chunk_benches,
