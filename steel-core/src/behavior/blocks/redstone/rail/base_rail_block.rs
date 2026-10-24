@@ -16,7 +16,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 use super::rail_state::RailState;
 
 /// Shared server behavior inherited from vanilla's `BaseRailBlock`.
-pub(super) struct BaseRailBlock {
+pub(crate) struct BaseRailBlock {
     pub(super) block: BlockRef,
     is_straight: bool,
 }
@@ -36,7 +36,7 @@ impl BaseRailBlock {
     }
 
     #[must_use]
-    pub(super) fn is_rail_state(state: BlockStateId) -> bool {
+    pub(crate) fn is_rail_state(state: BlockStateId) -> bool {
         let block = state.get_block();
         block.has_tag(&BlockTag::RAILS) && BLOCK_BEHAVIORS.get_behavior(block).as_rail().is_some()
     }
