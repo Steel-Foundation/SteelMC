@@ -14,17 +14,20 @@ use steel_core::entity::{Entity, LivingEntity};
 use steel_core::inventory::container::Container;
 use steel_core::player::game_mode;
 use steel_core::player::player_inventory::PlayerInventory;
-use steel_core::player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession};
+use steel_core::player::{
+    ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession, offline_uuid,
+};
 use steel_core::server::Server;
 use steel_core::world::{ClipBlockShape, ClipFluid, World};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use steel_utils::types::{GameType, InteractionHand};
-use uuid::Uuid;
 
 use crate::convert::clip_to_block_hit;
 use crate::test_connection::FlintConnection;
+
+const TEST_PLAYER_NAME: &str = "flintmc_testbot";
 
 /// Test player implementation that wraps a real `Player`.
 pub struct SteelTestPlayer {
@@ -37,8 +40,14 @@ impl SteelTestPlayer {
     /// # Panics
     /// Never in practice: the fixed test player name always passes validation.
     pub fn new(world: Arc<World>, server: &Arc<Server>) -> Self {
-        let game_profile = GameProfile::new(Uuid::new_v4(), "TestPlayer".to_owned(), vec![])
-            .expect("\"TestPlayer\" is a valid player name");
+        // Same identity as the FlintCLI bot, so specs asserting an `Owner` UUID
+        // stay portable between runners.
+        let game_profile = GameProfile::new(
+            offline_uuid(TEST_PLAYER_NAME),
+            TEST_PLAYER_NAME.to_owned(),
+            vec![],
+        )
+        .expect("test player name is valid");
         let player_connection = Arc::new(PlayerConnection::Other(Box::new(
             FlintConnection::default(),
         )));

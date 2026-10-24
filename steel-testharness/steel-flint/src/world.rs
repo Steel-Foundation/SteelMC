@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use flint_core::Block;
 use flint_core::test_spec::EntityNbt;
+use flint_core::traits::EntityState;
 use flint_core::{BlockPos as FlintBlockPos, FlintPlayer, FlintWorld};
 use rustc_hash::FxHashMap;
 use simdnbt::borrow::read_compound;
@@ -34,7 +35,7 @@ use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::{parse_snbt_compound, to_canonical_snbt};
 use steel_utils::types::{Difficulty, GameType};
-use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, WorldAabb, types::UpdateFlags};
 use toml::Value;
 use toml::value::Table;
 
@@ -210,8 +211,13 @@ impl SteelTestWorld {
             "chunk {chunk_pos:?} did not reach Full status within 30s"
         );
 
+        // Entity ticking needs a larger Full neighborhood than block ticking, and the
+        // outer ring generates asynchronously: without waiting for it, entities
+        // spawned by a test sit un-ticked at their spawn point.
         while Instant::now() < deadline {
-            if chunk_map.is_block_ticking_full_chunk_simulated(chunk_pos) {
+            if chunk_map.is_block_ticking_full_chunk_simulated(chunk_pos)
+                && chunk_map.is_entity_ticking_full_chunk_loaded(chunk_pos)
+            {
                 return handle;
             }
             chunk_map.flint_advance_scheduling();
@@ -326,6 +332,56 @@ impl FlintWorld for SteelTestWorld {
             entity.set_changed();
         }
         Ok(())
+    }
+
+    fn find_entity(
+        &self,
+        entity_type: &str,
+        requested_nbt: &[String],
+    ) -> Result<Vec<EntityState>, anyhow::Error> {
+        // The query only sees loaded chunks, and each test owns its world.
+        const WORLD_EXTENT: f64 = 3.0e7;
+        let aabb = WorldAabb::new(
+            -WORLD_EXTENT,
+            f64::from(OVERWORLD.min_y),
+            -WORLD_EXTENT,
+            WORLD_EXTENT,
+            f64::from(OVERWORLD.min_y + OVERWORLD.height),
+            WORLD_EXTENT,
+        );
+
+        let wanted = entity_type
+            .strip_prefix("minecraft:")
+            .unwrap_or(entity_type);
+        let entities = self.world.get_entities_in_aabb_matching(&aabb, |entity| {
+            let key = &entity.entity_type().key;
+            key.namespace == "minecraft" && key.path == wanted
+        });
+
+        Ok(entities
+            .iter()
+            .map(|entity| {
+                let pos = entity.position();
+                let (yaw, pitch) = entity.rotation();
+                let compound = entity.nbt_for_data_compare();
+                let nbt = compound
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        let key = key.to_owned().try_into_string().ok()?;
+                        if !requested_nbt.iter().any(|requested| requested == &key) {
+                            return None;
+                        }
+                        Some((key, to_canonical_snbt(value)?))
+                    })
+                    .collect();
+                EntityState {
+                    entity_type: Some(format!("minecraft:{wanted}")),
+                    pos: Some([pos.x, pos.y, pos.z]),
+                    rot: Some([yaw, pitch]),
+                    nbt,
+                }
+            })
+            .collect())
     }
 
     fn create_player(&mut self) -> Box<dyn FlintPlayer> {
