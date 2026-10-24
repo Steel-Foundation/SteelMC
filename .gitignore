@@ -10,6 +10,10 @@
 /steel-utils/build_assets/en_us.json
 /steel-utils/build_assets/deprecated.json
 /steel-utils/build_assets/version.json
+/steel-testharness/steel-flint/log
+/steel-testharness/steel-flint/.cache
+/steel-testharness/steel-flint/.env
+/steel-testharness/steel-flint/flint.toml
 
 # Config
 /config

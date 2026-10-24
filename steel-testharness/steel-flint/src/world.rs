@@ -1,0 +1,334 @@
+//! Test world implementation using the real steel-core World.
+//!
+//! This module provides a test world that wraps the real `Arc<World>` from steel-core,
+//! configured with RAM-only storage for instant chunk creation without disk I/O.
+
+use std::io::Cursor;
+use std::mem;
+use std::slice;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use flint_core::Block;
+use flint_core::test_spec::EntityNbt;
+use flint_core::{BlockPos as FlintBlockPos, FlintPlayer, FlintWorld};
+use rustc_hash::FxHashMap;
+use simdnbt::borrow::read_compound;
+use steel_core::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind};
+use steel_core::chunk::status::ChunkStatus;
+use steel_core::config::{ResolvedDomainConfig, RuntimeConfig};
+use steel_core::entity::damage::DamageHistory;
+use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
+use steel_core::permission::PermissionSubjectIndex;
+use steel_core::server::{Server, test_server_with_worlds_and_config};
+use steel_core::world::{LevelReader, World, WorldConfig, WorldStorageConfig};
+use steel_core::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
+use steel_registry::REGISTRY;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_utils::Identifier;
+use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::{parse_snbt_compound, to_canonical_snbt};
+use steel_utils::types::{Difficulty, GameType};
+use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+use toml::Value;
+use toml::value::Table;
+
+use crate::convert::{flint_block_to_state_id, flint_pos_to_steel, state_id_to_block};
+use crate::player::SteelTestPlayer;
+use crate::runtime;
+
+/// Test world implementation using the real steel-core World.
+///
+/// This wraps an `Arc<World>` configured with RAM-only storage:
+/// - Chunks are created empty (all air) on-demand
+/// - No disk I/O, no chunk generation delay
+/// - Full block behavior system (neighbors, shapes, etc.)
+/// - Real tick processing
+pub struct SteelTestWorld {
+    /// The underlying steel-core world.
+    world: Arc<World>,
+    /// Server owning the world; players hold a weak reference to it.
+    server: Arc<Server>,
+    /// Owner of the damage history; the world only holds a weak reference.
+    _damage_history: Arc<DamageHistory>,
+    /// Current tick count (for `FlintWorld` trait).
+    tick: AtomicU64,
+    /// Active chunk requests, keyed by chunk position.
+    ///
+    /// Each handle owns the chunk's tickets; retaining it for the world's
+    /// lifetime keeps the chunk permanently loaded (it unloads on drop).
+    chunk_requests: SyncMutex<FxHashMap<ChunkPos, ChunkRequestHandle>>,
+}
+
+impl SteelTestWorld {
+    /// Creates a new test world with RAM-only storage.
+    ///
+    /// The world uses the overworld dimension type and starts with seed 0.
+    /// All chunks are created empty on-demand.
+    ///
+    /// # Panic
+    /// shouldn't panic only something is completely broken and then it is ok
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
+    pub fn new() -> Self {
+        let rt = runtime();
+
+        let dim_id = Identifier::vanilla_static("overworld");
+
+        let damage_history = Arc::new(DamageHistory::default());
+        let config = WorldConfig {
+            damage_history: Arc::clone(&damage_history),
+            storage: WorldStorageConfig::RamOnly,
+            level_data_path: None,
+            generator: Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new())),
+            generation_settings: WorldGenerationSettings {
+                generator: Identifier::new("steel", "empty"),
+                config: Value::Table(Table::new()),
+                dimension_type: dim_id.clone(),
+                min_y: OVERWORLD.min_y,
+                height: OVERWORLD.height,
+            },
+            view_distance: 10,
+            simulation_distance: 10,
+            max_chained_neighbor_updates: -1,
+            compression: None,
+            is_flat: false,
+            sea_level: 63,
+            default_gamemode: GameType::Survival,
+            difficulty: Difficulty::Normal,
+            game_time_source: GameTimeSource::Primary,
+        };
+
+        let generation_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .build()
+                .expect("Failed to create rayon thread pool"),
+        );
+
+        let runtime_config = Arc::new(RuntimeConfig {
+            max_players: 20,
+            view_distance: 10,
+            simulation_distance: 10,
+            max_chained_neighbor_updates: -1,
+            online_mode: false,
+            encryption: false,
+            motd: String::new(),
+            use_favicon: false,
+            favicon: String::new(),
+            enforce_secure_chat: false,
+            compression: None,
+            allow_flight: true,
+            chat_spam_threshold_seconds: 10,
+            command_spam_threshold_seconds: 10,
+            packet_workers: Some(1),
+            chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
+            ..RuntimeConfig::default()
+        });
+
+        // Block on async world and server creation
+        let (world, server) = rt.block_on(async {
+            let world =
+                World::new_with_config(rt.clone(), dim_id, &OVERWORLD, 0, config, generation_pool)
+                    .await
+                    .expect("Failed to create test world");
+            let domain = ResolvedDomainConfig {
+                name: world.domain().to_owned(),
+                default_world: world.key.clone(),
+                worlds: vec![world.key.clone()],
+            };
+            let server = test_server_with_worlds_and_config(
+                domain.name.clone(),
+                slice::from_ref(&domain),
+                slice::from_ref(&world),
+                PermissionSubjectIndex::default(),
+                runtime_config,
+            )
+            .await
+            .expect("Failed to create test server");
+            (world, server)
+        });
+
+        Self {
+            world,
+            server,
+            _damage_history: damage_history,
+            tick: AtomicU64::new(0),
+            chunk_requests: SyncMutex::new(FxHashMap::default()),
+        }
+    }
+
+    /// Ensures the chunk containing `pos` is loaded, retaining its ticket handle.
+    fn ensure_chunk_at(&self, pos: &BlockPos) {
+        let chunk_pos = ChunkPos::new(pos.x() >> 4, pos.z() >> 4);
+        // Fast path: a retained handle that is already Ready means the chunk
+        // is loaded at Full and its ticket is held — nothing to do.
+        if let Some(handle) = self.chunk_requests.lock().get(&chunk_pos)
+            && handle.poll() == ChunkRequestState::Ready
+        {
+            return;
+        }
+
+        // Retain the handle so the ticket stays alive for the world's
+        // lifetime (the chunk would unload if the handle were dropped).
+        let handle = self.drive_chunk_request(chunk_pos);
+        self.chunk_requests.lock().insert(chunk_pos, handle);
+    }
+
+    /// Requests the chunk at `chunk_pos` with a simulation ticket and blocks
+    /// until it becomes tickable.
+    fn drive_chunk_request(&self, chunk_pos: ChunkPos) -> ChunkRequestHandle {
+        let chunk_map = &self.world.chunk_map;
+
+        let handle =
+            chunk_map.request_chunk(chunk_pos, ChunkStatus::Full, ChunkTicketKind::Command);
+        // Ender pearl ticket is the only public simulated ticket: radius 2 =>
+        // center is entity-ticking, block-ticking readiness (3x3 Full) at center.
+        // ponytail: timed ticket, refreshed every `do_tick`; add a public forced ticket in steel if that gets messy
+        chunk_map.place_ender_pearl_ticket(chunk_pos);
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+
+        while Instant::now() < deadline {
+            chunk_map.flint_advance_scheduling();
+
+            match handle.poll() {
+                ChunkRequestState::Ready => break,
+                ChunkRequestState::Cancelled => {
+                    panic!("chunk {chunk_pos:?} request was cancelled before reaching Full")
+                }
+                ChunkRequestState::Pending { .. } => thread::sleep(Duration::from_millis(1)),
+            }
+        }
+        assert!(
+            handle.poll() == ChunkRequestState::Ready,
+            "chunk {chunk_pos:?} did not reach Full status within 30s"
+        );
+
+        while Instant::now() < deadline {
+            if chunk_map.is_block_ticking_full_chunk_simulated(chunk_pos) {
+                return handle;
+            }
+            chunk_map.flint_advance_scheduling();
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        panic!("chunk {chunk_pos:?} did not enter tickable snapshot within 30s");
+    }
+}
+
+impl Drop for SteelTestWorld {
+    fn drop(&mut self) {
+        // Worldgen tasks for outer-ring chunks outlive the test and panic with
+        // "World has been dropped", aborting the whole test process.
+        // ponytail: leaks each test world; drain generation on drop if steel exposes an idle check
+        mem::forget(Arc::clone(&self.world));
+    }
+}
+
+impl Default for SteelTestWorld {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlintWorld for SteelTestWorld {
+    fn do_tick(&mut self) -> Result<(), anyhow::Error> {
+        let tick_count = self.tick.fetch_add(1, Ordering::SeqCst);
+
+        // Keep timed simulation tickets from expiring.
+        for &pos in self.chunk_requests.lock().keys() {
+            self.world.chunk_map.place_ender_pearl_ticket(pos);
+        }
+
+        // Run a real world tick, mirroring the server loop: game time is
+        // advanced per domain before the world ticks.
+        // Note: For testing we run with `runs_normally = true`
+        self.server.worlds.advance_domain_game_times();
+        self.world.tick_game(tick_count, true);
+        Ok(())
+    }
+
+    fn current_tick(&self) -> u64 {
+        self.tick.load(Ordering::SeqCst)
+    }
+
+    fn get_time(&self) -> Result<u64, anyhow::Error> {
+        Ok(self.world.game_time() as u64)
+    }
+
+    fn get_block(
+        &self,
+        pos: FlintBlockPos,
+        requested_nbt: &[String],
+    ) -> Result<Block, anyhow::Error> {
+        let steel_pos = flint_pos_to_steel(pos);
+
+        // Ensure the chunk is loaded (for RAM storage this creates empty chunks)
+        self.ensure_chunk_at(&steel_pos);
+
+        let state = self.world.get_block_state(steel_pos);
+        let mut block = state_id_to_block(state);
+        if let Some(entity) = self.world.get_block_entity(steel_pos) {
+            let compound = entity.save_with_full_metadata();
+            block.nbt = Some(EntityNbt::from_string_values(compound.iter().filter_map(
+                |(key, value)| {
+                    let key = key.to_owned().try_into_string().ok()?;
+                    if !requested_nbt.iter().any(|requested| requested == &key) {
+                        return None;
+                    }
+                    Some((key, to_canonical_snbt(value)?))
+                },
+            )));
+        }
+        Ok(block)
+    }
+
+    fn set_block(&mut self, pos: FlintBlockPos, block: &Block) -> Result<(), anyhow::Error> {
+        let Some(state_id) = flint_block_to_state_id(block) else {
+            tracing::warn!("Unknown block: {} - skipping placement", block.id);
+            return Ok(());
+        };
+
+        let steel_pos = flint_pos_to_steel(pos);
+
+        // Ensure the chunk is loaded before setting blocks
+        self.ensure_chunk_at(&steel_pos);
+
+        // Mirror vanilla `/setblock`: fit the state to its neighbors, then
+        // re-apply the properties the test set explicitly.
+        let mut state = self.world.update_from_neighbor_shapes(state_id, steel_pos);
+        if state.is_air() {
+            state = state_id;
+        }
+        for (name, value) in &block.properties {
+            state = REGISTRY
+                .blocks
+                .try_set_property_by_name(state, name, value)
+                .unwrap_or(state);
+        }
+
+        self.world
+            .set_block(steel_pos, state, UpdateFlags::UPDATE_ALL);
+        if let Some(nbt) = &block.nbt
+            && let Some(entity) = self.world.get_block_entity(steel_pos)
+        {
+            let compound = parse_snbt_compound(&nbt.to_snbt())?;
+            let mut bytes = Vec::new();
+            compound.write(&mut bytes);
+            let borrowed = read_compound(&mut Cursor::new(bytes.as_slice()))?;
+            entity.load_additional(&borrowed);
+            entity.set_changed();
+        }
+        Ok(())
+    }
+
+    fn create_player(&mut self) -> Box<dyn FlintPlayer> {
+        Box::new(SteelTestPlayer::new(self.world.clone(), &self.server))
+    }
+}

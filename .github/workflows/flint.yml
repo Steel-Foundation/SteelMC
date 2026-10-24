@@ -1,0 +1,255 @@
+name: Flint Tests
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  pull_request:
+
+
+env:
+  CARGO_TERM_COLOR: always
+  FLINT_DIR: steel-testharness/steel-flint
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SteelMC
+        uses: actions/checkout@v4
+
+      - name: Clone FlintBenchmark
+        uses: actions/checkout@v4
+        with:
+          repository: FlintTestMC/FlintBenchmark
+          path: FlintBenchmark
+
+      - name: Read Steel toolchain
+        id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Rust (Steel toolchain)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "steel-flint"
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
+
+      - name: Configure Flint via toml
+        run: |
+          cat > "$FLINT_DIR/flint.toml" << 'EOF'
+          [filter]
+          implemented_only = true
+          EOF
+
+      - name: Build steel-flint
+        id: build
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          cargo test -p steel-flint --profile cicd --lib --no-run
+          cargo build -p steel-flint --profile cicd --bin steel-implemented
+
+      - name: Run steel-flint tests
+        id: tests
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          TEST_PATH: ${{ github.workspace }}/FlintBenchmark/tests
+          FLINT_VIZ_URL: "https://flinttestmc.github.io/FlintViz"
+        run: cargo test -p steel-flint --profile cicd --lib test_run_flint_selected -- --ignored --nocapture
+
+      - name: Dump implemented blocks and items
+        id: implemented
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          { cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- blocks
+            cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- items
+            cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- entities; } | LC_ALL=C sort -u > implemented.txt
+          echo "$(wc -l < implemented.txt) implemented ids"
+
+      - name: Download baseline
+        id: baseline
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
+        with:
+          name: flint-baseline
+          branch: master
+          workflow: flint.yml
+          # Use the newest master run that actually has the artifact, not just the newest green run.
+          search_artifacts: true
+          path: baseline
+
+      - name: Download master implemented ids
+        if: github.event_name == 'pull_request'
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
+        with:
+          name: flint-implemented
+          branch: master
+          workflow: flint.yml
+          # Use the newest master run that actually has the artifact, not just the newest green run.
+          search_artifacts: true
+          path: baseline
+
+      - name: Check for regressions
+        id: regression
+        # TODO delete later so it will fail if regression are there
+        continue-on-error: true
+        run: |
+          SUMMARY="$FLINT_DIR/log/flint_summary.json"
+          BASELINE="baseline/flint_baseline.json"
+
+          if [ ! -f "$SUMMARY" ]; then
+            echo "::error::No flint_summary.json produced — tests likely failed to compile"
+            exit 1
+          fi
+
+          if [ ! -f "$BASELINE" ]; then
+            echo "No baseline found — skipping regression check"
+            exit 0
+          fi
+
+          # Tests that passed in baseline but now fail or are missing from the results
+          jq -n \
+            --slurpfile base "$BASELINE" \
+            --slurpfile curr "$SUMMARY" \
+            '($base[0] | map(select(.success == true)) | map(.name) | unique) as $required |
+              ($curr[0] | map(.name)) as $present |
+              ($curr[0] | map(select(.success == true)) | map(.name)) as $passed |
+              $required | map(select(IN(.; $passed[]) | not)) |
+              map({name: ., missing: (IN(.; $present[]) | not)})' > regressions.json
+
+          if [ "$(jq length regressions.json)" != "0" ]; then
+            echo "::error::Regressions detected: $(jq -c 'map(.name)' regressions.json)"
+            jq -r '.[] | "  - \(.name)\(if .missing then " (missing from results)" else "" end)"' regressions.json
+            exit 1
+          fi
+
+          echo "No regressions detected"
+
+      - name: Warn on non-blocking regression failure
+        if: steps.regression.outcome == 'failure'
+        run: |
+          MSG="Flint regression check failed but is not blocking yet (continue-on-error)."
+          if [ -f regressions.json ] && [ "$(jq length regressions.json)" != "0" ]; then
+            MSG="$MSG Regressions: $(jq -r 'map(.name) | join(", ")' regressions.json)"
+          fi
+          echo "::warning title=Flint regressions::$MSG"
+          {
+            echo "## :warning: Flint regression check failed (non-blocking)"
+            echo
+            echo "$MSG"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          SUMMARY="$FLINT_DIR/log/flint_summary.json"
+          BASE_IMPL="baseline/implemented.txt"
+          mkdir -p report
+          echo "$PR_NUMBER" > report/pr_number.txt
+          OUT=report/comment.md
+
+          echo "<!-- flint-report -->" > "$OUT"
+          echo "## Flint test report" >> "$OUT"
+          echo >> "$OUT"
+
+          if [ ! -f "$SUMMARY" ]; then
+            echo ":x: No \`flint_summary.json\` produced — steel-flint likely failed to compile. See the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)." >> "$OUT"
+            exit 0
+          fi
+
+          jq -r '"**Implemented tests:** \(length) total, \(map(select(.success)) | length) passed, \(map(select(.success | not)) | length) failed"' "$SUMMARY" >> "$OUT"
+          echo >> "$OUT"
+
+          echo "### Regressions" >> "$OUT"
+          if [ -f regressions.json ]; then
+            jq -r 'if length == 0 then "None :white_check_mark:" else map("- :x: `\(.name)`\(if .missing then " (missing from results)" else "" end)") | join("\n") end' regressions.json >> "$OUT"
+          else
+            echo "No master baseline yet — skipped." >> "$OUT"
+          fi
+          echo >> "$OUT"
+
+          echo "### Newly implemented blocks/items" >> "$OUT"
+          if [ ! -f implemented.txt ] || [ ! -f "$BASE_IMPL" ]; then
+            echo "No implemented-id list for this run or master yet — skipped." >> "$OUT"
+          else
+            NEW=$(LC_ALL=C comm -23 implemented.txt "$BASE_IMPL" | jq -R . | jq -sc .)
+            if [ "$NEW" = "[]" ]; then
+              echo "None." >> "$OUT"
+            else
+              jq -r --argjson new "$NEW" '
+                [.[] | select(any(.ids[]; IN(.; $new[])))] as $t |
+                ($t | map(select(.success | not)) | map(.name)) as $failed |
+                "`" + ($new | join("`, `")) + "`\n",
+                "**\($t | length) tests**, \($t | map(select(.success)) | length) passed, \($failed | length) failed",
+                (if ($failed | length) > 0 then "\nFailed:\n" + ($failed | map("- :x: `\(.)`") | join("\n")) else empty end),
+                (if ($t | length) == 0 then "\n:warning: No Flint tests cover these ids yet." else empty end)
+              ' "$SUMMARY" >> "$OUT"
+            fi
+          fi
+
+          echo >> "$OUT"
+          echo "<sub>[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) · failure links to flint-viz are in the test log</sub>" >> "$OUT"
+          cat "$OUT"
+
+      - name: Upload PR report
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-pr-report
+          path: report/
+
+      - name: Merge and upload baseline
+        if: github.ref == 'refs/heads/master' && steps.regression.outcome == 'success'
+        run: |
+          SUMMARY="$FLINT_DIR/log/flint_summary.json"
+          BASELINE="baseline/flint_baseline.json"
+          MERGED="flint_baseline.json"
+
+          if [ -f "$BASELINE" ]; then
+            # Merge: old baseline successes ∪ current successes
+            jq -n \
+              --slurpfile base "$BASELINE" \
+              --slurpfile curr "$SUMMARY" \
+              '($base[0] + $curr[0]) | group_by(.name) | map({
+                name: .[0].name,
+                ids: .[-1].ids,
+                success: (map(.success) | any)
+              })' > "$MERGED"
+          else
+            # First run — current results become the baseline
+            cp "$SUMMARY" "$MERGED"
+          fi
+
+      - name: Upload baseline artifact
+        if: github.ref == 'refs/heads/master' && steps.regression.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-baseline
+          path: flint_baseline.json
+
+      - name: Upload implemented ids
+        if: github.ref == 'refs/heads/master' && steps.implemented.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-implemented
+          path: implemented.txt
+
+      - name: Upload Flint summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-summary
+          path: ${{ env.FLINT_DIR }}/log/flint_summary.json
