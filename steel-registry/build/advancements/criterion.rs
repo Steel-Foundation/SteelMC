@@ -6,7 +6,10 @@ use std::collections::BTreeMap;
 use steel_utils::Identifier;
 
 #[derive(Deserialize)]
-#[expect(dead_code)]
+#[expect(
+    dead_code,
+    reason = "criterion inputs are deserialized ahead of trigger-specific code generation"
+)]
 pub(crate) struct CriterionJson {
     trigger: Identifier,
     #[serde(default)]
