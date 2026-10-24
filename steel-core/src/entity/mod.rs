@@ -76,7 +76,7 @@ use crate::physics::{
     WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::game_event::GameEventContext;
-use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
+use crate::world::{ClipBlockShape, ClipFluid, Explosion, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
@@ -515,7 +515,7 @@ fn apply_block_effect_segment(
     to: DVec3,
     max_iterations: i32,
     effect_collector: &mut InsideBlockEffectCollector,
-    visited_blocks: &mut FxHashSet<BlockPos>,
+    visited_blocks: &mut block_effects::VisitedBlockPositions,
 ) -> BlockEffectSegmentResult {
     let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
     if aabb.is_empty() {
@@ -652,7 +652,8 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
     apply_step_on_block(entity, &world);
 
-    let mut visited_blocks = FxHashSet::default();
+    // Deduplicates effects across every movement segment of this tick.
+    let mut visited_blocks = block_effects::VisitedBlockPositions::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
     let before_effects = BlockEffectFireSnapshot::from_entity(entity);
     for movement in movements.iter().copied() {
@@ -835,6 +836,7 @@ pub use living_base::{
     MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
+pub(crate) use manager::EntityCollisionCandidates;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
@@ -864,9 +866,7 @@ pub(crate) use spawn::{
 };
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
-pub(crate) use ticking::{
-    snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
-};
+pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
 
 #[cfg(test)]
@@ -979,7 +979,7 @@ pub(crate) fn change_entity_world(
         return None;
     }
 
-    if entity.as_player().is_some() {
+    let changed = if entity.as_player().is_some() {
         let Some(player) = source_world.players.get_by_entity_id(entity.id()) else {
             tracing::error!(
                 entity_id = entity.id(),
@@ -992,10 +992,12 @@ pub(crate) fn change_entity_world(
         if !player.change_world_within_domain(teleport_transition) {
             return None;
         }
-        return Some(entity);
-    }
-
-    change_non_player_entity_world(entity, teleport_transition)
+        entity
+    } else {
+        change_non_player_entity_world(entity, teleport_transition)?
+    };
+    changed.on_teleported();
+    Some(changed)
 }
 
 fn change_non_player_entity_world(

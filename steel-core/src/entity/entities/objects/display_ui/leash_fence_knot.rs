@@ -11,7 +11,7 @@ use crate::entity::{
 };
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -313,6 +313,13 @@ impl BlockAttachedEntity for LeashFenceKnotEntity {
         self.base()
             .set_bounding_box(Self::knot_bounding_box(self.entity_type, pos));
         Ok(())
+    }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        explosion
+            .direct_source_entity()
+            .is_some_and(Entity::is_in_water)
+            || !explosion.should_affect_blocklike_entities()
     }
 }
 

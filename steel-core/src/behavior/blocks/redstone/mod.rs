@@ -16,6 +16,7 @@ mod redstone_lamp_block;
 mod redstone_ore_block;
 mod redstone_torch_block;
 mod target_block;
+mod tnt_block;
 mod tripwire;
 mod weathering_lightning_rod_block;
 mod wire;
