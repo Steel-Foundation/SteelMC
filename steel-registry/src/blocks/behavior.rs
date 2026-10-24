@@ -5,7 +5,7 @@
 
 pub use crate::blocks::properties::NoteBlockInstrument;
 use glam::DVec3;
-use steel_utils::{BlockPos, random::get_seed};
+use steel_utils::{BlockPos, Identifier, random::get_seed};
 
 use crate::sound_types::SoundType;
 
@@ -42,6 +42,8 @@ pub struct BlockConfig {
     pub friction: f32,
     pub speed_factor: f32,
     pub jump_factor: f32,
+    pub bounce_restitution: f32,
+    pub fall_distance_reduction: f32,
     pub dynamic_shape: bool,
     pub offset_type: OffsetType,
     pub max_horizontal_offset: f32,
@@ -54,6 +56,8 @@ pub struct BlockConfig {
     pub instrument: NoteBlockInstrument,
     pub replaceable: bool,
     pub sound_type: SoundType,
+    /// Key resolved by the loot registry in `steel-core`.
+    pub loot_table: Option<&'static Identifier>,
 }
 
 impl BlockConfig {
@@ -71,6 +75,8 @@ impl BlockConfig {
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,
+            bounce_restitution: 0.0,
+            fall_distance_reduction: 0.0,
             dynamic_shape: false,
             offset_type: OffsetType::None,
             max_horizontal_offset: 0.25,
@@ -83,6 +89,7 @@ impl BlockConfig {
             instrument: NoteBlockInstrument::Harp,
             replaceable: false,
             sound_type: crate::sound_types::STONE,
+            loot_table: None,
         }
     }
 
@@ -143,6 +150,18 @@ impl BlockConfig {
     #[must_use]
     pub const fn jump_factor(mut self, factor: f32) -> Self {
         self.jump_factor = factor;
+        self
+    }
+
+    #[must_use]
+    pub const fn bounce_restitution(mut self, factor: f32) -> Self {
+        self.bounce_restitution = factor;
+        self
+    }
+
+    #[must_use]
+    pub const fn fall_distance_reduction(mut self, factor: f32) -> Self {
+        self.fall_distance_reduction = factor;
         self
     }
 
@@ -215,6 +234,12 @@ impl BlockConfig {
     #[must_use]
     pub const fn sound_type(mut self, sound_type: SoundType) -> Self {
         self.sound_type = sound_type;
+        self
+    }
+
+    #[must_use]
+    pub const fn loot_table(mut self, loot_table: Option<&'static Identifier>) -> Self {
+        self.loot_table = loot_table;
         self
     }
 

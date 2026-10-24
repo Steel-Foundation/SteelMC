@@ -21,7 +21,7 @@ use steel_utils::{
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
-use crate::entity::{LivingEntity as _, entity_loot_ref};
+use crate::entity::{LivingEntity as _, entity_loot_ref, living_loot_equipment};
 use crate::player::Player;
 use crate::world::World;
 
@@ -222,6 +222,7 @@ impl BrushableBlockEntity {
             state.loot_table_seed as u64
         };
         let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
+        let equipment = living_loot_equipment(player);
         let mut ctx = LootContext::new(&mut rng)
             .with_world(world)
             .with_luck(player.get_luck())
@@ -231,7 +232,7 @@ impl BrushableBlockEntity {
                 f64::from(self.get_block_pos().y()) + 0.5,
                 f64::from(self.get_block_pos().z()) + 0.5,
             )
-            .with_this_entity(entity_loot_ref(player));
+            .with_this_entity(entity_loot_ref(player, Some(&equipment)));
         let items = table.get_random_items(&mut ctx)?;
         if items.len() > 1 {
             log::warn!(

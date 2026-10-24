@@ -81,6 +81,12 @@ impl Compiler {
                     quote! { entity.chicken_variant == Some(&#variant) },
                 );
             }
+            if let Some(variant) = &components.mooshroom_variant {
+                component_checks.insert(
+                    "minecraft:mooshroom/variant",
+                    quote! { entity.mooshroom_variant.is_some_and(|variant| variant.serialized_name() == #variant) },
+                );
+            }
             for name in components.unsupported.keys() {
                 // TODO: Match other typed entity components through their entity
                 // capabilities, including frog variants used by extracted tables.

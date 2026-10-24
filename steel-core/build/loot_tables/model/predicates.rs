@@ -122,6 +122,8 @@ pub struct EntityComponents {
     pub sheep_color: Option<String>,
     #[serde(rename = "minecraft:chicken/variant")]
     pub chicken_variant: Option<String>,
+    #[serde(rename = "minecraft:mooshroom/variant")]
+    pub mooshroom_variant: Option<String>,
     // Component payloads without a supported entity capability remain explicit
     // runtime errors, including dynamically named component types.
     #[expect(

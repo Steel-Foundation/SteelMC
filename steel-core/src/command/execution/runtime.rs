@@ -35,6 +35,7 @@ use crate::{
 };
 use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::data_components::vanilla_components::SwingAnimationType;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
@@ -238,6 +239,14 @@ where
     /// Returns a parsed Minecraft time argument in ticks.
     pub(crate) fn time(&self, name: &str) -> Result<i32, CommandSyntaxError> {
         self.typed_argument::<TimeValue>(name).map(|value| value.0)
+    }
+
+    pub(crate) fn swing_animation(
+        &self,
+        name: &str,
+    ) -> Result<SwingAnimationType, CommandSyntaxError> {
+        self.typed_argument::<super::swing_animation::SwingAnimationValue>(name)
+            .map(|value| value.0)
     }
 
     /// Returns a parsed coordinate expression without resolving it early.

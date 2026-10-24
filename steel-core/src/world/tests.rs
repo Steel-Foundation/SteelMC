@@ -257,6 +257,34 @@ fn entity_breaker_is_available_to_chorus_flower_loot() {
     assert_eq!(BlockLootContext::new(world, pos).get_drops(state).len(), 0);
 }
 
+#[test]
+fn wall_torch_variants_use_their_standing_torch_loot_tables() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("wall_torch_variant_loot");
+    let world = &world_fixture.world;
+    let context = BlockLootContext::new(world, BlockPos::new(0, 64, 0));
+    let cases = [
+        (&vanilla_blocks::WALL_TORCH, &*vanilla_items::TORCH),
+        (
+            &vanilla_blocks::SOUL_WALL_TORCH,
+            &*vanilla_items::SOUL_TORCH,
+        ),
+        (
+            &vanilla_blocks::COPPER_WALL_TORCH,
+            &*vanilla_items::COPPER_TORCH,
+        ),
+    ];
+
+    for (block, expected_item) in cases {
+        let drops = context.get_drops(block.default_state());
+        assert_eq!(drops.len(), 1, "{block:?}");
+        assert_eq!(drops[0].item(), expected_item, "{block:?}");
+        assert_eq!(drops[0].count(), 1, "{block:?}");
+    }
+}
+
 fn assert_vec3_close(left: DVec3, right: DVec3) {
     let diff = left - right;
     assert!(
@@ -649,6 +677,72 @@ fn clip_local_aabb_supports_runtime_fluid_heights() {
 
     assert_eq!(hit.direction, Direction::Up);
     assert_vec3_close(hit.location, DVec3::new(0.5, 0.5, 0.5));
+}
+
+#[test]
+fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("can_see_sky_light");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+
+    // Open sky has full sky light regardless of time of day.
+    assert!(world.can_see_sky(pos));
+
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    // The world tick loop drains queued light updates; tests must do so manually.
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky(pos));
+}
+
+#[test]
+fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("precipitation_sky_exposure");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+
+    assert!(world.can_see_sky_for_precipitation(pos));
+
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky_for_precipitation(pos));
+
+    // Glass passes the light gate but blocks the heightmap gate.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::GLASS.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(world.can_see_sky(pos));
+    assert!(!world.can_see_sky_for_precipitation(pos));
+
+    // Water fails the light gate despite an unobstructed heightmap.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::AIR.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky_for_precipitation(pos));
 }
 
 #[test]

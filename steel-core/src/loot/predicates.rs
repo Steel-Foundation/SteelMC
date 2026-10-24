@@ -46,19 +46,13 @@ pub(super) fn equipment_matches(
     slot: EquipmentSlot,
     predicate: impl Fn(&ItemStack) -> bool,
 ) -> bool {
-    if let Some(living) = entity.entity.and_then(Entity::as_living_entity) {
-        let mut matches = false;
-        living.with_equipment_slot(slot, &mut |item| matches = predicate(item));
-        return matches;
+    if let Some(equipment) = entity.equipment {
+        return predicate(equipment.get(slot));
     }
-    let item = entity.equipment.and_then(|equipment| match slot {
-        EquipmentSlot::MainHand => equipment.mainhand,
-        EquipmentSlot::OffHand => equipment.offhand,
-        EquipmentSlot::Head => equipment.head,
-        EquipmentSlot::Chest => equipment.chest,
-        EquipmentSlot::Legs => equipment.legs,
-        EquipmentSlot::Feet => equipment.feet,
-        EquipmentSlot::Body | EquipmentSlot::Saddle => None,
-    });
-    item.is_some_and(predicate)
+    let Some(living) = entity.entity.and_then(Entity::as_living_entity) else {
+        return false;
+    };
+    let mut matches = false;
+    living.with_equipment_slot(slot, &mut |item| matches = predicate(item));
+    matches
 }

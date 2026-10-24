@@ -37,7 +37,9 @@ use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
-use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref};
+use crate::entity::{
+    Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref, loot_equipment,
+};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
@@ -47,6 +49,9 @@ use crate::world::{
     SignalQueryContext, World,
 };
 use steel_registry::vanilla_fluids;
+
+/// Exclusive block-emission limit for the default mob spawn predicate.
+pub(crate) const MAX_MOB_SPAWN_LIGHT_EMISSION: u8 = 14;
 
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
@@ -84,8 +89,12 @@ pub(crate) fn drop_from_block_interact_loot_table(
         ctx = ctx.with_block_entity(block_entity);
     }
 
+    let interacting_equipment = interacting_entity.and_then(loot_equipment);
     if let Some(interacting_entity) = interacting_entity {
-        ctx = ctx.with_interacting_entity(entity_loot_ref(interacting_entity));
+        ctx = ctx.with_interacting_entity(entity_loot_ref(
+            interacting_entity,
+            interacting_equipment.as_ref(),
+        ));
     }
 
     if let Some(tool) = tool {
@@ -236,6 +245,20 @@ pub trait BlockBehavior: Send + Sync {
     /// (torches, buttons, candles, cactus, etc.).
     fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
+    }
+
+    /// Whether this block accepts a mob spawning on or inside it.
+    /// Defaults to full UP support and emission below [`MAX_MOB_SPAWN_LIGHT_EMISSION`].
+    fn is_valid_spawn(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        _entity_type: EntityTypeRef,
+    ) -> bool {
+        // TODO: extract the correct rules from block spawn rule
+        world.is_face_sturdy_for(state, pos, Direction::Up, SupportType::Full)
+            && state.get_light_emission() < MAX_MOB_SPAWN_LIGHT_EMISSION
     }
 
     /// Returns whether this block can be occupied by a forced respawn position
@@ -599,15 +622,17 @@ pub trait BlockBehavior: Send + Sync {
     /// # Arguments
     /// * `block` - The block being picked
     /// * `_state` - The block state (some blocks vary pick item based on state)
+    /// * `_block_entity` - An optional block entity (some blocks vary pick item based on block entity data)
     /// * `_include_data` - Whether to include block entity data (creative + Ctrl)
     #[expect(
         unused_variables,
-        reason = "default implementation only uses `block`; state/include_data are for overrides"
+        reason = "default implementation only uses `block`; state/block_entity/include_data are for overrides"
     )]
     fn get_clone_item_stack(
         &self,
         block: BlockRef,
         state: BlockStateId,
+        block_entity: Option<SharedBlockEntity>,
         include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(REGISTRY.items.by_block(block)))
@@ -955,7 +980,8 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
-            context.fall_distance,
+            context.fall_distance
+                * f64::from(1f32 - state.get_block().config.fall_distance_reduction),
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
@@ -972,6 +998,21 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, context)
+    }
+
+    /// called when an entity bounce on the block.
+    /// only works if the block has a restitution > 0.0 and the entity is not suppressing bounce
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn bounce_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) {
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
@@ -1022,8 +1063,21 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         context: EntityLandingContext,
-    ) -> DVec3 {
-        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+    ) -> (DVec3, bool) {
+        let restitution = state.get_block().config.bounce_restitution;
+        if context.velocity.y >= 0.0
+            || restitution <= 0.0
+            || context.suppresses_bounce
+            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
+            || -context.velocity.y <= context.gravity
+        {
+            (
+                self.default_update_entity_movement_after_fall_on(state, world, pos, context),
+                false,
+            )
+        } else {
+            (context.velocity_after_bounce(restitution), true)
+        }
     }
 
     /// Default step-on hook.

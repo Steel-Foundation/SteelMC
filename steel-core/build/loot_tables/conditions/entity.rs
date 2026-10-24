@@ -45,7 +45,7 @@ impl CompileCondition for EntityProperties {
 #[serde(deny_unknown_fields)]
 pub struct DamageSourceProperties {
     // TODO: Accept an absent predicate while requiring origin and damage source.
-    pub predicate: DamageSourcePredicate,
+    pub predicate: Box<DamageSourcePredicate>,
 }
 
 impl CompileCondition for DamageSourceProperties {

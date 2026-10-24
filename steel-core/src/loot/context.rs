@@ -1,7 +1,8 @@
 use super::{LootError, LootResult, LootTableBehaviorRegistry};
 use crate::{block_entity::BlockEntity, entity::Entity, world::World};
 use steel_registry::{
-    DyeColor, REGISTRY, RegistryExt, equipment::EquipmentSlot, item_stack::ItemStack,
+    DyeColor, REGISTRY, RegistryExt, entity_variant::MooshroomVariant, equipment::EquipmentSlot,
+    item_stack::ItemStack,
 };
 use steel_utils::{BlockStateId, Identifier, random::RandomSource};
 
@@ -85,8 +86,8 @@ pub struct EntityRef<'a> {
     pub entity_type: Option<&'a Identifier>,
     /// Entity flags for predicate checking.
     pub flags: EntityRefFlags,
-    /// Equipment slots for equipment predicates.
-    pub equipment: Option<&'a EntityEquipmentRef<'a>>,
+    /// Equipment slots for equipment predicates. `None` for non-living entities.
+    pub equipment: Option<EntityEquipmentRef<'a>>,
     /// Entity name (for `copy_name` function).
     pub custom_name: Option<&'a str>,
     /// Vanilla `minecraft:components.sheep/color` entity data component.
@@ -96,6 +97,8 @@ pub struct EntityRef<'a> {
     pub sheep_sheared: Option<bool>,
     /// Vanilla `minecraft:components.chicken/variant` entity data component key.
     pub chicken_variant: Option<&'a Identifier>,
+    /// Vanilla `minecraft:mooshroom/variant` entity data component.
+    pub mooshroom_variant: Option<MooshroomVariant>,
 }
 
 /// Entity flags for predicate checking.
@@ -113,21 +116,42 @@ pub struct EntityRefFlags {
     pub is_baby: bool,
 }
 
-/// Equipment references for an entity.
+/// One item stack per equipment slot, indexed by [`EquipmentSlot::index`].
+pub type EntityEquipmentSlots = [ItemStack; EquipmentSlot::ALL.len()];
+
+/// Every equipment slot of a living entity.
 #[derive(Debug, Clone, Copy)]
-pub struct EntityEquipmentRef<'a> {
-    /// Main hand snapshot.
-    pub mainhand: Option<&'a ItemStack>,
-    /// Off hand snapshot.
-    pub offhand: Option<&'a ItemStack>,
-    /// Head equipment snapshot.
-    pub head: Option<&'a ItemStack>,
-    /// Chest equipment snapshot.
-    pub chest: Option<&'a ItemStack>,
-    /// Leg equipment snapshot.
-    pub legs: Option<&'a ItemStack>,
-    /// Feet equipment snapshot.
-    pub feet: Option<&'a ItemStack>,
+pub struct EntityEquipmentRef<'a>(&'a EntityEquipmentSlots);
+
+impl<'a> EntityEquipmentRef<'a> {
+    /// Borrows a snapshot of every equipment slot.
+    #[must_use]
+    pub const fn new(slots: &'a EntityEquipmentSlots) -> Self {
+        Self(slots)
+    }
+
+    /// Returns the item in the given equipment slot.
+    #[must_use]
+    pub const fn get(self, slot: EquipmentSlot) -> &'a ItemStack {
+        &self.0[slot.index()]
+    }
+
+    /// Returns the highest enchantment level from matching equipment slots.
+    #[must_use]
+    pub fn get_enchantment_level(self, enchantment: &Identifier) -> i32 {
+        let Some(definition) = REGISTRY.enchantments.by_key(enchantment) else {
+            return 0;
+        };
+        EquipmentSlot::ALL
+            .into_iter()
+            .filter(|slot| definition.matching_slot(*slot))
+            .filter_map(|slot| {
+                let stack = self.get(slot);
+                (!stack.is_empty()).then(|| stack.get_enchantment_level(enchantment))
+            })
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 /// Damage source information for loot context.
@@ -313,6 +337,9 @@ impl LootContext<'_> {
     /// Enchantment level over the attacking living entity's applicable equipment slots.
     #[must_use]
     pub fn attacker_enchantment_level(&self, key: &Identifier) -> i32 {
+        if let Some(equipment) = self.killer_entity.and_then(|entity| entity.equipment) {
+            return equipment.get_enchantment_level(key);
+        }
         let Some(entity) = self
             .killer_entity
             .and_then(|entity| entity.entity)
@@ -329,9 +356,33 @@ impl LootContext<'_> {
                 continue;
             }
             entity.with_equipment_slot(slot, &mut |item| {
-                best = best.max(item.get_enchantment_level(key));
+                if !item.is_empty() {
+                    best = best.max(item.get_enchantment_level(key));
+                }
             });
         }
         best
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::{init_vanilla_registry, vanilla_enchantments, vanilla_items};
+
+    #[test]
+    fn equipment_enchantment_level_ignores_empty_stacks() {
+        init_vanilla_registry();
+        let enchantment = &vanilla_enchantments::LOOTING.key;
+        let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+        sword.set_enchantments(&[(enchantment.clone(), 3)], false);
+        sword.set_count(0);
+        let mut slots = EntityEquipmentSlots::default();
+        slots[EquipmentSlot::MainHand.index()] = sword;
+
+        assert_eq!(
+            EntityEquipmentRef::new(&slots).get_enchantment_level(enchantment),
+            0
+        );
     }
 }

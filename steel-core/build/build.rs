@@ -16,6 +16,7 @@ mod common;
 mod entities;
 mod items;
 mod loot_tables;
+mod skull_type;
 mod waxables;
 mod weathering;
 
@@ -67,6 +68,10 @@ pub fn main() {
     write_if_changed(
         format!("{entity_out_dir}/entities.rs"),
         entities::build(&classes.entities),
+    );
+    write_if_changed(
+        format!("{behavior_out_dir}/skull_types.rs"),
+        skull_type::build(),
     );
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");

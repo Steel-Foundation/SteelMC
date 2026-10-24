@@ -378,7 +378,9 @@ fn sheep_shearing_uses_color_and_sheared_predicates() {
 
 #[test]
 fn looting_uses_attacker_equipment_and_limits_the_final_count() {
-    use crate::entity::{LivingEntity, entities::PigEntity, entity_loot_ref};
+    use crate::entity::{
+        LivingEntity, entities::PigEntity, entity_loot_ref, living_loot_equipment,
+    };
     use glam::DVec3;
     use std::sync::Weak;
     use steel_registry::{equipment::EquipmentSlot, vanilla_entities};
@@ -400,22 +402,25 @@ fn looting_uses_attacker_equipment_and_limits_the_final_count() {
         .set(EquipmentSlot::Head, helmet);
     let mut tool = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
     tool.set_enchantments(&[(vanilla_enchantments::LOOTING.key.clone(), 1)], false);
-    for with_attacker in [false, true] {
-        let mut rng = random(12345);
-        let mut ctx = LootContext::new(&mut rng).with_tool(&tool);
-        ctx.tables = Some(&tables);
-        if with_attacker {
-            ctx = ctx.with_killer_entity(entity_loot_ref(&attacker));
+    let snapshot = living_loot_equipment(&attacker);
+    for equipment in [None, Some(&snapshot)] {
+        for with_attacker in [false, true] {
+            let mut rng = random(12345);
+            let mut ctx = LootContext::new(&mut rng).with_tool(&tool);
+            ctx.tables = Some(&tables);
+            if with_attacker {
+                ctx = ctx.with_killer_entity(entity_loot_ref(&attacker, equipment));
+            }
+            assert_eq!(
+                ctx.attacker_enchantment_level(&vanilla_enchantments::LOOTING.key),
+                if with_attacker { 4 } else { 0 }
+            );
+            let items = fixtures::ATTACKER_LOOTING
+                .get_random_items(&mut ctx)
+                .expect("looting output");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].count(), if with_attacker { 3 } else { 1 });
         }
-        assert_eq!(
-            ctx.attacker_enchantment_level(&vanilla_enchantments::LOOTING.key),
-            if with_attacker { 4 } else { 0 }
-        );
-        let items = fixtures::ATTACKER_LOOTING
-            .get_random_items(&mut ctx)
-            .expect("looting output");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].count(), if with_attacker { 3 } else { 1 });
     }
 }
 

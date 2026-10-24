@@ -328,7 +328,7 @@ fn filled_result_empty_result_still_consumes_survival_hand_stack() {
 }
 
 #[test]
-fn filled_result_creative_unlimited_discards_unadded_result() {
+fn filled_result_creative_unlimited_returns_unadded_result_to_drop() {
     init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
@@ -344,7 +344,7 @@ fn filled_result_creative_unlimited_discards_unadded_result() {
         false,
     );
 
-    assert!(overflow.is_empty());
+    assert_eq!(overflow, ItemStack::new(&vanilla_items::WATER_BUCKET));
     assert_eq!(
         inventory.get_selected_item(),
         &ItemStack::new(&vanilla_items::LAVA_BUCKET)

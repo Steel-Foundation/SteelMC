@@ -20,13 +20,14 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity,
+    LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason, SharedEntity,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const MAX_LIFETIME: i32 = 2400;
+const XP_REWARD: i32 = 3;
 
 /// A hostile endermite entity.
 #[entity_behavior(class = "Endermite")]
@@ -67,6 +68,7 @@ impl EndermiteEntity {
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type);
         let mob_base = MobBase::new();
+        mob_base.set_xp_reward(XP_REWARD);
         let mut entity_data = EndermiteEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
 
@@ -174,7 +176,15 @@ impl Entity for EndermiteEntity {
     }
 
     fn sound_source(&self) -> SoundSource {
-        SoundSource::Hostile
+        Monster::sound_source_monster(self)
+    }
+
+    fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
+        Monster::fall_sounds_monster(self)
+    }
+
+    fn swim_sound(&self) -> SoundEventRef {
+        Monster::swim_sound_monster(self)
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
@@ -225,16 +235,30 @@ impl LivingEntity for EndermiteEntity {
         Some(&sound_events::ENTITY_ENDERMITE_DEATH)
     }
 
+    fn should_drop_experience(&self) -> bool {
+        Monster::should_drop_experience_monster(self)
+    }
+
+    fn should_drop_loot(&self, world: &World) -> bool {
+        Monster::should_drop_loot_monster(self, world)
+    }
+
     fn server_ai_step(&self, entity: &SharedEntity) {
         Mob::mob_server_ai_step(self, entity);
     }
 
     fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        let result = self.default_ai_step(entity);
-        if self.level().is_some() && !self.is_persistence_required() {
-            let mut lifetime = self.lifetime.lock();
-            *lifetime += 1;
-            if *lifetime >= MAX_LIFETIME {
+        let result = Monster::monster_ai_step(self, entity);
+        // Persistence pauses aging but does not bypass the lifetime cap.
+        if self.level().is_some() {
+            let discard = {
+                let mut lifetime = self.lifetime.lock();
+                if !self.is_persistence_required() {
+                    *lifetime += 1;
+                }
+                *lifetime >= MAX_LIFETIME
+            };
+            if discard {
                 self.set_removed(RemovalReason::Discarded);
             }
         }
@@ -268,18 +292,75 @@ impl Mob for EndermiteEntity {
     }
 }
 
+impl Monster for EndermiteEntity {}
+
 impl PathfinderMob for EndermiteEntity {}
 
 #[cfg(test)]
 mod tests {
-    use super::EndermiteEntity;
-    use crate::entity::Entity;
+    use std::io::Cursor;
+    use std::sync::{Arc, Weak};
+
     use glam::DVec3;
     use simdnbt::borrow::read_compound;
     use simdnbt::owned::NbtCompound;
-    use std::io::Cursor;
-    use std::sync::Weak;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
+    use steel_utils::{ChunkPos, Downcast as _};
+
+    use super::{EndermiteEntity, MAX_LIFETIME};
+    use crate::entity::{Entity, LivingEntity, Mob, SharedEntity, next_entity_id};
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn endermite_discards_after_max_lifetime_unless_persistence_required() {
+        init_vanilla_registry();
+        let world_fixture = fresh_test_world("endermite_lifetime");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+        let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
+            &vanilla_entities::ENDERMITE,
+            next_entity_id(),
+            DVec3::new(8.0, 65.0, 8.0),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&endermite))
+            .expect("test endermite should attach to the loaded chunk");
+        let endermite_entity = endermite;
+        let endermite = endermite_entity
+            .downcast_ref::<EndermiteEntity>()
+            .expect("endermite is concrete");
+        endermite.set_lifetime(MAX_LIFETIME - 2);
+        endermite.ai_step(&endermite_entity);
+        assert!(
+            !endermite.is_removed(),
+            "lifetime below the cap keeps the mob alive"
+        );
+        endermite.ai_step(&endermite_entity);
+        assert!(endermite.is_removed(), "reaching the cap discards the mob");
+
+        let persistent: SharedEntity = Arc::new(EndermiteEntity::new(
+            &vanilla_entities::ENDERMITE,
+            next_entity_id(),
+            DVec3::new(9.0, 65.0, 8.0),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&persistent))
+            .expect("test endermite should attach to the loaded chunk");
+        let persistent_entity = persistent;
+        let persistent = persistent_entity
+            .downcast_ref::<EndermiteEntity>()
+            .expect("endermite is concrete");
+        persistent.set_persistence_required();
+        persistent.set_lifetime(MAX_LIFETIME - 1);
+        persistent.ai_step(&persistent_entity);
+        assert!(
+            !persistent.is_removed(),
+            "persistence-required endermites must not expire"
+        );
+    }
 
     #[test]
     fn endermite_nbt_round_trip() {

@@ -1,11 +1,10 @@
 use super::*;
 use std::sync::Arc;
+use steel_utils::TICKS_PER_SECOND;
 use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 
 /// Trials for the random breeding-color fallback assertion.
 const COLOR_FALLBACK_TRIALS: u32 = 32;
-/// Vanilla tick rate, converting `AgeableMob.ageUp` seconds into ticks.
-const TICKS_PER_SECOND: i32 = 20;
 
 #[test]
 fn sheep_initializes_vanilla_living_attributes_and_health() {

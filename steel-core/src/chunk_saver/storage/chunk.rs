@@ -719,7 +719,7 @@ impl ChunkStorage {
                 state.name, state.properties
             )));
         };
-        let canonical = REGISTRY.blocks.get_properties(state_id);
+        let mut canonical = REGISTRY.blocks.properties(state_id);
         let unique_names = state
             .properties
             .iter()
@@ -727,9 +727,7 @@ impl ChunkStorage {
             .collect::<FxHashSet<_>>();
         if unique_names.len() != state.properties.len()
             || canonical.len() != state.properties.len()
-            || canonical
-                .iter()
-                .any(|property| !state.properties.contains(property))
+            || canonical.any(|property| !state.properties.contains(&property))
         {
             return Err(Self::invalid_chunk_data(format!(
                 "noncanonical block state {} with properties {:?}",

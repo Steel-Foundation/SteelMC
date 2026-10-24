@@ -14,7 +14,7 @@ use steel_registry::{RegistryExt, block_entity_type::BlockEntityTypeRef};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntityBase, RandomizableContainer};
-use crate::entity::{LivingEntity, entity_loot_ref};
+use crate::entity::{LivingEntity, entity_loot_ref, living_loot_equipment};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::loot::{LOOT_TABLES, LootContext, LootError, LootResult};
@@ -250,6 +250,7 @@ impl RandomizableContainerStorage {
                 .by_key(loot.loot_table())
                 .ok_or_else(|| LootError::MissingTable(loot.loot_table().clone()))?;
             let pos = base.pos();
+            let equipment = player.map(living_loot_equipment);
             world.with_loot_random(table, loot.seed(), |random| {
                 let mut context = LootContext::new(random).with_world(&world).with_origin(
                     f64::from(pos.x()) + 0.5,
@@ -260,7 +261,7 @@ impl RandomizableContainerStorage {
                     // TODO: Trigger GENERATE_LOOT once advancement criteria exist.
                     context = context
                         .with_luck(player.get_luck())
-                        .with_this_entity(entity_loot_ref(player));
+                        .with_this_entity(entity_loot_ref(player, equipment.as_ref()));
                 }
                 let generated = table.generate_for_container(&mut context)?;
                 let mut container = storage.lock();

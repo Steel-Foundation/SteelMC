@@ -1054,6 +1054,7 @@ mod tests {
         time::Duration,
     };
 
+    use steel_utils::TICKS_PER_SECOND;
     use tokio::time::timeout;
 
     use crate::{
@@ -1188,10 +1189,9 @@ mod tests {
     #[test]
     fn production_limit_allows_a_watchdog_window_of_mounted_client_traffic() {
         const VANILLA_WATCHDOG_SECONDS: usize = 60;
-        const CLIENT_TICKS_PER_SECOND: usize = 20;
         const MOUNTED_PACKETS_PER_CLIENT_TICK: usize = 4;
         const EXPECTED_PACKETS: usize =
-            VANILLA_WATCHDOG_SECONDS * CLIENT_TICKS_PER_SECOND * MOUNTED_PACKETS_PER_CLIENT_TICK;
+            VANILLA_WATCHDOG_SECONDS * TICKS_PER_SECOND as usize * MOUNTED_PACKETS_PER_CLIENT_TICK;
 
         let queue = PacketQueue::new();
         for packet in 0..EXPECTED_PACKETS {

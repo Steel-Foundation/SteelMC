@@ -492,5 +492,10 @@ pub mod vanilla_custom_stats;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_suspicious_stew_effects.rs"]
+pub mod vanilla_suspicious_stew_effects;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_advancements.rs"]
 pub mod vanilla_advancements;
