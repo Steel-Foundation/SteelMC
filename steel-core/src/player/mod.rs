@@ -461,16 +461,47 @@ impl Player {
             self.stop_using_item();
             return;
         }
-        let mut item = {
+
+        let stack_before_tick = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);
             current.clone()
         };
+        let mut item = stack_before_tick.clone();
+
         let world = self.get_world();
         let Some(user) = LivingEntityRef::new(entity) else {
             panic!("active item use requires a living entity");
         };
+
+        let session_id_before_tick = active.session_id();
+
         behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+
+        let current_active = self.living_base.active_item_use();
+        let Some(current_active) = current_active else {
+            let hand_stack = {
+                let inventory = self.inventory.lock();
+                inventory.get_item_in_hand(hand).clone()
+            };
+            if ItemStack::matches(&hand_stack, &stack_before_tick) {
+                self.inventory.lock().set_item_in_hand(hand, item);
+            }
+            return;
+        };
+        if current_active.session_id() != session_id_before_tick {
+            return;
+        }
+
+        let hand_stack = {
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.clone()
+        };
+        if !ItemStack::matches(&hand_stack, &stack_before_tick) {
+            self.stop_using_item();
+            return;
+        }
 
         if self.active_item_use_hand() != Some(hand) {
             self.inventory.lock().set_item_in_hand(hand, item);
