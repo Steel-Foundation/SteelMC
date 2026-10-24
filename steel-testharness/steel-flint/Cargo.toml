@@ -15,22 +15,18 @@ steel-utils.workspace = true
 
 glam.workspace = true
 simdnbt.workspace = true
-# UUID
-uuid.workspace = true
 
 # Text components for disconnect messages
 text_components.workspace = true
 
 # Flint testing framework
-flint-core = { git = "https://github.com/FlintTestMC/flint-core.git", rev = "v1.2.0" }
+flint-core = { git = "https://github.com/FlintTestMC/flint-core.git", rev = "v1.2.1" }
 
 # Async
 tokio.workspace = true
-futures.workspace = true
 
 # Logging
 tracing.workspace = true
-# Because of steel
 
 # Thread pool for world generation
 rayon.workspace = true

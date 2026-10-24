@@ -782,11 +782,12 @@ dependencies = [
 [[package]]
 name = "flint-core"
 version = "1.2.0"
-source = "git+https://github.com/FlintTestMC/flint-core.git?rev=v1.2.0#e736092cb42909d6aec9de84877db637df4b45ea"
+source = "git+https://github.com/FlintTestMC/flint-core.git?rev=v1.2.1#684b8aeb90fd40a149227fc190dfccde7ffb4633"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "colored",
+ "dotenvy",
  "flate2",
  "rayon",
  "rustc-hash 2.1.3",
@@ -2871,7 +2872,6 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "flint-core",
- "futures",
  "glam",
  "rayon",
  "rustc-hash 2.1.3",
@@ -2885,7 +2885,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "uuid",
 ]
 
 [[package]]
