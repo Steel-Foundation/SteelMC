@@ -325,6 +325,11 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(SpawnerBlockEntity::new(level, pos, state)),
         );
 
+        // Register skull block entity factory
+        registry.register(&vanilla_block_entity_types::SKULL, |level, pos, state| {
+            Arc::new(SkullBlockEntity::new(level, pos, state))
+        });
+
         registry
     });
 }

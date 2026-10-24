@@ -1,5 +1,8 @@
 use super::super::{
-    brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
+    brigadier::{
+        ArgumentSuggestionContext, ArgumentType, CommandNodeBuilder, CommandSyntaxError,
+        SuggestionsBuilder,
+    },
     execution::{
         CommandSource, SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument,
         literal,
@@ -7,7 +10,7 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::command::execution::FixedSuggestionProvider;
-use steel_utils::{Identifier, translations};
+use steel_utils::{Identifier, TICKS_PER_SECOND, translations};
 use text_components::TextComponent;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -19,15 +22,21 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
         .subcommand_permission(["freeze"])
 }
 
-pub const DEFAULT_TICK_RATE: &str = "20";
-
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("tick")
         .then(literal("query").executes(query_tick))
         .then(
             literal("rate").then(
                 argument("rate", ArgumentType::float(1.0, 10_000.0))
-                    .suggests(FixedSuggestionProvider::new(&[DEFAULT_TICK_RATE]))
+                    .suggests(
+                        |_: &ArgumentSuggestionContext<'_, _, _>,
+                         builder: &mut SuggestionsBuilder<'_>| {
+                            let rate = TICKS_PER_SECOND.to_string();
+                            if rate.starts_with(builder.remaining()) {
+                                builder.suggest(rate);
+                            }
+                        },
+                    )
                     .executes(set_tick_rate),
             ),
         )
