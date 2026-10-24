@@ -2,6 +2,8 @@ use super::*;
 use std::sync::Arc;
 use steel_registry::init_vanilla_registry;
 
+use crate::behavior::init_behaviors;
+
 #[test]
 fn cow_initializes_vanilla_living_attributes_and_health() {
     init_vanilla_registry();
@@ -65,6 +67,7 @@ fn cow_sound_methods_follow_selected_sound_variant() {
 #[test]
 fn cow_milks_bucket_into_milk_bucket_for_adults() {
     init_vanilla_registry();
+    init_behaviors();
 
     let world_fixture = fresh_test_world("cow_milking");
     let world = &world_fixture.world;

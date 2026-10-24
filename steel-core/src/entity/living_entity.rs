@@ -718,7 +718,6 @@ pub trait LivingEntity: Entity {
             self.broadcast_damage_event(world, source);
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
-                self.broadcast_hurt_animation(world);
             }
             self.apply_damage_knockback(source);
         }
@@ -963,19 +962,6 @@ pub trait LivingEntity: Entity {
                     .direct_entity()
                     .map_or(0, |entity| entity.id().wrapping_add(1)),
                 source_position: source.source_position_raw(),
-            },
-            None,
-        );
-    }
-
-    /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self, world: &World) {
-        let (yaw, _) = self.rotation();
-        world.broadcast_to_nearby(
-            self.hurt_broadcast_chunk(),
-            CHurtAnimation {
-                entity_id: self.id(),
-                yaw,
             },
             None,
         );
@@ -1397,11 +1383,24 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+        self.add_mob_effect_with_source(effect, None)
+    }
+
+    /// Adds or updates active vanilla mob-effect state, attributing it to
+    /// `source`.
+    fn add_mob_effect_with_source(
+        &self,
+        effect: MobEffectInstance,
+        source: Option<&dyn Entity>,
+    ) -> bool {
         if !self.can_be_affected(&effect) {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
+        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
+        // once the advancement-criteria foundation exists.
+        let _ = source;
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
