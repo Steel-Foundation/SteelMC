@@ -37,6 +37,7 @@ use steel_registry::loot_table::{
     LootContext, LootTableRef,
 };
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
@@ -46,7 +47,7 @@ use steel_registry::vanilla_game_rules::{MAX_ENTITY_CRAMMING, MOB_DROPS};
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_type_tags, vanilla_damage_types,
-    vanilla_game_events,
+    vanilla_game_events, vanilla_particle_types,
 };
 use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
