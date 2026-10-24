@@ -278,6 +278,13 @@ impl Entity for LeashFenceKnotEntity {
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.try_set_position_block_attached_entity(pos)
     }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        explosion
+            .direct_source_entity()
+            .is_some_and(Entity::is_in_water)
+            || !explosion.should_affect_blocklike_entities()
+    }
 }
 
 impl BlockAttachedEntity for LeashFenceKnotEntity {
@@ -313,13 +320,6 @@ impl BlockAttachedEntity for LeashFenceKnotEntity {
         self.base()
             .set_bounding_box(Self::knot_bounding_box(self.entity_type, pos));
         Ok(())
-    }
-
-    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
-        explosion
-            .direct_source_entity()
-            .is_some_and(Entity::is_in_water)
-            || !explosion.should_affect_blocklike_entities()
     }
 }
 

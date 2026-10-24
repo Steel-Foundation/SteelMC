@@ -277,10 +277,6 @@ impl Entity for ItemFrameEntity {
             || !explosion.should_affect_blocklike_entities()
     }
 
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         self.hurt_block_attached_entity(world, source, amount)
     }

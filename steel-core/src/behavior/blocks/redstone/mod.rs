@@ -44,6 +44,7 @@ pub use redstone_lamp_block::*;
 pub use redstone_ore_block::*;
 pub use redstone_torch_block::*;
 pub use target_block::*;
+pub use tnt_block::*;
 pub use tripwire::*;
 pub use weathering_lightning_rod_block::*;
 pub use wire::*;

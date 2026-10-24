@@ -138,7 +138,7 @@ impl EntityMovementTrace {
         self.final_movements_this_tick.clone()
     }
 
-    fn last_for_block_effects(&self) -> Vec<EntityMovement> {
+    fn last_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
         self.final_movements_this_tick.clone()
     }
 }

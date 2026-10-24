@@ -1060,7 +1060,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
@@ -1080,7 +1080,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
