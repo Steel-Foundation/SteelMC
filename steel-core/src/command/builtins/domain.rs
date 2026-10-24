@@ -9,7 +9,13 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::{inventory::prelude::*, server::Server, world::World};
+use crate::{
+    entity::Entity as _,
+    inventory::prelude::*,
+    portal::{PreparedSpawn, WorldEntry},
+    server::Server,
+    world::World,
+};
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
@@ -19,6 +25,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("domain"), |_| command())
@@ -42,27 +49,101 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 
             Ok(1)
         })
-        .then(argument("world", SteelArgumentType::world()).executes(switch_world))
+        .then(
+            argument("world", SteelArgumentType::world())
+                .executes(switch_world)
+                .then(
+                    argument("location", SteelArgumentType::vec3(true))
+                        .executes(switch_world_to_location)
+                        .then(
+                            argument("rotation", SteelArgumentType::rotation())
+                                .executes(switch_world_to_location_with_rotation),
+                        ),
+                )
+                .then(
+                    argument("rotation", SteelArgumentType::rotation())
+                        .executes(switch_world_with_rotation),
+                ),
+        )
 }
 
 fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+    switch_world_to(context, WorldEntry::Usual)
+}
+
+fn switch_world_to_location(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    switch_world_at_location(context, None)
+}
+
+fn switch_world_to_location_with_rotation(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    let rotation = context.coordinates("rotation")?.rotation(context.source());
+    switch_world_at_location(context, Some(rotation))
+}
+
+/// Enters the world as usual, then faces the given rotation.
+fn switch_world_with_rotation(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    let player = command_player(context.source())?;
+    let rotation = context.coordinates("rotation")?.rotation(context.source());
+    let rotation = finite_rotation(rotation, player.rotation());
+    switch_world_to(context, WorldEntry::Rotation(wrap_rotation(rotation)))
+}
+
+/// Resolves the location like `/teleport`, keeping the player's own rotation if none is given.
+fn switch_world_at_location(
+    context: &SteelCommandContext<CommandSource>,
+    rotation: Option<(f32, f32)>,
+) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
-    let Some(player) = source.player() else {
-        return Err(CommandSyntaxError::dynamic(
-            "This command can only be used by a player",
-        ));
+    let player = command_player(source)?;
+    let position = context.coordinates("location")?.position(source);
+    ensure_spawnable_position(position)?;
+    let destination = PreparedSpawn {
+        position,
+        rotation: wrap_rotation(rotation.map_or_else(
+            || player.rotation(),
+            |rotation| finite_rotation(rotation, player.rotation()),
+        )),
     };
+    switch_world_to(context, WorldEntry::Exact(destination))
+}
+
+fn command_player(source: &CommandSource) -> Result<&Arc<Player>, CommandSyntaxError> {
+    source
+        .player()
+        .ok_or_else(|| CommandSyntaxError::dynamic("This command can only be used by a player"))
+}
+
+fn switch_world_to(
+    context: &SteelCommandContext<CommandSource>,
+    entry: WorldEntry,
+) -> Result<i32, CommandSyntaxError> {
+    let source = context.source();
+    let player = command_player(source)?;
     let world = context.world_argument("world")?;
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(Arc::clone(player), &world)
+        .queue_player_world_selection(Arc::clone(player), &world, entry)
         .map_err(CommandSyntaxError::dynamic)?;
 
-    source.send_success(
-        &TextComponent::plain(format!("Switching to world {}", world.key)),
-        true,
-    );
+    let message = match entry {
+        WorldEntry::Exact(PreparedSpawn { position, .. }) => format!(
+            "Switching to world {} at {:.2} {:.2} {:.2}",
+            world.key, position.x, position.y, position.z
+        ),
+        WorldEntry::Rotation((yaw, pitch)) => format!(
+            "Switching to world {} facing {yaw:.1} {pitch:.1}",
+            world.key
+        ),
+        WorldEntry::Usual => format!("Switching to world {}", world.key),
+    };
+    source.send_success(&TextComponent::plain(message), true);
     Ok(1)
 }
 
@@ -205,10 +286,11 @@ impl MenuKind for DomainMenuKind {
             return ClickOutcome::Consume;
         }
 
-        if let Err(error) = self
-            .server
-            .queue_player_world_selection(Arc::clone(&self.player), world)
-        {
+        if let Err(error) = self.server.queue_player_world_selection(
+            Arc::clone(&self.player),
+            world,
+            WorldEntry::Usual,
+        ) {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }
         self.player.close_container();
