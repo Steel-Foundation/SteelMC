@@ -719,9 +719,6 @@ pub trait LivingEntity: Entity {
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
             }
-            if self.damage_sends_hurt_animation(source) {
-                self.broadcast_hurt_animation(world);
-            }
             self.apply_damage_knockback(source);
         }
 
@@ -747,11 +744,6 @@ pub trait LivingEntity: Entity {
         if let Some(animal) = self.as_animal() {
             animal.reset_love();
         }
-    }
-
-    /// Returns whether this damage source requires a separate hurt-animation packet.
-    fn damage_sends_hurt_animation(&self, source: &DamageSource) -> bool {
-        !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK)
     }
 
     /// Damages equipment that participates in vanilla armor absorption.
@@ -970,19 +962,6 @@ pub trait LivingEntity: Entity {
                     .direct_entity()
                     .map_or(0, |entity| entity.id().wrapping_add(1)),
                 source_position: source.source_position_raw(),
-            },
-            None,
-        );
-    }
-
-    /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self, world: &World) {
-        let (yaw, _) = self.rotation();
-        world.broadcast_to_nearby(
-            self.hurt_broadcast_chunk(),
-            CHurtAnimation {
-                entity_id: self.id(),
-                yaw,
             },
             None,
         );

@@ -260,17 +260,6 @@ fn generic_living_hurt_respects_no_knockback_damage_tag() {
 }
 
 #[test]
-fn no_knockback_damage_does_not_send_hurt_animation() {
-    init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    let fall = DamageSource::environment(&vanilla_damage_types::FALL);
-    let player_attack = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK);
-
-    assert!(!entity.damage_sends_hurt_animation(&fall));
-    assert!(entity.damage_sends_hurt_animation(&player_attack));
-}
-
-#[test]
 fn generic_living_hurt_scales_knockback_by_resistance() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
