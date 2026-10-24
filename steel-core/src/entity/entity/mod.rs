@@ -3552,6 +3552,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
+        if on_ground && self.fall_distance() > 0.0 {
+            self.send_landing_particles(world, on_state, pos);
+        }
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }
@@ -3562,7 +3565,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
         let fall_distance = self.fall_distance();
         if fall_distance > 0.0 {
-            self.send_landing_particles(world, on_state, pos);
             let behavior = BLOCK_BEHAVIORS.get_behavior(on_state.get_block());
             let fall_context =
                 EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
