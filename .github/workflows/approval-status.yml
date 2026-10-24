@@ -90,7 +90,7 @@ jobs:
 
             const authorCounts = await isWriteCollaborator(author);
             const count = approvers.length + (authorCounts ? 1 : 0);
-            const state = count >= REQUIRED_APPROVALS ? "success" : "failure";
+            const state = count >= REQUIRED_APPROVALS ? "success" : "pending";
             const description = `${count}/${REQUIRED_APPROVALS} approvals` +
               (authorCounts ? " (incl. maintainer author)" : "");
 
