@@ -3,8 +3,9 @@
 # viz_url = "http://localhost:7878"
 
 # Directory containing the flint tests. Env: TEST_PATH
-# Default: ./test
-# test_path = "./FlintBenchmark/tests"
+# Relative to the working directory (`cargo test` uses the crate dir, so this
+# points at a FlintBenchmark checkout next to the steel repo). Default: ./test
+test_path = "../../../FlintBenchmark/tests"
 
 # Filter priority (first match wins):
 #   test > tags (FLINT_TAGS, implemented_only, filter.tags) > pattern > all tests
