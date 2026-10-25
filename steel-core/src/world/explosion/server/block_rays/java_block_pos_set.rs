@@ -17,6 +17,7 @@ mod tree;
 
 const EMPTY: u32 = u32::MAX;
 const TREEIFY_THRESHOLD: usize = 8;
+const UNTREEIFY_THRESHOLD: usize = 6;
 const MIN_TREEIFY_CAPACITY: usize = 64;
 
 #[derive(Default)]

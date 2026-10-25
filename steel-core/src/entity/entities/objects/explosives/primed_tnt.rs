@@ -223,6 +223,8 @@ impl PrimedTntEntity {
     }
 
     /// Returns Vanilla's shortened chain-reaction fuse for `fuse`.
+    /// Adds one eighth of the fuse to a random duration below one quarter,
+    /// with a minimum random bound of one tick.
     #[must_use]
     pub fn get_random_short_fuse(fuse: i32) -> i32 {
         rand::random_range(0..(fuse / 4).max(1)) + fuse / 8
@@ -300,7 +302,6 @@ impl Entity for PrimedTntEntity {
         } else {
             self.refresh_fluid_contact_with_currents();
             self.base.reset_fall_distance_in_water();
-            // Vanilla's remaining-fuse smoke particle is client-local.
         }
     }
 

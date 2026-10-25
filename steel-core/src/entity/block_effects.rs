@@ -11,7 +11,7 @@ const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
 const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
 
-/// Deduplicates up to 16 positions without allocating, then switches to a hash set.
+/// Deduplicates small sweeps without allocating, then switches to a hash set.
 pub(super) enum VisitedBlockPositions {
     Inline(SmallVec<[BlockPos; 16]>),
     Hashed(FxHashSet<BlockPos>),
@@ -518,25 +518,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn visited_positions_stay_inline_through_sixteen_and_preserve_duplicates_after_seventeen() {
+    fn visited_positions_deduplicate_across_inline_capacity_boundary() {
         let mut visited = VisitedBlockPositions::default();
-        for x in 0..16 {
+        let VisitedBlockPositions::Inline(inline) = &visited else {
+            panic!("new visited positions must start inline");
+        };
+        let inline_capacity = inline.inline_size() as i32;
+        for x in 0..inline_capacity {
             assert!(visited.insert(BlockPos::new(x, 64, 0)));
         }
-        for x in 0..16 {
+        for x in 0..inline_capacity {
             assert!(!visited.insert(BlockPos::new(x, 64, 0)));
         }
         let VisitedBlockPositions::Inline(inline) = &visited else {
-            panic!("sixteen unique positions must remain inline");
+            panic!("positions up to the inline capacity must remain inline");
         };
         assert!(!inline.spilled());
 
-        assert!(visited.insert(BlockPos::new(16, 64, 0)));
+        assert!(visited.insert(BlockPos::new(inline_capacity, 64, 0)));
         let VisitedBlockPositions::Hashed(hashed) = &visited else {
-            panic!("the seventeenth unique position must use the hash set");
+            panic!("exceeding the inline capacity must use the hash set");
         };
-        assert_eq!(hashed.len(), 17);
-        for x in 0..17 {
+        assert_eq!(hashed.len(), inline_capacity as usize + 1);
+        for x in 0..=inline_capacity {
             assert!(!visited.insert(BlockPos::new(x, 64, 0)));
         }
     }
@@ -641,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn long_trace_uses_spill_path_without_duplicates() {
+    fn long_trace_visits_each_block_once_in_order() {
         let positions = visited_positions(
             DVec3::new(0.5, 64.0, 0.5),
             DVec3::new(24.5, 64.0, 0.5),
@@ -651,7 +655,6 @@ mod tests {
             .map(|x| BlockPos::new(x, 64, 0))
             .collect::<Vec<_>>();
 
-        assert!(positions.len() > 16);
         assert_eq!(positions, expected);
     }
 }

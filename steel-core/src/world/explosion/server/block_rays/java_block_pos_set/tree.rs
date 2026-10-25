@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use steel_utils::BlockPos;
 
-use super::{EMPTY, JavaBlockPosSet, spread};
+use super::{EMPTY, JavaBlockPosSet, UNTREEIFY_THRESHOLD, spread};
 
 pub(super) struct Links {
     pub(super) parent: u32,
@@ -104,7 +104,7 @@ impl JavaBlockPosSet {
             current = next;
         }
         for side in 0..2 {
-            if counts[side] <= 6 {
+            if counts[side] <= UNTREEIFY_THRESHOLD {
                 // Untreeification preserves the split list's linked order.
                 continue;
             }
