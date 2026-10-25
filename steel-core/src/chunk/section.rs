@@ -663,7 +663,7 @@ impl ChunkSection {
                 );
             }
             BlockPalette::Heterogeneous(data) => {
-                for &(state, count) in &data.palette {
+                for &(state, count) in data.palette() {
                     let counts = counts_for_state(state);
                     Self::accumulate_counter_traits(
                         &mut non_empty,
@@ -718,7 +718,7 @@ impl ChunkSection {
         match &self.states {
             BlockPalette::Homogeneous(state) => poi.is_poi_state(*state),
             BlockPalette::Heterogeneous(data) => data
-                .palette
+                .palette()
                 .iter()
                 .any(|(state, _)| poi.is_poi_state(*state)),
             // Not yet finalized (only happens mid-worldgen, not at promotion);
