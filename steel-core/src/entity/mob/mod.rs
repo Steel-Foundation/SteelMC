@@ -20,17 +20,22 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::components::ItemEnchantments;
 use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_game_events, vanilla_game_rules, vanilla_items,
+    vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
+    vanilla_game_rules, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{
+    BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
+};
 
 use crate::behavior::items::SpawnEggItem;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
@@ -44,11 +49,12 @@ use crate::entity::ai::path::{PathType, PathfindingContext, PathfindingMalus};
 use crate::entity::ai::sensing::Sensing;
 use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
+use crate::entity::conversion::{AfterConversion, convert_to as convert_mob};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
-    Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
-    SpawnGroupData, WeakEntity,
+    ConversionParams, Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason,
+    SharedEntity, SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -77,6 +83,14 @@ const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
 /// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
+const SUN_BURN_IGNITE_SECONDS: f32 = 8.0;
+const SUN_BURN_IGNITE_TICKS: i32 = (SUN_BURN_IGNITE_SECONDS * TICKS_PER_SECOND as f32) as i32;
+/// Brightness threshold shared by daylight burning and monster idle-time growth.
+pub(crate) const LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE: f32 = 0.5;
+const SUN_BURN_RANDOM_SCALE: f32 = 30.0;
+const SUN_BURN_LIGHT_OFFSET: f32 = 0.4;
+const SUN_BURN_LIGHT_GAIN: f32 = 2.0;
+const SUN_BURN_DURABILITY_ROLL_BOUND: i32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -495,9 +509,61 @@ pub trait Mob: LivingEntity + Leashable {
         group_data
     }
 
-    /// Dispatches a right-click interaction with this mob: important
-    /// interactions (name tag, spawn egg) first, then entity interaction,
-    /// then mob-specific interaction.
+    /// Creates a replacement or split mob and transfers state according to `params`.
+    /// The callback finalizes mob-specific state. Returns `None` without changing
+    /// the source if it is removed or world, difficulty, factory, mob-type, or
+    /// insertion checks fail.
+    fn convert_to(
+        &self,
+        entity_type: EntityTypeRef,
+        params: ConversionParams,
+        after_conversion: Option<&AfterConversion<'_>>,
+    ) -> Option<SharedEntity>
+    where
+        Self: Sized,
+    {
+        convert_mob(self, entity_type, params, after_conversion)
+    }
+
+    /// Requires the block below to accept the spawn via
+    /// [`BlockBehavior::is_valid_spawn`](crate::behavior::BlockBehavior::is_valid_spawn),
+    /// unless a spawner bypasses the surface check.
+    fn check_mob_spawn_rules(
+        entity_type: EntityTypeRef,
+        level: &dyn LevelReader,
+        spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+    ) -> bool
+    where
+        Self: Sized,
+    {
+        if spawn_reason.is_spawner() {
+            return true;
+        }
+
+        let below = pos.below();
+        let state = level.get_block_state(below);
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_valid_spawn(state, level, below, entity_type)
+    }
+
+    fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
+        let aabb = self.bounding_box();
+        if aabb_contains_any_liquid(world, aabb) {
+            return false;
+        }
+
+        !world.has_entity_in_aabb_matching(&aabb, |entity| {
+            entity.id() != self.id()
+                && !entity.is_removed()
+                && !entity.is_spectator()
+                && entity.blocks_building()
+                && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
+        })
+    }
+
+    /// Dispatches held-item, entity, and mob-specific interactions in order.
     fn interact_mob(
         &self,
         player: &Player,
@@ -616,8 +682,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Returns whether this mob can be leashed, before its leash state is considered.
     fn mob_can_be_leashed(&self) -> bool {
-        // TODO(enemy): return false for enemy mobs once hostile mob foundations exist.
-        true
+        !self.is_enemy()
     }
 
     /// Returns whether this mob is allowed to pick up dropped items.
@@ -631,6 +696,13 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn equipment_drop_chance(&self, slot: EquipmentSlot) -> f32 {
         self.mob_base().drop_chances().lock().by_equipment(slot)
+    }
+
+    fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) {
+        self.mob_base()
+            .drop_chances()
+            .lock()
+            .set_equipment_chance(slot, chance);
     }
 
     fn is_equipment_drop_preserved(&self, slot: EquipmentSlot) -> bool {
@@ -1487,15 +1559,90 @@ pub trait Mob: LivingEntity + Leashable {
         self.tick_jump_control();
     }
 
-    /// Vanilla `Mob.aiStep`: the `LivingEntity.aiStep` movement foundation followed
-    /// by the item-pickup looting loop.
+    /// Rolls the daylight-burning chance when `MONSTERS_BURN` is enabled.
+    /// Water, rain, and powder snow prevent burning.
+    fn is_sun_burn_tick(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+        if !world.monsters_burn() {
+            return false;
+        }
+
+        let eye_pos = BlockPos::new(
+            fast_floor(self.position().x),
+            fast_floor(self.get_eye_y()),
+            fast_floor(self.position().z),
+        );
+        let brightness = world.light_level_dependent_magic_value(eye_pos);
+        // Rain at either the feet or bounding-box top prevents burning.
+        let feet_pos = self.block_position();
+        let in_rain = world.is_raining_at(feet_pos)
+            || world.is_raining_at(BlockPos::new(
+                feet_pos.x(),
+                fast_floor(self.bounding_box().max_y()),
+                feet_pos.z(),
+            ));
+        let in_non_burnable_block =
+            self.is_in_water() || in_rain || self.is_in_powder_snow() || self.was_in_powder_snow();
+        brightness > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE
+            && rand::random::<f32>() * SUN_BURN_RANDOM_SCALE
+                < (brightness - SUN_BURN_LIGHT_OFFSET) * SUN_BURN_LIGHT_GAIN
+            && !in_non_burnable_block
+            && world.can_see_sky(eye_pos)
+    }
+
+    fn sun_protection_slot(&self) -> EquipmentSlot {
+        EquipmentSlot::Head
+    }
+
+    /// Damages sun-protective gear on a successful burn roll, or ignites
+    /// the mob if the slot is empty.
+    fn tick_daylight_burning(&self) {
+        if !LivingEntity::is_alive(self) || !self.is_sun_burn_tick() {
+            return;
+        }
+
+        let slot = self.sun_protection_slot();
+        let has_infinite_materials = self.has_infinite_materials();
+        let mut broke_sun_blocker: Option<ItemRef> = None;
+        {
+            let mut equipment = self.living_base().equipment().lock();
+            if equipment.get_ref(slot).is_empty() {
+                drop(equipment);
+                self.ignite_for_ticks(SUN_BURN_IGNITE_TICKS);
+                return;
+            }
+            if equipment.get_ref(slot).is_damageable_item() {
+                let item = equipment.get_ref(slot).item();
+                let sun_blocker = equipment.get_mut(slot);
+                if sun_blocker.hurt_and_break(
+                    rand::random_range(0..SUN_BURN_DURABILITY_ROLL_BOUND),
+                    has_infinite_materials,
+                ) {
+                    broke_sun_blocker = Some(item);
+                }
+            }
+        }
+
+        let Some(item) = broke_sun_blocker else {
+            return;
+        };
+        self.on_equipped_item_broken(item, slot);
+    }
+
+    /// Runs movement, daylight burning, and item pickup.
     ///
-    /// Looting lives here rather than in [`mob_server_ai_step`](Self::mob_server_ai_step)
-    /// because vanilla runs it from `aiStep`, not `serverAiStep`: a mob with
-    /// `NoAI` set still collects loot, so the looting must not sit behind the
-    /// `isEffectiveAi` gate that guards the goal/navigation ticks.
+    /// Burning and pickup belong here, outside the `serverAiStep` AI gate,
+    /// so mobs with `NoAI` still burn and collect loot as in vanilla.
     fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         let result = self.default_ai_step(entity);
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::BURN_IN_DAYLIGHT)
+        {
+            self.tick_daylight_burning();
+        }
         self.tick_looting();
         result
     }
@@ -1740,8 +1887,38 @@ impl<T: Mob> Leashable for T {
         self.mob_base().leash_data()
     }
 
+    /// Rejects enemies by default; concrete mobs may override the type-level rule.
     fn can_be_leashed(&self) -> bool {
         self.mob_can_be_leashed()
+    }
+
+    fn on_leash_removed(&self) {
+        if self.leash_holder().is_none() {
+            self.clear_home();
+        }
+    }
+
+    /// Drops the leash and disables MOVE until re-leashed at close range.
+    fn leash_too_far_behaviour(&self) {
+        self.drop_leash();
+        self.mob_base()
+            .goal_selector()
+            .lock()
+            .disable_control(GoalControl::Move);
+    }
+
+    fn when_leashed_to(&self, holder: &dyn Entity) {
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.when_leashed_to_pathfinder(holder);
+        } else {
+            holder.notify_leash_holder(self.as_entity_event_source());
+        }
+    }
+
+    fn close_range_leash_behaviour(&self, holder: &dyn Entity) {
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.close_range_leash_behaviour_pathfinder(holder);
+        }
     }
 }
 

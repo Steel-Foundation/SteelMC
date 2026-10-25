@@ -199,16 +199,16 @@ impl BlockStateProviderEvaluator {
             panic!("block-state provider received invalid block state id {state:?}");
         };
         let value_string = value.to_string();
-        let current_properties = registry.blocks.get_properties(state);
         let mut found = false;
-        let properties = current_properties
-            .iter()
+        let properties = registry
+            .blocks
+            .properties(state)
             .map(|(name, existing)| {
-                if *name == property {
+                if name == property {
                     found = true;
-                    (*name, value_string.as_str())
+                    (name, value_string.as_str())
                 } else {
-                    (*name, *existing)
+                    (name, existing)
                 }
             })
             .collect::<Vec<_>>();

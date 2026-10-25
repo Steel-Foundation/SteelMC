@@ -8,6 +8,7 @@ use super::{
     SoundSource, UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block,
     level_events, vanilla_blocks, vanilla_game_events,
 };
+use crate::entity::loot_equipment;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::vanilla_particle_types::{BUBBLE, SPLASH};
@@ -414,10 +415,14 @@ impl World {
         context: &BlockLootContext<'_>,
     ) -> Vec<ItemStack> {
         let block = state.get_block();
-        let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
-
-        let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
-            return Vec::new();
+        let loot_table = if let Some(loot_table) = block.config.loot_table {
+            loot_table
+        } else {
+            let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
+            let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
+                return Vec::new();
+            };
+            loot_table
         };
 
         let mut rng = rand::rng();
@@ -432,8 +437,9 @@ impl World {
         if let Some(tool) = context.tool() {
             ctx = ctx.with_tool(tool);
         }
+        let entity_equipment = context.entity().and_then(loot_equipment);
         if let Some(entity) = context.entity() {
-            ctx = ctx.with_this_entity(entity_loot_ref(entity));
+            ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
         }
 
         loot_table.get_random_items(&mut ctx)

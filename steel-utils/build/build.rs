@@ -456,6 +456,7 @@ fn build_version_constants(manifest_dir: &str) -> String {
 /// Main build script entry point that generates translation constants.
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=build_assets/");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 

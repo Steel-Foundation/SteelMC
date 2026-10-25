@@ -3,14 +3,15 @@
 pub mod mobs;
 pub mod objects;
 
+pub use mobs::ambient::BatEntity;
 pub use mobs::hostile::EndermiteEntity;
-pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
+pub use mobs::passive::{ChickenEntity, CowEntity, MushroomCowEntity, PigEntity, SheepEntity};
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::explosives::EndCrystalEntity;
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::projectiles::{
     EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, FishingHookEntity, SnowballEntity,
-    ThrownEggEntity,
+    SplashPotionEntity, ThrownEggEntity,
 };
 pub use objects::technical::{InteractionEntity, MarkerEntity};
 pub use objects::vehicles::ChestMinecartEntity;

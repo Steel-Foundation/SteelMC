@@ -11,7 +11,6 @@
     clippy::match_same_arms,
     clippy::missing_fields_in_debug,
     clippy::missing_panics_doc,
-    clippy::ref_option,
     clippy::return_self_not_must_use,
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
@@ -496,6 +495,11 @@ pub mod vanilla_block_state_providers;
 #[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_suspicious_stew_effects.rs"]
+pub mod vanilla_suspicious_stew_effects;
 
 #[expect(warnings)]
 #[rustfmt::skip]

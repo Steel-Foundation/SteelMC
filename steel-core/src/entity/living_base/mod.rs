@@ -19,6 +19,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
@@ -37,7 +38,6 @@ use crate::world::World;
 pub const DEATH_DURATION: i32 = 20;
 /// Vanilla default `SwingAnimation` duration in ticks.
 pub const DEFAULT_SWING_DURATION: i32 = 6;
-const INFINITE_EFFECT_DURATION: i32 = -1;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
@@ -144,6 +144,22 @@ impl MobEffectInstance {
     #[must_use]
     pub const fn is_infinite_duration(&self) -> bool {
         self.duration == INFINITE_EFFECT_DURATION
+    }
+
+    /// Checks whether the duration is at most `ticks` infinite effects never qualify
+    #[must_use]
+    pub const fn ends_within(&self, ticks: i32) -> bool {
+        !self.is_infinite_duration() && self.duration <= ticks
+    }
+
+    /// Maps the duration leaving zero and infinite durations unchanged
+    #[must_use]
+    fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
+        if self.is_infinite_duration() || self.duration == 0 {
+            self.duration
+        } else {
+            mapper(self.duration)
+        }
     }
 
     /// Serializes this effect with vanilla's `MobEffectInstance.CODEC` shape.
@@ -275,9 +291,7 @@ impl MobEffectInstance {
             hidden_effect.tick_down_duration();
         }
 
-        if !self.is_infinite_duration() && self.duration != 0 {
-            self.duration -= 1;
-        }
+        self.duration = self.map_duration(|duration| duration - 1);
     }
 
     fn downgrade_to_hidden_effect(&mut self) -> bool {
@@ -782,10 +796,7 @@ impl LivingEntityBase {
 
     /// Collects equipment changes against Vanilla's previous-tick snapshots.
     pub fn collect_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack, ItemStack)> {
-        let current_items: [ItemStack; EquipmentSlot::ALL.len()] = {
-            let equipment = self.equipment.lock();
-            array::from_fn(|index| equipment.get_ref(EquipmentSlot::ALL[index]).clone())
-        };
+        let current_items = self.equipment.lock().snapshot();
         let mut last_items = self.last_equipment_items.lock();
         let mut changes = Vec::new();
 
@@ -1499,6 +1510,16 @@ impl LivingEntityBase {
             .floor() as i32
     }
 
+    /// Returns the remaining hurt-cooldown ticks.
+    pub fn invulnerable_time(&self) -> i32 {
+        self.state.lock().invulnerable_time
+    }
+
+    /// Sets the remaining hurt-cooldown ticks.
+    pub fn set_invulnerable_time(&self, invulnerable_time: i32) {
+        self.state.lock().invulnerable_time = invulnerable_time;
+    }
+
     /// Decrements remaining invulnerability ticks by one if any are active.
     pub fn decrement_invulnerable_time(&self) {
         let mut state = self.state.lock();
@@ -1542,6 +1563,11 @@ impl LivingEntityBase {
         state.last_hurt_by_player = Some(player_uuid);
         state.last_hurt_by_player_entity = None;
         state.last_hurt_by_player_memory_time = time_to_remember;
+    }
+
+    /// Sets the remaining memory time without touching the remembered player.
+    pub fn set_last_hurt_by_player_memory_time(&self, time_to_remember: i32) {
+        self.state.lock().last_hurt_by_player_memory_time = time_to_remember;
     }
 
     /// Remembers the live player independently of which world it occupies.

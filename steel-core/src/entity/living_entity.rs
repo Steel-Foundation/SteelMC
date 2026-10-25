@@ -351,6 +351,11 @@ pub trait LivingEntity: Entity {
 
     /// Returns the pitch used for this entity's sounds; babies get a randomized higher pitch.
     fn voice_pitch(&self) -> f32 {
+        self.default_voice_pitch()
+    }
+
+    /// Returns the base voice pitch before entity-specific adjustments.
+    fn default_voice_pitch(&self) -> f32 {
         if self.is_baby() {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
@@ -511,6 +516,22 @@ pub trait LivingEntity: Entity {
     fn set_last_hurt_by_player(&self, player_uuid: Uuid, time_to_remember: i32) {
         self.living_base()
             .set_last_hurt_by_player(player_uuid, time_to_remember);
+    }
+
+    /// Returns the remaining hurt-cooldown ticks (vanilla `Entity.invulnerableTime`).
+    fn invulnerable_time(&self) -> i32 {
+        self.living_base().invulnerable_time()
+    }
+
+    /// Sets the remaining hurt-cooldown ticks.
+    fn set_invulnerable_time(&self, invulnerable_time: i32) {
+        self.living_base().set_invulnerable_time(invulnerable_time);
+    }
+
+    /// Sets the remaining memory time without touching the remembered player.
+    fn set_last_hurt_by_player_memory_time(&self, time_to_remember: i32) {
+        self.living_base()
+            .set_last_hurt_by_player_memory_time(time_to_remember);
     }
 
     /// Returns ticks remaining that this entity will remember the player who last hurt it.
@@ -697,7 +718,6 @@ pub trait LivingEntity: Entity {
             self.broadcast_damage_event(world, source);
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
-                self.broadcast_hurt_animation(world);
             }
             self.apply_damage_knockback(source);
         }
@@ -942,19 +962,6 @@ pub trait LivingEntity: Entity {
                     .direct_entity()
                     .map_or(0, |entity| entity.id().wrapping_add(1)),
                 source_position: source.source_position_raw(),
-            },
-            None,
-        );
-    }
-
-    /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self, world: &World) {
-        let (yaw, _) = self.rotation();
-        world.broadcast_to_nearby(
-            self.hurt_broadcast_chunk(),
-            CHurtAnimation {
-                entity_id: self.id(),
-                yaw,
             },
             None,
         );
@@ -1376,11 +1383,24 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+        self.add_mob_effect_with_source(effect, None)
+    }
+
+    /// Adds or updates active vanilla mob-effect state, attributing it to
+    /// `source`.
+    fn add_mob_effect_with_source(
+        &self,
+        effect: MobEffectInstance,
+        source: Option<&dyn Entity>,
+    ) -> bool {
         if !self.can_be_affected(&effect) {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
+        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
+        // once the advancement-criteria foundation exists.
+        let _ = source;
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
@@ -3168,8 +3188,8 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     killed_by_player: bool,
     rng: &mut R,
 ) -> Vec<ItemStack> {
-    let causing_entity = source.causing_entity();
-    let direct_entity = source.direct_entity();
+    let causing_entity = source.causing_entity().map(AsRef::as_ref);
+    let direct_entity = source.direct_entity().map(AsRef::as_ref);
     let last_damage_player = if killed_by_player {
         entity.living_base().last_hurt_by_player(world)
     } else {
@@ -3177,10 +3197,18 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     };
 
     let position = entity.position();
-    let this_entity = living_entity_loot_ref(entity);
-    let causing_entity = causing_entity.map(|entity| entity_loot_ref(entity.as_ref()));
-    let direct_entity = direct_entity.map(|entity| entity_loot_ref(entity.as_ref()));
-    let last_damage_player = last_damage_player.as_deref().map(entity_loot_ref);
+    let this_equipment = living_loot_equipment(entity);
+    let causing_equipment = causing_entity.and_then(loot_equipment);
+    let direct_equipment = direct_entity.and_then(loot_equipment);
+    let last_damage_player_equipment = last_damage_player.as_deref().and_then(loot_equipment);
+    let this_entity = entity_loot_ref(entity.as_entity_event_source(), Some(&this_equipment));
+    let causing_entity =
+        causing_entity.map(|causing| entity_loot_ref(causing, causing_equipment.as_ref()));
+    let direct_entity =
+        direct_entity.map(|direct| entity_loot_ref(direct, direct_equipment.as_ref()));
+    let last_damage_player = last_damage_player
+        .as_deref()
+        .map(|player| entity_loot_ref(player, last_damage_player_equipment.as_ref()));
     let damage_source = DamageSourceInfo {
         damage_type: Some(&source.damage_type.key),
         tags: &[],
@@ -3205,26 +3233,6 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
 
     loot_table.get_random_items(&mut context)
 }
-/// create an entity reference that can be used inside a lootTable as a source
-pub fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
-    let sheep = entity.sheep_loot_state();
-    EntityRef {
-        entity_type: Some(&entity.entity_type().key),
-        flags: EntityRefFlags {
-            is_on_fire: entity.is_on_fire(),
-            is_sneaking: entity.is_crouching(),
-            is_sprinting: entity.is_sprinting(),
-            is_swimming: entity.is_swimming(),
-            is_baby: entity.is_baby(),
-        },
-        // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
-        equipment: None,
-        custom_name: None,
-        sheep_color: sheep.map(|(color, _)| color),
-        sheep_sheared: sheep.map(|(_, sheared)| sheared),
-        chicken_variant: entity.chicken_loot_variant(),
-    }
-}
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
 /// drops resolved with the vanilla shearing loot params (origin, entity, tool).
@@ -3235,9 +3243,13 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     rng: &mut R,
 ) -> Vec<ItemStack> {
     let position = entity.position();
+    let equipment = living_loot_equipment(entity);
     let mut context = LootContext::new(rng)
         .with_origin(position.x, position.y, position.z)
-        .with_this_entity(living_entity_loot_ref(entity))
+        .with_this_entity(entity_loot_ref(
+            entity.as_entity_event_source(),
+            Some(&equipment),
+        ))
         .with_tool(tool);
     if let Some(level) = entity.level() {
         context = context.with_game_time(level.game_time());

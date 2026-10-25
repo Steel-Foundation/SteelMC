@@ -6,6 +6,8 @@
 
 use std::{env, fs, path::Path};
 
+use steel_utils as _;
+
 mod density;
 mod multi_noise;
 mod noise_parameters;
