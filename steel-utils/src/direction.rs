@@ -10,7 +10,7 @@ use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270};
 use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash)]
 #[derive_const(PartialEq, Eq)]
 pub enum Direction {
     /// Negative Y direction.

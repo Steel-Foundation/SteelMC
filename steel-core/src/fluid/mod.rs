@@ -7,6 +7,8 @@
 //! - TODO: Remaining entity fluid side effects: drowning, splash particles/sounds.
 //! - TODO: Block item drops when water destroys blocks (cactus infrastructure merged, needs implementation).
 //! - TODO: Lava random tick fire spread.
+#[cfg(feature = "benchmark-support")]
+pub mod benchmark_support;
 pub mod collision;
 pub mod conversion;
 pub mod flowing_fluid;
@@ -26,6 +28,8 @@ pub use fluid_behavior::FluidBehavior;
 pub use fluids::{EmptyFluid, LavaFluid, WaterFluid};
 
 // Re-export utility functions from their respective modules
+#[cfg(feature = "benchmark-support")]
+pub use collision::can_pass_through_wall_uncached;
 pub use collision::{
     can_hold_any_fluid_state, can_hold_fluid, can_hold_specific_fluid, can_pass_through_wall,
 };
