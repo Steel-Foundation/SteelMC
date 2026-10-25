@@ -79,6 +79,20 @@ pub struct FlintConfig {
     /// Priority: `FLINT_VIZ_URL` env var > toml `viz_url` > default.
     #[serde(alias = "flint_viz_url", alias = "FLINT_VIZ_URL")]
     viz_url: Option<String>,
+    /// Directory containing the flint tests.
+    /// Priority: `TEST_PATH` env var > toml `test_path` > `./test`.
+    test_path: Option<String>,
+}
+
+impl FlintConfig {
+    /// Resolves the test directory.
+    #[must_use]
+    pub fn test_path(&self) -> PathBuf {
+        var("TEST_PATH")
+            .ok()
+            .or_else(|| self.test_path.clone())
+            .map_or_else(|| PathBuf::from("./test"), PathBuf::from)
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -273,7 +287,6 @@ pub fn print_failure_urls(
 mod tests {
     use super::*;
     use crate::{TestLoader, TestRunner};
-    use flint_core::utils::get_test_path;
     use std::sync::Arc;
 
     #[test]
@@ -283,8 +296,7 @@ mod tests {
         init_env();
 
         let cfg = load_config();
-        let test_path = PathBuf::from(get_test_path());
-        let loader = TestLoader::new(&test_path, true)
+        let loader = TestLoader::new(&cfg.test_path(), true)
             .unwrap_or_else(|e| panic!("error while loading test files: {e}"));
         let paths = collect_filtered_paths(&loader, &cfg);
         let specs = loader
@@ -305,7 +317,8 @@ mod tests {
         crate::init();
         init_env();
 
-        let test_dir = PathBuf::from(get_test_path());
+        let cfg = load_config();
+        let test_dir = cfg.test_path();
         assert!(
             test_dir.exists(),
             "FlintBenchmark tests directory not found, skipping"
@@ -332,7 +345,7 @@ mod tests {
         let summary = runner.run_tests(&specs);
         summary.print_concise_summary();
         save_summary(&summary).unwrap_or_else(|e| panic!("failed to save flint summary: {e}"));
-        print_failure_urls(&specs, &paths, &summary, &load_config());
+        print_failure_urls(&specs, &paths, &summary, &cfg);
         assert_eq!(summary.failed_tests, 0, "No tests were run");
     }
 }
