@@ -533,13 +533,13 @@ impl BlockPalette {
 
 #[cfg(test)]
 mod tests {
-    use std::io::ErrorKind;
+    use std::io::{Cursor, ErrorKind};
 
     use super::{
         BiomePalette, BlockPalette, ToGlobalId, biome_global_bits, block_state_global_bits,
     };
     use steel_registry::init_vanilla_registry;
-    use steel_utils::BlockStateId;
+    use steel_utils::{BlockStateId, codec::VarInt, serial::ReadFrom as _};
 
     fn assert_column_matches_get(container: &BlockPalette, x: usize, z: usize) {
         let mut column = [BlockStateId::default(); 16];
@@ -674,35 +674,23 @@ mod tests {
     /// (absent for the global palette), then `64 / bits` entries per big-endian long.
     /// Returns each entry's global id.
     fn decode_written(bytes: &[u8], volume: usize, max_paletted_bits: u8) -> Vec<u32> {
-        fn read_var_int(bytes: &[u8], pos: &mut usize) -> u32 {
-            let mut value = 0u32;
-            for shift in (0..35).step_by(7) {
-                let byte = bytes[*pos];
-                *pos += 1;
-                value |= u32::from(byte & 0x7f) << shift;
-                if byte & 0x80 == 0 {
-                    break;
-                }
-            }
-            value
-        }
-
         let bits = bytes[0];
-        let mut pos = 1;
+        let mut cursor = Cursor::new(bytes);
+        cursor.set_position(1);
         if bits == 0 {
-            let value = read_var_int(bytes, &mut pos);
-            assert_eq!(pos, bytes.len());
+            let value = VarInt::read(&mut cursor).expect("single value").0 as u32;
+            assert_eq!(cursor.position() as usize, bytes.len());
             return vec![value; volume];
         }
         let palette = (bits <= max_paletted_bits).then(|| {
-            let len = read_var_int(bytes, &mut pos);
+            let len = VarInt::read(&mut cursor).expect("palette length").0 as u32;
             (0..len)
-                .map(|_| read_var_int(bytes, &mut pos))
+                .map(|_| VarInt::read(&mut cursor).expect("palette entry").0 as u32)
                 .collect::<Vec<_>>()
         });
         let bits = usize::from(bits);
         let values_per_long = 64 / bits;
-        let longs: Vec<u64> = bytes[pos..]
+        let longs: Vec<u64> = bytes[cursor.position() as usize..]
             .as_chunks::<8>()
             .0
             .iter()
