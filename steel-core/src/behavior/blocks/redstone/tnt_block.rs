@@ -13,7 +13,7 @@ use steel_registry::vanilla_game_rules::TNT_EXPLODES;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_items,
 };
-use steel_utils::types::{InteractionHand, UpdateFlags};
+use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
@@ -23,6 +23,7 @@ use crate::behavior::{
 use crate::entity::projectile::Projectile;
 use crate::entity::{Entity, entities::PrimedTntEntity, next_entity_id};
 use crate::player::Player;
+use crate::player::game_mode::can_break;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipHitResult, Explosion, SignalGetter as _, World};
 
@@ -177,7 +178,9 @@ impl BlockBehavior for TntBlock {
             return InteractionResult::TryEmptyHandInteraction;
         }
 
-        if !Self::prime(world, pos, Some(player)) {
+        let can_ignite = player.game_mode() != GameType::Adventure
+            || inv.with_item(|item| can_break(item, world, pos));
+        if !can_ignite || !Self::prime(world, pos, Some(player)) {
             if !world.get_game_rule(&TNT_EXPLODES) {
                 Self::send_disabled_message(player);
                 return InteractionResult::Pass;

@@ -447,6 +447,10 @@ impl World {
         } else {
             options.large_explosion_particle
         };
+
+        let play_sound = explosion
+            .direct_source_entity()
+            .is_none_or(|source| !source.is_silent());
         let packet_block_count = i32::try_from(affected_block_count).unwrap_or(i32::MAX);
 
         self.players.iter_players(|_, player| {
@@ -459,6 +463,7 @@ impl World {
                     explosion_particle: explosion_particle.clone(),
                     explosion_sound: options.explosion_sound.clone(),
                     block_particles: options.block_particles.clone(),
+                    play_sound,
                 });
             }
             true

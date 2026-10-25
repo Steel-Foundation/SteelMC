@@ -74,6 +74,7 @@ pub struct CExplode {
     pub explosion_particle: ParticleData,
     pub explosion_sound: SoundEventHolder,
     pub block_particles: ExplosionParticlePalette,
+    pub play_sound: bool,
 }
 
 #[cfg(test)]
@@ -117,6 +118,7 @@ mod tests {
                     3,
                 ),
             ]),
+            play_sound: true,
         };
 
         let mut encoded = Vec::new();
@@ -148,6 +150,7 @@ mod tests {
         expected.extend_from_slice(&1.0_f32.to_be_bytes());
         expected.extend_from_slice(&0.75_f32.to_be_bytes());
         assert!(VarInt(3).write(&mut expected).is_ok());
+        expected.push(1);
 
         assert_eq!(encoded, expected);
     }
@@ -167,6 +170,7 @@ mod tests {
                 fixed_range: Some(24.0),
             },
             block_particles: palette(Vec::new()),
+            play_sound: false,
         };
 
         let mut encoded = Vec::new();
@@ -183,6 +187,7 @@ mod tests {
         expected.extend_from_slice(&24.0_f32.to_be_bytes());
         assert!(VarInt(0).write(&mut expected).is_ok());
 
+        expected.push(0);
         assert_eq!(encoded, expected);
     }
 
