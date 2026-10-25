@@ -13,35 +13,38 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::convert::{flint_block_to_state_id, flint_pos_to_steel, state_id_to_block};
+use crate::player::SteelTestPlayer;
+use crate::runtime;
 use flint_core::Block;
 use flint_core::test_spec::EntityNbt;
 use flint_core::traits::EntityState;
 use flint_core::{BlockPos as FlintBlockPos, FlintPlayer, FlintWorld};
+use glam::DVec3;
 use rustc_hash::FxHashMap;
 use simdnbt::borrow::read_compound;
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_core::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind};
 use steel_core::chunk::status::ChunkStatus;
 use steel_core::config::{ResolvedDomainConfig, RuntimeConfig};
 use steel_core::entity::damage::DamageHistory;
+use steel_core::entity::{ENTITIES, Entity, SharedEntity, next_entity_id};
 use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
 use steel_core::permission::PermissionSubjectIndex;
 use steel_core::server::{Server, test_server_with_worlds_and_config};
 use steel_core::world::{LevelReader, World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
-use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
-use steel_utils::nbt::{parse_snbt_compound, to_canonical_snbt};
+use steel_utils::nbt::{parse_nbt_path, parse_snbt_compound, to_canonical_snbt};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{BlockPos, ChunkPos, WorldAabb, types::UpdateFlags};
 use toml::Value;
 use toml::value::Table;
-
-use crate::convert::{flint_block_to_state_id, flint_pos_to_steel, state_id_to_block};
-use crate::player::SteelTestPlayer;
-use crate::runtime;
+use uuid::Uuid;
 
 /// Test world implementation using the real steel-core World.
 ///
@@ -64,6 +67,8 @@ pub struct SteelTestWorld {
     /// Each handle owns the chunk's tickets; retaining it for the world's
     /// lifetime keeps the chunk permanently loaded (it unloads on drop).
     chunk_requests: SyncMutex<FxHashMap<ChunkPos, ChunkRequestHandle>>,
+
+    entities: FxHashMap<String, Uuid>,
 }
 
 impl SteelTestWorld {
@@ -161,6 +166,7 @@ impl SteelTestWorld {
             _damage_history: damage_history,
             tick: AtomicU64::new(0),
             chunk_requests: SyncMutex::new(FxHashMap::default()),
+            entities: FxHashMap::default(),
         }
     }
 
@@ -226,6 +232,46 @@ impl SteelTestWorld {
 
         panic!("chunk {chunk_pos:?} did not enter tickable snapshot within 30s");
     }
+
+    fn entity_by_alias(&self, alias: &str) -> anyhow::Result<SharedEntity> {
+        let uuid = self
+            .entities
+            .get(alias)
+            .ok_or_else(|| anyhow::anyhow!("Unknown entity alias '{alias}'"))?;
+        self.world
+            .get_entity_by_uuid(uuid)
+            .ok_or_else(|| anyhow::anyhow!("Entity '{alias}' is no longer in the world"))
+    }
+
+    /// Resolves each requested NBT path (e.g. `Items[0].count`) against `compound`,
+    /// keyed by the path as written. Paths that don't resolve are omitted.
+    fn nbt_values_for_paths(
+        compound: NbtCompound,
+        requested_nbt: &[String],
+    ) -> Vec<(String, String)> {
+        let root = NbtTag::Compound(compound);
+        requested_nbt
+            .iter()
+            .filter_map(|path| {
+                let value = parse_nbt_path(path).ok()?.get(&root).into_iter().next()?;
+                Some((path.clone(), to_canonical_snbt(&value)?))
+            })
+            .collect()
+    }
+
+    fn entity_state(entity: &dyn Entity, requested_nbt: &[String]) -> EntityState {
+        let pos = entity.position();
+        let (yaw, pitch) = entity.rotation();
+        let nbt = Self::nbt_values_for_paths(entity.nbt_for_data_compare(), requested_nbt)
+            .into_iter()
+            .collect();
+        EntityState {
+            entity_type: Some(entity.entity_type().key.to_string()),
+            pos: Some([pos.x, pos.y, pos.z]),
+            rot: Some([yaw, pitch]),
+            nbt,
+        }
+    }
 }
 
 impl Drop for SteelTestWorld {
@@ -282,14 +328,9 @@ impl FlintWorld for SteelTestWorld {
         let mut block = state_id_to_block(state);
         if let Some(entity) = self.world.get_block_entity(steel_pos) {
             let compound = entity.save_with_full_metadata();
-            block.nbt = Some(EntityNbt::from_string_values(compound.iter().filter_map(
-                |(key, value)| {
-                    let key = key.to_owned().try_into_string().ok()?;
-                    if !requested_nbt.iter().any(|requested| requested == &key) {
-                        return None;
-                    }
-                    Some((key, to_canonical_snbt(value)?))
-                },
+            block.nbt = Some(EntityNbt::from_string_values(Self::nbt_values_for_paths(
+                compound,
+                requested_nbt,
             )));
         }
         Ok(block)
@@ -360,31 +401,65 @@ impl FlintWorld for SteelTestWorld {
 
         Ok(entities
             .iter()
-            .map(|entity| {
-                let pos = entity.position();
-                let (yaw, pitch) = entity.rotation();
-                let compound = entity.nbt_for_data_compare();
-                let nbt = compound
-                    .iter()
-                    .filter_map(|(key, value)| {
-                        let key = key.to_owned().try_into_string().ok()?;
-                        if !requested_nbt.iter().any(|requested| requested == &key) {
-                            return None;
-                        }
-                        Some((key, to_canonical_snbt(value)?))
-                    })
-                    .collect();
-                EntityState {
-                    entity_type: Some(format!("minecraft:{wanted}")),
-                    pos: Some([pos.x, pos.y, pos.z]),
-                    rot: Some([yaw, pitch]),
-                    nbt,
-                }
-            })
+            .map(|entity| Self::entity_state(entity.as_ref(), requested_nbt))
             .collect())
     }
 
     fn create_player(&mut self) -> Box<dyn FlintPlayer> {
         Box::new(SteelTestPlayer::new(self.world.clone(), &self.server))
+    }
+
+    fn teleport_entity(
+        &mut self,
+        alias: &str,
+        pos: [f64; 3],
+        rot: Option<[f32; 2]>,
+    ) -> anyhow::Result<()> {
+        let entity = self.entity_by_alias(alias)?;
+        entity
+            .teleport_to(DVec3::new(pos[0], pos[1], pos[2]))
+            .map_err(|e| anyhow::anyhow!("Failed to teleport '{alias}': {e:?}"))?;
+        if let Some([yaw, pitch]) = rot {
+            entity.set_rotation((yaw, pitch));
+        }
+        Ok(())
+    }
+    fn summon_entity(
+        &mut self,
+        alias: &str,
+        entity_type: &str,
+        pos: [f64; 3],
+        _nbt: Option<&EntityNbt>,
+    ) -> anyhow::Result<()> {
+        let key = entity_type
+            .parse::<Identifier>()
+            .map_err(|e| anyhow::anyhow!("Invalid entity type identifier '{entity_type}': {e}"))?;
+        let entity_type = REGISTRY
+            .entity_types
+            .by_key(&key)
+            .ok_or_else(|| anyhow::anyhow!("Unknown entity type '{key}'"))?;
+        let entity = ENTITIES
+            .create(
+                entity_type,
+                next_entity_id(),
+                DVec3::new(pos[0], pos[1], pos[2]),
+                Arc::downgrade(&self.world),
+            )
+            .ok_or_else(|| anyhow::anyhow!("No entity factory registered for '{key}'"))?;
+        let uuid = entity.uuid();
+        self.world
+            .try_add_entity(entity)
+            .map_err(|e| anyhow::anyhow!("Failed to add '{key}' to world: {e:?}"))?;
+        self.entities.insert(alias.to_string(), uuid);
+        Ok(())
+    }
+
+    fn get_entity(
+        &self,
+        alias: &str,
+        requested_nbt: &[String],
+    ) -> anyhow::Result<Vec<EntityState>> {
+        let entity = self.entity_by_alias(alias)?;
+        Ok(vec![Self::entity_state(entity.as_ref(), requested_nbt)])
     }
 }

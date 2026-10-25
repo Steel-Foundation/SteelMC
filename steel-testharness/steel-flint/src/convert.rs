@@ -14,21 +14,16 @@ pub fn flint_block_to_state_id(block: &Block) -> Option<BlockStateId> {
     let block_id = block.id.strip_prefix("minecraft:").unwrap_or(&block.id);
     let identifier = Identifier::vanilla(block_id.to_string());
 
-    let properties: Vec<(&str, &str)> = block
-        .properties
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
+    let block_ref = REGISTRY.blocks.by_key(&identifier)?;
 
-    // If no properties specified, return the block's default state
-    if properties.is_empty() {
-        let block_ref = REGISTRY.blocks.by_key(&identifier)?;
-        return Some(REGISTRY.blocks.get_default_state_id(block_ref));
-    }
-
-    REGISTRY
-        .blocks
-        .state_id_from_properties(&identifier, &properties)
+    // Unspecified properties keep the block's default state values.
+    REGISTRY.blocks.state_id_from_block_defaulted_properties(
+        block_ref,
+        block
+            .properties
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str())),
+    )
 }
 
 /// Convert a `SteelMC` `BlockStateId` to Flint `Block`.
