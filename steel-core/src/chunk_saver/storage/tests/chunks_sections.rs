@@ -312,3 +312,26 @@ fn heterogeneous_biome_section_roundtrips_through_persistent_chunk() {
         expected.as_ref()
     );
 }
+
+/// Saving a section whose palette lost a block panics instead of writing another block in its
+/// place.
+#[test]
+#[should_panic(expected = "is missing from its palette")]
+fn chunk_save_refuses_a_section_palette_that_lost_a_block() {
+    init_vanilla_registry();
+
+    let pos = ChunkPos::new(0, 0);
+    let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+    let stone = vanilla_blocks::STONE.default_state();
+    let sand = vanilla_blocks::SAND.default_state();
+    {
+        let mut section = chunk.sections().sections[0].write();
+        let mut cube = Box::new([[[BlockStateId::default(); 16]; 16]; 16]);
+        cube[0][0][1] = stone;
+        section.states = PalettedContainer::from_cube(cube);
+        section.recalculate_counts();
+        section.states.set_without_palette_for_test(0, 0, 0, sand);
+    }
+
+    let _ = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Empty, &[], true);
+}
