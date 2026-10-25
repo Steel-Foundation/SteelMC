@@ -2867,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "steel-flint"
-version = "0.16.0+mc26.3"
+version = "0.16.1+mc26.3"
 dependencies = [
  "anyhow",
  "dotenvy",
