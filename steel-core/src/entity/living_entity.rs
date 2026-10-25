@@ -718,7 +718,6 @@ pub trait LivingEntity: Entity {
             self.broadcast_damage_event(world, source);
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
-                self.broadcast_hurt_animation(world);
             }
             self.apply_damage_knockback(source);
         }
@@ -963,19 +962,6 @@ pub trait LivingEntity: Entity {
                     .direct_entity()
                     .map_or(0, |entity| entity.id().wrapping_add(1)),
                 source_position: source.source_position_raw(),
-            },
-            None,
-        );
-    }
-
-    /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self, world: &World) {
-        let (yaw, _) = self.rotation();
-        world.broadcast_to_nearby(
-            self.hurt_broadcast_chunk(),
-            CHurtAnimation {
-                entity_id: self.id(),
-                yaw,
             },
             None,
         );

@@ -59,9 +59,11 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use steel_math::RAD_TO_DEG_F64;
 use steel_protocol::packets::game::{
-    CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
-    CSetHeldSlot, CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
+    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
+    LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -1724,6 +1726,15 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 impl LivingEntity for Player {
     fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
         Some(&self.entity_data)
+    }
+
+    fn indicate_damage(&self, xd: f64, zd: f64) {
+        let (y_rot, _) = self.rotation();
+        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        self.send_packet(CHurtAnimation {
+            entity_id: self.id(),
+            yaw: hurt_dir as f32,
+        });
     }
 
     fn tick_living_entity(&self, entity: &SharedEntity) {
