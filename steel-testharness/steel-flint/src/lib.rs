@@ -1,5 +1,8 @@
 //! Flint testing framework integration for `SteelMC`.
 
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
+
 pub mod adapter;
 mod convert;
 mod player;
