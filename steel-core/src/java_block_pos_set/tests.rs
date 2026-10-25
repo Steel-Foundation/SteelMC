@@ -12,13 +12,13 @@ fn linked_order_matches_openjdk_25_after_each_insertion_and_resize() {
 }
 
 fn check_oracle(oracle: &str) {
-    let mut set = JavaBlockPosSet::default();
+    let mut set = JavaBlockPosSet::new(EqualHashOrder::Insertion);
     let mut case = "";
     let mut saw_tree = false;
     for line in oracle.lines() {
         if let Some(name) = line.strip_prefix("case ") {
             case = name;
-            set = JavaBlockPosSet::default();
+            set = JavaBlockPosSet::new(EqualHashOrder::Insertion);
             continue;
         }
         let fields = line.split_whitespace().collect::<Vec<_>>();
@@ -94,9 +94,10 @@ fn check_links(set: &JavaBlockPosSet) {
         if !bucket.is_tree() {
             continue;
         }
-        assert_eq!(set.links(bucket.head).parent, EMPTY, "head is not the root");
+        let root = set.tree_root(bucket.head);
+        assert_eq!(set.links(root).parent, EMPTY, "root has a parent");
         let mut tree = BTreeSet::new();
-        let mut pending = vec![bucket.head];
+        let mut pending = vec![root];
         while let Some(node) = pending.pop() {
             assert!(tree.insert(node), "tree cycle or repeated child");
             let links = set.links(node);
@@ -112,7 +113,75 @@ fn check_links(set: &JavaBlockPosSet) {
             "tree and iteration list contain different entries"
         );
     }
-    assert_eq!(all.len(), set.entries.len(), "unreachable set entry");
+    assert_eq!(all.len(), set.len, "unreachable set entry");
+}
+
+#[test]
+fn removing_tree_heads_preserves_order_and_lookup_for_both_policies() {
+    for policy in [EqualHashOrder::Coordinates, EqualHashOrder::Insertion] {
+        let mut set = JavaBlockPosSet::new(policy);
+        for z in (0..64).rev() {
+            assert!(set.insert(BlockPos::new(-961 * z, 0, z)));
+        }
+        let positions = set.java_ordered_positions();
+        assert!(set.buckets.iter().any(|bucket| bucket.is_tree()));
+        for (index, &pos) in positions.iter().enumerate() {
+            assert_eq!(set.pop_java_ordered_position(), Some(pos));
+            assert!(!set.contains(pos));
+            assert_eq!(set.java_ordered_positions(), positions[index + 1..]);
+            for &remaining in &positions[index + 1..] {
+                assert!(set.contains(remaining));
+            }
+            check_links(&set);
+        }
+        assert!(set.is_empty());
+        assert_eq!(set.pop_java_ordered_position(), None);
+        assert!(set.insert(positions[0]));
+        assert_eq!(set.java_ordered_positions(), [positions[0]]);
+        check_links(&set);
+    }
+}
+
+#[test]
+fn removed_entries_do_not_count_towards_the_resize_threshold() {
+    let mut set = JavaBlockPosSet::default();
+    for x in 0..12 {
+        assert!(set.insert(BlockPos::new(x, 0, 0)));
+    }
+    let capacity = set.bucket_count();
+    for _ in 0..11 {
+        assert!(set.pop_java_ordered_position().is_some());
+    }
+    for x in 12..23 {
+        assert!(set.insert(BlockPos::new(x, 0, 0)));
+    }
+    assert_eq!(set.bucket_count(), capacity);
+    check_links(&set);
+}
+
+#[test]
+fn resize_untreeifies_small_unsplit_bins_after_iterator_removals() {
+    for policy in [EqualHashOrder::Coordinates, EqualHashOrder::Insertion] {
+        let mut set = JavaBlockPosSet::new(policy);
+        for x in 0..12 {
+            assert!(set.insert(BlockPos::new(x * 128, 0, 0)));
+        }
+        assert!(set.buckets.iter().any(|bucket| bucket.is_tree()));
+        for _ in 0..6 {
+            assert!(set.pop_java_ordered_position().is_some());
+        }
+        let positions = set.java_ordered_positions();
+        assert!(set.buckets.iter().any(|bucket| bucket.is_tree()));
+
+        set.resize();
+
+        assert!(!set.buckets.iter().any(|bucket| bucket.is_tree()));
+        assert_eq!(set.java_ordered_positions(), positions);
+        for pos in positions {
+            assert!(set.contains(pos));
+        }
+        check_links(&set);
+    }
 }
 
 fn tree_shape(set: &JavaBlockPosSet, node: u32, out: &mut String) {

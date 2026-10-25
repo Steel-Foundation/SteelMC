@@ -14,9 +14,8 @@ use crate::world::{BlockRegionBounds, BlockRegionRead, World};
 use super::ServerExplosion;
 
 mod cache;
-mod java_block_pos_set;
 
-use java_block_pos_set::JavaBlockPosSet;
+use crate::java_block_pos_set::{EqualHashOrder, JavaBlockPosSet};
 
 const RAY_GRID_SIZE: i32 = 16;
 const RAY_GRID_LAST_INDEX: i32 = RAY_GRID_SIZE - 1;
@@ -171,7 +170,7 @@ impl ServerExplosion<'_> {
             center: self.center,
             bounds: ExplosionWorldBounds::from_world(self.world),
         };
-        let mut affected = JavaBlockPosSet::default();
+        let mut affected = JavaBlockPosSet::new(EqualHashOrder::Insertion);
         for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
             visit_immutable_ray_positions(
                 ExplosionRay {
@@ -211,7 +210,7 @@ impl ServerExplosion<'_> {
         &self,
         mut next_float: impl FnMut() -> f32,
     ) -> Vec<BlockPos> {
-        let mut affected = JavaBlockPosSet::default();
+        let mut affected = JavaBlockPosSet::new(EqualHashOrder::Insertion);
         let bounds = ExplosionWorldBounds::from_world(self.world);
 
         for &step in RAY_STEPS.iter() {

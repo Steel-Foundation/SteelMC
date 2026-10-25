@@ -127,7 +127,7 @@ fn calculate_cached_immutable_rays<R: ExplosionBlockReader, const USE_BOUNDED_FL
     reader: &R,
     calculator: &dyn ImmutableExplosionBlockCalculator,
 ) -> Vec<BlockPos> {
-    let mut affected = JavaBlockPosSet::default();
+    let mut affected = JavaBlockPosSet::new(EqualHashOrder::Insertion);
     let mut cache = ExplosionBlockCache::default();
     let cache_policy = ImmutableRayCachePolicy {
         resistance: calculator.can_cache_explosion_resistance(),
@@ -423,7 +423,7 @@ fn cached_ray_decisions_keep_uncached_order_at_already_affected_positions() {
         initial_power: 1.0,
     });
     let uncached = RecordingCalculator(SyncMutex::new(Vec::new()));
-    let mut expected_affected = JavaBlockPosSet::default();
+    let mut expected_affected = JavaBlockPosSet::new(EqualHashOrder::Insertion);
     for ray in rays {
         visit_immutable_ray_positions(ray, context, world.as_ref(), &uncached, |pos| {
             expected_affected.insert(pos);
@@ -616,7 +616,7 @@ fn bounded_immutable_reader_covers_maximum_power_rays() {
 
 #[test]
 fn java_block_pos_set_resizes_on_a_ninth_collision_before_capacity_sixty_four() {
-    let mut positions = JavaBlockPosSet::default();
+    let mut positions = JavaBlockPosSet::new(EqualHashOrder::Insertion);
     for x in 1..=13 {
         assert!(positions.insert(BlockPos::new(x, 0, 0)));
     }

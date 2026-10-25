@@ -2,7 +2,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
-use super::super::vanilla_collections::JavaBlockPosSet;
+use crate::java_block_pos_set::JavaBlockPosSet;
 
 use rustc_hash::FxHashMap;
 use std::cell::{Cell, RefCell};

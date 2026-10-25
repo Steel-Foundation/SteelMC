@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use steel_utils::BlockPos;
 
-use super::{EMPTY, JavaBlockPosSet, UNTREEIFY_THRESHOLD, spread};
+use super::{EMPTY, EqualHashOrder, JavaBlockPosSet, UNTREEIFY_THRESHOLD, spread};
 
 pub(super) struct Links {
     pub(super) parent: u32,
@@ -22,6 +22,13 @@ impl Links {
 }
 
 impl JavaBlockPosSet {
+    pub(super) fn tree_root(&self, mut node: u32) -> u32 {
+        while self.links(node).parent != EMPTY {
+            node = self.links(node).parent;
+        }
+        node
+    }
+
     pub(super) fn links(&self, node: u32) -> &Links {
         &self.trees[&node]
     }
@@ -59,7 +66,17 @@ impl JavaBlockPosSet {
     fn goes_left(&self, node: u32, parent: u32) -> bool {
         let hash = spread(self.entries[node as usize].pos);
         let parent_hash = spread(self.entries[parent as usize].pos);
-        hash < parent_hash || (hash == parent_hash && node < parent)
+        if hash != parent_hash {
+            return hash < parent_hash;
+        }
+        match self.equal_hash_order {
+            EqualHashOrder::Insertion => node < parent,
+            EqualHashOrder::Coordinates => {
+                let pos = self.entries[node as usize].pos;
+                let parent_pos = self.entries[parent as usize].pos;
+                (pos.y(), pos.z(), pos.x()) < (parent_pos.y(), parent_pos.z(), parent_pos.x())
+            }
+        }
     }
 
     fn attach(&mut self, root: u32, node: u32) -> u32 {
@@ -139,7 +156,7 @@ impl JavaBlockPosSet {
 
     pub(super) fn insert_tree(&mut self, bucket: usize, node: u32) {
         self.reset_links(node);
-        let root = self.buckets[bucket].head;
+        let root = self.tree_root(self.buckets[bucket].head);
         let parent = self.attach(root, node);
         let next = self.entries[parent as usize].next;
         self.entries[parent as usize].next = node;
@@ -173,7 +190,7 @@ impl JavaBlockPosSet {
     }
 
     // Both rotations change only the tree; iteration still follows next/prev.
-    fn rotate(&mut self, mut root: u32, node: u32, left: bool) -> u32 {
+    pub(super) fn rotate(&mut self, mut root: u32, node: u32, left: bool) -> u32 {
         let pivot = if left {
             self.links(node).right
         } else {

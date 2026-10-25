@@ -1,9 +1,9 @@
-//! Explosion-local emulation of Java `HashSet<BlockPos>` iteration order.
+//! Shared Java `HashSet<BlockPos>` bucket and tree-bin ordering.
 //!
 //! Distinct hashes follow `OpenJDK` 25's linked tree-bin order. `BlockPos` inherits
-//! `Comparable<Vec3i>`, so equal-hash ties use JVM identities. Here ties use insertion
-//! indices, matching increasing JVM identities for plain `BlockPos` keys. Different
-//! identities can also change other entries' order in that bin and its later splits.
+//! `Comparable<Vec3i>`, so equal-hash ties use JVM identities. Steel preserves its
+//! existing deterministic policies: coordinate ordering for worldgen, and insertion
+//! indices for explosions (matching increasing JVM identities).
 
 use std::mem;
 use std::vec::IntoIter;
@@ -11,9 +11,12 @@ use std::vec::IntoIter;
 use rustc_hash::FxHashMap;
 use steel_utils::BlockPos;
 
+mod removal;
 #[cfg(test)]
 mod tests;
 mod tree;
+#[cfg(test)]
+mod worldgen_tests;
 
 const EMPTY: u32 = u32::MAX;
 const TREEIFY_THRESHOLD: usize = 8;
@@ -21,11 +24,21 @@ const UNTREEIFY_THRESHOLD: usize = 6;
 const MIN_TREEIFY_CAPACITY: usize = 64;
 
 #[derive(Default)]
-pub(super) struct JavaBlockPosSet {
+pub(crate) enum EqualHashOrder {
+    #[default]
+    Coordinates,
+    Insertion,
+}
+
+/// Java bucket ordering with a deterministic policy for equal-hash tree entries.
+#[derive(Default)]
+pub(crate) struct JavaBlockPosSet {
     buckets: Vec<Bucket>,
     entries: Vec<Entry>,
     // Allocate tree links only for entries that have actually entered a tree bin.
     trees: FxHashMap<u32, tree::Links>,
+    len: usize,
+    equal_hash_order: EqualHashOrder,
 }
 
 #[derive(Clone, Copy)]
@@ -52,8 +65,15 @@ struct Entry {
 }
 
 impl JavaBlockPosSet {
+    pub(crate) fn new(equal_hash_order: EqualHashOrder) -> Self {
+        Self {
+            equal_hash_order,
+            ..Self::default()
+        }
+    }
+
     #[inline]
-    pub(super) fn insert(&mut self, pos: BlockPos) -> bool {
+    pub(crate) fn insert(&mut self, pos: BlockPos) -> bool {
         if self.buckets.is_empty() {
             self.buckets.resize(16, Bucket::EMPTY);
             self.entries.reserve(16);
@@ -63,7 +83,7 @@ impl JavaBlockPosSet {
         let bucket = self.buckets[index];
         let mut bin_len = 0;
         if bucket.is_tree() {
-            if self.find_in_tree(bucket.head, hash, pos) {
+            if self.find_in_tree(self.tree_root(bucket.head), hash, pos) {
                 return false;
             }
         } else {
@@ -86,6 +106,7 @@ impl JavaBlockPosSet {
             "JavaBlockPosSet entry arena exhausted its u32 index space"
         );
         self.entries.push(Entry { pos, next: EMPTY });
+        self.len += 1;
         if bucket.is_tree() {
             self.insert_tree(index, entry_index);
         } else {
@@ -99,14 +120,79 @@ impl JavaBlockPosSet {
                 }
             }
         }
-        if self.entries.len() > self.buckets.len() * 3 / 4 {
+        if self.len > self.buckets.len() * 3 / 4 {
             self.resize();
         }
         true
     }
 
+    pub(crate) fn contains(&self, pos: BlockPos) -> bool {
+        if self.buckets.is_empty() {
+            return false;
+        }
+        let hash = spread(pos);
+        let bucket = self.buckets[hash as u32 as usize & (self.buckets.len() - 1)];
+        if bucket.is_tree() {
+            return self.find_in_tree(self.tree_root(bucket.head), hash, pos);
+        }
+        let mut current = bucket.head;
+        while current != EMPTY {
+            let entry = &self.entries[current as usize];
+            if entry.pos == pos {
+                return true;
+            }
+            current = entry.next;
+        }
+        false
+    }
+
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub(crate) fn java_order(&self) -> impl Iterator<Item = &BlockPos> {
+        self.buckets.iter().flat_map(move |bucket| {
+            let mut current = bucket.head;
+            std::iter::from_fn(move || {
+                if current == EMPTY {
+                    return None;
+                }
+                let entry = &self.entries[current as usize];
+                current = entry.next;
+                Some(&entry.pos)
+            })
+        })
+    }
+
+    pub(crate) fn java_ordered_positions(&self) -> Vec<BlockPos> {
+        self.java_order().copied().collect()
+    }
+
+    pub(crate) fn pop_java_ordered_position(&mut self) -> Option<BlockPos> {
+        let index = self
+            .buckets
+            .iter()
+            .position(|bucket| bucket.head != EMPTY)?;
+        let bucket = self.buckets[index];
+        let node = bucket.head;
+        let entry = &self.entries[node as usize];
+        let pos = entry.pos;
+        self.buckets[index].head = entry.next;
+        self.len -= 1;
+        if self.buckets[index].head == EMPTY {
+            self.buckets[index].tail = 0;
+        } else if bucket.is_tree() {
+            let next = self.buckets[index].head;
+            self.links_mut(next).prev = EMPTY;
+            // Iterator removal preserves linked order rather than moving the tree root.
+            self.remove_from_tree(node);
+        }
+        self.trees.remove(&node);
+        Some(pos)
+    }
+
     #[cfg(test)]
-    pub(super) const fn bucket_count(&self) -> usize {
+    pub(crate) const fn bucket_count(&self) -> usize {
         self.buckets.len()
     }
 
@@ -151,7 +237,7 @@ impl IntoIterator for JavaBlockPosSet {
     type IntoIter = IntoIter<BlockPos>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut ordered = Vec::with_capacity(self.entries.len());
+        let mut ordered = Vec::with_capacity(self.len);
         for bucket in self.buckets {
             let mut current = bucket.head;
             while current != EMPTY {

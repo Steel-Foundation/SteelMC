@@ -8,8 +8,8 @@ use crate::world::explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalcu
 
 use super::super::ServerExplosion;
 use super::{
-    ExplosionRay, ExplosionRayContext, ExplosionWorldBounds, JavaBlockPosSet, RAY_POWER_DECAY,
-    RAY_STEPS, ray_power_loss_from_resistance,
+    EqualHashOrder, ExplosionRay, ExplosionRayContext, ExplosionWorldBounds, JavaBlockPosSet,
+    RAY_POWER_DECAY, RAY_STEPS, ray_power_loss_from_resistance,
 };
 
 const BLOCK_CACHE_BITS: u32 = 9;
@@ -330,7 +330,7 @@ impl ServerExplosion<'_> {
         cache_policy: ImmutableRayCachePolicy,
         mut cache: C,
     ) -> Option<Vec<BlockPos>> {
-        let mut affected = JavaBlockPosSet::default();
+        let mut affected = JavaBlockPosSet::new(EqualHashOrder::Insertion);
         for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
             if !visit_immutable_ray_positions_cached::<R, C, USE_BOUNDED_FLOOR>(
                 ExplosionRay {
