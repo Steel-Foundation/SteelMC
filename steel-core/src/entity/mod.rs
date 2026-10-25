@@ -14,8 +14,8 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CSwingAnimation,
-    CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CSwingAnimation, CTeleportEntity,
+    EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     behavior::PushReaction, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -37,6 +37,7 @@ use steel_registry::loot_table::{
     LootContext, LootTableRef,
 };
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
@@ -46,7 +47,7 @@ use steel_registry::vanilla_game_rules::{MAX_ENTITY_CRAMMING, MOB_DROPS};
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_type_tags, vanilla_damage_types,
-    vanilla_game_events,
+    vanilla_game_events, vanilla_particle_types,
 };
 use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
@@ -850,8 +851,9 @@ pub use movement_sync::{
 };
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,
+    ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
+    SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use reference::EntityReference;

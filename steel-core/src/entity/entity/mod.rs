@@ -12,6 +12,33 @@ const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
+fn landing_particle_count(fall_distance: f64, safe_fall_distance: f64) -> Option<i32> {
+    let power = (fall_distance + 1.0e-6 - safe_fall_distance)
+        .floor()
+        .max(0.0);
+    (power > 0.0).then(|| (150.0 * (f64::from(0.2_f32) + power / 15.0).min(2.5)) as i32)
+}
+
+fn landing_particle_position(entity_position: DVec3, landing_pos: BlockPos) -> DVec3 {
+    let entity_pos = BlockPos::new(
+        entity_position.x.floor() as i32,
+        entity_position.y.floor() as i32,
+        entity_position.z.floor() as i32,
+    );
+    if landing_pos.x() == entity_pos.x() && landing_pos.z() == entity_pos.z() {
+        return entity_position;
+    }
+
+    let x_difference = entity_position.x - f64::from(landing_pos.x()) - 0.5;
+    let z_difference = entity_position.z - f64::from(landing_pos.z()) - 0.5;
+    let maximum_difference = x_difference.abs().max(z_difference.abs());
+    DVec3::new(
+        f64::from(landing_pos.x()) + 0.5 + x_difference / maximum_difference * 0.5,
+        entity_position.y,
+        f64::from(landing_pos.z()) + 0.5 + z_difference / maximum_difference * 0.5,
+    )
+}
+
 fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;
     let &[x, y, z, ..] = values.as_slice() else {
@@ -2077,6 +2104,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.sync_base_fire_freeze_entity_data();
     }
 
+    /// Plays the extinguish sound when currently on fire, then clears fire.
+    fn extinguish_fire(&self) {
+        if self.is_on_fire() {
+            self.play_entity_on_fire_extinguished_sound();
+        }
+        self.clear_fire();
+    }
+
     /// Ignites this entity for a vanilla tick duration.
     fn ignite_for_ticks(&self, number_of_ticks: i32) {
         self.base()
@@ -2935,8 +2970,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Plays vanilla's extinguished-on-fire entity sound.
     fn play_entity_on_fire_extinguished_sound(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
         let pitch = 1.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
-        self.play_sound(&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
+        world.play_sound_at(
+            &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
+            self.sound_source(),
+            self.position(),
+            0.7,
+            pitch,
+            None,
+        );
     }
 
     /// Plays the base vanilla step sound for a block.
@@ -3468,6 +3513,36 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_ground_contact(ground_contact);
     }
 
+    /// Sends the vanilla landing burst for living entities with enough fall power.
+    fn send_landing_particles(&self, world: &World, on_state: BlockStateId, pos: BlockPos) {
+        let Some(living) = self.as_living_entity() else {
+            return;
+        };
+        if on_state.is_air() {
+            return;
+        }
+
+        let safe_fall_distance = living
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
+        let Some(count) = landing_particle_count(self.fall_distance(), safe_fall_distance) else {
+            return;
+        };
+
+        world.send_particles(
+            ParticleData::new(
+                &vanilla_particle_types::BLOCK,
+                BlockParticleOption::new(on_state),
+            ),
+            landing_particle_position(self.position(), pos),
+            count,
+            DVec3::ZERO,
+            f64::from(0.15_f32),
+        );
+    }
+
     /// Accumulates fall distance, applies landing damage from the block fallen on, and resets it.
     fn check_fall_damage(
         self: Arc<Self>,
@@ -3477,6 +3552,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
+        if on_ground && self.fall_distance() > 0.0 {
+            self.send_landing_particles(world, on_state, pos);
+        }
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }
