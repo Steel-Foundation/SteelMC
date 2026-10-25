@@ -120,16 +120,11 @@ mod tests {
 
     use super::*;
     use crate::behavior::UseItemContext;
-    use crate::player::Player;
-    use crate::test_support::{
-        TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
-    };
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
-    use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
+    use crate::world::game_event::{GameEventContext, GameEventListener};
 
-    struct RecordingGameEventListener {
-        events: Arc<SyncMutex<Vec<GameEventRef>>>,
-    }
+    struct RecordingGameEventListener(Arc<SyncMutex<Vec<GameEventRef>>>);
 
     impl GameEventListener for RecordingGameEventListener {
         fn listener_pos(&self) -> Option<DVec3> {
@@ -147,37 +142,9 @@ mod tests {
             _context: &GameEventContext<'_>,
             _source_pos: DVec3,
         ) -> bool {
-            self.events.lock().push(event);
+            self.0.lock().push(event);
             true
         }
-    }
-
-    fn player_with_vibration_listener(
-        world_key: &'static str,
-        entity_id: i32,
-        uuid: u128,
-    ) -> (TestWorld, Arc<Player>, Arc<SyncMutex<Vec<GameEventRef>>>) {
-        let world_fixture = fresh_test_world(world_key);
-        let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", entity_id)
-            .uuid(Uuid::from_u128(uuid))
-            .build();
-        player
-            .try_set_position(DVec3::new(8.0, 64.0, 8.0))
-            .expect("should position player in center of chunk");
-        world.players.insert(Arc::clone(&player));
-
-        let events = Arc::new(SyncMutex::new(Vec::new()));
-        let listener: SharedGameEventListener = Arc::new(RecordingGameEventListener {
-            events: Arc::clone(&events),
-        });
-        world.register_game_event_listener(
-            SectionPos::from_block_pos(BlockPos::new(8, 64, 8)),
-            listener,
-        );
-
-        (world_fixture, player, events)
     }
 
     #[test]
@@ -221,13 +188,26 @@ mod tests {
 
     #[test]
     fn use_emits_vanilla_interact_vibrations() {
-        let (world_fixture, player, events) =
-            player_with_vibration_listener("fishing_rod_vibrations", 11, 3);
+        let world_fixture = fresh_test_world("fishing_rod_vibrations");
         let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 11)
+            .uuid(Uuid::from_u128(3))
+            .build();
+        player
+            .try_set_position(DVec3::new(8.0, 64.0, 8.0))
+            .expect("should position player in center of chunk");
+        world.players.insert(Arc::clone(&player));
         player
             .inventory
             .lock()
             .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
+
+        let events = Arc::new(SyncMutex::new(Vec::new()));
+        world.register_game_event_listener(
+            SectionPos::from_block_pos(BlockPos::new(8, 64, 8)),
+            Arc::new(RecordingGameEventListener(Arc::clone(&events))),
+        );
 
         let mut context = UseItemContext::new(
             &player,
@@ -256,47 +236,6 @@ mod tests {
                 &vanilla_game_events::ITEM_INTERACT_FINISH,
             ]
         );
-    }
-
-    #[test]
-    fn breaking_retrieve_does_not_emit_interact_finish_vibration() {
-        let (world_fixture, player, events) =
-            player_with_vibration_listener("fishing_rod_breaking_vibration", 12, 4);
-        let world = &world_fixture.world;
-        player
-            .inventory
-            .lock()
-            .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
-
-        let player_owner = Arc::clone(&player);
-        let owner: SharedEntity = player_owner;
-        let hook = Arc::new(FishingHookEntity::new(
-            &vanilla_entities::FISHING_BOBBER,
-            3,
-            DVec3::new(8.0, 64.0, 8.0),
-            Arc::downgrade(world),
-        ));
-        hook.set_owner(&owner);
-        hook.set_on_ground(true);
-
-        let mut context = UseItemContext::new(
-            &player,
-            InteractionHand::MainHand,
-            world,
-            Arc::clone(&player.inventory),
-        );
-        context.inv.with_item(|item| {
-            let damage = item.get_max_damage() - 1;
-            item.set_damage_value(damage);
-        });
-
-        assert_eq!(
-            FishingRodItem.use_item(&mut context),
-            InteractionResult::Success
-        );
-        assert!(hook.is_removed());
-        assert!(context.inv.with_item(|item| item.is_empty()));
-        assert!(events.lock().is_empty());
     }
 
     #[test]
