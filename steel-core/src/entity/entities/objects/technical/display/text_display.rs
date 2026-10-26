@@ -32,15 +32,7 @@ pub const DEFAULT_TEXT_OPACITY: i8 = -1;
 /// The default background color of text shown by a text display.
 pub const DEFAULT_BACKGROUND_COLOR: i32 = 0x4000_0000;
 
-/// The Vanilla text display entity.
-///
-/// In addition to having the common display entity properties, this entity
-/// also stores text-related fields to control what text it renders and
-/// how it does so.
-///
-/// Like any display entity, to **access** or **modify** the data of a text display,
-/// you will need to use [`Display::with_view`]. This method takes a function with a
-/// [`TextDisplayView`] as a parameter, which can be used within the function.
+/// A minecraft display entity that renders text with configurable text properties
 #[entity_behavior(class = "TextDisplay")]
 pub struct TextDisplayEntity {
     base: EntityBase,
