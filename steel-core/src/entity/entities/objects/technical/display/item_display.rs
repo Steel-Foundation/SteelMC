@@ -20,14 +20,7 @@ use steel_registry::vanilla_entity_data::{DisplayEntityData, ItemDisplayEntityDa
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-/// The Vanilla item display entity.
-///
-/// In addition to having the common display entity properties, this entity
-/// also stores an [`ItemStack`] and the context to display it (an [`ItemDisplayContext`]).
-///
-/// Like any display entity, to **access** or **modify** the data of an item display,
-/// you will need to use [`Display::with_view`]. This method takes a function with a
-/// [`ItemDisplayView`] as a parameter, which can be used within the function.
+/// A minecraft display entity that renders an [`ItemStack`] using an [`ItemDisplayContext`]
 #[entity_behavior(class = "ItemDisplay")]
 pub struct ItemDisplayEntity {
     base: EntityBase,
