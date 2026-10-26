@@ -212,8 +212,9 @@ impl SteelTestWorld {
                 ChunkRequestState::Pending { .. } => thread::sleep(Duration::from_millis(1)),
             }
         }
-        assert!(
-            handle.poll() == ChunkRequestState::Ready,
+        assert_eq!(
+            handle.poll(),
+            ChunkRequestState::Ready,
             "chunk {chunk_pos:?} did not reach Full status within 30s"
         );
 
