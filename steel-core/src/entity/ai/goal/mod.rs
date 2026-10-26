@@ -1,6 +1,7 @@
 //! Vanilla-shaped goal selector and movement goals.
 
 mod avoid_entity;
+mod break_door;
 mod breath_air;
 mod breed_goal;
 mod climb_on_top_of_powder_snow;
@@ -34,6 +35,7 @@ mod tempt_goal;
 mod try_find_water;
 mod water_avoiding_random_stroll;
 
+pub(crate) use break_door::BreakDoorGoal;
 pub(crate) use breed_goal::BreedGoal;
 pub(crate) use climb_on_top_of_powder_snow::ClimbOnTopOfPowderSnowGoal;
 pub(crate) use eat_block_goal::EatBlockGoal;
@@ -45,9 +47,7 @@ pub(crate) use melee_attack::MeleeAttackGoal;
 pub(crate) use nearest_attackable_target::NearestAttackableTargetGoal;
 pub(crate) use panic_goal::PanicGoal;
 pub(crate) use random_look_around::RandomLookAroundGoal;
-#[cfg(test)]
-pub(crate) use selector::GoalControls;
-pub(crate) use selector::{Goal, GoalControl, GoalSelector};
+pub(crate) use selector::{Goal, GoalControl, GoalControls, GoalId, GoalSelector};
 pub(crate) use squid_flee_goal::SquidFleeGoal;
 pub(crate) use squid_random_movement_goal::SquidRandomMovementGoal;
 pub(crate) use tempt_goal::TemptGoal;
