@@ -71,9 +71,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          { cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- blocks
-            cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- items
-            cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- entities; } | LC_ALL=C sort -u > implemented.txt
+          { cargo run -q -p steel-flint --profile cicd --bin steel-implemented; } | LC_ALL=C sort -u > implemented.txt
           echo "$(wc -l < implemented.txt) implemented ids"
 
       - name: Download baseline

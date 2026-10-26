@@ -7,18 +7,14 @@ use steel_flint::adapter::{
 };
 
 fn main() -> ExitCode {
-    let kind = env::args().nth(1);
-    let get = match kind.as_deref() {
-        Some("blocks") => get_implemented_blocks,
-        Some("items") => get_implemented_items,
-        Some("entities") => get_implemented_entities,
-        _ => {
-            eprintln!("usage: steel-implemented <blocks|items|entities>");
-            return ExitCode::FAILURE;
-        }
-    };
     steel_flint::init();
-    for id in get() {
+    for id in get_implemented_blocks() {
+        println!("{id}");
+    }
+    for id in get_implemented_items() {
+        println!("{id}");
+    }
+    for id in get_implemented_entities() {
         println!("{id}");
     }
     ExitCode::SUCCESS
