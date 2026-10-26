@@ -460,6 +460,10 @@ impl Mob for ZombieEntity {
         &self.mob_base
     }
 
+    fn set_baby(&self, baby: bool) {
+        ZombieEntity::set_baby(self, baby);
+    }
+
     fn tick_goal_selectors(&self, entity: &SharedEntity) {
         PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
