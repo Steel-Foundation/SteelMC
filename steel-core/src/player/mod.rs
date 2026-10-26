@@ -1797,7 +1797,6 @@ impl LivingEntity for Player {
             self.tick_death();
         } else {
             let world = self.get_world();
-            self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
 
             self.update_player_attributes();
@@ -2097,6 +2096,11 @@ impl LivingEntity for Player {
 
         let result = self.default_ai_step(entity);
         self.set_y_head_rot(self.rotation().0);
+        // Pickup uses the simulated position; `tick_living_entity` restores the
+        // authoritative tick position after this returns.
+        if self.get_health() > 0.0 {
+            self.touch_nearby_items();
+        }
         result
     }
 
