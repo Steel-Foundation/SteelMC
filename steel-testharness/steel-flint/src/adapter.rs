@@ -118,7 +118,7 @@ pub fn init_env() {
 }
 
 /// Collects test file paths based on environment variables and `flint.toml`.
-/// Priority: `FLINT_TEST` > `FLINT_PATTERN` > `FLINT_TAGS` > `implemented_only` > `filter.tags` > all
+/// Priority: `FLINT_TEST` > `FLINT_TAGS` > `implemented_only` (`FLINT_IMPLEMENTED_ONLY` env > toml) > `filter.tags` > `FLINT_PATTERN` > all
 #[must_use]
 pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<PathBuf> {
     let filter = cfg.filter.as_ref();
@@ -142,6 +142,10 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
     }
 
     // Tag filtering: env > implemented_only > toml tags
+    let implemented_only = var("FLINT_IMPLEMENTED_ONLY").map_or_else(
+        |_| filter.and_then(|f| f.implemented_only).unwrap_or(false),
+        |v| matches!(v.as_str(), "1" | "true"),
+    );
     let tags = var("FLINT_TAGS")
         .ok()
         .map(|s| {
@@ -150,7 +154,7 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
                 .collect::<Vec<_>>()
         })
         .or_else(|| {
-            if filter.and_then(|f| f.implemented_only).unwrap_or(false) {
+            if implemented_only {
                 let mut ids = get_implemented_items();
                 ids.extend(get_implemented_blocks());
                 ids.extend(get_implemented_entities());

@@ -65,6 +65,7 @@ Environment variables override config filters:
 FLINT_TEST=place_fence cargo test --lib test_run_flint_selected
 FLINT_PATTERN="*fence" cargo test --lib test_run_flint_selected
 FLINT_TAGS=redstone,walls cargo test --lib test_run_flint_selected
+FLINT_IMPLEMENTED_ONLY=true cargo test --lib test_run_flint_selected
 ```
 
 ## 6. Run the Benchmark Tests
