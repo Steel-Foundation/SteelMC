@@ -838,6 +838,8 @@ pub use living_base::{
 };
 pub use living_entity::LivingEntity;
 pub(crate) use manager::EntityCollisionCandidates;
+#[cfg(feature = "benchmark-support")]
+pub use manager::benchmark_support as entity_manager_benchmark_support;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
