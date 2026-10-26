@@ -1,4 +1,4 @@
-//! TNT ray order, block callbacks, and priming checked against SteelExtractor output.
+//! TNT ray order, block callbacks, and priming checked against `SteelExtractor` output.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;

@@ -5,6 +5,7 @@
 //! existing deterministic policies: coordinate ordering for worldgen, and insertion
 //! indices for explosions (matching increasing JVM identities).
 
+use std::iter::from_fn;
 use std::mem;
 use std::vec::IntoIter;
 
@@ -153,7 +154,7 @@ impl JavaBlockPosSet {
     pub(crate) fn java_order(&self) -> impl Iterator<Item = &BlockPos> {
         self.buckets.iter().flat_map(move |bucket| {
             let mut current = bucket.head;
-            std::iter::from_fn(move || {
+            from_fn(move || {
                 if current == EMPTY {
                     return None;
                 }
