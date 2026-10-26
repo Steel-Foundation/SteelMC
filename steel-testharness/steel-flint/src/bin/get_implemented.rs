@@ -1,5 +1,4 @@
 //! Prints all blocks, items or entities with a non-default behavior implemented in `SteelMC`.
-use std::env;
 use std::process::ExitCode;
 
 use steel_flint::adapter::{
