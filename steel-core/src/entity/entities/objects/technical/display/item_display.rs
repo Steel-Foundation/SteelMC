@@ -136,10 +136,7 @@ impl Display for ItemDisplayEntity {
     }
 }
 
-/// A view to the data of an item display.
-///
-/// Along with having the methods in [`DisplayView`], this view also has additional methods
-/// to access and manipulate the item stack and display context of the item display.
+/// A view to the data of an item display
 pub struct ItemDisplayView<'a>(MutexGuard<'a, ItemDisplayEntityData>);
 
 impl<'a> PrivateDisplayView<'a> for ItemDisplayView<'a> {
