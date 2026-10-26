@@ -5,40 +5,54 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 
-#[test]
-fn linked_order_matches_openjdk_25_after_each_insertion_and_resize() {
-    check_oracle(include_str!("tests/openjdk25.txt"));
-    check_oracle(include_str!("tests/openjdk25-sequential-identity.txt"));
+#[derive(serde::Deserialize)]
+struct CollectionFixtures {
+    minecraft_version: String,
+    java_feature_version: u32,
+    cases: Vec<CollectionCase>,
 }
 
-fn check_oracle(oracle: &str) {
-    let mut set = JavaBlockPosSet::new(EqualHashOrder::Insertion);
-    let mut case = "";
+#[derive(serde::Deserialize)]
+struct CollectionCase {
+    name: String,
+    insertions: Vec<CollectionInsertion>,
+}
+
+#[derive(serde::Deserialize)]
+struct CollectionInsertion {
+    position: [i32; 3],
+    inserted: bool,
+    capacity: usize,
+    tree_bins: usize,
+    order_sha256: String,
+    tree_shape_sha256: String,
+}
+
+#[test]
+fn linked_order_matches_openjdk_25_after_each_insertion_and_resize() {
+    let fixtures: CollectionFixtures =
+        serde_json::from_str(include_str!("../../test_assets/java_block_pos_sets.json"))
+            .expect("SteelExtractor collection fixtures must be valid JSON");
+    assert_eq!(fixtures.minecraft_version, steel_utils::MC_VERSION);
+    assert_eq!(fixtures.java_feature_version, 25);
     let mut saw_tree = false;
-    for line in oracle.lines() {
-        if let Some(name) = line.strip_prefix("case ") {
-            case = name;
-            set = JavaBlockPosSet::new(EqualHashOrder::Insertion);
-            continue;
-        }
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        let pos = BlockPos::new(
-            fields[0].parse().expect("oracle coordinate"),
-            fields[1].parse().expect("oracle coordinate"),
-            fields[2].parse().expect("oracle coordinate"),
-        );
-        assert_eq!(set.insert(pos), fields[3] == "true", "{case}: {pos:?}");
-        assert_eq!(
-            set.bucket_count(),
-            fields[4].parse::<usize>().expect("oracle count"),
-            "{case}: {pos:?}"
-        );
+    for case in fixtures.cases {
+        saw_tree |= check_case(&case);
+    }
+    assert!(saw_tree, "the fixtures must exercise actual tree bins");
+}
+
+fn check_case(case: &CollectionCase) -> bool {
+    let mut set = JavaBlockPosSet::new(EqualHashOrder::Insertion);
+    let mut saw_tree = false;
+    for (index, insertion) in case.insertions.iter().enumerate() {
+        let [x, y, z] = insertion.position;
+        let pos = BlockPos::new(x, y, z);
+        let context = format!("{}: insertion {index} {pos:?}", case.name);
+        assert_eq!(set.insert(pos), insertion.inserted, "{context}");
+        assert_eq!(set.bucket_count(), insertion.capacity, "{context}");
         let trees = set.buckets.iter().filter(|bucket| bucket.is_tree()).count();
-        assert_eq!(
-            trees,
-            fields[5].parse::<usize>().expect("oracle count"),
-            "{case}: {pos:?}"
-        );
+        assert_eq!(trees, insertion.tree_bins, "{context}");
         saw_tree |= trees != 0;
         check_links(&set);
         let mut digest = Sha256::new();
@@ -59,7 +73,7 @@ fn check_oracle(oracle: &str) {
         for byte in digest.finalize() {
             write!(actual, "{byte:02x}").expect("string write");
         }
-        assert_eq!(actual, fields[6], "{case}: {pos:?}");
+        assert_eq!(actual, insertion.order_sha256, "{context}");
         let mut shape = String::new();
         for (index, bucket) in set.buckets.iter().enumerate() {
             if bucket.is_tree() {
@@ -71,9 +85,12 @@ fn check_oracle(oracle: &str) {
         for byte in Sha256::digest(shape.as_bytes()) {
             write!(actual_shape, "{byte:02x}").expect("string write");
         }
-        assert_eq!(actual_shape, fields[7], "{case}: {pos:?} tree shape");
+        assert_eq!(
+            actual_shape, insertion.tree_shape_sha256,
+            "{context} tree shape"
+        );
     }
-    assert!(saw_tree, "the oracle must exercise actual tree bins");
+    saw_tree
 }
 
 fn check_links(set: &JavaBlockPosSet) {
