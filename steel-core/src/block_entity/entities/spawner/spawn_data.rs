@@ -6,7 +6,7 @@ use simdnbt::owned::NbtCompound;
 use steel_utils::nbt::NbtNumeric;
 use steel_utils::{BlockPos, Identifier};
 
-use crate::chunk::light::LightLayer;
+use crate::chunk::light::{LightLayer, MAX_LIGHT_LEVEL};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
@@ -20,7 +20,10 @@ pub struct LightRange {
 }
 
 impl LightRange {
-    pub(super) const DEFAULT: Self = Self { min: 0, max: 15 };
+    pub(super) const DEFAULT: Self = Self {
+        min: 0,
+        max: MAX_LIGHT_LEVEL as i32,
+    };
     fn from_nbt(tag: Option<BorrowedNbtTag<'_, '_>>) -> Option<Self> {
         let range = tag
             .and_then(|tag| {
@@ -60,7 +63,7 @@ impl LightRange {
                 (min <= max).then_some(Self { min, max })
             })
             .unwrap_or(Self::DEFAULT);
-        (range.min >= 0 && range.max <= 15).then_some(range)
+        (range.min >= Self::DEFAULT.min && range.max <= Self::DEFAULT.max).then_some(range)
     }
 
     fn to_nbt(self) -> NbtCompound {

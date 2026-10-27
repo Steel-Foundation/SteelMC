@@ -6,6 +6,7 @@ use glam::DVec3;
 use rand::{Rng, RngExt, rng};
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList};
+use steel_math::DEGREE_360;
 use steel_registry::entity_type::{EntityTypeRef, MobCategory};
 use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
@@ -19,8 +20,8 @@ use steel_utils::{BlockPos, Identifier, WorldAabb};
 
 use super::spawn_data::{EquipmentTable, SpawnData, WeightedSpawnData};
 use crate::entity::{
-    Entity, EntitySpawnReason, Mob, SpawnPlacements, entity_loot_ref, load_entity_recursive_owned,
-    nbt_dvec3,
+    Entity, EntitySpawnReason, Mob, SpawnPlacements, entity_loot_ref, living_loot_equipment,
+    load_entity_recursive_owned, nbt_dvec3,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{WorldCollisionProvider, has_collision};
@@ -298,11 +299,7 @@ impl BaseSpawner {
         reason = "The order of this method mirrors vanilla BaseSpawner.serverTick."
     )]
     pub(super) fn server_tick(&self, world: &Arc<World>, pos: BlockPos) -> SpawnerTickResult {
-        let center = DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
+        let center = DVec3::from(pos.get_center());
         let config = self.config();
         let Some(_) =
             world.nearest_player(center, f64::from(config.required_player_range), |player| {
@@ -410,7 +407,7 @@ impl BaseSpawner {
                 return self.delay_result(world, pos, &mut random, result);
             }
 
-            let yaw = random.random::<f32>() * 360.0;
+            let yaw = random.random::<f32>() * DEGREE_360;
             entity.snap_to(entity.position(), yaw, 0.0);
             if let Some(mob) = entity.as_mob() {
                 if (next_spawn_data.custom_spawn_rules.is_none()
@@ -562,7 +559,7 @@ fn random_spawn_position<R: Rng + ?Sized>(
         f64::from(spawner_pos.x())
             + (random.random::<f64>() - random.random::<f64>()) * f64::from(spawn_range)
             + 0.5,
-        f64::from(spawner_pos.y()) + f64::from(random.random_range(0..3)) - 1.0,
+        f64::from(spawner_pos.y() + random.random_range(-1..=1)),
         f64::from(spawner_pos.z())
             + (random.random::<f64>() - random.random::<f64>()) * f64::from(spawn_range)
             + 0.5,
@@ -576,7 +573,8 @@ fn equip_from_table(mob: &dyn Mob, equipment: &EquipmentTable) {
     };
 
     let mut random = rng();
-    let entity_ref = entity_loot_ref(mob.as_entity_event_source());
+    let mob_equipment = living_loot_equipment(mob);
+    let entity_ref = entity_loot_ref(mob.as_entity_event_source(), Some(&mob_equipment));
     let mut context = LootContext::new(&mut random)
         .with_origin(mob.position().x, mob.position().y, mob.position().z)
         .with_this_entity(entity_ref);
