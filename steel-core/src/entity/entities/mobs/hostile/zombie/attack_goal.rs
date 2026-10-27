@@ -35,7 +35,6 @@ impl Goal for ZombieAttackGoal {
 
     fn start(&mut self, mob: &dyn PathfinderMob) {
         self.melee.start(mob);
-        mob.set_aggressive(true);
         self.raise_arm_ticks = 0;
     }
 

@@ -7,20 +7,23 @@ use simdnbt::owned::NbtCompound;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
-use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items, vanilla_mob_effects};
 use steel_utils::types::Difficulty;
 
 use super::{
     LEADER_ZOMBIE_BONUS_ID, ZOMBIE_RANDOM_SPAWN_BONUS_ID, Zombie, ZombieEntity, spawn_as_baby_odds,
 };
+use crate::behavior::init_behaviors;
+use crate::entity::entities::{CowEntity, HuskEntity};
 use crate::entity::{
-    AgeableMobGroupData, Entity, EntitySpawnReason, LivingEntity, Mob, SharedEntity, SpawnGroupData,
-    ZombieGroupData,
+    AgeableMobGroupData, Entity, EntitySpawnReason, LivingEntity, Mob, SharedEntity,
+    SpawnGroupData, ZombieGroupData,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::special_dates;
-use crate::test_support::fresh_test_world;
+use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::{DifficultyInstance, World};
+use steel_utils::ChunkPos;
 
 fn make_zombie(id: i32) -> ZombieEntity {
     ZombieEntity::new(&vanilla_entities::ZOMBIE, id, DVec3::ZERO, Weak::new())
@@ -84,8 +87,8 @@ fn zombie_baby_nbt_round_trip() {
     let loaded = make_zombie(2);
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);
-    let borrowed =
-        read_compound(&mut Cursor::new(&bytes)).unwrap_or_else(|error| panic!("reborrow failed: {error}"));
+    let borrowed = read_compound(&mut Cursor::new(&bytes))
+        .unwrap_or_else(|error| panic!("reborrow failed: {error}"));
     loaded.load_additional((&borrowed).into());
 
     assert!(loaded.is_baby());
@@ -399,8 +402,7 @@ fn zombie_leader_spawn_applies_vanilla_bonuses() {
             leaders += 1;
             assert!((0.5..0.85).contains(&reinforcement));
             assert!(
-                attributes
-                    .has_modifier(vanilla_attributes::MAX_HEALTH, &LEADER_ZOMBIE_BONUS_ID)
+                attributes.has_modifier(vanilla_attributes::MAX_HEALTH, &LEADER_ZOMBIE_BONUS_ID)
             );
             let max_health = attributes.required_value(vanilla_attributes::MAX_HEALTH);
             assert!((40.0..100.0).contains(&max_health));
@@ -479,4 +481,49 @@ fn zombie_baby_odds_are_five_percent_boundary() {
         (300..=700).contains(&babies),
         "baby rolls should cluster around 5%: {babies}"
     );
+}
+
+#[test]
+fn husk_hunger_duration_scales_with_effective_difficulty() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("husk_hunger");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let husk: SharedEntity = Arc::new(HuskEntity::new(
+        &vanilla_entities::HUSK,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(world),
+    ));
+    let target: SharedEntity = Arc::new(CowEntity::new(
+        &vanilla_entities::COW,
+        2,
+        DVec3::new(9.0, 65.0, 8.0),
+        Arc::downgrade(world),
+    ));
+    for entity in [Arc::clone(&husk), Arc::clone(&target)] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    let husk_zombie = husk
+        .as_zombie()
+        .expect("husk implements the Zombie capability");
+    assert!(
+        Zombie::do_hurt_target_zombie(husk_zombie, &husk, world, &target),
+        "an empty-handed husk should land its melee hit"
+    );
+
+    let effective = world
+        .get_current_difficulty_at(husk.block_position())
+        .effective_difficulty();
+    let hunger = target
+        .as_living_entity()
+        .expect("cow is alive")
+        .mob_effect(vanilla_mob_effects::HUNGER)
+        .expect("husk melee applies hunger");
+    assert_eq!(hunger.duration(), 140 * effective as i32);
 }

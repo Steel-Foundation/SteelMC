@@ -570,11 +570,7 @@ pub trait Zombie: Monster {
     }
 
     /// Applies the vanilla pickup-loot roll to an egg-spawned offspring.
-    fn on_offspring_spawned_from_egg_zombie(
-        &self,
-        _spawner: &Player,
-        offspring: &SharedEntity,
-    ) {
+    fn on_offspring_spawned_from_egg_zombie(&self, _spawner: &Player, offspring: &SharedEntity) {
         let Some(world) = self.level() else {
             return;
         };
@@ -869,6 +865,10 @@ macro_rules! impl_zombie_mob {
 
 mod attack_goal;
 pub mod husk;
+#[expect(
+    clippy::module_inception,
+    reason = "the inner module is the vanilla Zombie class inside the zombie family module"
+)]
 pub mod zombie;
 
 #[cfg(test)]

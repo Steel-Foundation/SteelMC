@@ -1,6 +1,14 @@
 //! Vanilla `Zombie`.
 
-use super::*;
+use super::{
+    Arc, BlockPos, BlockStateId, BorrowedNbtCompoundView, ConversionTracker, DEFAULT_STEP_HEIGHT,
+    DROWNED_CONVERSION_TIME, DVec3, DamageSource, DifficultyInstance, DoorBreakingState, Entity,
+    EntityBase, EntityBaseLoad, EntityDimensions, EntityEventSource, EntityPose, EntitySpawnReason,
+    EntitySyncedData, EntityTypeRef, IN_WATER_TIME, ItemStack, LivingEntity, LivingEntityBase,
+    MappedMutexGuard, Mob, MobBase, Monster, MutexGuard, NbtCompound, PathfinderMob, Player,
+    SharedEntity, SoundEventRef, SoundSource, SpawnGroupData, SyncMutex, Weak, World, XP_REWARD,
+    Zombie, ZombieEntityData, baby_dimensions, register_zombie_goals, vanilla_attributes,
+};
 
 const BABY_EYE_HEIGHT: f32 = 0.775;
 const BABY_DIMENSIONS: EntityDimensions = baby_dimensions(BABY_EYE_HEIGHT);
@@ -19,7 +27,8 @@ pub struct ZombieEntity {
 
 // SAFETY: The owner-scoped type key uniquely identifies ZombieEntity.
 unsafe impl steel_utils::DowncastType for ZombieEntity {
-    const TYPE_KEY: steel_utils::DowncastTypeKey = steel_utils::DowncastTypeKey::new("steel:entity/zombie");
+    const TYPE_KEY: steel_utils::DowncastTypeKey =
+        steel_utils::DowncastTypeKey::new("steel:entity/zombie");
 }
 
 impl ZombieEntity {

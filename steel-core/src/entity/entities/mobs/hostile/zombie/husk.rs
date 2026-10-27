@@ -2,7 +2,17 @@
 
 use steel_registry::vanilla_mob_effects;
 
-use super::*;
+use super::{
+    Arc, BlockPos, BlockStateId, BorrowedNbtCompoundView, ConversionTracker, DEFAULT_STEP_HEIGHT,
+    DROWNED_CONVERSION_TIME, DVec3, DamageSource, DifficultyInstance, DoorBreakingState, Entity,
+    EntityBase, EntityBaseLoad, EntityDimensions, EntityEventSource, EntityPose, EntitySpawnReason,
+    EntitySyncedData, EntityTypeRef, EquipmentSlot, HuskEntityData, IN_WATER_TIME, ItemStack,
+    LivingEntity, LivingEntityBase, MappedMutexGuard, Mob, MobBase, MobEffectInstance, Monster,
+    MutexGuard, NbtCompound, PICKUP_LOOT_CHANCE, PathfinderMob, Player, SharedEntity,
+    SoundEventRef, SoundSource, SpawnGroupData, SyncMutex, Weak, World, XP_REWARD, Zombie,
+    ZombieEntityData, baby_dimensions, level_events, register_zombie_goals, sound_events,
+    vanilla_attributes, vanilla_entities,
+};
 
 const BABY_EYE_HEIGHT: f32 = 0.825;
 const BABY_DIMENSIONS: EntityDimensions = baby_dimensions(BABY_EYE_HEIGHT);
@@ -106,11 +116,14 @@ impl_zombie_state!(HuskEntity, BABY_DIMENSIONS, {
                 .get_current_difficulty_at(self.block_position())
                 .effective_difficulty();
             if let Some(living) = target.as_living_entity() {
-                living.add_mob_effect(MobEffectInstance::with_duration(
-                    vanilla_mob_effects::HUNGER,
-                    HUNGER_DURATION_PER_DIFFICULTY * difficulty as i32,
-                    0,
-                ));
+                living.add_mob_effect_with_source(
+                    MobEffectInstance::with_duration(
+                        vanilla_mob_effects::HUNGER,
+                        HUNGER_DURATION_PER_DIFFICULTY * difficulty as i32,
+                        0,
+                    ),
+                    Some(entity.as_ref()),
+                );
             }
         }
         result

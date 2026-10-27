@@ -133,7 +133,7 @@ impl ConversionTracker {
     ///
     /// Vanilla also requires the mob to be alive, not no-AI, and on the server; those checks
     /// belong to the caller because the tracker has no entity reference.
-    pub fn tick(&mut self, afflicted: bool) -> ConversionStatus {
+    pub const fn tick(&mut self, afflicted: bool) -> ConversionStatus {
         if !afflicted {
             self.affliction_time = -1;
             self.converting = false;
@@ -156,7 +156,7 @@ impl ConversionTracker {
         ConversionStatus::Converting
     }
 
-    fn start_conversion(&mut self, conversion_time: i32) {
+    const fn start_conversion(&mut self, conversion_time: i32) {
         self.conversion_time = conversion_time;
         self.converting = true;
     }
@@ -184,7 +184,12 @@ impl ConversionTracker {
     }
 
     /// Restores the vanilla timer tags.
-    pub fn load(&mut self, nbt: &BorrowedNbtCompoundView<'_, '_>, affliction_tag: &str, conversion_tag: &str) {
+    pub fn load(
+        &mut self,
+        nbt: &BorrowedNbtCompoundView<'_, '_>,
+        affliction_tag: &str,
+        conversion_tag: &str,
+    ) {
         self.affliction_time = nbt.int(affliction_tag).unwrap_or(0);
         match nbt.int(conversion_tag).unwrap_or(-1) {
             -1 => self.converting = false,
@@ -397,7 +402,7 @@ mod tests {
     use super::{ConversionParams, ConversionType};
     use crate::behavior::init_behaviors;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::{PigEntity, ZombieEntity};
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
     use crate::entity::{
         AgeableMob, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
@@ -868,5 +873,44 @@ mod tests {
             "the after-conversion callback runs on the new mob"
         );
         assert_eq!(cow.entity_type(), &vanilla_entities::COW);
+    }
+
+    #[test]
+    fn zombie_conversion_transfers_door_breaking() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+
+        let zombie: SharedEntity = Arc::new(ZombieEntity::new(
+            &vanilla_entities::ZOMBIE,
+            next_entity_id(),
+            DVec3::new(1.0, 64.0, 1.0),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&zombie))
+            .expect("test zombie should attach to the loaded chunk");
+        zombie
+            .as_zombie()
+            .expect("zombie implements the Zombie capability")
+            .set_can_break_doors(true);
+
+        let husk = zombie
+            .downcast_ref::<ZombieEntity>()
+            .expect("zombie is concrete")
+            .convert_to(
+                &vanilla_entities::HUSK,
+                ConversionParams::single(true, true),
+                None,
+            )
+            .expect("zombie should convert to husk");
+
+        assert!(
+            husk.as_zombie()
+                .expect("husk implements the Zombie capability")
+                .can_break_doors(),
+            "conversion must carry the door-breaking flag to the new zombie"
+        );
     }
 }

@@ -875,6 +875,7 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
+pub use entities::mobs::hostile::zombie::Zombie;
 pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
@@ -923,7 +924,6 @@ pub use projectile::{
 };
 pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
-pub use entities::mobs::hostile::zombie::Zombie;
 pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
