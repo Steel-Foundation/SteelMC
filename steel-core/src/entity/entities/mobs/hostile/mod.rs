@@ -6,6 +6,6 @@
 pub mod endermite;
 pub use endermite::EndermiteEntity;
 
-/// Hostile zombie entity module.
+/// Hostile zombie family entity module.
 pub mod zombie;
-pub use zombie::ZombieEntity;
+pub use zombie::{HuskEntity, ZombieEntity};

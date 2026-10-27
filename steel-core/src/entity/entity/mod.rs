@@ -1711,6 +1711,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Monster>(self)
     }
 
+    /// Returns the `Zombie` capability, equivalent to vanilla's `instanceof Zombie`.
+    fn as_zombie(&self) -> Option<&dyn Zombie> {
+        try_as_dyn::<Self, dyn Zombie>(self)
+    }
+
     /// Whether this entity implements the `Enemy` marker.
     fn is_enemy(&self) -> bool {
         self.as_enemy().is_some()
