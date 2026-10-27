@@ -48,22 +48,7 @@ impl<T: WriteTo> PrefixedWrite for Vec<T> {
         writer: &mut impl Write,
         bound: usize,
     ) -> Result<()> {
-        if self.len() > bound {
-            return Err(Error::other("Too long"));
-        }
-
-        let len: P = self
-            .len()
-            .try_into()
-            .map_err(|_| Error::other("This cant happen"))?;
-
-        len.write(writer)?;
-
-        for property in self {
-            property.write(writer)?;
-        }
-
-        Ok(())
+        self.as_slice().write_prefixed_bound::<P>(writer, bound)
     }
 }
 
@@ -84,11 +69,7 @@ impl<T: WriteTo> PrefixedWrite for [T] {
 
         len.write(writer)?;
 
-        for property in self {
-            property.write(writer)?;
-        }
-
-        Ok(())
+        T::write_slice(self, writer)
     }
 }
 
@@ -98,18 +79,7 @@ impl<T: WriteTo, const N: usize> PrefixedWrite for [T; N] {
         writer: &mut impl Write,
         bound: usize,
     ) -> Result<()> {
-        if N > bound {
-            return Err(Error::other("Too long"));
-        }
-
-        P::try_from(N)
-            .map_err(|_| Error::other("This cant happen"))?
-            .write(writer)?;
-
-        for i in self {
-            i.write(writer)?;
-        }
-        Ok(())
+        self.as_slice().write_prefixed_bound::<P>(writer, bound)
     }
 }
 
