@@ -303,6 +303,10 @@ impl Entity for PrimedTntEntity {
             self.refresh_fluid_contact_with_currents();
             self.base.reset_fall_distance_in_water();
         }
+
+        self.base.set_requires_precise_position(
+            self.horizontal_collision() || self.vertical_collision(),
+        );
     }
 
     fn blocks_building(&self) -> bool {

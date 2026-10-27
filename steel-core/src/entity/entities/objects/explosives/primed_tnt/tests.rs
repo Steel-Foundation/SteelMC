@@ -167,6 +167,29 @@ fn flowing_water_pushes_primed_tnt_trajectory() {
 }
 
 #[test]
+fn colliding_tnt_requests_precise_position_sync_only_while_colliding() {
+    let fixture = ready_tnt_world("primed_tnt_precise_position");
+    let world = &fixture.world;
+    assert!(world.set_block(
+        TEST_TNT_BLOCK_POS.below(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let entity = primed_tnt(world, test_tnt_position());
+    entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));
+
+    Arc::clone(&entity).tick();
+    assert!(entity.base().requires_precise_position());
+
+    entity
+        .base()
+        .set_position_local(test_tnt_position() + DVec3::new(0.0, 4.0, 0.0));
+    entity.set_velocity(DVec3::ZERO);
+    Arc::clone(&entity).tick();
+    assert!(!entity.base().requires_precise_position());
+}
+
+#[test]
 fn teleported_tnt_preserves_nether_portal_but_explodes_other_blocks() {
     let fixture = ready_tnt_world("primed_tnt_portal_explosion");
     let world = &fixture.world;

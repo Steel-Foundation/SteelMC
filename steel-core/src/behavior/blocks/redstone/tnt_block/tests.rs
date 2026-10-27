@@ -9,6 +9,32 @@ use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full
 use crate::world::{ExplosionInteraction, ExplosionOptions};
 
 #[test]
+fn adventure_owner_primes_only_when_the_igniting_stack_can_break_tnt() {
+    init_vanilla_registry();
+    init_behaviors();
+    let fixture = fresh_test_world("tnt_adventure_priming");
+    let world = &fixture.world;
+    let pos = BlockPos::new(8, 64, 8);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    let owner =
+        TestPlayerBuilder::new(Arc::clone(world), "AdventureOwner", next_entity_id()).build();
+    owner.restore_game_modes(GameType::Adventure, None);
+
+    assert!(!TntBlock::prime_with_source(
+        world,
+        pos,
+        Some(&*owner),
+        || false
+    ));
+    assert!(TntBlock::prime_with_source(
+        world,
+        pos,
+        Some(&*owner),
+        || true
+    ));
+}
+
+#[test]
 fn explosion_replaces_tnt_with_a_short_fuse_entity_owned_by_the_igniter() {
     init_vanilla_registry();
     init_behaviors();

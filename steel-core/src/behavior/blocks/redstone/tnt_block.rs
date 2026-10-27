@@ -55,12 +55,30 @@ impl TntBlock {
         ))
     }
 
-    /// Primes TNT at `pos`, returning whether a primed entity was added to the world.
+    /// Primes TNT at `pos` without a source, returning whether a primed entity was added.
     ///
     /// This is crate-visible so shared fire burn ticking can call the same entry point when that
     /// foundation is implemented.
-    pub(crate) fn prime(world: &Arc<World>, pos: BlockPos, owner: Option<&dyn Entity>) -> bool {
+    pub(crate) fn prime(world: &Arc<World>, pos: BlockPos) -> bool {
+        Self::prime_with_source(world, pos, None, || false)
+    }
+
+    /// Primes TNT for `owner`. An Adventure-mode player also needs `can_break_in_adventure`,
+    /// which checks the igniting stack's `can_break` predicate.
+    fn prime_with_source(
+        world: &Arc<World>,
+        pos: BlockPos,
+        owner: Option<&dyn Entity>,
+        can_break_in_adventure: impl FnOnce() -> bool,
+    ) -> bool {
         if !world.get_game_rule(&TNT_EXPLODES) {
+            return false;
+        }
+        if owner
+            .and_then(|owner| owner.as_player())
+            .is_some_and(|player| player.game_mode() == GameType::Adventure)
+            && !can_break_in_adventure()
+        {
             return false;
         }
 
@@ -108,7 +126,7 @@ impl BlockBehavior for TntBlock {
     ) {
         if old_state.get_block() != state.get_block()
             && world.has_neighbor_signal(pos)
-            && Self::prime(world, pos, None)
+            && Self::prime(world, pos)
         {
             world.remove_block(pos, false);
         }
@@ -122,7 +140,7 @@ impl BlockBehavior for TntBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
-        if world.has_neighbor_signal(pos) && Self::prime(world, pos, None) {
+        if world.has_neighbor_signal(pos) && Self::prime(world, pos) {
             world.remove_block(pos, false);
         }
     }
@@ -135,7 +153,7 @@ impl BlockBehavior for TntBlock {
         player: &Player,
     ) -> BlockStateId {
         if !player.has_infinite_materials() && state.get_value(&BlockStateProperties::UNSTABLE) {
-            Self::prime(world, pos, None);
+            Self::prime(world, pos);
         }
         state
     }
@@ -178,9 +196,9 @@ impl BlockBehavior for TntBlock {
             return InteractionResult::TryEmptyHandInteraction;
         }
 
-        let can_ignite = player.game_mode() != GameType::Adventure
-            || inv.with_item(|item| can_break(item, world, pos));
-        if !can_ignite || !Self::prime(world, pos, Some(player)) {
+        if !Self::prime_with_source(world, pos, Some(player), || {
+            inv.with_item(|item| can_break(item, world, pos))
+        }) {
             if !world.get_game_rule(&TNT_EXPLODES) {
                 Self::send_disabled_message(player);
                 return InteractionResult::Pass;
@@ -220,7 +238,9 @@ impl BlockBehavior for TntBlock {
 
         let owner = projectile.get_owner();
         let living_owner = owner.as_deref().filter(|owner| owner.is_living_entity());
-        if Self::prime(world, hit.block_pos, living_owner) {
+        // TODO: Check an arrow's pickup stack once arrows exist. Other projectiles use an empty
+        // stack, which never permits Adventure-mode breaking.
+        if Self::prime_with_source(world, hit.block_pos, living_owner, || false) {
             world.remove_block(hit.block_pos, false);
         }
     }

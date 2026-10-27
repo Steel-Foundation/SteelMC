@@ -237,6 +237,7 @@ pub struct EntityBaseState {
     no_physics: bool,
     needs_velocity_sync: bool,
     hurt_marked: bool,
+    requires_precise_position: bool,
 }
 
 impl EntityBaseState {
@@ -270,6 +271,7 @@ impl EntityBaseState {
             no_physics: false,
             needs_velocity_sync: false,
             hurt_marked: false,
+            requires_precise_position: false,
         }
     }
 
@@ -780,6 +782,17 @@ impl EntityBase {
     #[inline]
     pub fn hurt_marked(&self) -> bool {
         self.state.lock().hurt_marked
+    }
+
+    /// Returns true when tracker movement sync must send a full position packet.
+    #[inline]
+    pub fn requires_precise_position(&self) -> bool {
+        self.state.lock().requires_precise_position
+    }
+
+    /// Sets whether tracker movement sync must send a full position packet.
+    pub fn set_requires_precise_position(&self, requires_precise_position: bool) {
+        self.state.lock().requires_precise_position = requires_precise_position;
     }
 
     /// Gets the world this entity is in.
