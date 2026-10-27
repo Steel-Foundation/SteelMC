@@ -2787,9 +2787,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns vanilla movement side effects emitted by this entity.
-    // TODO: Override when these entities land: `None` for `PrimedTnt`, `Shulker`, and
-    // `AbstractArrow`; `Events` for `Squid`, `Breeze`, `Guardian`, `Silverfish`,
-    // `AbstractBoat`, and the unimplemented minecart variants.
     fn movement_emission(&self) -> EntityMovementEmission {
         EntityMovementEmission::All
     }
