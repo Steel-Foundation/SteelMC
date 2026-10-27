@@ -596,7 +596,7 @@ fn equip_from_table(mob: &dyn Mob, equipment: &EquipmentTable) {
         }
         mob.living_base().equipment().lock().set(slot, equipped);
         if let Some(chance) = equipment.drop_chance(slot) {
-            let _ = mob.set_equipment_drop_chance(slot, chance);
+            mob.set_equipment_drop_chance(slot, chance);
         }
         inserted[slot.index()] = true;
     }

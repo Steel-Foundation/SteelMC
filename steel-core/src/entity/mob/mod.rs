@@ -358,18 +358,6 @@ pub trait Mob: LivingEntity + Leashable {
         true
     }
 
-    /// Returns whether the entity's box is free of liquids and spawn-blocking entities.
-    fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
-        !aabb_contains_any_liquid(world, self.bounding_box())
-            && !world.has_entity_in_aabb_matching(&self.bounding_box(), |entity| {
-                entity.id() != self.id()
-                    && !entity.is_removed()
-                    && !entity.is_spectator()
-                    && entity.blocks_building()
-                    && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
-            })
-    }
-
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
     /// mobs derive it from their start age, and other mobs override as needed.
     fn set_baby(&self, baby: bool) {
@@ -745,14 +733,6 @@ pub trait Mob: LivingEntity + Leashable {
             .drop_chances()
             .lock()
             .set_guaranteed_drop(slot);
-    }
-
-    /// Sets a vanilla equipment drop chance loaded from a spawner table.
-    fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) -> bool {
-        self.mob_base()
-            .drop_chances()
-            .lock()
-            .set_equipment_chance(slot, chance)
     }
 
     /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search
