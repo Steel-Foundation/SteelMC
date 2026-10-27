@@ -15,6 +15,7 @@ use steel_utils::locks::SyncRwLock;
 use steel_utils::{BlockPos, ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
+use super::ticking::VehicleChain;
 use super::{
     Entity, NullEntityCallback, RemovalReason, SharedEntity, snapshot_old_pos_and_rot_for_tick,
     tick_vehicle_passengers_with_ticked_if,
@@ -378,6 +379,11 @@ struct EntityEntry {
     spatial_cells: SmallVec<[EntitySpatialCell; 8]>,
     section_order: u64,
     ownership: EntityOwnership,
+}
+
+/// Pre-tick manager state resolved under one state lock.
+struct TickContext {
+    manager_chunk: Option<ChunkPos>,
 }
 
 impl EntityEntry {
@@ -1427,9 +1433,9 @@ impl WorldEntityManager {
         let mut ticked_entities = FxHashSet::default();
         let tick_candidates = self.ticking_entities_snapshot();
         for entity in tick_candidates {
-            if !self.can_tick_entity_now(entity.id()) {
+            let Some(tick_context) = self.tick_context(entity.id()) else {
                 continue;
-            }
+            };
 
             if entity.is_removed() {
                 continue;
@@ -1439,7 +1445,7 @@ impl WorldEntityManager {
                 continue;
             }
 
-            let entity_chunk = self.live_manager_owned_entity_chunk(entity.id());
+            let entity_chunk = tick_context.manager_chunk;
             entity.check_despawn();
             if entity.is_removed() {
                 if let Some(chunk) = entity_chunk {
@@ -1585,21 +1591,27 @@ impl WorldEntityManager {
             return true;
         }
 
-        let mut visited = FxHashSet::default();
-        visited.insert(entity.id());
-        let mut vehicle = entity.vehicle();
-        while let Some(current) = vehicle {
+        let Some(mut vehicle) = entity.vehicle() else {
+            return false;
+        };
+
+        let mut visited = VehicleChain::new();
+        visited.push(entity.id());
+        loop {
             assert!(
-                visited.insert(current.id()),
+                !visited.contains(&vehicle.id()),
                 "cyclic passenger relationship involving entity {}",
                 entity.id()
             );
-            if current.is_world_change_pending() {
+            visited.push(vehicle.id());
+            if vehicle.is_world_change_pending() {
                 return true;
             }
-            vehicle = current.vehicle();
+            let Some(current) = vehicle.vehicle() else {
+                return false;
+            };
+            vehicle = current;
         }
-        false
     }
 
     fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {
@@ -1626,16 +1638,17 @@ impl WorldEntityManager {
     }
 
     fn assert_acyclic_vehicle_chain(entity: &SharedEntity) {
-        let mut visited = FxHashSet::default();
-        visited.insert(entity.id());
+        let mut visited = VehicleChain::new();
+        visited.push(entity.id());
 
         let mut vehicle = entity.vehicle();
         while let Some(current) = vehicle {
             assert!(
-                visited.insert(current.id()),
+                !visited.contains(&current.id()),
                 "cyclic passenger relationship involving entity {}",
                 entity.id()
             );
+            visited.push(current.id());
             vehicle = current.vehicle();
         }
     }
@@ -1677,21 +1690,27 @@ impl WorldEntityManager {
     }
 
     fn can_tick_entity_now(&self, entity_id: i32) -> bool {
+        self.tick_context(entity_id).is_some()
+    }
+
+    fn tick_context(&self, entity_id: i32) -> Option<TickContext> {
         let state = self.state.read();
-        let Some(entry) = state.live_by_id.get(&entity_id) else {
-            return false;
-        };
+        let entry = state.live_by_id.get(&entity_id)?;
         if Self::has_pending_world_change_in_vehicle_chain(&entry.entity) {
-            return false;
+            return None;
         }
 
-        match entry.ownership {
+        let in_tick_list = state.tick_list.contains(entity_id);
+        let can_tick = match entry.ownership {
             EntityOwnership::External => {
-                entry.entity.entity_type() == &vanilla_entities::PLAYER
-                    || state.tick_list.contains(entity_id)
+                entry.entity.entity_type() == &vanilla_entities::PLAYER || in_tick_list
             }
-            EntityOwnership::ManagerOwned => state.tick_list.contains(entity_id),
-        }
+            EntityOwnership::ManagerOwned => in_tick_list,
+        };
+        can_tick.then_some(TickContext {
+            manager_chunk: (entry.ownership == EntityOwnership::ManagerOwned)
+                .then_some(entry.chunk),
+        })
     }
 
     fn insert_live_entry(state: &mut ManagerState, mut entry: EntityEntry) {
@@ -1903,6 +1922,9 @@ impl Default for WorldEntityManager {
         Self::new()
     }
 }
+
+#[cfg(feature = "benchmark-support")]
+pub mod benchmark_support;
 
 #[cfg(test)]
 mod tests;
