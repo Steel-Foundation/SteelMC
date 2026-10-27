@@ -10,24 +10,246 @@ use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON, USE_REMAINDER,
 };
 
-use steel_registry::data_components::vanilla_components::ITEM_NAME;
+use steel_registry::data_components::vanilla_components::{INTANGIBLE_PROJECTILE, ITEM_NAME};
+use steel_registry::equipment::EquipmentSlot;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
+use steel_registry::vanilla_item_tags::ItemTag;
+use steel_registry::vanilla_items;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_game_events};
 use steel_utils::types::{InteractionHand, SignTextSlot};
 use text_components::TextComponent;
 
 use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem, block_transformer};
-use crate::behavior::{InteractionResult, InventoryTickContext, UseItemContext, UseOnContext};
+use crate::behavior::{
+    ITEM_BEHAVIORS, InteractionResult, InventoryTickContext, UseItemContext, UseOnContext,
+};
 use crate::block_entity::entities::{SignBlockEntity, SignText};
+use crate::enchantment_helper;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
+use crate::entity::projectile::{Projectile, spawn_projectile};
 use crate::entity::{Entity, LivingEntity, LivingEntityRef, SharedEntity};
+use crate::inventory::container::Container as _;
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
 pub use steel_registry::data_components::vanilla_components::ItemUseAnimation;
+
+/// Vanilla `InteractionHand.asEquipmentSlot`, used to attribute weapon
+/// durability loss to the hand that fired the projectile.
+const fn equipment_slot(hand: InteractionHand) -> EquipmentSlot {
+    match hand {
+        InteractionHand::MainHand => EquipmentSlot::MainHand,
+        InteractionHand::OffHand => EquipmentSlot::OffHand,
+    }
+}
+
+/// Item capability for vanilla `ArrowItem` subclasses: creates the concrete
+/// `AbstractArrow` a projectile weapon fires with this item as ammo.
+pub trait ArrowItemBehavior: Send + Sync {
+    /// Vanilla `ArrowItem.createArrow`.
+    ///
+    /// `is_crit` folds vanilla `ProjectileWeaponItem.createProjectile`'s
+    /// `setCritArrow` call into construction because `AbstractArrow` is not
+    /// object-safe, so the caller cannot set it afterwards.
+    fn create_arrow(
+        &self,
+        world: &Arc<World>,
+        pickup_item_stack: &mut ItemStack,
+        shooter: LivingEntityRef<'_>,
+        weapon: Option<&ItemStack>,
+        is_crit: bool,
+    ) -> Option<SharedEntity>;
+}
+
+/// Item capability for vanilla `ProjectileWeaponItem`: a weapon that draws ammo
+/// from the holder's inventory and fires projectiles with it.
+pub trait ProjectileWeaponItem: Send + Sync {
+    /// Vanilla `getSupportedHeldProjectiles`.
+    fn is_supported_held_projectile(&self, stack: &ItemStack) -> bool {
+        self.is_supported_projectile(stack)
+    }
+
+    /// Vanilla `getAllSupportedProjectiles`. The base `ProjectileWeaponItem`
+    /// default is `ARROW_ONLY`.
+    fn is_supported_projectile(&self, stack: &ItemStack) -> bool {
+        stack.item.has_tag(&ItemTag::ARROWS)
+    }
+
+    /// Vanilla `getDefaultProjectileRange`.
+    fn get_default_projectile_range(&self) -> i32;
+
+    /// Vanilla `getDurabilityUse`.
+    fn get_durability_use(&self, _projectile: &ItemStack) -> i32 {
+        1
+    }
+
+    /// Vanilla `shootProjectile`.
+    fn shoot_projectile(
+        &self,
+        shooter: &Player,
+        projectile: &dyn Projectile,
+        index: usize,
+        power: f32,
+        uncertainty: f32,
+        angle: f32,
+    );
+
+    /// Vanilla `createProjectile`.
+    fn create_projectile(
+        &self,
+        world: &Arc<World>,
+        shooter: LivingEntityRef<'_>,
+        weapon: &ItemStack,
+        projectile: &mut ItemStack,
+        is_crit: bool,
+    ) -> Option<SharedEntity> {
+        let arrow_item = ITEM_BEHAVIORS
+            .get_behavior(projectile.item())
+            .as_arrow_item()
+            .or_else(|| {
+                ITEM_BEHAVIORS
+                    .get_behavior(&vanilla_items::ARROW)
+                    .as_arrow_item()
+            });
+        let Some(arrow_item) = arrow_item else {
+            log::debug!(
+                "no arrow item behavior for {} or minecraft:arrow",
+                projectile.item().key
+            );
+            return None;
+        };
+        arrow_item.create_arrow(world, projectile, shooter, Some(weapon), is_crit)
+    }
+
+    /// Vanilla `ProjectileWeaponItem.shoot`: spawns each drawn projectile with
+    /// its spread angle, then damages the weapon once per shot.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla ProjectileWeaponItem.shoot"
+    )]
+    fn shoot(
+        &self,
+        world: &Arc<World>,
+        shooter: &Player,
+        shooter_entity: &SharedEntity,
+        hand: InteractionHand,
+        weapon: &mut ItemStack,
+        projectiles: &[ItemStack],
+        power: f32,
+        uncertainty: f32,
+        is_crit: bool,
+    ) {
+        let Some(shooter_ref) = LivingEntityRef::new(shooter_entity) else {
+            return;
+        };
+        let max_angle = enchantment_helper::process_projectile_spread(weapon, shooter, 0.0);
+        let angle_step = if projectiles.len() == 1 {
+            0.0
+        } else {
+            2.0 * max_angle / (projectiles.len() - 1) as f32
+        };
+        let angle_offset = ((projectiles.len() - 1) % 2) as f32 * angle_step / 2.0;
+        let mut direction = 1.0_f32;
+        let slot = equipment_slot(hand);
+
+        for (index, projectile) in projectiles.iter().enumerate() {
+            if projectile.is_empty() {
+                continue;
+            }
+            let angle = angle_offset + direction * index.div_ceil(2) as f32 * angle_step;
+            direction = -direction;
+
+            let mut projectile = projectile.clone();
+            if let Some(entity) =
+                self.create_projectile(world, shooter_ref, weapon, &mut projectile, is_crit)
+            {
+                let _ = spawn_projectile(world, entity, &mut projectile, |entity| {
+                    self.shoot_projectile(shooter, entity, index, power, uncertainty, angle);
+                });
+            }
+
+            // Vanilla damages the weapon after the spawn attempt regardless of
+            // whether the projectile entity could be created or added.
+            let durability = self.get_durability_use(&projectile);
+            let weapon_item = weapon.item();
+            if weapon.hurt_and_break(durability, shooter.has_infinite_materials()) {
+                shooter.on_equipped_item_broken(weapon_item, slot);
+            }
+            if weapon.is_empty() {
+                break;
+            }
+        }
+    }
+
+    /// Vanilla `draw`: splits the ammo stack into `processProjectileCount`
+    /// projectiles.
+    fn draw(
+        &self,
+        weapon: &ItemStack,
+        projectile: &ItemStack,
+        slot: Option<usize>,
+        shooter: &Player,
+    ) -> Vec<ItemStack> {
+        if projectile.is_empty() {
+            return Vec::new();
+        }
+
+        let count = enchantment_helper::process_projectile_count(weapon, shooter, 1) as usize;
+        let mut drawn = Vec::with_capacity(count);
+        let mut first = projectile.clone();
+        let mut extra = projectile.clone();
+        for index in 0..count {
+            let drawn_stack = if index == 0 {
+                self.use_ammo(weapon, &mut first, slot, shooter, false)
+            } else {
+                self.use_ammo(weapon, &mut extra, None, shooter, true)
+            };
+            if !drawn_stack.is_empty() {
+                drawn.push(drawn_stack);
+            }
+        }
+
+        drawn
+    }
+
+    /// Vanilla `useAmmo`.
+    ///
+    /// `slot` is the inventory slot the ammo came from; the split remainder is
+    /// written back there because Steel hands out a stack copy where vanilla
+    /// mutates the live inventory stack.
+    fn use_ammo(
+        &self,
+        weapon: &ItemStack,
+        projectile: &mut ItemStack,
+        slot: Option<usize>,
+        holder: &Player,
+        force_infinite: bool,
+    ) -> ItemStack {
+        let ammo_to_use = if force_infinite || holder.has_infinite_materials() {
+            0
+        } else {
+            enchantment_helper::process_ammo_use(weapon, projectile, 1)
+        };
+        if ammo_to_use > projectile.count() {
+            return ItemStack::empty();
+        }
+
+        if ammo_to_use == 0 {
+            let mut copy = projectile.copy_with_count(1);
+            copy.set(INTANGIBLE_PROJECTILE, ());
+            return copy;
+        }
+
+        let used = projectile.split(ammo_to_use);
+        if let Some(slot) = slot {
+            holder.inventory.lock().set_item(slot, projectile.clone());
+        }
+        used
+    }
+}
 
 /// Item capability applied by a sign before its editor fallback.
 pub trait SignApplicator: Send + Sync {
@@ -192,7 +414,7 @@ pub trait ItemBehavior: Send + Sync {
         &self,
         _stack: &mut ItemStack,
         _world: &Arc<World>,
-        _user: &dyn LivingEntity,
+        _user: LivingEntityRef<'_>,
         _time_left: i32,
     ) -> bool {
         false
@@ -286,6 +508,17 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Returns the capability used by sign block interactions.
     fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
+        None
+    }
+
+    /// Returns the projectile-weapon capability (vanilla `ProjectileWeaponItem`).
+    fn as_projectile_weapon(&self) -> Option<&dyn ProjectileWeaponItem> {
+        None
+    }
+
+    /// Returns the arrow-item capability (vanilla `ArrowItem`) used as
+    /// projectile-weapon ammo.
+    fn as_arrow_item(&self) -> Option<&dyn ArrowItemBehavior> {
         None
     }
 }

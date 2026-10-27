@@ -409,7 +409,7 @@ impl Projectile for ThrownTridentEntity {
 
             if let Some(mob) = entity.as_living_entity() {
                 self.arrow_do_knockback(mob, &damage_source);
-                self.arrow_do_post_hurt_effects(mob);
+                Arc::clone(&self).arrow_do_post_hurt_effects(mob);
             }
         }
 

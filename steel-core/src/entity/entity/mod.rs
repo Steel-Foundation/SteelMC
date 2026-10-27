@@ -3928,6 +3928,31 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
     fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
 
+    /// Vanilla `Entity.applyComponentsFromItemStack`: implicit entity components,
+    /// then the stack's custom name and custom data.
+    fn apply_components_from_item_stack(&self, item_stack: &ItemStack) {
+        self.apply_implicit_item_components(item_stack);
+
+        if let Some(custom_name) = item_stack.get(CUSTOM_NAME) {
+            self.set_custom_name(Some(custom_name.clone()));
+        }
+
+        if let Some(custom_data) = item_stack.get(CUSTOM_DATA) {
+            self.set_custom_data(custom_data.copy_tag());
+        }
+    }
+
+    /// Returns whether vanilla `LivingEntity.take` sends the take-item
+    /// animation packet for this entity (`ItemEntity`, `AbstractArrow`,
+    /// `ExperienceOrb`).
+    fn is_takeable(&self) -> bool {
+        self.is_abstract_arrow()
+            || self.downcast_ref::<entities::ItemEntity>().is_some()
+            || self
+                .downcast_ref::<entities::ExperienceOrbEntity>()
+                .is_some()
+    }
+
     /// Spawn-item data is merged into the entity's current save state before it
     /// is loaded. Keeping that merge at the entity boundary preserves defaults
     /// and entity-specific state when the component only overrides one field.

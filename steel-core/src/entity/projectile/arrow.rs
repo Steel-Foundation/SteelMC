@@ -14,6 +14,7 @@ use parking_lot::MappedMutexGuard;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
+use steel_protocol::packets::game::{CGameEvent, GameEventType};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
@@ -604,6 +605,10 @@ pub trait AbstractArrow: Projectile + Sized {
     }
 
     /// Vanilla `AbstractArrow.onHitEntity`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "mirrors vanilla AbstractArrow.onHitEntity"
+    )]
     fn arrow_on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         let Some(world) = entity.level() else {
             return;
@@ -681,9 +686,18 @@ pub trait AbstractArrow: Projectile + Sized {
                     );
                 }
 
-                self.arrow_do_post_hurt_effects(mob);
-                // TODO: vanilla also sends the arrow-hit sound game event to a
-                // player owner when the victim is another player.
+                Arc::clone(&self).arrow_do_post_hurt_effects(mob);
+                if entity.as_player().is_some()
+                    && !self.is_silent()
+                    && let Some(owner) = owner.as_ref()
+                    && let Some(owner_player) = owner.as_player()
+                    && !Arc::ptr_eq(entity, owner)
+                {
+                    owner_player.send_packet(CGameEvent {
+                        event: GameEventType::PlayArrowHitSound,
+                        data: 0.0,
+                    });
+                }
             }
 
             // TODO: vanilla tracks killed entities and triggers the
@@ -746,7 +760,16 @@ pub trait AbstractArrow: Projectile + Sized {
     }
 
     /// Vanilla `AbstractArrow.doPostHurtEffects` (no-op by default).
-    fn arrow_do_post_hurt_effects(&self, _mob: &dyn LivingEntity) {}
+    fn arrow_do_post_hurt_effects(self: Arc<Self>, _mob: &dyn LivingEntity) {}
+
+    /// Vanilla `Projectile.getEffectSource`: the owner when present, otherwise
+    /// the projectile itself. The owner need not be a living entity.
+    fn arrow_get_effect_source(self: Arc<Self>) -> SharedEntity {
+        if let Some(owner) = self.get_owner() {
+            return owner;
+        }
+        self
+    }
 
     /// Vanilla `AbstractArrow.onHitBlock`.
     fn arrow_on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
@@ -885,7 +908,7 @@ pub trait AbstractArrow: Projectile + Sized {
                 .and_then(|holder| holder.registry_ref())
                 .unwrap_or_else(|| arrow_base.default_sound_event()),
         );
-        arrow_base.set_pickup_item_stack(
+        self.arrow_set_pickup_item_stack(
             nbt.compound("item")
                 .and_then(|compound| ItemStack::from_borrowed_compound(&compound))
                 .unwrap_or_else(|| arrow_base.default_pickup_item()),
@@ -908,8 +931,7 @@ pub trait AbstractArrow: Projectile + Sized {
             && self.arrow_base().shake_time() <= 0
             && self.try_pickup(player)
         {
-            // TODO: vanilla also calls `player.take(this, 1)`, which Steel's
-            // `Player` does not implement yet.
+            player.take(self.as_ref(), 1);
             self.set_removed(RemovalReason::Discarded);
         }
     }

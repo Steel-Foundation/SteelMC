@@ -801,6 +801,35 @@ where
     Some(entity)
 }
 
+/// Vanilla `Projectile.spawnProjectile`: shoots the projectile, adds it to the
+/// world, then applies the spawn enchantment effects to `pickup_item_stack`.
+///
+/// Returns `None` when the world rejects the projectile so the caller can fail
+/// the attack.
+#[must_use]
+pub fn spawn_projectile(
+    world: &Arc<World>,
+    projectile: SharedEntity,
+    pickup_item_stack: &mut ItemStack,
+    shoot: impl FnOnce(&dyn Projectile),
+) -> Option<SharedEntity> {
+    let Some(projectile_capability) = projectile.as_projectile() else {
+        log::debug!("spawn_projectile called with a non-projectile entity");
+        return None;
+    };
+    shoot(projectile_capability);
+
+    if let Err(error) = world.try_add_entity(Arc::clone(&projectile)) {
+        log::debug!("failed to spawn projectile: {error}");
+        return None;
+    }
+    if let Some(projectile_capability) = projectile.as_projectile() {
+        projectile_capability.apply_on_projectile_spawned(world, pickup_item_stack);
+    }
+
+    Some(projectile)
+}
+
 /// Vanilla `Projectile.spawnProjectileUsingShoot`: shoots a new projectile at a
 /// point, adds it to the world, then applies the spawn enchantment effects.
 ///
@@ -818,19 +847,10 @@ pub fn spawn_projectile_using_shoot<E>(
 where
     E: Projectile + 'static,
 {
-    let projectile = Arc::new(create());
-    projectile.shoot_at(target.x, target.y, target.z, power, uncertainty);
-
-    let entity: SharedEntity = projectile;
-    if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
-        log::debug!("failed to spawn projectile: {error}");
-        return None;
-    }
-    if let Some(projectile) = entity.as_projectile() {
-        projectile.apply_on_projectile_spawned(world, pickup_item_stack);
-    }
-
-    Some(entity)
+    let projectile: SharedEntity = Arc::new(create());
+    spawn_projectile(world, projectile, pickup_item_stack, |projectile| {
+        projectile.shoot_at(target.x, target.y, target.z, power, uncertainty);
+    })
 }
 
 /// Vanilla `ProjectileUtil.computeMargin`: ramps the entity hit margin from 0 to

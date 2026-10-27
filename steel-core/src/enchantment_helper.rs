@@ -215,7 +215,7 @@ pub(crate) fn do_post_attack_effects_from_item(
 
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
-    victim: &(impl Entity + ?Sized),
+    victim: &dyn Entity,
     source: &ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {
@@ -316,6 +316,97 @@ pub(crate) fn get_trident_return_to_owner_acceleration(
     }
 
     (value.floor() as i32).max(0)
+}
+
+/// Vanilla `EnchantmentHelper.processAmmoUse`.
+pub(crate) fn process_ammo_use(weapon: &ItemStack, ammo: &ItemStack, amount: i32) -> i32 {
+    process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::AmmoUse,
+        amount as f32,
+        |requirements, _| requirements.matches_item_context(ammo.item) == Some(true),
+    ) as i32
+}
+
+/// Vanilla `EnchantmentHelper.processProjectileCount`.
+pub(crate) fn process_projectile_count(
+    weapon: &ItemStack,
+    shooter: &dyn Entity,
+    count: i32,
+) -> i32 {
+    let value = process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::ProjectileCount,
+        count as f32,
+        |requirements, level| entity_requirements_match(Some(requirements), shooter, level),
+    );
+    (value as i32).max(0)
+}
+
+/// Vanilla `EnchantmentHelper.processProjectileSpread`.
+pub(crate) fn process_projectile_spread(
+    weapon: &ItemStack,
+    shooter: &dyn Entity,
+    angle: f32,
+) -> f32 {
+    process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::ProjectileSpread,
+        angle,
+        |requirements, level| entity_requirements_match(Some(requirements), shooter, level),
+    )
+    .max(0.0)
+}
+
+/// Vanilla `EnchantmentHelper.getPiercingCount`.
+pub(crate) fn get_piercing_count(weapon: &ItemStack, ammo: &ItemStack) -> i32 {
+    let value = process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::ProjectilePiercing,
+        0.0,
+        |requirements, _| requirements.matches_item_context(ammo.item) == Some(true),
+    );
+    (value as i32).max(0)
+}
+
+/// Applies a weapon's value effects for `component` in vanilla
+/// `EnchantmentHelper.runIterationOnItem` order.
+///
+/// `remove_binomial` effects are skipped because Steel's value-effect pipeline
+/// has no per-entity random source; no vanilla projectile enchantment uses them.
+fn process_value_effects(
+    item: &ItemStack,
+    component: EnchantmentEffectComponent,
+    input: f32,
+    mut requirements_match: impl FnMut(&'static EnchantmentEffectRequirements, i32) -> bool,
+) -> f32 {
+    let Some(enchantments) = item.get_enchantments() else {
+        return input;
+    };
+
+    let mut value = input;
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let level = *level as i32;
+
+        for effect in enchantment.effects.value_effects(component) {
+            if let Some(requirements) = effect.requirements
+                && !requirements_match(requirements, level)
+            {
+                continue;
+            }
+            if let Some(updated) = effect.effect.process_without_random(level, value) {
+                value = updated;
+            }
+        }
+    }
+
+    value
 }
 
 fn apply_value_effects(
