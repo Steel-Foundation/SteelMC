@@ -646,6 +646,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         !self.is_removed() && self.is_pickable()
     }
 
+    /// Vanilla `Entity.projectileReceivesSideEffectsOnHit`: whether a projectile
+    /// that hit this entity still applies its side effects (hit sound,
+    /// deflection) when the hit did not hurt.
+    fn projectile_receives_side_effects_on_hit(&self, _was_hurt: bool) -> bool {
+        true
+    }
+
     /// Returns this entity's Vanilla projectile deflection behavior.
     fn deflection(&self, _projectile: &dyn Projectile) -> ProjectileDeflection {
         if REGISTRY
@@ -897,6 +904,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return;
         }
 
+        self.default_push_impulse(impulse);
+    }
+
+    /// Vanilla `Entity.push` body, exposed so overrides can apply the base
+    /// impulse.
+    fn default_push_impulse(&self, impulse: DVec3) {
         if !impulse.is_finite() {
             return;
         }
@@ -2246,7 +2259,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.fluid_contact().water_height() > 0.0
     }
 
-    /// Returns true if rain falls at this entity's feet or at the top of its bounding box.
+    /// Vanilla `Entity.isInRain`, which tests the block under the entity and the
+    /// block at the top of its bounding box.
     fn is_in_rain(&self) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -2261,7 +2275,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             ))
     }
 
-    /// Returns true if this entity is touching water or standing in rain.
+    /// Vanilla `Entity.isInWaterOrRain`.
     fn is_in_water_or_rain(&self) -> bool {
         self.is_in_water() || self.is_in_rain()
     }
@@ -3502,11 +3516,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Moves the entity with collision detection.
     ///
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
+    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+        self.default_move_entity(mover_type, delta)
+    }
+
+    /// Vanilla `Entity.move` body, exposed so overrides can apply the base
+    /// collision-resolved movement.
     #[expect(
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
     )]
-    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+    fn default_move_entity(
+        self: Arc<Self>,
+        mover_type: MoverType,
+        delta: DVec3,
+    ) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);

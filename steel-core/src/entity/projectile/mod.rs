@@ -9,6 +9,7 @@
 //!
 //! The block + entity move-vector raycast mirrors `ProjectileUtil`.
 
+mod arrow;
 mod throwable;
 mod throwable_item;
 mod thrown_potion;
@@ -46,6 +47,7 @@ use super::{
     BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
 };
 
+pub use arrow::{ARROW_AIR_DRAG, ARROW_GRAVITY, AbstractArrow, ArrowBase, ArrowPickup};
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
 pub use thrown_potion::{
@@ -112,12 +114,22 @@ pub enum ProjectileDeflection {
 }
 
 impl ProjectileDeflection {
-    fn apply(self, projectile: &dyn Projectile, deflecting_entity: Option<&dyn Entity>) {
+    fn apply(
+        self,
+        projectile: &dyn Projectile,
+        deflecting_entity: Option<&dyn Entity>,
+        power: DVec3,
+    ) {
         match self {
             Self::None => {}
             Self::Reverse => {
                 let rotation = rand::random_range(170.0..190.0);
-                projectile.set_velocity(projectile.velocity() * -0.5);
+                let velocity = projectile.velocity();
+                projectile.set_velocity(DVec3::new(
+                    velocity.x * -power.x * 0.5,
+                    velocity.y * -power.y * 0.5,
+                    velocity.z * -power.z * 0.5,
+                ));
                 let (yaw, pitch) = projectile.rotation();
                 projectile.set_rotation((yaw + rotation, pitch));
                 let (old_yaw, old_pitch) = projectile.base().old_rotation();
@@ -130,7 +142,12 @@ impl ProjectileDeflection {
                 let Some(entity) = deflecting_entity else {
                     return;
                 };
-                projectile.set_velocity(entity.look_angle());
+                let look_angle = entity.look_angle();
+                projectile.set_velocity(DVec3::new(
+                    look_angle.x * power.x,
+                    look_angle.y * power.y,
+                    look_angle.z * power.z,
+                ));
                 projectile.mark_velocity_sync();
             }
             Self::MomentumDeflect => {
@@ -144,7 +161,11 @@ impl ProjectileDeflection {
                 } else {
                     movement / length
                 };
-                projectile.set_velocity(normalized);
+                projectile.set_velocity(DVec3::new(
+                    normalized.x * power.x,
+                    normalized.y * power.y,
+                    normalized.z * power.z,
+                ));
                 projectile.mark_velocity_sync();
             }
         }
@@ -245,6 +266,12 @@ pub trait Projectile: Entity + ProjectileEventSource {
 
     /// Sets the owning entity and caches its live reference.
     fn set_owner_entity(&self, owner: Option<&SharedEntity>) {
+        self.default_set_owner_entity(owner);
+    }
+
+    /// Vanilla `Projectile.setOwner` body, exposed so overrides can store the
+    /// owner without their own side effects.
+    fn default_set_owner_entity(&self, owner: Option<&SharedEntity>) {
         self.projectile_base().state.lock().owner = owner.map(EntityReference::from_entity);
     }
 
@@ -396,6 +423,12 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Sets this projectile's velocity and facing rotation toward `direction`
     /// at `power`, with random spread scaled by `uncertainty`.
     fn shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
+        self.default_shoot(direction, power, uncertainty);
+    }
+
+    /// Vanilla `Projectile.shoot` body, exposed so overrides can apply the base
+    /// launch without their own side effects.
+    fn default_shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
         let movement = self.get_movement_to_shoot(direction, power, uncertainty);
         self.set_velocity(movement);
         self.mark_velocity_sync();
@@ -405,6 +438,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let pitch = movement.y.atan2(horizontal).to_degrees() as f32;
         self.set_rotation((yaw, pitch));
         self.base().set_old_rotation_to_current();
+    }
+
+    /// Vanilla `Projectile.shoot` overload that aims at `(x, y, z)`.
+    fn shoot_at(&self, x: f64, y: f64, z: f64, power: f32, uncertainty: f32) {
+        self.shoot(DVec3::new(x, y, z), power, uncertainty);
     }
 
     /// Shoots this projectile from `source`'s rotation (offset by `y_offset`),
@@ -456,8 +494,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         deflecting_entity: Option<&dyn Entity>,
         new_owner: Option<EntityReference>,
         by_attack: bool,
+        power: DVec3,
     ) -> bool {
-        deflection.apply(self.as_projectile_event_source(), deflecting_entity);
+        deflection.apply(self.as_projectile_event_source(), deflecting_entity, power);
         self.projectile_base().state.lock().owner = new_owner;
         self.on_deflection(by_attack);
         true
@@ -529,7 +568,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
                     .is_some_and(|last| Arc::ptr_eq(&last, &entity_hit.entity));
                 let owner = self.projectile_base().state.lock().owner.clone();
                 if !already_deflected
-                    && self.deflect(deflection, Some(entity_hit.entity.as_ref()), owner, false)
+                    && self.deflect(
+                        deflection,
+                        Some(entity_hit.entity.as_ref()),
+                        owner,
+                        false,
+                        DVec3::splat(1.0),
+                    )
                 {
                     self.projectile_base().state.lock().last_deflected_by =
                         Some(Arc::downgrade(&entity_hit.entity));
@@ -542,8 +587,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         {
             let deflection = ProjectileDeflection::Reverse;
             let owner = self.projectile_base().state.lock().owner.clone();
-            if self.deflect(deflection, None, owner, false) {
-                self.set_velocity(self.velocity() * 0.2);
+            if self.deflect(deflection, None, owner, false, DVec3::splat(0.2)) {
                 return deflection;
             }
         }
@@ -576,6 +620,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         owner_entity.as_deref(),
                         owner,
                         true,
+                        DVec3::splat(1.0),
                     );
                 }
                 Arc::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
@@ -649,6 +694,36 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.reset_left_owner_checked();
     }
 
+    /// Vanilla `Projectile.applyOnProjectileSpawned`.
+    ///
+    /// Overrides call [`Projectile::projectile_apply_on_projectile_spawned`] to
+    /// run the base behavior.
+    fn apply_on_projectile_spawned(&self, world: &World, pickup_item_stack: &mut ItemStack) {
+        self.projectile_apply_on_projectile_spawned(world, pickup_item_stack);
+    }
+
+    /// Shared `Projectile.applyOnProjectileSpawned` body.
+    ///
+    /// The pickup stack breaking is ignored, matching vanilla's no-op break
+    /// handler for this call.
+    fn projectile_apply_on_projectile_spawned(
+        &self,
+        world: &World,
+        pickup_item_stack: &mut ItemStack,
+    ) {
+        let owner = self.get_owner();
+        let _ = enchantment_helper::on_projectile_spawned(
+            world,
+            pickup_item_stack,
+            self.as_entity_event_source(),
+            owner.as_ref(),
+        );
+    }
+
+    /// Called when an enchantment effect breaks the item that spawned this
+    /// projectile (vanilla `Projectile.onItemBreak`).
+    fn on_item_break(&self, _item: &ItemStack) {}
+
     /// Saves vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
     fn save_projectile(&self, nbt: &mut NbtCompound) {
         let state = self.projectile_base().state.lock();
@@ -719,7 +794,41 @@ where
         log::debug!("failed to spawn throwable item projectile: {error}");
         return None;
     }
-    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(&owner));
+    if let Some(projectile) = entity.as_projectile() {
+        projectile.apply_on_projectile_spawned(world, item_stack);
+    }
+
+    Some(entity)
+}
+
+/// Vanilla `Projectile.spawnProjectileUsingShoot`: shoots a new projectile at a
+/// point, adds it to the world, then applies the spawn enchantment effects.
+///
+/// Returns `None` when the world rejects the projectile so the caller can fail
+/// the attack.
+#[must_use]
+pub fn spawn_projectile_using_shoot<E>(
+    world: &Arc<World>,
+    pickup_item_stack: &mut ItemStack,
+    create: impl FnOnce() -> E,
+    target: DVec3,
+    power: f32,
+    uncertainty: f32,
+) -> Option<SharedEntity>
+where
+    E: Projectile + 'static,
+{
+    let projectile = Arc::new(create());
+    projectile.shoot_at(target.x, target.y, target.z, power, uncertainty);
+
+    let entity: SharedEntity = projectile;
+    if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
+        log::debug!("failed to spawn projectile: {error}");
+        return None;
+    }
+    if let Some(projectile) = entity.as_projectile() {
+        projectile.apply_on_projectile_spawned(world, pickup_item_stack);
+    }
 
     Some(entity)
 }
@@ -809,6 +918,77 @@ fn get_entity_hit_result(
     nearest
 }
 
+/// Vanilla `ProjectileUtil.getManyEntityHitResult`: every entity whose inflated
+/// box the segment `from -> to` enters.
+///
+/// Unlike [`get_entity_hit_result`], this returns all matching entities and
+/// re-clips against the entity's surface when only the margin box was hit.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors the vanilla ProjectileUtil.getManyEntityHitResult parameters"
+)]
+pub(crate) fn get_many_entity_hits(
+    world: &World,
+    from: DVec3,
+    to: DVec3,
+    search_box: WorldAabb,
+    margin: f64,
+    predicate: impl Fn(&dyn Entity) -> bool,
+    include_from_entity: bool,
+    project_surface_hit_location: bool,
+) -> Vec<EntityHitResult> {
+    let mut hits = Vec::new();
+
+    for entity in world.get_entities_in_aabb(&search_box) {
+        if !predicate(entity.as_ref()) {
+            continue;
+        }
+
+        let entity_box = entity.bounding_box();
+        if include_from_entity && entity_box.contains(from) {
+            hits.push(EntityHitResult {
+                entity,
+                location: from,
+            });
+            continue;
+        }
+        if let Some(location) = clip_segment(entity_box, from, to) {
+            hits.push(EntityHitResult { entity, location });
+            continue;
+        }
+        if margin <= 0.0 {
+            continue;
+        }
+
+        let Some(outside_hit_position) = clip_segment(entity_box.inflate(margin), from, to) else {
+            continue;
+        };
+        let mut towards_target = entity_box.center();
+        let block_hit = world.clip_including_border(
+            outside_hit_position,
+            towards_target,
+            ClipBlockShape::Collider,
+            ClipFluid::None,
+        );
+        if !block_hit.is_miss() {
+            towards_target = block_hit.location;
+        }
+
+        if let Some(surface_hit) = clip_segment(entity_box, outside_hit_position, towards_target) {
+            hits.push(EntityHitResult {
+                entity,
+                location: if project_surface_hit_location {
+                    surface_hit
+                } else {
+                    outside_hit_position
+                },
+            });
+        }
+    }
+
+    hits
+}
+
 /// Clips the segment `from -> to` against `aabb`, returning the entry point.
 ///
 /// Returns `from` when the segment starts inside the box and `None` when it never
@@ -859,7 +1039,7 @@ const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
 }
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
-fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
+pub(crate) fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
     while rot - rot_old < -DEGREE_180 {
         rot_old -= DEGREE_360;
     }

@@ -219,6 +219,19 @@ pub(crate) fn do_post_attack_effects_with_item_source(
     source: &ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {
+    do_post_attack_effects_with_item_source_on_break(world, victim, source, context, None);
+}
+
+/// Applies post-attack effects and reports a broken item stack through
+/// `attackerless_on_break` when the damage source has no living attacker, matching
+/// vanilla's `doPostAttackEffectsWithItemSourceOnBreak`.
+pub(crate) fn do_post_attack_effects_with_item_source_on_break(
+    world: &World,
+    victim: &dyn Entity,
+    source: &ItemStack,
+    context: &EnchantmentPostAttackContext<'_>,
+    attackerless_on_break: Option<&dyn Fn(&ItemStack)>,
+) {
     if let Some(living_victim) = victim.as_living_entity() {
         for slot in EquipmentSlot::ALL {
             let mut item = EnchantedItemInUse::Equipped {
@@ -240,14 +253,69 @@ pub(crate) fn do_post_attack_effects_with_item_source(
         }
     }
 
+    let attacker = context
+        .attacker
+        .and_then(|entity| entity.as_living_entity());
+    if attacker.is_none() && attackerless_on_break.is_none() {
+        return;
+    }
+
     let mut source = source.copy_with_count(source.count());
-    let _ = apply_post_attack_effects(
+    let source_item = source.item;
+    let source_broke = apply_post_attack_effects(
         world,
         &mut EnchantedItemInUse::Stack(&mut source),
         Some(EquipmentSlot::MainHand),
         EnchantmentTarget::Attacker,
         context,
     );
+    if !source_broke {
+        return;
+    }
+
+    if let Some(attacker) = attacker {
+        attacker.on_equipped_item_broken(source_item, EquipmentSlot::MainHand);
+    } else if let Some(on_break) = attackerless_on_break {
+        on_break(&source);
+    }
+}
+
+/// Vanilla `EnchantmentHelper.getTridentReturnToOwnerAcceleration`.
+///
+/// `remove_binomial` effects are skipped because Steel's value-effect pipeline has
+/// no thread-local random source; vanilla loyalty only uses linear effects.
+pub(crate) fn get_trident_return_to_owner_acceleration(
+    weapon: &ItemStack,
+    trident: &dyn Entity,
+) -> i32 {
+    let Some(enchantments) = weapon.get_enchantments() else {
+        return 0;
+    };
+
+    let mut value = 0.0_f32;
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let level = *level as i32;
+
+        for effect in enchantment
+            .effects
+            .value_effects(EnchantmentEffectComponent::TridentReturnAcceleration)
+        {
+            if !entity_requirements_match(effect.requirements, trident, level) {
+                continue;
+            }
+            if let Some(updated) = effect.effect.process_without_random(level, value) {
+                value = updated;
+            }
+        }
+    }
+
+    (value.floor() as i32).max(0)
 }
 
 fn apply_value_effects(
@@ -402,15 +470,15 @@ fn apply_post_attack_effects(
 }
 
 /// Mirrors vanilla `EnchantmentHelper.onProjectileSpawned` after the projectile
-/// has been handed to the world.
+/// has been handed to the world. Returns whether an effect broke the item.
 pub(crate) fn on_projectile_spawned(
     world: &World,
     weapon: &mut ItemStack,
     projectile: &dyn Entity,
     owner: Option<&SharedEntity>,
-) {
+) -> bool {
     let Some(enchantments) = weapon.get_enchantments() else {
-        return;
+        return false;
     };
     let enchantments = enchantments
         .iter()
@@ -425,11 +493,12 @@ pub(crate) fn on_projectile_spawned(
         })
         .collect::<Vec<_>>();
 
+    let mut broke = false;
     for (enchantment, level) in enchantments {
         let level = level as i32;
         for effect in enchantment.effects.projectile_spawned {
             if entity_requirements_match(effect.requirements, projectile, level) {
-                let _ = apply_entity_effect(
+                broke |= apply_entity_effect(
                     world,
                     &effect.effect,
                     level,
@@ -440,6 +509,8 @@ pub(crate) fn on_projectile_spawned(
             }
         }
     }
+
+    broke
 }
 
 pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEntity) {

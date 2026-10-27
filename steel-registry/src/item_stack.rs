@@ -25,11 +25,11 @@ use crate::{
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, BUNDLE_CONTENTS, CHARGED_PROJECTILES,
             CONTAINER, CUSTOM_DATA, CUSTOM_NAME, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE,
-            ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ITEM_NAME, ItemAttributeModifiers,
-            ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
-            OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
-            REPAIRABLE, STORED_ENCHANTMENTS, TOOL, Tool, UNBREAKABLE, WEAPON, WRITTEN_BOOK_CONTENT,
-            Weapon,
+            ENCHANTABLE, ENCHANTMENT_GLINT_OVERRIDE, ENCHANTMENTS, EQUIPPABLE, Equippable,
+            ITEM_NAME, ItemAttributeModifiers, ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE,
+            MINIMUM_ATTACK_CHARGE, OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier,
+            PIERCING_WEAPON, PiercingWeapon, REPAIRABLE, STORED_ENCHANTMENTS, TOOL, Tool,
+            UNBREAKABLE, WEAPON, WRITTEN_BOOK_CONTENT, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
@@ -599,6 +599,17 @@ impl ItemStack {
     #[must_use]
     pub fn get_enchantments(&self) -> Option<&ItemEnchantments> {
         self.get(ENCHANTMENTS)
+    }
+
+    /// Vanilla `ItemStack.hasFoil`.
+    ///
+    /// Steel does not model per-item `Item.isFoil` overrides, so every item
+    /// falls back to the base enchantment check.
+    #[must_use]
+    pub fn has_foil(&self) -> bool {
+        self.get(ENCHANTMENT_GLINT_OVERRIDE)
+            .copied()
+            .unwrap_or_else(|| self.is_enchanted())
     }
 
     /// Vanilla `EnchantmentHelper.getEnchantmentsForCrafting`: enchanted books

@@ -12,7 +12,7 @@ pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::projectiles::{
     EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, FishingHookEntity,
-    LingeringPotionEntity, SnowballEntity, SplashPotionEntity, ThrownEggEntity,
+    LingeringPotionEntity, SnowballEntity, SplashPotionEntity, ThrownEggEntity, ThrownTridentEntity,
 };
 pub use objects::technical::{InteractionEntity, MarkerEntity};
 pub use objects::vehicles::ChestMinecartEntity;
