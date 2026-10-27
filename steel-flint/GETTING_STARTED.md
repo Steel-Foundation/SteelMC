@@ -4,7 +4,7 @@ This guide gets `flint-steel` running locally against the SteelBenchmark test sp
 
 ## 1. Install Prerequisites
 
-- Rust with the toolchain from `rust-toolchain.toml`
+- Rust with the toolchain from `../rust-toolchain.toml`
 - Git
 
 Cargo downloads SteelMC and Flint dependencies from their git repositories during the first build.

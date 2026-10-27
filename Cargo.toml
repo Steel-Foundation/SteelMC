@@ -11,7 +11,7 @@ members = [
     "steel-core",
     "steel-crypto",
     "steel-math",
-    "steel-testharness/steel-flint",
+    "steel-flint",
 ]
 
 [workspace.package]
