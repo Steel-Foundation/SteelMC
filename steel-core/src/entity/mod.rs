@@ -836,6 +836,8 @@ pub use living_base::{
     MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
+#[cfg(feature = "benchmark-support")]
+pub use manager::benchmark_support as entity_manager_benchmark_support;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,

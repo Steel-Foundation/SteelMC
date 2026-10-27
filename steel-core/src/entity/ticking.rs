@@ -3,8 +3,12 @@
 use std::sync::Arc;
 
 use rustc_hash::FxHashSet;
+use smallvec::SmallVec;
 
 use super::{Entity, SharedEntity};
+
+/// Cycle-detection stack sized for the shallow passenger chains vanilla produces.
+pub(crate) type VehicleChain = SmallVec<[i32; 4]>;
 
 /// Snapshots vanilla old position and rotation before an entity tick.
 pub(crate) fn snapshot_old_pos_and_rot_for_tick(entity: &dyn Entity) {
@@ -22,10 +26,15 @@ pub(crate) fn tick_vehicle_passengers_with_ticked_if(
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
 ) {
-    let mut visited = FxHashSet::default();
-    visited.insert(vehicle.id());
+    let passengers = vehicle.passengers();
+    if passengers.is_empty() {
+        return;
+    }
 
-    for passenger in vehicle.passengers() {
+    let mut visited = VehicleChain::new();
+    visited.push(vehicle.id());
+
+    for passenger in passengers {
         tick_passenger(
             vehicle,
             &passenger,
@@ -43,13 +52,14 @@ fn tick_passenger(
     ticked_entities: &mut FxHashSet<i32>,
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
-    visited: &mut FxHashSet<i32>,
+    visited: &mut VehicleChain,
 ) {
     assert!(
-        visited.insert(entity.id()),
+        !visited.contains(&entity.id()),
         "cyclic passenger relationship involving entity {}",
         entity.id()
     );
+    visited.push(entity.id());
 
     if entity.is_removed()
         || entity
@@ -57,7 +67,7 @@ fn tick_passenger(
             .is_none_or(|current_vehicle| current_vehicle.id() != vehicle.id())
     {
         entity.stop_riding();
-        visited.remove(&entity.id());
+        visited.pop();
         return;
     }
 
@@ -79,5 +89,5 @@ fn tick_passenger(
         }
     }
 
-    visited.remove(&entity.id());
+    visited.pop();
 }
