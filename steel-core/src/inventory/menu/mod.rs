@@ -342,6 +342,26 @@ impl Menu {
         self.notify_armor_equipment_changes(player, armor_before);
     }
 
+    /// Sets a slot on behalf of a direct player action, such as a creative mode
+    /// slot packet. Reports the resulting equipment changes like [`Self::clicked`].
+    pub(crate) fn set_slot_by_player(
+        &mut self,
+        slot_index: usize,
+        stack: ItemStack,
+        player: &Player,
+    ) {
+        let armor_before = self.armor_items();
+        {
+            let mut guard = self.behavior().lock_all_containers();
+            let Some(slot) = self.behavior().slots().get(slot_index) else {
+                return;
+            };
+            let previous = slot.get_item(&guard).clone();
+            slot.set_by_player(&mut guard, stack, &previous);
+        }
+        self.notify_armor_equipment_changes(player, armor_before);
+    }
+
     fn armor_items(&self) -> Vec<(EquipmentSlot, ItemStack)> {
         let guard = self.behavior().lock_all_containers();
         self.behavior()
