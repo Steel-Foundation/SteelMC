@@ -54,13 +54,17 @@ fn spawn_data(id: &str) -> SpawnData {
     }
 }
 
-fn load_spawner(nbt: &NbtCompound) -> BaseSpawner {
+fn load_into(spawner: &BaseSpawner, nbt: &NbtCompound) {
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);
     let borrowed =
         read_compound(&mut Cursor::new(bytes.as_slice())).expect("spawner NBT should be readable");
-    let spawner = BaseSpawner::new();
     spawner.load(&borrowed);
+}
+
+fn load_spawner(nbt: &NbtCompound) -> BaseSpawner {
+    let spawner = BaseSpawner::new();
+    load_into(&spawner, nbt);
     spawner
 }
 
@@ -188,8 +192,8 @@ fn weighted_selection_skips_zero_weights_and_preserves_order() {
 
     for (random, expected) in [(0, "minecraft:zombie"), (1_u64 << 62, "minecraft:skeleton")] {
         assert_eq!(
-            choose_weighted(&entries, &mut FixedRng(random)),
-            Some(spawn_data(expected))
+            choose_weighted(&entries, &mut FixedRng(random)).map(|index| &entries[index].data),
+            Some(&spawn_data(expected))
         );
     }
 }
@@ -257,6 +261,53 @@ fn update_tag_omits_spawn_potentials_for_client_sync() {
 
     assert!(update_tag.get("SpawnPotentials").is_none());
     assert!(update_tag.get("SpawnData").is_some());
+}
+
+#[test]
+fn invalid_optional_spawn_data_fields_keep_the_entity() {
+    let root = parse_snbt_compound(
+        r#"{SpawnData:{
+            entity:{id:"minecraft:zombie"},
+            custom_spawn_rules:{block_light_limit:16},
+            equipment:{loot_table:1}
+        }}"#,
+    )
+    .expect("valid spawner fixture");
+    let spawner = load_spawner(&root);
+
+    assert_eq!(
+        spawner.next_spawn_data(),
+        Some(spawn_data("minecraft:zombie"))
+    );
+}
+
+#[test]
+fn load_keeps_active_spawn_data_when_new_data_does_not_decode() {
+    let spawner = load_spawner(
+        &parse_snbt_compound(r#"{SpawnData:{entity:{id:"minecraft:pig"}}}"#)
+            .expect("valid spawner fixture"),
+    );
+    load_into(
+        &spawner,
+        &parse_snbt_compound("{SpawnData:{entity:1}}").expect("valid spawner fixture"),
+    );
+
+    assert_eq!(spawner.next_spawn_data(), Some(spawn_data("minecraft:pig")));
+}
+
+#[test]
+fn set_entity_id_also_changes_the_shared_spawn_potential() {
+    init_vanilla_registry();
+    let spawner = load_spawner(
+        &parse_snbt_compound(r#"{SpawnData:{entity:{id:"minecraft:pig"}}}"#)
+            .expect("valid spawner fixture"),
+    );
+    spawner.set_entity_id(&vanilla_entities::ZOMBIE);
+
+    assert_eq!(
+        spawner.spawn_potentials()[0].data,
+        spawn_data("minecraft:zombie")
+    );
 }
 
 #[test]

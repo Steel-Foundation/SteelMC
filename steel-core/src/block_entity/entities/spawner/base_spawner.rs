@@ -1,5 +1,6 @@
 //! Shared spawn-cycle state and ticking used by spawner block entities.
 
+use std::mem;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -68,11 +69,23 @@ impl Default for BaseSpawnerConfig {
     }
 }
 
+/// Active spawn data of a spawner.
+///
+/// Vanilla holds the `SpawnData` picked from `spawnPotentials` by reference, so spawn egg
+/// edits through it also change that potential.
+#[derive(Debug)]
+enum NextSpawnData {
+    /// Index of the picked `spawn_potentials` entry.
+    Potential(usize),
+    /// Spawn data not shared with any potential.
+    Own(SpawnData),
+}
+
 #[derive(Debug)]
 struct SpawnerState {
     spawn_delay: i32,
     spawn_potentials: Vec<WeightedSpawnData>,
-    next_spawn_data: Option<SpawnData>,
+    next_spawn_data: Option<NextSpawnData>,
     config: BaseSpawnerConfig,
 }
 
@@ -89,6 +102,38 @@ impl Default for SpawnerState {
             spawn_potentials: Vec::new(),
             next_spawn_data: None,
             config: BaseSpawnerConfig::default(),
+        }
+    }
+}
+
+impl SpawnerState {
+    fn next_spawn_data(&self) -> Option<&SpawnData> {
+        match self.next_spawn_data.as_ref()? {
+            NextSpawnData::Potential(index) => Some(&self.spawn_potentials[*index].data),
+            NextSpawnData::Own(data) => Some(data),
+        }
+    }
+    fn get_or_create_next_spawn_data<R: Rng + ?Sized>(
+        &mut self,
+        random: &mut R,
+    ) -> (&mut SpawnData, bool) {
+        let created = self.next_spawn_data.is_none();
+        let next = self.next_spawn_data.get_or_insert_with(|| {
+            choose_weighted(&self.spawn_potentials, random).map_or_else(
+                || NextSpawnData::Own(SpawnData::default()),
+                NextSpawnData::Potential,
+            )
+        });
+        let data = match next {
+            NextSpawnData::Potential(index) => &mut self.spawn_potentials[*index].data,
+            NextSpawnData::Own(data) => data,
+        };
+        (data, created)
+    }
+    fn replace_spawn_potentials(&mut self, potentials: Vec<WeightedSpawnData>) {
+        let mut old_potentials = mem::replace(&mut self.spawn_potentials, potentials);
+        if let Some(NextSpawnData::Potential(index)) = self.next_spawn_data {
+            self.next_spawn_data = Some(NextSpawnData::Own(old_potentials.swap_remove(index).data));
         }
     }
 }
@@ -122,9 +167,12 @@ impl BaseSpawner {
             .get("Delay")
             .and_then(|tag| tag.short_value())
             .map_or(DEFAULT_SPAWN_DELAY, i32::from);
-        state.next_spawn_data = nbt
+        if let Some(data) = nbt
             .compound("SpawnData")
-            .and_then(|data| SpawnData::from_nbt(&data));
+            .and_then(|data| SpawnData::from_nbt(&data))
+        {
+            state.next_spawn_data = Some(NextSpawnData::Own(data));
+        }
         let loaded_spawn_potentials = nbt.list("SpawnPotentials").map(|entries| {
             entries
                 .compounds()
@@ -143,12 +191,19 @@ impl BaseSpawner {
                 })
                 .collect::<Vec<_>>()
         });
-        state.spawn_potentials = loaded_spawn_potentials.unwrap_or_else(|| {
-            vec![WeightedSpawnData {
+        if let Some(potentials) = loaded_spawn_potentials {
+            state.replace_spawn_potentials(potentials);
+        } else {
+            // Vanilla wraps the active spawn data itself, so both stay shared.
+            state.replace_spawn_potentials(vec![WeightedSpawnData {
                 weight: 1,
-                data: state.next_spawn_data.clone().unwrap_or_default(),
-            }]
-        });
+                data: SpawnData::default(),
+            }]);
+            if let Some(NextSpawnData::Own(data)) = state.next_spawn_data.take() {
+                state.spawn_potentials[0].data = data;
+                state.next_spawn_data = Some(NextSpawnData::Potential(0));
+            }
+        }
         state.config.min_spawn_delay = nbt
             .get("MinSpawnDelay")
             .and_then(|tag| tag.int_value())
@@ -188,7 +243,7 @@ impl BaseSpawner {
             state.config.required_player_range as i16,
         );
         nbt.insert("SpawnRange", state.config.spawn_range as i16);
-        if let Some(next_spawn_data) = &state.next_spawn_data {
+        if let Some(next_spawn_data) = state.next_spawn_data() {
             nbt.insert("SpawnData", next_spawn_data.to_nbt());
         }
         let potentials = state
@@ -216,26 +271,16 @@ impl BaseSpawner {
         random: &mut R,
     ) -> (SpawnData, bool) {
         let mut state = self.state.lock();
-        if let Some(data) = &state.next_spawn_data {
-            return (data.clone(), false);
-        }
-
-        let data = choose_weighted(&state.spawn_potentials, random).unwrap_or_default();
-        state.next_spawn_data = Some(data.clone());
-        (data, true)
+        let (data, created) = state.get_or_create_next_spawn_data(random);
+        (data.clone(), created)
     }
 
     /// Configures the active spawn entity.
     pub fn set_entity_id(&self, entity_type: EntityTypeRef) {
         let mut random = rng();
         let mut state = self.state.lock();
-        if state.next_spawn_data.is_none() {
-            state.next_spawn_data =
-                Some(choose_weighted(&state.spawn_potentials, &mut random).unwrap_or_default());
-        }
-        if let Some(data) = state.next_spawn_data.as_mut() {
-            replace_entity_id(&mut data.entity_to_spawn, entity_type);
-        }
+        let (data, _) = state.get_or_create_next_spawn_data(&mut random);
+        replace_entity_id(&mut data.entity_to_spawn, entity_type);
     }
 
     /// Returns whether this spawner handles the given block event.
@@ -280,18 +325,18 @@ impl BaseSpawner {
     /// Replaces the weighted entries the next spawn data is picked from. The active
     /// spawn data is kept until the next delay roll.
     pub fn set_spawn_potentials(&self, potentials: Vec<WeightedSpawnData>) {
-        self.state.lock().spawn_potentials = potentials;
+        self.state.lock().replace_spawn_potentials(potentials);
     }
 
     /// Returns the active spawn data, if one has been selected.
     #[must_use]
     pub fn next_spawn_data(&self) -> Option<SpawnData> {
-        self.state.lock().next_spawn_data.clone()
+        self.state.lock().next_spawn_data().cloned()
     }
 
     /// Replaces the active spawn data.
     pub fn set_next_spawn_data(&self, data: SpawnData) {
-        self.state.lock().next_spawn_data = Some(data);
+        self.state.lock().next_spawn_data = Some(NextSpawnData::Own(data));
     }
 
     #[expect(
@@ -487,11 +532,10 @@ impl BaseSpawner {
             } else {
                 min_spawn_delay + random.random_range(0..delay)
             };
-            if let Some(next_spawn_data) = choose_weighted(&state.spawn_potentials, random)
-                && state.next_spawn_data.as_ref() != Some(&next_spawn_data)
-            {
-                state.next_spawn_data = Some(next_spawn_data);
-                result.next_spawn_data_changed = true;
+            if let Some(index) = choose_weighted(&state.spawn_potentials, random) {
+                result.next_spawn_data_changed =
+                    state.next_spawn_data() != Some(&state.spawn_potentials[index].data);
+                state.next_spawn_data = Some(NextSpawnData::Potential(index));
             }
         }
         world.block_event(pos, &vanilla_blocks::SPAWNER, EVENT_SPAWN, 0);
@@ -509,10 +553,11 @@ impl BaseSpawner {
     }
 }
 
+/// Returns the index of a weighted pick from `entries`.
 pub(super) fn choose_weighted<R: Rng + ?Sized>(
     entries: &[WeightedSpawnData],
     random: &mut R,
-) -> Option<SpawnData> {
+) -> Option<usize> {
     let total_weight = entries
         .iter()
         .map(|entry| i64::from(entry.weight))
@@ -522,10 +567,10 @@ pub(super) fn choose_weighted<R: Rng + ?Sized>(
     }
 
     let mut selection = random.random_range(0..total_weight);
-    for entry in entries {
+    for (index, entry) in entries.iter().enumerate() {
         let weight = i64::from(entry.weight);
         if selection < weight {
-            return Some(entry.data.clone());
+            return Some(index);
         }
         selection -= weight;
     }

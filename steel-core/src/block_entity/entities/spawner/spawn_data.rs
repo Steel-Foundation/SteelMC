@@ -136,8 +136,7 @@ impl EquipmentTable {
                 }
             }
             Some(tag) => {
-                let chances = tag.compound()?;
-                for (name, value) in chances.iter() {
+                for (name, value) in tag.compound().iter().flat_map(NbtCompoundView::iter) {
                     let name = name.to_str();
                     let Some(slot) = EquipmentSlot::by_name(name.as_ref()) else {
                         continue;
@@ -232,14 +231,12 @@ impl SpawnData {
     pub(super) fn from_nbt(nbt: &NbtCompoundView<'_, '_>) -> Option<Self> {
         let mut entity_to_spawn = nbt.compound("entity")?.to_owned();
         normalize_entity_id(&mut entity_to_spawn);
-        let custom_spawn_rules = match nbt.get("custom_spawn_rules") {
-            Some(tag) => Some(CustomSpawnRules::from_nbt(&tag.compound()?)?),
-            None => None,
-        };
-        let equipment = match nbt.get("equipment") {
-            Some(tag) => Some(EquipmentTable::from_nbt(&tag.compound()?)?),
-            None => None,
-        };
+        let custom_spawn_rules = nbt
+            .compound("custom_spawn_rules")
+            .and_then(|rules| CustomSpawnRules::from_nbt(&rules));
+        let equipment = nbt
+            .compound("equipment")
+            .and_then(|equipment| EquipmentTable::from_nbt(&equipment));
         Some(Self {
             entity_to_spawn,
             custom_spawn_rules,
