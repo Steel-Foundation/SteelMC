@@ -462,10 +462,9 @@ impl BaseSpawner {
                     continue;
                 }
 
-                // TODO: Vanilla calls `finalizeSpawn(SPAWNER)` here when the entity NBT holds
-                // only an `id`. Blocked on local difficulty (`DifficultyInstance`: world
-                // difficulty, overworld time, chunk InhabitedTime, moon brightness), which
-                // `Mob::finalize_spawn` does not take yet. Equipment applies either way.
+                if next_spawn_data.entity_to_spawn.len() == 1 {
+                    let _ = mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
+                }
                 if let Some(equipment) = &next_spawn_data.equipment {
                     equip_from_table(mob, equipment);
                 }
