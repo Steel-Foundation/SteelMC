@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{CExplode, ExplosionParticleInfo, ExplosionParticlePalette};
+use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::fluid::FluidState;
 use steel_registry::game_rules::GameRule;
@@ -18,6 +20,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, SharedEntity};
+use crate::player::connection::NetworkConnection as _;
 use crate::world::World;
 
 use server::ServerExplosion;
@@ -453,18 +456,35 @@ impl World {
             .is_none_or(|source| !source.is_silent());
         let packet_block_count = i32::try_from(affected_block_count).unwrap_or(i32::MAX);
 
+        let packet = |player_knockback| CExplode {
+            center: options.center,
+            radius: options.radius,
+            block_count: packet_block_count,
+            player_knockback,
+            explosion_particle: explosion_particle.clone(),
+            explosion_sound: options.explosion_sound.clone(),
+            block_particles: options.block_particles.clone(),
+            play_sound,
+        };
+        // Players without knockback receive identical bytes, so that packet is encoded once.
+        let mut shared = None;
         self.players.iter_players(|_, player| {
-            if player.position().distance_squared(options.center) < MAX_PACKET_DISTANCE_SQUARED {
-                player.send_packet(CExplode {
-                    center: options.center,
-                    radius: options.radius,
-                    block_count: packet_block_count,
-                    player_knockback: explosion.hit_players.get(&player.id()).copied(),
-                    explosion_particle: explosion_particle.clone(),
-                    explosion_sound: options.explosion_sound.clone(),
-                    block_particles: options.block_particles.clone(),
-                    play_sound,
-                });
+            if player.position().distance_squared(options.center) >= MAX_PACKET_DISTANCE_SQUARED {
+                return true;
+            }
+            if let Some(&knockback) = explosion.hit_players.get(&player.id()) {
+                player.send_packet(packet(Some(knockback)));
+                return true;
+            }
+            let encoded = shared.get_or_insert_with(|| {
+                EncodedPacket::from_bare(packet(None), self.compression, ConnectionProtocol::Play)
+                    .inspect_err(|error| {
+                        tracing::warn!(?error, "Failed to encode explosion packet");
+                    })
+                    .ok()
+            });
+            if let Some(encoded) = encoded {
+                player.connection.send_encoded(encoded.clone());
             }
             true
         });
