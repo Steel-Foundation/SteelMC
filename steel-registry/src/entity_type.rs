@@ -170,8 +170,8 @@ fn fallback_point(attachment: EntityAttachment, dimensions: EntityDimensions) ->
 
 fn rotate_attachment_point(point: DVec3, yaw_degrees: f32) -> DVec3 {
     let radians = f64::from(-yaw_degrees).to_radians();
-    let cos = f64::from(trig::cos(f64::from(radians)));
-    let sin = f64::from(trig::sin(f64::from(radians)));
+    let cos = f64::from(trig::cos(radians));
+    let sin = f64::from(trig::sin(radians));
     DVec3::new(
         point.x.mul_add(cos, point.z * sin),
         point.y,
