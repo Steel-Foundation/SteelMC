@@ -1,7 +1,7 @@
 // Data processing for .github/workflows/flint.yml, called through actions/github-script.
 const fs = require("fs");
 
-const SUMMARY = "steel-testharness/steel-flint/log/flint_summary.json";
+const SUMMARY = "steel-flint/log/flint_summary.json";
 const BASELINE = "baseline/flint_baseline.json";
 const BASE_IMPLEMENTED = "baseline/implemented.txt";
 const IMPLEMENTED = "implemented.txt";
