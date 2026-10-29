@@ -1,8 +1,9 @@
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::projectile::triangle_random;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
-    RemovalReason, SharedEntity, ThrowableProjectile, entity_loot_ref, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, LivingEntity,
+    Projectile, ProjectileBase, RemovalReason, SharedEntity, ThrowableProjectile, entity_loot_ref,
+    next_entity_id,
 };
 use crate::fluid::get_height;
 use crate::physics::MoverType;
@@ -834,6 +835,10 @@ impl Entity for FishingHookEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
     }
 
     /// Responsible for all state-changes.

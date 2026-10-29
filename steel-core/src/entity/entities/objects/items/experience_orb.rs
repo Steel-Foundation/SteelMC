@@ -18,8 +18,8 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, RemovalReason,
-    SharedEntity, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, LivingEntity,
+    RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -400,6 +400,10 @@ impl Entity for ExperienceOrbEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
     }
 
     fn tick(self: Arc<Self>) {
