@@ -1745,6 +1745,26 @@ pub trait LivingEntity: Entity {
             .flatten()
     }
 
+    /// Applies the sound portion of vanilla's equipment-change hook.
+    fn on_equip_item(&self, slot: EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
+        if self.is_spectator()
+            || self.is_first_tick()
+            || ItemStack::is_same_item_same_components(previous, stack)
+        {
+            return;
+        }
+
+        let Some(sound) = self.equip_sound(slot, stack) else {
+            return;
+        };
+        if self.is_silent() {
+            return;
+        }
+        if let Some(world) = self.level() {
+            world.play_sound_at(sound, self.sound_source(), self.position(), 1.0, 1.0, None);
+        }
+    }
+
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.
     fn interact_living_entity_with_equippable(
         &self,
@@ -1788,9 +1808,7 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         if let Some(mob) = self.as_mob() {
             mob.set_guaranteed_drop(slot);
         }
