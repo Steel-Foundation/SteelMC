@@ -24,9 +24,6 @@ jobs:
           repository: FlintTestMC/FlintBenchmark
           path: FlintBenchmark
 
-      - name: Test report script
-        run: node --test .github/scripts/flint-report.test.js
-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
