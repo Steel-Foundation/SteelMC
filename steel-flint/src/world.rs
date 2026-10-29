@@ -173,8 +173,6 @@ impl SteelTestWorld {
     /// Ensures the chunk containing `pos` is loaded, retaining its ticket handle.
     fn ensure_chunk_at(&self, pos: &BlockPos) {
         let chunk_pos = ChunkPos::new(pos.x() >> 4, pos.z() >> 4);
-        // Fast path: a retained handle that is already Ready means the chunk
-        // is loaded at Full and its ticket is held — nothing to do.
         if let Some(handle) = self.chunk_requests.lock().get(&chunk_pos)
             && handle.poll() == ChunkRequestState::Ready
         {
@@ -196,7 +194,6 @@ impl SteelTestWorld {
             chunk_map.request_chunk(chunk_pos, ChunkStatus::Full, ChunkTicketKind::Command);
         // Ender pearl ticket is the only public simulated ticket: radius 2 =>
         // center is entity-ticking, block-ticking readiness (3x3 Full) at center.
-        // ponytail: timed ticket, refreshed every `do_tick`; add a public forced ticket in steel if that gets messy
         chunk_map.place_ender_pearl_ticket(chunk_pos);
 
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -218,9 +215,6 @@ impl SteelTestWorld {
             "chunk {chunk_pos:?} did not reach Full status within 30s"
         );
 
-        // Entity ticking needs a larger Full neighborhood than block ticking, and the
-        // outer ring generates asynchronously: without waiting for it, entities
-        // spawned by a test sit un-ticked at their spawn point.
         while Instant::now() < deadline {
             if chunk_map.is_block_ticking_full_chunk_simulated(chunk_pos)
                 && chunk_map.is_entity_ticking_full_chunk_loaded(chunk_pos)
@@ -294,14 +288,10 @@ impl FlintWorld for SteelTestWorld {
     fn do_tick(&mut self) -> Result<(), anyhow::Error> {
         let tick_count = self.tick.fetch_add(1, Ordering::SeqCst);
 
-        // Keep timed simulation tickets from expiring.
         for &pos in self.chunk_requests.lock().keys() {
             self.world.chunk_map.place_ender_pearl_ticket(pos);
         }
 
-        // Run a real world tick, mirroring the server loop: game time is
-        // advanced per domain before the world ticks.
-        // Note: For testing we run with `runs_normally = true`
         self.server.worlds.advance_domain_game_times();
         self.world.tick_game(tick_count, true);
         Ok(())
@@ -322,7 +312,6 @@ impl FlintWorld for SteelTestWorld {
     ) -> Result<Block, anyhow::Error> {
         let steel_pos = flint_pos_to_steel(pos);
 
-        // Ensure the chunk is loaded (for RAM storage this creates empty chunks)
         self.ensure_chunk_at(&steel_pos);
 
         let state = self.world.get_block_state(steel_pos);
@@ -345,11 +334,8 @@ impl FlintWorld for SteelTestWorld {
 
         let steel_pos = flint_pos_to_steel(pos);
 
-        // Ensure the chunk is loaded before setting blocks
         self.ensure_chunk_at(&steel_pos);
 
-        // Mirror vanilla `/setblock`: fit the state to its neighbors, then
-        // re-apply the properties the test set explicitly.
         let mut state = self.world.update_from_neighbor_shapes(state_id, steel_pos);
         if state.is_air() {
             state = state_id;
@@ -381,7 +367,6 @@ impl FlintWorld for SteelTestWorld {
         entity_type: &str,
         requested_nbt: &[String],
     ) -> Result<Vec<EntityState>, anyhow::Error> {
-        // The query only sees loaded chunks, and each test owns its world.
         const WORLD_EXTENT: f64 = 3.0e7;
         let aabb = WorldAabb::new(
             -WORLD_EXTENT,

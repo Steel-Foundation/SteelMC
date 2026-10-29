@@ -27,7 +27,7 @@ use tokio::runtime::{Builder, Runtime};
 static RUNTIME: LazyLock<Arc<Runtime>> = LazyLock::new(|| {
     Arc::new(
         Builder::new_multi_thread()
-            .worker_threads(2)
+            .worker_threads(4)
             .enable_all()
             .build()
             .expect("Failed to create Flint runtime"),
