@@ -13,11 +13,13 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::convert::{flint_block_to_state_id, flint_pos_to_steel, state_id_to_block};
+use crate::convert::{
+    flint_block_to_state_id, flint_gamerule_value, flint_pos_to_steel, state_id_to_block,
+};
 use crate::player::SteelTestPlayer;
 use crate::runtime;
 use flint_core::Block;
-use flint_core::test_spec::EntityNbt;
+use flint_core::test_spec::{EntityNbt, GameruleValue};
 use flint_core::traits::EntityState;
 use flint_core::{BlockPos as FlintBlockPos, FlintPlayer, FlintWorld};
 use glam::DVec3;
@@ -335,6 +337,9 @@ impl FlintWorld for SteelTestWorld {
         let steel_pos = flint_pos_to_steel(pos);
 
         self.ensure_chunk_at(&steel_pos);
+        // FlintCLI sends each action as a separate command to a frozen vanilla
+        // server, which runs light updates while idle between commands.
+        self.world.chunk_map.propagate_queued_light_changes();
 
         let mut state = self.world.update_from_neighbor_shapes(state_id, steel_pos);
         if state.is_air() {
@@ -362,6 +367,82 @@ impl FlintWorld for SteelTestWorld {
         Ok(())
     }
 
+    fn set_gamerule(&mut self, rule: String, value: GameruleValue) -> anyhow::Result<()> {
+        let key = rule
+            .parse::<Identifier>()
+            .map_err(|e| anyhow::anyhow!("Invalid gamerule identifier '{rule}': {e}"))?;
+        let rule = REGISTRY
+            .game_rules
+            .by_key(&key)
+            .ok_or_else(|| anyhow::anyhow!("Unknown gamerule '{key}'"))?;
+        let value = flint_gamerule_value(rule, value)?;
+        if !self.world.set_erased_game_rule(rule, value) {
+            anyhow::bail!("Value rejected for gamerule '{key}' (outside allowed range)");
+        }
+        Ok(())
+    }
+
+    fn summon_entity(
+        &mut self,
+        alias: &str,
+        entity_type: &str,
+        pos: [f64; 3],
+        nbt: Option<&EntityNbt>,
+    ) -> anyhow::Result<()> {
+        let key = entity_type
+            .parse::<Identifier>()
+            .map_err(|e| anyhow::anyhow!("Invalid entity type identifier '{entity_type}': {e}"))?;
+        let entity_type = REGISTRY
+            .entity_types
+            .by_key(&key)
+            .ok_or_else(|| anyhow::anyhow!("Unknown entity type '{key}'"))?;
+        let entity = ENTITIES
+            .create(
+                entity_type,
+                next_entity_id(),
+                DVec3::new(pos[0], pos[1], pos[2]),
+                Arc::downgrade(&self.world),
+            )
+            .ok_or_else(|| anyhow::anyhow!("No entity factory registered for '{key}'"))?;
+        if let Some(nbt) = nbt {
+            let compound = parse_snbt_compound(&nbt.to_snbt())?;
+            let mut bytes = Vec::new();
+            compound.write(&mut bytes);
+            let borrowed = read_compound(&mut Cursor::new(bytes.as_slice()))?;
+            entity.apply_spawn_data((&borrowed).into());
+        }
+        let uuid = entity.uuid();
+        self.world
+            .try_add_entity(entity)
+            .map_err(|e| anyhow::anyhow!("Failed to add '{key}' to world: {e:?}"))?;
+        self.entities.insert(alias.to_string(), uuid);
+        Ok(())
+    }
+
+    fn teleport_entity(
+        &mut self,
+        alias: &str,
+        pos: [f64; 3],
+        rot: Option<[f32; 2]>,
+    ) -> anyhow::Result<()> {
+        let entity = self.entity_by_alias(alias)?;
+        entity
+            .teleport_to(DVec3::new(pos[0], pos[1], pos[2]))
+            .map_err(|e| anyhow::anyhow!("Failed to teleport '{alias}': {e:?}"))?;
+        if let Some([yaw, pitch]) = rot {
+            entity.set_rotation((yaw, pitch));
+        }
+        Ok(())
+    }
+
+    fn get_entity(
+        &self,
+        alias: &str,
+        requested_nbt: &[String],
+    ) -> anyhow::Result<Vec<EntityState>> {
+        let entity = self.entity_by_alias(alias)?;
+        Ok(vec![Self::entity_state(entity.as_ref(), requested_nbt)])
+    }
     fn find_entity(
         &self,
         entity_type: &str,
@@ -393,59 +474,5 @@ impl FlintWorld for SteelTestWorld {
 
     fn create_player(&mut self) -> Box<dyn FlintPlayer> {
         Box::new(SteelTestPlayer::new(self.world.clone(), &self.server))
-    }
-
-    fn teleport_entity(
-        &mut self,
-        alias: &str,
-        pos: [f64; 3],
-        rot: Option<[f32; 2]>,
-    ) -> anyhow::Result<()> {
-        let entity = self.entity_by_alias(alias)?;
-        entity
-            .teleport_to(DVec3::new(pos[0], pos[1], pos[2]))
-            .map_err(|e| anyhow::anyhow!("Failed to teleport '{alias}': {e:?}"))?;
-        if let Some([yaw, pitch]) = rot {
-            entity.set_rotation((yaw, pitch));
-        }
-        Ok(())
-    }
-    fn summon_entity(
-        &mut self,
-        alias: &str,
-        entity_type: &str,
-        pos: [f64; 3],
-        _nbt: Option<&EntityNbt>,
-    ) -> anyhow::Result<()> {
-        let key = entity_type
-            .parse::<Identifier>()
-            .map_err(|e| anyhow::anyhow!("Invalid entity type identifier '{entity_type}': {e}"))?;
-        let entity_type = REGISTRY
-            .entity_types
-            .by_key(&key)
-            .ok_or_else(|| anyhow::anyhow!("Unknown entity type '{key}'"))?;
-        let entity = ENTITIES
-            .create(
-                entity_type,
-                next_entity_id(),
-                DVec3::new(pos[0], pos[1], pos[2]),
-                Arc::downgrade(&self.world),
-            )
-            .ok_or_else(|| anyhow::anyhow!("No entity factory registered for '{key}'"))?;
-        let uuid = entity.uuid();
-        self.world
-            .try_add_entity(entity)
-            .map_err(|e| anyhow::anyhow!("Failed to add '{key}' to world: {e:?}"))?;
-        self.entities.insert(alias.to_string(), uuid);
-        Ok(())
-    }
-
-    fn get_entity(
-        &self,
-        alias: &str,
-        requested_nbt: &[String],
-    ) -> anyhow::Result<Vec<EntityState>> {
-        let entity = self.entity_by_alias(alias)?;
-        Ok(vec![Self::entity_state(entity.as_ref(), requested_nbt)])
     }
 }

@@ -1,9 +1,11 @@
 //! Conversion utilities between Flint types and `SteelMC` types.
 
 use flint_core::Block;
+use flint_core::test_spec::GameruleValue;
 use rustc_hash::FxHashMap;
 use steel_core::behavior::BlockHitResult;
 use steel_core::world::ClipHitResult;
+use steel_registry::game_rules::{ErasedGameRuleRef, GameRuleType, GameRuleValue};
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::{BlockPos as SteelBlockPos, BlockStateId, Identifier};
 
@@ -51,6 +53,25 @@ pub fn state_id_to_block(state_id: BlockStateId) -> Block {
 /// Convert Flint `BlockPos` to `SteelMC` `BlockPos`.
 pub const fn flint_pos_to_steel(pos: flint_core::BlockPos) -> SteelBlockPos {
     SteelBlockPos::new(pos[0], pos[1], pos[2])
+}
+
+/// Convert a Flint gamerule value into the type the Steel rule expects.
+pub fn flint_gamerule_value(
+    rule: ErasedGameRuleRef,
+    value: GameruleValue,
+) -> anyhow::Result<GameRuleValue> {
+    match (rule.value_type(), value) {
+        (GameRuleType::Bool, GameruleValue::Bool(value)) => Ok(GameRuleValue::new(value)),
+        (GameRuleType::Int, GameruleValue::Integer(value)) => {
+            i32::try_from(value).map(GameRuleValue::new).map_err(|_| {
+                anyhow::anyhow!("Gamerule '{}' value {value} out of i32 range", rule.key())
+            })
+        }
+        (expected, value) => Err(anyhow::anyhow!(
+            "Gamerule '{}' expects {expected:?}, got '{value}'",
+            rule.key()
+        )),
+    }
 }
 
 /// Convert a `SteelMC` [`ClipHitResult`] to a [`BlockHitResult`].
