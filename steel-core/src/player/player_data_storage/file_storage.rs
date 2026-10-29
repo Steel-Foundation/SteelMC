@@ -47,6 +47,8 @@ impl FilePlayerDataStorage {
     ) -> io::Result<()> {
         self.save_domain_player_data(domain, uuid, data).await?;
         self.save_domain_player_stats(domain, uuid, data).await?;
+        self.save_domain_player_advancement(domain, uuid, data)
+            .await?; // TODO
         Ok(())
     }
 
