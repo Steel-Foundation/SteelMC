@@ -34,6 +34,17 @@ impl AdvancementProgressMap {
         }
     }
 
+    pub fn start_progress(
+        &mut self,
+        advancement: AdvancementRef,
+        mut progress: AdvancementProgress,
+    ) {
+        let idx = self.order.len();
+        progress.update(advancement.requirements());
+        self.order.push((advancement, progress));
+        self.map.insert(advancement, idx);
+    }
+
     /// clear all the progress made
     #[inline]
     pub fn clear(&mut self) {
@@ -108,7 +119,7 @@ impl AdvancementProgress {
             .is_some_and(CriterionProgress::is_done)
     }
 
-    /// Returns `true` if the advancement has any progress. Currently just returns if it is fully complete.
+    /// Returns `true` if the advancement has any progress.
     #[must_use]
     pub fn has_progress(&self) -> bool {
         for value in self.criteria.values() {

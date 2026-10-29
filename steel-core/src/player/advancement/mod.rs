@@ -4,6 +4,7 @@
 
 pub mod progress;
 pub mod rewards;
+mod saving;
 mod visibility_evaluator;
 
 use crate::entity::Entity;

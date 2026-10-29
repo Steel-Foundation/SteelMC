@@ -7,6 +7,7 @@ pub mod prefixed_read;
 pub mod prefixed_write;
 /// A module for reading data.
 pub mod read;
+pub mod vec_as_map;
 /// A module for writing data.
 pub mod write;
 
