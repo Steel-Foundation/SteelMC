@@ -353,6 +353,20 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn set_mob_flags(&self, flags: i8);
 
+    /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
+    /// mobs derive it from their start age, and other mobs override as needed.
+    fn set_baby(&self, baby: bool) {
+        let Some(ageable) = self.as_ageable_mob() else {
+            return;
+        };
+        let age = if baby {
+            ageable.get_baby_start_age()
+        } else {
+            0
+        };
+        ageable.set_age(age);
+    }
+
     /// Returns whether this mob has a saddle equipped.
     fn is_saddled(&self) -> bool {
         let mut is_saddled = false;

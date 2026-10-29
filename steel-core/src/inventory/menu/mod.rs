@@ -25,13 +25,19 @@ use steel_utils::locks::Shared;
 use std::fmt;
 use std::mem;
 
-use steel_registry::{item_stack::ItemStack, menu_type::MenuTypeRef, mob_effect::MobEffectRef};
+use steel_registry::{
+    equipment::EquipmentSlot, item_stack::ItemStack, menu_type::MenuTypeRef,
+    mob_effect::MobEffectRef,
+};
 use steel_utils::{Downcast as _, types::GameType};
 
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::menu::kinds::InventoryKind;
+use crate::loot::LootResult;
 use crate::{
+    entity::LivingEntity,
     inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef},
+    inventory::slots::{ArmorSlot, Slot},
     player::{Player, PlayerConnection},
 };
 
@@ -276,6 +282,9 @@ impl Menu {
             return;
         }
 
+        let Ok(armor_before) = self.armor_items() else {
+            return;
+        };
         let has_infinite_materials = player.game_mode() == GameType::Creative;
         if let Click::QuickCraft(action) = click {
             let outcome = {
@@ -348,6 +357,60 @@ impl Menu {
                 return;
             };
             self.slots_changed(&mut guard, player);
+        }
+        self.notify_armor_equipment_changes(player, armor_before);
+    }
+
+    /// Sets a slot on behalf of a direct player action, such as a creative mode
+    /// slot packet. Reports the resulting equipment changes like [`Self::clicked`].
+    pub(crate) fn set_slot_by_player(
+        &mut self,
+        slot_index: usize,
+        stack: ItemStack,
+        player: &Player,
+    ) {
+        let Ok(armor_before) = self.armor_items() else {
+            return;
+        };
+        {
+            let Ok(mut guard) = self.behavior().lock_all_containers() else {
+                return;
+            };
+            let Some(slot) = self.behavior().slots().get(slot_index) else {
+                return;
+            };
+            let previous = slot.get_item(&guard).clone();
+            slot.set_by_player(&mut guard, stack, &previous);
+        }
+        self.notify_armor_equipment_changes(player, armor_before);
+    }
+
+    fn armor_items(&self) -> LootResult<Vec<(EquipmentSlot, ItemStack)>> {
+        let guard = self.behavior().lock_all_containers()?;
+        Ok(self
+            .behavior()
+            .slots()
+            .iter()
+            .filter_map(|slot| {
+                let armor_slot = slot.downcast_ref::<ArmorSlot>()?;
+                Some((
+                    armor_slot.equipment_slot(),
+                    armor_slot.get_item(&guard).clone(),
+                ))
+            })
+            .collect())
+    }
+
+    fn notify_armor_equipment_changes(
+        &self,
+        player: &Player,
+        armor_before: Vec<(EquipmentSlot, ItemStack)>,
+    ) {
+        let Ok(armor_after) = self.armor_items() else {
+            return;
+        };
+        for ((slot, previous), (_, current)) in armor_before.into_iter().zip(armor_after) {
+            player.on_equip_item(slot, &previous, &current);
         }
     }
 

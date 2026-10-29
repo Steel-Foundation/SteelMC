@@ -80,6 +80,10 @@ harness = false
 name = "legacy_random"
 harness = false
 
+[[bench]]
+name = "variable_integer"
+harness = false
+
 [lints]
 workspace = true
 
