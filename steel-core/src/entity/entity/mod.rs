@@ -1842,10 +1842,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn calculate_view_vector(&self, pitch_degrees: f32, yaw_degrees: f32) -> DVec3 {
         let pitch = pitch_degrees.to_radians();
         let yaw = -yaw_degrees.to_radians();
-        let yaw_cos = trig::cos(f64::from(yaw));
-        let yaw_sin = trig::sin(f64::from(yaw));
-        let pitch_cos = trig::cos(f64::from(pitch));
-        let pitch_sin = trig::sin(f64::from(pitch));
+        let yaw_cos = trig::cos(yaw);
+        let yaw_sin = trig::sin(yaw);
+        let pitch_cos = trig::cos(pitch);
+        let pitch_sin = trig::sin(pitch);
         DVec3::new(
             f64::from(yaw_sin * pitch_cos),
             f64::from(-pitch_sin),

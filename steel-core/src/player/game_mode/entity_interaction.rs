@@ -141,8 +141,8 @@ impl Player {
     ) {
         if knockback_amount > 0.0 {
             let yaw_radians = self.rotation().0.to_radians();
-            let yaw_sin = f64::from(trig::sin(f64::from(yaw_radians)));
-            let yaw_cos = f64::from(trig::cos(f64::from(yaw_radians)));
+            let yaw_sin = f64::from(trig::sin(yaw_radians));
+            let yaw_cos = f64::from(trig::cos(yaw_radians));
             if let Some(living_target) = entity.as_living_entity() {
                 living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
             } else {

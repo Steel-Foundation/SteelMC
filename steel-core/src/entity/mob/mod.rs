@@ -1462,8 +1462,8 @@ pub trait Mob: LivingEntity + Leashable {
         };
 
         let yaw_radians = self.rotation().0.to_radians();
-        let yaw_sin = f64::from(trig::sin(f64::from(yaw_radians)));
-        let yaw_cos = f64::from(trig::cos(f64::from(yaw_radians)));
+        let yaw_sin = f64::from(trig::sin(yaw_radians));
+        let yaw_cos = f64::from(trig::cos(yaw_radians));
         living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
 
         let velocity = self.velocity();
@@ -1759,8 +1759,8 @@ pub trait Mob: LivingEntity + Leashable {
         let xa = strafe_forward * distance;
         let za = strafe_right * distance;
         let yaw_radians = self.rotation().0 * DEG_TO_RAD;
-        let sin = trig::sin(f64::from(yaw_radians));
-        let cos = trig::cos(f64::from(yaw_radians));
+        let sin = trig::sin(yaw_radians);
+        let cos = trig::cos(yaw_radians);
         let dx = xa.mul_add(cos, -(za * sin));
         let dz = za.mul_add(cos, xa * sin);
         if !self.is_strafe_walkable(dx, dz) {

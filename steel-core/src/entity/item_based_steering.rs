@@ -69,7 +69,7 @@ impl ItemBasedSteering {
         }
 
         let angle = (self.boost_time as f32 / boost_time_total as f32) * PI;
-        1.0 + BOOST_FACTOR_SCALE * trig::sin(f64::from(angle))
+        1.0 + BOOST_FACTOR_SCALE * trig::sin(angle)
     }
 
     /// Returns whether a boost is currently active.

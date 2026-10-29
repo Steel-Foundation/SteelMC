@@ -1051,18 +1051,18 @@ impl Player {
             let power = rand::random_range(0.0..0.5);
             let angle = rand::random_range(0.0..TAU);
             DVec3::new(
-                f64::from(-trig::sin(f64::from(angle)) * power),
+                f64::from(-trig::sin(angle) * power),
                 0.2,
-                f64::from(trig::cos(f64::from(angle)) * power),
+                f64::from(trig::cos(angle) * power),
             )
         } else {
             let pitch_rad = pitch.to_radians();
             let yaw_rad = yaw.to_radians();
 
-            let sin_pitch = trig::sin(f64::from(pitch_rad));
-            let cos_pitch = trig::cos(f64::from(pitch_rad));
-            let sin_yaw = trig::sin(f64::from(yaw_rad));
-            let cos_yaw = trig::cos(f64::from(yaw_rad));
+            let sin_pitch = trig::sin(pitch_rad);
+            let cos_pitch = trig::cos(pitch_rad);
+            let sin_yaw = trig::sin(yaw_rad);
+            let cos_yaw = trig::cos(yaw_rad);
 
             let angle_offset = rand::random_range(0.0..TAU);
             let power_offset = rand::random_range(0.0..0.02);

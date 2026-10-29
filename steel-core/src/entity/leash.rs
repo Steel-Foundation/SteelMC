@@ -488,8 +488,8 @@ pub(super) fn leash_holder_movement(entity: &dyn Entity) -> DVec3 {
 }
 
 pub(super) fn rotate_y(vector: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(trig::cos(f64::from(radians)));
-    let sin = f64::from(trig::sin(f64::from(radians)));
+    let cos = f64::from(trig::cos(radians));
+    let sin = f64::from(trig::sin(radians));
     DVec3::new(
         vector.x * cos + vector.z * sin,
         vector.y,

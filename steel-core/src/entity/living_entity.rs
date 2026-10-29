@@ -2267,9 +2267,9 @@ pub trait LivingEntity: Entity {
             self.set_velocity(
                 self.velocity()
                     + DVec3::new(
-                        -f64::from(trig::sin(f64::from(angle))) * 0.2,
+                        -f64::from(trig::sin(angle)) * 0.2,
                         0.0,
-                        f64::from(trig::cos(f64::from(angle))) * 0.2,
+                        f64::from(trig::cos(angle)) * 0.2,
                     ),
             );
         }
@@ -2822,8 +2822,7 @@ pub trait LivingEntity: Entity {
         }
 
         if pitch_radians < 0.0 && look_horizontal_length > 0.0 {
-            let convert =
-                move_horizontal_length * -f64::from(trig::sin(f64::from(pitch_radians))) * 0.04;
+            let convert = move_horizontal_length * -f64::from(trig::sin(pitch_radians)) * 0.04;
             movement += DVec3::new(
                 -look_angle.x * convert / look_horizontal_length,
                 convert * 3.2,
