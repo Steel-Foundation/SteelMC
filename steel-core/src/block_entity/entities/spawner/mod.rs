@@ -9,6 +9,7 @@ use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
+use steel_registry::data_components::components::EntityData;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
@@ -23,6 +24,9 @@ pub use spawn_data::{CustomSpawnRules, EquipmentTable, LightRange, SpawnData, We
 pub trait Spawner {
     /// Sets the next spawn entity type.
     fn set_entity_id(&self, entity_type: EntityTypeRef);
+
+    /// Sets the next spawn entity type and merges the rest of `entity_data` into it.
+    fn set_entity_data(&self, entity_data: &EntityData);
 
     /// Returns the ticks left until the next spawn cycle.
     fn spawn_delay(&self) -> i32;
@@ -81,6 +85,11 @@ impl SpawnerBlockEntity {
 impl Spawner for SpawnerBlockEntity {
     fn set_entity_id(&self, entity_type: EntityTypeRef) {
         self.spawner.set_entity_id(entity_type);
+        self.save_and_sync();
+    }
+
+    fn set_entity_data(&self, entity_data: &EntityData) {
+        self.spawner.set_entity_data(entity_data);
         self.save_and_sync();
     }
 

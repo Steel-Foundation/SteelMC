@@ -8,6 +8,7 @@ use rand::{Rng, RngExt, rng};
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_math::DEGREE_360;
+use steel_registry::data_components::components::EntityData;
 use steel_registry::entity_type::{EntityTypeRef, MobCategory};
 use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
@@ -15,7 +16,7 @@ use steel_registry::{
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::nbt::NbtNumeric;
+use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds};
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, Identifier, WorldAabb};
 
@@ -281,6 +282,15 @@ impl BaseSpawner {
         let mut state = self.state.lock();
         let (data, _) = state.get_or_create_next_spawn_data(&mut random);
         replace_entity_id(&mut data.entity_to_spawn, entity_type);
+    }
+
+    /// Sets the active spawn entity type and merges the rest of `entity_data` into it.
+    pub fn set_entity_data(&self, entity_data: &EntityData) {
+        let mut random = rng();
+        let mut state = self.state.lock();
+        let (data, _) = state.get_or_create_next_spawn_data(&mut random);
+        replace_entity_id(&mut data.entity_to_spawn, entity_data.entity_type());
+        merge_nbt_compounds(&mut data.entity_to_spawn, entity_data.data().as_compound());
     }
 
     /// Returns whether this spawner handles the given block event.

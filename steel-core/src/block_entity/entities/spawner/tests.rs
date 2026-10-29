@@ -9,9 +9,10 @@ use simdnbt::{
     borrow::read_compound,
     owned::{NbtList, NbtTag},
 };
+use steel_registry::data_components::components::{CustomData, EntityData};
 use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
 use steel_utils::WorldAabb;
-use steel_utils::nbt::parse_snbt_compound;
+use steel_utils::nbt::{compare_nbt_compounds, parse_snbt_compound};
 
 use crate::entity::init_entities;
 use crate::player::ResetReason;
@@ -307,6 +308,41 @@ fn set_entity_id_also_changes_the_shared_spawn_potential() {
     assert_eq!(
         spawner.spawn_potentials()[0].data,
         spawn_data("minecraft:zombie")
+    );
+}
+
+#[test]
+fn set_entity_data_replaces_the_id_and_merges_the_rest() {
+    init_vanilla_registry();
+    let spawner = load_spawner(
+        &parse_snbt_compound(
+            r#"{SpawnData:{entity:{id:"minecraft:pig",CustomName:"Old",Health:5.0f,Tags:{a:1b}}}}"#,
+        )
+        .expect("valid spawner fixture"),
+    );
+    let entity_data = EntityData::new(
+        &vanilla_entities::ZOMBIE,
+        CustomData::try_from_compound(
+            parse_snbt_compound(r#"{id:"minecraft:pig",CustomName:"Bob",NoAI:1b,Tags:{b:1b}}"#)
+                .expect("valid entity data"),
+        )
+        .expect("valid custom data"),
+    );
+    spawner.set_entity_data(&entity_data);
+
+    let entity = spawner
+        .next_spawn_data()
+        .expect("spawn data should be active")
+        .entity_to_spawn;
+    let expected = parse_snbt_compound(
+        r#"{id:"minecraft:zombie",CustomName:"Bob",Health:5.0f,NoAI:1b,Tags:{a:1b,b:1b}}"#,
+    )
+    .expect("valid expected entity");
+    // Merging reorders keys, so compare both ways instead of by insertion order.
+    assert!(
+        compare_nbt_compounds(&expected, &entity, false)
+            && compare_nbt_compounds(&entity, &expected, false),
+        "{entity:?}"
     );
 }
 
