@@ -33,17 +33,7 @@ steel-worldgen = { path = "steel-worldgen" }
 steel-math = { path = "steel-math" }
 
 # Async runtime
-tokio = { version = "1.54.1", features = [
-    "macros",
-    "net",
-    "rt-multi-thread",
-    "sync",
-    "io-std",
-    "fs",
-    "io-util",
-    "time",
-    "signal",
-] }
+tokio = { version = "1.54.1", features = ["macros", "sync", "io-util", "rt", "time"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }
 futures = "0.3.34"
 
