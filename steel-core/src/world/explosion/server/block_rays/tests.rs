@@ -192,7 +192,7 @@ fn precomputed_ray_steps_match_java_bit_digest() {
         }
     }
 
-    // Produced by the Minecraft 26.2 ServerExplosion expression under OpenJDK 25.
+    // Produced by the Minecraft  ServerExplosion expression under OpenJDK 25.
     assert_eq!(digest, EXPECTED_RAY_STEPS_FNV1A_64);
 }
 

@@ -1162,7 +1162,7 @@ impl World {
         result
     }
 
-    /// Mirrors Minecraft 26.2 `AABB.getDirection` for one block-local shape box.
+    /// Mirrors Minecraft  `AABB.getDirection` for one block-local shape box.
     pub(super) fn intersects_aabb_with_t(
         start: DVec3,
         end: DVec3,
@@ -1433,7 +1433,7 @@ mod voxel_shape_clip_tests {
     fn voxel_shape_clip_matches_java_full_cube_at_exact_opposite_boundaries() {
         let shape = OffsetVoxelShape::without_offset(VoxelShape::FULL_BLOCK);
 
-        // Minecraft 26.2's VoxelShape.clip probes 0.001 along the segment. For a
+        // Minecraft VoxelShape.clip probes 0.001 along the segment. For a
         // CubeVoxelShape the resulting x=1 index is outside, while x=0 is inside.
         assert!(
             World::clip_shape(
