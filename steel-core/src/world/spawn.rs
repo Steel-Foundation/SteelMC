@@ -187,7 +187,7 @@ impl World {
             .map(|first_available| first_available - 1)
     }
 
-    /// Mirrors vanilla `LevelReader.getHeightmapPos`.
+    /// Returns a position at the heightmap height keeping the given X and Z
     #[must_use]
     pub(crate) fn heightmap_pos(&self, heightmap_type: HeightmapType, pos: BlockPos) -> BlockPos {
         BlockPos::new(
