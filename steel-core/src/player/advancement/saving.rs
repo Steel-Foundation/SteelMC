@@ -2,7 +2,6 @@ use crate::player::advancement::progress::{AdvancementProgress, CriterionProgres
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
-use steel_registry::advancement::AdvancementRequirement;
 use steel_utils::Identifier;
 use steel_utils::serial::vec_as_map;
 
@@ -28,7 +27,7 @@ impl Serialize for AdvancementProgress {
         S: Serializer,
     {
         let done = self
-            .criteria
+            .criteria()
             .iter()
             .filter(|(_key, criterion)| criterion.is_done());
         serializer.collect_map(done)
@@ -42,9 +41,6 @@ impl<'de> Deserialize<'de> for AdvancementProgress {
     {
         let criteria =
             FxHashMap::<Cow<'static, str>, CriterionProgress>::deserialize(deserializer)?;
-        Ok(Self {
-            criteria,
-            requirements: AdvancementRequirement::default(),
-        })
+        Ok(Self::new(criteria))
     }
 }

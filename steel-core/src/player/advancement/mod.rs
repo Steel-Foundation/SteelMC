@@ -180,7 +180,7 @@ impl PlayerAdvancement {
                     .map(|(key, val)| AdvancementProgressData {
                         id: key,
                         progress: val
-                            .criteria
+                            .criteria()
                             .iter()
                             .map(|(key, val)| Criteria {
                                 criterion_id: key.clone(),

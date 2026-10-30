@@ -99,7 +99,7 @@ impl AdvancementProgressMap {
 /// Tracks whether the advancement has been fully completed. In the future,
 /// this will also track specific criteria progress.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AdvancementProgress {
+pub struct AdvancementProgress {
     /// Indicates the different progress of all criteria currently only a boolean
     criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
     /// The Requirement for the Advancement to be mark as complete
@@ -107,6 +107,22 @@ pub(crate) struct AdvancementProgress {
 }
 
 impl AdvancementProgress {
+    /// Creates a new `AdvancementProgress` with the given criteria.
+    /// need to call `update` to set the requirements for the advancement
+    #[must_use]
+    pub fn new(criteria: FxHashMap<Cow<'static, str>, CriterionProgress>) -> AdvancementProgress {
+        Self {
+            criteria,
+            requirements: AdvancementRequirement::default(),
+        }
+    }
+
+    /// Returns a reference to the criteria map.
+    #[must_use]
+    pub const fn criteria(&self) -> &FxHashMap<Cow<'static, str>, CriterionProgress> {
+        &self.criteria
+    }
+
     /// Returns `true` if the advancement is done.
     #[must_use]
     pub fn is_done(&self) -> bool {
