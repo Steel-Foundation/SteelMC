@@ -84,6 +84,5 @@ workspace = true
 [features]
 fmt = []
 
-# saved data is read from and written to files, which browsers don't have
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { workspace = true, features = ["fs"] }
