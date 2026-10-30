@@ -1,7 +1,3 @@
-<!--
-PR template
--->
-
 ## Type of change
 
 - [ ] Block implementation
