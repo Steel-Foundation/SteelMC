@@ -38,8 +38,6 @@ use crate::world::World;
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
 /// Duration in ticks of the vanilla hurt animation.
-///
-/// Mirrors the literal `10` assigned to `LivingEntity.hurtDuration`.
 pub const HURT_DURATION_TICKS: i32 = 10;
 /// Vanilla default `SwingAnimation` duration in ticks.
 pub const DEFAULT_SWING_DURATION: i32 = 6;
