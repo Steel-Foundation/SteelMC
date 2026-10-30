@@ -89,3 +89,6 @@ workspace = true
 
 [features]
 fmt = ["dep:prettyplease", "dep:syn"]
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["fs"] }
