@@ -30,6 +30,8 @@ mod c_move_vehicle;
 mod c_open_screen;
 mod c_open_sign_editor;
 mod c_player_abilities;
+mod c_player_combat_end;
+mod c_player_combat_enter;
 mod c_player_combat_kill;
 mod c_player_info_update;
 mod c_player_look_at;
@@ -145,6 +147,8 @@ pub use c_move_vehicle::CMoveVehicle;
 pub use c_open_screen::COpenScreen;
 pub use c_open_sign_editor::COpenSignEditor;
 pub use c_player_abilities::{CPlayerAbilities, ability_flags};
+pub use c_player_combat_end::CPlayerCombatEnd;
+pub use c_player_combat_enter::CPlayerCombatEnter;
 pub use c_player_combat_kill::CPlayerCombatKill;
 pub use c_player_info_update::{
     CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS, PlayerInfoAction, PlayerInfoEntry,

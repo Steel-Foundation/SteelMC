@@ -7,16 +7,19 @@ use std::borrow::Cow;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::data_components::Consumable;
 use steel_registry::data_components::vanilla_components::{
-    BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON, USE_REMAINDER,
+    BLOCKS_ATTACKS, CONSUMABLE, CUSTOM_NAME, FOOD, KINETIC_WEAPON, RARITY, USE_REMAINDER,
 };
 
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_game_events};
+use steel_registry::{
+    ItemStackTemplate, REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_game_events,
+};
+use steel_utils::translations::CHAT_SQUARE_BRACKETS;
 use steel_utils::types::{InteractionHand, SignTextSlot};
-use text_components::TextComponent;
+use text_components::{Modifier as _, TextComponent};
 
 use crate::behavior::items::{DefaultItemBehavior, SpawnEggItem, block_transformer};
 use crate::behavior::{InteractionResult, InventoryTickContext, UseItemContext, UseOnContext};
@@ -452,6 +455,33 @@ impl ItemBehaviorRegistry {
             .unwrap_or_else(|| self.get_behavior(stack.item()).get_name(stack))
     }
 
+    /// Returns vanilla `ItemStack.getDisplayName`: the hover name wrapped in
+    /// square brackets, with custom-name italics, rarity color, and item hover.
+    #[must_use]
+    pub fn display_name(&self, stack: &ItemStack) -> TextComponent {
+        let mut hover_name = TextComponent {
+            children: vec![self.hover_name(stack).into_owned()],
+            ..TextComponent::new()
+        };
+        if stack.has(CUSTOM_NAME) {
+            hover_name = hover_name.italic(true);
+        }
+
+        let mut result = TextComponent::translated(CHAT_SQUARE_BRACKETS.message([hover_name]));
+
+        if !stack.is_empty() {
+            let rarity = stack.get(RARITY).copied().unwrap_or_default();
+            result = result.color(rarity.color());
+            if let Ok(template) = ItemStackTemplate::from_stack(stack)
+                && let Ok(hover) = template.to_hover_event()
+            {
+                result = result.hover_event(hover);
+            }
+        }
+
+        result
+    }
+
     /// Get all behaviors.
     #[cfg(feature = "test-framework")]
     #[must_use]
@@ -476,6 +506,10 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items, vanilla_potions};
     use steel_utils::types::InteractionHand;
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
+    use text_components::TextComponent;
+    use text_components::content::Content;
+    use text_components::format::Color;
+    use text_components::interactivity::HoverEvent;
 
     use super::finish_consuming_stack;
     use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext, init_behaviors};
@@ -516,6 +550,45 @@ mod tests {
 
         let stack = ITEM_BEHAVIORS.default_instance(&vanilla_items::STONE);
         assert_eq!(stack, ItemStack::new(&vanilla_items::STONE));
+    }
+
+    #[test]
+    fn display_name_matches_vanilla_brackets_styles_and_item_hover() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let mut stack = ItemStack::new(&vanilla_items::HEAVY_CORE);
+        stack.set(
+            vanilla_components::CUSTOM_NAME,
+            TextComponent::plain("Doom".to_owned()),
+        );
+
+        let display = ITEM_BEHAVIORS.display_name(&stack);
+        let Content::Translate(brackets) = &display.content else {
+            panic!("display name should be wrapped in square brackets");
+        };
+        assert_eq!(brackets.key.as_ref(), "chat.square_brackets");
+        let args = brackets
+            .args
+            .as_ref()
+            .expect("square brackets should have one argument");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].format.italic, Some(true));
+
+        let Content::Text { text } = &args[0].children[0].content else {
+            panic!("custom name should be plain text");
+        };
+        assert_eq!(text.as_ref(), "Doom");
+        assert_eq!(display.format.color, Some(Color::LightPurple));
+
+        let Some(HoverEvent::ShowItem { id, components, .. }) = &display.interactions.hover else {
+            panic!("display name should show the item on hover");
+        };
+        assert_eq!(id.as_ref(), "minecraft:heavy_core");
+        assert!(
+            components.is_some(),
+            "the custom name component should be part of the item hover"
+        );
     }
 
     /// Drinking one honey bottle out of a stack must only consume one item:

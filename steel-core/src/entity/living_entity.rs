@@ -2,11 +2,12 @@ use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
+use text_components::TextComponent;
 
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::consume_effect::apply_consume_effect;
-use crate::entity::damage::RecentDamageSource;
+use crate::entity::damage::{FallLocation, RecentDamageSource, death_message};
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 
@@ -867,10 +868,79 @@ pub trait LivingEntity: Entity {
         }
 
         if damage != 0.0 {
+            self.record_combat_damage(source, damage);
             self.set_health(self.get_health() - damage);
             self.set_absorption_amount(self.get_absorption_amount() - damage);
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
+    }
+
+    /// Records damage and enters combat when a living entity caused it.
+    fn record_combat_damage(&self, source: &DamageSource, damage: f32) {
+        self.recheck_combat_status();
+
+        let tick_count = self.tick_count();
+        self.living_base().record_combat_damage(
+            source,
+            damage,
+            self.current_fall_location(),
+            self.fall_distance() as f32,
+            tick_count,
+        );
+
+        let caused_by_living = source
+            .causing_entity()
+            .is_some_and(|entity| entity.as_living_entity().is_some());
+        if caused_by_living && Entity::is_alive(self) && self.living_base().enter_combat(tick_count)
+        {
+            self.on_enter_combat();
+        }
+    }
+
+    /// Resets expired combat state, notifying when combat ends.
+    fn recheck_combat_status(&self) {
+        if self
+            .living_base()
+            .recheck_combat_status(self.tick_count(), Entity::is_alive(self))
+        {
+            self.on_leave_combat();
+        }
+    }
+
+    /// Returns the combat duration in ticks.
+    fn combat_duration(&self) -> i32 {
+        self.living_base().combat_duration(self.tick_count())
+    }
+
+    /// Returns where this entity was climbing or swimming, if anywhere.
+    fn current_fall_location(&self) -> Option<FallLocation> {
+        if let Some(pos) = self.last_climbable_pos() {
+            self.level()
+                .map(|world| FallLocation::from_block_state(world.get_block_state(pos)))
+        } else if self.is_in_water() {
+            Some(FallLocation::Water)
+        } else {
+            None
+        }
+    }
+
+    /// Called when this entity enters combat.
+    fn on_enter_combat(&self) {}
+
+    /// Called when this entity leaves combat.
+    fn on_leave_combat(&self) {}
+
+    /// Returns the death message built from this entity's combat entries.
+    fn get_death_message(&self) -> TextComponent {
+        death_message(self)
+    }
+
+    /// Drops recorded combat entries without changing combat status.
+    ///
+    /// Entries retain strong damage-source references, so entities leaving the
+    /// world must release them to avoid mutual ownership cycles.
+    fn clear_combat_history(&self) {
+        self.living_base().clear_combat_history();
     }
 
     /// Applies vanilla hurt knockback for a damage source.
@@ -2015,6 +2085,9 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
             .tick_living_combat_memory(self.tick_count());
+        if self.tick_count() % 20 == 0 {
+            self.recheck_combat_status();
+        }
     }
 
     /// Returns whether the given item in the given slot allows elytra-style gliding.
@@ -2101,8 +2174,8 @@ pub trait LivingEntity: Entity {
         self.living_base().last_climbable_pos()
     }
 
-    /// Records the last climbable block position this living entity touched.
-    fn set_last_climbable_pos(&self, pos: BlockPos) {
+    /// Records or clears the last climbable block position this living entity touched.
+    fn set_last_climbable_pos(&self, pos: Option<BlockPos>) {
         self.living_base().set_last_climbable_pos(pos);
     }
 
@@ -2129,7 +2202,7 @@ pub trait LivingEntity: Entity {
                 && trapdoor_usable_as_ladder_state(state, world.get_block_state(pos.below()));
 
         if climbable {
-            self.set_last_climbable_pos(pos);
+            self.set_last_climbable_pos(Some(pos));
         }
 
         climbable

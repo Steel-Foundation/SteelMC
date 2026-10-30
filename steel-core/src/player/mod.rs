@@ -61,9 +61,9 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use steel_math::RAD_TO_DEG_F64;
 use steel_protocol::packets::game::{
-    CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
-    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
-    LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CHurtAnimation, CPlayerCombatEnd, CPlayerCombatEnter, CPlayerCombatKill,
+    CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers,
+    ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -89,7 +89,6 @@ use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
-use text_components::translation::TranslatedMessage;
 use text_components::{
     Modifier as _, TextComponent,
     interactivity::{ClickEvent, HoverEvent},
@@ -871,9 +870,9 @@ impl Player {
             );
         }
 
-        // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
+            self.record_combat_damage(source, damage);
             self.set_health(self.get_health() - damage);
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
@@ -883,6 +882,18 @@ impl Player {
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
+    }
+
+    /// Sends vanilla `ClientboundPlayerCombatEnterPacket`.
+    fn on_enter_combat(&self) {
+        self.send_packet(CPlayerCombatEnter);
+    }
+
+    /// Sends vanilla `ClientboundPlayerCombatEndPacket`.
+    fn on_leave_combat(&self) {
+        self.send_packet(CPlayerCombatEnd {
+            duration: self.combat_duration(),
+        });
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
@@ -917,16 +928,7 @@ impl Player {
 
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
-        // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
-        let death_key = format!("death.attack.{}", source.damage_type.message_id);
-        let death_message = TranslatedMessage {
-            key: death_key.into(),
-            fallback: None,
-            args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name().to_owned(),
-            )])),
-        }
-        .component();
+        let death_message = self.get_death_message();
 
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
@@ -970,6 +972,7 @@ impl Player {
 
         self.clear_fire();
         self.set_ticks_frozen(0);
+        self.recheck_combat_status();
 
         if world.get_game_rule(&IMMEDIATE_RESPAWN) {
             self.respawn();
@@ -1911,6 +1914,14 @@ impl LivingEntity for Player {
 
     fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
         Player::actually_hurt(self, world, source, amount);
+    }
+
+    fn on_enter_combat(&self) {
+        Player::on_enter_combat(self);
+    }
+
+    fn on_leave_combat(&self) {
+        Player::on_leave_combat(self);
     }
 
     fn hurt_broadcast_chunk(&self) -> ChunkPos {

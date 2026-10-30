@@ -554,8 +554,10 @@ fn last_climbable_pos_is_living_entity_state() {
     let climbable_pos = BlockPos::new(-5, 72, 3);
 
     assert_eq!(base.last_climbable_pos(), None);
-    base.set_last_climbable_pos(climbable_pos);
+    base.set_last_climbable_pos(Some(climbable_pos));
     assert_eq!(base.last_climbable_pos(), Some(climbable_pos));
+    base.set_last_climbable_pos(None);
+    assert_eq!(base.last_climbable_pos(), None);
 }
 
 #[test]
