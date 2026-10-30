@@ -1,0 +1,30 @@
+# Base URL of the flint-viz instance used in failure links.
+# Default: https://flinttestmc.github.io/FlintViz
+# viz_url = "http://localhost:7878"
+
+# Directory containing the flint tests. Env: TEST_PATH
+# Relative to the working directory (`cargo test` uses the crate dir, so this
+# points at a FlintBenchmark checkout next to the steel repo). Default: ./test
+test_path = "../../../FlintBenchmark/tests"
+
+# Filter priority (first match wins):
+#   test > tags (FLINT_TAGS, implemented_only, filter.tags) > pattern > all tests
+[filter]
+# Only run tests tagged with an implemented item, block or entity.
+# Env: FLINT_IMPLEMENTED_ONLY=true
+implemented_only = true
+
+# Run a single test by file name (without `.json`). Env: FLINT_TEST
+# test = "place_fence"
+
+# Run tests whose file name matches a glob. Only `*` as prefix or suffix is
+# supported ("fence_*", "*_wall", "*"). Env: FLINT_PATTERN
+# pattern = "fence_*"
+
+# Run tests with these tags (only `true` entries are used).
+# Env: FLINT_TAGS="redstone,fence" (comma separated, replaces this table)
+# Ignored when `implemented_only = true`.
+# [filter.tags]
+# redstone = true
+# walls = false
+# fence = true
