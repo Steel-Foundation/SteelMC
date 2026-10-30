@@ -21,6 +21,7 @@ pub mod entity;
 pub mod fluid;
 pub mod inventory;
 pub(crate) mod item_predicate;
+pub(crate) mod java_block_pos_set;
 pub mod level_data;
 pub mod nameable;
 pub mod permission;

@@ -11,6 +11,7 @@ members = [
     "steel-core",
     "steel-crypto",
     "steel-math",
+    "steel-flint",
 ]
 
 [workspace.package]
@@ -32,7 +33,7 @@ steel-worldgen = { path = "steel-worldgen" }
 steel-math = { path = "steel-math" }
 
 # Async runtime
-tokio = { version = "1.53.3", features = [
+tokio = { version = "1.54.1", features = [
     "macros",
     "net",
     "rt-multi-thread",
@@ -50,6 +51,7 @@ futures = "0.3.34"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 toml = "1.1.8"
+anyhow = "1.0.104"
 simdnbt = "0.10.0"
 unicode_names2 = "4.0.0"
 wincode = { version = "0.6.3", features = ["derive"] }
@@ -64,10 +66,10 @@ syn = "3.0.9"
 
 # Concurrency
 crossbeam = "0.8.5"
-parking_lot = { version = "0.12.5", features = ["nightly", "arc_lock"] }
+parking_lot = { version = "0.13.0", features = ["nightly", "arc_lock"] }
 rayon = "1.12.0"
 scc = "3.8.8"
-arc-swap = "1.9.2"
+arc-swap = "1.9.3"
 
 # Data structures
 glam = { version = "0.34.1", features = ["serde"] }
@@ -79,7 +81,7 @@ phf = { version = "0.14.0", features = ["macros"] }
 chrono = "0.4.45"
 
 # UUID
-uuid = { version = "1.28.0", features = ["serde", "v4"] }
+uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 # Logging
 log = "0.4.34"
@@ -124,7 +126,7 @@ text_components = {
 
 # Compression
 flate2 = "1.1.10"
-zstd = "0.14.2"
+zstd = "0.14.3"
 
 # Utilities
 enum_dispatch = "0.3.13"
@@ -152,6 +154,12 @@ debug = true
 [profile.flint]
 inherits = "dev"
 debug = true
+
+[profile.cicd]
+inherits = "release"
+lto = false
+codegen-units = 16
+panic = "unwind"
 
 [profile.bench]
 debug = true

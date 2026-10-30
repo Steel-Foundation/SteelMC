@@ -22,7 +22,7 @@ use crate::entity::{
     ItemFrame, SharedEntity,
 };
 use crate::physics::{MoveResult, MoverType};
-use crate::world::World;
+use crate::world::{Explosion, World};
 
 /// Item frame state needed by end-city structure markers.
 ///
@@ -268,6 +268,13 @@ impl Entity for ItemFrameEntity {
 
     fn is_pickable(&self) -> bool {
         self.is_pickable_block_attached_entity()
+    }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        explosion
+            .direct_source_entity()
+            .is_some_and(Entity::is_in_water)
+            || !explosion.should_affect_blocklike_entities()
     }
 
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {

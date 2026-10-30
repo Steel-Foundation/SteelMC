@@ -448,6 +448,9 @@ impl World {
         if let Some(entity) = context.entity() {
             ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
         }
+        if let Some(radius) = context.explosion_radius() {
+            ctx = ctx.with_explosion(radius);
+        }
 
         match loot_table.get_random_items(&mut ctx) {
             Ok(items) => items,
