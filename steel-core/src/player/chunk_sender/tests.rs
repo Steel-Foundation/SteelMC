@@ -309,10 +309,11 @@ fn chunk_batch_ack_updates_pacing_at_the_next_prepare_boundary() {
 fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("chunk_batch_ack_prepare_commit_race");
+    let world_fixture = fresh_test_world("chunk_batch_ack_prepare_commit_race");
+    let world = &world_fixture.world;
     let positions = [ChunkPos::new(0, 0), ChunkPos::new(1, 0)];
     for pos in positions {
-        insert_ready_full_chunk(&world, pos);
+        insert_ready_full_chunk(world, pos);
     }
 
     let mut sender = ChunkSender {
@@ -328,7 +329,7 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
     sender.pending_chunks.extend(positions);
     let epoch = SyncMutex::new(0);
     let batch = sender
-        .prepare_batch(&world, positions[0], &epoch)
+        .prepare_batch(world, positions[0], &epoch)
         .expect("two ready chunks should prepare");
     assert_eq!(batch.chunks.len(), positions.len());
 
@@ -365,7 +366,7 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
     assert_eq!(sender.pacing.unacknowledged_batches, 2);
     assert_eq!(sender.pacing.batch_quota.to_bits(), 0.0_f32.to_bits());
 
-    assert!(sender.prepare_batch(&world, positions[0], &epoch).is_none());
+    assert!(sender.prepare_batch(world, positions[0], &epoch).is_none());
     assert_eq!(sender.pacing.unacknowledged_batches, 1);
     assert_eq!(
         sender.pacing.desired_chunks_per_tick.to_bits(),

@@ -51,7 +51,7 @@ pub trait RegistryHolderSetEntry: RegistryEntry + Debug + Send + Sync {
 }
 
 /// Vanilla's homogeneous holder-set representation for a registry.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RegistryHolderSet<T: RegistryHolderSetEntry> {
     /// A named registry tag.
     Tag(Identifier),
@@ -339,10 +339,7 @@ mod tests {
             ),
             Some(direct.clone())
         );
-        assert_eq!(
-            direct.compute_hash(),
-            direct.clone().to_nbt_tag().compute_hash()
-        );
+        assert_eq!(direct.compute_hash(), direct.to_nbt_tag().compute_hash());
 
         let empty = RegistryHolderSet::<Item>::Direct(Vec::new());
         assert_eq!(empty.clone().to_nbt_tag(), NbtTag::List(NbtList::Empty));

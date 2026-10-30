@@ -17,13 +17,11 @@ pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
+use smallvec::SmallVec;
 use steel_math::{DEGREE_90, DEGREE_360};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
@@ -33,6 +31,7 @@ use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
 
+use crate::entity::damage::DamageHistoryBinding;
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
     EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
@@ -49,11 +48,12 @@ const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
 const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
 const MOVEMENT_TRACE_LIMIT: usize = 100;
 const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
-/// Default vanilla `Entity.getTicksRequiredToFreeze` value.
+/// Default ticks of powder-snow exposure required before an entity starts
+/// taking freeze damage.
 pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
-/// Default vanilla `Entity.getMaxAirSupply` value.
+/// Default maximum air supply in ticks before an entity starts drowning.
 pub const DEFAULT_MAX_AIR_SUPPLY: i32 = 300;
-/// Vanilla scoreboard tag limit for a single entity.
+/// Maximum number of scoreboard tags a single entity may carry.
 pub const MAX_ENTITY_TAGS: usize = 1024;
 const FIRE_IGNITE_TICKS: i32 = 8 * 20;
 const LAVA_IGNITE_TICKS: i32 = 15 * 20;
@@ -87,29 +87,27 @@ pub(crate) struct EntityPhysicsStateInput {
 
 #[derive(Debug, Default)]
 struct EntityMovementTrace {
-    movement_this_tick: VecDeque<EntityMovement>,
-    final_movements_this_tick: Vec<EntityMovement>,
+    // One segment is the common per-tick case. `EntityMovement` is large and both buffers live on
+    // every entity, so larger inline capacities would optimize uncommon multi-movement ticks at a
+    // persistent per-entity memory cost.
+    movement_this_tick: SmallVec<[EntityMovement; 1]>,
+    final_movements_this_tick: SmallVec<[EntityMovement; 1]>,
 }
 
 impl EntityMovementTrace {
     fn record(&mut self, movement: EntityMovement) {
         if self.movement_this_tick.len() >= MOVEMENT_TRACE_LIMIT {
-            let first = self.movement_this_tick.pop_front();
-            let second = self.movement_this_tick.pop_front();
-            match (first, second) {
-                (Some(first), Some(second)) => self
-                    .movement_this_tick
-                    .push_front(EntityMovement::new(first.from(), second.to())),
-                (Some(first), None) => self.movement_this_tick.push_front(first),
-                (None, _) => {}
-            }
+            let first = self.movement_this_tick.remove(0);
+            let second = self.movement_this_tick.remove(0);
+            self.movement_this_tick
+                .insert(0, EntityMovement::new(first.from(), second.to()));
         }
 
-        self.movement_this_tick.push_back(movement);
+        self.movement_this_tick.push(movement);
     }
 
     fn remove_latest_recording(&mut self) {
-        self.movement_this_tick.pop_back();
+        self.movement_this_tick.pop();
     }
 
     fn reset(&mut self) {
@@ -121,7 +119,7 @@ impl EntityMovementTrace {
         &mut self,
         old_position: DVec3,
         position: DVec3,
-    ) -> Vec<EntityMovement> {
+    ) -> SmallVec<[EntityMovement; 1]> {
         self.final_movements_this_tick.clear();
         self.final_movements_this_tick
             .extend(self.movement_this_tick.drain(..));
@@ -137,11 +135,11 @@ impl EntityMovementTrace {
                 .push(EntityMovement::new(old_position, position));
         }
 
-        self.final_movements_this_tick.as_slice().to_vec()
+        self.final_movements_this_tick.clone()
     }
 
-    fn last_for_block_effects(&self) -> Vec<EntityMovement> {
-        self.final_movements_this_tick.as_slice().to_vec()
+    fn last_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
+        self.final_movements_this_tick.clone()
     }
 }
 
@@ -239,6 +237,7 @@ pub struct EntityBaseState {
     no_physics: bool,
     needs_velocity_sync: bool,
     hurt_marked: bool,
+    requires_precise_position: bool,
 }
 
 impl EntityBaseState {
@@ -272,6 +271,7 @@ impl EntityBaseState {
             no_physics: false,
             needs_velocity_sync: false,
             hurt_marked: false,
+            requires_precise_position: false,
         }
     }
 
@@ -381,6 +381,7 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    damage_history: DamageHistoryBinding,
     /// Generation counter for this runtime construction of the entity.
     generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
@@ -452,6 +453,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            damage_history: DamageHistoryBinding::default(),
             generation: EntityGeneration::next(),
             id,
             uuid,
@@ -482,6 +484,10 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    pub(crate) const fn damage_history(&self) -> &DamageHistoryBinding {
+        &self.damage_history
     }
 
     /// Gets the generation counter of this runtime construction of the entity.
@@ -520,7 +526,7 @@ impl EntityBase {
         self.state.lock().last_known_speed
     }
 
-    /// Returns vanilla `Entity.tickCount`.
+    /// Returns the number of ticks this entity has existed for.
     #[inline]
     pub fn tick_count(&self) -> i32 {
         self.state.lock().tick_count
@@ -695,7 +701,7 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
-    /// Returns the synchronized vanilla `Air` value.
+    /// Returns this entity's current air supply in ticks.
     #[inline]
     pub fn air_supply(&self) -> i32 {
         self.save_data.lock().air_supply
@@ -719,13 +725,13 @@ impl EntityBase {
         *self.portal_process.lock()
     }
 
-    /// Returns the shared vanilla `NoGravity` flag.
+    /// Returns whether this entity ignores gravity.
     #[inline]
     pub fn no_gravity(&self) -> bool {
         self.save_data.lock().no_gravity
     }
 
-    /// Returns the shared vanilla `Invulnerable` flag.
+    /// Returns whether this entity is invulnerable to non-bypassing damage.
     #[inline]
     pub fn invulnerable(&self) -> bool {
         self.save_data.lock().invulnerable
@@ -765,7 +771,8 @@ impl EntityBase {
         self.save_data.lock().custom_data.clone()
     }
 
-    /// Returns true when vanilla `ServerEntity` should consider a velocity sync.
+    /// Returns whether this entity's velocity has changed enough to need
+    /// syncing to clients.
     #[inline]
     pub fn needs_velocity_sync(&self) -> bool {
         self.state.lock().needs_velocity_sync
@@ -775,6 +782,17 @@ impl EntityBase {
     #[inline]
     pub fn hurt_marked(&self) -> bool {
         self.state.lock().hurt_marked
+    }
+
+    /// Returns true when tracker movement sync must send a full position packet.
+    #[inline]
+    pub fn requires_precise_position(&self) -> bool {
+        self.state.lock().requires_precise_position
+    }
+
+    /// Sets whether tracker movement sync must send a full position packet.
+    pub fn set_requires_precise_position(&self, requires_precise_position: bool) {
+        self.state.lock().requires_precise_position = requires_precise_position;
     }
 
     /// Gets the world this entity is in.
@@ -969,16 +987,20 @@ impl EntityBase {
     ///
     /// Notifies the level callback on first removal.
     pub fn set_removed(&self, reason: RemovalReason) {
-        let callback = {
+        let (callback, released) = {
             let mut lifecycle = self.lifecycle.lock();
             if lifecycle.removal_reason.is_some() {
-                None
+                (None, None)
             } else {
                 lifecycle.removal_reason = Some(reason);
                 lifecycle.pending_world_change = None;
-                Some(self.level_callback.lock().clone())
+                (
+                    Some(self.level_callback.lock().clone()),
+                    self.damage_history.release_on_removal(),
+                )
             }
         };
+        drop(released);
 
         if let Some(callback) = callback {
             self.detach_from_relationships(reason);
@@ -1055,11 +1077,13 @@ impl EntityBase {
     /// Clears the removed flag and returns whether the entity had been removed.
     ///
     /// Vanilla uses this when an entity instance itself survives a world change.
+    /// Previously downgraded history stays weak; a new hit can retain a new source.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
         lifecycle.pending_world_change = None;
+        self.damage_history.clear_removed();
         was_removed
     }
 
@@ -1123,7 +1147,7 @@ impl EntityBase {
         self.state.lock().old_position = old_position;
     }
 
-    /// Sets vanilla `yRotO`/`xRotO` to the current rotation.
+    /// Copies the current rotation into the old-rotation snapshot used for interpolation.
     pub fn set_old_rotation_to_current(&self) {
         let mut state = self.state.lock();
         state.old_rotation = state.rotation;
@@ -1135,7 +1159,7 @@ impl EntityBase {
         state.old_rotation.0 = state.rotation.0;
     }
 
-    /// Sets vanilla `yRotO`/`xRotO` explicitly.
+    /// Sets the old-rotation snapshot explicitly, normalizing the angles.
     pub fn set_old_rotation(&self, old_rotation: (f32, f32)) {
         self.state.lock().old_rotation = normalize_rotation(old_rotation);
     }
@@ -1156,7 +1180,7 @@ impl EntityBase {
     }
 
     /// Takes and finalizes this tick's movement segments for block-contact effects.
-    pub fn take_movements_for_block_effects(&self) -> Vec<EntityMovement> {
+    pub fn take_movements_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
         let (old_position, position) = {
             let state = self.state.lock();
             (state.old_position, state.position)
@@ -1168,7 +1192,7 @@ impl EntityBase {
     }
 
     /// Returns the last finalized movement segments for vanilla block-contact effects.
-    pub fn last_movements_for_block_effects(&self) -> Vec<EntityMovement> {
+    pub fn last_movements_for_block_effects(&self) -> SmallVec<[EntityMovement; 1]> {
         self.movement_trace.lock().last_for_block_effects()
     }
 
@@ -1194,7 +1218,7 @@ impl EntityBase {
     }
 
     fn notify_bounding_box_changed(&self, bounding_box: WorldAabb) {
-        let callback = Arc::clone(&self.level_callback.lock());
+        let callback = self.level_callback.lock().clone();
         callback.on_bounding_box_changed(bounding_box);
     }
 
@@ -1205,7 +1229,7 @@ impl EntityBase {
         }
     }
 
-    /// Advances vanilla `Entity.tickCount` by one tick.
+    /// Advances this entity's tick counter by one.
     #[inline]
     pub fn advance_tick_count(&self) {
         let mut state = self.state.lock();
@@ -1261,7 +1285,7 @@ impl EntityBase {
         self.state.lock().no_physics = no_physics;
     }
 
-    /// Sets the synchronized vanilla `Air` value.
+    /// Sets this entity's air supply in ticks.
     pub fn set_air_supply(&self, air_supply: i32) {
         self.save_data.lock().air_supply = air_supply;
     }
@@ -1305,12 +1329,12 @@ impl EntityBase {
         *self.portal_process.lock() = None;
     }
 
-    /// Sets the shared vanilla `NoGravity` flag.
+    /// Sets whether this entity ignores gravity.
     pub fn set_no_gravity(&self, no_gravity: bool) {
         self.save_data.lock().no_gravity = no_gravity;
     }
 
-    /// Sets the shared vanilla `Invulnerable` flag.
+    /// Sets whether this entity is invulnerable to non-bypassing damage.
     pub fn set_invulnerable(&self, invulnerable: bool) {
         self.save_data.lock().invulnerable = invulnerable;
     }
@@ -1350,7 +1374,7 @@ impl EntityBase {
         self.save_data.lock().custom_data = custom_data;
     }
 
-    /// Marks velocity for vanilla `ServerEntity` synchronization.
+    /// Marks this entity's velocity as needing to be synced to clients.
     pub fn mark_velocity_sync(&self) {
         self.state.lock().needs_velocity_sync = true;
     }
@@ -1385,22 +1409,22 @@ impl EntityBase {
         self.set_fall_distance(0.0);
     }
 
-    /// Returns vanilla `remainingFireTicks`.
+    /// Returns the ticks remaining before this entity stops burning.
     pub fn remaining_fire_ticks(&self) -> i32 {
         self.state.lock().fire_freeze.remaining_fire_ticks()
     }
 
-    /// Sets vanilla `remainingFireTicks`.
+    /// Sets the ticks remaining before this entity stops burning.
     pub fn set_remaining_fire_ticks(&self, remaining_fire_ticks: i32) {
         self.state.lock().fire_freeze.remaining_fire_ticks = remaining_fire_ticks;
     }
 
-    /// Returns synchronized vanilla `TicksFrozen`.
+    /// Returns ticks this entity has spent freezing in powder snow.
     pub fn ticks_frozen(&self) -> i32 {
         self.state.lock().fire_freeze.ticks_frozen()
     }
 
-    /// Sets synchronized vanilla `TicksFrozen`.
+    /// Sets ticks this entity has spent freezing in powder snow.
     pub fn set_ticks_frozen(&self, ticks_frozen: i32) {
         self.state.lock().fire_freeze.ticks_frozen = ticks_frozen;
     }
@@ -1415,12 +1439,12 @@ impl EntityBase {
         self.state.lock().fire_freeze.was_in_powder_snow()
     }
 
-    /// Sets vanilla `hasVisualFire`.
+    /// Sets whether this entity currently renders as visually on fire.
     pub fn set_visual_fire(&self, has_visual_fire: bool) {
         self.state.lock().fire_freeze.has_visual_fire = has_visual_fire;
     }
 
-    /// Returns vanilla `hasVisualFire`.
+    /// Returns whether this entity currently renders as visually on fire.
     pub fn has_visual_fire(&self) -> bool {
         self.state.lock().fire_freeze.has_visual_fire()
     }

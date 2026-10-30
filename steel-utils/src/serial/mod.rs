@@ -24,6 +24,18 @@ pub trait ReadFrom: Sized {
 pub trait WriteTo {
     /// Writes data to a writer.
     fn write(&self, writer: &mut impl Write) -> Result<()>;
+
+    /// writes a slice as consecutive values without a length prefix
+    fn write_slice(values: &[Self], writer: &mut impl Write) -> Result<()>
+    where
+        Self: Sized,
+    {
+        for value in values {
+            value.write(writer)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// A trait for reading prefixed data from a cursor.

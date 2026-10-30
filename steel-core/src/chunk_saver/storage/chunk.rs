@@ -1,9 +1,9 @@
 use small_map::FxSmallMap;
 
 use super::{
-    BlockPos, BlockStateId, BlockTickList, CarvingMask, Chunk, ChunkBuilder, ChunkHeightmaps,
-    ChunkPos, ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList,
-    FullChunkRef, FxHashSet, Heightmap, HeightmapType, LoadedChunk, Ordering, PalettedContainer,
+    BlockPos, BlockStateId, BlockTickList, Chunk, ChunkBuilder, ChunkHeightmaps, ChunkPos,
+    ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList, FullChunkRef,
+    FxHashSet, Heightmap, HeightmapType, LoadedChunk, Ordering, PalettedContainer,
     PersistentBiomeData, PersistentChunk, PersistentHeightmap, PersistentLightSection,
     PersistentPoi, PersistentSection, REGISTRY, RegistryExt, SectionHolder, Sections, Weak, World,
     bits_for_palette_len, io, pack_indices_from_iter, unpack_indices,
@@ -66,7 +66,6 @@ impl ChunkStorage {
     )]
     fn validate_persistent_chunk(
         persistent: &PersistentChunk<'_>,
-        status: ChunkStatus,
         min_y: i32,
         height: i32,
     ) -> io::Result<()> {
@@ -241,20 +240,6 @@ impl ChunkStorage {
             }
         }
 
-        if status == ChunkStatus::Full && persistent.carving_mask.is_some() {
-            return Err(Self::invalid_chunk_data(
-                "Full chunk contains a proto carving mask",
-            ));
-        }
-        if let Some(mask) = &persistent.carving_mask {
-            let max_words = (256usize * height as usize).div_ceil(64);
-            if mask.len() > max_words {
-                return Err(Self::invalid_chunk_data(format!(
-                    "carving mask has {} words, maximum is {max_words}",
-                    mask.len()
-                )));
-            }
-        }
         if persistent.postprocessing.len() > expected_sections {
             return Err(Self::invalid_chunk_data(format!(
                 "chunk has {} postprocessing section lists, maximum is {expected_sections}",
@@ -266,17 +251,21 @@ impl ChunkStorage {
     }
 
     /// Converts a runtime section to persistent format.
+    ///
+    /// # Panics
+    /// If the section holds a value missing from its palette, rather than saving a different
+    /// block or biome in its place.
     pub(super) fn section_to_persistent(
         section: &SectionHolder,
         builder: &mut ChunkBuilder,
     ) -> PersistentSection {
         let mut section = section.write();
-        if matches!(&section.states, PalettedContainer::Building(_)) {
+        if matches!(section.states(), PalettedContainer::Building(_)) {
             section.recalculate_counts();
         }
         let biomes = Self::biomes_to_persistent(&section.biomes, builder);
 
-        match &section.states {
+        match section.states() {
             PalettedContainer::Homogeneous(block_id) => {
                 let block_idx = builder.ensure_block_state(*block_id);
                 PersistentSection::Homogeneous {
@@ -287,7 +276,7 @@ impl ChunkStorage {
             PalettedContainer::Heterogeneous(data) => {
                 // Build section-local palette (indices into chunk's block_states)
                 let palette: Vec<u16> = data
-                    .palette
+                    .palette()
                     .iter()
                     .map(|(block_id, _)| builder.ensure_block_state(*block_id))
                     .collect();
@@ -297,17 +286,18 @@ impl ChunkStorage {
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous section should have palette length >= 2");
                 let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, BlockStateId, u32> = data
-                    .palette
+                    .palette()
                     .iter()
                     .enumerate()
                     .map(|(index, (block_id, _))| (*block_id, index as u32))
                     .collect();
                 let block_data = pack_indices_from_iter(
-                    data.cube
-                        .as_flattened()
-                        .as_flattened()
-                        .iter()
-                        .map(|block_id| palette_indices.get(block_id).copied().unwrap_or(0)),
+                    data.values().iter().map(|block_id| {
+                        let Some(&index) = palette_indices.get(block_id) else {
+                            panic!("section block state {block_id:?} is missing from its palette");
+                        };
+                        index
+                    }),
                     bits,
                 );
 
@@ -325,6 +315,10 @@ impl ChunkStorage {
     }
 
     /// Converts runtime biome data to persistent format.
+    ///
+    /// # Panics
+    /// If the container is still in worldgen Building mode or holds a value missing from its
+    /// palette.
     pub(super) fn biomes_to_persistent(
         biomes: &PalettedContainer<u16, 4>,
         builder: &mut ChunkBuilder,
@@ -337,7 +331,7 @@ impl ChunkStorage {
             PalettedContainer::Heterogeneous(data) => {
                 // Build section-local palette (indices into chunk's biomes)
                 let palette: Vec<u16> = data
-                    .palette
+                    .palette()
                     .iter()
                     .map(|(biome_id, _)| builder.ensure_biome(*biome_id))
                     .collect();
@@ -345,17 +339,18 @@ impl ChunkStorage {
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous biome data should have palette length >= 2");
                 let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, u16, u32> = data
-                    .palette
+                    .palette()
                     .iter()
                     .enumerate()
                     .map(|(index, (biome_id, _))| (*biome_id, index as u32))
                     .collect();
                 let biome_data = pack_indices_from_iter(
-                    data.cube
-                        .as_flattened()
-                        .as_flattened()
-                        .iter()
-                        .map(|biome_id| palette_indices.get(biome_id).copied().unwrap_or(0)),
+                    data.values().iter().map(|biome_id| {
+                        let Some(&index) = palette_indices.get(biome_id) else {
+                            panic!("section biome {biome_id:?} is missing from its palette");
+                        };
+                        index
+                    }),
                     bits,
                 );
 
@@ -397,7 +392,7 @@ impl ChunkStorage {
         // Validate every persisted shape that materialization relies on before
         // constructing a Chunk. Full construction populates world POI state, so
         // a late validation failure would otherwise leak partial loaded state.
-        Self::validate_persistent_chunk(persistent, status, min_y, height)?;
+        Self::validate_persistent_chunk(persistent, min_y, height)?;
         let sections: Vec<ChunkSection> = persistent
             .sections
             .iter()
@@ -500,11 +495,6 @@ impl ChunkStorage {
             let fluid_ticks = FluidTickList::from_proto_saved_ticks(
                 Self::persistent_to_fluid_saved_ticks(&persistent.fluid_ticks, pos),
             );
-            let carving_mask = persistent
-                .carving_mask
-                .as_deref()
-                .map(|packed| CarvingMask::from_packed_u64s(height, min_y, packed));
-
             let chunk = Chunk::from_disk(
                 sections,
                 pos,
@@ -514,7 +504,6 @@ impl ChunkStorage {
                 heightmaps,
                 structure_starts,
                 structure_references,
-                carving_mask,
                 persistent.postprocessing.iter().map(Vec::clone).collect(),
                 block_ticks,
                 fluid_ticks,
@@ -740,7 +729,7 @@ impl ChunkStorage {
                 state.name, state.properties
             )));
         };
-        let canonical = REGISTRY.blocks.get_properties(state_id);
+        let mut canonical = REGISTRY.blocks.properties(state_id);
         let unique_names = state
             .properties
             .iter()
@@ -748,9 +737,7 @@ impl ChunkStorage {
             .collect::<FxHashSet<_>>();
         if unique_names.len() != state.properties.len()
             || canonical.len() != state.properties.len()
-            || canonical
-                .iter()
-                .any(|property| !state.properties.contains(property))
+            || canonical.any(|property| !state.properties.contains(&property))
         {
             return Err(Self::invalid_chunk_data(format!(
                 "noncanonical block state {} with properties {:?}",

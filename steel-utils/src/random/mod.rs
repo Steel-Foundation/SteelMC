@@ -62,6 +62,17 @@ pub trait Random {
             self.next_i32();
         }
     }
+
+    /// Vanilla `Util.shuffle`: one descending bounded draw per swapped position.
+    fn shuffle<T>(&mut self, items: &mut [T]) {
+        let Ok(size) = i32::try_from(items.len()) else {
+            panic!("shuffle length {} exceeds Java's int range", items.len());
+        };
+        for remaining in (2..=size).rev() {
+            let swap_to = self.next_i32_bounded(remaining) as usize;
+            items.swap(remaining as usize - 1, swap_to);
+        }
+    }
 }
 
 /// A trait for positional random number generators.

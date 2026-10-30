@@ -18,8 +18,8 @@ use super::PARAMETER_COUNT;
 use super::types::{Parameter, ParameterPoint, TargetPoint};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-/// Maximum children per tree node. Matches vanilla's `CHILDREN_PER_NODE` = 6.
-const CHILDREN_PER_NODE: usize = 6;
+/// Maximum children per tree node.
+const CHILDREN_PER_NODE: usize = 19;
 
 /// R-Tree node used during construction only. After building, the tree is
 /// flattened into a `Vec<FlatNode>` for search.
@@ -92,12 +92,10 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
     if entries.len() <= CHILDREN_PER_NODE {
         // Sort by total magnitude of centers across all dimensions
         entries.sort_by_key(|e| {
-            let mut total: i64 = 0;
-            for d in 0..PARAMETER_COUNT {
-                let p = &e.parameter_space[d];
-                total += ((p.min + p.max) / 2).abs();
-            }
-            total
+            e.parameter_space
+                .iter()
+                .map(|p| ((p.min + p.max) / 2).abs())
+                .sum::<i64>()
         });
 
         let children: Vec<RTreeNode> = entries
@@ -142,7 +140,6 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
         .map(|bucket_entries| {
             let mut bounds: [Option<Parameter>; PARAMETER_COUNT] = [None; PARAMETER_COUNT];
             for e in &bucket_entries {
-                #[expect(clippy::needless_range_loop, reason = "dim indexes parallel arrays")]
                 for dim in 0..PARAMETER_COUNT {
                     bounds[dim] = Some(e.parameter_space[dim].span_with(bounds[dim].as_ref()));
                 }
@@ -205,8 +202,8 @@ fn sort_bucket_subtrees(
 
 /// Compute the expected bucket size from vanilla's formula.
 fn expected_children_count(total: usize) -> usize {
-    let log_base_6 = ((total as f64) - 0.01).ln() / (CHILDREN_PER_NODE as f64).ln();
-    (CHILDREN_PER_NODE as f64).powf(log_base_6.floor()) as usize
+    let log_base_children = ((total as f64) - 0.01).ln() / (CHILDREN_PER_NODE as f64).ln();
+    (CHILDREN_PER_NODE as f64).powf(log_base_children.floor()) as usize
 }
 
 /// Snapshot the current entry order into buckets and compute total cost.
@@ -214,10 +211,6 @@ fn expected_children_count(total: usize) -> usize {
 /// This matches vanilla's `bucketize()` which creates `SubTree` objects that
 /// capture the children's current sorted order. We return cloned entries so
 /// that later sorts of the original slice don't affect the saved buckets.
-#[expect(
-    clippy::needless_range_loop,
-    reason = "indexing into PARAMETER_COUNT parallel arrays; iterator would be less clear"
-)]
 fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
     let expected = expected_children_count(entries.len());
     let mut buckets = Vec::new();
@@ -267,10 +260,6 @@ impl FlatNode {
     /// Uses branchless `max` operations (compiles to `cmov`) to avoid branch
     /// mispredictions in the hot inner loop.
     #[inline]
-    #[expect(
-        clippy::needless_range_loop,
-        reason = "indexing into parallel min/max arrays; iterator zip would be less clear"
-    )]
     fn distance(&self, target: &[i64; PARAMETER_COUNT]) -> i64 {
         let mut d = 0i64;
         for i in 0..PARAMETER_COUNT {

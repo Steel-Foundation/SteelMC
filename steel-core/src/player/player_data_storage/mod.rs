@@ -177,7 +177,7 @@ impl PlayerDataStorage {
         let domain = player.get_world().domain().to_owned();
         self.save_domain(&domain, player).await?;
         self.save_global(
-            player.gameprofile.id,
+            player.gameprofile.id(),
             &GlobalPlayerData {
                 last_active_domain: domain,
             },

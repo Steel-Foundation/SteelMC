@@ -4,6 +4,7 @@ use super::*;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::next_entity_id;
 use crate::test_support::insert_ready_full_chunk;
+use std::sync::Arc;
 
 #[test]
 fn pig_uses_vanilla_animal_fire_path_malus() {
@@ -134,7 +135,12 @@ fn pig_animal_love_ticks_only_for_adults() {
 fn pig_damage_resets_vanilla_animal_love_time() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(test_world()),
+    );
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     pig.set_in_love_time(20);
 
@@ -147,11 +153,17 @@ fn pig_damage_resets_vanilla_animal_love_time() {
 fn pig_death_tick_removes_after_vanilla_death_duration() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Weak::new(),
+    ));
+    let pig_entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
     pig.set_health(0.0);
 
     for _ in 0..DEATH_DURATION {
-        LivingEntity::tick_living_entity(&pig);
+        LivingEntity::tick_living_entity(pig.as_ref(), &pig_entity);
     }
 
     assert_eq!(pig.removal_reason(), Some(RemovalReason::Killed));
@@ -163,8 +175,9 @@ fn breeding_drops_a_single_experience_orb() {
     const GRID_SIDE: i32 = 4;
 
     init_vanilla_registry();
-    let world = fresh_test_world("pig_breeding_experience_orb");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("pig_breeding_experience_orb");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     // A split amount would show up as extra orbs; 16 breedings make a lucky
     // run of unsplittable rolls vanishingly unlikely.
@@ -175,15 +188,15 @@ fn breeding_drops_a_single_experience_orb() {
             &vanilla_entities::PIG,
             next_entity_id(),
             DVec3::new(x, 64.0, z),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         let partner = PigEntity::new(
             &vanilla_entities::PIG,
             next_entity_id(),
             DVec3::new(x, 64.0, z),
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
-        pig.finalize_spawn_child_from_breeding(&world, &partner, None);
+        pig.finalize_spawn_child_from_breeding(world, &partner, None);
 
         let aabb = WorldAabb::new(x - 1.0, 63.0, z - 1.0, x + 1.0, 66.0, z + 1.0);
         let orbs: Vec<_> = world

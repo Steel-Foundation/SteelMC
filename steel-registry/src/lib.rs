@@ -11,7 +11,6 @@
     clippy::match_same_arms,
     clippy::missing_fields_in_debug,
     clippy::missing_panics_doc,
-    clippy::ref_option,
     clippy::return_self_not_must_use,
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
@@ -23,6 +22,7 @@ pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;
 pub mod block_entity_type;
+pub mod block_transformer;
 pub mod blocks;
 pub mod carver;
 pub mod cat_sound_variant;
@@ -36,6 +36,7 @@ pub mod cow_variant;
 pub mod damage_type;
 pub mod data_component_predicate;
 pub mod data_components;
+pub mod decorated_pot_pattern;
 pub mod dialog;
 pub mod dimension_type;
 pub mod dye_color;
@@ -49,6 +50,7 @@ pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
 pub mod game_events;
+pub mod game_profile;
 pub mod game_rules;
 pub mod instrument;
 pub mod item_predicate;
@@ -83,6 +85,7 @@ pub mod structure;
 pub use structure::processor as structure_processor;
 pub use structure::set as structure_set;
 pub use structure::template_pool;
+pub mod advancement;
 pub mod ticket_type;
 pub mod timeline;
 pub mod trim_material;
@@ -101,12 +104,12 @@ pub use entity_variant::{
     AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
     RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
 };
+pub use game_profile::{GameProfile, ProfileProperty};
 pub use item_stack_template::ItemStackTemplate;
 pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
 pub use potion::{Potion, PotionEffect, PotionRef};
 pub use resolvable_profile::{
-    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
-    ResolvableProfileContents, StoredGameProfile,
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ResolvableProfile, ResolvableProfileContents,
 };
 
 #[expect(warnings)]
@@ -163,6 +166,11 @@ pub mod vanilla_trim_patterns;
 #[rustfmt::skip]
 #[path = "generated/vanilla_trim_materials.rs"]
 pub mod vanilla_trim_materials;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_decorated_pot_patterns.rs"]
+pub mod vanilla_decorated_pot_patterns;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -253,6 +261,11 @@ pub mod vanilla_dimension_types;
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_types.rs"]
 pub mod vanilla_damage_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_block_transformers.rs"]
+pub mod vanilla_block_transformers;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -475,5 +488,20 @@ pub mod vanilla_placed_features;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_block_state_providers.rs"]
+pub mod vanilla_block_state_providers;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_suspicious_stew_effects.rs"]
+pub mod vanilla_suspicious_stew_effects;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_advancements.rs"]
+pub mod vanilla_advancements;

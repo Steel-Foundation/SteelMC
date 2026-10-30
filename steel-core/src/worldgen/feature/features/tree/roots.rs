@@ -188,7 +188,7 @@ impl FeatureDecorationRunner {
             region.get_block_state(pos),
             &placer.mangrove_root_placement.muddy_roots_in,
         ) {
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,
@@ -204,8 +204,13 @@ impl FeatureDecorationRunner {
             return;
         }
 
-        let state =
-            Self::sample_block_state_provider(region, registry, random, &placer.root_provider, pos);
+        let state = BlockStateProviderEvaluator::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &placer.root_provider,
+            pos,
+        );
         let state = Self::copy_waterlogged_from(region, pos, state);
         placement.set_root(region, pos, state);
 
@@ -213,7 +218,7 @@ impl FeatureDecorationRunner {
         if random.next_f32() < placer.above_root_placement.above_root_placement_chance
             && region.get_block_state(above).is_air()
         {
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,

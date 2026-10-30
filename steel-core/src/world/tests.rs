@@ -5,6 +5,7 @@ use std::{
 };
 
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::{
     init_vanilla_registry, sound_events, stat::vanilla_stat_types, vanilla_custom_stats,
     vanilla_entities, vanilla_fluids, vanilla_game_rules, vanilla_items,
@@ -27,15 +28,16 @@ static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
 fn respawn_world_handoff_requires_the_exact_old_player() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("exact_respawn_world_handoff");
+    let world_fixture = fresh_test_world("exact_respawn_world_handoff");
+    let world = &world_fixture.world;
     let uuid = Uuid::from_u128(1);
-    let old = TestPlayerBuilder::new(Arc::clone(&world), "Old", 1)
+    let old = TestPlayerBuilder::new(Arc::clone(world), "Old", 1)
         .uuid(uuid)
         .build();
-    let replacement = TestPlayerBuilder::new(Arc::clone(&world), "Replacement", 1)
+    let replacement = TestPlayerBuilder::new(Arc::clone(world), "Replacement", 1)
         .uuid(uuid)
         .build();
-    let stale = TestPlayerBuilder::new(Arc::clone(&world), "Stale", 1)
+    let stale = TestPlayerBuilder::new(Arc::clone(world), "Stale", 1)
         .uuid(uuid)
         .build();
 
@@ -109,17 +111,18 @@ fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool)
 #[test]
 fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
     init_vanilla_registry();
-    let sound = &sound_events::ENTITY_PLAYER_LEVELUP;
+    let sound = SoundEventHolder::Registry(&sound_events::ENTITY_PLAYER_LEVELUP);
 
-    assert!(sound_is_within_range(sound, 0.75, 255.0));
-    assert!(!sound_is_within_range(sound, 0.75, 256.0));
+    assert!(sound_is_within_range(&sound, 0.75, 255.0));
+    assert!(!sound_is_within_range(&sound, 0.75, 256.0));
 }
 
 #[test]
 fn face_directed_item_drops_respect_block_drops_game_rule() {
     init_vanilla_registry();
-    let world = fresh_test_world("face_drop_game_rule");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("face_drop_game_rule");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     assert!(world.set_game_rule(&vanilla_game_rules::BLOCK_DROPS, false));
 
     let dropped = world.pop_resource_from_face(
@@ -135,8 +138,9 @@ fn face_directed_item_drops_respect_block_drops_game_rule() {
 fn generic_shape_update_does_not_schedule_non_source_fluid() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("shape_update_fluid_ownership");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("shape_update_fluid_ownership");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(0, 64, 0);
     let flowing_water = vanilla_blocks::WATER
         .default_state()
@@ -242,14 +246,43 @@ fn entity_breaker_is_available_to_chorus_flower_loot() {
     let state = vanilla_blocks::CHORUS_FLOWER.default_state();
     let pos = BlockPos::new(1_312, 64, 1_312);
     let breaker = TrackerTestEntity::shared(987_654);
-    let world = fresh_test_world("entity_breaker_loot");
-    let context = BlockLootContext::new(&world, pos).with_entity(Some(breaker.as_ref()));
+    let world_fixture = fresh_test_world("entity_breaker_loot");
+    let world = &world_fixture.world;
+    let context = BlockLootContext::new(world, pos).with_entity(Some(breaker.as_ref()));
     let drops = context.get_drops(state);
 
     assert_eq!(drops.len(), 1);
     assert_eq!(drops[0].item(), &*vanilla_items::CHORUS_FLOWER);
     assert_eq!(drops[0].count(), 1);
-    assert_eq!(BlockLootContext::new(&world, pos).get_drops(state).len(), 0);
+    assert_eq!(BlockLootContext::new(world, pos).get_drops(state).len(), 0);
+}
+
+#[test]
+fn wall_torch_variants_use_their_standing_torch_loot_tables() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("wall_torch_variant_loot");
+    let world = &world_fixture.world;
+    let context = BlockLootContext::new(world, BlockPos::new(0, 64, 0));
+    let cases = [
+        (&vanilla_blocks::WALL_TORCH, &*vanilla_items::TORCH),
+        (
+            &vanilla_blocks::SOUL_WALL_TORCH,
+            &*vanilla_items::SOUL_TORCH,
+        ),
+        (
+            &vanilla_blocks::COPPER_WALL_TORCH,
+            &*vanilla_items::COPPER_TORCH,
+        ),
+    ];
+
+    for (block, expected_item) in cases {
+        let drops = context.get_drops(block.default_state());
+        assert_eq!(drops.len(), 1, "{block:?}");
+        assert_eq!(drops[0].item(), expected_item, "{block:?}");
+        assert_eq!(drops[0].count(), 1, "{block:?}");
+    }
 }
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -388,14 +421,15 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = fresh_test_world("set_block_publication_gates");
+    let world_fixture = fresh_test_world("set_block_publication_gates");
+    let world = &world_fixture.world;
     let pos = BlockPos::new(1_504, 64, 1_504);
     let chunk_pos = ChunkPos::from_block_pos(pos);
     let player_id = Uuid::from_u128(1);
     let simulation_receipt = world
         .chunk_map
         .queue_test_player_ticket_add(chunk_pos, player_id);
-    advance_scheduling_until(&world, || {
+    advance_scheduling_until(world, || {
         world
             .chunk_map
             .is_ticket_receipt_committed(simulation_receipt)
@@ -483,7 +517,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     let removal_receipt = world
         .chunk_map
         .queue_test_player_ticket_remove(chunk_pos, player_id);
-    advance_scheduling_until(&world, || {
+    advance_scheduling_until(world, || {
         world.chunk_map.is_ticket_receipt_committed(loading_receipt)
             && world.chunk_map.is_ticket_receipt_committed(removal_receipt)
     });
@@ -511,7 +545,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
         .chunk_map
         .release_chunk_request_leases(&[chunk_pos], loading_level)
         .expect("one request lease release should produce a receipt");
-    advance_scheduling_until(&world, || {
+    advance_scheduling_until(world, || {
         world
             .chunk_map
             .is_ticket_receipt_committed(full_only_receipt)
@@ -643,6 +677,72 @@ fn clip_local_aabb_supports_runtime_fluid_heights() {
 
     assert_eq!(hit.direction, Direction::Up);
     assert_vec3_close(hit.location, DVec3::new(0.5, 0.5, 0.5));
+}
+
+#[test]
+fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("can_see_sky_light");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+
+    // Open sky has full sky light regardless of time of day.
+    assert!(world.can_see_sky(pos));
+
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    // The world tick loop drains queued light updates; tests must do so manually.
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky(pos));
+}
+
+#[test]
+fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("precipitation_sky_exposure");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let pos = BlockPos::new(8, 65, 8);
+
+    assert!(world.can_see_sky_for_precipitation(pos));
+
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky_for_precipitation(pos));
+
+    // Glass passes the light gate but blocks the heightmap gate.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::GLASS.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(world.can_see_sky(pos));
+    assert!(!world.can_see_sky_for_precipitation(pos));
+
+    // Water fails the light gate despite an unobstructed heightmap.
+    assert!(world.set_block(
+        pos.above(),
+        vanilla_blocks::AIR.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    world.chunk_map.broadcast_changed_chunks();
+    assert!(!world.can_see_sky_for_precipitation(pos));
 }
 
 #[test]

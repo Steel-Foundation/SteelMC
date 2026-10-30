@@ -336,7 +336,7 @@ impl ConsumeEffectCodec for ApplyStatusEffectsConsumeEffect {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoveStatusEffectsConsumeEffect {
     effects: RegistryHolderSet<MobEffect>,
 }

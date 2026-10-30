@@ -12,6 +12,7 @@ use steel_math::DEGREE_360;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
+use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
@@ -21,12 +22,13 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
+    DEFAULT_AIR_DRAG, Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementEmission,
+    EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -53,11 +55,10 @@ const INFINITE_LIFETIME: i32 = -32768;
 /// Default health (damage resistance).
 const DEFAULT_HEALTH: i32 = 5;
 
-/// Gravity applied per tick (blocks/tick^2). Vanilla: `ItemEntity.getDefaultGravity()`
+/// Gravity applied per tick (blocks/tick^2).
 const DEFAULT_GRAVITY: f64 = 0.04;
 
 /// Air/vertical drag multiplier per tick.
-const AIR_DRAG: f64 = 0.98;
 const FLUID_VERTICAL_NUDGE: f64 = 5.0e-4;
 const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
 const ITEM_WATER_DRAG: f64 = 0.99;
@@ -155,8 +156,6 @@ impl ItemEntity {
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
-    ///
-    /// Mirrors vanilla's `ItemEntity(Level, double, double, double, ItemStack, double, double, double)`.
     #[must_use]
     pub fn with_item_and_velocity(
         entity_type: EntityTypeRef,
@@ -306,8 +305,6 @@ impl ItemEntity {
     ///
     /// Returns `true` if the item was fully picked up (and the entity should be removed),
     /// `false` if pickup failed or was only partial.
-    ///
-    /// Mirrors vanilla's `ItemEntity.playerTouch(Player)`.
     pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
         // Check pickup delay
         if self.has_pickup_delay() {
@@ -316,7 +313,7 @@ impl ItemEntity {
 
         // Check owner restriction
         if let Some(owner_uuid) = self.get_owner()
-            && owner_uuid != player.gameprofile.id
+            && owner_uuid != player.gameprofile.id()
         {
             return false;
         }
@@ -372,7 +369,6 @@ impl ItemEntity {
 
     /// Returns true if this item entity can be merged with others.
     ///
-    /// Mirrors vanilla's `ItemEntity.isMergeable()`.
     /// An item is mergeable if:
     /// - It's not removed
     /// - It doesn't have infinite pickup delay (32767)
@@ -392,7 +388,6 @@ impl ItemEntity {
 
     /// Checks if two item stacks can be merged together.
     ///
-    /// Mirrors vanilla's `ItemEntity.areMergeable()`.
     /// Returns true if the items are the same type with the same components,
     /// and their combined count wouldn't exceed max stack size.
     #[must_use]
@@ -407,7 +402,6 @@ impl ItemEntity {
 
     /// Attempts to merge with another item entity.
     ///
-    /// Mirrors vanilla's `ItemEntity.tryToMerge()`.
     /// The item with fewer items is merged into the one with more.
     fn try_to_merge(&self, other: &Self) {
         let this_stack = self.get_item();
@@ -431,8 +425,6 @@ impl ItemEntity {
     }
 
     /// Merges the `from_item`'s stack into the `to_item`'s stack.
-    ///
-    /// Mirrors vanilla's `ItemEntity.merge(ItemEntity, ItemStack, ItemEntity, ItemStack)`.
     fn merge_stacks(
         to_item: &Self,
         to_stack: &ItemStack,
@@ -476,7 +468,6 @@ impl ItemEntity {
 
     /// Attempts to merge this item with nearby item entities.
     ///
-    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbors()`.
     /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
     pub fn merge_with_neighbors(&self, world: &Arc<World>) {
@@ -543,7 +534,15 @@ impl Entity for ItemEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        !explosion.should_affect_blocklike_entities()
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
+    fn tick(self: Arc<Self>) {
         // Check if item is empty
         if self.get_item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
@@ -584,7 +583,9 @@ impl Entity for ItemEntity {
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
-            if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
+            if let Some(result) =
+                Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity())
+            {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {
                     return;
@@ -597,15 +598,15 @@ impl Entity for ItemEntity {
                         && let Some(block_pos) = self.block_pos_below_that_affects_movement()
                     {
                         let block_state = world.get_block_state(block_pos);
-                        f64::from(block_state.get_block().config.friction) * AIR_DRAG
+                        f64::from(block_state.get_block().config.friction) * DEFAULT_AIR_DRAG
                     } else {
-                        AIR_DRAG
+                        DEFAULT_AIR_DRAG
                     };
 
                     let mut velocity = self.velocity();
                     velocity.x *= friction;
                     velocity.z *= friction;
-                    velocity.y *= AIR_DRAG;
+                    velocity.y *= DEFAULT_AIR_DRAG;
 
                     // Bounce when landing on ground (vanilla: ItemEntity.tick lines 145-149)
                     if result.on_ground && velocity.y < 0.0 {
@@ -637,8 +638,13 @@ impl Entity for ItemEntity {
             self.merge_with_neighbors(&world);
         }
 
+        let fluid_contact = self.refresh_fluid_contact_with_currents();
+        self.base.reset_fall_distance_in_water();
+        if fluid_contact.water_height() > 0.0 || fluid_contact.lava_height() > 0.0 {
+            self.mark_velocity_sync();
+        }
+
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)
-        // Vanilla: if (getDeltaMovement().subtract(oldMovement).lengthSqr() > 0.01) needsSync = true
         let new_movement = self.velocity();
         let diff = DVec3::new(
             new_movement.x - old_movement.x,
@@ -702,8 +708,15 @@ impl Entity for ItemEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
+        if !world.get_game_rule(&MOB_GRIEFING)
+            && source
+                .causing_entity()
+                .is_some_and(|entity| entity.as_mob().is_some())
+        {
+            return false;
+        }
         if !self.get_item().can_be_hurt_by(source.damage_type) {
             return false;
         }
@@ -780,17 +793,19 @@ impl Entity for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
 
     use steel_registry::{
-        init_vanilla_registry, item_stack::ItemStack, vanilla_damage_types, vanilla_entities,
-        vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_damage_types,
+        vanilla_entities, vanilla_items,
     };
+    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
+    use crate::behavior::init_behaviors;
     use crate::entity::{Entity, damage::DamageSource};
-    use crate::test_support::test_world;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
     use crate::world::World;
 
     use super::ItemEntity;
@@ -846,6 +861,33 @@ mod tests {
         assert_eq!(velocity.y.to_bits(), 0.2_f64.to_bits());
         assert!(velocity.z >= -0.1);
         assert!(velocity.z < 0.1);
+    }
+
+    #[test]
+    fn item_tick_refreshes_fluid_after_movement() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("item_post_move_fluid_update");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        assert!(world.set_block(
+            BlockPos::new(8, 64, 8),
+            vanilla_blocks::WATER.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let item = Arc::new(ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::new(8.5, 65.1, 8.5),
+            ItemStack::new(&vanilla_items::STONE),
+            Arc::downgrade(world),
+        ));
+        item.set_velocity(DVec3::new(0.0, -0.2, 0.0));
+
+        Arc::clone(&item).tick();
+
+        assert!(item.fluid_contact().water_height() > 0.0);
+        assert!(item.needs_velocity_sync());
     }
 
     #[test]

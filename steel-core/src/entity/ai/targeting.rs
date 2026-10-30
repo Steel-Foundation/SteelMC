@@ -208,11 +208,12 @@ mod tests {
     fn sight_check_applies_to_a_mob_that_does_not_pathfind() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("targeting_sight_check_scope");
+        let world_fixture = fresh_test_world("targeting_sight_check_scope");
+        let world = &world_fixture.world;
         let wall = BlockPos::new(2, 64, 0);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wall));
-        let targeter = HoveringTestMob::new(1, DVec3::new(0.5, 64.0, 0.5), Arc::downgrade(&world));
-        let target = HoveringTestMob::new(2, DVec3::new(4.5, 64.0, 0.5), Arc::downgrade(&world));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(wall));
+        let targeter = HoveringTestMob::new(1, DVec3::new(0.5, 64.0, 0.5), Arc::downgrade(world));
+        let target = HoveringTestMob::new(2, DVec3::new(4.5, 64.0, 0.5), Arc::downgrade(world));
 
         assert!(
             targeter.as_pathfinder_mob().is_none(),

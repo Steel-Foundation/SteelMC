@@ -18,8 +18,8 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, RemovalReason,
-    SharedEntity, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, LivingEntity,
+    RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -133,7 +133,8 @@ impl ExperienceOrbEntity {
         }
     }
 
-    /// Vanilla `ExperienceOrb.getExperienceValue`.
+    /// Splits a total XP amount into the largest single orb value at most
+    /// `max_value`, from a fixed tier table capped at 2477.
     #[must_use]
     pub const fn get_experience_value(max_value: i32) -> i32 {
         if max_value >= 2477 {
@@ -401,7 +402,11 @@ impl Entity for ExperienceOrbEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         self.set_old_position_to_current();
 
@@ -441,7 +446,7 @@ impl Entity for ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if self
+        if Arc::clone(&self)
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {

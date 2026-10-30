@@ -30,7 +30,7 @@ where
         let mut contexts = Vec::new();
         let mut current = root;
         loop {
-            let child = current.child_arc().map(Arc::clone);
+            let child = current.child_arc().cloned();
             contexts.push(current);
             let Some(child) = child else {
                 break;
