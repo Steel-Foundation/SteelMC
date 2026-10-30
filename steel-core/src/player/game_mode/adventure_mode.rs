@@ -32,7 +32,7 @@ impl Player {
 
 /// Is it breakable=
 #[must_use]
-pub(super) fn can_break(item: &ItemStack, world: &World, pos: BlockPos) -> bool {
+pub(crate) fn can_break(item: &ItemStack, world: &World, pos: BlockPos) -> bool {
     item.get(CAN_BREAK)
         .is_some_and(|predicate| matches(predicate, world, pos))
 }

@@ -488,6 +488,8 @@ pub struct ServerEntityMovementSyncUpdate {
     pub vertical_collision: bool,
     /// whether the latest movement collided horizontally
     pub horizontal_collision: bool,
+    /// Whether the entity requested a full-precision position sync.
+    pub requires_precise_position: bool,
     /// Entity network id.
     pub entity_id: i32,
     /// Whether the entity is currently riding another entity.
@@ -655,6 +657,7 @@ impl ServerEntityMovementSyncState {
             && packed_delta.is_some_and(|delta| update.is_full_precision_encoding_required(delta));
 
         let force_full = delta_too_big
+            || update.requires_precise_position
             || self.teleport_delay > FORCED_TELEPORT_PERIOD
             || self.was_riding
             || self.was_on_ground != update.on_ground;
@@ -1089,6 +1092,7 @@ mod tests {
             entity_type: &vanilla_entities::PIG,
             vertical_collision: false,
             horizontal_collision: false,
+            requires_precise_position: false,
             entity_id: 12,
             is_passenger: false,
             position,

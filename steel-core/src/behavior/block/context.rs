@@ -112,6 +112,7 @@ pub struct BlockLootContext<'a> {
     entity: Option<&'a dyn Entity>,
     block_entity: Option<&'a dyn BlockEntity>,
     tool: Option<&'a ItemStack>,
+    explosion_radius: Option<f32>,
     luck: f32,
 }
 
@@ -125,6 +126,7 @@ impl<'a> BlockLootContext<'a> {
             entity: None,
             block_entity: None,
             tool: None,
+            explosion_radius: None,
             luck: 0.0,
         }
     }
@@ -147,6 +149,13 @@ impl<'a> BlockLootContext<'a> {
     #[must_use]
     pub const fn with_tool(mut self, tool: &'a ItemStack) -> Self {
         self.tool = Some(tool);
+        self
+    }
+
+    /// Adds the explosion radius used by explosion-decay loot functions.
+    #[must_use]
+    pub const fn with_explosion(mut self, radius: f32) -> Self {
+        self.explosion_radius = Some(radius);
         self
     }
 
@@ -185,6 +194,10 @@ impl<'a> BlockLootContext<'a> {
 
     pub(crate) const fn tool(&self) -> Option<&'a ItemStack> {
         self.tool
+    }
+
+    pub(crate) const fn explosion_radius(&self) -> Option<f32> {
+        self.explosion_radius
     }
 
     pub(crate) const fn luck(&self) -> f32 {

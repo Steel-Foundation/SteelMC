@@ -13,6 +13,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::trig;
 use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, RAD_TO_DEG, fast_floor, wrap_degrees};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::attribute::AttributeRef;
@@ -1461,8 +1462,8 @@ pub trait Mob: LivingEntity + Leashable {
         };
 
         let yaw_radians = self.rotation().0.to_radians();
-        let yaw_sin = f64::from(yaw_radians.sin());
-        let yaw_cos = f64::from(yaw_radians.cos());
+        let yaw_sin = f64::from(trig::sin(yaw_radians));
+        let yaw_cos = f64::from(trig::cos(yaw_radians));
         living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
 
         let velocity = self.velocity();
@@ -1758,8 +1759,8 @@ pub trait Mob: LivingEntity + Leashable {
         let xa = strafe_forward * distance;
         let za = strafe_right * distance;
         let yaw_radians = self.rotation().0 * DEG_TO_RAD;
-        let sin = yaw_radians.sin();
-        let cos = yaw_radians.cos();
+        let sin = trig::sin(yaw_radians);
+        let cos = trig::cos(yaw_radians);
         let dx = xa.mul_add(cos, -(za * sin));
         let dz = za.mul_add(cos, xa * sin);
         if !self.is_strafe_walkable(dx, dz) {
