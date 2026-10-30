@@ -15,6 +15,10 @@ use steel_registry::data_components::vanilla_components::{
     SIGN_TEXT_BACK, SIGN_TEXT_FRONT, SignText as SignTextComponent, WAXED,
 };
 use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::sound_events::{
+    BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL, BLOCK_SIGN_WAXED_INTERACT_FAIL,
+};
 use steel_registry::{DyeColor, vanilla_block_entity_types};
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
@@ -256,10 +260,7 @@ impl SignBlockEntity {
         sign.is_waxed = true;
         true
     }
-    /// Sets whether a side's text glows, returning whether its state changed or not :3.
-    ///
-    /// Mirrors vanilla `SignBlockEntity.updateText`: returns false when the side
-    /// already has the requested glow state, so callers can skip consuming the item.
+    /// Sets whether a side's text glows, returning whether its state changed.
     pub fn set_glowing(&self, slot: SignTextSlot, glowing: bool) -> bool {
         let mut sign = self.sign.lock();
         let text = if slot.is_front() {
@@ -272,6 +273,31 @@ impl SignBlockEntity {
         }
         text.has_glowing_text = glowing;
         true
+    }
+
+    /// Sets the text color for a side, returning whether its state changed.
+    pub fn set_color(&self, slot: SignTextSlot, color: DyeColor) -> bool {
+        let mut sign = self.sign.lock();
+        let text = if slot.is_front() {
+            &mut sign.front_text
+        } else {
+            &mut sign.back_text
+        };
+        if text.color == color {
+            return false;
+        }
+        text.color = color;
+        true
+    }
+
+    /// Returns the sound event to play when a player fails to interact with this waxed sign.
+    #[must_use]
+    pub fn sign_interaction_failed_sound_event(&self) -> SoundEventRef {
+        if self.base.block_entity_type() == &vanilla_block_entity_types::HANGING_SIGN {
+            &BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL
+        } else {
+            &BLOCK_SIGN_WAXED_INTERACT_FAIL
+        }
     }
 
     /// Sets the text for a side.
@@ -490,5 +516,26 @@ mod tests {
 
         sign.tick(world);
         assert_eq!(sign.get_player_who_may_edit(), None);
+    }
+
+    #[test]
+    fn set_color_updates_color_and_reports_change() {
+        init_vanilla_registry();
+        let world_fixture = fresh_test_world("sign_set_color");
+        let world = &world_fixture.world;
+        let sign = SignBlockEntity::new(
+            Arc::downgrade(world),
+            BlockPos::new(0, 64, 0),
+            vanilla_blocks::OAK_SIGN.default_state(),
+        );
+
+        assert_eq!(sign.get_text(SignTextSlot::Front).color, DyeColor::Black);
+        assert!(sign.set_color(SignTextSlot::Front, DyeColor::Blue));
+        assert_eq!(sign.get_text(SignTextSlot::Front).color, DyeColor::Blue);
+        assert!(!sign.set_color(SignTextSlot::Front, DyeColor::Blue));
+
+        assert_eq!(sign.get_text(SignTextSlot::Back).color, DyeColor::Black);
+        assert!(sign.set_color(SignTextSlot::Back, DyeColor::Red));
+        assert_eq!(sign.get_text(SignTextSlot::Back).color, DyeColor::Red);
     }
 }

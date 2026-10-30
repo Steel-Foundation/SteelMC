@@ -25,9 +25,11 @@ Don't PR changes that have no impact on code foundation/structure, unless paired
 
 When optimizing code or removing "unnecessary" vanilla Minecraft elements, always consider their potential use cases in future implementations. This also applies when choosing which crate to place new functionality into; think about modularity and future extensibility.
 
-### Use Parchment Mappings
+### Testing
 
-Please stick to Parchment mapping names most of the time for consistency and easier collaboration.
+Only write tests for behavior that has caused regressions or is important enough to protect. Avoid tests that only add coverage.
+
+We have integrated the testing harness Flint, which lets you write JSON tests for blocks, items and entities. These tests can be compared directly against vanilla, so your work can be verified.
 
 ### AI policy
 

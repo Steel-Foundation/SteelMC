@@ -1,4 +1,4 @@
-use steel_math::DEGREE_90;
+use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
@@ -718,7 +718,6 @@ pub trait LivingEntity: Entity {
             self.broadcast_damage_event(world, source);
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
-                self.broadcast_hurt_animation(world);
             }
             self.apply_damage_knockback(source);
         }
@@ -963,19 +962,6 @@ pub trait LivingEntity: Entity {
                     .direct_entity()
                     .map_or(0, |entity| entity.id().wrapping_add(1)),
                 source_position: source.source_position_raw(),
-            },
-            None,
-        );
-    }
-
-    /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self, world: &World) {
-        let (yaw, _) = self.rotation();
-        world.broadcast_to_nearby(
-            self.hurt_broadcast_chunk(),
-            CHurtAnimation {
-                entity_id: self.id(),
-                yaw,
             },
             None,
         );
@@ -1397,11 +1383,24 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+        self.add_mob_effect_with_source(effect, None)
+    }
+
+    /// Adds or updates active vanilla mob-effect state, attributing it to
+    /// `source`.
+    fn add_mob_effect_with_source(
+        &self,
+        effect: MobEffectInstance,
+        source: Option<&dyn Entity>,
+    ) -> bool {
         if !self.can_be_affected(&effect) {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
+        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
+        // once the advancement-criteria foundation exists.
+        let _ = source;
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
@@ -1746,6 +1745,26 @@ pub trait LivingEntity: Entity {
             .flatten()
     }
 
+    /// Applies the sound portion of vanilla's equipment-change hook.
+    fn on_equip_item(&self, slot: EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
+        if self.is_spectator()
+            || self.is_first_tick()
+            || ItemStack::is_same_item_same_components(previous, stack)
+        {
+            return;
+        }
+
+        let Some(sound) = self.equip_sound(slot, stack) else {
+            return;
+        };
+        if self.is_silent() {
+            return;
+        }
+        if let Some(world) = self.level() {
+            world.play_sound_at(sound, self.sound_source(), self.position(), 1.0, 1.0, None);
+        }
+    }
+
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.
     fn interact_living_entity_with_equippable(
         &self,
@@ -1789,9 +1808,7 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         if let Some(mob) = self.as_mob() {
             mob.set_guaranteed_drop(slot);
         }
@@ -2250,9 +2267,9 @@ pub trait LivingEntity: Entity {
             self.set_velocity(
                 self.velocity()
                     + DVec3::new(
-                        f64::from(-angle.sin() * 0.2),
+                        -f64::from(trig::sin(angle)) * 0.2,
                         0.0,
-                        f64::from(angle.cos() * 0.2),
+                        f64::from(trig::cos(angle)) * 0.2,
                     ),
             );
         }
@@ -2805,7 +2822,7 @@ pub trait LivingEntity: Entity {
         }
 
         if pitch_radians < 0.0 && look_horizontal_length > 0.0 {
-            let convert = move_horizontal_length * -f64::from(pitch_radians.sin()) * 0.04;
+            let convert = move_horizontal_length * -f64::from(trig::sin(pitch_radians)) * 0.04;
             movement += DVec3::new(
                 -look_angle.x * convert / look_horizontal_length,
                 convert * 3.2,

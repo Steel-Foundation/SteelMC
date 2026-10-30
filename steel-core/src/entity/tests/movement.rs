@@ -1,4 +1,6 @@
 use super::*;
+use crate::physics::MoverType;
+use steel_utils::types::UpdateFlags;
 
 #[test]
 fn resolved_movement_application_matches_vanilla_threshold() {
@@ -26,6 +28,63 @@ fn move_without_physics_returns_none_when_position_commit_rejects() {
 
     assert!(result.is_none());
     assert_vec3_close(entity.position(), DVec3::ZERO);
+}
+
+#[test]
+fn move_preserves_fluid_contact_until_the_entity_fluid_update() {
+    init_vanilla_registry();
+    let fixture = fresh_test_world("entity_move_fluid_update_boundary");
+    let world = &fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(1.0, 0.0, true, world));
+    entity.set_no_physics(true);
+
+    assert!(
+        Arc::clone(&entity)
+            .move_entity(MoverType::SelfMovement, DVec3::X)
+            .is_some()
+    );
+
+    assert_eq!(
+        entity.fluid_contact().water_height().to_bits(),
+        1.0_f64.to_bits()
+    );
+    assert_eq!(
+        entity.refresh_fluid_contact().water_height().to_bits(),
+        0.0_f64.to_bits()
+    );
+}
+
+#[test]
+fn living_move_refreshes_fluid_before_fall_state_is_applied() {
+    init_vanilla_registry();
+    init_behaviors();
+    let fixture = fresh_test_world("living_move_fluid_fall_boundary");
+    let world = &fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world));
+    entity.base.set_position_local(DVec3::new(8.5, 65.1, 8.5));
+    entity.base.set_fall_distance(8.0);
+
+    assert!(
+        Arc::clone(&entity)
+            .move_entity(MoverType::SelfMovement, DVec3::new(0.0, -0.25, 0.0))
+            .is_some()
+    );
+
+    assert!(
+        entity.fluid_contact().water_height() > 0.0,
+        "position={:?}, box={:?}, contact={:?}",
+        entity.position(),
+        entity.bounding_box(),
+        entity.fluid_contact()
+    );
+    assert_eq!(entity.fall_distance().to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]

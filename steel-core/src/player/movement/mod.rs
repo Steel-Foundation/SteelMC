@@ -617,7 +617,6 @@ impl Player {
                     vehicle.id()
                 );
             }
-            vehicle.refresh_fluid_contact();
             vehicle.set_rotation((target_yaw, target_pitch));
             self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
             vehicle.remove_latest_movement_recording();
@@ -649,7 +648,6 @@ impl Player {
                         vehicle.id()
                     );
                 }
-                vehicle.refresh_fluid_contact();
                 vehicle.set_rotation((target_yaw, target_pitch));
                 self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
                 vehicle.remove_latest_movement_recording();
