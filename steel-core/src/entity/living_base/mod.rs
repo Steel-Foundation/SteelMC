@@ -1543,8 +1543,6 @@ impl LivingEntityBase {
     }
 
     /// Decrements the vanilla hurt animation timer.
-    ///
-    /// Mirrors the `hurtTime` countdown in `LivingEntity.baseTick`.
     pub fn decrement_hurt_time(&self) {
         let mut state = self.state.lock();
         if state.hurt_time > 0 {
