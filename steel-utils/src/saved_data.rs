@@ -10,7 +10,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// browsers have no files: the async api isn't available there, the sync one fails at runtime
 #[cfg(not(target_family = "wasm"))]
 use serde::{Serialize, de::DeserializeOwned};
 #[cfg(not(target_family = "wasm"))]
