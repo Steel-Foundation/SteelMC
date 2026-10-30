@@ -19,7 +19,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySpawnReason, EntitySyncedData,
     LivingEntity, LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason,
     SharedEntity, SpawnRule,
 };
@@ -158,6 +158,10 @@ impl Entity for EndermiteEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::Events
     }
 
     fn base_tick(&self) {

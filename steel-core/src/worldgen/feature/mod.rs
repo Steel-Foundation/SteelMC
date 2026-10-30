@@ -16,7 +16,6 @@ mod prelude;
 mod runner;
 mod sorter;
 mod state;
-mod vanilla_collections;
 mod weather;
 
 pub(crate) use features::no_nested_features;
