@@ -195,7 +195,7 @@ impl EntityExplosionExposure {
     }
 }
 
-fn exposure_axis_step(axis_length: f64) -> f64 {
+const fn exposure_axis_step(axis_length: f64) -> f64 {
     1.0 / (axis_length * EXPOSURE_SAMPLE_DENSITY + 1.0)
 }
 
