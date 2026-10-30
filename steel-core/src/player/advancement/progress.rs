@@ -99,11 +99,11 @@ impl AdvancementProgressMap {
 /// Tracks whether the advancement has been fully completed. In the future,
 /// this will also track specific criteria progress.
 #[derive(Debug, Clone, Default)]
-pub struct AdvancementProgress {
+pub(crate) struct AdvancementProgress {
     /// Indicates the different progress of all criteria currently only a boolean
-    pub criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
+    criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
     /// The Requirement for the Advancement to be mark as complete
-    pub requirements: AdvancementRequirement,
+    requirements: AdvancementRequirement,
 }
 
 impl AdvancementProgress {
