@@ -377,11 +377,7 @@ pub trait Mob: LivingEntity + Leashable {
         is_saddled
     }
 
-    /// Returns vanilla `Mob.getSensing().hasLineOfSight(target)`.
-    ///
-    /// Lives on `Mob` rather than `PathfinderMob` because vanilla's callers, such as
-    /// `TargetingConditions.test`, gate on `instanceof Mob`; the Ender Dragon is a
-    /// `Mob` that does not pathfind.
+    /// Checks line of sight using this mob sensing cache
     fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
         self.mob_base()
             .sensing()
