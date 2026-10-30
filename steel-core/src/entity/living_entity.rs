@@ -727,8 +727,8 @@ pub trait LivingEntity: Entity {
         if took_full_damage {
             self.living_base().begin_hurt_animation();
         }
-        self.resolve_mob_responsible_for_damage(world, source);
-        self.resolve_player_responsible_for_damage(world, source);
+        self.resolve_mob_responsible_for_damage(source);
+        self.resolve_player_responsible_for_damage(source);
 
         if took_full_damage {
             self.broadcast_damage_event(world, source);
