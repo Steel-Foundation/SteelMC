@@ -34,6 +34,7 @@ impl AdvancementProgressMap {
         }
     }
 
+    /// Replaces the progress of an advancement with persisted state.
     pub fn start_progress(
         &mut self,
         advancement: AdvancementRef,
@@ -97,7 +98,7 @@ impl AdvancementProgressMap {
 ///
 /// Tracks whether the advancement has been fully completed. In the future,
 /// this will also track specific criteria progress.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct AdvancementProgress {
     /// Indicates the different progress of all criteria currently only a boolean
     pub criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,

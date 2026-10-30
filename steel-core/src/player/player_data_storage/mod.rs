@@ -454,6 +454,7 @@ impl PlayerDataFile {
                 items
             },
             stats: Vec::new(),
+            advancements: Vec::new(),
         })
     }
 }

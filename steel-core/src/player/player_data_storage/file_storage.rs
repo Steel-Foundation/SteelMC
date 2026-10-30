@@ -8,11 +8,15 @@ use super::{
     decode_global_file, decode_player_file, encode_global_file, encode_player_file,
 };
 use crate::permission::PermissionSubjectIndex;
+use crate::player::advancement::PersistedAdvancements;
+use crate::player::advancement::PersistedAdvancementsRef;
+use crate::player::advancement::progress::AdvancementProgress;
 use crate::player::player_data::{PersistentPlayerData, PersistentStat};
 use crate::player::{KnownPlayers, Player};
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use steel_utils::Identifier;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
@@ -47,8 +51,8 @@ impl FilePlayerDataStorage {
     ) -> io::Result<()> {
         self.save_domain_player_data(domain, uuid, data).await?;
         self.save_domain_player_stats(domain, uuid, data).await?;
-        self.save_domain_player_advancement(domain, uuid, data)
-            .await?; // TODO
+        self.save_domain_player_advancements(domain, uuid, data)
+            .await?;
         Ok(())
     }
 
@@ -83,6 +87,25 @@ impl FilePlayerDataStorage {
         Ok(())
     }
 
+    pub(crate) async fn save_domain_player_advancements(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        data: &PersistentPlayerData,
+    ) -> io::Result<()> {
+        let file = PersistedAdvancementsRef {
+            entries: &data.advancements,
+        };
+        let json = serde_json::to_vec_pretty(&file)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let final_path = Self::player_advancements_file(&self.domain_players_dir(domain), uuid);
+        let _guard = self.file_lock(&final_path).await;
+        Self::write_atomic_path_locked(&final_path, &json).await?;
+        log::debug!("Saved player advancements for {uuid} in domain {domain}");
+
+        Ok(())
+    }
+
     pub(crate) async fn load_domain(
         &self,
         domain: &str,
@@ -100,6 +123,18 @@ impl FilePlayerDataStorage {
             }
             Err(e) => {
                 log::error!("Could not load stats for {uuid} in domain {domain}: {e}");
+                Vec::new()
+            }
+        };
+
+        data.advancements = match self.load_domain_player_advancements(domain, uuid).await {
+            Ok(Some(advancements)) => advancements,
+            Ok(None) => {
+                log::debug!("Using empty advancements for {uuid} in domain {domain}");
+                Vec::new()
+            }
+            Err(e) => {
+                log::error!("Could not load advancements for {uuid} in domain {domain}: {e}");
                 Vec::new()
             }
         };
@@ -149,6 +184,30 @@ impl FilePlayerDataStorage {
         log::debug!("Loaded player stats for {uuid} in domain {domain}");
 
         Ok(Some(persistent_stats))
+    }
+
+    pub(crate) async fn load_domain_player_advancements(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+    ) -> io::Result<Option<Vec<(Identifier, AdvancementProgress)>>> {
+        let domain_dir = self.domain_players_dir(domain);
+        let path = Self::player_advancements_file(&domain_dir, uuid);
+        let _guard = self.file_lock(&path).await;
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
+            return Ok(None);
+        }
+
+        let bytes = fs::read(&path).await?;
+        let file: PersistedAdvancements = serde_json::from_slice(&bytes).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid player advancements for {uuid} in domain {domain}: {e}"),
+            )
+        })?;
+        log::debug!("Loaded player advancements for {uuid} in domain {domain}");
+
+        Ok(Some(file.entries))
     }
 
     pub(crate) async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
@@ -296,6 +355,10 @@ impl FilePlayerDataStorage {
 
     pub(crate) fn player_stats_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
         players_dir.join(format!("stats/{uuid}.toml"))
+    }
+
+    pub(crate) fn player_advancements_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
+        players_dir.join(format!("advancements/{uuid}.json"))
     }
 
     async fn file_lock(&self, path: &Path) -> OwnedAsyncMutexGuard<()> {

@@ -5,8 +5,11 @@
 use rustc_hash::FxHashSet;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::Stat;
+use steel_utils::Identifier;
 use steel_utils::types::GameType;
 
+use super::advancement::PlayerAdvancement;
+use super::advancement::progress::AdvancementProgress;
 use super::{
     Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
     player_inventory::PlayerInventory,
@@ -126,6 +129,9 @@ pub struct PersistentPlayerData {
 
     /// The tracked statistics of the player with their counters.
     pub stats: Vec<PersistentStat>,
+
+    /// Persisted advancement progress keyed by advancement identifier.
+    pub advancements: Vec<(Identifier, AdvancementProgress)>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -234,6 +240,7 @@ impl PersistentPlayerData {
             .or_else(|| player.pending_root_vehicle_for_current_world());
         let ender_pearls = Self::ender_pearls_from_player(player);
         let stats = Self::stats_from_player(player);
+        let advancements = player.advancements.lock().persisted_progress();
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -279,6 +286,7 @@ impl PersistentPlayerData {
             ender_pearls,
             ender_items,
             stats,
+            advancements,
         }
     }
 
@@ -345,6 +353,7 @@ impl Player {
         *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
         *self.food_data.lock() = FoodData::new();
         self.stats.lock().reset();
+        *self.advancements.lock() = PlayerAdvancement::default();
 
         let mut experience = Experience::default();
         experience.dirty = true;
@@ -523,5 +532,10 @@ impl PersistentPlayerData {
                 stats.stats.insert(*stat, (*count, StatState::Dirty));
             }
         }
+
+        player
+            .advancements
+            .lock()
+            .apply_persisted_progress(self.advancements.iter().cloned());
     }
 }
