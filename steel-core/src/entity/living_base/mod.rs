@@ -1550,7 +1550,7 @@ impl LivingEntityBase {
         }
     }
 
-    /// Returns vanilla `LivingEntity.hurtTime`.
+    /// Returns the current hurt time
     #[must_use]
     pub fn hurt_time(&self) -> i32 {
         self.state.lock().hurt_time
