@@ -18,7 +18,6 @@ pub fn flint_block_to_state_id(block: &Block) -> Option<BlockStateId> {
 
     let block_ref = REGISTRY.blocks.by_key(&identifier)?;
 
-    // Unspecified properties keep the block's default state values.
     REGISTRY.blocks.state_id_from_block_defaulted_properties(
         block_ref,
         block

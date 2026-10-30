@@ -139,7 +139,6 @@ impl SteelTestWorld {
             ..RuntimeConfig::default()
         });
 
-        // Block on async world and server creation
         let (world, server) = rt.block_on(async {
             let world =
                 World::new_with_config(rt.clone(), dim_id, &OVERWORLD, 0, config, generation_pool)
@@ -181,8 +180,6 @@ impl SteelTestWorld {
             return;
         }
 
-        // Retain the handle so the ticket stays alive for the world's
-        // lifetime (the chunk would unload if the handle were dropped).
         let handle = self.drive_chunk_request(chunk_pos);
         self.chunk_requests.lock().insert(chunk_pos, handle);
     }
@@ -194,8 +191,6 @@ impl SteelTestWorld {
 
         let handle =
             chunk_map.request_chunk(chunk_pos, ChunkStatus::Full, ChunkTicketKind::Command);
-        // Ender pearl ticket is the only public simulated ticket: radius 2 =>
-        // center is entity-ticking, block-ticking readiness (3x3 Full) at center.
         chunk_map.place_ender_pearl_ticket(chunk_pos);
 
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -273,9 +268,6 @@ impl SteelTestWorld {
 
 impl Drop for SteelTestWorld {
     fn drop(&mut self) {
-        // Worldgen tasks for outer-ring chunks outlive the test and panic with
-        // "World has been dropped", aborting the whole test process.
-        // ponytail: leaks each test world; drain generation on drop if steel exposes an idle check
         mem::forget(Arc::clone(&self.world));
     }
 }
@@ -337,8 +329,6 @@ impl FlintWorld for SteelTestWorld {
         let steel_pos = flint_pos_to_steel(pos);
 
         self.ensure_chunk_at(&steel_pos);
-        // FlintCLI sends each action as a separate command to a frozen vanilla
-        // server, which runs light updates while idle between commands.
         self.world.chunk_map.propagate_queued_light_changes();
 
         let mut state = self.world.update_from_neighbor_shapes(state_id, steel_pos);

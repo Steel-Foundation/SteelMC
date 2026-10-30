@@ -1,6 +1,5 @@
 //! Flint testing framework integration for `SteelMC`.
 
-// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
 #![recursion_limit = "256"]
 
 pub mod adapter;
@@ -13,7 +12,6 @@ pub use adapter::SteelAdapter;
 pub use player::SteelTestPlayer;
 pub use world::SteelTestWorld;
 
-/// Re-export flint types for convenience
 pub use flint_core::{TestLoader, TestRunner};
 
 use std::sync::{Arc, LazyLock};
