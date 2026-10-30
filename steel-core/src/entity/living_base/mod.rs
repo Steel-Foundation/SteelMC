@@ -631,9 +631,7 @@ struct LivingEntityState {
     effects_dirty: bool,
     death_processed: bool,
     invulnerable_time: i32,
-    /// Vanilla `LivingEntity.hurtTime`.
     hurt_time: i32,
-    /// Vanilla `LivingEntity.hurtDuration`.
     hurt_duration: i32,
     last_hurt: f32,
     last_hurt_by_player: Option<Uuid>,
