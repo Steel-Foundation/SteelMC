@@ -22,8 +22,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    DEFAULT_AIR_DRAG, Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData,
-    RemovalReason,
+    DEFAULT_AIR_DRAG, Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementEmission,
+    EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -536,6 +536,10 @@ impl Entity for ItemEntity {
 
     fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
         !explosion.should_affect_blocklike_entities()
+    }
+  
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
     }
 
     fn tick(self: Arc<Self>) {

@@ -119,6 +119,7 @@ pub trait ItemBehavior: Send + Sync {
         }
 
         let slot = equippable.slot;
+        let equipped = context.inv.with_item(|item| item.copy_with_count(1));
         let result = context.inv.with_inventory(|inventory| {
             inventory.try_swap_with_equipment_slot(
                 context.hand,
@@ -134,6 +135,9 @@ pub trait ItemBehavior: Send + Sync {
                         .player
                         .drop_item(overflow, false, Prediction::Predicted);
                 }
+                context
+                    .player
+                    .on_equip_item(slot, &ItemStack::empty(), &equipped);
                 InteractionResult::Success
             }
             EquipmentSwapResult::Fail => InteractionResult::Fail,
