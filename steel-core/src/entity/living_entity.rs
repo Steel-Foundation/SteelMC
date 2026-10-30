@@ -2021,10 +2021,6 @@ pub trait LivingEntity: Entity {
         self.living_base().decrement_hurt_time();
         self.living_base().decrement_invulnerable_time();
 
-        // Vanilla runs `tickDeath` from `baseTick`, before `tickEffects`, and keeps
-        // running `aiStep` from `tick` gated only on `isRemoved`. What stops while
-        // dying is the AI: `isImmobile` returns `isDeadOrDying`, so `aiStep` skips
-        // `serverAiStep`. Death animations depend on still being moved.
         if self.is_dead_or_dying() {
             self.tick_death();
         }
