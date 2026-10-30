@@ -537,7 +537,7 @@ impl Entity for ItemEntity {
     fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
         !explosion.should_affect_blocklike_entities()
     }
-  
+
     fn movement_emission(&self) -> EntityMovementEmission {
         EntityMovementEmission::None
     }
