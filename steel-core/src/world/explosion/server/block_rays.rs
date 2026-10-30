@@ -260,7 +260,6 @@ impl ServerExplosion<'_> {
     }
 }
 
-#[inline(always)]
 fn ray_direction(xx: i32, yy: i32, zz: i32) -> DVec3 {
     let mut xd = ray_direction_component(xx);
     let mut yd = ray_direction_component(yy);
@@ -272,17 +271,14 @@ fn ray_direction(xx: i32, yy: i32, zz: i32) -> DVec3 {
     DVec3::new(xd, yd, zd)
 }
 
-#[inline(always)]
 fn ray_direction_component(index: i32) -> f64 {
     f64::from(index as f32 / RAY_GRID_LAST_INDEX as f32 * 2.0 - 1.0)
 }
 
-#[inline(always)]
 const fn initial_ray_power(radius: f32, random: f32) -> f32 {
     radius * (INITIAL_RAY_POWER_BASE + random * INITIAL_RAY_POWER_RANDOM_SCALE)
 }
 
-#[inline(always)]
 const fn ray_power_loss_from_resistance(resistance: f32) -> f32 {
     (resistance + RESISTANCE_POWER_OFFSET) * RESISTANCE_POWER_SCALE
 }
