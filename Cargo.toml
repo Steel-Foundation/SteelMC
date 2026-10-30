@@ -32,17 +32,9 @@ steel-worldgen = { path = "steel-worldgen" }
 steel-math = { path = "steel-math" }
 
 # Async runtime
-tokio = { version = "1.53.1", features = [
-    "macros",
-    "net",
-    "rt-multi-thread",
-    "sync",
-    "io-std",
-    "fs",
-    "io-util",
-    "time",
-    "signal",
-] }
+# only features that also build for wasm32-unknown-unknown, so the worldgen crates can run in
+# browsers. crates that need networking, the multi thread runtime or files enable those themselves.
+tokio = { version = "1.53.1", features = ["macros", "sync", "io-util", "rt", "time"] }
 tokio-util = { version = "0.7.19", features = ["rt"] }
 futures = "0.3.33"
 
