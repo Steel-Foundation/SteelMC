@@ -494,6 +494,7 @@ impl World {
         }
     }
 
+    // TODO: Add trigger branch with windcharges
     fn resolve_block_interaction(&self, interaction: ExplosionInteraction) -> BlockInteraction {
         match interaction {
             ExplosionInteraction::None => BlockInteraction::Keep,
