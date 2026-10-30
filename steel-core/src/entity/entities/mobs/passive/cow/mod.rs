@@ -37,7 +37,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SharedEntity, SpawnGroupData,sync_dirty_mob_effects,
+    PathfinderMob, SharedEntity, SpawnGroupData, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;

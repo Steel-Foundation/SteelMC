@@ -39,7 +39,7 @@ use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
     PathfinderMob, SharedEntity, SpawnGroupData, entity_loot_ref, living_loot_equipment,
-    position_rider_default,sync_dirty_mob_effects,
+    position_rider_default, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;

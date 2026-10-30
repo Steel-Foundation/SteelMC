@@ -108,21 +108,6 @@ pub trait PathfinderMob: Mob {
 
     /// Scores pathfinding positions: animals favor light, monsters darkness.
     fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
-      //TODO fix!!!!! merge conflict and find out what is the correct branch
-// <<<<<<< dragon/living-entity
-//        self.as_animal()
-//            .map_or(0.0, |animal| animal.animal_walk_target_value(pos))
-//=======
-//        if let Some(monster) = self.as_monster() {
-//            monster.get_walk_target_value_monster(pos)
-//        } else if let Some(animal) = self.as_animal() {
-//            animal.animal_walk_target_value(pos)
-//        } else {
-//            0.0
-//        }
-//>>>>>>> master
-        self.as_animal()
-            .map_or(0.0, |animal| animal.animal_walk_target_value(pos))
         if let Some(monster) = self.as_monster() {
             monster.get_walk_target_value_monster(pos)
         } else if let Some(animal) = self.as_animal() {
