@@ -1031,9 +1031,6 @@ pub trait LivingEntity: Entity {
         if self.is_removed() {
             return;
         }
-        // Vanilla guards on `!this.dead` and sets the flag inside `handleKillingBlow`.
-        // Steel ticks worlds in parallel, so the test and the set stay one atomic
-        // step here and the hook keeps only the subclass-visible side effects.
         if !self.living_base().mark_death_processed() {
             return;
         }
