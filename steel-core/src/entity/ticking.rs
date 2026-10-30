@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 use super::{Entity, SharedEntity};
 
 /// Cycle-detection stack sized for the shallow passenger chains vanilla produces.
-pub(crate) type VehicleChain = SmallVec<[i32; 4]>;
+pub(crate) type VehicleChain = SmallVec<[i32; 8]>;
 
 /// Snapshots vanilla old position and rotation before an entity tick.
 pub(crate) fn snapshot_old_pos_and_rot_for_tick(entity: &dyn Entity) {
@@ -29,7 +29,7 @@ pub(crate) fn tick_vehicle_passengers_if(
         return;
     }
 
-    let mut visited = SmallVec::<[i32; 8]>::new();
+    let mut visited = VehicleChain::new();
     visited.push(vehicle.id());
 
     for passenger in passengers {
@@ -42,7 +42,7 @@ fn tick_passenger(
     entity: &SharedEntity,
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
-    visited: &mut SmallVec<[i32; 8]>,
+    visited: &mut VehicleChain,
 ) {
     let entity_id = entity.id();
     assert!(
