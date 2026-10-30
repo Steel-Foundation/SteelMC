@@ -2221,10 +2221,7 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_no_jump_delay();
     }
 
-    /// Returns vanilla `LivingEntity.hurtTime`.
-    ///
-    /// Counts down from `HURT_DURATION_TICKS` after the entity takes full damage;
-    /// entities such as the Ender Dragon gate melee sweeps on it being zero.
+    /// returns the remaining hurt animation ticks
     fn hurt_time(&self) -> i32 {
         self.living_base().hurt_time()
     }
