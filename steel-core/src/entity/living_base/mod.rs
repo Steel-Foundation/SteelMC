@@ -1536,10 +1536,6 @@ impl LivingEntityBase {
     }
 
     /// Starts the vanilla hurt animation.
-    ///
-    /// Mirrors `hurtDuration = 10; hurtTime = hurtDuration;` in `LivingEntity.hurtServer`,
-    /// which vanilla runs *after* `actuallyHurt`, so death handling still observes the
-    /// previous animation state.
     pub fn begin_hurt_animation(&self) {
         let mut state = self.state.lock();
         state.hurt_duration = HURT_DURATION_TICKS;
