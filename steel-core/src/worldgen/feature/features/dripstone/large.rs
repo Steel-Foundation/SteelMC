@@ -128,8 +128,8 @@ impl FeatureDecorationRunner {
         let angle_increment = 6.0 / xz_radius as f32;
         let mut angle = 0.0f32;
         while angle < TAU {
-            let dx = (trig::cos(f64::from(angle)) * xz_radius as f32) as i32;
-            let dz = (trig::sin(f64::from(angle)) * xz_radius as f32) as i32;
+            let dx = (trig::cos(angle) * xz_radius as f32) as i32;
+            let dz = (trig::sin(angle) * xz_radius as f32) as i32;
             if Self::is_empty_or_water_or_lava(region.block_state(center.offset(dx, 0, dz))) {
                 return false;
             }
@@ -291,8 +291,8 @@ impl WindOffsetter {
         Self {
             origin_y,
             wind_speed: Some((
-                f64::from(trig::cos(f64::from(direction)) * speed),
-                f64::from(trig::sin(f64::from(direction)) * speed),
+                f64::from(trig::cos(direction) * speed),
+                f64::from(trig::sin(direction) * speed),
             )),
             max_offset,
         }
