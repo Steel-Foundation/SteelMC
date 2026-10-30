@@ -345,6 +345,7 @@ pub enum ArgumentType {
     LootPredicate,
     LootModifier,
     Dialog,
+    SwingAnimation,
     Uuid,
 }
 
@@ -413,8 +414,9 @@ impl ArgumentType {
             Self::LootTable => 52,
             Self::LootPredicate => 53,
             Self::LootModifier => 54,
-            Self::Dialog => 55,
-            Self::Uuid => 56,
+            Self::Dialog => 58,
+            Self::SwingAnimation => 60,
+            Self::Uuid => 61,
         }
     }
 }
@@ -520,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn command_argument_tail_uses_the_26_2_registry_ids() {
+    fn command_argument_tail_uses_the_26_3_registry_ids() {
         for (argument, expected) in [
             (ArgumentType::TemplateMirror, 49),
             (ArgumentType::TemplateRotation, 50),
@@ -528,8 +530,9 @@ mod tests {
             (ArgumentType::LootTable, 52),
             (ArgumentType::LootPredicate, 53),
             (ArgumentType::LootModifier, 54),
-            (ArgumentType::Dialog, 55),
-            (ArgumentType::Uuid, 56),
+            (ArgumentType::Dialog, 58),
+            (ArgumentType::SwingAnimation, 60),
+            (ArgumentType::Uuid, 61),
         ] {
             let mut encoded = Vec::new();
             assert!(argument.write(&mut encoded).is_ok());

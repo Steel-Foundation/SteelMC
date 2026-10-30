@@ -133,6 +133,10 @@ impl LiquidBlock {
 }
 
 impl BlockBehavior for LiquidBlock {
+    fn is_liquid_block(&self) -> bool {
+        true
+    }
+
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -356,5 +360,21 @@ mod tests {
 
         assert_eq!(updated, state);
         assert!(level.scheduled_block_ticks.borrow().is_empty());
+    }
+
+    #[test]
+    fn liquid_block_behavior_and_ext_identify_liquid_blocks() {
+        use crate::behavior::BlockStateBehaviorExt as _;
+
+        init_vanilla_registry();
+        init_behaviors();
+
+        let liquid = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
+        assert!(liquid.is_liquid_block());
+
+        assert!(vanilla_blocks::WATER.default_state().is_liquid_block());
+        assert!(vanilla_blocks::LAVA.default_state().is_liquid_block());
+        assert!(!vanilla_blocks::STONE.default_state().is_liquid_block());
+        assert!(!vanilla_blocks::AIR.default_state().is_liquid_block());
     }
 }

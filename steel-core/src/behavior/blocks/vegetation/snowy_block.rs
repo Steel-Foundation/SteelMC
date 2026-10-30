@@ -92,9 +92,10 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("snowy_block_placement");
+        let world_fixture = fresh_test_world("snowy_block_placement");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(0, 64, 0);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let behavior = SnowyBlock::new(&vanilla_blocks::PODZOL);
 
@@ -106,7 +107,7 @@ mod tests {
             world.set_block(pos.above(), snow.default_state(), UpdateFlags::empty());
             let mut stack = ItemStack::empty();
             let context = BlockPlaceContext::directional(
-                &world,
+                world,
                 pos,
                 Direction::Down,
                 &mut stack,
@@ -126,7 +127,7 @@ mod tests {
             world.set_block(pos.above(), non_snow.default_state(), UpdateFlags::empty());
             let mut stack = ItemStack::empty();
             let context = BlockPlaceContext::directional(
-                &world,
+                world,
                 pos,
                 Direction::Down,
                 &mut stack,

@@ -1,11 +1,70 @@
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::entity::leash::Leashable;
+use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
 const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
 /// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
 const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
+
+const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
+
+fn landing_particle_count(fall_distance: f64, safe_fall_distance: f64) -> Option<i32> {
+    let power = (fall_distance + 1.0e-6 - safe_fall_distance)
+        .floor()
+        .max(0.0);
+    (power > 0.0).then(|| (150.0 * (f64::from(0.2_f32) + power / 15.0).min(2.5)) as i32)
+}
+
+fn landing_particle_position(entity_position: DVec3, landing_pos: BlockPos) -> DVec3 {
+    let entity_pos = BlockPos::new(
+        entity_position.x.floor() as i32,
+        entity_position.y.floor() as i32,
+        entity_position.z.floor() as i32,
+    );
+    if landing_pos.x() == entity_pos.x() && landing_pos.z() == entity_pos.z() {
+        return entity_position;
+    }
+
+    let x_difference = entity_position.x - f64::from(landing_pos.x()) - 0.5;
+    let z_difference = entity_position.z - f64::from(landing_pos.z()) - 0.5;
+    let maximum_difference = x_difference.abs().max(z_difference.abs());
+    DVec3::new(
+        f64::from(landing_pos.x()) + 0.5 + x_difference / maximum_difference * 0.5,
+        entity_position.y,
+        f64::from(landing_pos.z()) + 0.5 + z_difference / maximum_difference * 0.5,
+    )
+}
+
+fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
+    let values = nbt.list(key)?.doubles()?;
+    let &[x, y, z, ..] = values.as_slice() else {
+        return None;
+    };
+    Some(DVec3::new(x, y, z))
+}
+
+fn read_nbt_rotation(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<(f32, f32)> {
+    let values = nbt.list(key)?.floats()?;
+    let &[yaw, pitch, ..] = values.as_slice() else {
+        return None;
+    };
+    Some((yaw, pitch))
+}
+
+fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
+    let sanitize = |value: f64| {
+        if value.abs() > MAX_ENTITY_MOTION_COMPONENT {
+            0.0
+        } else {
+            value
+        }
+    };
+    DVec3::new(sanitize(motion.x), sanitize(motion.y), sanitize(motion.z))
+}
 
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,9 +97,16 @@ pub enum AcceptedClientMovementOutcome {
 pub trait EntityEventSource {
     /// Returns this entity as a game-event source.
     fn as_entity_event_source(&self) -> &dyn Entity;
+
+    /// Retains this exact entity allocation as a shared entity handle.
+    fn into_shared_entity(self: Arc<Self>) -> SharedEntity;
 }
 
 impl<T: Entity> EntityEventSource for T {
+    fn into_shared_entity(self: Arc<Self>) -> SharedEntity {
+        self
+    }
+
     fn as_entity_event_source(&self) -> &dyn Entity {
         self
     }
@@ -74,8 +140,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn entity_type(&self) -> EntityTypeRef;
 
     /// Returns whether this entity ignores chunk ticking visibility.
-    ///
-    /// Mirrors vanilla `Entity.isAlwaysTicking`.
     fn is_always_ticking(&self) -> bool {
         false
     }
@@ -91,6 +155,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Gets the entity's unique network ID (session-local).
     fn id(&self) -> i32 {
         self.base().id()
+    }
+
+    /// Gets the generation counter of this runtime construction of the entity.
+    fn generation(&self) -> EntityGeneration {
+        self.base().generation()
     }
 
     /// Gets the UUID of the entity (persistent identifier).
@@ -275,7 +344,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns vanilla `Entity.getInBlockState`.
+    /// Returns the block state this entity's origin currently overlaps.
     fn in_block_state(&self, world: &World) -> BlockStateId {
         self.base().in_block_state(world)
     }
@@ -290,7 +359,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().bounding_box()
     }
 
-    /// Returns vanilla `Entity.isFree()` for the current bounding box shifted by `delta`.
+    /// Returns whether the bounding box shifted by `delta` is free of block
+    /// collisions and liquids.
     fn is_free(&self, delta: DVec3) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -311,16 +381,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity obstructs block placement.
     ///
-    /// Mirrors vanilla `Entity.blocksBuilding`. Base entities do not obstruct
-    /// placement unless a concrete entity type opts in.
+    /// Base entities do not obstruct placement unless a concrete entity type opts in.
     fn blocks_building(&self) -> bool {
         false
     }
 
     /// Returns whether this entity can be targeted by picking and interaction raycasts.
     ///
-    /// Mirrors vanilla `Entity.isPickable`. Base entities are not pickable unless
-    /// a concrete entity type opts in.
+    /// Base entities are not pickable unless a concrete entity type opts in.
     fn is_pickable(&self) -> bool {
         self.as_living_entity()
             .is_some_and(|living| !living.is_removed())
@@ -328,23 +396,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity can be attacked.
     ///
-    /// Mirrors vanilla `Entity.isAttackable`. Concrete entities that override
-    /// vanilla to reject player attacks should override this method.
+    /// Concrete entities that override vanilla to reject player attacks
+    /// should override this method.
     fn attackable(&self) -> bool {
         true
     }
 
     /// Returns whether this entity handles and consumes an attack before normal damage.
-    ///
-    /// Mirrors vanilla `Entity.skipAttackInteraction`.
-    fn skip_attack_interaction(&self, _source: &dyn Entity) -> bool {
+    fn skip_attack_interaction(&self, _source: &SharedEntity) -> bool {
         false
     }
 
     /// Returns whether this entity participates in vanilla push separation.
     ///
-    /// Mirrors vanilla `Entity.isPushable`. Base entities are not pushable unless
-    /// a concrete entity type opts in.
+    /// Base entities are not pushable unless a concrete entity type opts in.
     fn is_pushable(&self) -> bool {
         let Some(living) = self.as_living_entity() else {
             return false;
@@ -357,8 +422,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         true
     }
 
-    /// Applies vanilla `Entity.onAboveBubbleColumn`.
-    fn on_above_bubble_column(&self, drag_down: bool, _pos: BlockPos) {
+    /// Applies bubble-column surface push velocity, dispatching to the
+    /// projectile override when this entity is a projectile.
+    fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.on_above_bubble_column_projectile(drag_down, pos);
+            return;
+        }
+
+        self.default_on_above_bubble_column(drag_down, pos);
+    }
+
+    /// Applies the base entity's clamped bubble-column surface movement.
+    fn default_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
         if self.is_flying_player() {
             return;
         }
@@ -370,10 +446,25 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
         };
         self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
     }
 
-    /// Applies vanilla `Entity.onInsideBubbleColumn`.
+    /// Applies bubble-column push velocity while submerged in the column,
+    /// dispatching to the projectile override when this entity is a projectile.
     fn on_inside_bubble_column(&self, drag_down: bool) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.on_inside_bubble_column_projectile(drag_down);
+            return;
+        }
+
+        self.default_on_inside_bubble_column(drag_down);
+    }
+
+    /// Applies the base entity's clamped movement inside a bubble-column.
+    fn default_on_inside_bubble_column(&self, drag_down: bool) {
         if self.is_flying_player() {
             return;
         }
@@ -391,24 +482,72 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity is invisible to normal entity selectors.
     ///
-    /// Mirrors vanilla `Entity.isSpectator`. Base entities are never spectators;
-    /// players override this from their game mode.
+    /// Base entities are never spectators; players override this from their game mode.
     fn is_spectator(&self) -> bool {
         false
     }
 
     /// Returns whether this entity is excluded from pressure plates and tripwires.
     ///
-    /// Mirrors vanilla `Entity.isIgnoringBlockTriggers`. Display-like entities
-    /// and marker entities override this capability.
+    /// Display-like entities and marker entities override this capability.
     fn is_ignoring_block_triggers(&self) -> bool {
         false
     }
 
+    /// Returns the living entity credited as this explosion's indirect source.
+    fn explosion_indirect_source(&self) -> Option<SharedEntity> {
+        self.projectile_owner()
+            .filter(|owner| owner.as_living_entity().is_some())
+    }
+
+    /// Returns the point used to calculate this entity's explosion direction.
+    fn explosion_damage_origin(&self) -> DVec3 {
+        let position = self.position();
+        DVec3::new(position.x, self.get_eye_y(), position.z)
+    }
+
+    /// Returns whether this entity is wholly ignored by an explosion.
+    fn ignore_explosion(&self, _explosion: &dyn Explosion) -> bool {
+        false
+    }
+
+    /// Lets an entity source modify effective block or fluid resistance.
+    #[expect(
+        unused_variables,
+        reason = "default implementation preserves resistance"
+    )]
+    fn block_explosion_resistance(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid: FluidState,
+        resistance: f32,
+    ) -> f32 {
+        resistance
+    }
+
+    /// Lets an entity source veto one affected block position.
+    #[expect(unused_variables, reason = "default implementation allows destruction")]
+    fn should_block_explode(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        power: f32,
+    ) -> bool {
+        true
+    }
+
+    /// Called after this entity is processed by an explosion.
+    fn on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {}
+
     /// Returns how vanilla lets this entity respond to piston movement.
     fn piston_push_reaction(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
-            PushReaction::Ignore
+            PushReaction::IgnoreEntity
         } else {
             self.entity_type().flags.piston_push_reaction
         }
@@ -424,13 +563,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.is_alive() && !self.is_removed() && !self.is_spectator()
     }
 
-    /// Returns vanilla `Entity.isInvisible()`.
+    /// Returns whether this entity is invisible, per its synced entity data.
     fn is_invisible(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_base_invisible_flag)
     }
 
-    /// Returns vanilla `Entity.isDiscrete()`.
+    /// Returns whether this entity is sneaking (shift key down), per its synced entity data.
     fn is_discrete(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_shift_key_down)
@@ -468,15 +607,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether `other` can collide with this entity.
     ///
-    /// Mirrors vanilla `Entity.canBeCollidedWith`. Base entities cannot be collided
-    /// with unless a concrete entity type opts in.
+    /// Base entities cannot be collided with unless a concrete entity type opts in.
     fn can_be_collided_with(&self, _other: Option<&dyn Entity>) -> bool {
         false
     }
 
-    /// Returns whether projectile collision may interact with this entity.
+    /// Whether movement queries must consider this entity for hard collisions.
     ///
-    /// Mirrors vanilla `Entity.canBeHitByProjectile`.
+    /// Returning `false` promises [`Self::can_be_collided_with`] is always false and
+    /// [`Self::can_collide_with`] never broadens the default rule. This capability may be
+    /// cached for the registered lifetime, including chunk-unload retention.
+    fn is_hard_collision_relevant(&self) -> bool {
+        true
+    }
+
+    /// Returns whether projectile collision may interact with this entity.
     fn can_be_hit_by_projectile(&self) -> bool {
         !self.is_removed() && self.is_pickable()
     }
@@ -494,15 +639,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Gets the vehicle this entity is riding, if present.
-    ///
-    /// Mirrors vanilla `Entity.getVehicle`.
     fn vehicle(&self) -> Option<SharedEntity> {
         self.base().vehicle()
     }
 
     /// Returns the vehicle this entity directly controls, if any.
-    ///
-    /// Mirrors vanilla `Entity.getControlledVehicle`.
     fn controlled_vehicle(&self) -> Option<SharedEntity> {
         let vehicle = self.vehicle()?;
         let controlled_by_self = vehicle
@@ -512,29 +653,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity is riding another entity.
-    ///
-    /// Mirrors vanilla `Entity.isPassenger`.
     fn is_passenger(&self) -> bool {
         self.vehicle().is_some()
     }
 
     /// Returns whether vanilla allows this entity to start riding `vehicle`.
-    ///
-    /// Mirrors vanilla `Entity.canRide`.
     fn can_ride(&self, _vehicle: &dyn Entity) -> bool {
         !self.is_discrete() && self.base().boarding_cooldown() <= 0
     }
 
     /// Stops riding the current vehicle, if any.
-    ///
-    /// Mirrors vanilla `Entity.stopRiding`.
     fn stop_riding(&self) {
         self.base().stop_riding();
     }
 
     /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
-    ///
-    /// Mirrors vanilla `Entity.startRiding(Entity)`.
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -546,15 +679,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Gets this entity's direct passengers.
-    ///
-    /// Mirrors vanilla `Entity.getPassengers`.
     fn passengers(&self) -> Vec<SharedEntity> {
         self.base().passengers()
     }
 
     /// Counts indirect player passengers.
-    ///
-    /// Mirrors vanilla `Entity.countPlayerPassengers`.
     fn count_player_passengers(&self) -> usize {
         fn count_passenger_tree(
             passengers: Vec<SharedEntity>,
@@ -579,30 +708,24 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity has exactly one indirect player passenger.
-    ///
-    /// Mirrors vanilla `Entity.hasExactlyOnePlayerPassenger`.
     fn has_exactly_one_player_passenger(&self) -> bool {
         self.count_player_passengers() == 1
     }
 
     /// Gets this entity's first direct passenger.
-    ///
-    /// Mirrors vanilla `Entity.getFirstPassenger`.
     fn first_passenger(&self) -> Option<SharedEntity> {
         self.base().first_passenger()
     }
 
     /// Returns the living passenger currently controlling this entity, if any.
     ///
-    /// Mirrors vanilla `Entity.getControllingPassenger`. Base entities have no
-    /// controller; controllable vehicles override this based on their own rules.
+    /// Base entities have no controller; controllable vehicles override this
+    /// based on their own rules.
     fn controlling_passenger(&self) -> Option<SharedEntity> {
         None
     }
 
     /// Returns whether this entity can control a vehicle it is riding.
-    ///
-    /// Mirrors vanilla `Entity.canControlVehicle`.
     fn can_control_vehicle(&self) -> bool {
         !REGISTRY
             .entity_types
@@ -610,20 +733,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity currently has a controlling passenger.
-    ///
-    /// Mirrors vanilla `Entity.hasControllingPassenger`.
     fn has_controlling_passenger(&self) -> bool {
         self.controlling_passenger().is_some()
     }
 
     /// Returns whether this entity has any direct passengers.
-    ///
-    /// Mirrors vanilla `Entity.isVehicle`.
     fn is_vehicle(&self) -> bool {
         self.base().is_vehicle()
     }
 
-    /// Returns vanilla `Entity.dismountsUnderwater`.
+    /// Returns whether this entity's passengers are forced to dismount when
+    /// it goes underwater, per the `dismounts_underwater` entity type tag.
     fn dismounts_underwater(&self) -> bool {
         REGISTRY
             .entity_types
@@ -631,22 +751,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether `passenger` is a direct passenger of this entity.
-    ///
-    /// Mirrors vanilla `Entity.hasPassenger(Entity)`.
     fn has_passenger(&self, passenger: &dyn Entity) -> bool {
         self.base().has_passenger_id(passenger.id())
     }
 
     /// Returns whether this entity can accept `passenger` as a direct passenger.
-    ///
-    /// Mirrors vanilla `Entity.canAddPassenger`.
     fn can_add_passenger(&self, _passenger: &dyn Entity) -> bool {
         self.passengers().is_empty()
     }
 
     /// Returns whether this entity can accept any passenger.
-    ///
-    /// Mirrors vanilla `Entity.couldAcceptPassenger`.
     fn could_accept_passenger(&self) -> bool {
         true
     }
@@ -659,8 +773,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this passenger's vehicle attachment point.
-    ///
-    /// Mirrors vanilla `Entity.getVehicleAttachmentPoint`.
     fn vehicle_attachment_point(&self, _vehicle: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
         dimensions.attachments.get_clamped(
@@ -686,15 +798,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns the world position where `passenger` should ride this vehicle.
-    ///
-    /// Mirrors vanilla `Entity.getPassengerRidingPosition`.
     fn passenger_riding_position(&self, passenger: &dyn Entity) -> DVec3 {
         self.position() + self.passenger_attachment_point(passenger)
     }
 
     /// Repositions a direct passenger from this vehicle's attachment point.
-    ///
-    /// Mirrors vanilla `Entity.positionRider`.
     fn position_rider(&self, passenger: &dyn Entity) {
         position_rider_default(self, passenger);
     }
@@ -707,8 +815,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity's root vehicle, if this entity is riding one.
-    ///
-    /// Mirrors vanilla `Entity.getRootVehicle`.
     fn root_vehicle(&self) -> Option<SharedEntity> {
         let mut root = self.vehicle()?;
         let mut visited = FxHashSet::default();
@@ -726,15 +832,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity and `other` share the same root vehicle.
-    ///
-    /// Mirrors vanilla `Entity.isPassengerOfSameVehicle`.
     fn is_passenger_of_same_vehicle(&self, other: &dyn Entity) -> bool {
         self.root_vehicle_id() == other.root_vehicle_id()
     }
 
     /// Returns whether `entity` is an indirect passenger of this entity.
-    ///
-    /// Mirrors vanilla `Entity.hasIndirectPassenger`.
     fn has_indirect_passenger(&self, entity: &dyn Entity) -> bool {
         let target_id = self.id();
         let mut vehicle = entity.vehicle();
@@ -756,16 +858,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity can collide with `other`.
-    ///
-    /// Mirrors vanilla `Entity.canCollideWith`.
     fn can_collide_with(&self, other: &dyn Entity) -> bool {
         other.can_be_collided_with(Some(self.as_entity_event_source()))
             && !self.is_passenger_of_same_vehicle(other)
     }
 
     /// Adds an impulse to this entity's velocity and marks velocity for sync.
-    ///
-    /// Mirrors vanilla `Entity.push(double, double, double)`.
     fn push_impulse(&self, impulse: DVec3) {
         if !impulse.is_finite() {
             return;
@@ -776,8 +874,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies vanilla entity-to-entity push separation.
-    ///
-    /// Mirrors vanilla `Entity.push(Entity)`.
     fn push_entity(&self, entity: &dyn Entity) {
         if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
             return;
@@ -817,7 +913,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns vanilla `Entity.getRelativePortalPosition`.
+    /// Returns this entity's position relative to the portal, in portal-local
+    /// space; living entities have their forward-axis offset reset to zero.
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         let offsets = PortalShape::get_relative_position(
             portal_area,
@@ -832,8 +929,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Default vanilla `Entity.tick()` behavior.
-    ///
     /// Concrete entity ticks that mirror vanilla `super.tick()` should call this
     /// rather than calling [`Self::base_tick`] directly.
     fn default_tick(&self) {
@@ -848,26 +943,25 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// The default dispatches vanilla living behavior without requiring every
     /// living implementation to repeat an `Entity::tick` forwarding method.
     /// Non-living entities with custom tick behavior override this directly.
-    fn tick(&self) {
-        if let Some(living) = self.as_living_entity() {
-            living.tick_living_entity();
+    fn tick(self: Arc<Self>) {
+        let entity = self.into_shared_entity();
+        if let Some(living) = entity.as_living_entity() {
+            living.tick_living_entity(&entity);
         }
     }
 
     /// Called every game tick while this entity is riding another entity.
-    ///
-    /// Mirrors vanilla `Entity.rideTick`.
-    fn ride_tick(&self) {
-        self.default_ride_tick();
+    fn ride_tick(self: Arc<Self>) {
+        Arc::clone(&self).default_ride_tick();
         if let Some(living) = self.as_living_entity() {
             living.reset_fall_distance();
         }
     }
 
     /// The default implementation of `Entity.rideTick` when not overridden.
-    fn default_ride_tick(&self) {
+    fn default_ride_tick(self: Arc<Self>) {
         self.set_velocity(DVec3::ZERO);
-        self.tick();
+        Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
         }
@@ -914,7 +1008,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     entity,
                     WorldChangeRequest::Portal {
                         portal: process.portal(),
-                        source_world: world.clone(),
+                        source_world: Arc::clone(&world),
                         portal_pos: process.entry_position(),
                         pending_token,
                     },
@@ -1008,7 +1102,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Gets the world this entity is in.
     ///
     /// Returns `None` if the entity is not in a world or the world was dropped.
-    /// Mirrors vanilla's `Entity.level()`.
     fn level(&self) -> Option<Arc<World>> {
         self.base().level()
     }
@@ -1035,8 +1128,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Updates synchronized entity data just before tracker sync.
-    ///
-    /// Mirrors vanilla `Entity.updateDataBeforeSync`.
     fn update_data_before_sync(&self) {}
 
     /// Returns true if the entity has been marked for removal.
@@ -1168,6 +1259,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// entities. Most entities do not store owner references.
     fn restore_owner_reference(&self, _owner: &SharedEntity) {}
 
+    /// Called after a teleport completes successfully.
+    fn on_teleported(&self) {}
+
     /// Sets the level callback for lifecycle events (movement, removal).
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
         self.base().set_level_callback(callback);
@@ -1261,7 +1355,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         true
     }
 
-    /// Runs vanilla `Entity.attemptToShearEquipment`.
+    /// Shears the first shearable equipped item on this mob, spawning it as a
+    /// dropped item and playing its shearing sound; returns whether anything was sheared.
     fn attempt_to_shear_equipment(&self, player: &Player, hand: InteractionHand) -> bool {
         let Some(mob) = self.as_mob() else {
             return false;
@@ -1331,7 +1426,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.interact_entity(player, hand, location)
     }
 
-    /// Handles shared vanilla `Entity.interact` behavior.
+    /// Shared right-click interaction for mobs: leashing/unleashing, cutting
+    /// leash connections, or shearing equipment with shears.
     fn interact_entity(
         &self,
         player: &Player,
@@ -1444,15 +1540,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a living entity when it has living behavior.
-    ///
-    /// Mirrors vanilla's frequent `instanceof LivingEntity` branches.
     fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
         try_as_dyn::<Self, dyn LivingEntity>(self)
     }
 
     /// Returns this entity as an item frame when it has item-frame behavior.
-    ///
-    /// Mirrors vanilla's `instanceof ItemFrame` branches.
     fn as_item_frame(&self) -> Option<&dyn ItemFrame> {
         try_as_dyn::<Self, dyn ItemFrame>(self)
     }
@@ -1477,8 +1569,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a pathfinder mob when it has pathfinding behavior.
-    ///
-    /// Mirrors vanilla's frequent `instanceof PathfinderMob` branches.
     fn as_pathfinder_mob(&self) -> Option<&dyn PathfinderMob> {
         try_as_dyn::<Self, dyn PathfinderMob>(self)
     }
@@ -1489,8 +1579,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a mob when it has mob behavior.
-    ///
-    /// Mirrors vanilla's frequent `instanceof Mob` branches.
     fn as_mob(&self) -> Option<&dyn Mob> {
         try_as_dyn::<Self, dyn Mob>(self)
     }
@@ -1506,10 +1594,28 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as an animal when it has animal behavior.
-    ///
-    /// Mirrors vanilla's frequent `instanceof Animal` branches.
     fn as_animal(&self) -> Option<&dyn Animal> {
         try_as_dyn::<Self, dyn Animal>(self)
+    }
+
+    /// Returns true for entities that implement vanilla hostile-mob behavior.
+    fn is_monster(&self) -> bool {
+        self.as_monster().is_some()
+    }
+
+    /// Returns the `Monster` capability, equivalent to vanilla's `instanceof Monster`.
+    fn as_monster(&self) -> Option<&dyn Monster> {
+        try_as_dyn::<Self, dyn Monster>(self)
+    }
+
+    /// Whether this entity implements the `Enemy` marker.
+    fn is_enemy(&self) -> bool {
+        self.as_enemy().is_some()
+    }
+
+    /// Returns the `Enemy` marker, equivalent to vanilla's `instanceof Enemy`.
+    fn as_enemy(&self) -> Option<&dyn Enemy> {
+        try_as_dyn::<Self, dyn Enemy>(self)
     }
 
     /// Returns true for entities that implement vanilla ageable-mob behavior.
@@ -1518,8 +1624,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as an ageable mob when it has ageable behavior.
-    ///
-    /// Mirrors vanilla's frequent `instanceof AgeableMob` branches.
     fn as_ageable_mob(&self) -> Option<&dyn AgeableMob> {
         try_as_dyn::<Self, dyn AgeableMob>(self)
     }
@@ -1530,15 +1634,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as item steerable when it has item-steering behavior.
-    ///
-    /// Mirrors vanilla's `instanceof ItemSteerable` branches.
     fn as_item_steerable(&self) -> Option<&dyn ItemSteerable> {
         try_as_dyn::<Self, dyn ItemSteerable>(self)
     }
 
-    /// Returns true when vanilla `ServerEntity` should force velocity sync for fall flying.
+    /// Returns whether this entity's velocity should sync every tick because
+    /// it's currently fall-flying with an elytra.
     fn forces_fall_flying_velocity_sync(&self) -> bool {
-        false
+        self.as_living_entity()
+            .is_some_and(LivingEntity::is_fall_flying)
     }
 
     /// Returns true when movement is driven by serverbound movement packets.
@@ -1604,8 +1708,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Updates the vanilla swimming shared flag.
-    ///
-    /// Mirrors vanilla `Entity.updateSwimming`.
     fn update_swimming(&self) {
         self.default_update_swimming();
     }
@@ -1680,7 +1782,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().known_speed()
     }
 
-    /// Returns vanilla `Entity.tickCount`.
+    /// Returns the number of ticks this entity has existed for.
     fn tick_count(&self) -> i32 {
         self.base().tick_count()
     }
@@ -1695,7 +1797,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_first_tick(first_tick);
     }
 
-    /// Advances vanilla `Entity.tickCount`.
+    /// Advances this entity's tick counter by one.
     fn advance_tick_count(&self) {
         self.base().advance_tick_count();
     }
@@ -1741,7 +1843,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.look_at(from_anchor, target_anchor.position(target));
     }
 
-    /// Returns vanilla `Entity.getYHeadRot`.
+    /// Returns this entity's head yaw; 0.0 for non-living entities.
     fn head_yaw(&self) -> f32 {
         self.as_living_entity()
             .map_or(0.0, LivingEntity::y_head_rot)
@@ -1760,7 +1862,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         f64::from(self.base().dimensions().eye_height)
     }
 
-    /// Returns vanilla `Entity.getFluidJumpThreshold()`.
+    /// Returns the fluid-surface height threshold used for fluid-jump
+    /// physics: 0.0 for entities with eye height under 0.4, otherwise 0.4.
     fn get_fluid_jump_threshold(&self) -> f64 {
         if self.get_eye_height() < 0.4 {
             0.0
@@ -1770,13 +1873,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Gets the Y coordinate of the entity's eyes.
-    ///
-    /// Equivalent to vanilla's `Entity.getEyeY()`.
     fn get_eye_y(&self) -> f64 {
         self.position().y + self.get_eye_height()
     }
 
-    /// Mirrors vanilla `Entity.isInWall`.
+    /// Returns whether the entity is currently suffocating inside a solid block.
     fn is_in_wall(&self) -> bool {
         if self.no_physics() {
             return false;
@@ -1799,14 +1900,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         })
     }
 
-    /// Calculates vanilla `Entity.calculateViewVector()`.
+    /// Computes a unit look-direction vector from the given pitch and yaw in degrees.
     fn calculate_view_vector(&self, pitch_degrees: f32, yaw_degrees: f32) -> DVec3 {
         let pitch = pitch_degrees.to_radians();
         let yaw = -yaw_degrees.to_radians();
-        let yaw_cos = yaw.cos();
-        let yaw_sin = yaw.sin();
-        let pitch_cos = pitch.cos();
-        let pitch_sin = pitch.sin();
+        let yaw_cos = trig::cos(yaw);
+        let yaw_sin = trig::sin(yaw);
+        let pitch_cos = trig::cos(pitch);
+        let pitch_sin = trig::sin(pitch);
         DVec3::new(
             f64::from(yaw_sin * pitch_cos),
             f64::from(-pitch_sin),
@@ -1814,7 +1915,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns vanilla `Entity.getLookAngle()`.
+    /// Returns this entity's current unit look-direction vector.
     fn look_angle(&self) -> DVec3 {
         let (yaw, pitch) = self.rotation();
         self.calculate_view_vector(pitch, yaw)
@@ -1864,12 +1965,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_velocity(velocity);
     }
 
-    /// Returns true when vanilla `ServerEntity` should consider sending velocity.
+    /// Returns whether this entity's velocity has changed enough to need
+    /// syncing to clients.
     fn needs_velocity_sync(&self) -> bool {
         self.base().needs_velocity_sync()
     }
 
-    /// Marks velocity for vanilla `ServerEntity` synchronization.
+    /// Marks this entity's velocity as needing to be synced to clients.
     fn mark_velocity_sync(&self) {
         self.base().mark_velocity_sync();
     }
@@ -1919,7 +2021,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().reset_fall_distance();
     }
 
-    /// Mirrors vanilla `Entity.checkFallDistanceAccumulation()`.
+    /// Caps the accumulated fall distance at 1 once the entity is no longer falling faster than 0.5 blocks per tick.
     fn check_fall_distance_accumulation(&self) {
         if self.velocity().y > -0.5 && self.fall_distance() > 1.0 {
             self.set_fall_distance(1.0);
@@ -1931,12 +2033,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().fire_freeze_state()
     }
 
-    /// Returns vanilla `remainingFireTicks`.
+    /// Returns the ticks remaining before this entity stops burning.
     fn remaining_fire_ticks(&self) -> i32 {
         self.base().remaining_fire_ticks()
     }
 
-    /// Sets vanilla `remainingFireTicks`.
+    /// Sets the ticks remaining before this entity stops burning, clamped to
+    /// this entity's fire-ticks cap if any.
     fn set_remaining_fire_ticks(&self, remaining_fire_ticks: i32) {
         self.base().set_remaining_fire_ticks(
             self.remaining_fire_ticks_cap()
@@ -1945,12 +2048,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.sync_base_fire_freeze_entity_data();
     }
 
-    /// Returns synchronized vanilla `TicksFrozen`.
+    /// Returns ticks this entity has spent freezing in powder snow.
     fn ticks_frozen(&self) -> i32 {
         self.base().ticks_frozen()
     }
 
-    /// Sets synchronized vanilla `TicksFrozen`.
+    /// Sets ticks this entity has spent freezing in powder snow, syncing the
+    /// change to clients.
     fn set_ticks_frozen(&self, ticks_frozen: i32) {
         self.base().set_ticks_frozen(ticks_frozen);
         self.sync_base_fire_freeze_entity_data();
@@ -1986,12 +2090,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             4.0,
         ) && self.should_play_lava_hurt_sound()
         {
-            let pitch = 2.0 + rand::random::<f32>() * 0.4;
+            let pitch = rand::random_range(2.0..2.4);
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
 
-    /// Maximum vanilla `remainingFireTicks` this entity can store.
+    /// Maximum ticks this entity's remaining-fire timer can hold; `None` means unlimited.
     fn remaining_fire_ticks_cap(&self) -> Option<i32> {
         None
     }
@@ -2006,7 +2110,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_on_fire(self.fire_immune())
     }
 
-    /// Returns vanilla `hasVisualFire`.
+    /// Returns whether this entity currently renders as visually on fire.
     fn has_visual_fire(&self) -> bool {
         self.base().has_visual_fire()
     }
@@ -2032,7 +2136,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns vanilla `getTicksRequiredToFreeze`.
+    /// Returns the ticks of powder-snow exposure required before this entity
+    /// starts taking freeze damage.
     fn ticks_required_to_freeze(&self) -> i32 {
         DEFAULT_TICKS_REQUIRED_TO_FREEZE
     }
@@ -2042,7 +2147,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_fully_frozen(self.ticks_required_to_freeze())
     }
 
-    /// Returns vanilla `Entity.getPercentFrozen`.
+    /// Returns how frozen this entity is, from 0.0 to 1.0, based on ticks
+    /// frozen versus ticks required.
     fn percent_frozen(&self) -> f32 {
         let ticks_required = self.ticks_required_to_freeze();
         self.ticks_frozen().min(ticks_required) as f32 / ticks_required as f32
@@ -2058,6 +2164,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn clear_fire(&self) {
         self.base().clear_fire();
         self.sync_base_fire_freeze_entity_data();
+    }
+
+    /// Plays the extinguish sound when currently on fire, then clears fire.
+    fn extinguish_fire(&self) {
+        if self.is_on_fire() {
+            self.play_entity_on_fire_extinguished_sound();
+        }
+        self.clear_fire();
     }
 
     /// Ignites this entity for a vanilla tick duration.
@@ -2126,16 +2240,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Refreshes cached fluid contact from this entity's current bounding box.
     fn refresh_fluid_contact(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(false)
+        self.scan_and_store_fluid_contact(false, false)
+    }
+
+    /// Refreshes cached fluid contact and applies currents without advancing
+    /// base-tick-only eye-water history.
+    fn refresh_fluid_contact_with_currents(&self) -> EntityFluidContact {
+        self.scan_and_store_fluid_contact(false, true)
     }
 
     /// Refreshes cached fluid contact with vanilla base-tick eye-water history.
     fn refresh_fluid_contact_for_base_tick(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(true)
+        self.scan_and_store_fluid_contact(true, true)
     }
 
     /// Scans current fluid contact and stores it on the entity base.
-    fn scan_and_store_fluid_contact(&self, advance_eye_water_history: bool) -> EntityFluidContact {
+    fn scan_and_store_fluid_contact(
+        &self,
+        advance_eye_water_history: bool,
+        include_currents: bool,
+    ) -> EntityFluidContact {
         let Some(world) = self.level() else {
             let contact = EntityFluidContact::default();
             if advance_eye_water_history {
@@ -2146,7 +2270,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return contact;
         };
 
-        let contact = if advance_eye_water_history {
+        let contact = if include_currents {
             EntityFluidContact::scan_with_currents(
                 &world,
                 self.position(),
@@ -2164,15 +2288,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         if advance_eye_water_history {
             self.base().set_fluid_contact_for_base_tick(contact);
-            self.apply_fluid_current_for_base_tick(&world, contact);
         } else {
             self.base().set_fluid_contact(contact);
+        }
+        if include_currents {
+            self.apply_fluid_current_impulses(&world, contact);
         }
         contact
     }
 
-    /// Applies vanilla water/lava current impulses from the base-tick fluid scan.
-    fn apply_fluid_current_for_base_tick(&self, world: &Arc<World>, contact: EntityFluidContact) {
+    /// Applies vanilla water/lava current impulses from a fluid interaction update.
+    fn apply_fluid_current_impulses(&self, world: &Arc<World>, contact: EntityFluidContact) {
         if !self.is_pushed_by_fluid() {
             return;
         }
@@ -2223,7 +2349,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Living entities use the shared `LivingEntity` damage path; base entities
     /// only propagate to passengers and return `false`.
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
@@ -2323,7 +2449,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 is_shape_full_block(collision_shape)
             });
 
-        let speed = f64::from(rand::random::<f32>().mul_add(0.2, 0.1));
+        let speed = f64::from(rand::random_range(0.1f32..0.3));
         let step = direction_step(closest_direction);
         let scaled_velocity = self.velocity() * 0.75;
         let next_velocity = match closest_direction.axis() {
@@ -2394,13 +2520,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
     /// handling after rollback/collision validation has accepted the target.
     fn default_apply_accepted_client_movement(
-        &self,
+        self: Arc<Self>,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         if let Some(position) = accepted.position {
             self.try_set_position(position)?;
-            self.refresh_fluid_contact();
         }
 
         self.set_rotation(accepted.rotation);
@@ -2409,7 +2534,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             accepted.horizontal_collision,
             accepted.movement,
         );
-        if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
+        if Arc::clone(&self).do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
             return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
@@ -2421,7 +2546,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies final state accepted from a client-authored movement packet.
     fn apply_accepted_client_movement(
-        &self,
+        self: Arc<Self>,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -2430,7 +2555,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies final state accepted from a controlled-vehicle movement packet.
     fn apply_accepted_client_vehicle_movement(
-        &self,
+        self: Arc<Self>,
         world: &Arc<World>,
         mut accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -2440,13 +2565,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
+    ///
+    /// For the base method, see [`Entity::try_set_position_base`]
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position_base(pos)
+    }
+
+    /// The base method to set the entity's position through world lifecycle validation.
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
+    fn try_set_position_base(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
     }
 
-    /// Moves this entity to `pos`, keeping its current rotation. Mirrors
-    /// vanilla `Entity.teleportTo(x, y, z)`
+    /// Moves this entity to `pos`, keeping its current rotation.
     // TODO: Recursively reposition this entity's passengers (vanilla
     // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     #[must_use = "movement commits can fail when world entity state rejects the update"]
@@ -2550,7 +2682,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .speed_factor
     }
 
-    /// Returns vanilla `Entity.getBlockJumpFactor()`.
+    /// Returns the jump-height multiplier from the block at this entity's
+    /// position, falling back to the block below when the current one
+    /// doesn't modify jumps.
     #[expect(
         clippy::float_cmp,
         reason = "intentional: vanilla checks static block jump factors against 1.0"
@@ -2619,8 +2753,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Vanilla `Entity.fudgePositionAfterSizeChange`.
-    ///
     /// Moves the entity to the closest free position for its new dimensions
     /// within the previous dimensions' footprint, returning whether a valid
     /// position was found. Vanilla runs this after growing in a confined space;
@@ -2740,12 +2872,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         true
     }
 
-    /// Returns the synchronized vanilla `Air` value.
+    /// Returns this entity's current air supply in ticks, synced to clients.
     fn air_supply(&self) -> i32 {
         self.base().air_supply()
     }
 
-    /// Sets the synchronized vanilla `Air` value.
+    /// Sets this entity's air supply in ticks, syncing the change to clients.
     fn set_air_supply(&self, air_supply: i32) {
         self.base().set_air_supply(air_supply);
         if let Some(synced_data) = self.synced_data() {
@@ -2774,15 +2906,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Resets vanilla portal cooldown to this entity's dimension-changing delay.
-    ///
-    /// Mirrors vanilla `Entity.setPortalCooldown()`.
     fn reset_portal_cooldown(&self) {
         self.set_portal_cooldown(self.dimension_changing_delay());
     }
 
     /// Marks this entity as inside a vanilla portal during the current tick.
-    ///
-    /// Mirrors vanilla `Entity.setAsInsidePortal`.
     fn set_as_inside_portal(&self, portal: PortalKind, entry_position: BlockPos) {
         if self.is_on_portal_cooldown() {
             self.reset_portal_cooldown();
@@ -2915,8 +3043,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Plays vanilla's extinguished-on-fire entity sound.
     fn play_entity_on_fire_extinguished_sound(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
         let pitch = 1.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
-        self.play_sound(&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
+        world.play_sound_at(
+            &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
+            self.sound_source(),
+            self.position(),
+            0.7,
+            pitch,
+            None,
+        );
     }
 
     /// Plays the base vanilla step sound for a block.
@@ -3164,7 +3302,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().no_gravity()
     }
 
-    /// Sets the shared vanilla `NoGravity` flag.
+    /// Sets whether this entity ignores gravity, syncing the change to clients.
     fn set_no_gravity(&self, no_gravity: bool) {
         self.base().set_no_gravity(no_gravity);
         if let Some(synced_data) = self.synced_data() {
@@ -3172,12 +3310,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Returns the shared vanilla `Invulnerable` flag.
+    /// Returns whether this entity is invulnerable to non-bypassing damage.
     fn is_invulnerable(&self) -> bool {
         self.base().invulnerable()
     }
 
-    /// Sets the shared vanilla `Invulnerable` flag.
+    /// Sets whether this entity is invulnerable to non-bypassing damage.
     fn set_invulnerable(&self, invulnerable: bool) {
         self.base().set_invulnerable(invulnerable);
     }
@@ -3193,9 +3331,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
+    /// get the air drag value of the entity
+    fn get_air_drag(&self) -> f64 {
+        let Some(entity) = self.as_living_entity() else {
+            return DEFAULT_AIR_DRAG;
+        };
+        compute_modified_friction(
+            DEFAULT_AIR_DRAG,
+            entity
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
+        )
+    }
+
     /// Applies gravity to the entity's velocity.
-    ///
-    /// Mirrors vanilla's `Entity.applyGravity()`.
     fn apply_gravity(&self) {
         let gravity = self.get_gravity();
         if gravity != 0.0 {
@@ -3205,7 +3355,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Applies vanilla `Entity.moveRelative()`.
+    /// Adds `input` scaled by `speed`, rotated to face this entity's current
+    /// yaw, to its velocity.
     fn move_relative(&self, speed: f32, input: DVec3) {
         let yaw = self.rotation().0;
         self.set_velocity(self.velocity() + get_input_vector(input, speed, yaw));
@@ -3222,7 +3373,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return None;
         }
         self.base().clear_collision_flags();
-        self.refresh_fluid_contact();
 
         Some(MoveResult {
             final_position,
@@ -3238,9 +3388,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Moves the entity with collision detection.
     ///
-    /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-    fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeps vanilla movement phases in order"
+    )]
+    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -3248,7 +3401,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
         let mut movement = delta;
         if mover_type == MoverType::Piston {
-            let game_time = world.level_data.read().game_time();
+            let game_time = world.game_time();
             movement = self.base().limit_piston_movement(movement, game_time);
             if movement == DVec3::ZERO {
                 return None;
@@ -3304,9 +3457,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
-        self.refresh_fluid_contact();
 
-        if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
+        if self.is_server_driven_movement()
+            && Arc::clone(&self).apply_fall_damage_after_move(&result, &world)
+        {
             return Some(result);
         }
 
@@ -3327,19 +3481,36 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
                 velocity,
+                result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
+                self.as_living_entity()
+                    .map_or_else(|| self.get_gravity(), LivingEntity::get_effective_gravity),
+                self.get_air_drag(),
             );
+
             let next_velocity =
                 if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
                     let effect_state = world.get_block_state(effect_pos);
                     let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-                    behavior.update_entity_movement_after_fall_on(
+                    let (res, bounced) = behavior.update_entity_movement_after_fall_on(
                         effect_state,
                         &world,
                         effect_pos,
                         landing_context,
-                    )
+                    );
+                    if bounced {
+                        behavior.bounce_on(
+                            effect_state,
+                            &world,
+                            effect_pos,
+                            EntityFallOnContext::from_entity(
+                                self.fall_distance(),
+                                self.as_entity_event_source(),
+                            ),
+                        );
+                    }
+                    res
                 } else {
                     landing_context.default_velocity_after_fall_on()
                 };
@@ -3360,7 +3531,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
-    fn apply_fall_damage_after_move(&self, result: &MoveResult, world: &Arc<World>) -> bool {
+    fn apply_fall_damage_after_move(
+        self: Arc<Self>,
+        result: &MoveResult,
+        world: &Arc<World>,
+    ) -> bool {
         self.do_check_fall_damage(result.actual_movement, result.on_ground, world)
     }
 
@@ -3385,15 +3560,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Mirrors vanilla `Entity.doCheckFallDamage`.
+    /// Applies fall damage from the block fallen on, then returns whether the
+    /// entity was removed (e.g. killed) as a result.
     ///
     /// Callers update on-ground/supporting-block state before this method.
-    fn do_check_fall_damage(&self, movement: DVec3, on_ground: bool, world: &Arc<World>) -> bool {
+    fn do_check_fall_damage(
+        self: Arc<Self>,
+        movement: DVec3,
+        on_ground: bool,
+        world: &Arc<World>,
+    ) -> bool {
         let Some(effect_pos) = self.on_pos_legacy() else {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
+        Arc::clone(&self).check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
     }
 
@@ -3403,15 +3584,55 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_ground_contact(ground_contact);
     }
 
-    /// Mirrors vanilla `Entity.checkFallDamage`.
+    /// Sends the vanilla landing burst for living entities with enough fall power.
+    fn send_landing_particles(&self, world: &World, on_state: BlockStateId, pos: BlockPos) {
+        let Some(living) = self.as_living_entity() else {
+            return;
+        };
+        if on_state.is_air() {
+            return;
+        }
+
+        let safe_fall_distance = living
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
+        let Some(count) = landing_particle_count(self.fall_distance(), safe_fall_distance) else {
+            return;
+        };
+
+        world.send_particles(
+            ParticleData::new(
+                &vanilla_particle_types::BLOCK,
+                BlockParticleOption::new(on_state),
+            ),
+            landing_particle_position(self.position(), pos),
+            count,
+            DVec3::ZERO,
+            f64::from(0.15_f32),
+        );
+    }
+
+    /// Accumulates fall distance, applies landing damage from the block fallen on, and resets it.
     fn check_fall_damage(
-        &self,
+        self: Arc<Self>,
         vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
         pos: BlockPos,
         world: &Arc<World>,
     ) {
+        // LivingEntity refreshes fluid interaction after movement, before it evaluates fall state.
+        if self.as_living_entity().is_some() && !self.is_in_water() {
+            self.refresh_fluid_contact_with_currents();
+            self.base().reset_fall_distance_in_water();
+        }
+
+        if on_ground && self.fall_distance() > 0.0 {
+            self.send_landing_particles(world, on_state, pos);
+        }
+
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }
@@ -3426,7 +3647,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let fall_context =
                 EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                let damage_applied = self.cause_fall_damage(
+                let damage_applied = Arc::clone(&self).cause_fall_damage(
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,
@@ -3478,7 +3699,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.check_supporting_block(on_ground, movement, &world)
     }
 
-    /// Mirrors vanilla `Entity.checkSupportingBlock`.
+    /// Determines the supporting block state and position underneath the entity while grounded.
     fn check_supporting_block(
         &self,
         on_ground: bool,
@@ -3521,8 +3742,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Spawns an item at this entity's location.
     ///
-    /// Mirrors vanilla's `Entity.spawnAtLocation()`. The item spawns at the
-    /// entity's position with the given Y offset and has a default pickup delay.
+    /// The item spawns at the entity's position with the given Y offset and
+    /// has a default pickup delay.
     ///
     /// Returns `None` if the item stack is empty or the entity has no world.
     fn spawn_at_location(
@@ -3532,7 +3753,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         let pos = self.position();
-        world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
+        let entity = world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Spawns an item at this entity's location plus a vanilla attachment offset.
@@ -3542,7 +3765,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         offset: DVec3,
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
-        world.spawn_item(self.position() + offset, item)
+        let entity = world.spawn_item(self.position() + offset, item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.
@@ -3552,45 +3777,125 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Called during chunk serialization. Implementors should save all data
     /// needed to restore entity state on load. Base fields (pos, motion,
     /// rotation, uuid, `on_ground`) are handled by the serialization layer.
-    ///
-    /// Mirrors vanilla's `Entity.addAdditionalSaveData()`.
     fn save_additional(&self, _nbt: &mut NbtCompound) {}
 
     /// Loads type-specific entity data from NBT.
     ///
     /// Called after entity creation during chunk deserialization. Base fields
     /// are already restored; this handles type-specific data.
-    ///
-    /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
 
-    /// Returns vanilla `Entity.isInvulnerableToBase`.
+    /// Applies entity-specific implicit components carried by an item stack.
+    ///
+    /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
+    fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
+
+    /// Spawn-item data is merged into the entity's current save state before it
+    /// is loaded. Keeping that merge at the entity boundary preserves defaults
+    /// and entity-specific state when the component only overrides one field.
+    fn apply_spawn_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let read_int = |key: &str| {
+            nbt.int(key)
+                .or_else(|| nbt.short(key).map(i32::from))
+                .or_else(|| nbt.byte(key).map(i32::from))
+        };
+
+        if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
+            && position.is_finite()
+        {
+            self.base()
+                .set_position_local(super::clamp_loaded_entity_position(position));
+        }
+
+        if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {
+            self.set_velocity(sanitize_nbt_motion(motion));
+        }
+
+        if let Some((yaw, pitch)) = read_nbt_rotation(&nbt, "Rotation") {
+            self.set_rotation((yaw, pitch));
+            if let Some(living) = self.as_living_entity() {
+                living.set_y_head_rot(yaw);
+                living.set_y_body_rot(yaw);
+            }
+        }
+
+        if let Some(fall_distance) = nbt
+            .double("fall_distance")
+            .or_else(|| nbt.double("FallDistance"))
+        {
+            self.set_fall_distance(fall_distance);
+        }
+
+        if let Some(on_ground) = nbt.byte("OnGround") {
+            self.set_on_ground(on_ground != 0);
+        }
+
+        let mut save_data = self.base().save_data();
+        if let Some(air_supply) = read_int("Air") {
+            save_data.air_supply = air_supply;
+        }
+        if let Some(portal_cooldown) = read_int("PortalCooldown") {
+            save_data.portal_cooldown = portal_cooldown;
+        }
+        if let Some(no_gravity) = nbt.byte("NoGravity") {
+            save_data.no_gravity = no_gravity != 0;
+        }
+        if let Some(invulnerable) = nbt.byte("Invulnerable") {
+            save_data.invulnerable = invulnerable != 0;
+        }
+        if let Some(custom_name) = nbt
+            .get("CustomName")
+            .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()))
+        {
+            save_data.custom_name = Some(custom_name);
+        }
+        if let Some(custom_name_visible) = nbt.byte("CustomNameVisible") {
+            save_data.custom_name_visible = custom_name_visible != 0;
+        }
+        if let Some(silent) = nbt.byte("Silent") {
+            save_data.silent = silent != 0;
+        }
+        if let Some(glowing) = nbt.byte("Glowing") {
+            save_data.glowing = glowing != 0;
+        }
+        if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
+            save_data.tags = tags
+                .iter()
+                .take(MAX_ENTITY_TAGS)
+                .map(|tag| tag.to_str().into_owned())
+                .collect::<BTreeSet<_>>();
+        }
+        if let Some(custom_data) = nbt.compound("data") {
+            save_data.custom_data = custom_data.to_owned();
+        }
+        self.base().replace_save_data(save_data);
+
+        if let Some(remaining_fire_ticks) = read_int("Fire") {
+            self.set_remaining_fire_ticks(remaining_fire_ticks);
+        }
+        if let Some(ticks_frozen) = read_int("TicksFrozen") {
+            self.set_ticks_frozen(ticks_frozen);
+        }
+        if let Some(has_visual_fire) = nbt.byte("HasVisualFire") {
+            self.base().set_visual_fire(has_visual_fire != 0);
+        }
+
+        self.load_additional(nbt);
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
+        self.sync_base_entity_data();
+    }
+
+    /// Returns whether this entity is immune to damage from `source`: already
+    /// removed, or invulnerable and the source doesn't bypass invulnerability.
     fn is_invulnerable_to_base(&self, source: &DamageSource) -> bool {
         self.is_removed()
             || self.is_invulnerable()
                 && !source.bypasses_invulnerability()
-                && !self.source_is_creative_player(source)
+                && !source.is_creative_player()
             || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
             || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
                 && self.is_fall_damage_immune()
-    }
-
-    /// Returns vanilla `DamageSource.isCreativePlayer`: whether the damage's
-    /// causing entity is a player with infinite materials.
-    fn source_is_creative_player(&self, source: &DamageSource) -> bool {
-        let Some(causing_entity_id) = source.causing_entity_id else {
-            return false;
-        };
-        let Some(world) = self.level() else {
-            return false;
-        };
-        world
-            .get_entity_by_id(causing_entity_id)
-            .is_some_and(|entity| {
-                entity
-                    .as_player()
-                    .is_some_and(Player::has_infinite_materials)
-            })
     }
 
     /// Applies damage to this entity.
@@ -3615,7 +3920,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         dx * dx + dy * dy + dz * dz
     }
 
-    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
+    /// Sets position and rotation.
     ///
     /// # Panics
     ///
@@ -3647,6 +3952,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
         // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
     }
+}
+
+fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+    (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
 /// Repositions a direct passenger from the vehicle's attachment point.
@@ -3682,20 +3991,9 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
     let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_look_at_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
-    let yaw = wrap_look_at_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - 90.0);
+    let pitch = wrap_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
+    let yaw = wrap_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90);
     (yaw, pitch)
-}
-
-fn wrap_look_at_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]

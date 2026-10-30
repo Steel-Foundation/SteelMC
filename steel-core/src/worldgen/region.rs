@@ -34,7 +34,7 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     full_chunk::FullChunkRef,
     heightmap::{Heightmap, HeightmapType},
-    section::{ChunkSection, SectionHolder, SectionWriteGuard, Sections},
+    section::{SectionHolder, SectionWriteGuard, Sections},
     status::ChunkStatus,
 };
 use crate::entity::SharedEntity;
@@ -565,8 +565,7 @@ impl<'a> WorldGenRegion<'a> {
     /// Attaches block entity data at a writable worldgen position.
     ///
     /// This mirrors vanilla's feature paths that place a block first, then configure its block
-    /// entity. If Steel does not have concrete behavior for the type yet, the raw fallback keeps
-    /// the NBT intact for later save/load.
+    /// entity. For unimplemented types, the fallback keeps the NBT intact for later save/load.
     #[must_use]
     pub fn set_block_entity_data(
         &self,
@@ -593,7 +592,7 @@ impl<'a> WorldGenRegion<'a> {
             if !chunk.access_mode.allows_writes() {
                 return false;
             }
-            let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
+            let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
                 block_entity_type,
                 chunk.chunk.level_weak(),
                 pos,
@@ -985,7 +984,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let local_x = Self::local_coord(pos.x());
         let local_y = Self::local_coord(pos.y());
         let local_z = Self::local_coord(pos.z());
-        let old_state = section_guard.states.get(local_x, local_y, local_z);
+        let old_state = section_guard.states().get(local_x, local_y, local_z);
         let Some(state) = replacement(old_state) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
@@ -1015,7 +1014,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_z: i32,
         section_index: usize,
         positions: &[PackedSectionBlockPos],
-        mut replacement: impl FnMut(BlockStateId) -> Option<BlockStateId>,
+        mut replacement: impl FnMut(BlockStateId, i32) -> Option<BlockStateId>,
     ) -> u64 {
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
@@ -1039,6 +1038,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             status,
             section_index,
         };
+        let section_base_y = self.region.min_y() + (section_index as i32) * 16;
         let chunk = self.chunk(chunk_x, chunk_z, status);
         if !chunk.access_mode.allows_writes() {
             Self::record_ore_write_time(ore_profile, started_at);
@@ -1060,8 +1060,8 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some(state) = replacement(old_state) {
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
+                if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
                         &mut section_guard,
@@ -1080,8 +1080,8 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some(state) = replacement(old_state) {
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
+                if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
                         &mut section_guard,
@@ -1148,12 +1148,12 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         } else {
             section.read()
         };
-        if section_guard.states.has_only_air() {
+        if section_guard.states().has_only_air() {
             Self::record_ore_read_time(ore_profile, started_at);
             return air;
         }
 
-        let state = section_guard.states.get(
+        let state = section_guard.states().get(
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),
             Self::local_coord(pos.z()),
@@ -1240,7 +1240,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
     fn set_bulk_block_state(
         holder: &ChunkHolder,
-        section: &mut ChunkSection,
+        section: &mut SectionWriteGuard<'_>,
         local_x: usize,
         local_y: usize,
         local_z: usize,
@@ -1456,12 +1456,20 @@ impl LevelReader for WorldGenRegion<'_> {
         self.context.world().dimension_type.ambient_light
     }
 
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        WorldGenRegion::height_at(self, heightmap_type, x, z)
+    }
+
     fn min_y(&self) -> i32 {
         WorldGenRegion::min_y(self)
     }
 
     fn height(&self) -> i32 {
         WorldGenRegion::height(self)
+    }
+
+    fn sea_level(&self) -> i32 {
+        WorldGenRegion::sea_level(self)
     }
 }
 
@@ -1486,6 +1494,10 @@ impl LevelAccessor for WorldGenRegion<'_> {
         WorldGenRegion::set_block_state(self, pos, state, flags)
     }
 
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        WorldGenRegion::can_write_to_chunk(self, chunk_x, chunk_z)
+    }
+
     fn destroy_block(&self, pos: BlockPos, _drop_items: bool) -> bool {
         if self.block_state(pos).is_air() {
             return false;
@@ -1505,6 +1517,7 @@ mod tests {
 
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use crate::behavior::init_behaviors;
     use crate::chunk::{
@@ -1512,7 +1525,7 @@ mod tests {
         chunk_holder::ChunkHolder,
         chunk_ticket_manager::ChunkTicketLevel,
         heightmap::{Heightmap, HeightmapType},
-        section::{ChunkSection, Sections},
+        section::{ChunkSection, SectionHolder, Sections},
         status::ChunkStatus,
     };
 
@@ -1590,39 +1603,67 @@ mod tests {
 
     #[test]
     fn biome_quart_y_indices_clamp_to_vertical_biome_range() {
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -17), (0, 0));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -16), (0, 0));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -13), (0, 3));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -12), (1, 0));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 79), (23, 3));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 80), (23, 3));
-        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 81), (23, 3));
+        let min_y = OverworldNoiseSettings::MIN_Y;
+        let section_count = (OverworldNoiseSettings::HEIGHT / 16) as usize;
+        let min_quart_y = OverworldNoiseSettings::MIN_Y >> 2;
+        let max_quart_y = min_quart_y + section_count as i32 * 4 - 1;
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y - 1),
+            (0, 0)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y),
+            (0, 0)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y + 3),
+            (0, 3)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, min_quart_y + 4),
+            (1, 0)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, max_quart_y),
+            (section_count - 1, 3)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, max_quart_y + 1),
+            (section_count - 1, 3)
+        );
+        assert_eq!(
+            WorldGenRegion::biome_quart_y_indices(min_y, section_count, max_quart_y + 2),
+            (section_count - 1, 3)
+        );
     }
 
     #[test]
     fn bulk_section_index_matches_world_height_bounds() {
+        let min_y = OverworldNoiseSettings::MIN_Y;
+        let height = OverworldNoiseSettings::HEIGHT;
+        let max_y = min_y + height - 1;
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -65),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y - 1),
             None
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -64),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y),
             Some(0)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -49),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y + 15),
             Some(0)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, -48),
+            WorldGenBulkSectionAccess::section_index(min_y, height, min_y + 16),
             Some(1)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, 319),
-            Some(23)
+            WorldGenBulkSectionAccess::section_index(min_y, height, max_y),
+            Some((height / 16 - 1) as usize)
         );
         assert_eq!(
-            WorldGenBulkSectionAccess::section_index(-64, 384, 320),
+            WorldGenBulkSectionAccess::section_index(min_y, height, max_y + 1),
             None
         );
     }
@@ -1672,7 +1713,8 @@ mod tests {
         let stone = vanilla_blocks::STONE.default_state();
         let air = vanilla_blocks::AIR.default_state();
 
-        let mut pre_light_section = ChunkSection::new_empty();
+        let pre_light_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut pre_light_section = pre_light_section.write();
         let pre_light_holder = published_holder(ChunkStatus::Empty);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
@@ -1686,7 +1728,8 @@ mod tests {
 
         assert_eq!(pre_light_section.non_empty_block_count(), 0);
 
-        let mut initialized_section = ChunkSection::new_empty();
+        let initialized_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut initialized_section = initialized_section.write();
         let initialized_holder = published_holder(ChunkStatus::InitializeLight);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
@@ -1699,8 +1742,19 @@ mod tests {
         );
 
         assert_eq!(initialized_section.non_empty_block_count(), 1);
+        WorldGenBulkSectionAccess::set_bulk_block_state(
+            &initialized_holder,
+            &mut initialized_section,
+            1,
+            2,
+            3,
+            air,
+        );
+        assert_eq!(initialized_section.non_empty_block_count(), 0);
+        assert!(initialized_section.stable_air_box_is_clear(0, 15, 0, 15, 0, 15));
 
-        let mut initialized_building_section = ChunkSection::new_empty();
+        let initialized_building_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut initialized_building_section = initialized_building_section.write();
         initialized_building_section.set_block_state_for_generation(1, 2, 3, stone);
 
         let old_state = WorldGenBulkSectionAccess::set_bulk_block_state(

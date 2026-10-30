@@ -174,3 +174,78 @@ impl crate::RegistryEntry for PlacedFeature {
         self.id.get().copied()
     }
 }
+
+impl simdnbt::ToNbtTag for &BlockStateProvider {
+    fn to_nbt_tag(self) -> simdnbt::owned::NbtTag {
+        simdnbt::owned::NbtTag::Compound((self.nbt)())
+    }
+}
+
+/// Registry of block-state providers.
+pub struct BlockStateProviderRegistry {
+    providers_by_id: Vec<BlockStateProviderRef>,
+    providers_by_key: FxHashMap<Identifier, usize>,
+    allows_registering: bool,
+}
+
+impl BlockStateProviderRegistry {
+    /// Creates an empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            providers_by_id: Vec::new(),
+            providers_by_key: FxHashMap::default(),
+            allows_registering: true,
+        }
+    }
+
+    /// Registers a block-state provider and returns its numeric ID.
+    pub fn register(&mut self, entry: BlockStateProviderRef) -> usize {
+        assert!(
+            self.allows_registering,
+            "Cannot register BlockStateProvider after registry has been frozen"
+        );
+        let id = self.providers_by_id.len();
+        let cached = entry.id.get_or_init(|| id);
+        assert_eq!(
+            *cached, id,
+            "block state provider registered with conflicting id"
+        );
+        self.providers_by_id.push(entry);
+        self.providers_by_key.insert(entry.key.clone(), id);
+        id
+    }
+
+    /// Iterates over all block-state providers.
+    pub fn iter(&self) -> impl Iterator<Item = (usize, BlockStateProviderRef)> + '_ {
+        self.providers_by_id
+            .iter()
+            .enumerate()
+            .map(|(id, &entry)| (id, entry))
+    }
+}
+
+impl Default for BlockStateProviderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+crate::impl_registry_ext!(
+    BlockStateProviderRegistry,
+    BlockStateProvider,
+    providers_by_id,
+    providers_by_key
+);
+
+crate::impl_registry_entry_eq!(BlockStateProvider);
+
+impl crate::RegistryEntry for BlockStateProvider {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        self.id.get().copied()
+    }
+}

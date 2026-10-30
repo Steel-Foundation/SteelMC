@@ -226,7 +226,7 @@ mod tests {
 
         collector.advance_step(0);
         {
-            let calls = entity.calls.clone();
+            let calls = Arc::clone(&entity.calls);
             collector.run_before(
                 InsideBlockEffectType::FireIgnite,
                 Box::new(move |_| calls.lock().push("before")),
@@ -234,7 +234,7 @@ mod tests {
         }
         collector.apply(InsideBlockEffectType::FireIgnite);
         {
-            let calls = entity.calls.clone();
+            let calls = Arc::clone(&entity.calls);
             collector.run_after(
                 InsideBlockEffectType::FireIgnite,
                 Box::new(move |_| calls.lock().push("after")),

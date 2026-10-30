@@ -5,12 +5,13 @@
 use std::io::{self, Cursor};
 
 use glam::IVec3;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, trig};
 
 use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum Direction {
     /// Negative Y direction.
     Down,
@@ -131,7 +132,7 @@ impl Direction {
     /// Returns the horizontal direction from a yaw rotation.
     #[must_use]
     pub fn from_yaw(yaw: f32) -> Direction {
-        match ((f64::from(yaw) / 90.0 + 0.5).floor() as i32) & 3 {
+        match ((f64::from(yaw) / f64::from(DEGREE_90) + 0.5).floor() as i32) & 3 {
             0 => Direction::South,
             1 => Direction::West,
             2 => Direction::North,
@@ -146,10 +147,10 @@ impl Direction {
     #[must_use]
     pub const fn to_yaw(self) -> f32 {
         match self {
-            Direction::North => 180.0,
+            Direction::North => DEGREE_180,
             Direction::South | Direction::Up | Direction::Down => 0.0,
-            Direction::West => 90.0,
-            Direction::East => 270.0,
+            Direction::West => DEGREE_90,
+            Direction::East => DEGREE_270,
         }
     }
 
@@ -256,10 +257,10 @@ impl Direction {
         let pitch_rad = pitch.to_radians();
         let yaw_rad = (-yaw).to_radians();
 
-        let pitch_sin = pitch_rad.sin();
-        let pitch_cos = pitch_rad.cos();
-        let yaw_sin = yaw_rad.sin();
-        let yaw_cos = yaw_rad.cos();
+        let pitch_sin = trig::sin(pitch_rad);
+        let pitch_cos = trig::cos(pitch_rad);
+        let yaw_sin = trig::sin(yaw_rad);
+        let yaw_cos = trig::cos(yaw_rad);
 
         // Determine which direction on each axis the player is looking
         let x_pos = yaw_sin > 0.0;
@@ -344,8 +345,8 @@ impl Direction {
     #[must_use]
     pub fn is_facing_yaw(self, yaw: f32) -> bool {
         let radians = yaw.to_radians();
-        let dx = -radians.sin();
-        let dz = radians.cos();
+        let dx = -trig::sin(radians);
+        let dz = trig::cos(radians);
 
         let (nx, nz) = self.offset_xz();
 

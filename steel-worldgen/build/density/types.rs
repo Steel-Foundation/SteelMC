@@ -16,8 +16,6 @@ type NormalNoise = u8;
 // ── Individual density function structs ──────────────────────────────────────
 
 /// A constant density value.
-///
-/// Matches vanilla's `DensityFunctions.Constant`.
 #[derive(Debug, Clone)]
 pub struct Constant {
     /// The constant value.
@@ -27,7 +25,7 @@ pub struct Constant {
 /// A reference to another density function by ID.
 ///
 /// After resolution via [`DensityFunction::resolve`], `resolved` holds the
-/// target function. Matches vanilla's `DensityFunctions.HolderHolder`.
+/// target function.
 #[derive(Debug, Clone)]
 pub struct Reference {
     /// The density function ID (for debugging / serialization).
@@ -40,7 +38,6 @@ pub struct Reference {
 ///
 /// Returns `from_value` at Y = `from_y`, `to_value` at Y = `to_y`,
 /// linearly interpolated between, clamped outside the range.
-/// Matches vanilla's `DensityFunctions.YClampedGradient`.
 #[derive(Debug, Clone)]
 pub struct YClampedGradient {
     /// Starting Y coordinate
@@ -54,8 +51,6 @@ pub struct YClampedGradient {
 }
 
 /// Sample from a noise generator.
-///
-/// Matches vanilla's `DensityFunctions.Noise`.
 #[derive(Debug, Clone)]
 pub struct Noise {
     /// Noise identifier (for debugging / serialization)
@@ -69,8 +64,6 @@ pub struct Noise {
 }
 
 /// Sample from a shifted noise generator.
-///
-/// Matches vanilla's `DensityFunctions.ShiftedNoise`.
 #[derive(Debug, Clone)]
 pub struct ShiftedNoise {
     /// X coordinate shift
@@ -90,8 +83,6 @@ pub struct ShiftedNoise {
 }
 
 /// Shift noise generator A for coordinate offsetting.
-///
-/// Matches vanilla's `DensityFunctions.ShiftA`.
 #[derive(Debug, Clone)]
 pub struct ShiftA {
     /// Noise identifier (for debugging / serialization)
@@ -101,8 +92,6 @@ pub struct ShiftA {
 }
 
 /// Shift noise generator B for coordinate offsetting.
-///
-/// Matches vanilla's `DensityFunctions.ShiftB`.
 #[derive(Debug, Clone)]
 pub struct ShiftB {
     /// Noise identifier (for debugging / serialization)
@@ -112,8 +101,6 @@ pub struct ShiftB {
 }
 
 /// Generic shift noise generator for coordinate offsetting.
-///
-/// Matches vanilla's `DensityFunctions.Shift`.
 #[derive(Debug, Clone)]
 pub struct Shift {
     /// Noise identifier (for debugging / serialization)
@@ -123,8 +110,6 @@ pub struct Shift {
 }
 
 /// The type of two-argument operation.
-///
-/// Matches vanilla's `DensityFunctions.TwoArgumentSimpleFunction.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TwoArgType {
     /// Add two density functions.
@@ -135,11 +120,13 @@ pub enum TwoArgType {
     Min,
     /// Take the maximum of two density functions.
     Max,
+    /// Subtract the second density function from the first.
+    Sub,
+    /// Divide the first density function by the second.
+    Div,
 }
 
 /// A two-argument density function (add, mul, min, max).
-///
-/// Matches vanilla's `DensityFunctions.Ap2` / `TwoArgumentSimpleFunction`.
 #[derive(Debug, Clone)]
 pub struct TwoArgumentSimple {
     /// The operation type
@@ -151,8 +138,6 @@ pub struct TwoArgumentSimple {
 }
 
 /// The type of mapped (pure transformer) operation.
-///
-/// Matches vanilla's `DensityFunctions.Mapped.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MappedType {
     /// Absolute value.
@@ -169,12 +154,13 @@ pub enum MappedType {
     Invert,
     /// Squeeze: clamp(-1, 1) then apply c/2 - c^3/24
     Squeeze,
+    /// Negate: -v
+    Negate,
 }
 
 /// A mapped (pure transformer) density function.
 ///
 /// Applies a unary operation to its input.
-/// Matches vanilla's `DensityFunctions.Mapped`.
 #[derive(Debug, Clone)]
 pub struct Mapped {
     /// The mapping type
@@ -183,9 +169,70 @@ pub struct Mapped {
     pub input: Arc<DensityFunction>,
 }
 
-/// Clamp a density function value to a range.
+/// Linear interpolation between `first` and `second` by `alpha`.
 ///
-/// Matches vanilla's `DensityFunctions.Clamp`.
+/// Matches vanilla's `LerpFunction`.
+#[derive(Debug, Clone)]
+pub struct Lerp {
+    /// Interpolation factor.
+    pub alpha: Arc<DensityFunction>,
+    /// Value at `alpha == 0.0`.
+    pub first: Arc<DensityFunction>,
+    /// Value at `alpha == 1.0`.
+    pub second: Arc<DensityFunction>,
+}
+
+/// A coordinate axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    /// X axis.
+    X,
+    /// Y axis.
+    Y,
+    /// Z axis.
+    Z,
+}
+
+/// Fix one axis to a constant coordinate while evaluating `input`.
+///
+/// Matches vanilla's `SliceFunction`.
+#[derive(Debug, Clone)]
+pub struct Slice {
+    /// The axis to fix.
+    pub axis: Axis,
+    /// The fixed coordinate.
+    pub coordinate: i32,
+    /// The wrapped function, evaluated with `axis` fixed to `coordinate`.
+    pub input: Arc<DensityFunction>,
+}
+
+/// A distance metric.
+///
+/// Matches vanilla's `DistanceMetric`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistanceMetric {
+    /// `sqrt(dx^2 + dy^2 + dz^2)`.
+    Euclidean,
+    /// `dx^2 + dy^2 + dz^2`.
+    EuclideanSquared,
+    /// `|dx| + |dy| + |dz|`.
+    Manhattan,
+    /// `max(|dx|, |dy|, |dz|)`.
+    Chebyshev,
+}
+
+/// Distance from the sampled position to a fixed point.
+///
+/// Matches vanilla's `DistanceToPointFunction`.
+#[derive(Debug, Clone)]
+pub struct DistanceToPoint {
+    /// The fixed point.
+    pub point: [i32; 3],
+    /// The distance metric.
+    pub metric: DistanceMetric,
+}
+
+/// Clamp a density function value to a range.
 #[derive(Debug, Clone)]
 pub struct Clamp {
     /// Input density function
@@ -197,8 +244,6 @@ pub struct Clamp {
 }
 
 /// Choose between two functions based on input range.
-///
-/// Matches vanilla's `DensityFunctions.RangeChoice`.
 #[derive(Debug, Clone)]
 pub struct RangeChoice {
     /// Input density function
@@ -214,8 +259,6 @@ pub struct RangeChoice {
 }
 
 /// Choose one of many functions based on ordered input thresholds.
-///
-/// Matches vanilla's `DensityFunctions.IntervalSelect`.
 #[derive(Debug, Clone)]
 pub struct IntervalSelect {
     /// Input density function
@@ -229,8 +272,6 @@ pub struct IntervalSelect {
 }
 
 /// Blended (interpolated) 3D noise.
-///
-/// Matches vanilla's `BlendedNoise`.
 #[derive(Debug, Clone)]
 pub struct BlendedNoise {
     /// XZ scale factor
@@ -248,8 +289,6 @@ pub struct BlendedNoise {
 }
 
 /// Weird scaled sampler (for cave generation).
-///
-/// Matches vanilla's `DensityFunctions.WeirdScaledSampler`.
 #[derive(Debug, Clone)]
 pub struct WeirdScaledSampler {
     /// Input density function
@@ -263,8 +302,6 @@ pub struct WeirdScaledSampler {
 }
 
 /// Blend density (for chunk blending).
-///
-/// Matches vanilla's `DensityFunctions.BlendDensity`.
 #[derive(Debug, Clone)]
 pub struct BlendDensity {
     /// Input density function
@@ -276,7 +313,6 @@ pub struct BlendDensity {
 /// Iterates from an upper bound down to a lower bound in cell-height steps,
 /// evaluating the density function at each Y level. Returns the first Y
 /// where density > 0, or the lower bound if none found.
-/// Matches vanilla's `DensityFunctions.FindTopSurface`.
 #[derive(Debug, Clone)]
 pub struct FindTopSurface {
     /// The density function to evaluate at each Y level.
@@ -290,8 +326,6 @@ pub struct FindTopSurface {
 }
 
 /// The type of cache/marker wrapper.
-///
-/// Matches vanilla's `DensityFunctions.Marker.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkerType {
     /// Interpolated (cell-based interpolation).
@@ -309,19 +343,21 @@ pub enum MarkerType {
 /// A cache/marker wrapper density function.
 ///
 /// These are optimization hints that wrap another density function.
-/// Matches vanilla's `DensityFunctions.Marker`.
 #[derive(Debug, Clone)]
 pub struct Marker {
     /// The marker type
     pub kind: MarkerType,
     /// The wrapped density function
     pub wrapped: Arc<DensityFunction>,
+    /// Cell size for `MarkerType::Interpolated`; `0` (unused) for other kinds.
+    pub cell_size_xz: i32,
+    /// Cell size for `MarkerType::Interpolated`; `0` (unused) for other kinds.
+    pub cell_size_y: i32,
 }
 
 /// Cubic spline density function wrapper.
 ///
 /// Wraps an `Arc<CubicSpline>` for spline-based density evaluation.
-/// Matches vanilla's `DensityFunctions.Spline`.
 #[derive(Debug, Clone)]
 pub struct Spline {
     /// The cubic spline.
@@ -329,14 +365,10 @@ pub struct Spline {
 }
 
 /// Blend alpha density function (returns 1.0, placeholder for blending).
-///
-/// Matches vanilla's `DensityFunctions.BlendAlpha`.
 #[derive(Debug, Clone, Copy)]
 pub struct BlendAlpha;
 
 /// Blend offset density function (returns 0.0, placeholder for blending).
-///
-/// Matches vanilla's `DensityFunctions.BlendOffset`.
 #[derive(Debug, Clone, Copy)]
 pub struct BlendOffset;
 
@@ -376,11 +408,14 @@ pub enum DensityFunction {
     /// Generic shift noise generator for coordinate offsetting.
     Shift(Shift),
 
-    /// Two-argument operation (add, mul, min, max).
+    /// Two-argument operation (add, sub, mul, div, min, max).
     TwoArgumentSimple(TwoArgumentSimple),
 
     /// Mapped (pure transformer) operation (abs, square, cube, etc.).
     Mapped(Mapped),
+
+    /// Linear interpolation between two functions.
+    Lerp(Lerp),
 
     /// Clamp the value to a range.
     Clamp(Clamp),
@@ -418,6 +453,12 @@ pub enum DensityFunction {
 
     /// Find the topmost Y where density is positive.
     FindTopSurface(FindTopSurface),
+
+    /// Fix one axis to a constant coordinate.
+    Slice(Slice),
+
+    /// Distance from the sampled position to a fixed point.
+    DistanceToPoint(DistanceToPoint),
 }
 
 // ── Convenience constructors ────────────────────────────────────────────────
@@ -462,6 +503,7 @@ impl DensityFunction {
             | Self::EndIslands
             | Self::BlendAlpha(_)
             | Self::BlendOffset(_)
+            | Self::DistanceToPoint(_)
             | Self::YClampedGradient(_) => self.clone(),
 
             Self::Reference(r) => {
@@ -517,6 +559,12 @@ impl DensityFunction {
                 input: Arc::new(m.input.resolve_inner(registry, noises)),
             }),
 
+            Self::Lerp(l) => Self::Lerp(Lerp {
+                alpha: Arc::new(l.alpha.resolve_inner(registry, noises)),
+                first: Arc::new(l.first.resolve_inner(registry, noises)),
+                second: Arc::new(l.second.resolve_inner(registry, noises)),
+            }),
+
             Self::Clamp(c) => Self::Clamp(Clamp {
                 input: Arc::new(c.input.resolve_inner(registry, noises)),
                 min: c.min,
@@ -568,6 +616,8 @@ impl DensityFunction {
             Self::Marker(m) => Self::Marker(Marker {
                 kind: m.kind,
                 wrapped: Arc::new(m.wrapped.resolve_inner(registry, noises)),
+                cell_size_xz: m.cell_size_xz,
+                cell_size_y: m.cell_size_y,
             }),
 
             Self::FindTopSurface(fts) => Self::FindTopSurface(FindTopSurface {
@@ -575,6 +625,12 @@ impl DensityFunction {
                 upper_bound: Arc::new(fts.upper_bound.resolve_inner(registry, noises)),
                 lower_bound: fts.lower_bound,
                 cell_height: fts.cell_height,
+            }),
+
+            Self::Slice(s) => Self::Slice(Slice {
+                axis: s.axis,
+                coordinate: s.coordinate,
+                input: Arc::new(s.input.resolve_inner(registry, noises)),
             }),
         }
     }
@@ -777,35 +833,5 @@ mod tests {
         assert!((mapper.get_values(0.0) - 1.0).abs() < 0.01);
         assert!((mapper.get_values(0.6) - 2.0).abs() < 0.01);
         assert!((mapper.get_values(0.8) - 3.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_resolve_bakes_noises() {
-        use crate::random::Random;
-        use crate::random::xoroshiro::Xoroshiro;
-
-        let mut rng = Xoroshiro::from_seed(12345);
-        let splitter = rng.next_positional();
-
-        let mut noises = FxHashMap::default();
-        let noise = NormalNoise::create(&splitter, "test_noise", -4, &[1.0, 1.0, 1.0, 1.0]);
-        noises.insert("test_noise".to_string(), noise);
-
-        let registry = FxHashMap::default();
-
-        let func = DensityFunction::Noise(Noise {
-            noise_id: "test_noise".to_string(),
-            xz_scale: 1.0,
-            y_scale: 1.0,
-            noise: None, // not yet baked
-        });
-
-        // After resolve, noise should be baked
-        let resolved = func.resolve(&registry, &noises);
-        if let DensityFunction::Noise(n) = &resolved {
-            assert!(n.noise.is_some());
-        } else {
-            panic!("Expected Noise variant");
-        }
     }
 }

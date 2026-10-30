@@ -366,8 +366,6 @@ impl NetherChunkBiomeSampler<'_> {
 ///    - `≥ -0.0625` → `end_midlands`
 ///    - `< -0.21875` → `small_end_islands`
 ///    - otherwise → `end_barrens`
-///
-/// Matches vanilla's `TheEndBiomeSource`.
 pub struct EndBiomeSource {
     seed: u64,
     end_islands: EndIslands,

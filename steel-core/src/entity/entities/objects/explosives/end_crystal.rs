@@ -1,5 +1,6 @@
 //! Minimal End Crystal entity implementation for End spike worldgen.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -11,7 +12,7 @@ use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -88,7 +89,11 @@ impl Entity for EndCrystalEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
+    fn tick(self: Arc<Self>) {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
 

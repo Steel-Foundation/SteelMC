@@ -1,7 +1,9 @@
 //! Steel-owned built-in command declarations.
 
+pub mod advancement;
 mod clear;
 mod damage;
+mod defaultgamemode;
 mod difficulty;
 mod domain;
 mod enchant;
@@ -26,12 +28,17 @@ mod setidletimeout;
 mod setworldspawn;
 mod spawnpoint;
 mod stop;
+mod stopsound;
 mod summon;
+mod swing;
+mod tag;
 mod teleport;
 mod tellraw;
 mod tick;
 mod time;
 mod title;
+mod transfer;
+mod version;
 mod weather;
 mod worldborder;
 
@@ -64,9 +71,11 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
+    builder.register(advancement::registration())?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
+    builder.register(defaultgamemode::registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
@@ -90,15 +99,20 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(setidletimeout::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
+    builder.register(stopsound::registration())?;
     builder.register(summon::registration())?;
+    builder.register(swing::registration())?;
+    builder.register(tag::registration())?;
     builder.register(teleport::registration())?;
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(title::registration())?;
+    builder.register(version::registration())?;
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
+    builder.register(transfer::registration())?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
 }
@@ -142,9 +156,11 @@ mod tests {
         assert_eq!(
             names,
             [
+                "advancement",
                 "clear",
                 "deop",
                 "damage",
+                "defaultgamemode",
                 "difficulty",
                 "domain",
                 "enchant",
@@ -169,16 +185,21 @@ mod tests {
                 "setidletimeout",
                 "setworldspawn",
                 "stop",
+                "stopsound",
                 "summon",
+                "swing",
+                "tag",
                 "teleport",
                 "tp",
                 "tellraw",
                 "tick",
                 "time",
                 "title",
+                "version",
                 "weather",
                 "worldborder",
-                "invsee"
+                "invsee",
+                "transfer"
             ]
         );
 

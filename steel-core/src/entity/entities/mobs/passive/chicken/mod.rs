@@ -10,6 +10,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::chicken_sound_variant::{ChickenAge, ChickenSoundVariantRef};
 use steel_registry::chicken_variant::ChickenVariantRef;
+use steel_registry::data_components::vanilla_components::{CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -37,7 +38,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData, entity_loot_ref, position_rider_default, sync_dirty_mob_effects,
+    PathfinderMob, SharedEntity, SpawnGroupData, entity_loot_ref, living_loot_equipment,
+    position_rider_default,sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -273,13 +275,13 @@ impl ChickenEntity {
             .is_in_tag(item_stack.item(), &ItemTag::CHICKEN_FOOD)
     }
 
-    /// Returns vanilla `Chicken.isChickenJockey`.
+    /// Returns whether this chicken is currently ridden by a chicken jockey mob.
     #[must_use]
     pub fn is_chicken_jockey(&self) -> bool {
         self.chicken_state.lock().is_chicken_jockey
     }
 
-    /// Sets vanilla `Chicken.isChickenJockey`.
+    /// Sets whether this chicken is a chicken jockey mount.
     pub fn set_chicken_jockey(&self, is_chicken_jockey: bool) {
         self.chicken_state.lock().is_chicken_jockey = is_chicken_jockey;
     }
@@ -369,10 +371,11 @@ impl ChickenEntity {
     fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
         let position = self.position();
         let mut rng = rand::rng();
+        let equipment = living_loot_equipment(self);
         // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
         let mut context = LootContext::new(&mut rng)
             .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self));
+            .with_this_entity(entity_loot_ref(self, Some(&equipment)));
 
         let items = loot_table.get_random_items(&mut context);
         let dropped_any = !items.is_empty();
@@ -390,6 +393,15 @@ impl Entity for ChickenEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(CHICKEN_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(CHICKEN_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
     }
 
     fn base_tick(&self) {
@@ -508,12 +520,12 @@ impl LivingEntity for ChickenEntity {
         }
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -547,16 +559,6 @@ impl AgeableMob for ChickenEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
-}
-
-impl Animal for ChickenEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        ChickenEntity::is_food(item_stack)
-    }
 
     fn breed_variant_key(&self) -> Option<&Identifier> {
         Some(&self.variant().key)
@@ -566,7 +568,7 @@ impl Animal for ChickenEntity {
         self.set_variant_by_key(key)
     }
 
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
         let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
@@ -583,13 +585,23 @@ impl Animal for ChickenEntity {
     }
 }
 
+impl Animal for ChickenEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        ChickenEntity::is_food(item_stack)
+    }
+}
+
 impl Mob for ChickenEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {

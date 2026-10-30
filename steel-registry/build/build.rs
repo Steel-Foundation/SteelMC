@@ -24,12 +24,23 @@
     reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
 )]
 
-use std::{env, fs, path::Path, process::Command};
+use std::{env, fs, path::Path};
+
+/// Structure-processor codec types, shared by `structure::processors` and
+/// `features` (inline `TemplateFeature` processors). Deserialize derives
+/// live in `src/`, so build script and library use the same file.
+#[expect(
+    dead_code,
+    reason = "imported processor data contains variants not emitted by current vanilla assets"
+)]
+#[path = "../src/structure/processor/data.rs"]
+mod structure_processor_data;
 
 mod attributes;
 mod banner_patterns;
 mod biomes;
 mod block_entity_types;
+mod block_transformers;
 mod blocks;
 mod carvers;
 mod cat_variants;
@@ -37,6 +48,7 @@ mod chat_types;
 mod chicken_variants;
 mod cow_variants;
 mod damage_types;
+mod decorated_pot_patterns;
 mod dialogs;
 mod dimension_types;
 mod entities;
@@ -71,6 +83,7 @@ mod recipes;
 mod sound_events;
 mod sound_types;
 mod structure;
+mod suspicious_stew_effects;
 mod timelines;
 mod trim_materials;
 mod trim_patterns;
@@ -83,12 +96,12 @@ mod zombie_nautilus_variants;
 
 mod enchantments;
 
+mod advancements;
 mod generator_functions;
 mod shared_structs;
 mod tags;
 
-const FMT: bool = cfg!(feature = "fmt");
-
+const ADVANCEMENTS: &str = "advancements";
 const ATTRIBUTES: &str = "attributes";
 const BLOCKS: &str = "blocks";
 const BLOCK_TAGS: &str = "block_tags";
@@ -101,6 +114,7 @@ const BIOME_TAGS: &str = "biome_tags";
 const CHAT_TYPES: &str = "chat_types";
 const TRIM_PATTERNS: &str = "trim_patterns";
 const TRIM_MATERIALS: &str = "trim_materials";
+const DECORATED_POT_PATTERNS: &str = "decorated_pot_patterns";
 const WOLF_VARIANTS: &str = "wolf_variants";
 const WOLF_SOUNDS: &str = "wolf_sound_variants";
 const PIG_VARIANTS: &str = "pig_variants";
@@ -119,6 +133,7 @@ const VILLAGER_TYPES: &str = "villager_types";
 const VILLAGER_PROFESSIONS: &str = "villager_professions";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
+const BLOCK_TRANSFORMERS: &str = "block_transformers";
 const DAMAGE_TYPE_TAGS: &str = "damage_type_tags";
 const BANNER_PATTERN_TAGS: &str = "banner_pattern_tags";
 const ENTITY_TYPE_TAGS: &str = "entity_type_tags";
@@ -160,9 +175,11 @@ const STRUCTURE_PROCESSORS: &str = "structure_processors";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
 const CARVERS: &str = "configured_carvers";
+const BLOCK_STATE_PROVIDERS: &str = "block_state_providers";
 const CONFIGURED_FEATURES: &str = "configured_features";
 const PLACED_FEATURES: &str = "placed_features";
 const CUSTOM_STATS: &str = "custom_stats";
+const SUSPICIOUS_STEW_EFFECTS: &str = "suspicious_stew_effects";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -191,6 +208,7 @@ pub fn main() {
         (chat_types::build(), CHAT_TYPES),
         (trim_patterns::build(), TRIM_PATTERNS),
         (trim_materials::build(), TRIM_MATERIALS),
+        (decorated_pot_patterns::build(), DECORATED_POT_PATTERNS),
         (wolf_variants::build(), WOLF_VARIANTS),
         (wolf_sound_variants::build(), WOLF_SOUNDS),
         (pig_variants::build(), PIG_VARIANTS),
@@ -209,6 +227,7 @@ pub fn main() {
         (villager_professions::build(), VILLAGER_PROFESSIONS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
+        (block_transformers::build(), BLOCK_TRANSFORMERS),
         (tags::damage_type(), DAMAGE_TYPE_TAGS),
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),
@@ -249,9 +268,15 @@ pub fn main() {
         (tags::enchantment(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
         (carvers::build(), CARVERS),
+        (
+            features::build_block_state_providers(),
+            BLOCK_STATE_PROVIDERS,
+        ),
         (features::build_configured(), CONFIGURED_FEATURES),
         (features::build_placed(), PLACED_FEATURES),
         (custom_stats::build(), CUSTOM_STATS),
+        (suspicious_stew_effects::build(), SUSPICIOUS_STEW_EFFECTS),
+        (advancements::build(), ADVANCEMENTS),
     ];
 
     // Track which files we're generating this run
@@ -260,6 +285,13 @@ pub fn main() {
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
         let content = content.to_string();
+        #[cfg(feature = "fmt")]
+        let content = {
+            let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
+                panic!("Failed to parse generated file {}: {error}", path.display())
+            });
+            prettyplease::unparse(&syntax)
+        };
         generated_files.push(path.clone());
 
         // Only write if content changed
@@ -278,13 +310,6 @@ pub fn main() {
             if !generated_files.contains(&path) {
                 let _ = fs::remove_file(&path);
             }
-        }
-    }
-
-    if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let _ = Command::new("rustfmt").arg(path).output();
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::behavior::InteractionResult;
-use crate::entity::BorrowedNbtCompoundView;
 use crate::entity::damage::DamageSource;
+use crate::entity::{BorrowedNbtCompoundView, SharedEntity};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::player::Player;
 use crate::world::World;
@@ -8,6 +8,7 @@ use glam::DVec3;
 use parking_lot::MutexGuard;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
+use std::sync::Arc;
 use std::sync::Weak;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
@@ -144,7 +145,7 @@ impl Entity for InteractionEntity {
         true
     }
 
-    fn skip_attack_interaction(&self, source: &dyn Entity) -> bool {
+    fn skip_attack_interaction(&self, source: &SharedEntity) -> bool {
         let Some(player) = source.as_player() else {
             return false;
         };
@@ -163,7 +164,7 @@ impl Entity for InteractionEntity {
     }
 
     fn piston_push_reaction(&self) -> PushReaction {
-        PushReaction::Ignore
+        PushReaction::IgnoreEntity
     }
 
     fn can_be_hit_by_projectile(&self) -> bool {
@@ -181,7 +182,7 @@ impl Entity for InteractionEntity {
         )
     }
 
-    fn tick(&self) {}
+    fn tick(self: Arc<Self>) {}
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
@@ -367,11 +368,13 @@ impl InteractionEntityDataView<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::Entity;
     use crate::entity::entities::InteractionEntity;
     use crate::entity::entities::objects::technical::interaction::{
         DEFAULT_HEIGHT, DEFAULT_WIDTH, PlayerAction, TAG_HEIGHT, TAG_WIDTH,
     };
+    use crate::entity::{Entity, SharedEntity};
+    use crate::player::Player;
+    use crate::test_support::tick_test_world;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
     use glam::DVec3;
     use simdnbt::borrow::read_compound;
@@ -385,47 +388,51 @@ mod tests {
 
     #[test]
     fn skip_attack_interaction_when_required() {
-        let world = fresh_test_world("skip_interaction_when_required");
-        let player = TestPlayerBuilder::new(world.clone(), "InteractPlayer", 0).build();
+        let world_fixture = fresh_test_world("skip_interaction_when_required");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "InteractPlayer", 0).build();
 
         let response_false_interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             1,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         let response_true_interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             2,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         response_true_interaction.with_entity_data(|data| data.set_response(true));
 
-        assert!(response_false_interaction.skip_attack_interaction(player.as_ref()));
-        assert!(!response_true_interaction.skip_attack_interaction(player.as_ref()));
+        let shared_player: SharedEntity = Arc::<Player>::clone(&player);
+        assert!(response_false_interaction.skip_attack_interaction(&shared_player));
+        assert!(!response_true_interaction.skip_attack_interaction(&shared_player));
     }
 
     #[test]
     fn record_player_actions() {
-        let world = fresh_test_world("interaction_records_player_actions");
-        let player = TestPlayerBuilder::new(world.clone(), "InteractPlayer", 0).build();
+        let world_fixture = fresh_test_world("interaction_records_player_actions");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "InteractPlayer", 0).build();
 
         let interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             1,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
 
         assert_eq!(interaction.last_attack(), None);
         assert_eq!(interaction.last_interaction(), None);
 
-        world.tick_game(0, true);
-        world.tick_game(1, true);
-        world.tick_game(2, true);
+        tick_test_world(world, 0, true);
+        tick_test_world(world, 1, true);
+        tick_test_world(world, 2, true);
 
-        interaction.skip_attack_interaction(player.as_ref());
+        let shared_player: SharedEntity = Arc::<Player>::clone(&player);
+        interaction.skip_attack_interaction(&shared_player);
         assert_eq!(
             interaction.last_attack(),
             Some(PlayerAction {
@@ -435,8 +442,8 @@ mod tests {
         );
         assert_eq!(interaction.last_interaction(), None);
 
-        world.tick_game(3, true);
-        world.tick_game(4, true);
+        tick_test_world(world, 3, true);
+        tick_test_world(world, 4, true);
 
         interaction.interact(player.as_ref(), InteractionHand::MainHand, TEST_POSITION);
         assert_eq!(
@@ -454,9 +461,9 @@ mod tests {
             })
         );
 
-        world.tick_game(5, true);
+        tick_test_world(world, 5, true);
 
-        interaction.skip_attack_interaction(player.as_ref());
+        interaction.skip_attack_interaction(&shared_player);
         assert_eq!(
             interaction.last_attack(),
             Some(PlayerAction {
@@ -468,13 +475,14 @@ mod tests {
 
     #[test]
     fn update_dimensions_on_edit() {
-        let world = fresh_test_world("interaction_updates_dimensions_on_edit");
+        let world_fixture = fresh_test_world("interaction_updates_dimensions_on_edit");
+        let world = &world_fixture.world;
 
         let interaction = InteractionEntity::new(
             &vanilla_entities::INTERACTION,
             0,
             TEST_POSITION,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
 
         let check_dimensions_and_bounding_box = |expected_width: f32, expected_height: f32| {

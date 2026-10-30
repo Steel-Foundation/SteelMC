@@ -11,7 +11,6 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::world::World;
 
-/// Vanilla `NeighborUpdater.UPDATE_ORDER`.
 pub(in crate::world) const UPDATE_ORDER: [Direction; 6] = [
     Direction::West,
     Direction::East,

@@ -1,6 +1,6 @@
 use super::{
-    Arc, CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
-    Entity, EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
+    CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket, Entity,
+    EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
 };
 
 impl World {
@@ -11,8 +11,8 @@ impl World {
     pub fn broadcast_chat(
         &self,
         mut packet: CPlayerChat,
-        _sender: Arc<Player>,
-        sender_last_seen: LastSeen,
+        _sender: &Player,
+        sender_last_seen: &LastSeen,
         message_signature: Option<&[u8; 256]>,
     ) {
         log::debug!(
@@ -27,17 +27,17 @@ impl World {
 
             log::debug!(
                 "Broadcasting to player {} (UUID: {}), global_index={}",
-                recipient.gameprofile.name,
-                recipient.gameprofile.id,
+                recipient.gameprofile.name(),
+                recipient.gameprofile.id(),
                 messages_received
             );
 
             // IMPORTANT: Index previous messages BEFORE updating the cache
             // This matches vanilla's order: pack() then push()
             let previous_messages = {
-                let chat = recipient.chat.lock();
+                let chat = recipient.chat().lock();
                 chat.signature_cache
-                    .index_previous_messages(&sender_last_seen)
+                    .index_previous_messages(sender_last_seen)
             };
 
             log::debug!(
@@ -53,10 +53,9 @@ impl World {
             // AFTER sending, update the recipient's cache using vanilla's push algorithm
             // This adds all lastSeen signatures + current signature to the cache
             {
-                let mut chat = recipient.chat.lock();
+                let mut chat = recipient.chat().lock();
                 if let Some(signature) = message_signature {
-                    chat.signature_cache
-                        .push(&sender_last_seen, Some(signature));
+                    chat.signature_cache.push(sender_last_seen, Some(signature));
 
                     log::debug!("  Added signature to recipient's cache and pending list");
 
@@ -191,7 +190,7 @@ impl World {
             .filter(|entity_id| {
                 self.players
                     .get_by_entity_id(*entity_id)
-                    .is_some_and(|player| player.chunk_sender.lock().is_chunk_sent(chunk))
+                    .is_some_and(|player| player.chunk_sender().lock().is_chunk_sent(chunk))
             })
             .collect()
     }
@@ -208,7 +207,7 @@ impl World {
                 let Some(view) = *player.last_tracking_view.lock() else {
                     return false;
                 };
-                let chunk_sender = player.chunk_sender.lock();
+                let chunk_sender = player.chunk_sender().lock();
                 let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
                 Self::chunk_is_on_packet_tracked_border(view, chunk, &is_chunk_sent)
             })

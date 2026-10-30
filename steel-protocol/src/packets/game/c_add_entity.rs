@@ -52,8 +52,6 @@ impl WriteTo for CAddEntity {
 
 /// Writes a velocity vector in `LpVec3` format.
 ///
-/// Mirrors vanilla's `LpVec3.write()`.
-///
 /// Zero velocity is encoded as a single 0 byte.
 /// Non-zero velocity uses 6+ bytes with bit-packed components.
 pub fn write_lp_vec3(writer: &mut impl std::io::Write, velocity: DVec3) -> std::io::Result<()> {

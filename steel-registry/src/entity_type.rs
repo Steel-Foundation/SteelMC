@@ -1,5 +1,6 @@
 use glam::DVec3;
 use rustc_hash::FxHashMap;
+use steel_math::trig;
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{RegistryTags, blocks::behavior::PushReaction};
@@ -73,7 +74,6 @@ impl EntityAttachmentPoint {
     }
 }
 
-/// Vanilla `EntityAttachments`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityAttachments {
     pub passenger: &'static [EntityAttachmentPoint],
@@ -169,9 +169,9 @@ fn fallback_point(attachment: EntityAttachment, dimensions: EntityDimensions) ->
 }
 
 fn rotate_attachment_point(point: DVec3, yaw_degrees: f32) -> DVec3 {
-    let radians = f64::from(-yaw_degrees).to_radians();
-    let cos = radians.cos();
-    let sin = radians.sin();
+    let radians = (-yaw_degrees).to_radians();
+    let cos = f64::from(trig::cos(radians));
+    let sin = f64::from(trig::sin(radians));
     DVec3::new(
         point.x.mul_add(cos, point.z * sin),
         point.y,
@@ -253,7 +253,7 @@ impl EntityDimensions {
 }
 
 /// Behavioral flags for entity collision and interaction.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityFlags {
     pub is_pushable: bool,
     pub is_attackable: bool,
@@ -295,6 +295,9 @@ pub struct EntityType {
     /// Whether this entity type can be serialized to disk.
     /// Set to false for transient entities (lightning, fishing hooks, players).
     pub can_serialize: bool,
+    /// Whether only server operators may set this entity's data via a spawn
+    /// item's `ENTITY_DATA` component. Mirrors vanilla `EntityType.onlyOpCanSetNbt`.
+    pub only_op_can_set_nbt: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractBoat`.
     pub is_abstract_boat: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractMinecart`.

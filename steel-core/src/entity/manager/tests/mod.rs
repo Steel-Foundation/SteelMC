@@ -16,6 +16,7 @@ struct ManagerTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     always_ticking: bool,
+    hard_collision_relevant: bool,
 }
 
 struct DelayedFirstBoundsCallback {
@@ -61,6 +62,22 @@ impl ManagerTestEntity {
             base: EntityBase::with_uuid(id, uuid, position, entity_type.dimensions, Weak::new()),
             entity_type,
             always_ticking: false,
+            hard_collision_relevant: true,
+        })
+    }
+
+    fn shared_non_hard(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
+        Arc::new(Self {
+            base: EntityBase::with_uuid(
+                id,
+                uuid,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+            ),
+            entity_type: &vanilla_entities::ITEM,
+            always_ticking: false,
+            hard_collision_relevant: false,
         })
     }
 
@@ -75,6 +92,7 @@ impl ManagerTestEntity {
             ),
             entity_type: &vanilla_entities::ITEM,
             always_ticking: true,
+            hard_collision_relevant: true,
         })
     }
 }
@@ -118,7 +136,7 @@ impl Entity for MovingTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         if let Err(error) = self.try_set_position(self.tick_position) {
             panic!("moving tick test entity failed to move during tick: {error}");
@@ -166,7 +184,7 @@ impl Entity for AddDuringTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(&self) {
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         let Some(entity) = self.entity_to_add.lock().take() else {
             return;
@@ -227,6 +245,10 @@ impl Entity for ManagerTestEntity {
 
     fn is_always_ticking(&self) -> bool {
         self.always_ticking
+    }
+
+    fn is_hard_collision_relevant(&self) -> bool {
+        self.hard_collision_relevant
     }
 }
 

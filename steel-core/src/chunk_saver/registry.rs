@@ -6,7 +6,9 @@ use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use steel_utils::Identifier;
 
-use crate::config::{StorageSelection, WorldStorageConfig, validate_relative_path};
+use crate::config::{
+    ResolvedWorldsConfig, StorageSelection, WorldStorageConfig, validate_relative_path,
+};
 
 /// Storage paths and backend for a loaded world.
 pub struct WorldStorageOutput {
@@ -63,6 +65,47 @@ impl WorldStorageRegistry {
             .get(&selection.kind)
             .ok_or_else(|| format!("unknown world storage {}", selection.kind))?;
         (factory.validate)(&selection.config_value())
+    }
+
+    /// Resolves storage and checks domain clock durability before any world is loaded.
+    pub(crate) fn resolve_worlds(
+        &self,
+        config: &ResolvedWorldsConfig,
+    ) -> Result<FxHashMap<Identifier, WorldStorageOutput>, String> {
+        let mut outputs = FxHashMap::default();
+        for world in &config.worlds {
+            let path = config
+                .save_path
+                .join(&world.domain)
+                .join("worlds")
+                .join(&world.name);
+            let output = self
+                .create(&world.storage, &config.save_path, &path)
+                .map_err(|error| format!("failed to create storage for {}: {error}", world.key))?;
+            outputs.insert(world.key.clone(), output);
+        }
+        for domain in &config.domains {
+            let primary = outputs
+                .get(&domain.default_world)
+                .ok_or_else(|| format!("domain {} has no primary storage", domain.name))?;
+            if primary.level_data_path.is_some() {
+                continue;
+            }
+            for key in &domain.worlds {
+                let output = outputs
+                    .get(key)
+                    .ok_or_else(|| format!("world {key} has no resolved storage"))?;
+                if output.level_data_path.is_some()
+                    || matches!(output.storage, WorldStorageConfig::Disk { .. })
+                {
+                    return Err(format!(
+                        "domain {} default world {} must persist level data because world {key} uses persistent storage",
+                        domain.name, domain.default_world
+                    ));
+                }
+            }
+        }
+        Ok(outputs)
     }
 
     /// Creates a resolved world storage config.
@@ -142,4 +185,69 @@ fn create_ram_storage(
 
 fn path_to_string(path: PathBuf) -> String {
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::init_vanilla_registry;
+
+    use crate::config::{DomainConfig, StorageSelection, WorldEntryConfig, WorldsConfig};
+    use crate::worldgen::generator::registry::WorldGeneratorRegistry;
+    use steel_utils::Identifier;
+
+    use super::WorldStorageRegistry;
+
+    #[test]
+    fn domain_storage_accepts_durable_primary_or_entirely_ephemeral_worlds() {
+        init_vanilla_registry();
+        let storage = WorldStorageRegistry::new_with_builtins().expect("storage registry");
+        let generators = WorldGeneratorRegistry::new_with_builtins().expect("generators");
+        for (primary, derived) in [("disk", "disk"), ("disk", "ram"), ("ram", "ram")] {
+            let worlds = [("primary", primary, true), ("derived", derived, false)]
+                .into_iter()
+                .map(|(name, backend, default)| WorldEntryConfig {
+                    name: name.to_owned(),
+                    generator: Identifier::new_static("minecraft", "flat"),
+                    default,
+                    seed: None,
+                    default_gamemode: None,
+                    difficulty: None,
+                    storage: Some(StorageSelection {
+                        kind: Identifier::new_static("steel", backend),
+                        config: None,
+                    }),
+                    nether_portal_target: None,
+                    end_portal_target: None,
+                    config: None,
+                })
+                .collect();
+            let config = WorldsConfig {
+                save_path: "saves".to_owned(),
+                seed: None,
+                default_gamemode: None,
+                difficulty: None,
+                storage: None,
+                player_storage: None,
+                domains: [(
+                    "example".to_owned(),
+                    DomainConfig {
+                        default: true,
+                        seed: None,
+                        default_gamemode: None,
+                        difficulty: None,
+                        storage: None,
+                        worlds,
+                    },
+                )]
+                .into(),
+            };
+
+            let resolved = config
+                .validate_and_resolve(&generators, &storage)
+                .expect("resolve");
+            storage
+                .resolve_worlds(&resolved)
+                .expect("valid storage combination");
+        }
+    }
 }

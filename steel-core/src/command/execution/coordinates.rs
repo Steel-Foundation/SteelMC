@@ -1,9 +1,7 @@
 //! Vanilla command coordinate expressions.
 
-use std::f32::consts::PI;
-
 use glam::DVec3;
-use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_90, trig};
 use steel_utils::{BlockPos, translations};
 use text_components::{TextComponent, translation::Translation};
 
@@ -136,16 +134,15 @@ impl LocalCoordinates {
     }
 
     fn position(self, anchor: DVec3, (yaw, pitch): (f32, f32)) -> DVec3 {
-        let radians_per_degree = PI / 180.0;
-        let y_rotation = (yaw + 90.0) * radians_per_degree;
-        let x_rotation = -pitch * radians_per_degree;
-        let x_up_rotation = (-pitch + 90.0) * radians_per_degree;
-        let y_cos = f64::from(trig::cos(f64::from(y_rotation)));
-        let y_sin = f64::from(trig::sin(f64::from(y_rotation)));
-        let x_cos = f64::from(trig::cos(f64::from(x_rotation)));
-        let x_sin = f64::from(trig::sin(f64::from(x_rotation)));
-        let x_cos_up = f64::from(trig::cos(f64::from(x_up_rotation)));
-        let x_sin_up = f64::from(trig::sin(f64::from(x_up_rotation)));
+        let y_rotation = (yaw + DEGREE_90) * DEG_TO_RAD;
+        let x_rotation = -pitch * DEG_TO_RAD;
+        let x_up_rotation = (-pitch + DEGREE_90) * DEG_TO_RAD;
+        let y_cos = f64::from(trig::cos(y_rotation));
+        let y_sin = f64::from(trig::sin(y_rotation));
+        let x_cos = f64::from(trig::cos(x_rotation));
+        let x_sin = f64::from(trig::sin(x_rotation));
+        let x_cos_up = f64::from(trig::cos(x_up_rotation));
+        let x_sin_up = f64::from(trig::sin(x_up_rotation));
         let forwards_axis = DVec3::new(y_cos * x_cos, x_sin, y_sin * x_cos);
         let up_axis = DVec3::new(y_cos * x_cos_up, x_sin_up, y_sin * x_cos_up);
         let left_axis = -forwards_axis.cross(up_axis);

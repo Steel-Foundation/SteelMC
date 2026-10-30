@@ -1,6 +1,10 @@
-use std::sync::{Arc, Weak};
+use std::{
+    io::Cursor,
+    sync::{Arc, Weak},
+};
 
 use glam::DVec3;
+use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::blocks::{
@@ -25,6 +29,7 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
     block_util::FoundRectangle,
 };
+use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
 use uuid::Uuid;
 
@@ -42,19 +47,7 @@ use crate::world::game_event::GameEventContext;
 use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
-use super::{
-    ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
-    DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
-    EntityFluidContact, EntityLevelCallback, EntityMoveError, EntityOwnership, EntitySyncedData,
-    EntityVerticalMovementStateUpdate, HURT_DURATION_TICKS, InsideBlockEffectCollector,
-    InsideBlockEffectType, LivingEntity, LivingEntityBase, LivingTravelInput, MobEffectInstance,
-    RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity, block_state_suffocates_eye_box,
-    closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
-    fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
-    passenger_transition_position, passenger_transition_rotation, remove_after_changing_dimensions,
-    should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
-    transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
-};
+use super::*;
 
 struct PushableTestEntity {
     base: EntityBase,
@@ -215,8 +208,36 @@ fn command_data_compare_nbt_contains_base_and_custom_data() {
 }
 
 #[test]
+fn spawn_data_clamps_position_and_refreshes_old_transform() {
+    let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
+    let mut nbt = NbtCompound::new();
+    nbt.insert(
+        "Pos",
+        NbtList::Double(vec![100_000_000.0, -100_000_000.0, 100_000_000.0]),
+    );
+    nbt.insert("Rotation", NbtList::Float(vec![90.0, -30.0]));
+
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed =
+        read_compound(&mut Cursor::new(bytes.as_slice())).expect("test spawn data should be valid");
+    entity.apply_spawn_data((&borrowed).into());
+
+    let expected_position = DVec3::new(
+        ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+        -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+        ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+    );
+    assert_eq!(entity.position(), expected_position);
+    assert_eq!(entity.base().old_position(), expected_position);
+    assert_eq!(entity.rotation(), (90.0, -30.0));
+    assert_eq!(entity.base().old_rotation(), (90.0, -30.0));
+}
+
+#[test]
 fn command_data_compare_nbt_contains_implemented_living_data() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
     entity
         .attributes()
@@ -298,10 +319,12 @@ fn command_data_compare_nbt_contains_implemented_living_data() {
 fn kill_uses_vanilla_living_and_non_living_paths() {
     init_vanilla_registry();
     init_behaviors();
-    let source_world_storage = fresh_test_world("kill_game_event_source");
-    let target_world_storage = fresh_test_world("kill_game_event_target");
-    let source_world = &source_world_storage;
-    let target_world = &target_world_storage;
+    let source_world_storage_fixture = fresh_test_world("kill_game_event_source");
+    let source_world_storage = &source_world_storage_fixture.world;
+    let target_world_storage_fixture = fresh_test_world("kill_game_event_target");
+    let target_world_storage = &target_world_storage_fixture.world;
+    let source_world = source_world_storage;
+    let target_world = target_world_storage;
     assert!(!Arc::ptr_eq(source_world, target_world));
     let non_living_position = DVec3::new(0.25, 64.75, -0.125);
     let living_position = DVec3::new(1.25, 64.75, -0.125);
@@ -311,14 +334,16 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
     insert_ready_full_chunk(source_world, listener_chunk);
     insert_ready_full_chunk(target_world, listener_chunk);
     let target_listener = Arc::new(RecordingGameEventListener::new(listener_position));
-    let target_shared_listener: SharedGameEventListener = target_listener.clone();
+    let target_shared_listener: SharedGameEventListener =
+        Arc::<RecordingGameEventListener>::clone(&target_listener);
     let _target_registration = RegisteredGameEventListener::new(
         target_world,
         listener_section,
         Arc::clone(&target_shared_listener),
     );
     let source_listener = Arc::new(RecordingGameEventListener::new(listener_position));
-    let source_shared_listener: SharedGameEventListener = source_listener.clone();
+    let source_shared_listener: SharedGameEventListener =
+        Arc::<RecordingGameEventListener>::clone(&source_listener);
     let _source_registration = RegisteredGameEventListener::new(
         source_world,
         listener_section,
@@ -873,10 +898,11 @@ fn wither_effect_only_damages_on_its_vanilla_interval() {
 
 #[test]
 fn wither_rose_respects_difficulty_invulnerability_and_effect_immunity() {
-    let peaceful_world = fresh_test_world("wither_rose_peaceful");
+    let peaceful_world_fixture = fresh_test_world("wither_rose_peaceful");
+    let peaceful_world = &peaceful_world_fixture.world;
     peaceful_world.set_difficulty(Difficulty::Peaceful);
-    let peaceful_entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &peaceful_world);
-    apply_wither_rose_effect(&peaceful_world, &peaceful_entity);
+    let peaceful_entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, peaceful_world);
+    apply_wither_rose_effect(peaceful_world, &peaceful_entity);
     assert!(!peaceful_entity.has_mob_effect(vanilla_mob_effects::WITHER));
 
     let world = test_world();
@@ -938,43 +964,44 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     use crate::entity::mob_effect::{HealOrHarmBehavior, MobEffectBehavior};
 
     init_vanilla_registry();
-    let world = fresh_test_world("heal_or_harm_inversion");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let world_fixture = fresh_test_world("heal_or_harm_inversion");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &living, 0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &living, 0);
     assert_eq!(
         living.get_health(),
         14.0,
         "instant health heals a living mob"
     );
 
-    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let zombie = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::ZOMBIE)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &zombie, 0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &zombie, 0);
     assert_eq!(
         zombie.get_health(),
         4.0,
         "instant health hurts an inverted (undead) mob"
     );
 
-    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &living, 0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &living, 0);
     assert_eq!(
         living.get_health(),
         4.0,
         "instant damage hurts a living mob"
     );
 
-    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+    let zombie = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::ZOMBIE)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &zombie, 0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &zombie, 0);
     assert_eq!(
         zombie.get_health(),
         14.0,
@@ -1037,11 +1064,15 @@ impl LevelReader for EmptyTestLevel {
     }
 
     fn min_y(&self) -> i32 {
-        -64
+        OverworldNoiseSettings::MIN_Y
     }
 
     fn height(&self) -> i32 {
-        384
+        OverworldNoiseSettings::HEIGHT
+    }
+
+    fn sea_level(&self) -> i32 {
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 
@@ -1134,6 +1165,7 @@ fn closest_direction_with_blocked_neighbors(
 }
 
 mod damage;
+mod death_loot;
 mod equipment_and_freezing;
 mod fall_and_fluids;
 mod living_state;

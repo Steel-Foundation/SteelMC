@@ -58,6 +58,10 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - After fixing something, don't leave a comment that only explains the old bug.
  - Currently this project is in early development, we don't need to provide migrations.
 
+ **Vanilla reference comments**
+- Don't write comments that only name the matching vanilla name, like ``/// Mirrors vanilla `CandleBlock.isLit`.`` on `CandleBlock::is_lit`.
+- Only reference vanilla when you document: a non obvious name, or you do something different an need to document where it comes from.
+
 **Particle routing**
 - In Vanilla, `Level.addParticle` and `playLocalSound` calls from shared ticks are client-local, so Steel generally has no server-side work to perform for them. An explanatory comment can still be useful when an omission would otherwise look accidental.
 - Vanilla `ServerLevel.sendParticles` corresponds to `World::send_particles`; level and entity events continue to use their existing packets.

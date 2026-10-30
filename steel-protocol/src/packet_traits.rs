@@ -149,7 +149,7 @@ impl EncodedPacket {
         let data_len = packet_data.len();
         // We dont need any more size check to convert to i32 as MAX_PACKET_DATA_SIZE < i32::MAX
         if data_len + VarInt::MAX_SIZE * 2 > MAX_PACKET_DATA_SIZE {
-            Err(PacketError::TooLong(data_len))?;
+            return Err(PacketError::TooLong(data_len));
         }
 
         if data_len >= compression.threshold.get() as _ {
