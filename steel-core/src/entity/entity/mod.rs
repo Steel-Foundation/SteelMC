@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::entity::leash::Leashable;
+use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
@@ -1033,9 +1034,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().advance_base_tick_state();
         self.handle_portal();
         self.base().advance_powder_snow_contact_for_base_tick();
-        self.refresh_fluid_contact_for_base_tick();
+        self.base().update_was_eye_in_water();
+        self.update_fluid_interaction();
         self.update_swimming();
-        self.base().reset_fall_distance_in_water();
         if self
             .base()
             .advance_fire_tick(self.fire_immune(), self.is_in_lava())
@@ -2240,37 +2241,47 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Refreshes cached fluid contact from this entity's current bounding box.
     fn refresh_fluid_contact(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(false, false)
+        self.scan_and_store_fluid_contact(false)
     }
 
-    /// Refreshes cached fluid contact and applies currents without advancing
-    /// base-tick-only eye-water history.
-    fn refresh_fluid_contact_with_currents(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(false, true)
-    }
+    /// Runs vanilla `Entity.updateFluidInteraction`: refreshes cached contact,
+    /// emits the water-entry splash on transition, resets fall distance in
+    /// water, and applies fluid currents.
+    ///
+    /// Returns whether any fluid touches the entity.
+    fn update_fluid_interaction(&self) -> bool {
+        let was_touching_water = self.base().was_touching_water();
+        let contact = self.scan_and_store_fluid_contact(true);
+        let in_water = contact.water_height() > 0.0;
+        if in_water {
+            self.base().reset_fall_distance_in_water();
+            if !was_touching_water && !self.is_first_tick() {
+                self.do_water_splash_effect();
+            }
+        }
+        if let Some(world) = self.level() {
+            self.apply_fluid_current_impulses(&world, contact);
+        }
 
-    /// Refreshes cached fluid contact with vanilla base-tick eye-water history.
-    fn refresh_fluid_contact_for_base_tick(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(true, true)
+        contact.any_fluid()
     }
 
     /// Scans current fluid contact and stores it on the entity base.
-    fn scan_and_store_fluid_contact(
-        &self,
-        advance_eye_water_history: bool,
-        include_currents: bool,
-    ) -> EntityFluidContact {
+    ///
+    /// `advance_eye_water_history` scans currents and records `wasTouchingWater` for
+    /// vanilla `updateFluidInteraction`.
+    fn scan_and_store_fluid_contact(&self, advance_eye_water_history: bool) -> EntityFluidContact {
         let Some(world) = self.level() else {
             let contact = EntityFluidContact::default();
             if advance_eye_water_history {
-                self.base().set_fluid_contact_for_base_tick(contact);
+                self.base().set_fluid_interaction(contact);
             } else {
                 self.base().set_fluid_contact(contact);
             }
             return contact;
         };
 
-        let contact = if include_currents {
+        let contact = if advance_eye_water_history {
             EntityFluidContact::scan_with_currents(
                 &world,
                 self.position(),
@@ -2287,12 +2298,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             )
         };
         if advance_eye_water_history {
-            self.base().set_fluid_contact_for_base_tick(contact);
+            self.base().set_fluid_interaction(contact);
         } else {
             self.base().set_fluid_contact(contact);
-        }
-        if include_currents {
-            self.apply_fluid_current_impulses(&world, contact);
         }
         contact
     }
@@ -3041,6 +3049,46 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
+    /// Returns the sound played when this entity enters water at low speed.
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_GENERIC_SPLASH
+    }
+
+    /// Returns the sound played when this entity enters water at high speed.
+    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_GENERIC_SPLASH
+    }
+
+    /// Plays the vanilla water-entry splash sound and emits `SPLASH`.
+    fn do_water_splash_effect(&self) {
+        self.default_do_water_splash_effect();
+    }
+
+    /// The default implementation of `Entity.doWaterSplashEffect` when not overridden.
+    fn default_do_water_splash_effect(&self) {
+        let (movement, volume_modifier) = if let Some(passenger) = self.controlling_passenger() {
+            (passenger.velocity(), 0.9)
+        } else {
+            (self.velocity(), 0.2)
+        };
+        let speed = ((movement.x * movement.x * 0.2
+            + movement.y * movement.y
+            + movement.z * movement.z * 0.2)
+            .sqrt() as f32
+            * volume_modifier)
+            .min(1.0);
+        let pitch = 1.0 + (rng().random::<f32>() - rng().random::<f32>()) * 0.4;
+        if speed < 0.25 {
+            self.play_sound(self.swim_splash_sound(), speed, pitch);
+        } else {
+            self.play_sound(self.swim_high_speed_splash_sound(), speed, pitch);
+        }
+
+        // VANILLA CLIENT-LOCAL: the bubble/splash particle loop uses `Level.addParticle`.
+
+        self.game_event(&vanilla_game_events::SPLASH);
+    }
+
     /// Plays vanilla's extinguished-on-fire entity sound.
     fn play_entity_on_fire_extinguished_sound(&self) {
         let Some(world) = self.level() else {
@@ -3623,10 +3671,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
-        // LivingEntity refreshes fluid interaction after movement, before it evaluates fall state.
-        if self.as_living_entity().is_some() && !self.is_in_water() {
-            self.refresh_fluid_contact_with_currents();
-            self.base().reset_fall_distance_in_water();
+        // Vanilla `LivingEntity.checkFallDamage` refreshes its fluid interaction
+        // when the cached state is not already water. Steel refreshes contact
+        // during movement, so the last interaction result is the vanilla check.
+        if self.is_living_entity() && !self.base().was_touching_water() {
+            self.update_fluid_interaction();
         }
 
         if on_ground && self.fall_distance() > 0.0 {
