@@ -15,6 +15,7 @@ use std::env::var;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use steel_core::behavior::block_behaviors::PLAIN_BLOCKS;
 use steel_core::behavior::{BLOCK_BEHAVIORS, ITEM_BEHAVIORS};
 use steel_core::entity::ENTITIES;
 use steel_registry::{REGISTRY, RegistryExt};
@@ -38,7 +39,7 @@ impl FlintAdapter for SteelAdapter {
     }
 }
 
-/// Returns IDs of blocks with a non-default behavior.
+/// Returns IDs of blocks with a non-default behavior or a plain vanilla `Block` class.
 pub fn get_implemented_blocks() -> Vec<String> {
     BLOCK_BEHAVIORS
         .get_behaviors()
@@ -46,6 +47,7 @@ pub fn get_implemented_blocks() -> Vec<String> {
         .enumerate()
         .filter(|(_, behavior)| !behavior.type_name().ends_with("DefaultBlockBehavior"))
         .filter_map(|(id, _)| REGISTRY.blocks.by_id(id))
+        .chain(PLAIN_BLOCKS.iter().copied())
         .map(|block| block.key.to_string())
         .collect()
 }
