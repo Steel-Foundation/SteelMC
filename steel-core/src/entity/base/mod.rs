@@ -85,6 +85,12 @@ pub(crate) struct EntityPhysicsStateInput {
     pub(crate) is_falling_block: bool,
 }
 
+pub(crate) struct EntityPushState {
+    pub(crate) position: DVec3,
+    pub(crate) no_physics: bool,
+    pub(crate) is_vehicle: bool,
+}
+
 #[derive(Debug, Default)]
 struct EntityMovementTrace {
     // One segment is the common per-tick case. `EntityMovement` is large and both buffers live on
@@ -708,6 +714,26 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
+    /// base push inputs, if riding then normal callbacks got this
+    pub(crate) fn unmounted_push_state(&self) -> Option<EntityPushState> {
+        let mut relationships = self.relationships.lock();
+
+        if relationships.vehicle().is_some() {
+            return None;
+        }
+
+        let is_vehicle = relationships.first_passenger().is_some();
+        drop(relationships);
+
+        let state = self.state.lock();
+
+        Some(EntityPushState {
+            position: state.position,
+            no_physics: state.no_physics,
+            is_vehicle,
+        })
+    }
+
     /// Returns this entity's current air supply in ticks.
     #[inline]
     pub fn air_supply(&self) -> i32 {
@@ -1234,6 +1260,22 @@ impl EntityBase {
         if velocity.is_finite() {
             self.state.lock().velocity = velocity;
         }
+    }
+
+    /// velocity + sync one lock bad impulse then skip it if sum overflow keep velocity but still sync
+    pub(crate) fn push_impulse(&self, impulse: DVec3) {
+        if !impulse.is_finite() {
+            return;
+        }
+
+        let mut state = self.state.lock();
+        let velocity = state.velocity + impulse;
+
+        if velocity.is_finite() {
+            state.velocity = velocity;
+        }
+
+        state.needs_velocity_sync = true;
     }
 
     /// Advances this entity's tick counter by one.

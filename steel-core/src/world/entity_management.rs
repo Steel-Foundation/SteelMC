@@ -7,7 +7,7 @@ use super::{
     WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
 };
 
-use crate::entity::EntityCollisionCandidates;
+use crate::entity::{EntityCollisionCandidates, selector::EntitySelector};
 
 pub(super) struct NavigatingMobTracker {
     ids: SyncMutex<FxHashSet<i32>>,
@@ -642,11 +642,19 @@ impl World {
         pusher: &dyn Entity,
         aabb: &WorldAabb,
     ) -> Vec<SharedEntity> {
-        self.get_entities_in_aabb(aabb)
+        Self::filter_pushable_entities(pusher, self.get_entities_in_aabb(aabb))
+    }
+
+    /// push selector on a ready snapshot
+    pub(crate) fn filter_pushable_entities(
+        pusher: &dyn Entity,
+        entities: Vec<SharedEntity>,
+    ) -> Vec<SharedEntity> {
+        let predicate = EntitySelector::pushable_by(pusher);
+
+        entities
             .into_iter()
-            .filter(|entity| entity.id() != pusher.id())
-            .filter(|entity| !entity.is_spectator())
-            .filter(|entity| entity.is_pushable())
+            .filter(|entity| predicate(entity.as_ref()))
             .collect()
     }
 

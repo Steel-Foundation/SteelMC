@@ -19,8 +19,9 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySyncedData,
-    LivingEntity, LivingEntityBase, LivingTravelInput, Mob, MobBase, SharedEntity,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
+    EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob, MobBase,
+    SharedEntity,
 };
 use crate::physics::MoveResult;
 use crate::world::{World, is_redstone_conductor};
@@ -245,7 +246,17 @@ impl BatEntity {
     }
 }
 
+impl DefaultEntityPush for BatEntity {}
+
 impl Entity for BatEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

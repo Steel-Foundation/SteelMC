@@ -43,9 +43,10 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::CowEntity;
 use crate::entity::living_entity::shearing_loot_items_with_rng;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData, next_entity_id,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
+    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData,
+    next_entity_id,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -410,7 +411,17 @@ impl MushroomCowEntity {
     }
 }
 
+impl DefaultEntityPush for MushroomCowEntity {}
+
 impl Entity for MushroomCowEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
