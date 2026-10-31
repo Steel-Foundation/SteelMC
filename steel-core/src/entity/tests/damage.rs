@@ -286,7 +286,7 @@ fn generic_living_hurt_scales_knockback_by_resistance() {
 #[test]
 fn full_damage_starts_the_vanilla_hurt_animation_timer() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert_eq!(entity.hurt_time(), 0);
 
@@ -319,7 +319,7 @@ fn hurt_time_counts_down_in_the_living_base_tick() {
 #[test]
 fn partial_damage_within_the_cooldown_leaves_hurt_time_alone() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(entity.hurt(test_world(), &source, 4.0));
     for _ in 0..4 {
