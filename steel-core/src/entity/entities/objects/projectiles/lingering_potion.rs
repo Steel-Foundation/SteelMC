@@ -20,7 +20,7 @@ use crate::entity::entities::AreaEffectCloudEntity;
 use crate::entity::{
     AbstractThrownPotion, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity,
     Projectile, ProjectileBase, ProjectileHit, SharedEntity, ThrowableItemProjectile,
-    ThrowableProjectile, next_entity_id,
+    ThrowableProjectile, apply_implicit_item_stack_components, next_entity_id,
 };
 use crate::world::{ClipHitResult, World};
 
@@ -193,9 +193,9 @@ impl AbstractThrownPotion for LingeringPotionEntity {
         cloud.set_duration(CLOUD_DURATION);
         cloud.set_wait_time(CLOUD_WAIT_TIME);
         cloud.set_radius_per_tick(-cloud.radius() / cloud.duration() as f32);
-        cloud.apply_components_from_item_stack(potion_item);
 
         let cloud: SharedEntity = cloud;
+        apply_implicit_item_stack_components(&cloud, potion_item);
         if let Err(error) = world.try_add_entity(cloud) {
             log::debug!("world rejected a lingering potion cloud: {error}");
         }

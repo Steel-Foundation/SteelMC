@@ -162,20 +162,6 @@ impl AreaEffectCloudEntity {
         ));
     }
 
-    /// Applies the potion components carried by `stack` to this cloud.
-    pub fn apply_components_from_item_stack(&self, stack: &ItemStack) {
-        if let Some(contents) = stack.get(vanilla_components::POTION_CONTENTS) {
-            self.set_potion_contents(contents.clone());
-        }
-        if let Some(scale) = stack.get(vanilla_components::POTION_DURATION_SCALE) {
-            self.set_potion_duration_scale(*scale);
-        }
-        if let Some(name) = stack.get(vanilla_components::CUSTOM_NAME) {
-            self.set_custom_name(Some(name.clone()));
-        }
-        // TODO: Apply `CUSTOM_DATA` once entities store custom data.
-    }
-
     /// Returns the duration in ticks, or `-1` for a cloud that never expires.
     #[must_use]
     pub fn duration(&self) -> i32 {
@@ -409,6 +395,15 @@ impl Entity for AreaEffectCloudEntity {
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(contents) = item_stack.get(vanilla_components::POTION_CONTENTS) {
+            self.set_potion_contents(contents.clone());
+        }
+        if let Some(scale) = item_stack.get(vanilla_components::POTION_DURATION_SCALE) {
+            self.set_potion_duration_scale(*scale);
+        }
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
