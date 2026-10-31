@@ -683,9 +683,6 @@ impl Server {
     /// Server membership mirrors vanilla `PlayerList`; world entity spawning remains
     /// owned by the per-world entity tracker.
     pub(super) fn sync_tab_list(&self, player: &Arc<Player>) {
-        // Vanilla PlayerList.placeNewPlayer announces every online player to the joiner
-        // with a single createPlayerInitializing packet; chat session data rides on the
-        // same entries via the InitializeChat action.
         let mut entries: Vec<PlayerInfoEntry> = Vec::new();
         self.online_players.iter_players(|_, existing_player| {
             if existing_player.gameprofile.id() == player.gameprofile.id() {
