@@ -14,7 +14,7 @@ use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::FLUID_BEHAVIORS;
-use crate::world::World;
+use crate::world::{LevelReader as _, World};
 use steel_registry::vanilla_fluids;
 
 const FLOW_BELOW_HEIGHT_OFFSET: f32 = 0.888_888_9;
@@ -143,6 +143,20 @@ pub fn get_height(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) ->
     get_height_with(fluid_state, above_fluid, |candidate| {
         behavior.is_same(candidate.fluid_id)
     })
+}
+
+/// Returns the fluid height used for eye and camera immersion.
+#[must_use]
+pub fn get_height_for_camera(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> f32 {
+    if fluid_state.is_source() {
+        let above = pos.above();
+        let above_state = world.get_block_state(above);
+        if world.is_face_sturdy(above_state, above, Direction::Down) {
+            return 1.0;
+        }
+    }
+
+    get_height(world, pos, fluid_state)
 }
 
 fn get_height_with<S>(fluid_state: FluidState, above_fluid: FluidState, same_fluid: S) -> f32

@@ -159,6 +159,27 @@ pub struct CPlayerInfoUpdate {
 }
 
 impl CPlayerInfoUpdate {
+    /// Creates the full initializing entry for a single player.
+    #[must_use]
+    pub fn create_player_initializing_entry(
+        profile: GameProfile,
+        game_mode: i32,
+        latency: i32,
+        display_name: Option<TextComponent>,
+        show_hat: bool,
+    ) -> PlayerInfoEntry {
+        PlayerInfoEntry {
+            target: PlayerInfoTarget::Profile(profile),
+            chat_session: None,
+            game_mode: Some(VarInt(game_mode)),
+            listed: Some(true),
+            latency: Some(VarInt(latency)),
+            display_name: Some(display_name.into()),
+            list_order: Some(VarInt(0)),
+            show_hat: Some(show_hat),
+        }
+    }
+
     /// Creates a full player initializing packet with all information.
     /// This is sent when a player joins to add them to the tab list.
     #[must_use]
@@ -171,16 +192,13 @@ impl CPlayerInfoUpdate {
     ) -> Self {
         Self {
             actions: PLAYER_INFO_INIT_ACTIONS,
-            entries: vec![PlayerInfoEntry {
-                target: PlayerInfoTarget::Profile(profile),
-                chat_session: None,
-                game_mode: Some(VarInt(game_mode)),
-                listed: Some(true),
-                latency: Some(VarInt(latency)),
-                display_name: Some(display_name.into()),
-                list_order: Some(VarInt(0)),
-                show_hat: Some(show_hat),
-            }],
+            entries: vec![Self::create_player_initializing_entry(
+                profile,
+                game_mode,
+                latency,
+                display_name,
+                show_hat,
+            )],
         }
     }
 

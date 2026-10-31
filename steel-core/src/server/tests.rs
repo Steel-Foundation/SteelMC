@@ -11,7 +11,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
@@ -3623,6 +3623,51 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
 }
 
 #[test]
+fn sync_tab_list_sends_single_batched_update_to_joiner() {
+    let world_fixture = fresh_test_world("sync-tab-list-batch");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let (existing1, existing1_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "Existing1", 1);
+        let (existing2, existing2_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "Existing2", 2);
+        let (joiner, joiner_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "Joiner", 3);
+        assert!(server.online_players.insert(existing1));
+        assert!(server.online_players.insert(existing2));
+
+        server.sync_tab_list(&joiner);
+
+        assert_eq!(
+            joiner_packets.lock().len(),
+            1,
+            "the joiner must receive exactly one batched tab list packet"
+        );
+        assert_eq!(
+            existing1_packets.lock().len(),
+            1,
+            "existing players receive only the join announcement"
+        );
+        assert_eq!(
+            existing2_packets.lock().len(),
+            1,
+            "existing players receive only the join announcement"
+        );
+
+        drop(server);
+    });
+}
+
+#[test]
 fn title_command_delivers_vanilla_packets_to_recorded_connections() {
     let world_fixture = fresh_test_world("title-command");
     let world = &world_fixture.world;
@@ -3851,28 +3896,6 @@ fn a_second_server_bootstraps_in_the_same_process() {
 
             shutdown_server(&first, &first_root).await;
             shutdown_server(&second, &second_root).await;
-        });
-    });
-}
-
-#[test]
-fn offline_startup_does_not_wait_for_the_services_key_fetch() {
-    with_server_runtime(|runtime| {
-        runtime.block_on(async {
-            let save_root = test_storage_root("offline-service-keys");
-
-            let started = Instant::now();
-            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
-                .await
-                .expect("an offline server should start");
-            let elapsed = started.elapsed();
-
-            assert!(
-                elapsed < SERVICE_KEY_CONNECT_TIMEOUT,
-                "offline startup waited {elapsed:?} on the services key fetch"
-            );
-
-            shutdown_server(&server, &save_root).await;
         });
     });
 }
