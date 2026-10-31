@@ -1243,6 +1243,12 @@ impl EntityBase {
         state.tick_count = state.tick_count.wrapping_add(1);
     }
 
+    /// Sets this entity's tick counter, for entities that persist it.
+    #[inline]
+    pub fn set_tick_count(&self, tick_count: i32) {
+        self.state.lock().tick_count = tick_count;
+    }
+
     /// Records movement distance used by vanilla step, swim, and flap effects.
     pub fn record_movement_progress(
         &self,
