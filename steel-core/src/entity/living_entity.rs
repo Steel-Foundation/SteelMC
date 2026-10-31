@@ -54,13 +54,18 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs the shared per-tick living-entity behavior: rotation/animation
-    /// snapshots, base entity tick, environmental damage, and the hurt timer.
+    /// snapshots, base entity tick, environmental damage, the hurt timer, and
+    /// combat memory expiry. Memory must expire before mob effects tick, so a
+    /// lethal effect tick sees the same kill credit as vanilla.
     fn base_tick_living_entity(&self) {
         self.advance_living_rotation_for_base_tick();
         self.living_base().tick_swing_state();
         self.entity_base_tick();
         self.tick_living_environmental_damage();
         self.living_base().decrement_hurt_time();
+        self.living_base().tick_last_hurt_by_player_memory();
+        self.living_base()
+            .tick_living_combat_memory(self.tick_count());
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -2041,9 +2046,6 @@ pub trait LivingEntity: Entity {
             .tick_fall_flying_state(self.is_fall_flying());
         self.refresh_dirty_attributes();
         self.living_base().tick_post_impulse_grace_time();
-        self.living_base().tick_last_hurt_by_player_memory();
-        self.living_base()
-            .tick_living_combat_memory(self.tick_count());
     }
 
     /// Returns whether the given item in the given slot allows elytra-style gliding.

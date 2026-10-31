@@ -7,9 +7,7 @@ use glam::DVec3;
 use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::RelativeMovement;
-use steel_registry::blocks::{
-    properties::{BlockStateProperties, Direction as BlockDirection},
-};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction as BlockDirection};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
