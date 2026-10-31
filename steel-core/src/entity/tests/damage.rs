@@ -299,18 +299,20 @@ fn full_damage_starts_the_vanilla_hurt_animation_timer() {
 }
 
 #[test]
-fn hurt_time_counts_back_down_to_zero() {
+fn hurt_time_counts_down_in_the_living_base_tick() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(entity.hurt(test_world(), &source, 4.0));
 
+    // Players override `tick_living_entity` but still run the living base tick,
+    // like vanilla `LivingEntity.baseTick`.
     for _ in 0..HURT_DURATION_TICKS {
-        entity.living_base().decrement_hurt_time();
+        entity.base_tick_living_entity();
     }
 
     assert_eq!(entity.hurt_time(), 0);
-    entity.living_base().decrement_hurt_time();
+    entity.base_tick_living_entity();
     assert_eq!(entity.hurt_time(), 0, "the counter must not go negative");
 }
 

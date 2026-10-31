@@ -54,12 +54,13 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs the shared per-tick living-entity behavior: rotation/animation
-    /// snapshots, base entity tick, and environmental damage.
+    /// snapshots, base entity tick, environmental damage, and the hurt timer.
     fn base_tick_living_entity(&self) {
         self.advance_living_rotation_for_base_tick();
         self.living_base().tick_swing_state();
         self.entity_base_tick();
         self.tick_living_environmental_damage();
+        self.living_base().decrement_hurt_time();
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -2015,7 +2016,6 @@ pub trait LivingEntity: Entity {
     /// The default `Entity::tick` dispatches living entities here.
     fn tick_living_entity(&self, entity: &SharedEntity) {
         self.default_tick();
-        self.living_base().decrement_hurt_time();
         self.living_base().decrement_invulnerable_time();
 
         if self.is_dead_or_dying() {
