@@ -377,6 +377,14 @@ pub trait Mob: LivingEntity + Leashable {
         is_saddled
     }
 
+    /// Checks line of sight using this mob sensing cache
+    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+        self.mob_base()
+            .sensing()
+            .lock()
+            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
+    }
+
     fn custom_server_ai_step(&self) {}
 
     /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
@@ -1310,14 +1318,6 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn is_aggressive(&self) -> bool {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
-    }
-
-    /// Whether this mob can see `target`.
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     /// Maximum degrees the head may pitch up or down independently of the body.

@@ -462,9 +462,19 @@ fn base_state_caches_fluid_contact() {
     assert!(!base.was_eye_in_water());
 
     base.set_fluid_contact(water_contact);
-    base.set_fluid_contact_for_base_tick(air_contact);
+    base.update_was_eye_in_water();
+    base.set_fluid_interaction(air_contact);
 
     assert_eq!(base.fluid_contact(), air_contact);
+    assert!(base.was_eye_in_water());
+    assert!(!base.was_touching_water());
+
+    // Mid-tick interaction refreshes must not advance eye-water history.
+    base.set_fluid_interaction(water_contact);
+
+    assert!(base.was_touching_water());
+    assert!(base.was_eye_in_water());
+    base.set_fluid_interaction(air_contact);
     assert!(base.was_eye_in_water());
 }
 
