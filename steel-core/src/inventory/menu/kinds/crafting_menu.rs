@@ -34,7 +34,7 @@ pub fn crafting(inventory: Shared<PlayerInventory>, container_id: u8, block_pos:
     );
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::CRAFTING, container_id);
-    let result = builder.result_slot(handler.clone());
+    let result = builder.crafting_result_slot(handler.clone());
     let grid = builder.section_all(crafting_container);
     let player = builder.player_inventory(&inventory);
 

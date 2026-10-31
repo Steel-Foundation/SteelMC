@@ -22,6 +22,8 @@ use steel_registry::{
     },
     init_vanilla_registry,
     item_stack::ItemStack,
+    items::Item,
+    stat::vanilla_stat_types,
     vanilla_blocks, vanilla_enchantments, vanilla_entities, vanilla_items,
 };
 use steel_utils::Downcast as _;
@@ -32,6 +34,15 @@ use steel_utils::{
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
     TestPlayerBuilder::new(world, "AnvilTester", 1).build()
+}
+
+fn crafted_count(player: &Player, item: &'static Item) -> i32 {
+    let crafted = vanilla_stat_types::ITEM_CRAFTED.get(item);
+    player
+        .stats()
+        .into_iter()
+        .find_map(|(stat, count)| (stat == crafted).then_some(count))
+        .unwrap_or(0)
 }
 
 fn test_anvil(key: &'static str) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
@@ -162,6 +173,29 @@ fn rename_only_result_preserves_unused_second_input() {
     assert!(input.get_item(0).is_empty());
     assert!(input.get_item(1).is(&vanilla_items::DIAMOND_SWORD));
     assert!(menu.behavior().carried().is(&vanilla_items::DIAMOND_SWORD));
+}
+
+#[test]
+fn anvil_result_does_not_award_item_crafted() {
+    let (_world, player, _pos, mut menu) = test_anvil("anvil_menu_item_crafted");
+    player.restore_game_modes(GameType::Creative, None);
+    let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
+        panic!("anvil builder should create an anvil menu");
+    };
+    Arc::clone(&kind.input_container)
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    menu.set_item_name("Renamed", &player);
+    menu.clicked(
+        Click::Pickup {
+            slot: 2,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+
+    assert_eq!(crafted_count(&player, &vanilla_items::DIAMOND_SWORD), 0);
 }
 
 #[test]

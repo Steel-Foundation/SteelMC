@@ -42,7 +42,7 @@ pub fn inventory_menu(inventory: Shared<PlayerInventory>) -> Menu {
 
     let mut builder = MenuBuilder::new(None, INVENTORY_MENU_CONTAINER_ID);
 
-    let result = builder.result_slot(handler.clone());
+    let result = builder.crafting_result_slot(handler.clone());
     let grid = builder.section_all(crafting_container);
     let armor = builder.section_at(
         &inventory,
@@ -295,7 +295,10 @@ impl MenuKind for InventoryKind {
             return Some(ItemStack::empty());
         }
 
-        if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &stack_mut, player) {
+        let taken = clicked.copy_with_count(clicked.count - stack_mut.count);
+        let slot = &behavior.slots()[slot_index];
+        slot.on_quick_craft(&taken, player);
+        if let Some(remainder) = slot.on_take(guard, &stack_mut, player) {
             // Crafting remainders like empty buckets go back to the inventory.
             player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
