@@ -7,12 +7,15 @@
 use crate::world::SteelTestWorld;
 use dotenvy::dotenv;
 use flint_core::results::TestSummary;
+use flint_core::test_spec::MinimalTestSpec;
 use flint_core::{FlintAdapter, FlintWorld, ServerInfo, TestLoader};
+use rustc_hash::FxHashSet;
 use serde::Deserialize;
 use std::env::var;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use steel_core::behavior::block_behaviors::PLAIN_BLOCKS;
 use steel_core::behavior::{BLOCK_BEHAVIORS, ITEM_BEHAVIORS};
 use steel_core::entity::ENTITIES;
 use steel_registry::{REGISTRY, RegistryExt};
@@ -36,7 +39,7 @@ impl FlintAdapter for SteelAdapter {
     }
 }
 
-/// Returns IDs of blocks with a non-default behavior.
+/// Returns IDs of blocks with a non-default behavior or a plain vanilla `Block` class.
 pub fn get_implemented_blocks() -> Vec<String> {
     BLOCK_BEHAVIORS
         .get_behaviors()
@@ -44,6 +47,7 @@ pub fn get_implemented_blocks() -> Vec<String> {
         .enumerate()
         .filter(|(_, behavior)| !behavior.type_name().ends_with("DefaultBlockBehavior"))
         .filter_map(|(id, _)| REGISTRY.blocks.by_id(id))
+        .chain(PLAIN_BLOCKS.iter().copied())
         .map(|block| block.key.to_string())
         .collect()
 }
@@ -142,34 +146,41 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
     }
 
     // Tag filtering: env > implemented_only > toml tags
+    let env_tags = var("FLINT_TAGS").ok().map(|s| {
+        s.split(',')
+            .map(|t| t.trim().to_string())
+            .collect::<Vec<_>>()
+    });
     let implemented_only = var("FLINT_IMPLEMENTED_ONLY").map_or_else(
         |_| filter.and_then(|f| f.implemented_only).unwrap_or(false),
         |v| matches!(v.as_str(), "1" | "true"),
     );
-    let tags = var("FLINT_TAGS")
-        .ok()
-        .map(|s| {
-            s.split(',')
-                .map(|t| t.trim().to_string())
-                .collect::<Vec<_>>()
+    if env_tags.is_none() && implemented_only {
+        let mut ids = get_implemented_items();
+        ids.extend(get_implemented_blocks());
+        ids.extend(get_implemented_entities());
+        let implemented: FxHashSet<String> = ids.iter().cloned().collect();
+        let paths: Vec<PathBuf> = loader
+            .collect_by_tags(&ids)
+            .into_iter()
+            .filter(|path| all_ids_implemented(path, &implemented))
+            .collect();
+        println!(
+            "Running {} test(s) whose minecraftIds are all implemented",
+            paths.len()
+        );
+        return paths;
+    }
+    let tags = env_tags.or_else(|| {
+        filter.and_then(|f| {
+            f.tags.as_ref().map(|map| {
+                map.iter()
+                    .filter(|&(_, &enabled)| enabled)
+                    .map(|(tag, _)| tag.clone())
+                    .collect()
+            })
         })
-        .or_else(|| {
-            if implemented_only {
-                let mut ids = get_implemented_items();
-                ids.extend(get_implemented_blocks());
-                ids.extend(get_implemented_entities());
-                Some(ids)
-            } else {
-                filter.and_then(|f| {
-                    f.tags.as_ref().map(|map| {
-                        map.iter()
-                            .filter(|&(_, &enabled)| enabled)
-                            .map(|(tag, _)| tag.clone())
-                            .collect()
-                    })
-                })
-            }
-        });
+    });
     if let Some(tags) = tags {
         println!("Running tests with tags: {}", tags.join(", "));
         return loader.collect_by_tags(&tags);
@@ -196,6 +207,18 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
     // Default: all tests
     println!("Running all flint tests");
     loader.collect_all_test_files().unwrap_or_default()
+}
+
+/// Whether every `minecraftIds` entry of the test at `path` is implemented.
+/// Unreadable specs are kept so `load_specs` reports the real error.
+fn all_ids_implemented(path: &Path, implemented: &FxHashSet<String>) -> bool {
+    let Some(spec) = fs::read_to_string(path)
+        .ok()
+        .and_then(|json| serde_json::from_str::<MinimalTestSpec>(&json).ok())
+    else {
+        return true;
+    };
+    !spec.minecraft_ids.is_empty() && spec.minecraft_ids.iter().all(|id| implemented.contains(id))
 }
 
 /// Simple glob pattern matching (supports * wildcard)

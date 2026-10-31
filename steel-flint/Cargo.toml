@@ -39,6 +39,7 @@ dotenvy = "0.15.7"
 toml.workspace = true
 anyhow.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 uuid = { version = "1.29.0", features = ["v4"] }
 
 

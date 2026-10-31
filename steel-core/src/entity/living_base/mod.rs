@@ -30,12 +30,15 @@ use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::entity::synced_data::EntitySyncedData;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
+/// Duration in ticks of the vanilla hurt animation.
+pub const HURT_DURATION_TICKS: i32 = 10;
 /// Vanilla default `SwingAnimation` duration in ticks.
 pub const DEFAULT_SWING_DURATION: i32 = 6;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
@@ -628,6 +631,8 @@ struct LivingEntityState {
     effects_dirty: bool,
     death_processed: bool,
     invulnerable_time: i32,
+    hurt_time: i32,
+    hurt_duration: i32,
     last_hurt: f32,
     last_hurt_by_player: Option<Uuid>,
     last_hurt_by_player_entity: Option<WeakEntity>,
@@ -663,6 +668,8 @@ impl LivingEntityState {
             effects_dirty: false,
             death_processed: false,
             invulnerable_time: 0,
+            hurt_time: 0,
+            hurt_duration: 0,
             last_hurt: 0.0,
             last_hurt_by_player: None,
             last_hurt_by_player_entity: None,
@@ -1528,6 +1535,33 @@ impl LivingEntityBase {
         }
     }
 
+    /// Starts the vanilla hurt animation.
+    pub fn begin_hurt_animation(&self) {
+        let mut state = self.state.lock();
+        state.hurt_duration = HURT_DURATION_TICKS;
+        state.hurt_time = state.hurt_duration;
+    }
+
+    /// Decrements the vanilla hurt animation timer.
+    pub fn decrement_hurt_time(&self) {
+        let mut state = self.state.lock();
+        if state.hurt_time > 0 {
+            state.hurt_time -= 1;
+        }
+    }
+
+    /// Returns the current hurt time
+    #[must_use]
+    pub fn hurt_time(&self) -> i32 {
+        self.state.lock().hurt_time
+    }
+
+    /// Returns the current hurt duration
+    #[must_use]
+    pub fn hurt_duration(&self) -> i32 {
+        self.state.lock().hurt_duration
+    }
+
     /// Applies vanilla hurt cooldown bookkeeping.
     ///
     /// Returns `None` when damage should be ignored because death was already
@@ -1683,6 +1717,17 @@ impl LivingEntityBase {
         }
     }
 
+    /// Returns whether death side effects have already run.
+    ///
+    /// Close to vanilla `LivingEntity.dead`, which guards `die`, but not identical:
+    /// Steel also gates [`Self::apply_damage_cooldown`] on it, and players set it
+    /// through their own death path. Treat it as "this entity has already died",
+    /// not as a faithful mirror of the vanilla field.
+    #[must_use]
+    pub fn is_death_processed(&self) -> bool {
+        self.state.lock().death_processed
+    }
+
     /// Marks death side effects as processed.
     ///
     /// Returns `false` if they were already processed.
@@ -1741,3 +1786,32 @@ fn living_is_dead(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+/// Pushes newly dirty mob-effect state into a living entity's synced data.
+///
+/// Every mob does this before its data is sent, so it lives here rather than being
+/// restated per species. Returns the resolved display state when something was dirty,
+/// so a caller that syncs further flags from it need not repeat the dirty check, and
+/// `None` when there was nothing to publish.
+pub fn sync_dirty_mob_effects<T>(
+    living_base: &LivingEntityBase,
+    entity_data: &SyncMutex<T>,
+) -> Option<MobEffectDisplayState>
+where
+    T: VanillaLivingEntityData + Send + Sync,
+    SyncMutex<T>: EntitySyncedData,
+{
+    if !living_base.take_effects_dirty() {
+        return None;
+    }
+
+    let display = living_base.mob_effect_display_state();
+    {
+        let mut entity_data = entity_data.lock();
+        let living = entity_data.living_entity_mut();
+        living.effect_particles.set(display.particles.clone());
+        living.effect_ambience.set(display.ambient);
+    }
+    entity_data.set_base_invisible_flag(display.invisible);
+    Some(display)
+}

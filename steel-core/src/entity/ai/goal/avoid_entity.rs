@@ -4,6 +4,7 @@ use super::random_pos::default_random_pos_away;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::entity_selector;
 use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
@@ -23,7 +24,7 @@ impl AvoidEntityGoal {
             max_dist,
             walk_speed_modifier,
             sprint_speed_modifier,
-            |target, _| no_creative_or_spectator(target),
+            |target, _| entity_selector::no_creative_or_spectator(target.as_entity_event_source()),
         )
     }
 
@@ -120,12 +121,6 @@ impl Goal for AvoidEntityGoal {
     }
 }
 
-fn no_creative_or_spectator(target: &dyn LivingEntity) -> bool {
-    target
-        .as_player()
-        .is_none_or(|player| !target.is_spectator() && !player.has_infinite_materials())
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Weak};
@@ -148,7 +143,7 @@ mod tests {
         init_vanilla_registry();
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(no_creative_or_spectator(&pig));
+        assert!(entity_selector::no_creative_or_spectator(&pig));
     }
 
     #[test]
