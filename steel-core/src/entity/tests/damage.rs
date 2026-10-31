@@ -284,6 +284,77 @@ fn generic_living_hurt_scales_knockback_by_resistance() {
 }
 
 #[test]
+fn full_damage_starts_the_vanilla_hurt_animation_timer() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+    assert_eq!(entity.hurt_time(), 0);
+
+    assert!(entity.hurt(test_world(), &source, 4.0));
+
+    // Vanilla `LivingEntity.hurtServer` sets `hurtTime = hurtDuration = 10` only on
+    // the branch that applies the full damage amount.
+    assert_eq!(entity.hurt_time(), HURT_DURATION_TICKS);
+    assert_eq!(entity.living_base().hurt_duration(), HURT_DURATION_TICKS);
+}
+
+#[test]
+fn hurt_time_counts_down_in_the_living_base_tick() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+    assert!(entity.hurt(test_world(), &source, 4.0));
+
+    // Players override `tick_living_entity` but still run the living base tick,
+    // like vanilla `LivingEntity.baseTick`.
+    for _ in 0..HURT_DURATION_TICKS {
+        entity.base_tick_living_entity();
+    }
+
+    assert_eq!(entity.hurt_time(), 0);
+    entity.base_tick_living_entity();
+    assert_eq!(entity.hurt_time(), 0, "the counter must not go negative");
+}
+
+#[test]
+fn partial_damage_within_the_cooldown_leaves_hurt_time_alone() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+    assert!(entity.hurt(test_world(), &source, 4.0));
+    for _ in 0..4 {
+        entity.living_base().decrement_hurt_time();
+    }
+    let remaining = entity.hurt_time();
+
+    // A larger hit inside the invulnerability window takes the partial-damage
+    // branch, which vanilla does not re-animate.
+    assert!(entity.hurt(test_world(), &source, 6.0));
+
+    assert_eq!(entity.hurt_time(), remaining);
+}
+
+#[test]
+fn death_side_effects_run_only_once() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+    assert!(!entity.living_base().is_death_processed());
+
+    assert!(entity.hurt(test_world(), &source, 4.0));
+
+    assert!(entity.living_base().is_death_processed());
+    assert_eq!(entity.pose(), EntityPose::Dying);
+
+    // `die` claims the death atomically, so a second call cannot re-run the side
+    // effects. Whether a subclass hook keeps the entity alive for an animation is
+    // that subclass's own contract, tested with it.
+    entity.set_pose(EntityPose::Standing);
+    entity.die(&source);
+    assert_eq!(entity.pose(), EntityPose::Standing);
+}
+
+#[test]
 fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
     init_vanilla_registry();
     init_behaviors();

@@ -26,8 +26,12 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut imports = GeneratedImports::default();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
+    let mut plain_blocks = Vec::new();
 
     for block in blocks {
+        if block.class == "Block" {
+            plain_blocks.push(to_block_ident(&block.name));
+        }
         let Some(info) = discovered.get(&block.class) else {
             continue;
         };
@@ -81,6 +85,10 @@ pub fn build(blocks: &[BlockClass]) -> String {
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
             #(#registrations)*
         }
+
+        /// Blocks whose vanilla class is plain `Block`; `DefaultBlockBehavior` fully implements them.
+        #[cfg(feature = "test-framework")]
+        pub const PLAIN_BLOCKS: &[steel_registry::blocks::BlockRef] = &[#(&vanilla_blocks::#plain_blocks),*];
     };
 
     output.to_string()
