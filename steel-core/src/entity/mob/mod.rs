@@ -61,7 +61,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, World};
+use crate::world::{DifficultyInstance, LevelReader, World};
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
@@ -78,9 +78,15 @@ const BODY_ROTATION_MOVING_DISTANCE_SQR: f64 = 2.500_000_3e-7;
 const TARGET_REACH_DISTANCE_SQR: f64 = 2.25;
 const DEFAULT_ATTACK_REACH_BASE: f32 = 2.04;
 const DEFAULT_ATTACK_REACH_OFFSET: f32 = 0.6;
-const RANDOM_SPAWN_BONUS_ID: Identifier = Identifier::vanilla_static("random_spawn_bonus");
+pub(crate) const RANDOM_SPAWN_BONUS_ID: Identifier =
+    Identifier::vanilla_static("random_spawn_bonus");
 const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
 const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
+const MAX_WEARING_ARMOR_CHANCE: f32 = 0.15;
+const WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE: f32 = 0.1087;
+const WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS: i32 = 3;
+const HARD_ARMOR_PARTIAL_CHANCE: f32 = 0.1;
+const OTHER_ARMOR_PARTIAL_CHANCE: f32 = 0.25;
 /// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
@@ -497,15 +503,17 @@ pub trait Mob: LivingEntity + Leashable {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        self.finalize_spawn_mob_base(world, spawn_reason, group_data)
+        self.finalize_spawn_mob_base(world, difficulty, spawn_reason, group_data)
     }
 
     fn finalize_spawn_mob_base(
         &self,
         _world: &Arc<World>,
+        _difficulty: DifficultyInstance,
         _spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -530,6 +538,11 @@ pub trait Mob: LivingEntity + Leashable {
         }
         self.set_left_handed(left_handed);
         group_data
+    }
+
+    /// Gives this mob vanilla's difficulty-scaled default armor.
+    fn populate_default_equipment_slots(&self, difficulty: DifficultyInstance) {
+        populate_default_equipment_slots_default(self, difficulty);
     }
 
     /// Creates a replacement or split mob and transfers state according to `params`.
@@ -673,6 +686,9 @@ pub trait Mob: LivingEntity + Leashable {
     fn mob_interact(&self, _player: &Player, _hand: InteractionHand) -> InteractionResult {
         InteractionResult::Pass
     }
+
+    /// Runs after a player spawns this mob's offspring with a spawn egg.
+    fn on_offspring_spawned_from_egg(&self, _spawner: &Player, _offspring: &SharedEntity) {}
 
     /// Returns whether this mob's equipment can be sheared; false while
     /// something is riding it.
@@ -1335,67 +1351,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// the target was hurt.
     #[must_use]
     fn do_hurt_target(&self, entity: &SharedEntity, world: &World, target: &SharedEntity) -> bool {
-        let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
-            return false;
-        };
-        let weapon_item = {
-            let mut main_hand = ItemStack::empty();
-            self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-                main_hand = item_stack.copy_with_count(item_stack.count());
-            });
-            main_hand
-        };
-        let attack_damage = self
-            .attributes()
-            .lock()
-            .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = self.mob_attack_damage_source(&weapon_item, entity);
-        let enchantment_context = EnchantmentDamageContext::new(
-            target.entity_type(),
-            Some(self.entity_type()),
-            Some(self.entity_type()),
-            &damage_source,
-        );
-        let mut damage =
-            enchantment_helper::modify_damage(&weapon_item, &enchantment_context, attack_damage);
-        damage += ITEM_BEHAVIORS
-            .get_behavior(weapon_item.item())
-            .get_attack_damage_bonus(attacker, target.as_ref(), damage, &damage_source);
-
-        let old_movement = target.velocity();
-        let was_hurt = target.hurt(world, &damage_source, damage);
-        if was_hurt {
-            self.cause_extra_knockback(
-                target.as_ref(),
-                self.get_attack_knockback(target.as_ref(), &weapon_item, &damage_source),
-                old_movement,
-            );
-            self.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
-                if stack.is_empty() {
-                    return;
-                }
-                if let Some(living_target) = target.as_living_entity() {
-                    ITEM_BEHAVIORS.get_behavior(stack.item()).hurt_enemy(
-                        stack,
-                        living_target,
-                        attacker,
-                    );
-                }
-            });
-            let post_attack_context = EnchantmentPostAttackContext::new(target, &damage_source);
-            enchantment_helper::do_post_attack_effects_from_item(
-                world,
-                &weapon_item,
-                &post_attack_context,
-            );
-            self.set_last_hurt_mob(Some(target));
-            self.play_attack_sound();
-        }
-
-        if let Some(user) = self.as_entity_event_source().as_living_entity() {
-            enchantment_helper::do_post_piercing_attack_effects(world, user);
-        }
-        was_hurt
+        do_hurt_target_default(self, entity, world, target)
     }
 
     /// Builds the damage source for this mob's melee attack: the weapon's
@@ -1894,6 +1850,167 @@ pub trait Mob: LivingEntity + Leashable {
         self.set_y_body_rot(update.y_body_rot());
         self.set_y_head_rot(update.y_head_rot());
     }
+}
+
+/// Shared implementation of vanilla `Mob.doHurtTarget`, callable by mobs that
+/// extend the default attack behavior.
+pub(crate) fn do_hurt_target_default<M: Mob + ?Sized>(
+    mob: &M,
+    entity: &SharedEntity,
+    world: &World,
+    target: &SharedEntity,
+) -> bool {
+    let Some(attacker) = mob.as_entity_event_source().as_living_entity() else {
+        return false;
+    };
+    let weapon_item = {
+        let mut main_hand = ItemStack::empty();
+        mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            main_hand = item_stack.copy_with_count(item_stack.count());
+        });
+        main_hand
+    };
+    let attack_damage = mob
+        .attributes()
+        .lock()
+        .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
+    let damage_source = mob.mob_attack_damage_source(&weapon_item, entity);
+    let enchantment_context = EnchantmentDamageContext::new(
+        target.entity_type(),
+        Some(mob.entity_type()),
+        Some(mob.entity_type()),
+        &damage_source,
+    );
+    let mut damage =
+        enchantment_helper::modify_damage(&weapon_item, &enchantment_context, attack_damage);
+    damage += ITEM_BEHAVIORS
+        .get_behavior(weapon_item.item())
+        .get_attack_damage_bonus(attacker, target.as_ref(), damage, &damage_source);
+
+    let old_movement = target.velocity();
+    let was_hurt = target.hurt(world, &damage_source, damage);
+    if was_hurt {
+        mob.cause_extra_knockback(
+            target.as_ref(),
+            mob.get_attack_knockback(target.as_ref(), &weapon_item, &damage_source),
+            old_movement,
+        );
+        mob.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
+            if stack.is_empty() {
+                return;
+            }
+            if let Some(living_target) = target.as_living_entity() {
+                ITEM_BEHAVIORS.get_behavior(stack.item()).hurt_enemy(
+                    stack,
+                    living_target,
+                    attacker,
+                );
+            }
+        });
+        let post_attack_context = EnchantmentPostAttackContext::new(target, &damage_source);
+        enchantment_helper::do_post_attack_effects_from_item(
+            world,
+            &weapon_item,
+            &post_attack_context,
+        );
+        mob.set_last_hurt_mob(Some(target));
+        mob.play_attack_sound();
+    }
+
+    if let Some(user) = mob.as_entity_event_source().as_living_entity() {
+        enchantment_helper::do_post_piercing_attack_effects(world, user);
+    }
+    was_hurt
+}
+
+/// Shared implementation of vanilla `Mob.populateDefaultEquipmentSlots`.
+pub(crate) fn populate_default_equipment_slots_default(
+    mob: &(impl Mob + ?Sized),
+    difficulty: DifficultyInstance,
+) {
+    if rand::random::<f32>() >= MAX_WEARING_ARMOR_CHANCE * difficulty.special_multiplier() {
+        return;
+    }
+
+    let mut armor_type = rand::random_range(0..3);
+    for _ in 0..WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS {
+        if rand::random::<f32>() < WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE {
+            armor_type += 1;
+        }
+    }
+
+    let partial_chance = if difficulty.difficulty() == Difficulty::Hard {
+        HARD_ARMOR_PARTIAL_CHANCE
+    } else {
+        OTHER_ARMOR_PARTIAL_CHANCE
+    };
+    let mut first = true;
+    for slot in [
+        EquipmentSlot::Head,
+        EquipmentSlot::Chest,
+        EquipmentSlot::Legs,
+        EquipmentSlot::Feet,
+    ] {
+        if !first && rand::random::<f32>() < partial_chance {
+            break;
+        }
+        first = false;
+        if !mob.equipment_in_slot(slot).is_empty() {
+            continue;
+        }
+        let Some(item) = get_equipment_for_slot(slot, armor_type) else {
+            continue;
+        };
+        mob.living_base()
+            .equipment()
+            .lock()
+            .set(slot, ItemStack::new(item));
+    }
+}
+
+/// Returns vanilla's armor item for a spawn armor tier and slot.
+fn get_equipment_for_slot(slot: EquipmentSlot, armor_type: i32) -> Option<ItemRef> {
+    let items: [ItemRef; 6] = match slot {
+        EquipmentSlot::Head => [
+            &vanilla_items::LEATHER_HELMET,
+            &vanilla_items::COPPER_HELMET,
+            &vanilla_items::GOLDEN_HELMET,
+            &vanilla_items::CHAINMAIL_HELMET,
+            &vanilla_items::IRON_HELMET,
+            &vanilla_items::DIAMOND_HELMET,
+        ],
+        EquipmentSlot::Chest => [
+            &vanilla_items::LEATHER_CHESTPLATE,
+            &vanilla_items::COPPER_CHESTPLATE,
+            &vanilla_items::GOLDEN_CHESTPLATE,
+            &vanilla_items::CHAINMAIL_CHESTPLATE,
+            &vanilla_items::IRON_CHESTPLATE,
+            &vanilla_items::DIAMOND_CHESTPLATE,
+        ],
+        EquipmentSlot::Legs => [
+            &vanilla_items::LEATHER_LEGGINGS,
+            &vanilla_items::COPPER_LEGGINGS,
+            &vanilla_items::GOLDEN_LEGGINGS,
+            &vanilla_items::CHAINMAIL_LEGGINGS,
+            &vanilla_items::IRON_LEGGINGS,
+            &vanilla_items::DIAMOND_LEGGINGS,
+        ],
+        EquipmentSlot::Feet => [
+            &vanilla_items::LEATHER_BOOTS,
+            &vanilla_items::COPPER_BOOTS,
+            &vanilla_items::GOLDEN_BOOTS,
+            &vanilla_items::CHAINMAIL_BOOTS,
+            &vanilla_items::IRON_BOOTS,
+            &vanilla_items::DIAMOND_BOOTS,
+        ],
+        EquipmentSlot::MainHand
+        | EquipmentSlot::OffHand
+        | EquipmentSlot::Body
+        | EquipmentSlot::Saddle => return None,
+    };
+    usize::try_from(armor_type)
+        .ok()
+        .and_then(|index| items.get(index).copied())
 }
 
 // Blanket implementation for all mobs to implement `Leashable`

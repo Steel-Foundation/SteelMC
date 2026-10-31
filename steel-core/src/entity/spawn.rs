@@ -231,7 +231,8 @@ pub(crate) fn spawn_entity(
     {
         mob.set_y_head_rot(rotation.0);
         mob.set_y_body_rot(rotation.0);
-        let _ = mob.finalize_spawn(world, request.reason, None);
+        let difficulty = world.get_current_difficulty_at(entity.block_position());
+        let _ = mob.finalize_spawn(world, difficulty, request.reason, None);
     }
 
     if let Some(item_stack) = request.item_stack {

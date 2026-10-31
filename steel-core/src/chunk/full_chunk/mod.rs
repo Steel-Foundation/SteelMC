@@ -336,6 +336,7 @@ impl Chunk {
     /// * `level` - Weak reference to the world (mirrors Java's `LevelChunk.level`)
     /// * `block_ticks` - Scheduled block ticks loaded from disk
     /// * `fluid_ticks` - Scheduled fluid ticks loaded from disk
+    /// * `inhabited_time` - Accumulated natural-spawn candidate ticks loaded from disk
     /// * `heightmaps` - Heightmaps loaded from disk
     /// * `postprocessing` - Pending postprocessing offsets loaded from disk
     /// * `light` - Chunk-owned light data loaded from disk
@@ -356,6 +357,7 @@ impl Chunk {
         level: Weak<World>,
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
+        inhabited_time: i64,
         mut heightmaps: ChunkHeightmaps,
         postprocessing: Vec<Vec<u16>>,
         structure_starts: StructureStartMap,
@@ -384,6 +386,7 @@ impl Chunk {
             postprocessing,
             block_ticks,
             fluid_ticks,
+            inhabited_time,
             Weak::clone(&level),
             light,
         );

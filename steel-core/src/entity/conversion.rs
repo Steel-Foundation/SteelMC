@@ -527,14 +527,14 @@ mod tests {
             .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::ZOMBIE,
+                &vanilla_entities::AXOLOTL,
                 ConversionParams::single(true, true),
                 None,
             );
 
         assert!(
             converted.is_none(),
-            "no zombie factory is registered, so conversion cannot happen"
+            "no axolotl factory is registered, so conversion cannot happen"
         );
         assert!(
             !pig.is_removed(),
@@ -559,7 +559,7 @@ mod tests {
             .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::ZOMBIE,
+                &vanilla_entities::AXOLOTL,
                 ConversionParams::single(true, true),
                 None,
             );
@@ -593,7 +593,7 @@ mod tests {
             .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::ZOMBIE,
+                &vanilla_entities::AXOLOTL,
                 ConversionParams::single(true, true),
                 None,
             );
@@ -628,7 +628,7 @@ mod tests {
             .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::ZOMBIE,
+                &vanilla_entities::AXOLOTL,
                 ConversionParams::single(true, true),
                 None,
             );

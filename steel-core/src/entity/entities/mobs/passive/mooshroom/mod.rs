@@ -51,7 +51,7 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::player::player_inventory::Prediction;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, World};
+use crate::world::{DifficultyInstance, LevelReader, World};
 
 const MOOSHROOM_BABY_PASSENGER_Y_OFFSET: f64 = 0.75;
 const MOOSHROOM_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -647,11 +647,12 @@ impl Mob for MushroomCowEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         self.set_variant(MooshroomVariant::Red);
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

@@ -15,7 +15,8 @@ use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
 use super::{
-    can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
+    can_attempt_equipment_drop, find_ground_path_target_surface, get_equipment_for_slot,
+    path_end_node_can_reach_target,
 };
 use crate::behavior::init_behaviors;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
@@ -48,6 +49,48 @@ fn equipment_drop_attempt_gate_matches_vanilla_conditions() {
     assert!(!can_attempt_equipment_drop(0.085, false, false));
     assert!(can_attempt_equipment_drop(0.085, false, true));
     assert!(can_attempt_equipment_drop(2.0, true, false));
+}
+
+#[test]
+fn spawn_armor_tiers_map_to_vanilla_materials() {
+    let tiers = [
+        (
+            0,
+            &vanilla_items::LEATHER_HELMET,
+            &vanilla_items::LEATHER_CHESTPLATE,
+            &vanilla_items::LEATHER_LEGGINGS,
+            &vanilla_items::LEATHER_BOOTS,
+        ),
+        (
+            5,
+            &vanilla_items::DIAMOND_HELMET,
+            &vanilla_items::DIAMOND_CHESTPLATE,
+            &vanilla_items::DIAMOND_LEGGINGS,
+            &vanilla_items::DIAMOND_BOOTS,
+        ),
+    ];
+
+    for (tier, head, chest, legs, feet) in tiers {
+        assert_eq!(
+            get_equipment_for_slot(EquipmentSlot::Head, tier).map(|item| &item.key),
+            Some(&head.key)
+        );
+        assert_eq!(
+            get_equipment_for_slot(EquipmentSlot::Chest, tier).map(|item| &item.key),
+            Some(&chest.key)
+        );
+        assert_eq!(
+            get_equipment_for_slot(EquipmentSlot::Legs, tier).map(|item| &item.key),
+            Some(&legs.key)
+        );
+        assert_eq!(
+            get_equipment_for_slot(EquipmentSlot::Feet, tier).map(|item| &item.key),
+            Some(&feet.key)
+        );
+    }
+
+    assert!(get_equipment_for_slot(EquipmentSlot::Head, 6).is_none());
+    assert!(get_equipment_for_slot(EquipmentSlot::MainHand, 0).is_none());
 }
 
 struct SurfaceLevel {

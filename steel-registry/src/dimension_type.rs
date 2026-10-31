@@ -116,6 +116,9 @@ pub struct DimensionType {
 }
 
 impl DimensionType {
+    /// Brightness multiplier indexed by vanilla moon phase.
+    pub const MOON_BRIGHTNESS_PER_PHASE: [f32; 8] = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75];
+
     #[must_use]
     pub fn get_teleportation_scale(last_dimension_type: &Self, new_dimension_type: &Self) -> f64 {
         last_dimension_type.coordinate_scale / new_dimension_type.coordinate_scale

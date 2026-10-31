@@ -69,6 +69,7 @@ fn full_disk_construction_returns_initialized_runtime() {
         Weak::new(),
         BlockTickList::new(),
         FluidTickList::new(),
+        0,
         ChunkHeightmaps::with_types(HeightmapType::final_types(), 0, 16),
         Vec::new(),
         StructureStartMap::default(),

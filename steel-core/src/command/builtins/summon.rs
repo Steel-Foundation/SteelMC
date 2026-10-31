@@ -80,7 +80,8 @@ pub(super) fn create_entity(
     };
 
     if let Some(mob) = entity.as_mob() {
-        let _ = mob.finalize_spawn(world, EntitySpawnReason::Command, None);
+        let difficulty = world.get_current_difficulty_at(entity.block_position());
+        let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Command, None);
     }
 
     match world.try_add_entity(Arc::clone(&entity)) {

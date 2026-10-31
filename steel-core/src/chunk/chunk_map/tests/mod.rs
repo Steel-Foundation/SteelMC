@@ -176,6 +176,7 @@ fn insert_active_full_holder_with_ticks(
         Arc::downgrade(world),
         block_ticks,
         FluidTickList::new(),
+        0,
         ChunkHeightmaps::new(min_y, height),
         postprocessing,
         StructureStartMap::default(),
@@ -243,6 +244,7 @@ fn unloaded_light_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         Vec::new(),
         BlockTickList::new(),
         FluidTickList::new(),
+        0,
         Weak::new(),
         ChunkLightData::for_valid_world_height(0, 16),
     );
@@ -266,6 +268,7 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         Weak::new(),
         BlockTickList::new(),
         FluidTickList::new(),
+        0,
         ChunkHeightmaps::new(0, 16),
         Vec::new(),
         StructureStartMap::default(),

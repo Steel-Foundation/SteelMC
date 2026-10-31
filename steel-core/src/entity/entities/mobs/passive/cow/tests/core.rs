@@ -221,7 +221,8 @@ fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
             .is_some()
     );
 
-    let _ = Mob::finalize_spawn(&cow, world, EntitySpawnReason::Natural, None);
+    let difficulty = world.get_current_difficulty_at(cow.block_position());
+    let _ = Mob::finalize_spawn(&cow, world, difficulty, EntitySpawnReason::Natural, None);
 
     assert!(
         REGISTRY
