@@ -24,15 +24,15 @@ use super::{
 
 /// Every resource that `/reload` refreshes.
 /// the complete list of Minecraft reloadable resources are:
-/// - TODO function
-/// - DONE advancement
-/// - TODO structure
-/// - TODO tags
-/// - TODO loot_table
-/// - TODO predicate
-/// - TODO recipe
-/// - TODO slot_source
-/// - TODO number_provider
+/// - TODO `function`
+/// - DONE `advancement`
+/// - TODO `structure`
+/// - TODO `tags`
+/// - TODO `loot_table`
+/// - TODO `predicate`
+/// - TODO `recipe`
+/// - TODO `slot_source`
+/// - TODO `number_provider`
 static RELOADABLE_RESOURCES: &[&dyn ReloadableResource] = &[&AdvancementsResource];
 
 /// A server resource that can be rebuilt from its registration sources.
