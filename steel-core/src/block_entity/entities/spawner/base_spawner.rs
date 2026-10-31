@@ -1,0 +1,662 @@
+//! Shared spawn-cycle state and ticking used by spawner block entities.
+
+use std::mem;
+use std::sync::Arc;
+
+use glam::DVec3;
+use rand::{Rng, RngExt, rng};
+use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::owned::{NbtCompound, NbtList};
+use steel_math::DEGREE_360;
+use steel_registry::data_components::components::EntityData;
+use steel_registry::entity_type::{EntityTypeRef, MobCategory};
+use steel_registry::loot_table::{LootContext, LootTableRef};
+use steel_registry::{
+    REGISTRY, RegistryExt, level_events, vanilla_blocks, vanilla_game_events, vanilla_game_rules,
+};
+use steel_utils::entity_events::EntityStatus;
+use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds};
+use steel_utils::types::Difficulty;
+use steel_utils::{BlockPos, Identifier, WorldAabb};
+
+use super::spawn_data::{EquipmentTable, SpawnData, WeightedSpawnData};
+use crate::entity::{
+    Entity, EntitySpawnReason, Mob, SpawnPlacements, entity_loot_ref, living_loot_equipment,
+    load_entity_recursive_owned, nbt_dvec3,
+};
+use crate::inventory::equipment::EquipmentSlot;
+use crate::physics::{WorldCollisionProvider, has_collision};
+use crate::world::World;
+
+const EVENT_SPAWN: i32 = 1;
+const DEFAULT_SPAWN_DELAY: i32 = 20;
+const DEFAULT_MIN_SPAWN_DELAY: i32 = 200;
+const DEFAULT_MAX_SPAWN_DELAY: i32 = 800;
+const DEFAULT_SPAWN_COUNT: i32 = 4;
+const DEFAULT_MAX_NEARBY_ENTITIES: i32 = 6;
+const DEFAULT_REQUIRED_PLAYER_RANGE: i32 = 16;
+const DEFAULT_SPAWN_RANGE: i32 = 4;
+
+/// Spawn-cycle limits of a [`BaseSpawner`]: delays, mob counts and ranges.
+///
+/// Vanilla keeps these as separate fields on `BaseSpawner`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BaseSpawnerConfig {
+    /// Lower bound of the delay between spawn cycles, in ticks.
+    pub min_spawn_delay: i32,
+    /// Upper bound of the delay between spawn cycles, in ticks.
+    pub max_spawn_delay: i32,
+    /// Spawn attempts per cycle.
+    pub spawn_count: i32,
+    /// Same-type entities allowed around the spawner before a cycle is skipped.
+    pub max_nearby_entities: i32,
+    /// Distance a player must be within for the spawner to tick.
+    pub required_player_range: i32,
+    /// Horizontal radius of the spawn area.
+    pub spawn_range: i32,
+}
+
+impl Default for BaseSpawnerConfig {
+    fn default() -> Self {
+        Self {
+            min_spawn_delay: DEFAULT_MIN_SPAWN_DELAY,
+            max_spawn_delay: DEFAULT_MAX_SPAWN_DELAY,
+            spawn_count: DEFAULT_SPAWN_COUNT,
+            max_nearby_entities: DEFAULT_MAX_NEARBY_ENTITIES,
+            required_player_range: DEFAULT_REQUIRED_PLAYER_RANGE,
+            spawn_range: DEFAULT_SPAWN_RANGE,
+        }
+    }
+}
+
+/// Active spawn data of a spawner.
+///
+/// Vanilla holds the `SpawnData` picked from `spawnPotentials` by reference, so spawn egg
+/// edits through it also change that potential.
+#[derive(Debug)]
+enum NextSpawnData {
+    /// Index of the picked `spawn_potentials` entry.
+    Potential(usize),
+    /// Spawn data not shared with any potential.
+    Own(SpawnData),
+}
+
+#[derive(Debug)]
+struct SpawnerState {
+    spawn_delay: i32,
+    spawn_potentials: Vec<WeightedSpawnData>,
+    next_spawn_data: Option<NextSpawnData>,
+    config: BaseSpawnerConfig,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct SpawnerTickResult {
+    pub(super) state_changed: bool,
+    pub(super) next_spawn_data_changed: bool,
+}
+
+impl Default for SpawnerState {
+    fn default() -> Self {
+        Self {
+            spawn_delay: DEFAULT_SPAWN_DELAY,
+            spawn_potentials: Vec::new(),
+            next_spawn_data: None,
+            config: BaseSpawnerConfig::default(),
+        }
+    }
+}
+
+impl SpawnerState {
+    fn next_spawn_data(&self) -> Option<&SpawnData> {
+        match self.next_spawn_data.as_ref()? {
+            NextSpawnData::Potential(index) => Some(&self.spawn_potentials[*index].data),
+            NextSpawnData::Own(data) => Some(data),
+        }
+    }
+    fn get_or_create_next_spawn_data<R: Rng + ?Sized>(
+        &mut self,
+        random: &mut R,
+    ) -> (&mut SpawnData, bool) {
+        let created = self.next_spawn_data.is_none();
+        let next = self.next_spawn_data.get_or_insert_with(|| {
+            choose_weighted(&self.spawn_potentials, random).map_or_else(
+                || NextSpawnData::Own(SpawnData::default()),
+                NextSpawnData::Potential,
+            )
+        });
+        let data = match next {
+            NextSpawnData::Potential(index) => &mut self.spawn_potentials[*index].data,
+            NextSpawnData::Own(data) => data,
+        };
+        (data, created)
+    }
+    fn replace_spawn_potentials(&mut self, potentials: Vec<WeightedSpawnData>) {
+        let mut old_potentials = mem::replace(&mut self.spawn_potentials, potentials);
+        if let Some(NextSpawnData::Potential(index)) = self.next_spawn_data {
+            self.next_spawn_data = Some(NextSpawnData::Own(old_potentials.swap_remove(index).data));
+        }
+    }
+}
+
+/// Vanilla-style mutable spawner state shared by normal spawner block entities.
+#[derive(Debug)]
+pub struct BaseSpawner {
+    state: SyncMutex<SpawnerState>,
+}
+
+impl Default for BaseSpawner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BaseSpawner {
+    /// Creates a spawner with vanilla defaults.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            state: SyncMutex::new(SpawnerState::default()),
+        }
+    }
+
+    /// Loads the vanilla spawner fields from NBT.
+    pub fn load(&self, nbt: &BorrowedNbtCompound<'_>) {
+        let nbt: NbtCompoundView<'_, '_> = nbt.into();
+        let mut state = self.state.lock();
+        state.spawn_delay = nbt
+            .get("Delay")
+            .and_then(|tag| tag.short_value())
+            .map_or(DEFAULT_SPAWN_DELAY, i32::from);
+        if let Some(data) = nbt
+            .compound("SpawnData")
+            .and_then(|data| SpawnData::from_nbt(&data))
+        {
+            state.next_spawn_data = Some(NextSpawnData::Own(data));
+        }
+        let loaded_spawn_potentials = nbt.list("SpawnPotentials").map(|entries| {
+            entries
+                .compounds()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|entry| {
+                    let weight = entry.get("weight")?.codec_i32()?;
+                    if weight < 0 {
+                        return None;
+                    }
+                    let data = entry.compound("data")?;
+                    Some(WeightedSpawnData {
+                        weight,
+                        data: SpawnData::from_nbt(&data)?,
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        if let Some(potentials) = loaded_spawn_potentials {
+            state.replace_spawn_potentials(potentials);
+        } else {
+            // Vanilla wraps the active spawn data itself, so both stay shared.
+            state.replace_spawn_potentials(vec![WeightedSpawnData {
+                weight: 1,
+                data: SpawnData::default(),
+            }]);
+            if let Some(NextSpawnData::Own(data)) = state.next_spawn_data.take() {
+                state.spawn_potentials[0].data = data;
+                state.next_spawn_data = Some(NextSpawnData::Potential(0));
+            }
+        }
+        state.config.min_spawn_delay = nbt
+            .get("MinSpawnDelay")
+            .and_then(|tag| tag.int_value())
+            .unwrap_or(DEFAULT_MIN_SPAWN_DELAY);
+        state.config.max_spawn_delay = nbt
+            .get("MaxSpawnDelay")
+            .and_then(|tag| tag.int_value())
+            .unwrap_or(DEFAULT_MAX_SPAWN_DELAY);
+        state.config.spawn_count = nbt
+            .get("SpawnCount")
+            .and_then(|tag| tag.int_value())
+            .unwrap_or(DEFAULT_SPAWN_COUNT);
+        state.config.max_nearby_entities = nbt
+            .get("MaxNearbyEntities")
+            .and_then(|tag| tag.int_value())
+            .unwrap_or(DEFAULT_MAX_NEARBY_ENTITIES);
+        state.config.required_player_range = nbt
+            .get("RequiredPlayerRange")
+            .and_then(|tag| tag.int_value())
+            .unwrap_or(DEFAULT_REQUIRED_PLAYER_RANGE);
+        state.config.spawn_range = nbt
+            .get("SpawnRange")
+            .and_then(|tag| tag.int_value())
+            .unwrap_or(DEFAULT_SPAWN_RANGE);
+    }
+
+    /// Saves the vanilla spawner fields to NBT.
+    pub fn save(&self, nbt: &mut NbtCompound) {
+        let state = self.state.lock();
+        nbt.insert("Delay", state.spawn_delay as i16);
+        nbt.insert("MinSpawnDelay", state.config.min_spawn_delay as i16);
+        nbt.insert("MaxSpawnDelay", state.config.max_spawn_delay as i16);
+        nbt.insert("SpawnCount", state.config.spawn_count as i16);
+        nbt.insert("MaxNearbyEntities", state.config.max_nearby_entities as i16);
+        nbt.insert(
+            "RequiredPlayerRange",
+            state.config.required_player_range as i16,
+        );
+        nbt.insert("SpawnRange", state.config.spawn_range as i16);
+        if let Some(next_spawn_data) = state.next_spawn_data() {
+            nbt.insert("SpawnData", next_spawn_data.to_nbt());
+        }
+        let potentials = state
+            .spawn_potentials
+            .iter()
+            .map(|entry| {
+                let mut nbt = NbtCompound::new();
+                nbt.insert("data", entry.data.to_nbt());
+                nbt.insert("weight", entry.weight);
+                nbt
+            })
+            .collect::<Vec<_>>();
+        nbt.insert("SpawnPotentials", NbtList::Compound(potentials));
+    }
+
+    /// Selects or returns the active spawn data.
+    #[cfg(test)]
+    pub(super) fn get_or_create_next_spawn_data(&self) -> SpawnData {
+        let mut random = rng();
+        self.get_or_create_next_spawn_data_with_rng(&mut random).0
+    }
+
+    fn get_or_create_next_spawn_data_with_rng<R: Rng + ?Sized>(
+        &self,
+        random: &mut R,
+    ) -> (SpawnData, bool) {
+        let mut state = self.state.lock();
+        let (data, created) = state.get_or_create_next_spawn_data(random);
+        (data.clone(), created)
+    }
+
+    /// Configures the active spawn entity.
+    pub fn set_entity_id(&self, entity_type: EntityTypeRef) {
+        let mut random = rng();
+        let mut state = self.state.lock();
+        let (data, _) = state.get_or_create_next_spawn_data(&mut random);
+        replace_entity_id(&mut data.entity_to_spawn, entity_type);
+    }
+
+    /// Sets the active spawn entity type and merges the rest of `entity_data` into it.
+    pub fn set_entity_data(&self, entity_data: &EntityData) {
+        let mut random = rng();
+        let mut state = self.state.lock();
+        let (data, _) = state.get_or_create_next_spawn_data(&mut random);
+        replace_entity_id(&mut data.entity_to_spawn, entity_data.entity_type());
+        merge_nbt_compounds(&mut data.entity_to_spawn, entity_data.data().as_compound());
+    }
+
+    /// Returns whether this spawner handles the given block event.
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "The event method mirrors the vanilla BaseSpawner delegation API."
+    )]
+    pub const fn on_event_triggered(&self, event: i32) -> bool {
+        event == EVENT_SPAWN
+    }
+
+    /// Returns the ticks left until the next spawn cycle. `-1` means a new delay is rolled
+    /// on the next tick.
+    #[must_use]
+    pub fn spawn_delay(&self) -> i32 {
+        self.state.lock().spawn_delay
+    }
+
+    /// Sets the ticks left until the next spawn cycle.
+    pub fn set_spawn_delay(&self, delay: i32) {
+        self.state.lock().spawn_delay = delay;
+    }
+
+    /// Returns the spawn-cycle limits.
+    #[must_use]
+    pub fn config(&self) -> BaseSpawnerConfig {
+        self.state.lock().config
+    }
+
+    /// Replaces the spawn-cycle limits.
+    pub fn set_config(&self, config: BaseSpawnerConfig) {
+        self.state.lock().config = config;
+    }
+
+    /// Returns the weighted entries the next spawn data is picked from.
+    #[must_use]
+    pub fn spawn_potentials(&self) -> Vec<WeightedSpawnData> {
+        self.state.lock().spawn_potentials.clone()
+    }
+
+    /// Replaces the weighted entries the next spawn data is picked from. The active
+    /// spawn data is kept until the next delay roll.
+    pub fn set_spawn_potentials(&self, potentials: Vec<WeightedSpawnData>) {
+        self.state.lock().replace_spawn_potentials(potentials);
+    }
+
+    /// Returns the active spawn data, if one has been selected.
+    #[must_use]
+    pub fn next_spawn_data(&self) -> Option<SpawnData> {
+        self.state.lock().next_spawn_data().cloned()
+    }
+
+    /// Replaces the active spawn data.
+    pub fn set_next_spawn_data(&self, data: SpawnData) {
+        self.state.lock().next_spawn_data = Some(NextSpawnData::Own(data));
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The order of this method mirrors vanilla BaseSpawner.serverTick."
+    )]
+    pub(super) fn server_tick(&self, world: &Arc<World>, pos: BlockPos) -> SpawnerTickResult {
+        let center = DVec3::from(pos.get_center());
+        let config = self.config();
+        let Some(_) =
+            world.nearest_player(center, f64::from(config.required_player_range), |player| {
+                player.is_alive() && !player.is_spectator()
+            })
+        else {
+            return SpawnerTickResult::default();
+        };
+        if !world.get_game_rule(&vanilla_game_rules::SPAWNER_BLOCKS_WORK) {
+            return SpawnerTickResult::default();
+        }
+
+        let mut random = rng();
+        let mut result = SpawnerTickResult::default();
+        if self.spawn_delay() == -1 {
+            result = self.delay(world, pos, &mut random);
+        }
+
+        if self.decrement_spawn_delay() {
+            return result;
+        }
+
+        let (next_spawn_data, selected_data_changed) =
+            self.get_or_create_next_spawn_data_with_rng(&mut random);
+        result.next_spawn_data_changed |= selected_data_changed;
+        result.state_changed |= selected_data_changed;
+        let BaseSpawnerConfig {
+            spawn_count,
+            spawn_range,
+            max_nearby_entities,
+            ..
+        } = config;
+        let mut spawned_any = false;
+
+        for _ in 0..spawn_count {
+            let Some(entity_type) = entity_type_from_owned_nbt(&next_spawn_data.entity_to_spawn)
+            else {
+                return self.delay_result(world, pos, &mut random, result);
+            };
+
+            let spawn_position = configured_or_random_position(
+                &next_spawn_data.entity_to_spawn,
+                pos,
+                spawn_range,
+                &mut random,
+            );
+            let dimensions = entity_type.dimensions;
+            let spawn_box = WorldAabb::entity_box(
+                spawn_position.x,
+                spawn_position.y,
+                spawn_position.z,
+                f64::from(dimensions.half_width()),
+                f64::from(dimensions.height),
+            );
+            if has_collision(&WorldCollisionProvider::new(world), spawn_box) {
+                continue;
+            }
+
+            let spawn_block_pos = BlockPos::from(spawn_position);
+            if let Some(custom_rules) = next_spawn_data.custom_spawn_rules {
+                if entity_type.mob_category == MobCategory::Monster
+                    && world.difficulty() == Difficulty::Peaceful
+                {
+                    continue;
+                }
+                if !custom_rules.is_valid_position(world, spawn_block_pos) {
+                    continue;
+                }
+            } else if !SpawnPlacements::check_spawner_spawn_rules(
+                entity_type,
+                world,
+                spawn_block_pos,
+            ) {
+                continue;
+            }
+
+            let Some(loaded) = load_entity_recursive_owned(
+                world,
+                &next_spawn_data.entity_to_spawn,
+                EntitySpawnReason::Spawner,
+                |entity| {
+                    entity.snap_to(spawn_position, entity.rotation().0, entity.rotation().1);
+                },
+            ) else {
+                return self.delay_result(world, pos, &mut random, result);
+            };
+            let entity = &loaded.root;
+
+            let entity_class = entity.downcast_type_key();
+            let nearby_box = WorldAabb::new(
+                f64::from(pos.x()),
+                f64::from(pos.y()),
+                f64::from(pos.z()),
+                f64::from(pos.x() + 1),
+                f64::from(pos.y() + 1),
+                f64::from(pos.z() + 1),
+            )
+            .inflate(f64::from(spawn_range));
+            let nearby_count = world
+                .get_entities_in_aabb_matching(&nearby_box, |candidate| {
+                    !candidate.is_spectator() && candidate.downcast_type_key() == entity_class
+                })
+                .len();
+            if nearby_count as i32 >= max_nearby_entities {
+                return self.delay_result(world, pos, &mut random, result);
+            }
+
+            let yaw = random.random::<f32>() * DEGREE_360;
+            entity.snap_to(entity.position(), yaw, 0.0);
+            if let Some(mob) = entity.as_mob() {
+                if (next_spawn_data.custom_spawn_rules.is_none()
+                    && !mob.check_spawn_rules(world, EntitySpawnReason::Spawner))
+                    || !mob.check_spawn_obstruction(world)
+                {
+                    continue;
+                }
+
+                if next_spawn_data.entity_to_spawn.len() == 1 {
+                    let _ = mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
+                }
+                if let Some(equipment) = &next_spawn_data.equipment {
+                    equip_from_table(mob, equipment);
+                }
+            }
+
+            if world
+                .try_add_fresh_entity_with_passengers(Arc::clone(entity))
+                .is_err()
+            {
+                return self.delay_result(world, pos, &mut random, result);
+            }
+
+            world.level_event(level_events::PARTICLES_MOBBLOCK_SPAWN, pos, 0, None);
+            world.game_event(
+                &vanilla_game_events::ENTITY_PLACE,
+                spawn_block_pos,
+                &crate::world::game_event::GameEventContext::new(Some(entity.as_ref()), None),
+            );
+            if entity.as_mob().is_some() {
+                entity.broadcast_entity_event(EntityStatus::SilverfishMergeAnim);
+            }
+            spawned_any = true;
+        }
+
+        if spawned_any {
+            result = self.delay_result(world, pos, &mut random, result);
+        }
+        result
+    }
+
+    fn delay_result<R: Rng + ?Sized>(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        random: &mut R,
+        mut result: SpawnerTickResult,
+    ) -> SpawnerTickResult {
+        let delay_result = self.delay(world, pos, random);
+        result.state_changed |= delay_result.state_changed;
+        result.next_spawn_data_changed |= delay_result.next_spawn_data_changed;
+        result
+    }
+
+    fn delay<R: Rng + ?Sized>(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        random: &mut R,
+    ) -> SpawnerTickResult {
+        let mut result = SpawnerTickResult {
+            state_changed: true,
+            next_spawn_data_changed: false,
+        };
+        {
+            let mut state = self.state.lock();
+            let BaseSpawnerConfig {
+                min_spawn_delay,
+                max_spawn_delay,
+                ..
+            } = state.config;
+            let delay = max_spawn_delay.saturating_sub(min_spawn_delay);
+            state.spawn_delay = if delay <= 0 {
+                min_spawn_delay
+            } else {
+                min_spawn_delay + random.random_range(0..delay)
+            };
+            if let Some(index) = choose_weighted(&state.spawn_potentials, random) {
+                result.next_spawn_data_changed =
+                    state.next_spawn_data() != Some(&state.spawn_potentials[index].data);
+                state.next_spawn_data = Some(NextSpawnData::Potential(index));
+            }
+        }
+        world.block_event(pos, &vanilla_blocks::SPAWNER, EVENT_SPAWN, 0);
+        result
+    }
+
+    fn decrement_spawn_delay(&self) -> bool {
+        let mut state = self.state.lock();
+        if state.spawn_delay > 0 {
+            state.spawn_delay -= 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Returns the index of a weighted pick from `entries`.
+pub(super) fn choose_weighted<R: Rng + ?Sized>(
+    entries: &[WeightedSpawnData],
+    random: &mut R,
+) -> Option<usize> {
+    let total_weight = entries
+        .iter()
+        .map(|entry| i64::from(entry.weight))
+        .sum::<i64>();
+    if total_weight == 0 {
+        return None;
+    }
+
+    let mut selection = random.random_range(0..total_weight);
+    for (index, entry) in entries.iter().enumerate() {
+        let weight = i64::from(entry.weight);
+        if selection < weight {
+            return Some(index);
+        }
+        selection -= weight;
+    }
+    None
+}
+
+fn entity_type_from_owned_nbt(entity: &NbtCompound) -> Option<EntityTypeRef> {
+    let id = entity.string("id")?.to_str().parse::<Identifier>().ok()?;
+    REGISTRY.entity_types.by_key(&id)
+}
+
+fn configured_or_random_position<R: Rng + ?Sized>(
+    entity: &NbtCompound,
+    spawner_pos: BlockPos,
+    spawn_range: i32,
+    random: &mut R,
+) -> DVec3 {
+    entity
+        .get("Pos")
+        .and_then(nbt_dvec3)
+        .filter(|position| position.is_finite())
+        .unwrap_or_else(|| random_spawn_position(spawner_pos, spawn_range, random))
+}
+
+fn random_spawn_position<R: Rng + ?Sized>(
+    spawner_pos: BlockPos,
+    spawn_range: i32,
+    random: &mut R,
+) -> DVec3 {
+    DVec3::new(
+        f64::from(spawner_pos.x())
+            + (random.random::<f64>() - random.random::<f64>()) * f64::from(spawn_range)
+            + 0.5,
+        f64::from(spawner_pos.y() + random.random_range(-1..=1)),
+        f64::from(spawner_pos.z())
+            + (random.random::<f64>() - random.random::<f64>()) * f64::from(spawn_range)
+            + 0.5,
+    )
+}
+
+fn equip_from_table(mob: &dyn Mob, equipment: &EquipmentTable) {
+    let Some(table): Option<LootTableRef> = REGISTRY.loot_tables.by_key(&equipment.loot_table)
+    else {
+        return;
+    };
+
+    let mut random = rng();
+    let mob_equipment = living_loot_equipment(mob);
+    let entity_ref = entity_loot_ref(mob.as_entity_event_source(), Some(&mob_equipment));
+    let mut context = LootContext::new(&mut random)
+        .with_origin(mob.position().x, mob.position().y, mob.position().z)
+        .with_this_entity(entity_ref);
+    let mut inserted = [false; EquipmentSlot::ALL.len()];
+    for mut item in table.get_random_items(&mut context) {
+        if item.is_empty() {
+            continue;
+        }
+        let slot = item
+            .get_equippable_slot()
+            .unwrap_or(EquipmentSlot::MainHand);
+        if inserted[slot.index()] {
+            continue;
+        }
+
+        let equipped = slot.limit(&mut item);
+        if equipped.is_empty() {
+            continue;
+        }
+        mob.living_base().equipment().lock().set(slot, equipped);
+        if let Some(chance) = equipment.drop_chance(slot) {
+            mob.set_equipment_drop_chance(slot, chance);
+        }
+        inserted[slot.index()] = true;
+    }
+}
+
+fn replace_entity_id(entity: &mut NbtCompound, entity_type: EntityTypeRef) {
+    while entity.remove("id").is_some() {}
+    entity.insert("id", entity_type.key.to_string());
+}
