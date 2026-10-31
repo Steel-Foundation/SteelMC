@@ -37,7 +37,7 @@ jobs:
         timeout-minutes: 15
         run: |
           cargo test -p steel-flint --profile cicd --lib --no-run
-          cargo build -p steel-flint --profile cicd --bin steel-implemented
+          cargo build -p steel-flint --profile cicd --example steel-implemented
 
       - name: Run steel-flint tests
         id: tests
@@ -54,7 +54,7 @@ jobs:
         id: implemented
         if: steps.build.outcome == 'success'
         continue-on-error: true
-        run: cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- implemented.txt
+        run: cargo run -q -p steel-flint --profile cicd --example steel-implemented -- implemented.txt
 
       - name: Download baseline
         id: baseline

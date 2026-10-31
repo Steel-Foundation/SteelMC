@@ -64,6 +64,6 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }
 unwrap_used = { level = "warn", priority = -3 }
 
-[[bin]]
+[[example]]
 name = "steel-implemented"
-path = "src/bin/get_implemented.rs"
+path = "flint-utils/get_implemented.rs"
