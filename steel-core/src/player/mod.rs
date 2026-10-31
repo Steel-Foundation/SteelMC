@@ -132,7 +132,9 @@ use crate::server::{
     PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
 };
-use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
+use crate::world::player_spawn_finder::{
+    POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
+};
 use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
@@ -149,7 +151,6 @@ use steel_utils::{
 
 use crate::inventory::container::Container;
 
-const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;

@@ -61,9 +61,10 @@ use crate::player::{
     ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
-    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
-    end_portal, nether_portal,
+    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, WorldSelection,
+    end_gateway, end_portal, nether_portal,
 };
+pub use crate::portal::{PreparedSpawn, WorldEntry};
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
@@ -271,12 +272,6 @@ pub async fn test_server_with_worlds_and_config(
     }))
 }
 
-#[derive(Clone, Copy)]
-struct PreparedSpawn {
-    position: DVec3,
-    rotation: (f32, f32),
-}
-
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
     player.base().set_position_local(spawn.position);
     player.set_rotation(spawn.rotation);
@@ -421,6 +416,7 @@ struct DomainSwitchRequest {
     player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
+    entry: WorldEntry,
     pending_token: PendingWorldChangeToken,
 }
 

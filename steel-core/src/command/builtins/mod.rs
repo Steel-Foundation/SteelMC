@@ -21,6 +21,7 @@ mod locate;
 mod operator;
 mod perms;
 mod playsound;
+mod position;
 mod return_command;
 mod seed;
 mod setblock;
