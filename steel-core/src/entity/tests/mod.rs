@@ -8,7 +8,6 @@ use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::blocks::{
-    block_state_ext::BlockStateExt as _,
     properties::{BlockStateProperties, Direction as BlockDirection},
 };
 use steel_registry::entity_data::EntityPose;
@@ -22,7 +21,6 @@ use steel_registry::{
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events, vanilla_items,
     vanilla_loot_tables, vanilla_mob_effects,
 };
-use steel_utils::Downcast as _;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
@@ -30,7 +28,7 @@ use steel_utils::{
     block_util::FoundRectangle,
 };
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
-use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
+use text_components::{TextComponent, format::Color, interactivity::ClickEvent};
 use uuid::Uuid;
 
 use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};
@@ -61,7 +59,7 @@ impl PushableTestEntity {
     }
 }
 
-crate::entity::impl_test_downcast_type!(PushableTestEntity);
+impl_test_downcast_type!(PushableTestEntity);
 
 impl Entity for PushableTestEntity {
     fn base(&self) -> &EntityBase {
