@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::time::SystemTime;
 use steel_registry::advancement::AdvancementRequirement;
-use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::advancement::registry::{AdvancementIdx, FrozenAdvancementRegistry};
 
 /// represent a map of all progress made for advancement of a specific player
 #[derive(Debug, Default, Clone)]
 pub struct AdvancementProgressMap {
     /// A map of all advancement progress for the player.
-    map: FxHashMap<AdvancementRef, usize>,
-    order: Vec<(AdvancementRef, AdvancementProgress)>,
+    map: FxHashMap<AdvancementIdx, usize>,
+    order: Vec<(AdvancementIdx, AdvancementProgress)>,
 }
 
 impl AdvancementProgressMap {
@@ -19,12 +19,14 @@ impl AdvancementProgressMap {
     #[must_use]
     pub fn get_mut_or_start_progress(
         &mut self,
-        advancement: AdvancementRef,
+        registry: &FrozenAdvancementRegistry,
+        advancement_idx: AdvancementIdx,
     ) -> &mut AdvancementProgress {
-        let idx = self.map.entry(advancement).or_insert_with(|| {
+        let idx = self.map.entry(advancement_idx).or_insert_with(|| {
             let mut progress = AdvancementProgress::default();
-            progress.update(advancement.requirements());
-            self.order.push((advancement, progress));
+            let advancement = registry.get_by_idx(advancement_idx);
+            progress.update(advancement.value().requirements());
+            self.order.push((advancement_idx, progress));
             self.order.len() - 1
         });
         if let Some(progress) = self.order.get_mut(*idx) {
@@ -39,13 +41,6 @@ impl AdvancementProgressMap {
     pub fn clear(&mut self) {
         self.map.clear();
         self.order.clear();
-    }
-
-    /// insert a new advancement to the progress map
-    #[inline]
-    pub fn insert(&mut self, advancement: AdvancementRef, progress: AdvancementProgress) {
-        self.order.push((advancement, progress));
-        self.map.insert(advancement, self.order.len() - 1);
     }
 
     /// return the len of the map
@@ -65,19 +60,19 @@ impl AdvancementProgressMap {
     /// return whether the advancement has a progress instance
     #[must_use]
     #[inline]
-    pub fn has_progress(&self, advancement: AdvancementRef) -> bool {
+    pub fn has_progress(&self, advancement: AdvancementIdx) -> bool {
         self.map.contains_key(&advancement)
     }
 
     /// return the progress of a specific advancement
     #[must_use]
     #[inline]
-    pub fn get_progress(&self, advancement: AdvancementRef) -> Option<&AdvancementProgress> {
+    pub fn get_progress(&self, advancement: AdvancementIdx) -> Option<&AdvancementProgress> {
         self.map.get(&advancement).map(|&i| &self.order[i].1)
     }
 
     /// return an iterator over all the progress made using the order of insertion
-    pub fn iter(&self) -> impl Iterator<Item = &(AdvancementRef, AdvancementProgress)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(AdvancementIdx, AdvancementProgress)> {
         self.order.iter()
     }
 }

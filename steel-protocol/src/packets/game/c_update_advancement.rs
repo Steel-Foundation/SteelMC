@@ -1,6 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::advancement::AdvancementProgressData;
-use steel_registry::advancement::registry::AdvancementNodeRef;
+use steel_registry::advancement::registry::AdvancementNode;
 use steel_registry::packets::play::C_UPDATE_ADVANCEMENTS;
 use steel_utils::Identifier;
 
@@ -10,7 +10,7 @@ use steel_utils::Identifier;
 pub struct CUpdateAdvancements {
     /// The number of ticks to step forward.
     pub reset: bool,
-    pub added: Vec<AdvancementNodeRef>,
+    pub added: Vec<AdvancementNode>,
     pub removed: Vec<Identifier>,
     pub progress: Vec<AdvancementProgressData>,
     pub show_advancements: bool,
@@ -21,7 +21,7 @@ impl CUpdateAdvancements {
     #[must_use]
     pub const fn new(
         reset: bool,
-        added: Vec<AdvancementNodeRef>,
+        added: Vec<AdvancementNode>,
         progress: Vec<AdvancementProgressData>,
         removed: Vec<Identifier>,
         show_advancements: bool,

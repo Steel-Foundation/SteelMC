@@ -498,10 +498,9 @@ impl Player {
     /// Set the selected advancement
     pub fn handle_seen_advancement(&self, packet: SSeenAdvancement) {
         if let Opened(tab_id) = packet {
-            let advancement = REGISTRY.advancements.value_by_key(&tab_id);
-            if advancement.is_some() {
-                self.advancements.lock().set_selected_tab(self, advancement);
-            }
+            REGISTRY.advancements.with_value_by_key(&tab_id, |adv| {
+                self.advancements.lock().set_selected_tab(self, Some(adv));
+            });
         }
     }
 

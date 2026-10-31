@@ -23,6 +23,7 @@ bitflags.workspace = true
 glam.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
+arc-swap.workspace = true
 
 # Logging
 log.workspace = true
