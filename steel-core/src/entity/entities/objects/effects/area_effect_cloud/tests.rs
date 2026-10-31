@@ -137,7 +137,10 @@ fn extreme_saved_timings_wrap_like_vanilla_int_arithmetic() {
     // (`10 - MIN`, `10 + MAX`, `MAX + MAX`); Java wraps these silently.
     tick(&cloud);
     assert!(pig.has_mob_effect(vanilla_mob_effects::POISON));
-    assert!(cloud.is_removed(), "the wrapped duration drops to zero or below");
+    assert!(
+        cloud.is_removed(),
+        "the wrapped duration drops to zero or below"
+    );
 }
 
 #[test]
