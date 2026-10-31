@@ -131,7 +131,7 @@ impl BlockEntity for SkullBlockEntity {
         Some(self.save_custom_only())
     }
 
-    fn apply_components_from_item(&self, item: &ItemStack) {
+    fn apply_components_from_item_stack(&self, item: &ItemStack) {
         let mut state = self.state.lock();
         *state = SkullData::from_item(item);
     }

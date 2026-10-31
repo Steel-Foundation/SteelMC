@@ -5,16 +5,17 @@ use crate::entity::Entity;
 
 use super::Player;
 
-/// Vanilla player experience state.
+/// Player experience state.
 ///
-/// These three fields are intentionally independent. Vanilla commands and save
-/// data can change one without recomputing the others. The player's score is
-/// synchronized entity data and is owned by [`super::Player`], not experience.
+/// Level, progress, and total points are independent: commands and save data
+/// can change one without recomputing the others. The player's score belongs
+/// to [`super::Player`]'s synchronized entity data.
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Experience {
     level: i32,
     progress: f32,
     total_points: i32,
+    enchantment_seed: i32,
     /// Whether the client experience packet needs to be sent.
     pub dirty: bool,
 }
@@ -37,6 +38,7 @@ impl Experience {
             level,
             progress,
             total_points,
+            enchantment_seed: 0,
             dirty: true,
         }
     }
@@ -48,6 +50,7 @@ impl Experience {
             level,
             progress,
             total_points,
+            enchantment_seed: 0,
             dirty: true,
         }
     }
@@ -112,8 +115,27 @@ impl Experience {
         self.progress
     }
 
-    /// Adds (or removes, if negative) experience levels, resetting progress
-    /// and total points to zero if the level would drop below zero.
+    /// Returns the enchantment seed; zero until loaded or the player first enchants
+    #[must_use]
+    pub const fn enchantment_seed(&self) -> i32 {
+        self.enchantment_seed
+    }
+
+    /// Returns this state with the given enchantment seed, used when restoring saves.
+    #[must_use]
+    pub const fn with_enchantment_seed(mut self, seed: i32) -> Self {
+        self.enchantment_seed = seed;
+        self
+    }
+
+    /// Replaces a missing or zero saved `XpSeed` with a seed drawn from `reroll`
+    #[must_use]
+    pub fn with_loaded_enchantment_seed(self, saved: i32, reroll: impl FnOnce() -> i32) -> Self {
+        let seed = if saved == 0 { reroll() } else { saved };
+        self.with_enchantment_seed(seed)
+    }
+
+    /// Adds levels with saturation, clearing progress and points if the result is negative.
     pub const fn add_levels(&mut self, additional_levels: i32) {
         if additional_levels == 0 {
             return;
@@ -128,8 +150,19 @@ impl Experience {
         self.dirty = true;
     }
 
-    /// Adds raw experience points, rolling progress over into level changes
-    /// as it crosses 0.0 or 1.0.
+    /// Spends `enchantment_cost` levels and installs `next_seed`
+    pub const fn on_enchantment_performed(&mut self, enchantment_cost: i32, next_seed: i32) {
+        self.level = self.level.wrapping_sub(enchantment_cost);
+        if self.level < 0 {
+            self.level = 0;
+            self.progress = 0.0;
+            self.total_points = 0;
+        }
+        self.enchantment_seed = next_seed;
+        self.dirty = true;
+    }
+
+    /// Adds raw points, updating progress and level as thresholds are crossed.
     #[expect(
         clippy::cast_precision_loss,
         reason = "vanilla performs these calculations with Java float precision"

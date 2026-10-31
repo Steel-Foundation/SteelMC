@@ -762,8 +762,7 @@ impl ChunkStorage {
                 let pos = entity.get_block_pos();
 
                 // Serialize NBT data
-                let mut nbt = NbtCompound::new();
-                entity.save_additional(&mut nbt);
+                let nbt = entity.save_without_metadata();
                 let mut nbt_bytes = Vec::new();
                 nbt.write(&mut nbt_bytes);
 
