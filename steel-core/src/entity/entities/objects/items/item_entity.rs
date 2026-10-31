@@ -638,9 +638,9 @@ impl Entity for ItemEntity {
             self.merge_with_neighbors(&world);
         }
 
-        let fluid_contact = self.refresh_fluid_contact_with_currents();
-        self.base.reset_fall_distance_in_water();
-        if fluid_contact.water_height() > 0.0 || fluid_contact.lava_height() > 0.0 {
+        // Vanilla item ticks refresh fluid interaction after movement and sync
+        // the result, which also emits water-entry splashes.
+        if self.update_fluid_interaction() {
             self.mark_velocity_sync();
         }
 

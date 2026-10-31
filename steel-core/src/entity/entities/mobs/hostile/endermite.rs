@@ -179,6 +179,10 @@ impl Entity for EndermiteEntity {
         Monster::swim_sound_monster(self)
     }
 
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        Monster::swim_splash_sound_monster(self)
+    }
+
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
         self.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
     }
