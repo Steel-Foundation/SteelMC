@@ -11,11 +11,14 @@ use crate::player::Player;
 use crate::player::advancement::rewards::grant_reward;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::CSelectAdvancementsTab;
 use steel_protocol::packets::game::CUpdateAdvancements;
 use steel_registry::REGISTRY;
-use steel_registry::advancement::registry::{AdvancementNodeRef, AdvancementRef};
+use steel_registry::advancement::registry::{
+    AdvancementIdx, AdvancementNodeRef, AdvancementRef, FrozenAdvancementRegistry,
+};
 use steel_registry::advancement::{AdvancementProgressData, Criteria};
 use steel_registry::vanilla_game_rules::SHOW_ADVANCEMENT_MESSAGES;
 use steel_utils::Identifier;
@@ -28,11 +31,13 @@ pub struct PlayerAdvancement {
     /// the progress of the player for each advancement
     pub(crate) progress: AdvancementProgressMap,
     is_first_packet: bool,
-    roots_to_update: FxHashSet<AdvancementNodeRef>,
-    visible: FxHashSet<AdvancementRef>,
-    progress_changed: FxHashSet<AdvancementRef>,
-    /// represent the las selected advancement tab
-    pub last_selected_tab: Option<AdvancementRef>,
+    roots_to_update: FxHashSet<AdvancementIdx>,
+    visible: FxHashSet<AdvancementIdx>,
+    progress_changed: FxHashSet<AdvancementIdx>,
+    /// represent the last selected advancement tab
+    last_selected_tab: Option<Identifier>,
+    /// the registry used to evaluate the visibility of the advancements
+    registry: Arc<FrozenAdvancementRegistry>,
 }
 
 impl Default for PlayerAdvancement {
@@ -44,11 +49,26 @@ impl Default for PlayerAdvancement {
             visible: FxHashSet::default(),
             progress_changed: FxHashSet::default(),
             last_selected_tab: Option::default(),
+            registry: REGISTRY.advancements.snapshot(),
         }
     }
 }
 
 impl PlayerAdvancement {
+    /// Synchronizes the player's advancement data with the current advancement registry.
+    /// This is useful when the advancement registry has been updated, and the player's data needs to be aligned with the new state.
+    pub fn sync(&mut self, current: Arc<FrozenAdvancementRegistry>) {
+        if Arc::ptr_eq(&self.registry, &current) {
+            return;
+        }
+        self.registry = current;
+        // Les anciens indices ne valent plus rien : on repart de zéro
+        self.visible.clear();
+        self.progress_changed.clear();
+        self.roots_to_update.clear();
+        self.is_first_packet = true; // renvoyer l'état complet au client
+    }
+
     /// Award a criterion to a player. If this completes the advancement,
     /// grant the advancement along with its rewards and display the corresponding chat message.
     pub(crate) fn award(
@@ -203,20 +223,13 @@ impl PlayerAdvancement {
 
     /// change the selected tab and update the client with it
     pub fn set_selected_tab(&mut self, player: &Player, advancement: Option<AdvancementRef>) {
-        let old = self.last_selected_tab;
-        if let Some(value) = advancement
-            && value.is_root()
-            && value.display().is_some()
-        {
-            self.last_selected_tab = advancement;
-        } else {
-            self.last_selected_tab = None;
-        }
+        let new = advancement
+            .filter(|a| a.is_root() && a.display().is_some())
+            .map(|a| a.key().clone());
 
-        if old != self.last_selected_tab {
-            player.send_packet(CSelectAdvancementsTab::new(
-                self.last_selected_tab.map(|e| e.key().clone()),
-            ));
+        if self.last_selected_tab != new {
+            player.send_packet(CSelectAdvancementsTab::new(new.clone()));
+            self.last_selected_tab = new;
         }
     }
 }

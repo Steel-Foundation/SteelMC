@@ -128,7 +128,7 @@ pub(crate) fn build() -> TokenStream {
         use crate::advancement::display::{AdvancementType,DisplayInfo};
         use crate::advancement::{Advancement,AdvancementRewards,AdvancementRequirement};
         use crate::advancement::criterion::{Criterion,AnyCriterion,ImpossibleInstance,ImpossibleTrigger};
-        use crate::advancement::registry::AdvancementRegistry;
+        use crate::advancement::registry::{AdvancementRegistry,AdvancementHolder};
         use crate::vanilla_items;
         use crate::vanilla_recipes;
         use crate::ItemStackTemplate;
@@ -148,7 +148,7 @@ pub(crate) fn build() -> TokenStream {
         advancement_data.to_tokens(&mut stream);
         let const_ident = &advancement_data.const_ident;
         register_stream.extend(quote! {
-            registry.register(&#const_ident);
+            registry.register(AdvancementHolder::from(&*#const_ident));
         });
     }
     stream.extend(quote! {

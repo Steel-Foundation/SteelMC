@@ -1,25 +1,213 @@
 use crate::advancement::{Advancement, positioner};
+use arc_swap::ArcSwap;
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::cmp::PartialEq;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+use std::ops::{Add, Deref, Index, Sub};
+use std::sync::Arc;
 use steel_utils::Identifier;
+use steel_utils::locks::SyncMutex;
 use steel_utils::serial::WriteTo;
 
-pub type AdvancementRef = &'static Advancement;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AdvancementRef<'a> {
+    Static(&'static Advancement),
+    Dynamic(&'a Advancement),
+}
+
+impl AdvancementRef<'_> {
+    #[must_use]
+    pub const fn get(&self) -> &Advancement {
+        match self {
+            AdvancementRef::Static(adv) => adv,
+            AdvancementRef::Dynamic(adv) => adv,
+        }
+    }
+    #[must_use]
+    pub const fn key(&self) -> &Identifier {
+        match self {
+            AdvancementRef::Static(adv) => &adv.key,
+            AdvancementRef::Dynamic(adv) => &adv.key,
+        }
+    }
+
+    #[must_use]
+    pub const fn display(&self) -> Option<&crate::advancement::display::DisplayInfo> {
+        match self {
+            AdvancementRef::Static(adv) => adv.display.as_ref(),
+            AdvancementRef::Dynamic(adv) => adv.display.as_ref(),
+        }
+    }
+
+    #[must_use]
+    pub const fn requirements(&self) -> &crate::advancement::AdvancementRequirement {
+        match self {
+            AdvancementRef::Static(adv) => &adv.requirements,
+            AdvancementRef::Dynamic(adv) => &adv.requirements,
+        }
+    }
+
+    #[must_use]
+    pub const fn send_telemetry_event(&self) -> bool {
+        match self {
+            AdvancementRef::Static(adv) => adv.send_telemetry_event,
+            AdvancementRef::Dynamic(adv) => adv.send_telemetry_event,
+        }
+    }
+
+    #[must_use]
+    pub const fn parent(&self) -> Option<&Identifier> {
+        match self {
+            AdvancementRef::Static(adv) => adv.parent.as_ref(),
+            AdvancementRef::Dynamic(adv) => adv.parent.as_ref(),
+        }
+    }
+}
+
+impl Deref for AdvancementRef<'_> {
+    type Target = Advancement;
+    fn deref(&self) -> &Advancement {
+        (*self).get()
+    }
+}
+
+impl AsRef<Advancement> for AdvancementRef<'_> {
+    fn as_ref(&self) -> &Advancement {
+        self
+    }
+}
+
+impl From<&'static Advancement> for AdvancementRef<'_> {
+    fn from(r: &'static Advancement) -> Self {
+        Self::Static(r)
+    }
+}
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum AdvancementHolder {
+    Static(&'static Advancement),
+    Dynamic(Arc<Advancement>),
+}
+
+impl From<&'static Advancement> for AdvancementHolder {
+    fn from(r: &'static Advancement) -> Self {
+        Self::Static(r)
+    }
+}
+
+impl From<Arc<Advancement>> for AdvancementHolder {
+    fn from(a: Arc<Advancement>) -> Self {
+        Self::Dynamic(a)
+    }
+}
+
+impl Clone for AdvancementHolder {
+    fn clone(&self) -> Self {
+        match self {
+            AdvancementHolder::Static(adv) => AdvancementHolder::Static(adv),
+            AdvancementHolder::Dynamic(adv) => AdvancementHolder::Dynamic(Arc::clone(adv)),
+        }
+    }
+}
+
+impl Deref for AdvancementHolder {
+    type Target = Advancement;
+    fn deref(&self) -> &Advancement {
+        match self {
+            Self::Static(r) => r,
+            Self::Dynamic(a) => a,
+        }
+    }
+}
+
+impl AdvancementHolder {
+    /// Returns a reference to the underlying `Advancement`.
+    #[must_use]
+    pub fn as_ref(&self) -> AdvancementRef<'_> {
+        match self {
+            Self::Static(r) => AdvancementRef::Static(r), // le 'static est conservé
+            Self::Dynamic(b) => AdvancementRef::Dynamic(b), // &Box<T> -> &T par deref coercion
+        }
+    }
+}
+
+impl<'a> From<&'a AdvancementHolder> for AdvancementRef<'a> {
+    fn from(h: &'a AdvancementHolder) -> Self {
+        h.as_ref()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct AdvancementIdx(usize);
+
+impl AdvancementIdx {
+    #[must_use]
+    #[inline]
+    pub(crate) const fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
+impl std::ops::IndexMut<AdvancementIdx> for Vec<AdvancementNode> {
+    fn index_mut(&mut self, i: AdvancementIdx) -> &mut AdvancementNode {
+        &mut self[i.get()]
+    }
+}
+
+impl From<AdvancementIdx> for usize {
+    fn from(i: AdvancementIdx) -> usize {
+        i.0
+    }
+}
+
+impl Sub for AdvancementIdx {
+    type Output = AdvancementIdx;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        AdvancementIdx(self.0 - rhs.0)
+    }
+}
+
+impl Add for AdvancementIdx {
+    type Output = AdvancementIdx;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        AdvancementIdx(self.0 + rhs.0)
+    }
+}
+
+impl Index<AdvancementIdx> for Vec<AdvancementNode> {
+    type Output = AdvancementNode;
+    fn index(&self, i: AdvancementIdx) -> &AdvancementNode {
+        &self[i.0]
+    }
+}
+
+impl Display for AdvancementIdx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AdvancementIdx({})", self.0)
+    }
+}
 
 #[derive(Debug)]
 pub struct AdvancementNode {
-    children: Vec<usize>,
-    parent: Option<usize>,
-    value: AdvancementRef,
+    children: Vec<AdvancementIdx>,
+    parent: Option<AdvancementIdx>,
+    value: AdvancementHolder,
     x: f32,
     y: f32,
 }
 
-pub type AdvancementNodeRef = &'static AdvancementNode;
+pub type AdvancementNodeRef<'a> = &'a AdvancementNode;
 
-impl WriteTo for AdvancementNodeRef {
+impl WriteTo for AdvancementNodeRef<'_> {
     fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.value.write(writer)?;
         self.x.write(writer)?;
@@ -28,12 +216,12 @@ impl WriteTo for AdvancementNodeRef {
 }
 
 impl AdvancementNode {
-    pub fn add_child(&mut self, child: usize) {
+    pub fn add_child(&mut self, child: AdvancementIdx) {
         self.children.push(child);
     }
 
     #[must_use]
-    pub const fn new(value: AdvancementRef, parent: Option<usize>) -> Self {
+    pub const fn new(value: AdvancementHolder, parent: Option<AdvancementIdx>) -> Self {
         Self {
             value,
             parent,
@@ -45,7 +233,7 @@ impl AdvancementNode {
 
     #[inline]
     #[must_use]
-    pub const fn has_display(&self) -> bool {
+    pub fn has_display(&self) -> bool {
         self.value.display.is_some()
     }
 
@@ -63,19 +251,19 @@ impl AdvancementNode {
 
     #[must_use]
     #[inline]
-    pub const fn value(&self) -> AdvancementRef {
-        self.value
+    pub fn value(&self) -> AdvancementRef<'_> {
+        self.value.as_ref()
     }
 
     #[must_use]
     #[inline]
-    pub fn children(&self) -> Vec<usize> {
+    pub fn children(&self) -> Vec<AdvancementIdx> {
         self.children.clone()
     }
 
     #[must_use]
     #[inline]
-    pub const fn parent(&self) -> Option<usize> {
+    pub const fn parent(&self) -> Option<AdvancementIdx> {
         self.parent
     }
 }
@@ -99,58 +287,29 @@ impl Hash for AdvancementNode {
     }
 }
 
-/// equivalent of the `AdvancementTree` of the minecraft source code
-///
-/// TODO add Dynamic allocated Advancement with a enum :
-/// ```rust
-/// use steel_registry::advancement::Advancement;
-/// use steel_registry::advancement::registry::AdvancementRef;
-///
-/// enum AdvancementHolder {
-///    Static(AdvancementRef),
-///    Dynamic(Box<Advancement>),
-/// }
-/// ```
-/// TODO add the ability to reload the registry.
-/// TODO made the registry behind a `ArcSwap` and the `unloaded_advancement` behind a `Mutex` to allow for dynamic reloading of advancements.
 #[derive(Default, Debug)]
-pub struct AdvancementRegistry {
-    pub(crate) advancements: Vec<AdvancementRef>,
+pub struct FrozenAdvancementRegistry {
     pub(crate) adv_nodes: Vec<AdvancementNode>,
-    pub(crate) unloaded_advancement: FxHashSet<AdvancementRef>,
-    pub(crate) by_key: FxHashMap<Identifier, usize>,
-    pub(crate) roots: Vec<usize>,
-    pub(crate) tasks: Vec<usize>,
+    pub(crate) by_key: FxHashMap<Identifier, AdvancementIdx>,
+    pub(crate) roots: Vec<AdvancementIdx>,
+    pub(crate) tasks: Vec<AdvancementIdx>,
 }
 
-impl AdvancementRegistry {
-    #[must_use]
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
-    pub fn advancements(&self) -> &[AdvancementRef] {
-        &self.advancements
-    }
-
-    #[must_use]
-    pub fn nodes(&self) -> &[AdvancementNode] {
-        &self.adv_nodes
-    }
-
-    fn register_with_parent(&mut self, advancement: AdvancementRef, parent_idx: Option<usize>) {
+impl FrozenAdvancementRegistry {
+    fn register_with_parent(
+        &mut self,
+        advancement: AdvancementHolder,
+        parent_idx: Option<AdvancementIdx>,
+    ) {
         let id = advancement.key.clone();
-        let node_idx = self.adv_nodes.len();
+        let node_idx = AdvancementIdx::new(self.adv_nodes.len());
         self.adv_nodes
             .push(AdvancementNode::new(advancement, parent_idx));
-        self.advancements.push(advancement);
         self.by_key.insert(id, node_idx);
         if let Some(parent) = parent_idx {
-            let parent_node = self
+            let parent_node: &mut AdvancementNode = self
                 .adv_nodes
-                .get_mut(parent)
+                .get_mut(parent.get())
                 .expect("unable to get the parent node");
             parent_node.add_child(node_idx);
             self.tasks.push(node_idx);
@@ -159,9 +318,9 @@ impl AdvancementRegistry {
         }
     }
 
-    fn try_register(&mut self, advancement: AdvancementRef) -> Option<AdvancementRef> {
+    fn try_register(&mut self, advancement: AdvancementHolder) -> Option<AdvancementHolder> {
         let parent_id = &advancement.parent;
-        let parent_idx: Option<usize> = match parent_id {
+        let parent_idx: Option<AdvancementIdx> = match parent_id {
             Some(id) => match self.by_key.get(id) {
                 Some(node) => Some(*node),
                 None => return Some(advancement),
@@ -172,7 +331,26 @@ impl AdvancementRegistry {
         None
     }
 
-    fn register_all(&mut self, mut advancements_to_add: Vec<AdvancementRef>) {
+    #[must_use]
+    pub fn value_by_key(&self, key: &Identifier) -> Option<AdvancementRef<'_>> {
+        let &idx = self.by_key.get(key)?;
+        Some(self.adv_nodes[idx].value())
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn get_by_idx(&self, idx: AdvancementIdx) -> Option<&AdvancementNode> {
+        self.adv_nodes.get(idx.get())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (AdvancementIdx, &AdvancementNode)> + '_ {
+        self.adv_nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, node)| (AdvancementIdx(idx), node))
+    }
+
+    fn register_all(&mut self, mut advancements_to_add: Vec<AdvancementHolder>) {
         while !advancements_to_add.is_empty() {
             let len_before = advancements_to_add.len();
 
@@ -194,71 +372,88 @@ impl AdvancementRegistry {
         }
     }
 
-    /// Registers an advancement in the registry. Returns true if the advancement was added to the
-    /// unloaded advancements set, false if it was already present.
-    pub fn register(&mut self, advancement: AdvancementRef) -> bool {
-        self.unloaded_advancement.insert(advancement)
-    }
-
     #[cfg(test)]
-    pub fn register_without_load(&mut self, advancements: &[AdvancementRef]) {
+    pub fn register_without_load(&mut self, advancements: &[AdvancementHolder]) {
         self.register_all(advancements.to_vec());
     }
 
+    pub fn advancements(&self) -> impl Iterator<Item = AdvancementRef<'_>> + '_ {
+        self.adv_nodes.iter().map(|node| node.value())
+    }
+
+    #[must_use]
+    pub fn root<'a>(&'a self, advancement_node: AdvancementNodeRef<'a>) -> AdvancementNodeRef<'a> {
+        let mut advancement_node = advancement_node;
+        while let Some(parent) = &advancement_node.parent {
+            advancement_node = self
+                .get_by_idx(*parent)
+                .expect("unable to get the parent node");
+        }
+        advancement_node
+    }
+}
+
+/// equivalent of the `AdvancementTree` of the minecraft source code
+#[derive(Debug, Default)]
+pub struct AdvancementRegistry {
+    registry: ArcSwap<FrozenAdvancementRegistry>,
+    unloaded_advancement: SyncMutex<FxHashSet<AdvancementHolder>>,
+}
+
+impl AdvancementRegistry {
     #[must_use]
     #[inline]
-    pub fn value_by_key(&self, key: &Identifier) -> Option<AdvancementRef> {
-        self.by_key.get(key).map(|idx| self.advancements[*idx])
+    pub fn new(registry: FrozenAdvancementRegistry) -> Self {
+        Self {
+            registry: ArcSwap::new(Arc::new(registry)),
+            unloaded_advancement: SyncMutex::new(FxHashSet::default()),
+        }
     }
 
     #[must_use]
     #[inline]
-    pub fn by_key(&self, key: &Identifier) -> Option<&AdvancementNode> {
-        self.by_key
-            .get(key)
-            .and_then(|idx| self.adv_nodes.get(*idx))
+    pub fn snapshot(&self) -> Arc<FrozenAdvancementRegistry> {
+        self.registry.load_full()
     }
 
-    #[must_use]
-    #[inline]
-    pub fn get_by_idx(&self, idx: usize) -> Option<&AdvancementNode> {
-        self.adv_nodes.get(idx)
+    /// Registers an advancement in the registry. Returns true if the advancement was added to the
+    /// unloaded advancements set, false if it was already present.
+    pub fn register(&mut self, advancement: AdvancementHolder) -> bool {
+        self.unloaded_advancement.lock().insert(advancement)
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, &AdvancementNode)> + '_ {
-        self.adv_nodes.iter().enumerate()
+    pub fn with_value_by_key<R>(
+        &self,
+        key: &Identifier,
+        f: impl FnOnce(AdvancementRef<'_>) -> R,
+    ) -> Option<R> {
+        let reg = self.registry.load(); // guard court, bien utilisé ici
+        reg.value_by_key(key).map(f)
     }
 
     /// Updates the advancement tree by loading and connecting all unloaded advancements.
     pub(crate) fn update_tree(&mut self) {
-        let advancements = self.unloaded_advancement.drain().collect();
-        self.register_all(advancements);
-        for advancement_idx in self.roots.clone() {
-            let node = self.adv_nodes.get(advancement_idx);
+        let advancements = self.unloaded_advancement.lock().drain().collect();
+        let mut new_registry = FrozenAdvancementRegistry::default();
+        new_registry.register_all(advancements);
+        for advancement_idx in new_registry.roots.clone() {
+            let node = new_registry.adv_nodes.get(advancement_idx.get());
             let Some(node) = node else {
                 eprintln!("unable to get the root node with index {advancement_idx}");
                 return;
             };
             if node.has_display() {
-                let res = positioner::run(self, advancement_idx);
+                let res = positioner::run(&mut new_registry, advancement_idx);
                 if let Err(e) = res {
                     eprintln!("{}", e.get_message());
                 }
             }
         }
-    }
-
-    #[must_use]
-    pub fn root(&'static self, advancement_node: AdvancementNodeRef) -> AdvancementNodeRef {
-        let mut advancement_node = advancement_node;
-        while let Some(parent) = &advancement_node.parent {
-            advancement_node = &self.adv_nodes[*parent];
-        }
-        advancement_node
+        self.registry.store(Arc::new(new_registry));
     }
 
     pub fn remove_unloaded_advancement(&mut self, advancement: &Identifier) {
         self.unloaded_advancement
+            .lock()
             .retain(|adv| adv.key() != advancement);
     }
 }

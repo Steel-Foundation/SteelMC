@@ -1141,9 +1141,9 @@ unit_argument_parser!(
         suggest_resources(
             REGISTRY
                 .advancements
+                .load()
                 .advancements()
-                .iter()
-                .map(|adv| adv.key()),
+                .map(|adv| adv.key().clone()),
             builder,
         );
     },

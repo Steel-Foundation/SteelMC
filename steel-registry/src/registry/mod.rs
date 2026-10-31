@@ -787,7 +787,7 @@ impl Registry {
             custom_stats: CustomStatRegistry::new(),
             stat_types: StatTypeRegistry::new(),
             ticket_types: TicketTypeRegistry::new(),
-            advancements: AdvancementRegistry::new(),
+            advancements: AdvancementRegistry::default(),
         }
     }
 }

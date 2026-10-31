@@ -2954,6 +2954,7 @@ dependencies = [
 name = "steel-registry"
 version = "0.16.1+mc26.3"
 dependencies = [
+ "arc-swap",
  "bitflags",
  "flate2",
  "glam",

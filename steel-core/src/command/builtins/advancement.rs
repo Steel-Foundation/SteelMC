@@ -11,7 +11,6 @@ use crate::player::Player;
 use crate::player::advancement::PlayerAdvancement;
 use std::sync::Arc;
 use steel_registry::REGISTRY;
-use steel_registry::advancement::Advancement;
 use steel_registry::advancement::registry::{AdvancementNode, AdvancementRef};
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -94,11 +93,12 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     }),
                 ))
                 .then(literal("everything").executes(|c| {
+                    let snap = REGISTRY.advancements.snapshot();
                     perform(
                         c.source(),
                         &c.players("targets")?,
                         $action,
-                        REGISTRY.advancements.advancements(),
+                        snap.advancements(),
                         false,
                     )
                 })))
@@ -166,7 +166,7 @@ impl Action {
         }
         let count = advancements
             .iter()
-            .filter(|advancement| self.perform_single_inner(player, &mut guard, advancement))
+            .filter(|advancement| self.perform_single_inner(player, &mut guard, **advancement))
             .count() as i32;
         if !show_advancement {
             guard.flush_dirty(player, false);
@@ -177,7 +177,7 @@ impl Action {
     fn perform_criterion(
         self,
         player: &Arc<Player>,
-        advancement: &'static Advancement,
+        advancement: AdvancementRef,
         criterion: &str,
     ) -> bool {
         let mut guard = player.advancements.lock();
@@ -225,13 +225,14 @@ fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
                 let mut parent = target_node.parent();
                 while let Some(parent_id) = parent {
                     let current_node = tree
+                        .snapshot()
                         .get_by_idx(parent_id)
                         .expect("unable to get the parent node");
                     advancements.push(current_node.value());
                     parent = current_node.parent();
                 }
             }
-            advancements.push(target);
+            advancements.push(target.clone());
             if mode.children() {
                 add_children(target_node, &mut advancements);
             }
@@ -240,10 +241,11 @@ fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
     )
 }
 
-fn add_children(parent: &AdvancementNode, output: &mut Vec<&Advancement>) {
+fn add_children(parent: &AdvancementNode, output: &mut Vec<AdvancementRef>) {
     for child in parent.children() {
         let node = REGISTRY
             .advancements
+            .snapshot()
             .get_by_idx(child)
             .expect("invalid child index in the parent node");
         output.push(node.value());

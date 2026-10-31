@@ -4,14 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::time::SystemTime;
 use steel_registry::advancement::AdvancementRequirement;
-use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::advancement::registry::{
+    AdvancementIdx, AdvancementRef, FrozenAdvancementRegistry,
+};
 
 /// represent a map of all progress made for advancement of a specific player
 #[derive(Debug, Default, Clone)]
 pub struct AdvancementProgressMap {
     /// A map of all advancement progress for the player.
-    map: FxHashMap<AdvancementRef, usize>,
-    order: Vec<(AdvancementRef, AdvancementProgress)>,
+    map: FxHashMap<AdvancementIdx, usize>,
+    order: Vec<(AdvancementIdx, AdvancementProgress)>,
 }
 
 impl AdvancementProgressMap {
@@ -19,11 +21,12 @@ impl AdvancementProgressMap {
     #[must_use]
     pub fn get_mut_or_start_progress(
         &mut self,
-        advancement: AdvancementRef,
+        registry: &FrozenAdvancementRegistry,
+        advancement: AdvancementIdx,
     ) -> &mut AdvancementProgress {
         let idx = self.map.entry(advancement).or_insert_with(|| {
             let mut progress = AdvancementProgress::default();
-            progress.update(advancement.requirements());
+            progress.update(registry.get_by_idx(advancement).requirements());
             self.order.push((advancement, progress));
             self.order.len() - 1
         });
@@ -43,7 +46,7 @@ impl AdvancementProgressMap {
 
     /// insert a new advancement to the progress map
     #[inline]
-    pub fn insert(&mut self, advancement: AdvancementRef, progress: AdvancementProgress) {
+    pub fn insert(&mut self, advancement: AdvancementIdx, progress: AdvancementProgress) {
         self.order.push((advancement, progress));
         self.map.insert(advancement, self.order.len() - 1);
     }
@@ -65,7 +68,7 @@ impl AdvancementProgressMap {
     /// return whether the advancement has a progress instance
     #[must_use]
     #[inline]
-    pub fn has_progress(&self, advancement: AdvancementRef) -> bool {
+    pub fn has_progress(&self, advancement: AdvancementIdx) -> bool {
         self.map.contains_key(&advancement)
     }
 
