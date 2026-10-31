@@ -301,7 +301,7 @@ fn full_damage_starts_the_vanilla_hurt_animation_timer() {
 #[test]
 fn hurt_time_counts_down_in_the_living_base_tick() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(entity.hurt(test_world(), &source, 4.0));
 
