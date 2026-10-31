@@ -24,7 +24,7 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
 
-/// Vanilla `JukeboxBlock` behavior.
+/// Jukebox block behavior.
 #[block_behavior]
 pub struct JukeboxBlock {
     block: BlockRef,

@@ -19,7 +19,7 @@ impl FeatureDecorationRunner {
     ) -> bool {
         let origin = BlockPos::new(origin.x(), region.sea_level(), origin.z());
         let snow_on_top = random.next_f64() > 0.7;
-        let main_block_state = Self::block_state_from_data(registry, config);
+        let main_block_state = BlockStateProviderEvaluator::block_state_from_data(registry, config);
         let shape_angle = random.next_f64() * 2.0 * PI;
         let shape_ellipse_a = 11 - random.next_i32_bounded(5);
         let shape_ellipse_c = 3 + random.next_i32_bounded(3);

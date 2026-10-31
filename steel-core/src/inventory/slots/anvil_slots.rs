@@ -70,11 +70,11 @@ impl AnvilResultHandler {
 
 impl ResultHandler for AnvilResultHandler {
     fn result_container(&self) -> ContainerRef {
-        ContainerRef::from(self.result_container.clone())
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     fn dependencies(&self) -> Vec<ContainerRef> {
-        vec![ContainerRef::from(self.input_container.clone())]
+        vec![ContainerRef::from(Arc::clone(&self.input_container))]
     }
 
     fn update_result(&self, _guard: &mut ContainerLockGuard) {}
@@ -162,11 +162,12 @@ mod tests {
     fn anvil_damage_does_not_notify_neighbors() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("anvil_damage_update_flags");
+        let world_fixture = fresh_test_world("anvil_damage_update_flags");
+        let world = &world_fixture.world;
         let anvil_pos = BlockPos::new(8, 64, 8);
         let lamp_pos = anvil_pos.east();
         let power_pos = lamp_pos.east();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(anvil_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(anvil_pos));
 
         assert!(world.set_block(
             power_pos,
@@ -197,7 +198,7 @@ mod tests {
             Arc::new(AtomicI32::new(0)),
             Arc::new(AtomicBool::new(false)),
             anvil_pos,
-            Arc::clone(&world),
+            Arc::clone(world),
         );
         handler.damage_anvil(world.get_block_state(anvil_pos));
 

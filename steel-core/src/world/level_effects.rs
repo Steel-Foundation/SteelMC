@@ -1,20 +1,46 @@
+use std::ptr;
+
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
     GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext, NetworkConnection,
-    ParticleData, Player, REGISTRY, RegistryExt, SectionPos, SoundEventRef, SoundSource,
-    UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
-    vanilla_blocks, vanilla_game_events,
+    ParticleData, Player, REGISTRY, RandomizationType, RegistryExt, SectionPos, SoundEventRef,
+    SoundSource, UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block,
+    level_events, vanilla_blocks, vanilla_game_events,
 };
+use crate::entity::loot_equipment;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use steel_registry::sound_event::SoundEventHolder;
+use steel_registry::vanilla_particle_types::{BUBBLE, SPLASH};
 
 pub(super) fn sound_is_within_range(
-    sound: SoundEventRef,
+    sound: &SoundEventHolder,
     volume: f32,
     distance_squared: f64,
 ) -> bool {
     let range = f64::from(sound.range(volume));
     distance_squared < range * range
+}
+
+fn sound_packet_for_player(
+    pos: DVec3,
+    player_pos: DVec3,
+    max_distance_squared: f64,
+    volume: f32,
+    min_volume: f32,
+) -> Option<(DVec3, f32)> {
+    let delta = pos - player_pos;
+    let distance_squared = delta.length_squared();
+    if distance_squared <= max_distance_squared {
+        return Some((pos, volume));
+    }
+    if min_volume <= 0.0 {
+        return None;
+    }
+    Some((
+        player_pos + delta / distance_squared.sqrt() * 2.0,
+        min_volume,
+    ))
 }
 
 impl World {
@@ -95,9 +121,12 @@ impl World {
             x_dist: spread.x as f32,
             y_dist: spread.y as f32,
             z_dist: spread.z as f32,
-            max_speed: speed as f32,
+            x_max_speed: speed as f32,
+            y_max_speed: speed as f32,
+            z_max_speed: speed as f32,
             count,
             particle,
+            randomization_type: RandomizationType::default(),
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -156,9 +185,12 @@ impl World {
             x_dist: spread.x as f32,
             y_dist: spread.y as f32,
             z_dist: spread.z as f32,
-            max_speed: speed as f32,
+            x_max_speed: speed as f32,
+            y_max_speed: speed as f32,
+            z_max_speed: speed as f32,
             count,
             particle,
+            randomization_type: RandomizationType::default(),
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -178,6 +210,29 @@ impl World {
         let (x, y, z) = player_block_pos.get_center();
         let radius = if override_limiter { 512.0 } else { 32.0 };
         DVec3::new(x, y, z).distance_squared(particle_pos) < radius * radius
+    }
+
+    /// Sends bubble column particles at the position
+    pub fn send_bubble_column_particles(&self, pos: BlockPos) {
+        let x = f64::from(pos.x());
+        let y = f64::from(pos.y()) + 1.0;
+        let z = f64::from(pos.z());
+        for _ in 0..2 {
+            self.send_particles(
+                ParticleData::simple(&SPLASH),
+                DVec3::new(x + rand::random::<f64>(), y, z + rand::random::<f64>()),
+                1,
+                DVec3::ZERO,
+                1.0,
+            );
+            self.send_particles(
+                ParticleData::simple(&BUBBLE),
+                DVec3::new(x + rand::random::<f64>(), y, z + rand::random::<f64>()),
+                1,
+                DVec3::new(0.0, 0.01, 0.0),
+                0.2,
+            );
+        }
     }
 
     /// Broadcasts a global level event to all players in the world.
@@ -204,15 +259,13 @@ impl World {
 
     /// Broadcasts block destruction particles and sound for a destroyed block.
     ///
-    /// This is a convenience method that sends the `PARTICLES_DESTROY_BLOCK` level event.
-    ///
     /// # Arguments
     /// * `pos` - The position of the destroyed block
     /// * `block_state_id` - The block state ID of the destroyed block
     /// * `exclude` - Optional entity ID to exclude from receiving the event
     pub fn destroy_block_effect(&self, pos: BlockPos, block_state_id: u32, exclude: Option<i32>) {
         self.level_event(
-            level_events::PARTICLES_DESTROY_BLOCK,
+            level_events::PARTICLES_AND_SOUND_DESTROY_BLOCK,
             pos,
             block_state_id as i32,
             exclude,
@@ -224,9 +277,9 @@ impl World {
     /// Sends destruction particles (skipping fire blocks), optionally drops
     /// resources via loot table, then replaces with air.
     ///
-    /// Defaults to recursion limit of 512
+    /// Defaults to [`Self::UPDATE_LIMIT`].
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
-        self.destroy_block_with_limit(pos, drop_items, 512)
+        self.destroy_block_with_limit(pos, drop_items, Self::UPDATE_LIMIT)
     }
 
     /// Replaces a block with its fluid state's legacy block.
@@ -249,7 +302,7 @@ impl World {
         drop_items: bool,
         entity: &dyn Entity,
     ) -> bool {
-        self.destroy_block_with_limit_and_entity(pos, drop_items, 512, Some(entity))
+        self.destroy_block_with_limit_and_entity(pos, drop_items, Self::UPDATE_LIMIT, Some(entity))
     }
 
     /// Destroys a block at the given position, optionally dropping its loot.
@@ -362,10 +415,14 @@ impl World {
         context: &BlockLootContext<'_>,
     ) -> Vec<ItemStack> {
         let block = state.get_block();
-        let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
-
-        let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
-            return Vec::new();
+        let loot_table = if let Some(loot_table) = block.config.loot_table {
+            loot_table
+        } else {
+            let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
+            let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
+                return Vec::new();
+            };
+            loot_table
         };
 
         let mut rng = rand::rng();
@@ -380,8 +437,12 @@ impl World {
         if let Some(tool) = context.tool() {
             ctx = ctx.with_tool(tool);
         }
+        let entity_equipment = context.entity().and_then(loot_equipment);
         if let Some(entity) = context.entity() {
-            ctx = ctx.with_this_entity(entity_loot_ref(entity));
+            ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
+        }
+        if let Some(radius) = context.explosion_radius() {
+            ctx = ctx.with_explosion(radius);
         }
 
         loot_table.get_random_items(&mut ctx)
@@ -433,6 +494,26 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
+        self.play_sound_holder_at(
+            &SoundEventHolder::Registry(sound),
+            source,
+            pos,
+            volume,
+            pitch,
+            exclude,
+        );
+    }
+
+    /// broadcasts a registry or direct sound holder at an exact world position
+    pub fn play_sound_holder_at(
+        &self,
+        sound: &SoundEventHolder,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x.floor() as i32),
             SectionPos::block_to_section_coord(pos.z.floor() as i32),
@@ -440,7 +521,7 @@ impl World {
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
-        let packet = CSound::new(sound, source, pos, volume, pitch, seed);
+        let packet = CSound::new_holder(sound.clone(), source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -466,6 +547,55 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Plays a sound for explicit player targets using vanilla's range fallback.
+    ///
+    /// Returns the players that received a packet, in target order.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps the vanilla playsound parameters explicit"
+    )]
+    pub fn play_sound_to_players(
+        &self,
+        sound: &SoundEventHolder,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        min_volume: f32,
+        targets: &[Arc<Player>],
+    ) -> Vec<Arc<Player>> {
+        let max_distance = sound.range(volume);
+        let max_distance_squared = f64::from(max_distance * max_distance);
+        let seed = rand::random::<i64>();
+        let mut played_for = Vec::new();
+
+        for player in targets {
+            let player_world = player.get_world();
+            if !ptr::eq(self, player_world.as_ref()) {
+                continue;
+            }
+
+            let player_pos = player.position();
+            let Some((packet_pos, packet_volume)) =
+                sound_packet_for_player(pos, player_pos, max_distance_squared, volume, min_volume)
+            else {
+                continue;
+            };
+
+            player.send_packet(CSound::new_holder(
+                sound.clone(),
+                source,
+                packet_pos,
+                packet_volume,
+                pitch,
+                seed,
+            ));
+            played_for.push(Arc::clone(player));
+        }
+
+        played_for
     }
 
     /// Plays a block sound at a specific position.
@@ -494,5 +624,28 @@ impl World {
     #[must_use]
     pub(crate) const fn entity_manager(&self) -> &WorldEntityManager {
         &self.entity_manager
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::sound_packet_for_player;
+
+    #[test]
+    fn sound_range_fallback_matches_vanilla_boundary_and_relocation() {
+        assert_eq!(
+            sound_packet_for_player(DVec3::ZERO, DVec3::new(16.0, 0.0, 0.0), 256.0, 1.0, 0.0),
+            Some((DVec3::ZERO, 1.0))
+        );
+        assert_eq!(
+            sound_packet_for_player(DVec3::ZERO, DVec3::new(17.0, 0.0, 0.0), 256.0, 1.0, 0.0),
+            None
+        );
+        assert_eq!(
+            sound_packet_for_player(DVec3::ZERO, DVec3::new(17.0, 0.0, 0.0), 256.0, 1.0, 0.25),
+            Some((DVec3::new(15.0, 0.0, 0.0), 0.25))
+        );
     }
 }

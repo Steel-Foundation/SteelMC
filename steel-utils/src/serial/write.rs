@@ -5,7 +5,7 @@
 use std::{
     collections::HashMap,
     hash::BuildHasher,
-    io::{Result, Write},
+    io::{Error, Result, Write},
 };
 
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::{
     BlockPos, Identifier, PackedBlockPos,
     codec::VarInt,
-    serial::{PrefixedWrite, WriteTo},
+    serial::{DEFAULT_BOUND, PrefixedWrite, WriteTo},
 };
 
 impl WriteTo for bool {
@@ -28,6 +28,10 @@ impl WriteTo for bool {
 impl WriteTo for u8 {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         writer.write_all(&self.to_be_bytes())
+    }
+
+    fn write_slice(values: &[Self], writer: &mut impl Write) -> Result<()> {
+        writer.write_all(values)
     }
 }
 
@@ -98,10 +102,7 @@ impl<T: WriteTo> WriteTo for Option<T> {
 
 impl<T: WriteTo, const N: usize> WriteTo for [T; N] {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        for i in self {
-            i.write(writer)?;
-        }
-        Ok(())
+        T::write_slice(self, writer)
     }
 }
 
@@ -152,8 +153,15 @@ impl WriteTo for Uuid {
 
 impl WriteTo for Identifier {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        self.to_string().write_prefixed::<VarInt>(writer)?;
-        Ok(())
+        let len = self.namespace.len() + 1 + self.path.len();
+        if len > DEFAULT_BOUND {
+            return Err(Error::other("Too long"));
+        }
+
+        VarInt(len as i32).write(writer)?;
+        writer.write_all(self.namespace.as_bytes())?;
+        writer.write_all(b":")?;
+        writer.write_all(self.path.as_bytes())
     }
 }
 

@@ -5,7 +5,9 @@ use super::{
     ItemPredicate, ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_input, parse_block_predicate, suggest_block_inputs, suggest_blocks},
-    coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+    coordinates::{
+        parse_block_pos, parse_rotation, parse_vec2, parse_vec3, suggest_coordinates, suggest_vec2,
+    },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
@@ -14,6 +16,8 @@ use super::{
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
+    suggestions::{matches_substring_ignore_case, suggest_resources},
+    swing_animation::SwingAnimationParser,
     text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
 };
@@ -28,8 +32,10 @@ use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+    ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
+    SuggestionType as ProtocolSuggestionType,
 };
+use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
@@ -37,6 +43,7 @@ use steel_registry::{
     entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
     world_clock::WorldClockRef,
 };
+use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
@@ -167,12 +174,20 @@ impl SteelArgumentType {
         Self::new(TimeParser { minimum })
     }
 
+    pub(crate) fn swing_animation() -> Self {
+        Self::new(SwingAnimationParser)
+    }
+
     pub(crate) fn block_pos() -> Self {
         Self::new(BlockPosParser)
     }
 
     pub(crate) fn vec3(center_integers: bool) -> Self {
         Self::new(Vec3Parser { center_integers })
+    }
+
+    pub(crate) fn vec2(center_integers: bool) -> Self {
+        Self::new(Vec2Parser { center_integers })
     }
 
     pub(crate) fn rotation() -> Self {
@@ -189,6 +204,10 @@ impl SteelArgumentType {
 
     pub(crate) fn entity_anchor() -> Self {
         Self::new(EntityAnchorParser)
+    }
+
+    pub(crate) fn entity_tag() -> Self {
+        Self::new(EntityTagParser)
     }
 
     pub(crate) fn entity() -> Self {
@@ -335,6 +354,14 @@ impl SteelArgumentType {
 
     pub(crate) fn storage_key() -> Self {
         Self::new(StorageKeyParser)
+    }
+
+    pub(crate) fn sound() -> Self {
+        Self::new(SoundParser)
+    }
+
+    pub(crate) fn advancement() -> Self {
+        Self::new(AdvancementParser)
     }
 
     pub(crate) fn world_clock() -> Self {
@@ -515,6 +542,10 @@ argument_value_wrapper!(
     "steel:command/value/enchantment"
 );
 argument_value_wrapper!(
+    AdvancementValue(AdvancementRef),
+    "steel:command/value/advancement"
+);
+argument_value_wrapper!(
     DamageTypeValue(DamageTypeRef),
     "steel:command/value/damage_type"
 );
@@ -676,6 +707,37 @@ impl SteelArgumentParser for Vec3Parser {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Vec2Parser {
+    center_integers: bool,
+}
+
+impl_downcast_type!(Vec2Parser, "steel:command/parser/vec2");
+
+impl SteelArgumentParser for Vec2Parser {
+    type Value = Coordinates;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_vec2(reader, self.center_integers)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_vec2(builder, |reader| parse_vec2(reader, self.center_integers));
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Vec2, None)
+    }
+}
+
 unit_argument_parser!(
     RotationParser,
     "steel:command/parser/rotation",
@@ -720,6 +782,57 @@ unit_argument_parser!(
     },
     protocol(ProtocolArgumentType::EntityAnchor, None)
 );
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EntityTagParser;
+
+impl_downcast_type!(EntityTagParser, "steel:command/parser/entity_tag");
+
+impl SteelArgumentParser for EntityTagParser {
+    type Value = PrimitiveArgumentValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        Ok(PrimitiveArgumentValue::String(
+            reader.read_unquoted_string().into(),
+        ))
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let Ok(targets) = context.argument("targets") else {
+            return;
+        };
+        let Some(targets) = targets.downcast_ref::<EntitySelector>() else {
+            return;
+        };
+
+        let prefix = builder.remaining();
+        for tag in context
+            .source()
+            .entity_tag_suggestions(targets)
+            .into_iter()
+            .filter(|tag| matches_substring_ignore_case(prefix, tag))
+        {
+            builder.suggest(tag);
+        }
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::String {
+                behavior: ArgumentStringTypeBehavior::SingleWord,
+            },
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct EntityParser {
@@ -1018,6 +1131,28 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    AdvancementParser,
+    "steel:command/parser/advancement",
+    AdvancementValue,
+    parse | reader,
+    _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .advancements
+                .advancements()
+                .iter()
+                .map(|adv| adv.key()),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
     ItemStackParser,
     "steel:command/parser/item_stack",
     ItemStackValue,
@@ -1080,6 +1215,24 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::ResourceLocation,
         Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    SoundParser,
+    "steel:command/parser/sound",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY.sound_events.iter().map(|(_, sound)| &sound.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AvailableSounds),
     )
 );
 unit_argument_parser!(
@@ -1384,6 +1537,19 @@ fn parse_summonable_entity(
     Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
 }
 
+fn parse_advancement(reader: &mut StringReader<'_>) -> Result<AdvancementRef, CommandSyntaxError> {
+    parse_identifier(reader).and_then(|key| {
+        REGISTRY.advancements.by_key(&key).map_or(
+            Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                TextComponent::translated(
+                    ADVANCEMENT_ADVANCEMENT_NOT_FOUND.message([key.to_string()]),
+                ),
+            )))),
+            |val| Ok(val.value()),
+        )
+    })
+}
+
 fn can_summon(entity_type: EntityTypeRef) -> bool {
     entity_type.summonable
         && ENTITIES
@@ -1455,28 +1621,6 @@ pub(super) fn unknown_resource(
     reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message)))
 }
 
-fn suggest_resources<'a>(
-    resources: impl Iterator<Item = &'a Identifier>,
-    builder: &mut SuggestionsBuilder<'_>,
-) {
-    let contents = builder.remaining_lowercase();
-    let has_namespace = contents.contains(':');
-    let suggestions = resources.filter_map(|resource| {
-        let full_name = resource.to_string();
-        let matches = if has_namespace {
-            matches_substring(contents, &full_name)
-        } else {
-            matches_substring(contents, resource.namespace.as_ref())
-                || matches_substring(contents, resource.path.as_ref())
-        };
-        matches.then_some(full_name)
-    });
-    let suggestions = suggestions.collect::<Vec<_>>();
-    for suggestion in suggestions {
-        builder.suggest(suggestion);
-    }
-}
-
 fn suggest_storage_keys<S>(source: &S, builder: &mut SuggestionsBuilder<'_>)
 where
     S: CommandArgumentSource + ?Sized,
@@ -1487,25 +1631,6 @@ where
         .filter_map(|key| key.parse::<Identifier>().ok())
         .collect::<Vec<_>>();
     suggest_resources(keys.iter(), builder);
-}
-
-pub(super) fn matches_substring(pattern: &str, input: &str) -> bool {
-    if input.starts_with(pattern) {
-        return true;
-    }
-    input.char_indices().any(|(index, character)| {
-        matches!(character, '.' | '_' | '/')
-            && input[index + character.len_utf8()..].starts_with(pattern)
-    })
-}
-
-pub(super) fn identifier_matches(pattern: &str, identifier: &Identifier) -> bool {
-    if pattern.contains(':') {
-        matches_substring(pattern, &identifier.to_string())
-    } else {
-        matches_substring(pattern, identifier.namespace.as_ref())
-            || matches_substring(pattern, identifier.path.as_ref())
-    }
 }
 
 fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, CommandSyntaxError> {

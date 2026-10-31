@@ -34,15 +34,15 @@ pub struct FenceBlock {
 
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 /// North connection property.
-pub const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+pub(crate) const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
 /// East connection property.
-pub const EAST: &BoolProperty = &BlockStateProperties::EAST;
+pub(crate) const EAST: &BoolProperty = &BlockStateProperties::EAST;
 /// South connection property.
-pub const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+pub(crate) const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
 /// West connection property.
-pub const WEST: &BoolProperty = &BlockStateProperties::WEST;
+pub(crate) const WEST: &BoolProperty = &BlockStateProperties::WEST;
 /// Waterlogged property.
-pub const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+pub(crate) const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl FenceBlock {
     /// Creates a new fence block behavior for the given block.

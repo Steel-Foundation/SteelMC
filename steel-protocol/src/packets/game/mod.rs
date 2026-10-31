@@ -8,6 +8,7 @@ mod c_block_event;
 mod c_block_update;
 mod c_bundle_delimiter;
 mod c_change_difficulty;
+mod c_clear_titles;
 mod c_command_suggestions;
 mod c_commands;
 mod c_container_close;
@@ -18,6 +19,7 @@ mod c_cooldown;
 mod c_damage_event;
 mod c_entity_event;
 mod c_entity_position_sync;
+mod c_explode;
 mod c_game_event;
 mod c_hurt_animation;
 mod c_level_event;
@@ -38,6 +40,8 @@ mod c_remove_player_info;
 mod c_respawn;
 mod c_rotate_head;
 mod c_section_blocks_update;
+mod c_select_advancements_tab;
+mod c_set_action_bar_text;
 mod c_set_camera;
 mod c_set_cursor_item;
 mod c_set_default_spawn_position;
@@ -50,13 +54,19 @@ mod c_set_health;
 mod c_set_held_slot;
 mod c_set_passengers;
 mod c_set_player_inventory;
+mod c_set_subtitle_text;
 mod c_set_time;
+mod c_set_title_text;
+mod c_set_titles_animation;
 mod c_sound;
+mod c_stop_sound;
+mod c_swing_animation;
 mod c_tab_list;
 mod c_take_item_entity;
 mod c_teleport_entity;
 mod c_ticking_state;
 mod c_ticking_step;
+mod c_update_advancement;
 mod c_update_attributes;
 mod c_update_mob_effect;
 mod chat;
@@ -81,13 +91,14 @@ mod s_player_action;
 mod s_player_command;
 mod s_player_input;
 mod s_player_load;
+mod s_punch;
 mod s_rename_item;
+mod s_seen_advancement;
+mod s_set_beacon;
 mod s_set_carried_item;
 mod s_set_creative_mode_slot;
-mod s_set_held_item;
 mod s_sign_update;
 mod s_spectator_action;
-mod s_swing;
 mod s_use_item;
 mod s_use_item_on;
 mod world_border;
@@ -102,6 +113,7 @@ pub use c_block_event::CBlockEvent;
 pub use c_block_update::CBlockUpdate;
 pub use c_bundle_delimiter::CBundleDelimiter;
 pub use c_change_difficulty::CChangeDifficulty;
+pub use c_clear_titles::CClearTitles;
 pub use c_command_suggestions::{CCommandSuggestions, SuggestionEntry};
 pub use c_commands::{
     ArgumentStringTypeBehavior, ArgumentType, CCommands, CommandNode, CommandNodeInfo,
@@ -114,16 +126,20 @@ pub use c_container_set_slot::CContainerSetSlot;
 pub use c_cooldown::CCooldown;
 pub use c_damage_event::CDamageEvent;
 pub use c_entity_event::CEntityEvent;
-pub use c_entity_position_sync::CEntityPositionSync;
+pub use c_entity_position_sync::{CEntityPositionSync, PositionPath, PositionStep};
+pub use c_explode::{
+    CExplode, ExplosionParticleInfo, ExplosionParticlePalette, ExplosionParticleWeightError,
+};
 pub use c_game_event::CGameEvent;
 pub use c_game_event::GameEventType;
 pub use c_hurt_animation::CHurtAnimation;
 pub use c_level_event::CLevelEvent;
-pub use c_level_particles::CLevelParticles;
+pub use c_level_particles::{CLevelParticles, RandomizationType};
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
-    CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
+    CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, DeltaStep, PackedEntityDelta, VecDelta,
+    calc_delta, to_angle_byte,
 };
 pub use c_move_vehicle::CMoveVehicle;
 pub use c_open_screen::COpenScreen;
@@ -132,6 +148,7 @@ pub use c_player_abilities::{CPlayerAbilities, ability_flags};
 pub use c_player_combat_kill::CPlayerCombatKill;
 pub use c_player_info_update::{
     CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS, PlayerInfoAction, PlayerInfoEntry,
+    PlayerInfoTarget,
 };
 pub use c_player_look_at::{CPlayerLookAt, LookAtAnchor};
 pub use c_player_position::{CPlayerPosition, RelativeMovement};
@@ -141,6 +158,8 @@ pub use c_remove_player_info::CRemovePlayerInfo;
 pub use c_respawn::CRespawn;
 pub use c_rotate_head::CRotateHead;
 pub use c_section_blocks_update::{BlockChange, CSectionBlocksUpdate};
+pub use c_select_advancements_tab::CSelectAdvancementsTab;
+pub use c_set_action_bar_text::CSetActionBarText;
 pub use c_set_camera::CSetCamera;
 pub use c_set_cursor_item::CSetCursorItem;
 pub use c_set_default_spawn_position::CSetDefaultSpawnPosition;
@@ -153,13 +172,19 @@ pub use c_set_health::CSetHealth;
 pub use c_set_held_slot::CSetHeldSlot;
 pub use c_set_passengers::CSetPassengers;
 pub use c_set_player_inventory::CSetPlayerInventory;
+pub use c_set_subtitle_text::CSetSubtitleText;
 pub use c_set_time::CSetTime;
+pub use c_set_title_text::CSetTitleText;
+pub use c_set_titles_animation::CSetTitlesAnimation;
 pub use c_sound::{CSound, SoundSource};
+pub use c_stop_sound::CStopSound;
+pub use c_swing_animation::CSwingAnimation;
 pub use c_tab_list::CTabList;
 pub use c_take_item_entity::CTakeItemEntity;
 pub use c_teleport_entity::CTeleportEntity;
 pub use c_ticking_state::CTickingState;
 pub use c_ticking_step::CTickingStep;
+pub use c_update_advancement::CUpdateAdvancements;
 pub use c_update_attributes::{
     AttributeModifierData, AttributeModifierOperation, AttributeSnapshot, CUpdateAttributes,
 };
@@ -196,13 +221,14 @@ pub use s_player_action::{PlayerAction, SPlayerAction};
 pub use s_player_command::{PlayerCommandAction, SPlayerCommand};
 pub use s_player_input::SPlayerInput;
 pub use s_player_load::SPlayerLoad;
+pub use s_punch::SPunch;
 pub use s_rename_item::SRenameItem;
+pub use s_seen_advancement::SSeenAdvancement;
+pub use s_set_beacon::SSetBeacon;
 pub use s_set_carried_item::SSetCarriedItem;
 pub use s_set_creative_mode_slot::SSetCreativeModeSlot;
-pub use s_set_held_item::SSetHeldItem;
 pub use s_sign_update::SSignUpdate;
 pub use s_spectator_action::SSpectatorAction;
-pub use s_swing::SSwing;
 pub use s_use_item::SUseItem;
 pub use s_use_item_on::SUseItemOn;
 pub use world_border::{

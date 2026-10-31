@@ -7,6 +7,7 @@ use steel_registry::{vanilla_attributes, vanilla_blocks};
 use steel_utils::{BlockPos, ChunkPos};
 
 use super::{Mob, TARGET_REACH_DISTANCE_SQR};
+use crate::entity::ai::goal::{Goal, GoalControl};
 use crate::entity::ai::navigation::{
     NavigationPathRequest, NavigationRecomputeRequest, NavigationTickContext,
 };
@@ -16,6 +17,8 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
+pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f64 = 2.0;
+
 pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
     mob: &M,
     world: &Arc<World>,
@@ -24,10 +27,11 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
 ) {
     let (target, speed_modifier) = {
         let mut navigation = mob.mob_base().navigation().lock();
-        let mob_position =
+        let ground_mob_position =
             ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float());
         let context = NavigationTickContext {
-            mob_position,
+            ground_mob_position,
+            mob_position: mob.position(),
             mob_bounding_box_width: mob.bounding_box().width(),
             mob_speed: mob.get_speed(),
             game_time,
@@ -102,16 +106,15 @@ pub trait PathfinderMob: Mob {
         Some(vehicle)
     }
 
+    /// Scores pathfinding positions: animals favor light, monsters darkness.
     fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
-        self.as_animal()
-            .map_or(0.0, |animal| animal.animal_walk_target_value(pos))
-    }
-
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
+        if let Some(monster) = self.as_monster() {
+            monster.get_walk_target_value_monster(pos)
+        } else if let Some(animal) = self.as_animal() {
+            animal.animal_walk_target_value(pos)
+        } else {
+            0.0
+        }
     }
 
     fn can_update_path(&self) -> bool {
@@ -154,7 +157,7 @@ pub trait PathfinderMob: Mob {
         tick_path_navigation_target(self, &world, game_time, self.can_update_path());
     }
 
-    fn tick_pathfinder_goal_selectors(&self)
+    fn tick_pathfinder_goal_selectors(&self, entity: &SharedEntity)
     where
         Self: Sized,
     {
@@ -162,11 +165,11 @@ pub trait PathfinderMob: Mob {
         let mut target_selector = self.mob_base().target_selector().lock();
         let mut goal_selector = self.mob_base().goal_selector().lock();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(self, false);
-            goal_selector.tick_running_goals(self, false);
+            target_selector.tick_running_goals(self, entity, false);
+            goal_selector.tick_running_goals(self, entity, false);
         } else {
-            target_selector.tick(self);
-            goal_selector.tick(self);
+            target_selector.tick(self, entity);
+            goal_selector.tick(self, entity);
         }
     }
 
@@ -283,6 +286,59 @@ pub trait PathfinderMob: Mob {
             .goal_selector()
             .lock()
             .has_running_panic_goal()
+    }
+
+    fn should_stay_close_to_leash_holder(&self) -> bool {
+        true
+    }
+
+    fn follow_leash_speed(&self) -> f64 {
+        1.0
+    }
+
+    fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {
+        let radius = self.leash_elastic_distance() as i32 - 1;
+        self.set_home_to(holder.block_position(), radius);
+        holder.notify_leash_holder(self.as_entity_event_source());
+    }
+
+    /// Re-enables MOVE and follows a nearby holder unless panicking.
+    ///
+    /// Brain-based panic detection awaits Brain support; Steel uses vanilla's
+    /// running-`PanicGoal` fallback.
+    fn close_range_leash_behaviour_pathfinder(&self, holder: &dyn Entity) {
+        if !self.should_stay_close_to_leash_holder() || self.is_panicking() {
+            return;
+        }
+
+        self.mob_base()
+            .goal_selector()
+            .lock()
+            .enable_control(GoalControl::Move);
+        let distance_to = (holder.position() - self.position()).length();
+        let delta = (holder.position() - self.position()).normalize_or_zero()
+            * (distance_to - LEASH_CLOSE_RANGE_WANTED_DISTANCE).max(0.0);
+        self.move_to_pos(self.position() + delta, self.follow_leash_speed());
+    }
+
+    /// Stops and removes matching goals. Lives on `PathfinderMob` rather than
+    /// vanilla's `Mob` because Steel's goal hooks require pathfinding mobs.
+    fn remove_all_goals(&self, predicate: impl FnMut(&dyn Goal) -> bool)
+    where
+        Self: Sized,
+    {
+        self.mob_base()
+            .goal_selector()
+            .lock()
+            .remove_all_goals(self, predicate);
+    }
+
+    fn remove_free_will(&self)
+    where
+        Self: Sized,
+    {
+        self.remove_all_goals(|_| true);
+        // Vanilla also removes all brain behaviors; Steel has no brain system.
     }
 
     fn create_path_to_targets(

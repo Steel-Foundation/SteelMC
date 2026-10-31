@@ -376,8 +376,6 @@ impl StatePropertiesPredicate {
         let Some(block) = REGISTRY.blocks.by_state_id(state) else {
             return false;
         };
-        let values = REGISTRY.blocks.get_properties(state);
-
         self.properties.iter().all(|matcher| {
             let Some(index) = block
                 .properties
@@ -386,9 +384,10 @@ impl StatePropertiesPredicate {
             else {
                 return false;
             };
-            matcher
-                .value()
-                .matches(block.properties[index], values[index].1)
+            REGISTRY
+                .blocks
+                .get_property_str(state, matcher.name())
+                .is_some_and(|value| matcher.value().matches(block.properties[index], value))
         })
     }
 
@@ -828,6 +827,12 @@ impl LockCode {
     #[must_use]
     pub const fn predicate(&self) -> &ItemPredicate {
         &self.predicate
+    }
+
+    /// Encodes this lock code as its Vanilla item-predicate NBT without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> NbtTag {
+        self.predicate.to_nbt_tag_ref()
     }
 }
 

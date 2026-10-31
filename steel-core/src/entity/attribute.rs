@@ -409,6 +409,66 @@ impl AttributeMap {
         }
     }
 
+    /// Assigns base values from attributes present in both maps.
+    pub fn assign_base_values(&mut self, other: &Self) {
+        let Self {
+            instances,
+            to_update,
+            to_sync,
+        } = self;
+
+        for (id, other_instance) in other.instances.iter().enumerate() {
+            let Some(other_instance) = other_instance else {
+                continue;
+            };
+            let Some(Some(instance)) = instances.get_mut(id) else {
+                continue;
+            };
+            if instance.set_base_value(other_instance.base_value()) {
+                to_update.mark(id as u16);
+                if instance.attribute.syncable {
+                    to_sync.mark(id as u16);
+                }
+            }
+        }
+    }
+
+    /// Adds permanent modifiers from attributes present in both maps.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the destination already has a modifier with the same ID,
+    /// matching vanilla's `AttributeInstance.addPermanentModifier` contract.
+    pub fn assign_permanent_modifiers(&mut self, other: &Self) {
+        let Self {
+            instances,
+            to_update,
+            to_sync,
+        } = self;
+
+        for (id, other_instance) in other.instances.iter().enumerate() {
+            let Some(other_instance) = other_instance else {
+                continue;
+            };
+            let Some(Some(instance)) = instances.get_mut(id) else {
+                continue;
+            };
+
+            for modifier in other_instance.permanent_modifiers() {
+                assert!(
+                    instance.add_modifier(modifier.clone(), true),
+                    "modifier {} is already applied to attribute {}",
+                    modifier.id,
+                    instance.attribute.key
+                );
+                to_update.mark(id as u16);
+                if instance.attribute.syncable {
+                    to_sync.mark(id as u16);
+                }
+            }
+        }
+    }
+
     /// Adds a modifier to an attribute. Returns `false` if the modifier ID already exists
     pub fn add_modifier(
         &mut self,
@@ -683,5 +743,181 @@ mod tests {
         );
         assert!(!attributes.has_modifier(vanilla_attributes::MAX_HEALTH, &transient_id));
         assert!(!attributes.has_modifier(vanilla_attributes::MAX_HEALTH, &permanent_id));
+    }
+
+    #[test]
+    fn assigning_base_values_only_changes_attributes_present_in_both_maps() {
+        init_vanilla_registry();
+        let mut source = AttributeMap::new_for_entity(&vanilla_entities::ZOMBIE);
+        let mut destination = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+
+        source.set_base_value(vanilla_attributes::MAX_HEALTH, 37.0);
+        source.set_base_value(vanilla_attributes::ATTACK_DAMAGE, 8.0);
+        destination.set_base_value(vanilla_attributes::LUCK, 9.0);
+        destination.drain_dirty_updates();
+        destination.drain_dirty_sync();
+
+        destination.assign_base_values(&source);
+        let Some(max_health_id) = vanilla_attributes::MAX_HEALTH.try_id() else {
+            panic!("max health should be registered");
+        };
+        let Some(attack_damage_id) = vanilla_attributes::ATTACK_DAMAGE.try_id() else {
+            panic!("attack damage should be registered");
+        };
+
+        assert_eq!(
+            destination
+                .get_base_value(vanilla_attributes::MAX_HEALTH)
+                .map(f64::to_bits),
+            Some(37.0_f64.to_bits())
+        );
+        assert_eq!(
+            destination
+                .get_base_value(vanilla_attributes::LUCK)
+                .map(f64::to_bits),
+            Some(9.0_f64.to_bits())
+        );
+        assert_eq!(
+            destination
+                .get_base_value(vanilla_attributes::ATTACK_DAMAGE)
+                .map(f64::to_bits),
+            Some(8.0_f64.to_bits())
+        );
+        let dirty_updates = destination.drain_dirty_updates();
+        assert!(
+            dirty_updates
+                .iter()
+                .any(|attribute| attribute.key == vanilla_attributes::MAX_HEALTH.key)
+        );
+        assert!(
+            dirty_updates
+                .iter()
+                .any(|attribute| attribute.key == vanilla_attributes::ATTACK_DAMAGE.key)
+        );
+        let dirty_sync = destination.drain_dirty_sync();
+        assert!(
+            dirty_sync
+                .iter()
+                .any(|snapshot| snapshot.attribute_id == max_health_id as i32)
+        );
+        assert!(
+            dirty_sync
+                .iter()
+                .all(|snapshot| snapshot.attribute_id != attack_damage_id as i32)
+        );
+
+        destination.assign_base_values(&source);
+
+        assert!(!destination.has_dirty_updates());
+        assert!(!destination.has_dirty_sync());
+    }
+
+    #[test]
+    fn assigning_permanent_modifiers_adds_only_permanent_source_modifiers() {
+        init_vanilla_registry();
+        let mut source = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+        let mut destination = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+        let source_transient_id = Identifier::vanilla_static("source_transient_test");
+        let source_permanent_id = Identifier::vanilla_static("source_permanent_test");
+        let destination_transient_id = Identifier::vanilla_static("destination_transient_test");
+        let destination_permanent_id = Identifier::vanilla_static("destination_permanent_test");
+
+        source.set_base_value(vanilla_attributes::MAX_HEALTH, 40.0);
+        assert!(source.add_modifier(
+            vanilla_attributes::MAX_HEALTH,
+            AttributeModifier {
+                id: source_transient_id.clone(),
+                amount: 7.0,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            false,
+        ));
+        assert!(source.add_modifier(
+            vanilla_attributes::MAX_HEALTH,
+            AttributeModifier {
+                id: source_permanent_id.clone(),
+                amount: 5.0,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            true,
+        ));
+        destination.set_base_value(vanilla_attributes::MAX_HEALTH, 25.0);
+        assert!(destination.add_modifier(
+            vanilla_attributes::MAX_HEALTH,
+            AttributeModifier {
+                id: destination_transient_id.clone(),
+                amount: 2.0,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            false,
+        ));
+        assert!(destination.add_modifier(
+            vanilla_attributes::MAX_HEALTH,
+            AttributeModifier {
+                id: destination_permanent_id.clone(),
+                amount: 3.0,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            true,
+        ));
+        destination.drain_dirty_updates();
+        destination.drain_dirty_sync();
+
+        destination.assign_permanent_modifiers(&source);
+
+        assert_eq!(
+            destination
+                .get_base_value(vanilla_attributes::MAX_HEALTH)
+                .map(f64::to_bits),
+            Some(25.0_f64.to_bits())
+        );
+        assert_eq!(
+            destination
+                .get_value(vanilla_attributes::MAX_HEALTH)
+                .map(f64::to_bits),
+            Some(35.0_f64.to_bits())
+        );
+        assert!(!destination.has_modifier(vanilla_attributes::MAX_HEALTH, &source_transient_id));
+        assert!(destination.has_modifier(vanilla_attributes::MAX_HEALTH, &source_permanent_id));
+        assert!(
+            destination.has_modifier(vanilla_attributes::MAX_HEALTH, &destination_transient_id)
+        );
+        assert!(
+            destination.has_modifier(vanilla_attributes::MAX_HEALTH, &destination_permanent_id)
+        );
+        assert!(
+            destination
+                .get_instance(vanilla_attributes::MAX_HEALTH)
+                .is_some_and(|instance| {
+                    instance
+                        .permanent_modifiers()
+                        .any(|modifier| modifier.id == source_permanent_id)
+                })
+        );
+        assert!(destination.has_dirty_updates());
+        assert!(destination.has_dirty_sync());
+    }
+
+    #[test]
+    #[should_panic(expected = "is already applied")]
+    fn assigning_permanent_modifiers_rejects_duplicate_ids() {
+        init_vanilla_registry();
+        let mut source = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+        let mut destination = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+        let modifier_id = Identifier::vanilla_static("duplicate_test");
+
+        for attributes in [&mut source, &mut destination] {
+            assert!(attributes.add_modifier(
+                vanilla_attributes::MAX_HEALTH,
+                AttributeModifier {
+                    id: modifier_id.clone(),
+                    amount: 1.0,
+                    operation: AttributeModifierOperation::AddValue,
+                },
+                true,
+            ));
+        }
+
+        destination.assign_permanent_modifiers(&source);
     }
 }

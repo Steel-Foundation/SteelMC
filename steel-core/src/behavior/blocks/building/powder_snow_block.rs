@@ -50,7 +50,6 @@ impl PowderSnowBlock {
         Self { block }
     }
 
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
     pub(crate) fn can_entity_walk_on_powder_snow<E: Entity + ?Sized>(entity: &E) -> bool {
         if REGISTRY.entity_types.is_in_tag(
             entity.entity_type(),
@@ -358,7 +357,7 @@ mod tests {
             state,
             &empty_level(),
             pos,
-            BlockCollisionContext::pre_move(65.0, false)
+            BlockCollisionContext::with_position(65.0, false)
                 .with_can_walk_on_powder_snow(true)
                 .with_fall_distance(NUM_BLOCKS_TO_FALL_INTO_BLOCK + 0.01),
         );

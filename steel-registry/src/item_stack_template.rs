@@ -1,11 +1,10 @@
 //! Non-empty item stack templates used by recursive Vanilla codecs.
 
+use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::{FromNbtTag, ToNbtTag};
 use std::cell::Cell;
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
-
-use simdnbt::owned::{NbtCompound, NbtTag};
-use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
@@ -61,6 +60,12 @@ pub struct ItemStackTemplate {
     components_hash: Option<i32>,
 }
 
+impl Default for ItemStackTemplate {
+    fn default() -> Self {
+        Self::new(&vanilla_items::STONE)
+    }
+}
+
 impl ItemStackTemplate {
     pub const MIN_COUNT: i32 = 1;
     pub const MAX_COUNT: i32 = 99;
@@ -68,8 +73,9 @@ impl ItemStackTemplate {
     /// Creates the common count-one template with no component changes.
     #[must_use]
     pub fn new(item: ItemRef) -> Self {
-        assert!(
-            item != &*vanilla_items::AIR,
+        assert_ne!(
+            item,
+            &*vanilla_items::AIR,
             "Item stack template item must be non-empty"
         );
         Self {
@@ -78,6 +84,20 @@ impl ItemStackTemplate {
             components: DataComponentPatch::new(),
             components_hash: Some(empty_map_hash()),
         }
+    }
+
+    /// Creates a template with a validated persistent count and no component changes.
+    #[must_use]
+    pub fn with_count(item: ItemRef, count: i32) -> Self {
+        assert!(
+            (Self::MIN_COUNT..=Self::MAX_COUNT).contains(&count),
+            "Item stack template count {count} is outside the persistent range {}..={}",
+            Self::MIN_COUNT,
+            Self::MAX_COUNT
+        );
+        let mut template = Self::new(item);
+        template.count = count;
+        template
     }
 
     /// Creates a template after validating its complete persistent codec shape.
@@ -104,6 +124,33 @@ impl ItemStackTemplate {
             components,
             components_hash: Some(components_hash),
         })
+    }
+
+    /// Constructs a template from build-time validated Vanilla extractor data.
+    ///
+    /// This avoids persistent codec validation during registry bootstrap because
+    /// registry-aware component codecs cannot consult `REGISTRY` until it has
+    /// been completely built and published.
+    pub(crate) fn from_extracted(
+        item: ItemRef,
+        count: i32,
+        components: DataComponentPatch,
+        components_hash: i32,
+    ) -> Self {
+        assert!(
+            item != &*vanilla_items::AIR,
+            "Extracted recipe result must be non-empty"
+        );
+        assert!(
+            (Self::MIN_COUNT..=Self::MAX_COUNT).contains(&count),
+            "Extracted recipe result count is outside the persistent range"
+        );
+        Self {
+            item,
+            count,
+            components,
+            components_hash: Some(components_hash),
+        }
     }
 
     /// Copies a non-empty stack into its immutable template representation.
@@ -142,6 +189,20 @@ impl ItemStackTemplate {
     pub fn create(&self) -> ItemStack {
         let result =
             ItemStack::with_count_and_patch(self.item, self.count, self.components.clone());
+        if let Err(error) = result.validate_strict() {
+            log::warn!("Can't create item stack with properties {self:?}, error: {error}");
+            return ItemStack::empty();
+        }
+        result
+    }
+
+    /// Creates this template over an existing component patch, matching
+    /// Vanilla's `ItemStackTemplate.apply` precedence rules.
+    #[must_use]
+    pub fn apply(&self, count: i32, additional_components: &DataComponentPatch) -> ItemStack {
+        let mut components = additional_components.clone();
+        components.apply(&self.components);
+        let result = ItemStack::with_count_and_patch(self.item, count, components);
         if let Err(error) = result.validate_strict() {
             log::warn!("Can't create item stack with properties {self:?}, error: {error}");
             return ItemStack::empty();

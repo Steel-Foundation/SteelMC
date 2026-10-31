@@ -13,6 +13,7 @@ pub use simple::SimpleContainer;
 
 use std::mem;
 
+use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::ErasedType;
 
@@ -63,8 +64,6 @@ pub trait Container: ErasedType + Send + Sync {
     }
 
     /// Returns true if this container has a non-empty stack with the same item and components.
-    ///
-    /// Mirrors vanilla `Inventory.contains(ItemStack)`.
     fn contains_stack(&self, search_stack: &ItemStack) -> bool {
         (0..self.get_container_size()).any(|slot| {
             let item = self.get_item(slot);
@@ -127,6 +126,33 @@ pub trait Container: ErasedType + Send + Sync {
         _destination: &dyn Container,
         _slot: usize,
         _stack: &ItemStack,
+    ) -> bool {
+        true
+    }
+
+    /// Returns the slots exposed to automation from one face.
+    ///
+    /// `None` means this is an ordinary container with no face-specific view.
+    fn slots_for_face(&self, _direction: Direction) -> Option<&'static [usize]> {
+        None
+    }
+
+    /// Returns whether automation may insert `stack` into `slot` through `direction`.
+    fn can_place_item_through_face(
+        &self,
+        slot: usize,
+        stack: &ItemStack,
+        _direction: Direction,
+    ) -> bool {
+        self.can_place_item(slot, stack)
+    }
+
+    /// Returns whether automation may extract `stack` from `slot` through `direction`.
+    fn can_take_item_through_face(
+        &self,
+        _slot: usize,
+        _stack: &ItemStack,
+        _direction: Direction,
     ) -> bool {
         true
     }

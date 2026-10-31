@@ -6,6 +6,8 @@
 //! - Slots 10-36: Main inventory (27)
 //! - Slots 37-45: Hotbar (9)
 
+use std::sync::Arc;
+
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::container::ResultContainer;
 use crate::inventory::prelude::*;
@@ -25,7 +27,11 @@ pub fn crafting(inventory: Shared<PlayerInventory>, container_id: u8, block_pos:
     let crafting_container = CraftingContainer::new(3, 3).into_shared();
     let result_container = ResultContainer::new().into_shared();
 
-    let handler = CraftingHandler::new(crafting_container.clone(), result_container.clone(), 3);
+    let handler = CraftingHandler::new(
+        Arc::clone(&crafting_container),
+        Arc::clone(&result_container),
+        3,
+    );
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::CRAFTING, container_id);
     let result = builder.result_slot(handler.clone());

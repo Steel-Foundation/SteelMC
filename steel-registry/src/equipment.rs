@@ -1,5 +1,6 @@
 //! Shared equipment slot definitions.
 
+use crate::item_stack::ItemStack;
 use steel_utils::entity_events::EntityStatus;
 
 /// Equipment slot types for categorization.
@@ -73,7 +74,6 @@ impl EquipmentSlot {
         }
     }
 
-    /// Returns vanilla `EquipmentSlot.canIncreaseExperience`.
     #[must_use]
     pub const fn can_increase_experience(self) -> bool {
         !matches!(self.slot_type(), EquipmentSlotType::Saddle)
@@ -121,6 +121,29 @@ impl EquipmentSlot {
             6 => EquipmentSlot::Body,
             7 => EquipmentSlot::Saddle,
             _ => EquipmentSlot::MainHand,
+        }
+    }
+
+    /// Returns vanilla `EquipmentSlot.countLimit`: the maximum stack size this
+    /// slot will hold, or `0` for no limit. Hand slots are unlimited; armor,
+    /// body, and saddle slots hold a single item.
+    #[must_use]
+    pub const fn count_limit(self) -> i32 {
+        match self.slot_type() {
+            EquipmentSlotType::Hand => 0,
+            _ => 1,
+        }
+    }
+
+    /// Returns vanilla `EquipmentSlot.limit`: splits `to_equip` down to this
+    /// slot's [`count_limit`](Self::count_limit), leaving the remainder in place.
+    /// An unlimited slot takes the whole stack.
+    pub fn limit(self, to_equip: &mut ItemStack) -> ItemStack {
+        let count_limit = self.count_limit();
+        if count_limit > 0 {
+            to_equip.split(count_limit)
+        } else {
+            to_equip.split(to_equip.count())
         }
     }
 

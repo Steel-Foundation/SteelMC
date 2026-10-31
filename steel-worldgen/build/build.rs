@@ -4,13 +4,13 @@
     reason = "build-script modules include parser shapes and generated-code helpers"
 )]
 
-use std::{env, fs, io, path::Path, process::Command};
+use std::{env, fs, path::Path};
+
+use steel_utils as _;
 
 mod density;
 mod multi_noise;
 mod noise_parameters;
-
-const FMT: bool = cfg!(feature = "fmt");
 
 const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
@@ -29,15 +29,7 @@ pub fn main() {
 
     for (content, file_name) in generated_files {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        let content = content.to_string();
-        if fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
-            continue;
-        }
-        fs::write(&path, content).expect("failed to write generated worldgen file");
-    }
-
-    if FMT && let Err(err) = format_generated_rust_files(&out_dir) {
-        panic!("failed to rustfmt generated worldgen files: {err}");
+        write_if_changed(&path, content.to_string());
     }
 
     let df = density::build();
@@ -50,40 +42,26 @@ pub fn main() {
         (df.end, "end"),
     ] {
         let path = df_dir.join(format!("{name}.rs"));
-        let content = content.to_string();
-        if fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
-            continue;
-        }
-        fs::write(&path, content).expect("failed to write generated density function file");
+        write_if_changed(&path, content.to_string());
     }
 
     let path = df_dir.join("mod.rs");
-    let content = df.index.to_string();
-    if !fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
-        fs::write(&path, content).expect("failed to write generated density function index");
-    }
-
-    if FMT && let Err(err) = format_generated_rust_files(&df_dir) {
-        panic!("failed to rustfmt generated density function files: {err}");
-    }
+    write_if_changed(&path, df.index.to_string());
 }
 
-fn format_generated_rust_files(dir: &Path) -> io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.extension().is_none_or(|extension| extension != "rs") {
-            continue;
-        }
-
-        let output = Command::new("rustfmt").arg(&path).output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(io::Error::other(format!(
-                "rustfmt failed for {}: {stderr}",
-                path.display()
-            )));
-        }
+fn write_if_changed(path: &Path, content: String) {
+    #[cfg(feature = "fmt")]
+    let content = {
+        let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
+            panic!("Failed to parse generated file {}: {error}", path.display())
+        });
+        prettyplease::unparse(&syntax)
+    };
+    if fs::read_to_string(path).is_ok_and(|existing| existing == content) {
+        return;
     }
 
-    Ok(())
+    if let Err(error) = fs::write(path, content) {
+        panic!("Failed to write {}: {error}", path.display());
+    }
 }

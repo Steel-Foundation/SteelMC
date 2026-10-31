@@ -113,7 +113,7 @@ impl EntitySelector {
                         .is_some_and(|world| world.domain() == source.world().domain()),
                     PlayerSelection::OnlineProfile => true,
                 })
-                .filter(|player| player_name_matches(&player.gameprofile.name, name))
+                .filter(|player| player_name_matches(player.gameprofile.name(), name))
                 .collect::<Vec<_>>(),
             SelectorKind::EntityUuid(uuid) => server
                 .get_players()
@@ -176,7 +176,7 @@ impl EntitySelector {
                 .get_players()
                 .into_iter()
                 .filter(|player| player.get_world().domain() == source.world().domain())
-                .filter(|player| player_name_matches(&player.gameprofile.name, name))
+                .filter(|player| player_name_matches(player.gameprofile.name(), name))
                 .map(|player| player as SharedEntity)
                 .collect::<Vec<_>>(),
             SelectorKind::EntityUuid(uuid) => find_entity_by_uuid(source, uuid)

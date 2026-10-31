@@ -2,7 +2,10 @@ use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemeal
 use crate::behavior::blocks::vegetation::nether_vines;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
-    block::BlockBehavior, blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock,
+    block::BlockBehavior,
+    blocks::vegetation::growing_plant_head_block::{
+        GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
+    },
 };
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use rand::Rng;
@@ -74,6 +77,10 @@ impl BlockBehavior for TwistingVinesBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(&self.base)
     }
 }
 impl Bonemealable for TwistingVinesBlock {

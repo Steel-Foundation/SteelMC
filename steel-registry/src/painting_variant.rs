@@ -9,7 +9,7 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use text_components::TextComponent;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaintingVariantValue {
     pub width: i32,
     pub height: i32,

@@ -19,7 +19,7 @@ jobs:
       - name: Setup Nightly
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2026-08-21
+          toolchain: nightly-2026-10-14
           components: rustfmt
       - name: Generate documentation
         run: |

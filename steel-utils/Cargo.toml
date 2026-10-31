@@ -7,6 +7,7 @@ authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
+steel-math.workspace = true
 steel-macros.workspace = true
 
 # Async runtime
@@ -57,11 +58,14 @@ serde_json.workspace = true
 # Proc macros
 proc-macro2.workspace = true
 quote.workspace = true
+prettyplease = { workspace = true, optional = true }
+syn = { workspace = true, features = ["full"], optional = true }
 
 # Data structures
 phf_codegen.workspace = true
 
 # Utilities
+chrono.workspace = true
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
 reqwest = { workspace = true, features = ["blocking"] }
@@ -76,8 +80,15 @@ harness = false
 name = "legacy_random"
 harness = false
 
+[[bench]]
+name = "variable_integer"
+harness = false
+
 [lints]
 workspace = true
 
 [features]
-fmt = []
+fmt = ["dep:prettyplease", "dep:syn"]
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["fs"] }

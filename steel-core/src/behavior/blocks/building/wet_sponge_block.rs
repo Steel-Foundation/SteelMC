@@ -51,7 +51,7 @@ impl BlockBehavior for WetSpongeBlock {
             SoundSource::Blocks,
             pos,
             1.0,
-            (1.0 + rand::random::<f32>() * 0.2) * 0.7,
+            rand::random_range(0.7..0.84),
             None,
         );
     }

@@ -6,14 +6,14 @@ use steel_registry::{
     blocks::block_state_ext::BlockStateExt as _, vanilla_blocks,
     vanilla_game_rules::MAX_BLOCK_MODIFICATIONS,
 };
-use steel_utils::{BlockPos, BoundingBox, Identifier, translations, types::UpdateFlags};
+use steel_utils::{BlockPos, BoundingBox, Identifier, translations};
 use text_components::TextComponent;
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
         BlockInput, BlockPredicate, CommandSource, SteelArgumentType, SteelCommandContext,
-        SteelCommandRuntime, argument, literal,
+        SteelCommandRuntime, argument, literal, placement_flags,
     },
     registration::CommandRegistration,
 };
@@ -175,11 +175,7 @@ fn fill_blocks(
                     continue;
                 };
 
-                let placed = input.place(world, pos, flags).map_err(|error| {
-                    CommandSyntaxError::dynamic(format!(
-                        "Failed to apply block entity NBT at {pos:?}: {error}"
-                    ))
-                })?;
+                let placed = input.place(world, pos, flags)?;
                 if !placed {
                     if affected {
                         count += 1;
@@ -229,16 +225,6 @@ const fn input_at<'input>(
     }
 }
 
-fn placement_flags(strict: bool) -> UpdateFlags {
-    let mut flags = UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
-    if strict {
-        flags |= UpdateFlags::UPDATE_KNOWN_SHAPE
-            | UpdateFlags::UPDATE_SUPPRESS_DROPS
-            | UpdateFlags::UPDATE_SKIP_ON_PLACE;
-    }
-    flags
-}
-
 fn block_region_volume(region: BoundingBox) -> i64 {
     let x_span = i64::from(region.max_x()) - i64::from(region.min_x()) + 1;
     let y_span = i64::from(region.max_y()) - i64::from(region.min_y()) + 1;
@@ -259,7 +245,7 @@ fn area_too_large(limit: i32, area: i64) -> CommandSyntaxError {
 #[cfg(test)]
 mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_game_rules};
-    use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
+    use steel_utils::{ChunkPos, Downcast as _, WorldAabb, types::UpdateFlags};
 
     use super::super::create_dispatcher;
     use super::*;
@@ -271,7 +257,9 @@ mod tests {
             execution::{SteelArgumentType, SteelCommandRuntime},
         },
         entity::entities::ItemEntity,
-        test_support::{fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk},
+        test_support::{
+            TestWorld, fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk,
+        },
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -297,13 +285,14 @@ mod tests {
         assert!(node.is_executable());
     }
 
-    fn setup_world(key: &'static str, chunk: ChunkPos) -> Arc<World> {
+    fn setup_world(key: &'static str, chunk: ChunkPos) -> TestWorld {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world = fresh_test_world(key);
-        insert_ready_full_chunk(&world, chunk);
-        world
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, chunk);
+        world_fixture
     }
 
     #[test]
@@ -345,7 +334,8 @@ mod tests {
     #[test]
     fn hollow_replaces_the_shell_and_clears_the_core() {
         let origin = BlockPos::new(4, 64, 4);
-        let world = setup_world("fill_hollow", ChunkPos::from_block_pos(origin));
+        let world_fixture = setup_world("fill_hollow", ChunkPos::from_block_pos(origin));
+        let world = &world_fixture.world;
         let region = BoundingBox::from_corners(origin, origin.offset(2, 2, 2));
         for z in region.min_z()..=region.max_z() {
             for y in region.min_y()..=region.max_y() {
@@ -361,7 +351,7 @@ mod tests {
 
         let target = BlockInput::from_state(vanilla_blocks::GLASS.default_state());
         let result = fill_blocks(
-            &world,
+            world,
             region,
             &target,
             FillMode::Hollow,
@@ -380,7 +370,8 @@ mod tests {
     #[test]
     fn replace_filter_only_changes_matching_blocks() {
         let origin = BlockPos::new(5, 64, 5);
-        let world = setup_world("fill_filter", ChunkPos::from_block_pos(origin));
+        let world_fixture = setup_world("fill_filter", ChunkPos::from_block_pos(origin));
+        let world = &world_fixture.world;
         let states = [
             vanilla_blocks::STONE.default_state(),
             vanilla_blocks::DIRT.default_state(),
@@ -401,7 +392,7 @@ mod tests {
         let target = BlockInput::from_state(vanilla_blocks::GLASS.default_state());
 
         let result = fill_blocks(
-            &world,
+            world,
             BoundingBox::from_corners(origin, origin.offset(2, 0, 0)),
             &target,
             FillMode::Replace,
@@ -427,7 +418,8 @@ mod tests {
     #[test]
     fn destroy_mode_counts_the_destroyed_block_and_drops_its_loot() {
         let pos = BlockPos::new(8, 64, 8);
-        let world = setup_world("fill_destroy", ChunkPos::from_block_pos(pos));
+        let world_fixture = setup_world("fill_destroy", ChunkPos::from_block_pos(pos));
+        let world = &world_fixture.world;
         assert!(world.set_block(
             pos,
             vanilla_blocks::DIRT.default_state(),
@@ -437,7 +429,7 @@ mod tests {
 
         assert_eq!(
             fill_blocks(
-                &world,
+                world,
                 BoundingBox::from_corners(pos, pos),
                 &air,
                 FillMode::Destroy,
@@ -459,13 +451,14 @@ mod tests {
     #[test]
     fn fill_limit_and_unloaded_region_fail_before_mutation() {
         let first = BlockPos::new(15, 64, 0);
-        let world = setup_world("fill_preflight", ChunkPos::from_block_pos(first));
+        let world_fixture = setup_world("fill_preflight", ChunkPos::from_block_pos(first));
+        let world = &world_fixture.world;
         assert!(world.set_game_rule(&vanilla_game_rules::MAX_BLOCK_MODIFICATIONS, 1));
         let target = BlockInput::from_state(vanilla_blocks::STONE.default_state());
         let two_blocks = BoundingBox::from_corners(first, first.east());
         assert!(
             fill_blocks(
-                &world,
+                world,
                 two_blocks,
                 &target,
                 FillMode::Replace,
@@ -479,7 +472,7 @@ mod tests {
         assert!(world.set_game_rule(&vanilla_game_rules::MAX_BLOCK_MODIFICATIONS, 32_768));
         assert!(
             fill_blocks(
-                &world,
+                world,
                 two_blocks,
                 &target,
                 FillMode::Replace,
@@ -498,13 +491,14 @@ mod tests {
         init_behaviors();
         init_block_entities();
 
-        let unavailable = fresh_test_world("fill_unready_halo");
-        insert_unready_full_chunk(&unavailable, ChunkPos::new(0, 0));
-        insert_ready_full_chunk(&unavailable, ChunkPos::new(1, 0));
+        let unavailable_fixture = fresh_test_world("fill_unready_halo");
+        let unavailable = &unavailable_fixture.world;
+        insert_unready_full_chunk(unavailable, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(unavailable, ChunkPos::new(1, 0));
         let fence = BlockInput::from_state(vanilla_blocks::OAK_FENCE.default_state());
         assert!(
             fill_blocks(
-                &unavailable,
+                unavailable,
                 BoundingBox::from_corners(pos, pos),
                 &fence,
                 FillMode::Replace,
@@ -515,9 +509,10 @@ mod tests {
         );
         assert!(unavailable.get_block_state(pos).is_air());
 
-        let ready = fresh_test_world("fill_ready_halo");
-        insert_ready_full_chunk(&ready, ChunkPos::new(0, 0));
-        insert_ready_full_chunk(&ready, ChunkPos::new(1, 0));
+        let ready_fixture = fresh_test_world("fill_ready_halo");
+        let ready = &ready_fixture.world;
+        insert_ready_full_chunk(ready, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(ready, ChunkPos::new(1, 0));
         assert!(ready.set_block(
             pos.east(),
             vanilla_blocks::OAK_FENCE.default_state(),
@@ -525,7 +520,7 @@ mod tests {
         ));
         assert_eq!(
             fill_blocks(
-                &ready,
+                ready,
                 BoundingBox::from_corners(pos, pos),
                 &fence,
                 FillMode::Replace,
@@ -537,8 +532,8 @@ mod tests {
         assert!(
             steel_registry::REGISTRY
                 .blocks
-                .get_properties(ready.get_block_state(pos))
-                .contains(&("east", "true"))
+                .properties(ready.get_block_state(pos))
+                .any(|property| property == ("east", "true"))
         );
     }
 }

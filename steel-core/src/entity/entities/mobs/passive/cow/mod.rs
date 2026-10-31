@@ -1,5 +1,6 @@
 //! Vanilla Cow entity with variant + sound-variant parity.
 
+use crate::player::player_inventory::Prediction;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
@@ -10,6 +11,7 @@ use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::cow_sound_variant::CowSoundVariantRef;
 use steel_registry::cow_variant::CowVariantRef;
+use steel_registry::data_components::vanilla_components::{COW_SOUND_VARIANT, COW_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -26,7 +28,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
-use crate::behavior::InteractionResult;
+use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
@@ -35,7 +37,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -224,14 +226,14 @@ impl CowEntity {
             let mut inventory = player.inventory.lock();
             inventory.apply_filled_result(
                 hand,
-                ItemStack::new(&vanilla_items::MILK_BUCKET),
+                ITEM_BEHAVIORS.default_instance(&vanilla_items::MILK_BUCKET),
                 player.has_infinite_materials(),
                 true,
             )
         };
 
         if !overflow.is_empty() {
-            let _ = player.drop_item(overflow, false, false);
+            let _ = player.drop_item(overflow, false, Prediction::Predicted);
         }
 
         true
@@ -245,6 +247,15 @@ impl Entity for CowEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(COW_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(COW_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
     }
 
     fn base_tick(&self) {
@@ -342,12 +353,12 @@ impl LivingEntity for CowEntity {
         Some(self.sound_variant().death_sound)
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -379,16 +390,6 @@ impl AgeableMob for CowEntity {
     fn age_boundary_changed(&self, _baby: bool) {
         self.refresh_dimensions();
     }
-}
-
-impl Animal for CowEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        CowEntity::is_food(item_stack)
-    }
 
     fn breed_variant_key(&self) -> Option<&Identifier> {
         Some(&self.variant().key)
@@ -398,7 +399,7 @@ impl Animal for CowEntity {
         self.set_variant_by_key(key)
     }
 
-    fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
+    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
         let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
@@ -415,13 +416,23 @@ impl Animal for CowEntity {
     }
 }
 
+impl Animal for CowEntity {
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
+
+    fn is_food(&self, item_stack: &ItemStack) -> bool {
+        CowEntity::is_food(item_stack)
+    }
+}
+
 impl Mob for CowEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {

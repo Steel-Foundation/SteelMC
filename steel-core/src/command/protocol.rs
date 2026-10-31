@@ -42,8 +42,8 @@ pub(crate) enum CommandTreeProjectionError {
     UnknownNode(NodeId),
     #[error("command graph contains more nodes than the protocol can index")]
     TooManyNodes,
-    #[error("argument node {0:?} has no argument parser")]
-    MissingArgumentType(NodeId),
+    #[error("argument node {0:?} has no argument data")]
+    MissingArgumentData(NodeId),
     #[error("visible command node {node:?} redirects to filtered node {target:?}")]
     HiddenRedirectTarget { node: NodeId, target: NodeId },
 }
@@ -114,13 +114,13 @@ where
             NodeKind::Literal => ProtocolCommandNode::new_literal(info, node.name().to_owned()),
             NodeKind::Argument => {
                 let argument = node
-                    .argument_type()
-                    .ok_or(CommandTreeProjectionError::MissingArgumentType(node_id))?;
-                ProtocolCommandNode::new_argument(
-                    info,
-                    node.name().to_owned(),
-                    argument.protocol_argument(),
-                )
+                    .argument_data()
+                    .ok_or(CommandTreeProjectionError::MissingArgumentData(node_id))?;
+                let mut protocol_argument = argument.argument_type().protocol_argument();
+                if argument.has_custom_suggestions() {
+                    protocol_argument.1 = Some(SuggestionType::AskServer);
+                }
+                ProtocolCommandNode::new_argument(info, node.name().to_owned(), protocol_argument)
             }
         };
         nodes.push(projected);
@@ -640,6 +640,10 @@ mod tests {
         let (vec3, vec3_suggestions) = SteelArgumentType::vec3(true).protocol_argument();
         assert!(matches!(vec3, ProtocolArgumentType::Vec3));
         assert!(vec3_suggestions.is_none());
+
+        let (vec2, vec2_suggestions) = SteelArgumentType::vec2(true).protocol_argument();
+        assert!(matches!(vec2, ProtocolArgumentType::Vec2));
+        assert!(vec2_suggestions.is_none());
 
         let (rotation, rotation_suggestions) = SteelArgumentType::rotation().protocol_argument();
         assert!(matches!(rotation, ProtocolArgumentType::Rotation));

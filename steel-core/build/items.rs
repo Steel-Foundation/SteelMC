@@ -21,7 +21,6 @@ pub struct ItemClass {
 pub fn build(items: &[ItemClass]) -> String {
     let discovered = scan_object_behaviors("items", "item_behavior");
 
-    let mut type_imports = BTreeSet::new();
     let mut enum_imports: BTreeMap<String, String> = BTreeMap::new();
     let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
     let mut registrations = Vec::new();
@@ -37,8 +36,6 @@ pub fn build(items: &[ItemClass]) -> String {
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let item_field = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
 
-        type_imports.insert(info.struct_name.clone());
-
         for field in &info.fields {
             match &field.kind {
                 JsonArgKind::Enum {
@@ -47,8 +44,6 @@ pub fn build(items: &[ItemClass]) -> String {
                 } => {
                     if let Some(path) = module_path {
                         enum_imports.insert(type_name.clone(), path.clone());
-                    } else {
-                        type_imports.insert(type_name.clone());
                     }
                 }
                 JsonArgKind::Registry(module) => {
@@ -93,12 +88,6 @@ pub fn build(items: &[ItemClass]) -> String {
         );
     }
 
-    // Build imports
-    let item_type_imports: Vec<_> = type_imports
-        .iter()
-        .map(|name| Ident::new(name, Span::call_site()))
-        .collect();
-
     let enum_import_tokens: Vec<_> = enum_imports
         .iter()
         .map(|(type_name, module_path)| {
@@ -124,7 +113,11 @@ pub fn build(items: &[ItemClass]) -> String {
 
         use steel_registry::{vanilla_items #(#registry_import_tokens)*};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{#(#item_type_imports),*};
+        #[expect(
+            clippy::wildcard_imports,
+            reason = "the registry intentionally imports every item behavior implementation"
+        )]
+        use crate::behavior::items::*;
         #(#enum_import_tokens)*
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {

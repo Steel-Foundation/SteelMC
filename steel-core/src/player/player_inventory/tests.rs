@@ -27,8 +27,8 @@ use steel_protocol::{
     packets::game::{ClickType, HashedStack, SContainerClick, SSetCreativeModeSlot},
 };
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
-    vanilla_menu_types,
+    RegistryEntry, init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
+    vanilla_menu_types, vanilla_mob_effects,
 };
 use steel_utils::{
     ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, WorldAabb,
@@ -76,6 +76,63 @@ fn vanilla_inventory_nbt_contains_main_slots_only() {
         items[0].string("id").map(ToString::to_string),
         Some("minecraft:stone".to_owned())
     );
+}
+
+#[test]
+fn replacement_copy_preserves_all_logical_slots_and_selection() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        source.set_item(
+            slot,
+            ItemStack::with_count(&vanilla_items::OAK_LOG, slot as i32 + 1),
+        );
+    }
+    source.set_selected_slot(8);
+
+    let replacement = source.replacement_copy();
+
+    assert_eq!(replacement.get_selected_slot(), 8);
+    for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        assert_eq!(replacement.get_item(slot), source.get_item(slot));
+    }
+}
+
+#[test]
+fn replacement_copy_does_not_drain_or_share_storage_with_source() {
+    init_vanilla_registry();
+
+    let mut source = PlayerInventory::new();
+    let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    sword.set_damage_value(3);
+    source.set_item(0, sword);
+    source.set_item(
+        PlayerInventory::SLOT_OFFHAND,
+        ItemStack::with_count(&vanilla_items::OAK_LOG, 4),
+    );
+    source.set_selected_slot(1);
+
+    let mut replacement = source.replacement_copy();
+
+    assert_eq!(source.get_item(0).get_damage_value(), 3);
+    assert_eq!(source.get_item(PlayerInventory::SLOT_OFFHAND).count(), 4);
+
+    source.get_item_mut(0).set_damage_value(7);
+    source
+        .get_item_mut(PlayerInventory::SLOT_OFFHAND)
+        .set_count(2);
+    source.set_selected_slot(2);
+
+    assert_eq!(replacement.get_item(0).get_damage_value(), 3);
+    assert_eq!(
+        replacement.get_item(PlayerInventory::SLOT_OFFHAND).count(),
+        4
+    );
+    assert_eq!(replacement.get_selected_slot(), 1);
+
+    replacement.get_item_mut(0).set_damage_value(11);
+    assert_eq!(source.get_item(0).get_damage_value(), 7);
 }
 
 #[test]
@@ -271,13 +328,13 @@ fn filled_result_empty_result_still_consumes_survival_hand_stack() {
 }
 
 #[test]
-fn filled_result_creative_unlimited_discards_unadded_result() {
+fn filled_result_creative_unlimited_returns_unadded_result_to_drop() {
     init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::LAVA_BUCKET));
-    for slot in 1..PlayerInventory::INVENTORY_SIZE {
-        inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
+    for item in &mut inventory.items[1..PlayerInventory::INVENTORY_SIZE] {
+        *item = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
     }
 
     let overflow = inventory.apply_filled_result(
@@ -287,7 +344,7 @@ fn filled_result_creative_unlimited_discards_unadded_result() {
         false,
     );
 
-    assert!(overflow.is_empty());
+    assert_eq!(overflow, ItemStack::new(&vanilla_items::WATER_BUCKET));
     assert_eq!(
         inventory.get_selected_item(),
         &ItemStack::new(&vanilla_items::LAVA_BUCKET)
@@ -405,8 +462,8 @@ fn main_inventory_search_does_not_use_equipment_slots() {
     init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
-    for slot in 0..PlayerInventory::INVENTORY_SIZE {
-        inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
+    for item in &mut inventory.items[..PlayerInventory::INVENTORY_SIZE] {
+        *item = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
     }
     inventory.set(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
 
@@ -1112,9 +1169,10 @@ fn empty_test_menu(player: &Player, container_id: u8, kind: impl MenuKind + 'sta
 #[test]
 fn disconnected_menu_removal_drops_transient_items() {
     init_vanilla_registry();
-    let world = fresh_test_world("disconnected_menu_close");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let world_fixture = fresh_test_world("disconnected_menu_close");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
@@ -1129,14 +1187,14 @@ fn disconnected_menu_removal_drops_transient_items() {
         state: Arc::clone(&probe_state),
         container: Arc::clone(&transient),
     })));
-    let observer = TestPlayerBuilder::new(Arc::clone(&world), "Observer", next_entity_id())
+    let observer = TestPlayerBuilder::new(Arc::clone(world), "Observer", next_entity_id())
         .connection(observer_connection)
         .build();
     assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
     observer
-        .chunk_sender
+        .chunk_sender()
         .lock()
         .mark_chunk_sent_for_test(ChunkPos::new(0, 0));
 
@@ -1390,9 +1448,10 @@ fn malformed_non_quickcraft_click_resets_active_drag() {
 #[test]
 fn closing_menu_while_dead_does_not_return_items_to_inventory() {
     init_vanilla_registry();
-    let world = fresh_test_world("dead_menu_close");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let world_fixture = fresh_test_world("dead_menu_close");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
@@ -1639,9 +1698,10 @@ fn terminal_menu_removal_skips_queued_factory_and_drains_base_menu() {
 #[test]
 fn pending_terminal_removal_preserves_drop_disposition() {
     init_vanilla_registry();
-    let world = fresh_test_world("pending_terminal_menu_drop");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let world_fixture = fresh_test_world("pending_terminal_menu_drop");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
     *player.inventory_menu.lock().behavior_mut().carried_mut() =
         ItemStack::with_count(&vanilla_items::STONE, 2);
 
@@ -1692,9 +1752,10 @@ fn menu_open_stops_when_predecessor_removal_turns_terminal() {
 #[test]
 fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
     init_vanilla_registry();
-    let world = fresh_test_world("prepared_menu_terminal_cleanup");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let world_fixture = fresh_test_world("prepared_menu_terminal_cleanup");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
     player.open_menu("Open terminal replacement", |context| {
         empty_test_menu(
             context.player,
@@ -1746,9 +1807,10 @@ fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
 #[test]
 fn deferred_factory_is_not_run_when_earlier_close_turns_terminal() {
     init_vanilla_registry();
-    let world = fresh_test_world("deferred_open_terminal_cleanup");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(&world));
+    let world_fixture = fresh_test_world("deferred_open_terminal_cleanup");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
     let transient = SimpleContainer::new(9).into_shared();
     transient
         .lock()
@@ -1895,4 +1957,25 @@ fn creative_crafting_grid_updates_the_result_slot() {
             .expect("result container is registered with the menu");
         assert!(result.get_item(0).is_empty());
     }
+}
+
+/// Vanilla decodes the set-beacon effect ids with `byIdOrThrow`, so "absent" and "unknown" must
+/// stay distinguishable. Collapsing an unknown id to `None` would let a crafted packet pass
+/// effect validation, consume the payment, and silently clear the configured effects.
+#[test]
+fn resolve_beacon_effect_separates_absent_from_unknown_ids() {
+    init_vanilla_registry();
+
+    assert_eq!(Player::resolve_beacon_effect(None), Ok(None));
+
+    let speed_id = vanilla_mob_effects::SPEED.id() as i32;
+    assert_eq!(
+        Player::resolve_beacon_effect(Some(speed_id))
+            .expect("known id resolves")
+            .map(|effect| effect.key.clone()),
+        Some(vanilla_mob_effects::SPEED.key.clone())
+    );
+
+    assert_eq!(Player::resolve_beacon_effect(Some(9999)), Err(()));
+    assert_eq!(Player::resolve_beacon_effect(Some(-1)), Err(()));
 }

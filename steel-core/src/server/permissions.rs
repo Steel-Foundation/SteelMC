@@ -1,8 +1,15 @@
+use steel_utils::Identifier;
+
+use crate::permission::PermissionMetadataValue;
+
 use super::{
     Arc, FnServerJob, OP_GROUP, PermissionGroupManager, PermissionGroupManagerError,
     PermissionGroupUpdateError, PermissionGroupsConfig, PermissionSet, PermissionSubjectState,
     Player, PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
 };
+
+const BYPASSES_PLAYER_LIMIT: Identifier =
+    Identifier::new_static(Identifier::STEEL_NAMESPACE, "bypasses_player_limit");
 
 pub(super) fn validate_player_permission_group_update<E>(
     manager: &PermissionGroupManager,
@@ -19,11 +26,24 @@ pub(super) fn validate_player_permission_group_update<E>(
 }
 
 impl Server {
+    /// Resolves vanilla's `bypassesPlayerLimit` flag from global boolean metadata
+    /// `steel:bypasses_player_limit`, including inherited groups. Operator membership
+    /// alone does not grant it.
+    #[must_use]
+    pub(crate) fn can_bypass_player_limit(&self, uuid: Uuid) -> bool {
+        let subject = self.player_permission_state(uuid).unwrap_or_default();
+        self.permission_groups
+            .effective_metadata(subject.groups(), subject.metadata_overrides())
+            .resolve(&BYPASSES_PLAYER_LIMIT)
+            .and_then(PermissionMetadataValue::as_bool)
+            == Some(true)
+    }
+
     pub(super) fn apply_cached_or_default_permission_state(&self, player: &Player) -> u64 {
         let state = self
             .player_permission_states
             .read()
-            .get(player.gameprofile.id)
+            .get(player.gameprofile.id())
             .cloned()
             .unwrap_or_default();
         self.apply_player_permission_state(player, state)
@@ -35,7 +55,7 @@ impl Server {
             if !self.permission_groups.contains_group(group) {
                 log::warn!(
                     "Player {} has unknown permission group {group}",
-                    player.gameprofile.name
+                    player.gameprofile.name()
                 );
             }
         }
@@ -195,7 +215,7 @@ impl Server {
     fn refresh_online_permission_groups(self: &Arc<Self>) {
         for player in self.get_players() {
             let state = self
-                .player_permission_state(player.gameprofile.id)
+                .player_permission_state(player.gameprofile.id())
                 .unwrap_or_default();
             self.apply_player_permission_state(&player, state);
             self.resend_player_permission_context(&player);

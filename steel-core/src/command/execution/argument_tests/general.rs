@@ -103,6 +103,15 @@ fn objective_and_integer_range_arguments_retain_vanilla_values() {
             "{input} should reject an invalid integer range"
         );
     }
+
+    let parse = range.parse("resource 1.5", TestSource::new());
+    let Err(error) = range.context_chain(parse) else {
+        panic!("decimal integer range should fail");
+    };
+    assert_eq!(
+        error.kind(),
+        &CommandSyntaxErrorKind::InvalidInt("1.5".into())
+    );
 }
 
 #[test]

@@ -29,6 +29,7 @@ struct EntityTypeEntry {
     class_hierarchy: Vec<ClassHierarchyEntry>,
     #[serde(default = "default_can_serialize")]
     can_serialize: bool,
+    only_op_can_set_nbt: bool,
     #[serde(default)]
     flags: Option<FlagsEntry>,
     #[serde(default)]
@@ -95,16 +96,16 @@ struct FlagsEntry {
 }
 
 fn default_piston_push_reaction() -> String {
-    "NORMAL".to_owned()
+    "PUSH_PULL".to_owned()
 }
 
 fn piston_push_reaction_variant(reaction: &str) -> TokenStream {
     match reaction {
-        "NORMAL" => quote! { PushReaction::Normal },
-        "DESTROY" => quote! { PushReaction::Destroy },
-        "BLOCK" => quote! { PushReaction::Block },
-        "IGNORE" => quote! { PushReaction::Ignore },
-        "PUSH_ONLY" => quote! { PushReaction::PushOnly },
+        "PUSH_PULL" => quote! { PushReaction::PushPull },
+        "POPPED" => quote! { PushReaction::Popped },
+        "IMMOVEABLE" => quote! { PushReaction::Immoveable },
+        "IGNORE_ENTITY" => quote! { PushReaction::IgnoreEntity },
+        "PUSH" => quote! { PushReaction::Push },
         _ => panic!("Unknown piston push reaction: {reaction}"),
     }
 }
@@ -180,6 +181,7 @@ pub(crate) fn build() -> TokenStream {
         let allowed_in_peaceful = entity_type.allowed_in_peaceful;
         let can_spawn_far = entity_type.can_spawn_far_from_player;
         let can_serialize = entity_type.can_serialize;
+        let only_op_can_set_nbt = entity_type.only_op_can_set_nbt;
         let is_abstract_boat = entity_type
             .class_hierarchy
             .iter()
@@ -218,7 +220,7 @@ pub(crate) fn build() -> TokenStream {
         let can_breathe_underwater = flags.is_some_and(|f| f.can_breathe_underwater);
         let can_be_seen_as_enemy = flags.is_some_and(|f| f.can_be_seen_as_enemy);
         let piston_push_reaction = flags.map_or_else(
-            || quote! { PushReaction::Normal },
+            || quote! { PushReaction::PushPull },
             |flags| piston_push_reaction_variant(&flags.piston_push_reaction),
         );
 
@@ -261,6 +263,7 @@ pub(crate) fn build() -> TokenStream {
                 allowed_in_peaceful: #allowed_in_peaceful,
                 can_spawn_far_from_player: #can_spawn_far,
                 can_serialize: #can_serialize,
+                only_op_can_set_nbt: #only_op_can_set_nbt,
                 is_abstract_boat: #is_abstract_boat,
                 is_abstract_minecart: #is_abstract_minecart,
                 is_projectile: #is_projectile,

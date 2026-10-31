@@ -10,7 +10,7 @@ build = "build/build.rs"
 #default = ["stand-alone"]
 stand-alone = []
 slow_chunk_gen = []
-flint = []
+test-framework = []
 benchmark-support = []
 
 [dependencies]
@@ -24,7 +24,7 @@ steel-worldgen.workspace = true
 steel-math.workspace = true
 
 # Async runtime
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "io-std", "fs", "signal"] }
 tokio-util.workspace = true
 futures.workspace = true
 
@@ -94,6 +94,16 @@ steel-registry.workspace = true
 
 [[bench]]
 name = "worldgen"
+harness = false
+required-features = ["benchmark-support"]
+
+[[bench]]
+name = "chunk_sender"
+harness = false
+required-features = ["benchmark-support"]
+
+[[bench]]
+name = "entity_tick"
 harness = false
 required-features = ["benchmark-support"]
 

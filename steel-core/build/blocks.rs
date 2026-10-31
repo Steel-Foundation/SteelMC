@@ -23,14 +23,16 @@ pub struct BlockClass {
 
 pub fn build(blocks: &[BlockClass]) -> String {
     let discovered = scan_object_behaviors("blocks", "block_behavior");
-
-    let mut block_type_imports = BTreeSet::new();
     let mut explicit_enum_imports: BTreeMap<String, String> = BTreeMap::new();
     let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
+    let mut plain_blocks = Vec::new();
 
     for block in blocks {
+        if block.class == "Block" {
+            plain_blocks.push(to_block_ident(&block.name));
+        }
         let Some(info) = discovered.get(&block.class) else {
             continue;
         };
@@ -38,8 +40,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let const_ident = to_block_ident(&block.name);
-
-        block_type_imports.insert(info.struct_name.clone());
 
         for field in &info.fields {
             match &field.kind {
@@ -49,8 +49,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
                 } => {
                     if let Some(path) = module_path {
                         explicit_enum_imports.insert(type_name.clone(), path.clone());
-                    } else {
-                        block_type_imports.insert(type_name.clone());
                     }
                 }
                 JsonArgKind::Registry(module) => {
@@ -85,12 +83,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
         );
     }
 
-    // Build imports
-    let block_imports: Vec<_> = block_type_imports
-        .iter()
-        .map(|name| Ident::new(name, Span::call_site()))
-        .collect();
-
     let enum_import_tokens: Vec<_> = explicit_enum_imports
         .iter()
         .map(|(type_name, path)| {
@@ -115,12 +107,20 @@ pub fn build(blocks: &[BlockClass]) -> String {
 
         use steel_registry::{vanilla_blocks #(#registry_import_tokens)*};
         use crate::behavior::BlockBehaviorRegistry;
-        use crate::behavior::blocks::{#(#block_imports),*};
+        #[expect(
+            clippy::wildcard_imports,
+            reason = "the registry intentionally imports every block behavior implementation"
+        )]
+        use crate::behavior::blocks::*;
         #(#enum_import_tokens)*
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
             #(#registrations)*
         }
+
+        /// Blocks whose vanilla class is plain `Block`; `DefaultBlockBehavior` fully implements them.
+        #[cfg(feature = "test-framework")]
+        pub const PLAIN_BLOCKS: &[steel_registry::blocks::BlockRef] = &[#(&vanilla_blocks::#plain_blocks),*];
     };
 
     output.to_string()

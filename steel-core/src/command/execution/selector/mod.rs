@@ -8,6 +8,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use rand::seq::SliceRandom;
 use simdnbt::owned::NbtCompound;
+use steel_math::wrap_degrees;
 use steel_registry::{
     REGISTRY, RegistryExt as _, TaggedRegistryExt as _, entity_type::EntityTypeRef,
     vanilla_entities,

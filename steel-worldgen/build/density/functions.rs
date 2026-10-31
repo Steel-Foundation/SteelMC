@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::string::String;
 use std::sync::Arc;
 use std::{fs, path::PathBuf};
 
-use super::surface_rules::{SurfaceRuleJson, generate_surface_rule_function};
+use super::surface_rules::{SurfaceRuleJson, collect_ore_veins, generate_surface_rule_function};
 
 /// Parsed density function from datapack JSON.
 ///
@@ -44,11 +44,27 @@ pub enum DensityFunctionData {
         from_value: f64,
         to_value: f64,
     },
+    #[serde(rename = "minecraft:gradient")]
+    Gradient {
+        axis: String,
+        #[serde(default)]
+        tiling: Option<String>,
+        from_coordinate: i32,
+        to_coordinate: i32,
+        from_value: f64,
+        to_value: f64,
+    },
     #[serde(rename = "minecraft:noise")]
     Noise {
         xz_scale: f64,
         y_scale: f64,
         noise: String,
+        #[serde(default)]
+        shift_x: Option<Box<DensityFunctionJson>>,
+        #[serde(default)]
+        shift_y: Option<Box<DensityFunctionJson>>,
+        #[serde(default)]
+        shift_z: Option<Box<DensityFunctionJson>>,
     },
     #[serde(rename = "minecraft:shifted_noise")]
     ShiftedNoise {
@@ -60,20 +76,11 @@ pub enum DensityFunctionData {
         noise: String,
     },
     #[serde(rename = "minecraft:shift_a")]
-    ShiftA {
-        #[serde(rename = "argument")]
-        noise: String,
-    },
+    ShiftA { noise: String },
     #[serde(rename = "minecraft:shift_b")]
-    ShiftB {
-        #[serde(rename = "argument")]
-        noise: String,
-    },
+    ShiftB { noise: String },
     #[serde(rename = "minecraft:shift")]
-    Shift {
-        #[serde(rename = "argument")]
-        noise: String,
-    },
+    Shift { noise: String },
     #[serde(rename = "minecraft:clamp")]
     Clamp {
         input: Box<DensityFunctionJson>,
@@ -81,59 +88,56 @@ pub enum DensityFunctionData {
         max: f64,
     },
     #[serde(rename = "minecraft:abs")]
-    Abs {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Abs { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:square")]
-    Square {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Square { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:cube")]
-    Cube {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Cube { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:half_negative")]
-    HalfNegative {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    HalfNegative { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:quarter_negative")]
-    QuarterNegative {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    QuarterNegative { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:invert")]
-    Invert {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Invert { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:squeeze")]
-    Squeeze {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Squeeze { input: Box<DensityFunctionJson> },
+    #[serde(rename = "minecraft:negate")]
+    Negate { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:add")]
     Add {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:sub")]
+    Sub {
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:mul")]
     Mul {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:div")]
+    Div {
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:min")]
     Min {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:max")]
     Max {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:lerp")]
+    Lerp {
+        alpha: Box<DensityFunctionJson>,
+        first: Box<DensityFunctionJson>,
+        second: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:spline")]
     Spline { spline: SplineJson },
@@ -152,7 +156,11 @@ pub enum DensityFunctionData {
         functions: Vec<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:interpolated")]
-    Interpolated { argument: Box<DensityFunctionJson> },
+    Interpolated {
+        input: Box<DensityFunctionJson>,
+        cell_size_xz: i32,
+        cell_size_y: i32,
+    },
     #[serde(rename = "minecraft:flat_cache")]
     FlatCache { argument: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:cache_once")]
@@ -161,19 +169,28 @@ pub enum DensityFunctionData {
     Cache2d { argument: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:cache_all_in_cell")]
     CacheAllInCell { argument: Box<DensityFunctionJson> },
+    #[serde(rename = "minecraft:cache")]
+    Cache { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:blend_offset")]
     BlendOffset {},
     #[serde(rename = "minecraft:blend_alpha")]
     BlendAlpha {},
     #[serde(rename = "minecraft:blend_density")]
-    BlendDensity {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    BlendDensity { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:beardifier")]
     Beardifier {},
     #[serde(rename = "minecraft:end_islands")]
     EndIslands {},
+    #[serde(rename = "minecraft:end_outer_islands")]
+    EndOuterIslands {},
+    #[serde(rename = "minecraft:slice")]
+    Slice {
+        axis: String,
+        coordinate: i32,
+        input: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:distance_to_point")]
+    DistanceToPoint { point: [i32; 3], metric: String },
     #[serde(rename = "minecraft:weird_scaled_sampler")]
     WeirdScaledSampler {
         input: Box<DensityFunctionJson>,
@@ -222,21 +239,21 @@ pub struct SplinePointJson {
 /// Parsed noise router from a `noise_settings` datapack file.
 #[derive(Deserialize)]
 pub struct NoiseRouterJson {
-    barrier: DensityFunctionJson,
-    fluid_level_floodedness: DensityFunctionJson,
-    fluid_level_spread: DensityFunctionJson,
-    lava: DensityFunctionJson,
     temperature: DensityFunctionJson,
     vegetation: DensityFunctionJson,
     continents: DensityFunctionJson,
     erosion: DensityFunctionJson,
     depth: DensityFunctionJson,
     ridges: DensityFunctionJson,
+    #[serde(default)]
     preliminary_surface_level: Option<DensityFunctionJson>,
     final_density: DensityFunctionJson,
-    vein_toggle: DensityFunctionJson,
-    vein_ridged: DensityFunctionJson,
-    vein_gap: DensityFunctionJson,
+    #[serde(default)]
+    vein_toggle: Option<DensityFunctionJson>,
+    #[serde(default)]
+    vein_ridged: Option<DensityFunctionJson>,
+    #[serde(default)]
+    vein_gap: Option<DensityFunctionJson>,
 }
 
 /// Noise configuration from a `noise_settings` datapack file.
@@ -244,31 +261,35 @@ pub struct NoiseRouterJson {
 struct NoiseConfigJson {
     min_y: i32,
     height: i32,
-    size_horizontal: i32,
-    size_vertical: i32,
 }
 
-/// Block state reference from a `noise_settings` datapack file.
+/// Aquifer density functions from a `noise_settings` datapack file.
 #[derive(Deserialize)]
-struct BlockStateJson {
-    #[serde(rename = "Name")]
-    name: String,
+struct AquifersJson {
+    barrier: DensityFunctionJson,
+    fluid_level_floodedness: DensityFunctionJson,
+    fluid_level_spread: DensityFunctionJson,
+    lava: DensityFunctionJson,
+    #[serde(default)]
+    surface_level: Option<DensityFunctionJson>,
 }
 
 /// Full noise settings from a datapack file.
 #[derive(Deserialize)]
 struct NoiseSettingsJson {
     sea_level: i32,
-    ore_veins_enabled: bool,
-    aquifers_enabled: bool,
+    #[serde(default)]
+    aquifers: Option<AquifersJson>,
     #[serde(default)]
     legacy_random_source: bool,
-    default_block: BlockStateJson,
-    default_fluid: BlockStateJson,
+    default_block: String,
+    default_fluid: String,
     noise: NoiseConfigJson,
     noise_router: NoiseRouterJson,
     #[serde(default)]
     surface_rule: Option<SurfaceRuleJson>,
+    #[serde(default)]
+    material_rule: Option<String>,
 }
 
 // ── Datapack file reading ───────────────────────────────────────────────────
@@ -336,13 +357,126 @@ fn read_noise_settings(dimension: &str) -> NoiseSettingsJson {
     serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
 }
 
+fn material_registry_path(registry: &str, id: &str) -> PathBuf {
+    let path = id
+        .strip_prefix("minecraft:")
+        .unwrap_or_else(|| panic!("unsupported {registry} namespace: {id}"));
+    Path::new(DATAPACK_BASE)
+        .join(registry)
+        .join(path)
+        .with_extension("json")
+}
+
+fn resolve_material_registry_entry(
+    registry: &str,
+    value: &mut serde_json::Value,
+    stack: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::String(id) => {
+            let id = id.clone();
+            let stack_id = format!("{registry}:{id}");
+            assert!(
+                !stack.contains(&stack_id),
+                "cyclic {registry} reference: {} -> {id}",
+                stack.join(" -> ")
+            );
+            let path = material_registry_path(registry, &id);
+            println!("cargo:rerun-if-changed={}", path.display());
+            let content = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("Failed to read {}: {error}", path.display()));
+            let mut resolved: serde_json::Value = serde_json::from_str(&content)
+                .unwrap_or_else(|error| panic!("Failed to parse {}: {error}", path.display()));
+            stack.push(stack_id);
+            resolve_material_rule(&mut resolved, stack);
+            stack.pop();
+            *value = resolved;
+        }
+        serde_json::Value::Object(rule) => {
+            match rule.get("type").and_then(serde_json::Value::as_str) {
+                Some("minecraft:sequence") => {
+                    for child in rule
+                        .get_mut("sequence")
+                        .and_then(serde_json::Value::as_array_mut)
+                        .expect("material rule sequence must contain an array")
+                    {
+                        resolve_material_rule(child, stack);
+                    }
+                }
+                Some("minecraft:condition") => {
+                    resolve_material_registry_entry(
+                        "material_condition",
+                        rule.get_mut("if_true")
+                            .expect("material rule condition must contain if_true"),
+                        stack,
+                    );
+                    resolve_material_rule(
+                        rule.get_mut("then_run")
+                            .expect("material rule condition must contain then_run"),
+                        stack,
+                    );
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn resolve_material_rule(value: &mut serde_json::Value, stack: &mut Vec<String>) {
+    resolve_material_registry_entry("material_rule", value, stack);
+}
+
+fn read_material_rule(id: &str) -> SurfaceRuleJson {
+    let mut value = serde_json::Value::String(id.to_owned());
+    resolve_material_rule(&mut value, &mut Vec::new());
+    serde_json::from_value(value).unwrap_or_else(|error| {
+        panic!("Failed to deserialize resolved material rule {id}: {error}")
+    })
+}
+
+fn surface_rule(settings: &NoiseSettingsJson) -> Option<SurfaceRuleJson> {
+    settings
+        .surface_rule
+        .clone()
+        .or_else(|| settings.material_rule.as_deref().map(read_material_rule))
+}
+
+fn material_ore_router_entries(
+    rule: Option<&SurfaceRuleJson>,
+) -> BTreeMap<String, DensityFunction> {
+    let mut entries = BTreeMap::new();
+    let Some(rule) = rule else {
+        return entries;
+    };
+
+    let mut ore_veins = Vec::new();
+    collect_ore_veins(rule, &mut ore_veins);
+    for (index, ore_vein) in ore_veins.into_iter().enumerate() {
+        entries.insert(
+            format!("material_ore_vein_{index}_density"),
+            json_to_df(&ore_vein.density),
+        );
+        entries.insert(
+            format!("material_ore_vein_{index}_richness"),
+            json_to_df(&ore_vein.richness),
+        );
+        entries.insert(
+            format!("material_ore_vein_{index}_filler_gap"),
+            json_to_df(&ore_vein.filler_gap),
+        );
+    }
+    entries
+}
+
 // ── JSON → DensityFunction conversion ───────────────────────────────────────
 
 use crate::density::{
-    BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
-    DensityFunction, FindTopSurface, IntervalSelect, Mapped, MappedType, Marker, MarkerType, Noise,
-    RangeChoice, RarityValueMapper, Reference, Shift, ShiftA, ShiftB, ShiftedNoise, Spline,
-    SplinePoint, SplineValue, TwoArgType, TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
+    Axis, BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
+    DensityFunction, DistanceMetric, DistanceToPoint, FindTopSurface, IntervalSelect, Lerp, Mapped,
+    MappedType, Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference, Shift,
+    ShiftA, ShiftB, ShiftedNoise, Slice, Spline, SplinePoint, SplineValue, TwoArgType,
+    TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
 };
 
 /// Convert a JSON density function to a runtime `DensityFunction` value.
@@ -384,16 +518,54 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             to_value: *to_value,
         }),
 
+        DensityFunctionData::Gradient {
+            axis,
+            tiling,
+            from_coordinate,
+            to_coordinate,
+            from_value,
+            to_value,
+        } => {
+            assert!(
+                axis == "y" && tiling.as_deref().is_none_or(|t| t == "clamp_to_edge"),
+                "minecraft:gradient with axis {axis:?} tiling {tiling:?} is not yet supported"
+            );
+            DensityFunction::YClampedGradient(YClampedGradient {
+                from_y: *from_coordinate,
+                to_y: *to_coordinate,
+                from_value: *from_value,
+                to_value: *to_value,
+            })
+        }
+
         DensityFunctionData::Noise {
             xz_scale,
             y_scale,
             noise,
-        } => DensityFunction::Noise(Noise {
-            noise_id: noise.clone(),
-            xz_scale: *xz_scale,
-            y_scale: *y_scale,
-            noise: None,
-        }),
+            shift_x,
+            shift_y,
+            shift_z,
+        } => {
+            if shift_x.is_none() && shift_y.is_none() && shift_z.is_none() {
+                DensityFunction::Noise(Noise {
+                    noise_id: noise.clone(),
+                    xz_scale: *xz_scale,
+                    y_scale: *y_scale,
+                    noise: None,
+                })
+            } else {
+                let zero = || DensityFunction::Constant(Constant { value: 0.0 });
+                DensityFunction::ShiftedNoise(ShiftedNoise {
+                    shift_x: Arc::new(shift_x.as_deref().map_or_else(zero, json_to_df)),
+                    shift_y: Arc::new(shift_y.as_deref().map_or_else(zero, json_to_df)),
+                    shift_z: Arc::new(shift_z.as_deref().map_or_else(zero, json_to_df)),
+                    xz_scale: *xz_scale,
+                    y_scale: *y_scale,
+                    noise_id: noise.clone(),
+                    noise: None,
+                })
+            }
+        }
 
         DensityFunctionData::ShiftedNoise {
             shift_x,
@@ -440,23 +612,24 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         }
         DensityFunctionData::Invert { input } => json_mapped(MappedType::Invert, input),
         DensityFunctionData::Squeeze { input } => json_mapped(MappedType::Squeeze, input),
+        DensityFunctionData::Negate { input } => json_mapped(MappedType::Negate, input),
 
-        DensityFunctionData::Add {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Add, argument1, argument2),
-        DensityFunctionData::Mul {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Mul, argument1, argument2),
-        DensityFunctionData::Min {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Min, argument1, argument2),
-        DensityFunctionData::Max {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Max, argument1, argument2),
+        DensityFunctionData::Add { left, right } => json_two_arg(TwoArgType::Add, left, right),
+        DensityFunctionData::Sub { left, right } => json_two_arg(TwoArgType::Sub, left, right),
+        DensityFunctionData::Mul { left, right } => json_two_arg(TwoArgType::Mul, left, right),
+        DensityFunctionData::Div { left, right } => json_two_arg(TwoArgType::Div, left, right),
+        DensityFunctionData::Min { left, right } => json_two_arg(TwoArgType::Min, left, right),
+        DensityFunctionData::Max { left, right } => json_two_arg(TwoArgType::Max, left, right),
+
+        DensityFunctionData::Lerp {
+            alpha,
+            first,
+            second,
+        } => DensityFunction::Lerp(Lerp {
+            alpha: Arc::new(json_to_df(alpha)),
+            first: Arc::new(json_to_df(first)),
+            second: Arc::new(json_to_df(second)),
+        }),
 
         DensityFunctionData::Spline { spline } => DensityFunction::Spline(Spline {
             spline: Arc::new(json_spline_to_cubic(spline)),
@@ -482,14 +655,25 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             functions,
         } => json_interval_select(input, thresholds, functions),
 
-        DensityFunctionData::Interpolated { argument } => {
-            json_marker(MarkerType::Interpolated, argument)
+        DensityFunctionData::Interpolated {
+            input,
+            cell_size_xz,
+            cell_size_y,
+        } => json_marker(MarkerType::Interpolated, input, *cell_size_xz, *cell_size_y),
+        DensityFunctionData::FlatCache { argument } => {
+            json_marker(MarkerType::FlatCache, argument, 0, 0)
         }
-        DensityFunctionData::FlatCache { argument } => json_marker(MarkerType::FlatCache, argument),
-        DensityFunctionData::CacheOnce { argument } => json_marker(MarkerType::CacheOnce, argument),
-        DensityFunctionData::Cache2d { argument } => json_marker(MarkerType::Cache2D, argument),
+        DensityFunctionData::CacheOnce { argument } => {
+            json_marker(MarkerType::CacheOnce, argument, 0, 0)
+        }
+        DensityFunctionData::Cache2d { argument } => {
+            json_marker(MarkerType::Cache2D, argument, 0, 0)
+        }
         DensityFunctionData::CacheAllInCell { argument } => {
-            json_marker(MarkerType::CacheAllInCell, argument)
+            json_marker(MarkerType::CacheAllInCell, argument, 0, 0)
+        }
+        DensityFunctionData::Cache { input } => {
+            json_marker(MarkerType::CacheAllInCell, input, 0, 0)
         }
 
         DensityFunctionData::BlendOffset {} => DensityFunction::BlendOffset(BlendOffset),
@@ -503,7 +687,37 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         // TODO: Implement Beardifier for structure terrain adaptation.
         // Constant(0.0) is correct when structures are not yet generated.
         DensityFunctionData::Beardifier {} => DensityFunction::Constant(Constant { value: 0.0 }),
-        DensityFunctionData::EndIslands {} => DensityFunction::EndIslands,
+        DensityFunctionData::EndIslands {} | DensityFunctionData::EndOuterIslands {} => {
+            DensityFunction::EndIslands
+        }
+
+        DensityFunctionData::Slice {
+            axis,
+            coordinate,
+            input,
+        } => DensityFunction::Slice(Slice {
+            axis: match axis.as_str() {
+                "x" => Axis::X,
+                "y" => Axis::Y,
+                "z" => Axis::Z,
+                other => panic!("minecraft:slice has unknown axis {other:?}"),
+            },
+            coordinate: *coordinate,
+            input: Arc::new(json_to_df(input)),
+        }),
+
+        DensityFunctionData::DistanceToPoint { point, metric } => {
+            DensityFunction::DistanceToPoint(DistanceToPoint {
+                point: *point,
+                metric: match metric.as_str() {
+                    "euclidean" => DistanceMetric::Euclidean,
+                    "euclidean_squared" => DistanceMetric::EuclideanSquared,
+                    "manhattan" => DistanceMetric::Manhattan,
+                    "chebyshev" => DistanceMetric::Chebyshev,
+                    other => panic!("minecraft:distance_to_point has unknown metric {other:?}"),
+                },
+            })
+        }
 
         DensityFunctionData::WeirdScaledSampler {
             input,
@@ -570,10 +784,17 @@ fn json_two_arg(
     })
 }
 
-fn json_marker(kind: MarkerType, argument: &DensityFunctionJson) -> DensityFunction {
+fn json_marker(
+    kind: MarkerType,
+    argument: &DensityFunctionJson,
+    cell_size_xz: i32,
+    cell_size_y: i32,
+) -> DensityFunction {
     DensityFunction::Marker(Marker {
         kind,
         wrapped: Arc::new(json_to_df(argument)),
+        cell_size_xz,
+        cell_size_y,
     })
 }
 
@@ -646,18 +867,11 @@ fn json_spline_point(p: &SplinePointJson) -> SplinePoint {
 use crate::density::{TranspilerInput, transpile};
 
 /// Convert a noise router JSON into a `BTreeMap` of router entries.
-fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFunction> {
+fn router_to_entries(
+    router: &NoiseRouterJson,
+    aquifers: Option<&AquifersJson>,
+) -> BTreeMap<String, DensityFunction> {
     let mut entries = BTreeMap::new();
-    entries.insert("barrier".to_string(), json_to_df(&router.barrier));
-    entries.insert(
-        "fluid_level_floodedness".to_string(),
-        json_to_df(&router.fluid_level_floodedness),
-    );
-    entries.insert(
-        "fluid_level_spread".to_string(),
-        json_to_df(&router.fluid_level_spread),
-    );
-    entries.insert("lava".to_string(), json_to_df(&router.lava));
     entries.insert("temperature".to_string(), json_to_df(&router.temperature));
     entries.insert("vegetation".to_string(), json_to_df(&router.vegetation));
     entries.insert(
@@ -671,13 +885,91 @@ fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFuncti
         "final_density".to_string(),
         json_to_df(&router.final_density),
     );
-    entries.insert("vein_toggle".to_string(), json_to_df(&router.vein_toggle));
-    entries.insert("vein_ridged".to_string(), json_to_df(&router.vein_ridged));
-    entries.insert("vein_gap".to_string(), json_to_df(&router.vein_gap));
-    if let Some(ref psl) = router.preliminary_surface_level {
-        entries.insert("preliminary_surface_level".to_string(), json_to_df(psl));
+    if let Some(aquifers) = aquifers {
+        entries.insert("barrier".to_string(), json_to_df(&aquifers.barrier));
+        entries.insert(
+            "fluid_level_floodedness".to_string(),
+            json_to_df(&aquifers.fluid_level_floodedness),
+        );
+        entries.insert(
+            "fluid_level_spread".to_string(),
+            json_to_df(&aquifers.fluid_level_spread),
+        );
+        entries.insert("lava".to_string(), json_to_df(&aquifers.lava));
+        if let Some(surface_level) = &aquifers.surface_level {
+            entries.insert(
+                "preliminary_surface_level".to_string(),
+                json_to_df(surface_level),
+            );
+        }
+    }
+    for (name, field) in [
+        ("vein_toggle", &router.vein_toggle),
+        ("vein_ridged", &router.vein_ridged),
+        ("vein_gap", &router.vein_gap),
+        (
+            "preliminary_surface_level",
+            &router.preliminary_surface_level,
+        ),
+    ] {
+        if !entries.contains_key(name)
+            && let Some(json) = field
+        {
+            entries.insert(name.to_string(), json_to_df(json));
+        }
     }
     entries
+}
+
+/// Find the `cell_size_xz`/`cell_size_y` of the first `minecraft:interpolated`
+/// marker reachable from `df` (through `Reference`s via `registry`).
+///
+/// The interpolation cell size is no longer a fixed per-dimension setting —
+/// it's declared per-node — but in practice every reachable `Interpolated`
+/// node within one dimension's router uses the same size.
+fn find_interpolated_cell_size(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+) -> Option<(i32, i32)> {
+    match df {
+        DensityFunction::Marker(m) => {
+            if m.kind == MarkerType::Interpolated {
+                Some((m.cell_size_xz, m.cell_size_y))
+            } else {
+                find_interpolated_cell_size(&m.wrapped, registry)
+            }
+        }
+        DensityFunction::Reference(r) => registry
+            .get(&r.id)
+            .and_then(|target| find_interpolated_cell_size(target, registry)),
+        DensityFunction::TwoArgumentSimple(t) => {
+            find_interpolated_cell_size(&t.argument1, registry)
+                .or_else(|| find_interpolated_cell_size(&t.argument2, registry))
+        }
+        DensityFunction::Lerp(l) => find_interpolated_cell_size(&l.alpha, registry)
+            .or_else(|| find_interpolated_cell_size(&l.first, registry))
+            .or_else(|| find_interpolated_cell_size(&l.second, registry)),
+        DensityFunction::Mapped(m) => find_interpolated_cell_size(&m.input, registry),
+        DensityFunction::Clamp(c) => find_interpolated_cell_size(&c.input, registry),
+        DensityFunction::Slice(s) => find_interpolated_cell_size(&s.input, registry),
+        DensityFunction::BlendDensity(bd) => find_interpolated_cell_size(&bd.input, registry),
+        DensityFunction::WeirdScaledSampler(ws) => find_interpolated_cell_size(&ws.input, registry),
+        DensityFunction::RangeChoice(rc) => find_interpolated_cell_size(&rc.input, registry)
+            .or_else(|| find_interpolated_cell_size(&rc.when_in_range, registry))
+            .or_else(|| find_interpolated_cell_size(&rc.when_out_of_range, registry)),
+        DensityFunction::IntervalSelect(i) => find_interpolated_cell_size(&i.input, registry)
+            .or_else(|| {
+                i.functions
+                    .iter()
+                    .find_map(|f| find_interpolated_cell_size(f, registry))
+            }),
+        DensityFunction::ShiftedNoise(sn) => find_interpolated_cell_size(&sn.shift_x, registry)
+            .or_else(|| find_interpolated_cell_size(&sn.shift_y, registry))
+            .or_else(|| find_interpolated_cell_size(&sn.shift_z, registry)),
+        DensityFunction::FindTopSurface(fts) => find_interpolated_cell_size(&fts.density, registry)
+            .or_else(|| find_interpolated_cell_size(&fts.upper_bound, registry)),
+        _ => None,
+    }
 }
 
 /// Transpile density functions for a single dimension.
@@ -687,14 +979,21 @@ fn transpile_dimension(
     registry: &BTreeMap<String, DensityFunction>,
 ) -> TokenStream {
     let settings = read_noise_settings(dimension);
-    let router_entries = router_to_entries(&settings.noise_router);
+    let mut router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    router_entries.extend(material_ore_router_entries(
+        surface_rule(&settings).as_ref(),
+    ));
 
-    let cell_width = settings.noise.size_horizontal * 4;
+    let (cell_width, cell_height) = router_entries
+        .values()
+        .find_map(|df| find_interpolated_cell_size(df, registry))
+        .unwrap_or((4, 8));
     let input = TranspilerInput {
         registry: registry.clone(),
         router_entries,
         prefix: prefix.to_string(),
         cell_width,
+        cell_height,
         legacy_random_source: settings.legacy_random_source,
     };
 
@@ -707,11 +1006,17 @@ fn transpile_dimension(
     reason = "generated noise settings include all trait glue in one quoted block"
 )]
 fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
-    let mut settings = read_noise_settings(dimension);
+    let settings = read_noise_settings(dimension);
 
     let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
     let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
     let cache_struct = Ident::new(&format!("{prefix}ColumnCache"), Span::call_site());
+
+    let material_rule = surface_rule(&settings);
+    let mut material_ore_veins = Vec::new();
+    if let Some(rule) = material_rule.as_ref() {
+        collect_ore_veins(rule, &mut material_ore_veins);
+    }
 
     // Generate surface rule function, noise IDs, and block-state cache.
     let (
@@ -723,7 +1028,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
         surface_rule_uses_preliminary_surface,
         surface_rule_uses_surface_secondary,
         surface_rule_uses_steep,
-    ) = if let Some(rule) = settings.surface_rule.take() {
+    ) = if let Some(rule) = material_rule.as_ref() {
         let (
             func,
             noise_ids,
@@ -733,7 +1038,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             uses_preliminary_surface,
             uses_surface_secondary,
             uses_steep,
-        ) = generate_surface_rule_function(&rule, settings.noise.min_y, settings.noise.height);
+        ) = generate_surface_rule_function(rule, settings.noise.min_y, settings.noise.height);
         let noise_id_literals: Vec<_> = noise_ids.iter().map(String::as_str).collect();
         let gradient_id_literals: Vec<_> = gradient_ids.iter().map(String::as_str).collect();
         let block_state_idents: Vec<_> = block_state_names
@@ -787,34 +1092,145 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
     let min_y = settings.noise.min_y;
     let height = settings.noise.height;
-    let size_horizontal = settings.noise.size_horizontal;
-    let size_vertical = settings.noise.size_vertical;
     let sea_level = settings.sea_level;
-    let aquifers_enabled = settings.aquifers_enabled;
-    let ore_veins_enabled = settings.ore_veins_enabled;
+    let aquifers_enabled = settings.aquifers.is_some();
+    let ore_veins_enabled = false;
+    let material_ore_veins_enabled = !material_ore_veins.is_empty();
+    let material_ore_vein_value_count = material_ore_veins.len() * 2;
     let legacy_random_source = settings.legacy_random_source;
 
-    // Cell dimensions: size_horizontal * 4 for XZ, size_vertical * 4 for Y
-    let cell_width = size_horizontal * 4;
-    let cell_height = size_vertical * 4;
+    let registry: BTreeMap<String, DensityFunction> = read_density_function_registry()
+        .iter()
+        .map(|(id, json)| (id.clone(), json_to_df(json)))
+        .collect();
+    let mut router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    router_entries.extend(material_ore_router_entries(material_rule.as_ref()));
+    let (cell_width, cell_height) = router_entries
+        .values()
+        .find_map(|df| find_interpolated_cell_size(df, &registry))
+        .unwrap_or((4, 8));
+
+    // Dimensions without a router entry for these (e.g. nether, end) return `0.0`;
+    // callers are expected to check `AQUIFERS_ENABLED`/`ORE_VEINS_ENABLED` first.
+    let optional_router_fns: TokenStream = [
+        "barrier",
+        "fluid_level_floodedness",
+        "fluid_level_spread",
+        "lava",
+        "vein_toggle",
+        "vein_ridged",
+        "vein_gap",
+        "preliminary_surface_level",
+    ]
+    .into_iter()
+    .map(|name| {
+        let fn_ident = format_ident!("router_{name}");
+        let body = if router_entries.contains_key(name) {
+            quote! { #fn_ident(self, cache, x as f64, y as f64, z as f64) }
+        } else {
+            quote! { 0.0 }
+        };
+        quote! {
+            #[inline]
+            fn #fn_ident(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
+                #body
+            }
+        }
+    })
+    .collect();
 
     // Extract block name without minecraft: prefix for lookup
     let default_block = settings
         .default_block
-        .name
         .strip_prefix("minecraft:")
-        .unwrap_or(&settings.default_block.name);
+        .unwrap_or(&settings.default_block);
     let default_fluid = settings
         .default_fluid
-        .name
         .strip_prefix("minecraft:")
-        .unwrap_or(&settings.default_fluid.name);
+        .unwrap_or(&settings.default_fluid);
 
     let default_block_upper = default_block.to_uppercase();
     let default_fluid_upper = default_fluid.to_uppercase();
 
     let default_block_ident = Ident::new(&default_block_upper, Span::call_site());
     let default_fluid_ident = Ident::new(&default_fluid_upper, Span::call_site());
+    let material_ore_vein_values_body: TokenStream = material_ore_veins
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let combined_density = format_ident!("combine_material_ore_vein_{index}_density");
+            let combined_richness = format_ident!("combine_material_ore_vein_{index}_richness");
+            let value_index = index * 2;
+            quote! {
+                out[#value_index] = #combined_density(self, cache, interpolated, x, y, z) as f32;
+                out[#value_index + 1] = #combined_richness(self, cache, interpolated, x, y, z) as f32;
+            }
+        })
+        .collect();
+    let material_ore_vein_apply_body: TokenStream = material_ore_veins
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| {
+            let filler_gap = format_ident!("router_material_ore_vein_{index}_filler_gap");
+            let value_index = index * 2;
+            let raw_ore_chance = rule.raw_ore_chance;
+            quote! {
+                if let Some(state) = ore_veinifier.try_apply_material_rule(
+                    x,
+                    y,
+                    z,
+                    values[#value_index],
+                    values[#value_index + 1],
+                    || {
+                        cache.ensure(x, z, self);
+                        #filler_gap(self, cache, x as f64, y as f64, z as f64) as f32
+                    },
+                    ore_vein_states[#index][0],
+                    ore_vein_states[#index][1],
+                    ore_vein_states[#index][2],
+                    #raw_ore_chance,
+                ) {
+                    out[#index] = Some(state);
+                }
+            }
+        })
+        .collect();
+    let material_ore_vein_states: Vec<TokenStream> = material_ore_veins
+        .iter()
+        .map(|rule| {
+            let ore = Ident::new(
+                &rule
+                    .ore_block
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(&rule.ore_block)
+                    .to_uppercase(),
+                Span::call_site(),
+            );
+            let raw_ore = Ident::new(
+                &rule
+                    .raw_ore_block
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(&rule.raw_ore_block)
+                    .to_uppercase(),
+                Span::call_site(),
+            );
+            let filler = Ident::new(
+                &rule
+                    .filler_block
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(&rule.filler_block)
+                    .to_uppercase(),
+                Span::call_site(),
+            );
+            quote! {
+                [
+                    steel_registry::vanilla_blocks::#ore.default_state(),
+                    steel_registry::vanilla_blocks::#raw_ore.default_state(),
+                    steel_registry::vanilla_blocks::#filler.default_state(),
+                ]
+            }
+        })
+        .collect();
 
     quote! {
         /// Noise settings for this dimension, parsed from the datapack.
@@ -835,6 +1251,8 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             pub const AQUIFERS_ENABLED: bool = #aquifers_enabled;
             /// Whether ore veins are enabled.
             pub const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+            /// Whether the material rule contains ore veins.
+            pub const MATERIAL_ORE_VEINS_ENABLED: bool = #material_ore_veins_enabled;
             /// Whether this dimension uses Java's LCG random (true) or Xoroshiro (false).
             pub const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
 
@@ -859,6 +1277,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             const CELL_HEIGHT: i32 = #cell_height;
             const AQUIFERS_ENABLED: bool = #aquifers_enabled;
             const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+            const MATERIAL_ORE_VEINS_ENABLED: bool = #material_ore_veins_enabled;
             const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
 
             #[inline]
@@ -905,78 +1324,40 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             }
 
             #[inline]
-            fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_final_density(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
-            fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_depth(self, cache, x as f64, y as f64, z as f64)
             }
 
-            #[inline]
-            fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_barrier(self, cache, x as f64, y as f64, z as f64)
-            }
+            #optional_router_fns
 
             #[inline]
-            fn router_fluid_level_floodedness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_fluid_level_floodedness(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_fluid_level_spread(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_fluid_level_spread(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_lava(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_toggle(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_ridged(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_gap(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_erosion(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
-            fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_continentalness(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
-            fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_temperature(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
-            fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_vegetation(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
-            fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32 {
                 router_ridges(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_preliminary_surface_level(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
@@ -989,40 +1370,32 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             }
 
             #[inline]
-            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
+            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f32]) {
                 self.blended_noise.compute_column(x, block_ys, z, out);
             }
 
             #[inline]
-            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f64, out: &mut [f64]) {
+            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f32, out: &mut [f32]) {
                 fill_cell_corner_densities(self, cache, x, y, z, blended_noise_value, out)
             }
 
             #[inline]
-            fn fill_cell_corner_densities_4x(
-                &self,
-                cache: &mut Self::ColumnCache,
-                x: i32,
-                ys: std::simd::f64x4,
-                z: i32,
-                blended_noise_values: std::simd::f64x4,
-                out: &mut [f64],
-            ) {
-                fill_cell_corner_densities_4x(self, cache, x, ys, z, blended_noise_values, out)
+            fn fill_cell_corner_densities_y_simd<const N: usize>(&self, cache: &mut Self::ColumnCache, x: i32, ys: [i32; N], z: i32, blended_noise_values: [f32; N], out: &mut [f32]) {
+                fill_cell_corner_densities_y_simd::<N>(self, cache, x, ys, z, blended_noise_values, out)
             }
 
             #[inline]
-            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f32], x: i32, y: i32, z: i32) -> f32 {
                 combine_interpolated(self, cache, interpolated, x, y, z)
             }
 
             #[inline]
-            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f32], x: i32, y: i32, z: i32) -> f32 {
                 combine_vein_toggle(self, cache, interpolated, x, y, z)
             }
 
             #[inline]
-            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f32], x: i32, y: i32, z: i32) -> f32 {
                 combine_vein_ridged(self, cache, interpolated, x, y, z)
             }
 
@@ -1058,6 +1431,42 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 ctx: &mut steel_worldgen::surface::SurfaceRuleContext<'_>,
             ) -> Option<steel_utils::BlockStateId> {
                 Self::apply_surface_rule_impl(ctx)
+            }
+
+            fn material_ore_vein_value_count() -> usize {
+                #material_ore_vein_value_count
+            }
+
+            fn fill_material_ore_vein_values(
+                &self,
+                cache: &mut Self::ColumnCache,
+                interpolated: &[f32],
+                x: i32,
+                y: i32,
+                z: i32,
+                out: &mut [f32],
+            ) {
+                #material_ore_vein_values_body
+            }
+
+            fn fill_prefilled_material_ore_vein_results(
+                &self,
+                cache: &mut Self::ColumnCache,
+                ore_veinifier: &steel_worldgen::noise::OreVeinifier,
+                values: &[f32],
+                x: i32,
+                y: i32,
+                z: i32,
+                out: &mut [Option<steel_utils::BlockStateId>],
+            ) {
+                let ore_vein_states: &[[steel_utils::BlockStateId; 3]] = {
+                    static ORE_VEIN_STATES: std::sync::OnceLock<Box<[[steel_utils::BlockStateId; 3]]>> =
+                        std::sync::OnceLock::new();
+                    ORE_VEIN_STATES.get_or_init(|| Box::from([
+                        #(#material_ore_vein_states),*
+                    ]))
+                };
+                #material_ore_vein_apply_body
             }
         }
 

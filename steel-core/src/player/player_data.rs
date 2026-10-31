@@ -15,7 +15,10 @@ use crate::player::stats_counter::StatState;
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
     entity::{Entity, EntityFireFreezeState, LivingEntity},
-    inventory::container::Container,
+    inventory::{
+        container::Container,
+        ender_chest::{ENDER_CHEST_SLOTS, PlayerEnderChestContainer},
+    },
 };
 
 /// Current data version for player saves.
@@ -43,19 +46,19 @@ pub struct PersistentPlayerData {
     /// Whether the player is elytra gliding.
     pub fall_flying: bool,
 
-    /// Vanilla `remainingFireTicks`.
+    /// Remaining fire duration, in ticks.
     pub remaining_fire_ticks: i32,
 
     /// Synchronized vanilla `TicksFrozen`.
     pub ticks_frozen: i32,
 
-    /// Vanilla `isInPowderSnow`.
+    /// Whether the player is currently standing in powder snow.
     pub is_in_powder_snow: bool,
 
-    /// Vanilla `wasInPowderSnow`.
+    /// Whether the player was standing in powder snow last tick.
     pub was_in_powder_snow: bool,
 
-    /// Vanilla `hasVisualFire`.
+    /// Whether the player renders as on fire regardless of actual fire ticks.
     pub has_visual_fire: bool,
 
     /// Current health points.
@@ -106,7 +109,7 @@ pub struct PersistentPlayerData {
     /// Vanilla death-screen score. Point grants change it with Java `int` wrapping.
     pub score: i32,
 
-    /// Vanilla `ServerPlayer.seenCredits`.
+    /// Whether this player has already seen the End credits screen.
     pub seen_credits: bool,
 
     /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
@@ -117,6 +120,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
+
+    /// Vanilla `EnderChest` items.
+    pub ender_items: Vec<PersistentSlot>,
 
     /// The tracked statistics of the player with their counters.
     pub stats: Vec<PersistentStat>,
@@ -207,6 +213,18 @@ impl PersistentPlayerData {
             }
         }
 
+        let ender_chest_inventory = player.ender_chest_inventory.lock();
+        let mut ender_items = Vec::new();
+        for slot in 0..ENDER_CHEST_SLOTS {
+            let item = ender_chest_inventory.get_item(slot);
+            if !item.is_empty() {
+                ender_items.push(PersistentSlot {
+                    slot: slot as i8,
+                    item: item.clone(),
+                });
+            }
+        }
+
         let (experience_level, experience_progress, experience_total) = {
             let lock = player.experience.lock();
             (lock.level(), lock.progress(), lock.total_points())
@@ -259,6 +277,7 @@ impl PersistentPlayerData {
             respawn_config: player.respawn_config(),
 
             ender_pearls,
+            ender_items,
             stats,
         }
     }
@@ -323,6 +342,7 @@ impl Player {
         self.set_health(self.get_max_health());
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
+        *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
         *self.food_data.lock() = FoodData::new();
         self.stats.lock().reset();
 
@@ -454,6 +474,19 @@ impl PersistentPlayerData {
             // Restore selected slot
             let selected = self.selected_slot.clamp(0, 8) as u8;
             inventory.set_selected_slot(selected);
+        }
+
+        {
+            let mut ender_chest_inventory = player.ender_chest_inventory.lock();
+            for slot in 0..ENDER_CHEST_SLOTS {
+                ender_chest_inventory.set_item(slot, ItemStack::empty());
+            }
+            for slot_data in &self.ender_items {
+                let slot_index = slot_data.slot as usize;
+                if slot_index < ENDER_CHEST_SLOTS {
+                    ender_chest_inventory.set_item(slot_index, slot_data.item.clone());
+                }
+            }
         }
 
         // Food data

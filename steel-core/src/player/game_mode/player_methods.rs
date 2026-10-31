@@ -7,11 +7,15 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
-use steel_protocol::packets::game::SSwing;
-
-const SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+use steel_protocol::packets::game::SPunch;
+use steel_utils::types::InteractionHand;
 
 impl Player {
+    /// Default reach distance for block interactions, in blocks.
+    pub const DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+    /// Default reach distance for entity interactions, in blocks.
+    pub const DEFAULT_ENTITY_INTERACTION_RANGE: f64 = 3.0;
+
     /// Sets the player's game mode and notifies the client.
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
@@ -37,7 +41,7 @@ impl Player {
         self.update_game_mode_invisibility();
 
         let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
+            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id(), gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
         self.get_world().update_sleeping_player_list();
@@ -125,7 +129,7 @@ impl Player {
         if !player_can_change_difficulty(self, &world) {
             log::warn!(
                 "Player {} tried to change difficulty to {difficulty:?} without permission",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -217,13 +221,14 @@ impl Player {
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         self.is_within_block_interaction_range_with_buffer(pos, 1.0)
     }
-    /// Vanilla `player.blockInteractionRange()`
+    /// Returns this player's current block interaction range, from the
+    /// attribute modifier if set, or the default range otherwise.
     #[must_use]
     pub fn block_interaction_range(&self) -> f64 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE)
+            .unwrap_or(Self::DEFAULT_BLOCK_INTERACTION_RANGE)
     }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.
@@ -248,11 +253,7 @@ impl Player {
         let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
-        let base_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let base_range = self.block_interaction_range();
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -278,7 +279,7 @@ impl Player {
             .attributes()
             .lock()
             .get_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
-            .unwrap_or(3.0);
+            .unwrap_or(Self::DEFAULT_ENTITY_INTERACTION_RANGE);
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -317,9 +318,15 @@ impl Player {
         self.is_crouching()
     }
 
-    /// Handles a player swing packet.
-    pub fn handle_animate(&self, packet: SSwing) {
+    /// Handles a player punch packet. The punch always swings the main hand
+    /// with the held item's attack animation.
+    pub fn handle_punch(&self, _packet: &SPunch) {
         self.reset_last_action_time();
-        self.swing(packet.hand, false);
+        self.swing(
+            InteractionHand::MainHand,
+            self.attack_animation(InteractionHand::MainHand),
+            false,
+        );
+        self.reset_attack_strength_ticker();
     }
 }

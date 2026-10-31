@@ -5,6 +5,7 @@ use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
     data_components::vanilla_components::USE_EFFECTS,
+    item_stack::ItemStack,
     level_events, vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
@@ -54,7 +55,7 @@ impl BoneMealItem {
 
     fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
         let state = world.get_block_state(pos);
-        if state.get_block() != &vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
+        if state.get_block() != &vanilla_blocks::WATER || !state.get_fluid_state().is_full() {
             return false;
         }
 
@@ -96,7 +97,7 @@ impl BoneMealItem {
             if behavior.can_survive(new_state, world, new_pos) {
                 let current_state = world.get_block_state(new_pos);
                 if current_state.get_block() == &vanilla_blocks::WATER
-                    && current_state.get_fluid_state().amount == 8
+                    && current_state.get_fluid_state().is_full()
                 {
                     world.set_block(new_pos, new_state, UpdateFlags::UPDATE_ALL);
                 } else if current_state.get_block() == &vanilla_blocks::SEAGRASS
@@ -115,7 +116,7 @@ impl BoneMealItem {
 impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         if Self::grow(context.world, context.hit_result.block_pos) {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(ItemStack::shrink_one);
             Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
@@ -141,7 +142,7 @@ impl ItemBehavior for BoneMealItem {
                 context.hit_result.direction,
             )
         {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(ItemStack::shrink_one);
             Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
