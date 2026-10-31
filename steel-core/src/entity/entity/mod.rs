@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::entity::leash::Leashable;
+use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
@@ -494,6 +495,56 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
+    /// Returns the living entity credited as this explosion's indirect source.
+    fn explosion_indirect_source(&self) -> Option<SharedEntity> {
+        self.projectile_owner()
+            .filter(|owner| owner.as_living_entity().is_some())
+    }
+
+    /// Returns the point used to calculate this entity's explosion direction.
+    fn explosion_damage_origin(&self) -> DVec3 {
+        let position = self.position();
+        DVec3::new(position.x, self.get_eye_y(), position.z)
+    }
+
+    /// Returns whether this entity is wholly ignored by an explosion.
+    fn ignore_explosion(&self, _explosion: &dyn Explosion) -> bool {
+        false
+    }
+
+    /// Lets an entity source modify effective block or fluid resistance.
+    #[expect(
+        unused_variables,
+        reason = "default implementation preserves resistance"
+    )]
+    fn block_explosion_resistance(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid: FluidState,
+        resistance: f32,
+    ) -> f32 {
+        resistance
+    }
+
+    /// Lets an entity source veto one affected block position.
+    #[expect(unused_variables, reason = "default implementation allows destruction")]
+    fn should_block_explode(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        power: f32,
+    ) -> bool {
+        true
+    }
+
+    /// Called after this entity is processed by an explosion.
+    fn on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {}
+
     /// Returns how vanilla lets this entity respond to piston movement.
     fn piston_push_reaction(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
@@ -560,6 +611,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Base entities cannot be collided with unless a concrete entity type opts in.
     fn can_be_collided_with(&self, _other: Option<&dyn Entity>) -> bool {
         false
+    }
+
+    /// Whether movement queries must consider this entity for hard collisions.
+    ///
+    /// Returning `false` promises [`Self::can_be_collided_with`] is always false and
+    /// [`Self::can_collide_with`] never broadens the default rule. This capability may be
+    /// cached for the registered lifetime, including chunk-unload retention.
+    fn is_hard_collision_relevant(&self) -> bool {
+        true
     }
 
     /// Returns whether projectile collision may interact with this entity.
@@ -974,9 +1034,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().advance_base_tick_state();
         self.handle_portal();
         self.base().advance_powder_snow_contact_for_base_tick();
-        self.refresh_fluid_contact_for_base_tick();
+        self.base().update_was_eye_in_water();
+        self.update_fluid_interaction();
         self.update_swimming();
-        self.base().reset_fall_distance_in_water();
         if self
             .base()
             .advance_fire_tick(self.fire_immune(), self.is_in_lava())
@@ -1199,6 +1259,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Caches a live owner reference after restoring persisted owner-linked
     /// entities. Most entities do not store owner references.
     fn restore_owner_reference(&self, _owner: &SharedEntity) {}
+
+    /// Called after a teleport completes successfully.
+    fn on_teleported(&self) {}
 
     /// Sets the level callback for lifecycle events (movement, removal).
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
@@ -1842,10 +1905,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn calculate_view_vector(&self, pitch_degrees: f32, yaw_degrees: f32) -> DVec3 {
         let pitch = pitch_degrees.to_radians();
         let yaw = -yaw_degrees.to_radians();
-        let yaw_cos = yaw.cos();
-        let yaw_sin = yaw.sin();
-        let pitch_cos = pitch.cos();
-        let pitch_sin = pitch.sin();
+        let yaw_cos = trig::cos(yaw);
+        let yaw_sin = trig::sin(yaw);
+        let pitch_cos = trig::cos(pitch);
+        let pitch_sin = trig::sin(pitch);
         DVec3::new(
             f64::from(yaw_sin * pitch_cos),
             f64::from(-pitch_sin),
@@ -2181,17 +2244,37 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.scan_and_store_fluid_contact(false)
     }
 
-    /// Refreshes cached fluid contact with vanilla base-tick eye-water history.
-    fn refresh_fluid_contact_for_base_tick(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(true)
+    /// Runs vanilla `Entity.updateFluidInteraction`: refreshes cached contact,
+    /// emits the water-entry splash on transition, resets fall distance in
+    /// water, and applies fluid currents.
+    ///
+    /// Returns whether any fluid touches the entity.
+    fn update_fluid_interaction(&self) -> bool {
+        let was_touching_water = self.base().was_touching_water();
+        let contact = self.scan_and_store_fluid_contact(true);
+        let in_water = contact.water_height() > 0.0;
+        if in_water {
+            self.base().reset_fall_distance_in_water();
+            if !was_touching_water && !self.is_first_tick() {
+                self.do_water_splash_effect();
+            }
+        }
+        if let Some(world) = self.level() {
+            self.apply_fluid_current_impulses(&world, contact);
+        }
+
+        contact.any_fluid()
     }
 
     /// Scans current fluid contact and stores it on the entity base.
+    ///
+    /// `advance_eye_water_history` scans currents and records `wasTouchingWater` for
+    /// vanilla `updateFluidInteraction`.
     fn scan_and_store_fluid_contact(&self, advance_eye_water_history: bool) -> EntityFluidContact {
         let Some(world) = self.level() else {
             let contact = EntityFluidContact::default();
             if advance_eye_water_history {
-                self.base().set_fluid_contact_for_base_tick(contact);
+                self.base().set_fluid_interaction(contact);
             } else {
                 self.base().set_fluid_contact(contact);
             }
@@ -2215,16 +2298,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             )
         };
         if advance_eye_water_history {
-            self.base().set_fluid_contact_for_base_tick(contact);
-            self.apply_fluid_current_for_base_tick(&world, contact);
+            self.base().set_fluid_interaction(contact);
         } else {
             self.base().set_fluid_contact(contact);
         }
         contact
     }
 
-    /// Applies vanilla water/lava current impulses from the base-tick fluid scan.
-    fn apply_fluid_current_for_base_tick(&self, world: &Arc<World>, contact: EntityFluidContact) {
+    /// Applies vanilla water/lava current impulses from a fluid interaction update.
+    fn apply_fluid_current_impulses(&self, world: &Arc<World>, contact: EntityFluidContact) {
         if !self.is_pushed_by_fluid() {
             return;
         }
@@ -2452,7 +2534,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         if let Some(position) = accepted.position {
             self.try_set_position(position)?;
-            self.refresh_fluid_contact();
         }
 
         self.set_rotation(accepted.rotation);
@@ -2968,6 +3049,46 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
+    /// Returns the sound played when this entity enters water at low speed.
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_GENERIC_SPLASH
+    }
+
+    /// Returns the sound played when this entity enters water at high speed.
+    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_GENERIC_SPLASH
+    }
+
+    /// Plays the vanilla water-entry splash sound and emits `SPLASH`.
+    fn do_water_splash_effect(&self) {
+        self.default_do_water_splash_effect();
+    }
+
+    /// The default implementation of `Entity.doWaterSplashEffect` when not overridden.
+    fn default_do_water_splash_effect(&self) {
+        let (movement, volume_modifier) = if let Some(passenger) = self.controlling_passenger() {
+            (passenger.velocity(), 0.9)
+        } else {
+            (self.velocity(), 0.2)
+        };
+        let speed = ((movement.x * movement.x * 0.2
+            + movement.y * movement.y
+            + movement.z * movement.z * 0.2)
+            .sqrt() as f32
+            * volume_modifier)
+            .min(1.0);
+        let pitch = 1.0 + (rng().random::<f32>() - rng().random::<f32>()) * 0.4;
+        if speed < 0.25 {
+            self.play_sound(self.swim_splash_sound(), speed, pitch);
+        } else {
+            self.play_sound(self.swim_high_speed_splash_sound(), speed, pitch);
+        }
+
+        // VANILLA CLIENT-LOCAL: the bubble/splash particle loop uses `Level.addParticle`.
+
+        self.game_event(&vanilla_game_events::SPLASH);
+    }
+
     /// Plays vanilla's extinguished-on-fire entity sound.
     fn play_entity_on_fire_extinguished_sound(&self) {
         let Some(world) = self.level() else {
@@ -3300,7 +3421,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return None;
         }
         self.base().clear_collision_flags();
-        self.refresh_fluid_contact();
 
         Some(MoveResult {
             final_position,
@@ -3385,7 +3505,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
-        self.refresh_fluid_contact();
 
         if self.is_server_driven_movement()
             && Arc::clone(&self).apply_fall_damage_after_move(&result, &world)
@@ -3552,9 +3671,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
+        // Vanilla `LivingEntity.checkFallDamage` refreshes its fluid interaction
+        // when the cached state is not already water. Steel refreshes contact
+        // during movement, so the last interaction result is the vanilla check.
+        if self.is_living_entity() && !self.base().was_touching_water() {
+            self.update_fluid_interaction();
+        }
+
         if on_ground && self.fall_distance() > 0.0 {
             self.send_landing_particles(world, on_state, pos);
         }
+
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }

@@ -19,8 +19,9 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason, SharedEntity,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySyncedData,
+    LivingEntity, LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason,
+    SharedEntity, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
@@ -121,20 +122,7 @@ impl EndermiteEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
+        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 }
 
@@ -145,6 +133,10 @@ impl Entity for EndermiteEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::Events
     }
 
     fn base_tick(&self) {
@@ -185,6 +177,10 @@ impl Entity for EndermiteEntity {
 
     fn swim_sound(&self) -> SoundEventRef {
         Monster::swim_sound_monster(self)
+    }
+
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        Monster::swim_splash_sound_monster(self)
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {

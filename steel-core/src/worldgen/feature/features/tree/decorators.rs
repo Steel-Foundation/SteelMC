@@ -8,8 +8,8 @@ use steel_utils::Downcast as _;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
-use super::super::super::vanilla_collections::JavaBlockPosSet;
 use super::{NestedFeaturePlacer, TreePlacement};
+use crate::java_block_pos_set::JavaBlockPosSet;
 
 use crate::block_entity::entities::BeehiveBlockEntity;
 

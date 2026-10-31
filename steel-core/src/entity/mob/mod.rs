@@ -13,6 +13,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::trig;
 use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, RAD_TO_DEG, fast_floor, wrap_degrees};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::attribute::AttributeRef;
@@ -353,6 +354,20 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn set_mob_flags(&self, flags: i8);
 
+    /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
+    /// mobs derive it from their start age, and other mobs override as needed.
+    fn set_baby(&self, baby: bool) {
+        let Some(ageable) = self.as_ageable_mob() else {
+            return;
+        };
+        let age = if baby {
+            ageable.get_baby_start_age()
+        } else {
+            0
+        };
+        ageable.set_age(age);
+    }
+
     /// Returns whether this mob has a saddle equipped.
     fn is_saddled(&self) -> bool {
         let mut is_saddled = false;
@@ -360,6 +375,14 @@ pub trait Mob: LivingEntity + Leashable {
             is_saddled = self.is_equippable_in_slot(item_stack, EquipmentSlot::Saddle);
         });
         is_saddled
+    }
+
+    /// Checks line of sight using this mob sensing cache
+    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+        self.mob_base()
+            .sensing()
+            .lock()
+            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     fn custom_server_ai_step(&self) {}
@@ -1297,14 +1320,6 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
     }
 
-    /// Whether this mob can see `target`.
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
-    }
-
     /// Maximum degrees the head may pitch up or down independently of the body.
     fn max_head_x_rot(&self) -> f32 {
         40.0
@@ -1447,8 +1462,8 @@ pub trait Mob: LivingEntity + Leashable {
         };
 
         let yaw_radians = self.rotation().0.to_radians();
-        let yaw_sin = f64::from(yaw_radians.sin());
-        let yaw_cos = f64::from(yaw_radians.cos());
+        let yaw_sin = f64::from(trig::sin(yaw_radians));
+        let yaw_cos = f64::from(trig::cos(yaw_radians));
         living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
 
         let velocity = self.velocity();
@@ -1744,8 +1759,8 @@ pub trait Mob: LivingEntity + Leashable {
         let xa = strafe_forward * distance;
         let za = strafe_right * distance;
         let yaw_radians = self.rotation().0 * DEG_TO_RAD;
-        let sin = yaw_radians.sin();
-        let cos = yaw_radians.cos();
+        let sin = trig::sin(yaw_radians);
+        let cos = trig::cos(yaw_radians);
         let dx = xa.mul_add(cos, -(za * sin));
         let dz = za.mul_add(cos, xa * sin);
         if !self.is_strafe_walkable(dx, dz) {
