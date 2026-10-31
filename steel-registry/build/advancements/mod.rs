@@ -30,7 +30,7 @@ struct AdvancementJson {
 struct AdvancementRewardsJson {
     #[serde(default)]
     experience: i32,
-    #[serde(default)]
+    #[serde(default, rename = "loot")]
     loots: Vec<Identifier>,
     #[serde(default)]
     recipes: Vec<Identifier>,
@@ -46,12 +46,7 @@ impl ToTokens for AdvancementRewardsJson {
                 UntypedRecipeRef { recipe: &*vanilla_recipes::#name }
             }
         });
-        let loots = generate_vec(&self.loots, |loot| {
-            let name = Ident::new(&loot.path.to_shouty_snake_case(), Span::call_site());
-            quote! {
-                &*vanilla_loot_tables::#name
-            }
-        });
+        let loots = generate_vec(&self.loots, generate_identifier);
         let function = generate_option(&self.function, generate_identifier);
         tokens.extend(quote! {
             AdvancementRewards {

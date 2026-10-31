@@ -922,7 +922,7 @@ impl<'a> GridPlacer<'a> {
     fn assert_mapping(container: &ContainerRef, rect: Abs, mapping: &SlotMapping) {
         use crate::inventory::lock::ContainerLockGuard;
 
-        let size = ContainerLockGuard::lock_all(slice::from_ref(container))
+        let size = ContainerLockGuard::lock_storage(slice::from_ref(container))
             .get(container.container_id())
             .expect("container was just locked")
             .get_container_size();

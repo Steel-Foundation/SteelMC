@@ -375,12 +375,11 @@ fn generate_loot_table_builder_call(loot_table: Option<&str>) -> TokenStream {
         table_path.display()
     );
 
-    let const_ident = Ident::new(
-        &path.replace('/', "_").to_shouty_snake_case(),
-        Span::call_site(),
-    );
     quote! {
-        .loot_table(Some(&crate::vanilla_loot_tables::#const_ident))
+        .loot_table(Some({
+            static LOOT_TABLE: Identifier = Identifier::vanilla_static(#path);
+            &LOOT_TABLE
+        }))
     }
 }
 

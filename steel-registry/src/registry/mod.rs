@@ -51,7 +51,6 @@ use crate::{
     instrument::InstrumentRegistry,
     items::ItemRegistry,
     jukebox_song::JukeboxSongRegistry,
-    loot_table::LootTableRegistry,
     map_decoration_type::MapDecorationTypeRegistry,
     menu_type::MenuTypeRegistry,
     mob_effect::MobEffectRegistry,
@@ -85,14 +84,13 @@ use crate::{
     vanilla_enchantments, vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags,
     vanilla_fluids, vanilla_frog_variants, vanilla_game_events, vanilla_game_rules,
     vanilla_instrument_tags, vanilla_instruments, vanilla_item_tags, vanilla_items,
-    vanilla_jukebox_songs, vanilla_loot_tables, vanilla_map_decoration_types, vanilla_menu_types,
-    vanilla_mob_effects, vanilla_painting_variant_tags, vanilla_painting_variants,
-    vanilla_particle_types, vanilla_pig_sound_variants, vanilla_pig_variants,
-    vanilla_placed_features, vanilla_poi_type_tags, vanilla_poi_types,
-    vanilla_position_source_types, vanilla_potion_tags, vanilla_potions, vanilla_recipes,
-    vanilla_structure_processors, vanilla_structure_tags, vanilla_structures,
-    vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags, vanilla_timelines,
-    vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
+    vanilla_jukebox_songs, vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
+    vanilla_painting_variant_tags, vanilla_painting_variants, vanilla_particle_types,
+    vanilla_pig_sound_variants, vanilla_pig_variants, vanilla_placed_features,
+    vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
+    vanilla_potions, vanilla_recipes, vanilla_structure_processors, vanilla_structure_tags,
+    vanilla_structures, vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags,
+    vanilla_timelines, vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
     vanilla_villager_types, vanilla_wolf_sound_variants, vanilla_wolf_variants,
     vanilla_world_clocks, vanilla_zombie_nautilus_variants,
     villager_profession::VillagerProfessionRegistry,
@@ -220,7 +218,6 @@ pub const MAP_DECORATION_TYPE_REGISTRY: Identifier =
 pub const ZOMBIE_NAUTILUS_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("zombie_nautilus_variant");
 pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline");
-pub const LOOT_TABLE_REGISTRY: Identifier = Identifier::vanilla_static("loot_table");
 pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("block_entity_type");
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
@@ -289,7 +286,6 @@ pub struct Registry {
     pub recipe_book_categories: RecipeBookCategoryRegistry,
     pub recipes: RecipeRegistry,
     pub entity_types: EntityTypeRegistry,
-    pub loot_tables: LootTableRegistry,
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
     pub game_events: GameEventRegistry,
@@ -412,7 +408,6 @@ impl Registry {
         vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
             &mut registry.entity_types,
         );
-        vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
@@ -504,7 +499,6 @@ impl Registry {
         self.recipe_book_categories.freeze();
         self.recipes.freeze(&self.recipe_types);
         self.entity_types.freeze();
-        self.loot_tables.freeze();
         self.block_entity_types.freeze();
         self.game_rules.freeze();
         self.game_events.freeze();
@@ -769,7 +763,6 @@ impl Registry {
             recipe_book_categories: RecipeBookCategoryRegistry::new(),
             recipes: RecipeRegistry::new(),
             entity_types: EntityTypeRegistry::new(),
-            loot_tables: LootTableRegistry::new(),
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             game_events: GameEventRegistry::new(),

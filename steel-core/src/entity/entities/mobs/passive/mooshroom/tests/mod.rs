@@ -171,6 +171,33 @@ fn mooshroom_thunder_hit_swaps_variant() {
 }
 
 #[test]
+fn shearing_loot_matches_the_mooshroom_variant() {
+    init_vanilla_registry();
+    let mooshroom =
+        MushroomCowEntity::new(&vanilla_entities::MOOSHROOM, 1, DVec3::ZERO, Weak::new());
+    let shears = ItemStack::new(&vanilla_items::SHEARS);
+    for (variant, expected) in [
+        (MooshroomVariant::Red, &*vanilla_items::RED_MUSHROOM),
+        (MooshroomVariant::Brown, &*vanilla_items::BROWN_MUSHROOM),
+    ] {
+        mooshroom.set_variant(variant);
+        let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1));
+        let drops = shearing_loot_items_with_rng(
+            &mooshroom,
+            &vanilla_loot_tables::SHEARING_MOOSHROOM,
+            &shears,
+            &mut random,
+        );
+        assert_eq!(drops.len(), 5);
+        assert!(
+            drops
+                .iter()
+                .all(|drop| drop.is(expected) && drop.count() == 1)
+        );
+    }
+}
+
+#[test]
 fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
     init_vanilla_registry();
     init_behaviors();

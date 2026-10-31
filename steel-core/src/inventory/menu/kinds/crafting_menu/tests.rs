@@ -50,6 +50,7 @@ fn partial_result_overflow_uses_the_default_drop_policy() {
     let result = menu
         .behavior()
         .lock_all_containers()
+        .expect("container access should succeed")
         .get(result_id)
         .expect("result container is registered with the menu")
         .get_item(0)
@@ -73,6 +74,7 @@ fn partial_result_overflow_uses_the_default_drop_policy() {
     assert!(
         menu.behavior()
             .lock_all_containers()
+            .expect("container access should succeed")
             .get(result_id)
             .expect("result container is registered with the menu")
             .get_item(0)

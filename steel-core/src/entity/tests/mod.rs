@@ -1,3 +1,4 @@
+use crate::loot::vanilla_loot_tables;
 use std::{
     io::Cursor,
     sync::{Arc, Weak},
@@ -17,7 +18,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData as SyncedLivingEntityD
 use steel_registry::{
     REGISTRY, init_vanilla_registry, sound_events, vanilla_attributes, vanilla_blocks,
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events, vanilla_items,
-    vanilla_loot_tables, vanilla_mob_effects,
+    vanilla_mob_effects,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};

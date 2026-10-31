@@ -3,6 +3,7 @@ use crate::behavior::{
     BlockBehavior, BlockPlaceContext, BlockRef, InteractionResult, InventoryAccess,
 };
 use crate::entity::Entity;
+use crate::loot::vanilla_loot_tables;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -14,9 +15,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{
-    sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
-};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_utils::axis::Axis;
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
@@ -64,8 +63,9 @@ impl BlockBehavior for PumpkinBlock {
 
         let drops = drop_from_block_interact_loot_table(
             &vanilla_loot_tables::CARVE_PUMPKIN,
+            world,
+            pos,
             state,
-            world.get_block_entity(pos),
             Some(&shears),
             Some(player),
             &mut rng,

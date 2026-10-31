@@ -404,7 +404,9 @@ impl MenuKind for AnvilKind {
         }
 
         {
-            let mut guard = behavior.lock_all_containers();
+            let Ok(mut guard) = behavior.lock_all_containers() else {
+                return;
+            };
             self.create_result(behavior, &mut guard, player);
         }
         behavior.broadcast_changes(&player.connection);
