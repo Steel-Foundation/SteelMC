@@ -104,6 +104,43 @@ fn affects_living_entities_once_per_reapplication_delay() {
 }
 
 #[test]
+fn extreme_saved_timings_wrap_like_vanilla_int_arithmetic() {
+    init_vanilla_registry();
+    init_behaviors();
+    let fixture = fresh_test_world("area_effect_cloud_wrapping");
+    let world = &fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        2,
+        POSITION,
+        Arc::downgrade(world),
+    ));
+    let shared_pig: SharedEntity = Arc::<PigEntity>::clone(&pig);
+    world.try_add_entity(shared_pig).expect("register pig");
+    let cloud = lingering_cloud(world);
+
+    let mut saved = NbtCompound::new();
+    saved.insert("Age", 9);
+    saved.insert("Duration", i32::MAX);
+    saved.insert("DurationOnUse", i32::MAX);
+    saved.insert("WaitTime", i32::MIN);
+    saved.insert("ReapplicationDelay", i32::MAX);
+    let mut bytes = Vec::new();
+    saved.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(&bytes))
+        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+    cloud.load_additional((&borrowed).into());
+    cloud.set_potion_contents(PotionContents::of(&vanilla_potions::POISON));
+
+    // At age 10 the effect pass runs and every timing sum overflows
+    // (`10 - MIN`, `10 + MAX`, `MAX + MAX`); Java wraps these silently.
+    tick(&cloud);
+    assert!(pig.has_mob_effect(vanilla_mob_effects::POISON));
+    assert!(cloud.is_removed(), "the wrapped duration drops to zero or below");
+}
+
+#[test]
 fn load_restores_age_and_resizes_to_saved_radius() {
     init_vanilla_registry();
     let fixture = fresh_test_world("area_effect_cloud_load");

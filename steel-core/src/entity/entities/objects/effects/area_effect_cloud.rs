@@ -211,7 +211,7 @@ impl AreaEffectCloudEntity {
             let state = self.state.lock();
             (state.duration, state.wait_time, state.radius_per_tick)
         };
-        if duration != INFINITE_DURATION && tick_count - wait_time >= duration {
+        if duration != INFINITE_DURATION && tick_count.wrapping_sub(wait_time) >= duration {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
@@ -292,7 +292,7 @@ impl AreaEffectCloudEntity {
                 let mut state = self.state.lock();
                 state
                     .victims
-                    .insert(entity.id(), tick_count + reapplication_delay);
+                    .insert(entity.id(), tick_count.wrapping_add(reapplication_delay));
                 (state.radius_on_use, state.duration_on_use)
             };
 
@@ -348,7 +348,7 @@ impl AreaEffectCloudEntity {
         if state.duration == INFINITE_DURATION {
             return false;
         }
-        state.duration += delta;
+        state.duration = state.duration.wrapping_add(delta);
         state.duration <= 0
     }
 }
