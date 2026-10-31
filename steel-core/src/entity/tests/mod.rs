@@ -7,10 +7,7 @@ use glam::DVec3;
 use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::RelativeMovement;
-use steel_registry::blocks::{
-    block_state_ext::BlockStateExt as _,
-    properties::{BlockStateProperties, Direction as BlockDirection},
-};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction as BlockDirection};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
@@ -22,7 +19,6 @@ use steel_registry::{
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events, vanilla_items,
     vanilla_loot_tables, vanilla_mob_effects,
 };
-use steel_utils::Downcast as _;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
@@ -30,7 +26,7 @@ use steel_utils::{
     block_util::FoundRectangle,
 };
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
-use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
+use text_components::{TextComponent, format::Color, interactivity::ClickEvent};
 use uuid::Uuid;
 
 use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};
@@ -47,20 +43,7 @@ use crate::world::game_event::GameEventContext;
 use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
-use super::{
-    ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
-    DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
-    ENTITY_LOAD_MAX_VERTICAL_POSITION, Entity, EntityBase, EntityFluidContact, EntityLevelCallback,
-    EntityMoveError, EntityOwnership, EntitySyncedData, EntityVerticalMovementStateUpdate,
-    InsideBlockEffectCollector, InsideBlockEffectType, LivingEntity, LivingEntityBase,
-    LivingTravelInput, MobEffectInstance, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID,
-    SharedEntity, block_state_suffocates_eye_box, closest_open_space_direction,
-    fall_damage_reset_clip_target, fall_flying_collision_damage, fall_flying_free_fall_interval,
-    get_input_vector, indirect_passengers, passenger_transition_position,
-    passenger_transition_rotation, remove_after_changing_dimensions,
-    should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
-    transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
-};
+use super::*;
 
 struct PushableTestEntity {
     base: EntityBase,
@@ -74,7 +57,7 @@ impl PushableTestEntity {
     }
 }
 
-crate::entity::impl_test_downcast_type!(PushableTestEntity);
+impl_test_downcast_type!(PushableTestEntity);
 
 impl Entity for PushableTestEntity {
     fn base(&self) -> &EntityBase {

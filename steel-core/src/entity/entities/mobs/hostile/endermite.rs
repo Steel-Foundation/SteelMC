@@ -21,7 +21,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySyncedData,
     LivingEntity, LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason,
-    SharedEntity,
+    SharedEntity, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
@@ -122,20 +122,7 @@ impl EndermiteEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
+        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 }
 
