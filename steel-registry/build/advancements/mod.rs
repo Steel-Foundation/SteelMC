@@ -148,12 +148,12 @@ pub(crate) fn build() -> TokenStream {
         advancement_data.to_tokens(&mut stream);
         let const_ident = &advancement_data.const_ident;
         register_stream.extend(quote! {
-            registry.register(AdvancementHolder::from(&*#const_ident));
+            AdvancementHolder::from(&*#const_ident),
         });
     }
     stream.extend(quote! {
-        pub fn register_advancements(registry: &mut AdvancementRegistry) {
-            #register_stream
+        pub fn register_advancements(registry: &AdvancementRegistry) {
+            registry.register_all(&[#register_stream]);
         }
     });
     stream

@@ -43,13 +43,6 @@ impl AdvancementProgressMap {
         self.order.clear();
     }
 
-    /// insert a new advancement to the progress map
-    #[inline]
-    pub fn insert(&mut self, advancement: AdvancementIdx, progress: AdvancementProgress) {
-        self.order.push((advancement, progress));
-        self.map.insert(advancement, self.order.len() - 1);
-    }
-
     /// return the len of the map
     #[must_use]
     #[inline]

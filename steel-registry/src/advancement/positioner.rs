@@ -336,7 +336,7 @@ mod tests {
     use steel_utils::Identifier;
 
     fn get_location(registry: &FrozenAdvancementRegistry, key: &Identifier) -> (f32, f32) {
-        let loc: Option<(f32, f32)> = registry.by_key(key).map(AdvancementNode::get_location);
+        let loc: Option<(f32, f32)> = registry.get_by_key(key).map(AdvancementNode::get_location);
         loc.unwrap_or_else(|| panic!("unbale to get the location of {key}"))
     }
 

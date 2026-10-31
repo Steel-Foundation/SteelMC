@@ -1,6 +1,6 @@
 use crate::advancement::{Advancement, positioner};
 use arc_swap::ArcSwap;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use std::cmp::PartialEq;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
@@ -339,6 +339,11 @@ impl FrozenAdvancementRegistry {
         advancement_idx
     }
 
+    /// Returns the root advancement indices in tree order.
+    pub fn roots(&self) -> impl Iterator<Item = AdvancementIdx> + '_ {
+        self.roots.iter().copied()
+    }
+
     #[must_use]
     pub fn get_all_idx(&self) -> Vec<AdvancementIdx> {
         self.adv_nodes
@@ -361,16 +366,26 @@ impl FrozenAdvancementRegistry {
 #[derive(Debug, Default)]
 pub struct AdvancementRegistry {
     registry: ArcSwap<FrozenAdvancementRegistry>,
-    unloaded_advancement: SyncMutex<FxHashSet<AdvancementHolder>>,
+    /// Every advancement registered for the current pipeline.
+    ///
+    /// Registrations accumulate here until a reload resets the registry to vanilla after its new
+    /// tree has been published. Plugins and datapacks can therefore register advancements outside
+    /// reload events and still have them included in the next pass.
+    registered_advancements: SyncMutex<FxHashMap<Identifier, AdvancementHolder>>,
 }
 
 impl AdvancementRegistry {
     #[must_use]
     #[inline]
     pub fn new(registry: FrozenAdvancementRegistry) -> Self {
+        let registered_advancements = registry
+            .adv_nodes
+            .iter()
+            .map(|node| (node.value().key().clone(), node.clone_value()))
+            .collect();
         Self {
             registry: ArcSwap::new(Arc::new(registry)),
-            unloaded_advancement: SyncMutex::new(FxHashSet::default()),
+            registered_advancements: SyncMutex::new(registered_advancements),
         }
     }
 
@@ -380,11 +395,39 @@ impl AdvancementRegistry {
         self.registry.load_full()
     }
 
-    /// Registers an advancement in the registry. Returns true if the advancement was added to the
-    /// unloaded advancements set, false if it was already present.
-    pub fn register(&mut self, advancement: AdvancementHolder) -> bool {
-        self.unloaded_advancement.lock().insert(advancement)
+    /// Registers an advancement. Returns `true` when the key was not registered yet, or `false`
+    /// when an advancement with the same key was replaced.
+    pub fn register(&self, advancement: AdvancementHolder) -> bool {
+        self.registered_advancements
+            .lock()
+            .insert(advancement.key().clone(), advancement)
+            .is_none()
     }
+
+    /// Registers multiple advancements in the registry.
+    pub fn register_all(&self, advancements: &[AdvancementHolder]) {
+        let mut registered = self.registered_advancements.lock();
+        for advancement in advancements {
+            registered.insert(advancement.key().clone(), advancement.clone());
+        }
+    }
+
+    /// Removes a registered advancement. It disappears from the tree on the next rebuild.
+    ///
+    /// The next [`Self::reset_to_vanilla`] restores it if it is a vanilla advancement.
+    pub fn remove(&self, key: &Identifier) -> bool {
+        self.registered_advancements.lock().remove(key).is_some()
+    }
+
+    /// Clears every registration and restores the vanilla advancements.
+    ///
+    /// Call this once a reload pass has published its tree. Registrations made outside reload
+    /// events stay valid until then.
+    pub fn reset_to_vanilla(&self) {
+        self.registered_advancements.lock().clear();
+        crate::vanilla_advancements::register_advancements(self);
+    }
+
     pub fn with_value_by_key<R>(
         &self,
         key: &Identifier,
@@ -394,30 +437,121 @@ impl AdvancementRegistry {
         reg.value_by_key(key).map(f)
     }
 
-    /// Updates the advancement tree by loading and connecting all unloaded advancements.
-    pub(crate) fn update_tree(&mut self) {
-        let advancements = self.unloaded_advancement.lock().drain().collect();
-        let mut new_registry = FrozenAdvancementRegistry::default();
-        new_registry.register_all(advancements);
-        for advancement_idx in new_registry.roots.clone() {
-            let node = new_registry.adv_nodes.get(advancement_idx.get());
-            let Some(node) = node else {
-                eprintln!("unable to get the root node with index {advancement_idx}");
-                return;
-            };
-            if node.has_display() {
-                let res = positioner::run(&mut new_registry, advancement_idx);
-                if let Err(e) = res {
-                    eprintln!("{}", e.get_message());
-                }
-            }
-        }
-        self.registry.store(Arc::new(new_registry));
+    /// Builds a new tree from the current registrations without publishing it.
+    ///
+    /// Registrations made after this snapshot are picked up by the next call.
+    #[must_use]
+    pub fn prepare_tree(&self) -> FrozenAdvancementRegistry {
+        let advancements = self
+            .registered_advancements
+            .lock()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        Self::build_tree(advancements)
     }
 
-    pub fn remove_unloaded_advancement(&mut self, advancement: &Identifier) {
-        self.unloaded_advancement
-            .lock()
-            .retain(|adv| adv.key() != advancement);
+    /// Publishes a tree previously built by [`Self::prepare_tree`].
+    pub fn replace_tree(&self, tree: FrozenAdvancementRegistry) {
+        self.registry.store(Arc::new(tree));
+    }
+
+    /// Rebuilds and publishes the tree from every registered advancement.
+    pub(crate) fn update_tree(&self) {
+        self.replace_tree(self.prepare_tree());
+    }
+
+    fn build_tree(mut advancements: Vec<AdvancementHolder>) -> FrozenAdvancementRegistry {
+        advancements.sort_by(|left, right| left.key().cmp(right.key()));
+
+        let mut registry = FrozenAdvancementRegistry::default();
+        registry.register_all(advancements);
+        for advancement_idx in registry.roots.clone() {
+            let Some(node) = registry.adv_nodes.get(advancement_idx.get()) else {
+                eprintln!("unable to get the root node with index {advancement_idx}");
+                return registry;
+            };
+            if node.has_display()
+                && let Err(error) = positioner::run(&mut registry, advancement_idx)
+            {
+                eprintln!("{}", error.get_message());
+            }
+        }
+        registry
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeMap, sync::Arc};
+
+    use crate::advancement::{AdvancementRequirement, AdvancementRewards};
+    use crate::vanilla_advancements::STORY_ROOT;
+
+    use super::*;
+
+    fn advancement(key: &'static str, parent: Option<&'static str>) -> AdvancementHolder {
+        AdvancementHolder::Dynamic(Arc::new(Advancement {
+            key: Identifier::new("steel_test", key),
+            parent: parent.map(|parent| Identifier::new("steel_test", parent)),
+            criteria: BTreeMap::new(),
+            display: None,
+            send_telemetry_event: false,
+            requirements: AdvancementRequirement::default(),
+            rewards: AdvancementRewards::default(),
+        }))
+    }
+
+    fn keys(registry: &FrozenAdvancementRegistry) -> Vec<String> {
+        registry
+            .get_all_key()
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn rebuild_keeps_advancements_registered_before_it() {
+        let registry = AdvancementRegistry::default();
+        registry.register_all(&[
+            advancement("root", None),
+            advancement("child", Some("root")),
+        ]);
+
+        // A first build must not drain the registration map.
+        assert_eq!(keys(&registry.prepare_tree()).len(), 2);
+        assert_eq!(keys(&registry.prepare_tree()).len(), 2);
+    }
+
+    #[test]
+    fn registering_an_existing_key_replaces_it() {
+        let registry = AdvancementRegistry::default();
+        assert!(registry.register(advancement("root", None)));
+        assert!(!registry.register(advancement("root", None)));
+
+        assert_eq!(registry.prepare_tree().get_all_key().len(), 1);
+    }
+
+    #[test]
+    fn reset_restores_vanilla_and_drops_runtime_registrations() {
+        let registry = AdvancementRegistry::default();
+        registry.reset_to_vanilla();
+
+        let vanilla_root = STORY_ROOT.key().clone();
+        assert!(registry.prepare_tree().get_by_key(&vanilla_root).is_some());
+
+        registry.remove(&vanilla_root);
+        registry.register(advancement("plugin", None));
+        let reloaded = registry.prepare_tree();
+        assert!(reloaded.get_by_key(&vanilla_root).is_none());
+
+        registry.reset_to_vanilla();
+        let reset = registry.prepare_tree();
+        assert!(reset.get_by_key(&vanilla_root).is_some());
+        assert!(
+            reset
+                .get_by_key(&Identifier::new("steel_test", "plugin"))
+                .is_none()
+        );
     }
 }

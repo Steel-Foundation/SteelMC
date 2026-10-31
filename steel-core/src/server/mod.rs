@@ -6,6 +6,8 @@ mod packet_processor;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
+/// Reloadable server resources.
+pub mod resources;
 mod run_loop;
 mod service_keys;
 mod tick_overload;

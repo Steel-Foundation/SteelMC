@@ -69,12 +69,15 @@ impl PlayerAdvancement {
         if Arc::ptr_eq(&self.registry, &current) {
             return;
         }
-        self.registry = current;
-        // Les anciens indices ne valent plus rien : on repart de zéro
+        // TODO: clear advancement listeners once listener registration is implemented.
+        self.progress.clear();
         self.visible.clear();
-        self.progress_changed.clear();
         self.roots_to_update.clear();
-        self.is_first_packet = true; // renvoyer l'état complet au client
+        self.progress_changed.clear();
+        self.is_first_packet = true;
+        self.last_selected_tab = None;
+        self.registry = current;
+        // TODO: reload advancement progress from storage once advancement saving/loading exists.
     }
 
     /// Award a criterion to a player. If this completes the advancement,
