@@ -34,6 +34,18 @@ impl AdvancementProgressMap {
         }
     }
 
+    /// Replaces the progress of an advancement with persisted state.
+    pub fn start_progress(
+        &mut self,
+        advancement: AdvancementRef,
+        mut progress: AdvancementProgress,
+    ) {
+        let idx = self.order.len();
+        progress.update(advancement.requirements());
+        self.order.push((advancement, progress));
+        self.map.insert(advancement, idx);
+    }
+
     /// clear all the progress made
     #[inline]
     pub fn clear(&mut self) {
@@ -86,15 +98,31 @@ impl AdvancementProgressMap {
 ///
 /// Tracks whether the advancement has been fully completed. In the future,
 /// this will also track specific criteria progress.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct AdvancementProgress {
     /// Indicates the different progress of all criteria currently only a boolean
-    pub criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
+    criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
     /// The Requirement for the Advancement to be mark as complete
-    pub requirements: AdvancementRequirement,
+    requirements: AdvancementRequirement,
 }
 
 impl AdvancementProgress {
+    /// Creates a new `AdvancementProgress` with the given criteria.
+    /// need to call `update` to set the requirements for the advancement
+    #[must_use]
+    pub fn new(criteria: FxHashMap<Cow<'static, str>, CriterionProgress>) -> AdvancementProgress {
+        Self {
+            criteria,
+            requirements: AdvancementRequirement::default(),
+        }
+    }
+
+    /// Returns a reference to the criteria map.
+    #[must_use]
+    pub const fn criteria(&self) -> &FxHashMap<Cow<'static, str>, CriterionProgress> {
+        &self.criteria
+    }
+
     /// Returns `true` if the advancement is done.
     #[must_use]
     pub fn is_done(&self) -> bool {
@@ -108,7 +136,7 @@ impl AdvancementProgress {
             .is_some_and(CriterionProgress::is_done)
     }
 
-    /// Returns `true` if the advancement has any progress. Currently just returns if it is fully complete.
+    /// Returns `true` if the advancement has any progress.
     #[must_use]
     pub fn has_progress(&self) -> bool {
         for value in self.criteria.values() {

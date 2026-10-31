@@ -4,7 +4,10 @@
 
 pub mod progress;
 pub mod rewards;
+mod saving;
 mod visibility_evaluator;
+
+pub(crate) use saving::{PersistedAdvancements, PersistedAdvancementsRef};
 
 use crate::entity::Entity;
 use crate::player::Player;
@@ -177,7 +180,7 @@ impl PlayerAdvancement {
                     .map(|(key, val)| AdvancementProgressData {
                         id: key,
                         progress: val
-                            .criteria
+                            .criteria()
                             .iter()
                             .map(|(key, val)| Criteria {
                                 criterion_id: key.clone(),
@@ -218,5 +221,143 @@ impl PlayerAdvancement {
                 self.last_selected_tab.map(|e| e.key().clone()),
             ));
         }
+    }
+
+    /// Snapshots the advancements that still have progress for persistence.
+    pub(crate) fn persisted_progress(&self) -> Vec<(Identifier, AdvancementProgress)> {
+        self.progress
+            .iter()
+            .filter(|(_, progress)| progress.has_progress())
+            .map(|(advancement, progress)| (advancement.key().clone(), progress.clone()))
+            .collect()
+    }
+
+    /// Replaces the current progress with entries loaded from storage.
+    ///
+    /// The first flush after this call sends the full tree to the client, so a
+    /// domain switch also clears progress that belonged to the previous domain.
+    pub(crate) fn apply_persisted_progress(
+        &mut self,
+        entries: impl IntoIterator<Item = (Identifier, AdvancementProgress)>,
+    ) {
+        self.progress.clear();
+        self.visible.clear();
+        self.roots_to_update.clear();
+        self.progress_changed.clear();
+        self.last_selected_tab = None;
+        self.is_first_packet = true;
+
+        for (advancement_id, progress) in entries {
+            let Some(advancement) = REGISTRY.advancements.value_by_key(&advancement_id) else {
+                tracing::warn!(
+                    "Ignored advancement '{}' in saved progress - it doesn't exist anymore?",
+                    advancement_id
+                );
+                continue;
+            };
+            self.progress.start_progress(advancement, progress);
+            self.progress_changed.insert(advancement);
+            self.mark_for_visibility_update(advancement);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::init_vanilla_registry;
+
+    fn advancement_with_criteria() -> AdvancementRef {
+        REGISTRY
+            .advancements
+            .advancements()
+            .iter()
+            .copied()
+            .find(|advancement| !advancement.requirements().names().is_empty())
+            .expect("vanilla registry should contain an advancement with criteria")
+    }
+
+    #[test]
+    fn persisted_progress_skips_advancements_without_progress() {
+        init_vanilla_registry();
+
+        let advancement = advancement_with_criteria();
+        let untouched = REGISTRY
+            .advancements
+            .advancements()
+            .iter()
+            .copied()
+            .find(|candidate| *candidate != advancement)
+            .expect("vanilla registry should contain more than one advancement");
+
+        let mut player_advancement = PlayerAdvancement::default();
+        let criterion = advancement
+            .requirements()
+            .names()
+            .into_iter()
+            .next()
+            .expect("advancement should have a criterion");
+        player_advancement
+            .progress
+            .get_mut_or_start_progress(advancement)
+            .grant_progress(&criterion);
+        player_advancement
+            .progress
+            .get_mut_or_start_progress(untouched)
+            .grant_progress("steel_never_completed");
+
+        let persisted = player_advancement.persisted_progress();
+
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].0, *advancement.key());
+    }
+
+    #[test]
+    fn apply_persisted_progress_restores_progress_and_resets_client_state() {
+        init_vanilla_registry();
+
+        let advancement = advancement_with_criteria();
+        let criterion = advancement
+            .requirements()
+            .names()
+            .into_iter()
+            .next()
+            .expect("advancement should have a criterion");
+
+        let mut source = PlayerAdvancement::default();
+        source
+            .progress
+            .get_mut_or_start_progress(advancement)
+            .grant_progress(&criterion);
+        let persisted = source.persisted_progress();
+
+        let mut restored = PlayerAdvancement {
+            is_first_packet: false,
+            ..PlayerAdvancement::default()
+        };
+        restored.apply_persisted_progress(persisted);
+
+        assert!(restored.is_first_packet, "client state must be reset");
+        assert_eq!(restored.progress.len(), 1);
+        let progress = restored
+            .progress
+            .get_progress(advancement)
+            .expect("progress should be restored");
+        assert_eq!(
+            progress.get_completed_criteria().collect::<Vec<_>>(),
+            vec![&*criterion]
+        );
+    }
+
+    #[test]
+    fn apply_persisted_progress_ignores_unknown_advancements() {
+        init_vanilla_registry();
+
+        let unknown = Identifier::vanilla_static("steel_unknown_advancement");
+        let mut player_advancement = PlayerAdvancement::default();
+
+        player_advancement.apply_persisted_progress([(unknown, AdvancementProgress::default())]);
+
+        assert!(player_advancement.progress.is_empty());
     }
 }
