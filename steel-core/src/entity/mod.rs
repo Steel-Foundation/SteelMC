@@ -12,10 +12,10 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use steel_math::wrap_degrees;
+use steel_math::{trig, wrap_degrees};
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CSwingAnimation,
-    CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CSwingAnimation, CTeleportEntity,
+    EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     behavior::PushReaction, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -33,9 +33,11 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::loot_table::{
-    DamageSourceInfo, EntityRef, EntityRefFlags, LootContext, LootTableRef,
+    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
+    LootContext, LootTableRef,
 };
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
@@ -45,7 +47,7 @@ use steel_registry::vanilla_game_rules::{MAX_ENTITY_CRAMMING, MOB_DROPS};
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_type_tags, vanilla_damage_types,
-    vanilla_game_events,
+    vanilla_game_events, vanilla_particle_types,
 };
 use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
@@ -75,7 +77,7 @@ use crate::physics::{
     WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::game_event::GameEventContext;
-use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
+use crate::world::{ClipBlockShape, ClipFluid, Explosion, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
@@ -289,7 +291,7 @@ pub(crate) fn equipment_items_to_packet_items(
         .collect()
 }
 
-fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
+pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
     (aabb.min_x().floor() as i32..aabb.max_x().ceil() as i32).any(|x| {
         (aabb.min_y().floor() as i32..aabb.max_y().ceil() as i32).any(|y| {
             (aabb.min_z().floor() as i32..aabb.max_z().ceil() as i32)
@@ -446,8 +448,8 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
         input
     } * f64::from(speed);
     let yaw = yaw_degrees.to_radians();
-    let sin = yaw.sin();
-    let cos = yaw.cos();
+    let sin = trig::sin(yaw);
+    let cos = trig::cos(yaw);
     DVec3::new(
         movement.x * f64::from(cos) - movement.z * f64::from(sin),
         movement.y,
@@ -514,7 +516,7 @@ fn apply_block_effect_segment(
     to: DVec3,
     max_iterations: i32,
     effect_collector: &mut InsideBlockEffectCollector,
-    visited_blocks: &mut FxHashSet<BlockPos>,
+    visited_blocks: &mut block_effects::VisitedBlockPositions,
 ) -> BlockEffectSegmentResult {
     let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
     if aabb.is_empty() {
@@ -651,7 +653,8 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
     apply_step_on_block(entity, &world);
 
-    let mut visited_blocks = FxHashSet::default();
+    // Deduplicates effects across every movement segment of this tick.
+    let mut visited_blocks = block_effects::VisitedBlockPositions::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
     let before_effects = BlockEffectFireSnapshot::from_entity(entity);
     for movement in movements.iter().copied() {
@@ -761,6 +764,7 @@ mod block_effects;
 mod callback;
 mod combat_rules;
 pub mod consume_effect;
+mod conversion;
 pub mod damage;
 pub(crate) mod dismount_helper;
 pub mod entities;
@@ -769,6 +773,7 @@ pub mod entities;
     reason = "the entity module mirrors vanilla's Entity class and groups its implementation"
 )]
 mod entity;
+pub mod entity_selector;
 mod fluid_contact;
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -785,6 +790,7 @@ mod living_reference;
 mod manager;
 mod mob;
 pub mod mob_effect;
+mod monster;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
@@ -813,6 +819,7 @@ pub use callback::{
     EntityChunkCallback, EntityLevelCallback, InactiveEntityCallback, NullEntityCallback,
     PlayerEntityCallback, RemovalReason,
 };
+pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
@@ -826,16 +833,21 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
-    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
-    MobEffectSyncChange, MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
+    HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
+    LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
+    sync_dirty_mob_effects,
 };
-pub use living_entity::{LivingEntity, living_entity_loot_ref};
+pub use living_entity::LivingEntity;
+pub(crate) use manager::EntityCollisionCandidates;
+#[cfg(feature = "benchmark-support")]
+pub use manager::benchmark_support as entity_manager_benchmark_support;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
 pub(crate) use mob::{Mob, MobBase, PathfinderMob};
+pub(crate) use monster::{Enemy, Monster};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -845,8 +857,9 @@ pub use movement_sync::{
 };
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,
+    ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
+    SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use reference::EntityReference;
@@ -858,9 +871,7 @@ pub(crate) use spawn::{
 };
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
-pub(crate) use ticking::{
-    snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
-};
+pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
 
 #[cfg(test)]
@@ -945,6 +956,11 @@ pub(crate) fn start_riding_entities(
 
     passenger.set_pose(EntityPose::Standing);
     EntityBase::start_riding_relationship(entity_to_ride, passenger);
+    if let Some(mob) = passenger.as_mob()
+        && mob.is_leashed()
+    {
+        mob.drop_leash();
+    }
     // TODO: Emit ENTITY_MOUNT game event and riding advancement trigger once those foundations exist.
     true
 }
@@ -968,7 +984,7 @@ pub(crate) fn change_entity_world(
         return None;
     }
 
-    if entity.as_player().is_some() {
+    let changed = if entity.as_player().is_some() {
         let Some(player) = source_world.players.get_by_entity_id(entity.id()) else {
             tracing::error!(
                 entity_id = entity.id(),
@@ -981,10 +997,12 @@ pub(crate) fn change_entity_world(
         if !player.change_world_within_domain(teleport_transition) {
             return None;
         }
-        return Some(entity);
-    }
-
-    change_non_player_entity_world(entity, teleport_transition)
+        entity
+    } else {
+        change_non_player_entity_world(entity, teleport_transition)?
+    };
+    changed.on_teleported();
+    Some(changed)
 }
 
 fn change_non_player_entity_world(
@@ -1361,7 +1379,24 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
     }
 }
 
-pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
+/// Clones every equipment slot of `entity` so loot predicates can read it without holding
+/// the equipment lock while the table rolls.
+///
+/// Locks the entity's equipment (a player's inventory), so callers must not already hold it.
+pub(crate) fn living_loot_equipment<E: LivingEntity + ?Sized>(entity: &E) -> EntityEquipmentSlots {
+    // TODO: Read live equipment once loot contexts can do so safely.
+    entity.living_base().equipment().lock().snapshot()
+}
+
+/// [`living_loot_equipment`] for any entity; `None` for non-living entities.
+pub(crate) fn loot_equipment(entity: &dyn Entity) -> Option<EntityEquipmentSlots> {
+    entity.as_living_entity().map(living_loot_equipment)
+}
+
+pub(crate) fn entity_loot_ref<'a>(
+    entity: &'a dyn Entity,
+    equipment: Option<&'a EntityEquipmentSlots>,
+) -> EntityRef<'a> {
     let living_entity = entity.as_living_entity();
     let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
@@ -1373,8 +1408,8 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
             is_swimming: entity.is_swimming(),
             is_baby: living_entity.is_some_and(LivingEntity::is_baby),
         },
-        // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
-        equipment: None,
+        equipment: equipment.map(EntityEquipmentRef::new),
+        // TODO: Include custom name once loot contexts can snapshot entity data.
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),

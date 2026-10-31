@@ -1,0 +1,135 @@
+name: Flint Tests
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  pull_request:
+
+
+env:
+  CARGO_TERM_COLOR: always
+  FLINT_DIR: steel-flint
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SteelMC
+        uses: actions/checkout@v4
+
+      - name: Clone FlintBenchmark
+        uses: actions/checkout@v4
+        with:
+          repository: FlintTestMC/FlintBenchmark
+          path: FlintBenchmark
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "steel-flint"
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
+
+      - name: Build steel-flint
+        id: build
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          cargo test -p steel-flint --profile cicd --lib --no-run
+          cargo build -p steel-flint --profile cicd --bin steel-implemented
+
+      - name: Run steel-flint tests
+        id: tests
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          TEST_PATH: ${{ github.workspace }}/FlintBenchmark/tests
+          FLINT_VIZ_URL: "https://flinttestmc.github.io/FlintViz"
+          FLINT_IMPLEMENTED_ONLY: "true"
+        run: cargo test -p steel-flint --profile cicd --lib test_run_flint_selected -- --ignored --nocapture
+
+      - name: Dump implemented blocks and items
+        id: implemented
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: cargo run -q -p steel-flint --profile cicd --bin steel-implemented -- implemented.txt
+
+      - name: Download baseline
+        id: baseline
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
+        with:
+          name: flint-baseline
+          branch: master
+          workflow: flint.yml
+          # Use the newest master run that actually has the artifact, not just the newest green run.
+          search_artifacts: true
+          path: baseline
+
+      - name: Download master implemented ids
+        if: github.event_name == 'pull_request'
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
+        with:
+          name: flint-implemented
+          branch: master
+          workflow: flint.yml
+          # Use the newest master run that actually has the artifact, not just the newest green run.
+          search_artifacts: true
+          path: baseline
+
+      - name: Check for regressions
+        id: regression
+        # TODO delete later so it will fail if regression are there
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: require('${{ github.workspace }}/.github/scripts/flint-report.js').checkRegressions({ core })
+
+      - name: Warn on non-blocking regression failure
+        if: steps.regression.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: await require('${{ github.workspace }}/.github/scripts/flint-report.js').warnRegressions({ core })
+
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: require('${{ github.workspace }}/.github/scripts/flint-report.js').prReport({ core, context })
+
+      - name: Upload PR report
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-pr-report
+          path: report/
+
+      - name: Merge baseline
+        if: github.ref == 'refs/heads/master' && steps.regression.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: require('${{ github.workspace }}/.github/scripts/flint-report.js').mergeBaselineStep()
+
+      - name: Upload baseline artifact
+        if: github.ref == 'refs/heads/master' && steps.regression.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-baseline
+          path: flint_baseline.json
+
+      - name: Upload implemented ids
+        if: github.ref == 'refs/heads/master' && steps.implemented.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-implemented
+          path: implemented.txt
+
+      - name: Upload Flint summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-summary
+          path: ${{ env.FLINT_DIR }}/log/flint_summary.json

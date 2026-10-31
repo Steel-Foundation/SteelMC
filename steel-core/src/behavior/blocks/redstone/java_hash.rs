@@ -14,11 +14,6 @@ pub(super) fn sort_small_map_positions(positions: &mut [BlockPos]) {
 
 #[must_use]
 pub(super) const fn bucket(pos: BlockPos) -> u32 {
-    let hash = pos
-        .z()
-        .wrapping_mul(31)
-        .wrapping_add(pos.y())
-        .wrapping_mul(31)
-        .wrapping_add(pos.x()) as u32;
+    let hash = pos.java_hash_code() as u32;
     (hash ^ (hash >> 16)) & 15
 }

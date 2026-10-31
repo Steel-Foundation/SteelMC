@@ -1,4 +1,5 @@
 use std::time::Instant;
+use steel_utils::TICKS_PER_SECOND;
 
 /// Number of tick samples to keep for averaging (matches vanilla).
 const TICK_STATS_SPAN: usize = 100;
@@ -60,16 +61,13 @@ pub struct TickRateManager {
     smoothed_tick_time_ms: f32,
 }
 
-/// Default server tick rate in ticks per second.
-pub const DEFAULT_TICK_RATE: i32 = 20;
-
 impl TickRateManager {
     /// Creates a new `TickRateManager` with the default tick rate (20.0 TPS).
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            tick_rate: DEFAULT_TICK_RATE as f32,
-            nanoseconds_per_tick: 50_000_000, // 1_000_000_000 / 20
+            tick_rate: TICKS_PER_SECOND as f32,
+            nanoseconds_per_tick: (NANOS_PER_SEC / TICKS_PER_SECOND as f64) as u64,
             tick_count: 0,
             is_frozen: false,
             frozen_ticks_to_run: 0,
