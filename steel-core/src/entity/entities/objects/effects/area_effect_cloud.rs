@@ -128,7 +128,6 @@ impl AreaEffectCloudEntity {
             .lock()
             .radius
             .set(radius.clamp(0.0, MAX_RADIUS));
-        // Refreshing is idempotent: the cloud has no physics, so it never fudges its position.
         self.refresh_dimensions();
     }
 
