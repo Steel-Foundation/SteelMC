@@ -35,6 +35,7 @@ use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
 };
+use steel_registry::advancement::Advancement;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
@@ -1137,7 +1138,7 @@ unit_argument_parser!(
     suggest | _context,
     builder | {
         let snap = REGISTRY.advancements.snapshot();
-        suggest_resources(snap.advancements().map(|adv| adv.consume().key()), builder);
+        suggest_resources(snap.advancements().map(Advancement::key), builder);
     },
     protocol(
         ProtocolArgumentType::ResourceLocation,

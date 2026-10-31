@@ -11,87 +11,7 @@ use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::serial::WriteTo;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AdvancementRef<'a> {
-    Static(&'static Advancement),
-    Dynamic(&'a Advancement),
-}
-
-impl<'a> AdvancementRef<'a> {
-    #[must_use]
-    pub const fn consume(self) -> &'a Advancement {
-        match self {
-            AdvancementRef::Static(adv) => adv,
-            AdvancementRef::Dynamic(adv) => adv,
-        }
-    }
-
-    #[must_use]
-    pub const fn get(&self) -> &Advancement {
-        match self {
-            AdvancementRef::Static(adv) => adv,
-            AdvancementRef::Dynamic(adv) => adv,
-        }
-    }
-    #[must_use]
-    pub const fn key(&self) -> &Identifier {
-        match self {
-            AdvancementRef::Static(adv) => &adv.key,
-            AdvancementRef::Dynamic(adv) => &adv.key,
-        }
-    }
-
-    #[must_use]
-    pub const fn display(&self) -> Option<&crate::advancement::display::DisplayInfo> {
-        match self {
-            AdvancementRef::Static(adv) => adv.display.as_ref(),
-            AdvancementRef::Dynamic(adv) => adv.display.as_ref(),
-        }
-    }
-
-    #[must_use]
-    pub const fn requirements(&self) -> &crate::advancement::AdvancementRequirement {
-        match self {
-            AdvancementRef::Static(adv) => &adv.requirements,
-            AdvancementRef::Dynamic(adv) => &adv.requirements,
-        }
-    }
-
-    #[must_use]
-    pub const fn send_telemetry_event(&self) -> bool {
-        match self {
-            AdvancementRef::Static(adv) => adv.send_telemetry_event,
-            AdvancementRef::Dynamic(adv) => adv.send_telemetry_event,
-        }
-    }
-
-    #[must_use]
-    pub const fn parent(&self) -> Option<&Identifier> {
-        match self {
-            AdvancementRef::Static(adv) => adv.parent.as_ref(),
-            AdvancementRef::Dynamic(adv) => adv.parent.as_ref(),
-        }
-    }
-}
-
-impl Deref for AdvancementRef<'_> {
-    type Target = Advancement;
-    fn deref(&self) -> &Advancement {
-        (*self).get()
-    }
-}
-
-impl AsRef<Advancement> for AdvancementRef<'_> {
-    fn as_ref(&self) -> &Advancement {
-        self
-    }
-}
-
-impl From<&'static Advancement> for AdvancementRef<'_> {
-    fn from(r: &'static Advancement) -> Self {
-        Self::Static(r)
-    }
-}
+pub type AdvancementRef<'a> = &'a Advancement;
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum AdvancementHolder {
     Static(&'static Advancement),
@@ -134,8 +54,16 @@ impl AdvancementHolder {
     #[must_use]
     pub fn as_ref(&self) -> AdvancementRef<'_> {
         match self {
-            Self::Static(r) => AdvancementRef::Static(r), // le 'static est conservé
-            Self::Dynamic(b) => AdvancementRef::Dynamic(b), // &Box<T> -> &T par deref coercion
+            Self::Static(r) => r,
+            Self::Dynamic(b) => b.as_ref(),
+        }
+    }
+
+    #[must_use]
+    pub const fn as_static(&self) -> Option<AdvancementRef<'static>> {
+        match self {
+            Self::Static(r) => Some(r),
+            Self::Dynamic(_) => None,
         }
     }
 }
@@ -398,7 +326,7 @@ impl FrozenAdvancementRegistry {
     }
 
     pub fn advancements(&self) -> impl Iterator<Item = AdvancementRef<'_>> + '_ {
-        self.adv_nodes.iter().map(|node| node.value())
+        self.adv_nodes.iter().map(AdvancementNode::value)
     }
 
     #[must_use]
