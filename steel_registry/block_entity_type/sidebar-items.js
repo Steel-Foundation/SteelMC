@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BlockEntityType","BlockEntityTypeRegistry"],"type":["BlockEntityTypeRef"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RegistryHolderSet"],"macro":[["impl_registry_holder_set_entry",1]],"trait":["RegistryHolderSetEntry"]};

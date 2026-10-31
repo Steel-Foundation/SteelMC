@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PATH_TYPE_CACHE_MASK","PATH_TYPE_CACHE_SIZE"],"enum":["PathComputationType","PathType"],"fn":["fastutil_mix"],"struct":["Path","PathTypeCache","PathTypeSet","PathfindingContext","PathfindingMalus"]};

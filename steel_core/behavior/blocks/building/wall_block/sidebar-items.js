@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EAST","NORTH","POST_X_MAX","POST_X_MIN","POST_Z_MAX","POST_Z_MIN","SOUTH","UP","WALL_ARM_EXTENT","WALL_ARM_MAX","WALL_ARM_MIN","WATERLOGGED","WEST"],"fn":["connects_to","is_connected","is_covered","make_wall_state","should_raise_post","side_update","top_update","update_sides","update_wall_state"],"struct":["WallBlock"]};

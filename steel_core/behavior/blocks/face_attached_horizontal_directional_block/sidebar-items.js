@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ATTACH_FACE","HORIZONTAL_FACING"],"struct":["FaceAttachedHorizontalDirectionalBlock"]};

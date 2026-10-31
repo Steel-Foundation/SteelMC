@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_default_game_mode","command","registration","set_default_game_mode","set_default_game_mode_domain"]};

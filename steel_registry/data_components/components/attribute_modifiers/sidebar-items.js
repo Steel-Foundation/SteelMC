@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ItemAttributeModifierDisplay"],"fn":["push_hash_entry"],"struct":["ItemAttributeModifierEntry","ItemAttributeModifiers"]};

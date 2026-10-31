@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_consume_effect_types"],"static":["APPLY_EFFECTS","CLEAR_ALL_EFFECTS","PLAY_SOUND","REMOVE_EFFECTS","TELEPORT_RANDOMLY"]};

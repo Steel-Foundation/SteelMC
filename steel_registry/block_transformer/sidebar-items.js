@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DropStrategy","TransformParticle","TransformType"],"struct":["BlockTransformData","BlockTransformer","BlockTransformerComponent","BlockTransformerRegistry"],"type":["BlockTransformerRef"]};

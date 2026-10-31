@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_COMMAND_SUGGESTIONS"],"enum":["CommandTreeProjectionError"],"fn":["command_suggestions_packet","command_tree_packet","protocol_argument_type","visible_nodes"],"trait":["CommandArgumentProtocol"]};

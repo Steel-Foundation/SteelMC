@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["VANILLA_TEMPLATE_CACHE"]};

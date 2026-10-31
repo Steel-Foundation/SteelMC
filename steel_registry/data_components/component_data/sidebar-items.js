@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":[["impl_component_downcast_type",1]],"struct":["ComponentData"],"trait":["Component"]};

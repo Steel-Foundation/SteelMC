@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SYNTAX_DOUBLE_QUOTE","SYNTAX_ESCAPE","SYNTAX_SINGLE_QUOTE"],"struct":["ReaderCursor","StringReader"]};

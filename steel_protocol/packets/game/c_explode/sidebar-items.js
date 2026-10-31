@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ExplosionParticleWeightError"],"struct":["CExplode","ExplosionParticleInfo","ExplosionParticlePalette","WeightedExplosionParticleInfo"]};

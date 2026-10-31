@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["VisibilityRule"],"fn":["evaluate_visibility","evaluate_visibility_for_unfinished_node","evaluate_visibility_rule","evaluate_visibility_with_rules"],"static":["VISIBILITY_DEPTH"]};

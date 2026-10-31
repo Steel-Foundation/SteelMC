@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["THROW_PITCH_DIVISOR_MAX","THROW_PITCH_DIVISOR_MIN","THROW_PITCH_NUMERATOR"],"fn":["throw_item_projectile"],"struct":["ThrowParams"]};

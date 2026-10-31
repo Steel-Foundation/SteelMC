@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["codecs","component_map","patch","patch_network","patch_persistence"],"struct":["DataComponentRegistry","DataComponentType"]};

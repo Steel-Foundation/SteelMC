@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_STEP_HEIGHT","MAX_LIFETIME","XP_REWARD"],"struct":["EndermiteEntity"]};

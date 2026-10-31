@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CInitializeBorder","CSetBorderCenter","CSetBorderLerpSize","CSetBorderSize","CSetBorderWarningDelay","CSetBorderWarningDistance"]};

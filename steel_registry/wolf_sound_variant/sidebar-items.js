@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["WolfAge","WolfSoundVariant","WolfSoundVariantRegistry"],"type":["WolfSoundVariantRef"]};

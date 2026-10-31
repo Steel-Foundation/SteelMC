@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_BOUND"],"mod":["prefixed_read","prefixed_write","read","write"],"trait":["PrefixedRead","PrefixedWrite","ReadFrom","WriteTo"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BASE_HARM_AMOUNT","BASE_HEAL_AMOUNT"],"struct":["HealOrHarmBehavior"]};

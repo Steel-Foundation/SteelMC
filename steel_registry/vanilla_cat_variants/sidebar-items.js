@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_cat_variants"],"static":["ALL_BLACK","BLACK","BRITISH_SHORTHAIR","CALICO","JELLIE","PERSIAN","RAGDOLL","RED","SIAMESE","TABBY","WHITE"]};

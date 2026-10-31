@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_configured_carvers"],"static":["CANYON","CAVE","CAVE_EXTRA_UNDERGROUND","NETHER_CAVE"]};

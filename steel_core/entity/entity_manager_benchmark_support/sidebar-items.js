@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["manager_with_entities"]};

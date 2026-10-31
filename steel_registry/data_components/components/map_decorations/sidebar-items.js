@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_NBT_QUOTA"],"fn":["hash_entries","java_double_equals","java_float_equals","push_hash_entry"],"struct":["MapDecorationEntry","MapDecorations"]};

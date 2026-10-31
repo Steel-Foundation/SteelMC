@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_best_neighbor_signal","get_best_own_or_neighbour_signal","get_control_input_signal","get_direct_signal","get_direct_signal_to","get_signal","has_neighbor_signal","is_redstone_conductor"],"struct":["SignalQueryContext"],"trait":["SignalGetter"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FLUID_INTERACTION_MARGIN","MIN_CURRENT_LENGTH_SQUARED","MIN_STILL_CURRENT_IMPULSE","SHALLOW_CURRENT_HEIGHT","STILL_CURRENT_VELOCITY_THRESHOLD"],"fn":["has_fluid_and_loaded"],"struct":["EntityFluidContact","EntityFluidCurrent","FluidScanBounds"]};
