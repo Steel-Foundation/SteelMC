@@ -5,7 +5,7 @@ use std::cmp::PartialEq;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::ops::{Add, Deref, Index, Sub};
+use std::ops::{Deref, Index};
 use std::sync::Arc;
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
@@ -17,7 +17,15 @@ pub enum AdvancementRef<'a> {
     Dynamic(&'a Advancement),
 }
 
-impl AdvancementRef<'_> {
+impl<'a> AdvancementRef<'a> {
+    #[must_use]
+    pub const fn consume(self) -> &'a Advancement {
+        match self {
+            AdvancementRef::Static(adv) => adv,
+            AdvancementRef::Dynamic(adv) => adv,
+        }
+    }
+
     #[must_use]
     pub const fn get(&self) -> &Advancement {
         match self {
@@ -167,22 +175,6 @@ impl From<AdvancementIdx> for usize {
     }
 }
 
-impl Sub for AdvancementIdx {
-    type Output = AdvancementIdx;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        AdvancementIdx(self.0 - rhs.0)
-    }
-}
-
-impl Add for AdvancementIdx {
-    type Output = AdvancementIdx;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        AdvancementIdx(self.0 + rhs.0)
-    }
-}
-
 impl Index<AdvancementIdx> for Vec<AdvancementNode> {
     type Output = AdvancementNode;
     fn index(&self, i: AdvancementIdx) -> &AdvancementNode {
@@ -196,7 +188,7 @@ impl Display for AdvancementIdx {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AdvancementNode {
     children: Vec<AdvancementIdx>,
     parent: Option<AdvancementIdx>,
@@ -205,15 +197,15 @@ pub struct AdvancementNode {
     y: f32,
 }
 
-pub type AdvancementNodeRef<'a> = &'a AdvancementNode;
-
-impl WriteTo for AdvancementNodeRef<'_> {
+impl WriteTo for AdvancementNode {
     fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.value.write(writer)?;
         self.x.write(writer)?;
         self.y.write(writer)
     }
 }
+
+pub type AdvancementNodeRef<'a> = &'a AdvancementNode;
 
 impl AdvancementNode {
     pub fn add_child(&mut self, child: AdvancementIdx) {
@@ -253,6 +245,12 @@ impl AdvancementNode {
     #[inline]
     pub fn value(&self) -> AdvancementRef<'_> {
         self.value.as_ref()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn clone_value(&self) -> AdvancementHolder {
+        self.value.clone()
     }
 
     #[must_use]
@@ -332,15 +330,37 @@ impl FrozenAdvancementRegistry {
     }
 
     #[must_use]
+    #[expect(unused, reason = "it can have use cases in the future")]
+    pub(crate) const fn is_idx_valid(&self, idx: AdvancementIdx) -> bool {
+        idx.get() < self.adv_nodes.len()
+    }
+
+    #[must_use]
+    pub fn value_by_idx(&self, idx: AdvancementIdx) -> AdvancementRef<'_> {
+        self.get_by_idx(idx).value()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn get_by_idx(&self, idx: AdvancementIdx) -> &AdvancementNode {
+        &self.adv_nodes[idx]
+    }
+
+    #[must_use]
     pub fn value_by_key(&self, key: &Identifier) -> Option<AdvancementRef<'_>> {
         let &idx = self.by_key.get(key)?;
         Some(self.adv_nodes[idx].value())
     }
 
     #[must_use]
-    #[inline]
-    pub fn get_by_idx(&self, idx: AdvancementIdx) -> Option<&AdvancementNode> {
+    pub fn get_by_key(&self, key: &Identifier) -> Option<&AdvancementNode> {
+        let &idx = self.by_key.get(key)?;
         self.adv_nodes.get(idx.get())
+    }
+
+    #[must_use]
+    pub fn get_idx_by_key(&self, key: &Identifier) -> Option<AdvancementIdx> {
+        self.by_key.get(key).copied()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (AdvancementIdx, &AdvancementNode)> + '_ {
@@ -382,18 +402,34 @@ impl FrozenAdvancementRegistry {
     }
 
     #[must_use]
-    pub fn root<'a>(&'a self, advancement_node: AdvancementNodeRef<'a>) -> AdvancementNodeRef<'a> {
-        let mut advancement_node = advancement_node;
+    pub fn root(&self, mut advancement_idx: AdvancementIdx) -> AdvancementIdx {
+        let mut advancement_node = self.get_by_idx(advancement_idx);
         while let Some(parent) = &advancement_node.parent {
-            advancement_node = self
-                .get_by_idx(*parent)
-                .expect("unable to get the parent node");
+            advancement_idx = *parent;
+            advancement_node = self.get_by_idx(advancement_idx);
         }
-        advancement_node
+        advancement_idx
+    }
+
+    #[must_use]
+    pub fn get_all_idx(&self) -> Vec<AdvancementIdx> {
+        self.adv_nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, _)| AdvancementIdx(idx))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn get_all_key(&self) -> Vec<Identifier> {
+        self.adv_nodes
+            .iter()
+            .map(|adv| adv.value().key().clone())
+            .collect()
     }
 }
 
-/// equivalent of the `AdvancementTree` of the minecraft source code
+/// equivalent of the `AdvancementTree` of the Minecraft source code
 #[derive(Debug, Default)]
 pub struct AdvancementRegistry {
     registry: ArcSwap<FrozenAdvancementRegistry>,
@@ -426,7 +462,7 @@ impl AdvancementRegistry {
         key: &Identifier,
         f: impl FnOnce(AdvancementRef<'_>) -> R,
     ) -> Option<R> {
-        let reg = self.registry.load(); // guard court, bien utilisé ici
+        let reg = self.registry.load();
         reg.value_by_key(key).map(f)
     }
 

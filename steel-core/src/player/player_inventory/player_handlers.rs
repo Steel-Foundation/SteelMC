@@ -499,7 +499,7 @@ impl Player {
     pub fn handle_seen_advancement(&self, packet: SSeenAdvancement) {
         if let Opened(tab_id) = packet {
             REGISTRY.advancements.with_value_by_key(&tab_id, |adv| {
-                self.advancements.lock().set_selected_tab(self, Some(adv))
+                self.advancements.lock().set_selected_tab(self, Some(adv));
             });
         }
     }

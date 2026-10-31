@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::time::SystemTime;
 use steel_registry::advancement::AdvancementRequirement;
-use steel_registry::advancement::registry::{
-    AdvancementIdx, AdvancementRef, FrozenAdvancementRegistry,
-};
+use steel_registry::advancement::registry::{AdvancementIdx, FrozenAdvancementRegistry};
 
 /// represent a map of all progress made for advancement of a specific player
 #[derive(Debug, Default, Clone)]
@@ -22,12 +20,13 @@ impl AdvancementProgressMap {
     pub fn get_mut_or_start_progress(
         &mut self,
         registry: &FrozenAdvancementRegistry,
-        advancement: AdvancementIdx,
+        advancement_idx: AdvancementIdx,
     ) -> &mut AdvancementProgress {
-        let idx = self.map.entry(advancement).or_insert_with(|| {
+        let idx = self.map.entry(advancement_idx).or_insert_with(|| {
             let mut progress = AdvancementProgress::default();
-            progress.update(registry.get_by_idx(advancement).requirements());
-            self.order.push((advancement, progress));
+            let advancement = registry.get_by_idx(advancement_idx);
+            progress.update(advancement.value().requirements());
+            self.order.push((advancement_idx, progress));
             self.order.len() - 1
         });
         if let Some(progress) = self.order.get_mut(*idx) {
@@ -75,12 +74,12 @@ impl AdvancementProgressMap {
     /// return the progress of a specific advancement
     #[must_use]
     #[inline]
-    pub fn get_progress(&self, advancement: AdvancementRef) -> Option<&AdvancementProgress> {
+    pub fn get_progress(&self, advancement: AdvancementIdx) -> Option<&AdvancementProgress> {
         self.map.get(&advancement).map(|&i| &self.order[i].1)
     }
 
     /// return an iterator over all the progress made using the order of insertion
-    pub fn iter(&self) -> impl Iterator<Item = &(AdvancementRef, AdvancementProgress)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(AdvancementIdx, AdvancementProgress)> {
         self.order.iter()
     }
 }

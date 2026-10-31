@@ -1,7 +1,6 @@
 use crate::advancement::registry::{AdvancementIdx, FrozenAdvancementRegistry};
 
 pub enum PositionError {
-    InvalidRootIndex(AdvancementIdx),
     RootMustHaveDisplay(String),
 }
 
@@ -9,7 +8,6 @@ impl PositionError {
     #[must_use]
     pub fn get_message(&self) -> String {
         match self {
-            PositionError::InvalidRootIndex(index) => format!("Invalid root index at {index}"),
             PositionError::RootMustHaveDisplay(key) => format!("{key} must have display data"),
         }
     }
@@ -22,9 +20,7 @@ pub fn run(
     tree: &mut FrozenAdvancementRegistry,
     root_index: AdvancementIdx,
 ) -> Result<(), PositionError> {
-    let Some(root_node) = tree.get_by_idx(root_index) else {
-        return Err(PositionError::InvalidRootIndex(root_index));
-    };
+    let root_node = tree.get_by_idx(root_index);
     if !root_node.has_display() {
         return Err(PositionError::RootMustHaveDisplay(
             root_node.value().key.to_string(),

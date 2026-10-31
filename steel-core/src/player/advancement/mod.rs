@@ -11,13 +11,14 @@ use crate::player::Player;
 use crate::player::advancement::rewards::grant_reward;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::mem::take;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::CSelectAdvancementsTab;
 use steel_protocol::packets::game::CUpdateAdvancements;
 use steel_registry::REGISTRY;
 use steel_registry::advancement::registry::{
-    AdvancementIdx, AdvancementNodeRef, AdvancementRef, FrozenAdvancementRegistry,
+    AdvancementIdx, AdvancementNode, AdvancementRef, FrozenAdvancementRegistry,
 };
 use steel_registry::advancement::{AdvancementProgressData, Criteria};
 use steel_registry::vanilla_game_rules::SHOW_ADVANCEMENT_MESSAGES;
@@ -55,6 +56,13 @@ impl Default for PlayerAdvancement {
 }
 
 impl PlayerAdvancement {
+    /// Returns a reference to the current advancement registry.
+    #[must_use]
+    #[inline]
+    pub const fn registry(&self) -> &Arc<FrozenAdvancementRegistry> {
+        &self.registry
+    }
+
     /// Synchronizes the player's advancement data with the current advancement registry.
     /// This is useful when the advancement registry has been updated, and the player's data needs to be aligned with the new state.
     pub fn sync(&mut self, current: Arc<FrozenAdvancementRegistry>) {
@@ -74,15 +82,21 @@ impl PlayerAdvancement {
     pub(crate) fn award(
         &mut self,
         player: &Player,
-        advancement: AdvancementRef,
+        advancement_key: &Identifier,
         criterion: &str,
     ) -> bool {
         let mut result = false;
-        let progress = self.progress.get_mut_or_start_progress(advancement);
+        let Some(advancement_idx) = self.registry.get_idx_by_key(advancement_key) else {
+            return false;
+        };
+        let advancement = self.registry.value_by_idx(advancement_idx);
+        let progress = self
+            .progress
+            .get_mut_or_start_progress(&self.registry, advancement_idx);
         let was_done = progress.is_done();
         if progress.grant_progress(criterion) {
             //TODO: register advancement listener
-            self.progress_changed.insert(advancement);
+            self.progress_changed.insert(advancement_idx);
             result = true;
             if !was_done && progress.is_done() {
                 grant_reward(player, advancement.rewards());
@@ -103,15 +117,20 @@ impl PlayerAdvancement {
         }
 
         if !was_done && progress.is_done() {
-            self.mark_for_visibility_update(advancement);
+            self.mark_for_visibility_update(advancement_idx);
         }
         result
     }
 
     /// revoke the specified criterion for a player.
-    pub fn revoke(&mut self, advancement: AdvancementRef, criterion: &str) -> bool {
+    pub fn revoke(&mut self, advancement_key: &Identifier, criterion: &str) -> bool {
         let mut result = false;
-        let progress = self.progress.get_mut_or_start_progress(advancement);
+        let Some(advancement) = self.registry.get_idx_by_key(advancement_key) else {
+            return false;
+        };
+        let progress = self
+            .progress
+            .get_mut_or_start_progress(&self.registry, advancement);
         let was_done = progress.is_done();
         if progress.revoke_progress(criterion) {
             //TODO: unregister advancement listener
@@ -127,19 +146,15 @@ impl PlayerAdvancement {
     }
 
     /// mark the advancement to be sent to the client next tick
-    fn mark_for_visibility_update(&mut self, advancement: AdvancementRef) {
-        let node = REGISTRY.advancements.by_key(advancement.key());
-        if let Some(node) = node {
-            self.roots_to_update
-                .insert(REGISTRY.advancements.root(node));
-        }
+    fn mark_for_visibility_update(&mut self, advancement: AdvancementIdx) {
+        self.roots_to_update.insert(self.registry.root(advancement));
     }
 
     /// modify the added and the removed from the available tree status
     fn update_tree_visibility(
         &mut self,
-        root: AdvancementNodeRef,
-        added: &mut Vec<AdvancementNodeRef>,
+        root: AdvancementIdx,
+        added: &mut Vec<AdvancementNode>,
         removed: &mut Vec<Identifier>,
     ) {
         visibility_evaluator::evaluate_visibility(
@@ -148,20 +163,20 @@ impl PlayerAdvancement {
             &mut |player_advancement, node| {
                 player_advancement
                     .progress
-                    .get_mut_or_start_progress(node.value())
+                    .get_mut_or_start_progress(&player_advancement.registry, node)
                     .is_done()
             },
-            &mut move |player_advancement, node, should_be_visible| {
-                let advancement = node.value();
+            &mut move |player_advancement, node_idx, should_be_visible| {
+                let node = player_advancement.registry.get_by_idx(node_idx);
                 if should_be_visible {
-                    if player_advancement.visible.insert(advancement) {
-                        added.push(node);
-                        if player_advancement.progress.has_progress(advancement) {
-                            player_advancement.progress_changed.insert(advancement);
+                    if player_advancement.visible.insert(node_idx) {
+                        added.push(node.clone());
+                        if player_advancement.progress.has_progress(node_idx) {
+                            player_advancement.progress_changed.insert(node_idx);
                         }
                     }
-                } else if player_advancement.visible.remove(advancement) {
-                    removed.push(advancement.key().clone());
+                } else if player_advancement.visible.remove(&node_idx) {
+                    removed.push(node.value().key().clone());
                 }
             },
         );
@@ -174,19 +189,24 @@ impl PlayerAdvancement {
             || !self.progress_changed.is_empty()
         {
             let mut progress: FxHashMap<Identifier, &AdvancementProgress> = FxHashMap::default();
-            let mut added: Vec<AdvancementNodeRef> = Vec::new();
+            let mut added: Vec<AdvancementNode> = Vec::new();
             let mut removed: Vec<Identifier> = Vec::new();
-            for root in self.roots_to_update.clone() {
+            let is_first_packet = self.is_first_packet;
+            let roots = take(&mut self.roots_to_update);
+            for root in roots {
                 self.update_tree_visibility(root, &mut added, &mut removed);
             }
-            self.roots_to_update.clear();
-            for advancement in &self.progress_changed {
-                if self.visible.contains(advancement) {
+            for advancement_idx in &self.progress_changed {
+                if self.visible.contains(advancement_idx) {
                     progress.insert(
-                        advancement.key().clone(),
-                        self.progress.get_progress(advancement).unwrap_or_else(|| {
-                            unreachable!("progress changed should only contains valid advancement")
-                        }),
+                        self.registry.value_by_idx(*advancement_idx).key().clone(),
+                        self.progress
+                            .get_progress(*advancement_idx)
+                            .unwrap_or_else(|| {
+                                unreachable!(
+                                    "progress changed should only contains valid advancement"
+                                )
+                            }),
                     );
                 }
             }
@@ -210,7 +230,7 @@ impl PlayerAdvancement {
                     })
                     .collect();
                 player.send_packet(CUpdateAdvancements::new(
-                    self.is_first_packet,
+                    is_first_packet,
                     added,
                     parsed_progress,
                     removed,
