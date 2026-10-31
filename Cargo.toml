@@ -150,6 +150,7 @@ inherits = "release"
 lto = false
 codegen-units = 16
 panic = "unwind"
+opt-level = 0
 
 [profile.bench]
 debug = true
