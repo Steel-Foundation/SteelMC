@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "steel-behavior-boundary-fixture"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+steel-extension-api = { path = "../.." }

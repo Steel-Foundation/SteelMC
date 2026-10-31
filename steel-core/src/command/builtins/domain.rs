@@ -74,11 +74,7 @@ fn domain_menu(
 ) -> Menu {
     let mut b = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X6, container_id);
 
-    let domain_names: Vec<String> = server
-        .worlds
-        .domain_names()
-        .map(ToOwned::to_owned)
-        .collect();
+    let domain_names: Vec<String> = server.worlds.domain_names().collect();
 
     let map: Vec<(Section, Vec<Arc<World>>)> = b.grid(6, |g| {
         g.paint_all(ItemStack::empty());

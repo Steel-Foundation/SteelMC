@@ -1,0 +1,11 @@
+[package]
+name = "behavior-boundary-fixture"
+version = "0.1.0"
+
+[targets]
+linux-x86_64 = "libsteel_behavior_boundary_fixture.so"
+linux-aarch64 = "libsteel_behavior_boundary_fixture.so"
+macos-x86_64 = "libsteel_behavior_boundary_fixture.dylib"
+macos-aarch64 = "libsteel_behavior_boundary_fixture.dylib"
+windows-x86_64 = "steel_behavior_boundary_fixture.dll"
+windows-aarch64 = "steel_behavior_boundary_fixture.dll"

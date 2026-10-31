@@ -509,9 +509,9 @@ fn scores_match(
 ) -> Result<bool, CommandSyntaxError> {
     let scoreboard = source_scoreboard(context)?;
     let target = context.score_holder("target")?;
-    let target_objective = objective(context, scoreboard, "targetObjective")?;
+    let target_objective = objective(context, &scoreboard, "targetObjective")?;
     let source = context.score_holder("source")?;
-    let source_objective = objective(context, scoreboard, "sourceObjective")?;
+    let source_objective = objective(context, &scoreboard, "sourceObjective")?;
     let Some(target_score) = scoreboard.score(&target, &target_objective) else {
         return Ok(false);
     };
@@ -526,7 +526,7 @@ fn score_range_matches(
 ) -> Result<bool, CommandSyntaxError> {
     let scoreboard = source_scoreboard(context)?;
     let target = context.score_holder("target")?;
-    let target_objective = objective(context, scoreboard, "targetObjective")?;
+    let target_objective = objective(context, &scoreboard, "targetObjective")?;
     let range = context.int_range("range")?;
     Ok(scoreboard
         .score(&target, &target_objective)

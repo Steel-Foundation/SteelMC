@@ -349,7 +349,6 @@ impl Server {
         let default_world = self
             .worlds
             .default_world(domain)
-            .cloned()
             .ok_or_else(|| format!("domain {domain} has no default world"))?;
         let respawn_data = {
             let level_data = default_world.level_data.read();
@@ -359,7 +358,6 @@ impl Server {
             .worlds
             .get(respawn_data.dimension())
             .filter(|world| world.domain() == domain)
-            .cloned()
             .ok_or_else(|| {
                 format!(
                     "respawn dimension {} is not loaded in domain {domain}",
@@ -404,9 +402,11 @@ impl Server {
             .worlds
             .get(&target_world.key)
             .filter(|registered| Arc::ptr_eq(registered, target_world))
-            .cloned()
             .ok_or_else(|| "target world is not the registered loaded world".to_owned())?;
         let target_domain = target_world.domain().to_owned();
+        if self.temporary_worlds.is_closing(&target_domain) {
+            return Err("temporary domain is closing".into());
+        }
         if !self.worlds.has_domain(&target_domain) {
             return Err(format!("unknown domain {target_domain}"));
         }
@@ -444,6 +444,9 @@ impl Server {
         player: Arc<Player>,
         target_domain: String,
     ) -> Result<(), String> {
+        if self.temporary_worlds.is_closing(&target_domain) {
+            return Err("temporary domain is closing".into());
+        }
         if !self.worlds.has_domain(&target_domain) {
             return Err(format!("unknown domain {target_domain}"));
         }
@@ -522,7 +525,7 @@ impl Server {
                 .worlds
                 .get(&target_world.key)
                 .ok_or_else(|| "target world is no longer loaded".to_owned())?;
-            if !Arc::ptr_eq(registered, target_world) || target_world.domain() != target_domain {
+            if !Arc::ptr_eq(&registered, target_world) || target_world.domain() != target_domain {
                 return Err("target world registration changed before the switch".to_owned());
             }
         }

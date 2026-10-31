@@ -23,6 +23,32 @@ pub struct PlayerInput {
 }
 
 impl PlayerInput {
+    /// Creates input from controller intent without requiring packet bit flags.
+    #[must_use]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "controller intent preserves vanilla's seven independent key states"
+    )]
+    pub const fn from_controls(
+        forward: bool,
+        backward: bool,
+        left: bool,
+        right: bool,
+        jump: bool,
+        shift: bool,
+        sprint: bool,
+    ) -> Self {
+        Self {
+            forward,
+            backward,
+            left,
+            right,
+            jump,
+            shift,
+            sprint,
+        }
+    }
+
     /// Empty input state used before the client sends input.
     pub const EMPTY: Self = Self::from_flags(0);
 

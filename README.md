@@ -71,11 +71,23 @@ SteelMC is not ready to replace an established server:
 - Survival gameplay is incomplete.
 - Only a small number of entities have meaningful behavior.
 - Full vanilla and protocol parity have not been reached.
-- Plugins are not available yet.
 - Paper, Bukkit, Fabric, Forge, and NeoForge extensions are not compatible.
 
 Follow the [implementation tracker](https://steelmc.dev/tracker) for a more detailed
 view of what is available today.
+
+## Native extensions
+
+Steel supports native Rust extensions with checked ABI bindings, startup registry
+hooks, ordered actions and filters, commands, and world generation. Libraries and
+ZIP packages can be configured through `[[extensions]]`; ZIP packages in
+`./extensions` are discovered automatically.
+
+Start with [creating an extension](doc/extensions/getting-started.md) and the
+[API reference](doc/extensions/api.md). The
+[extension examples](extension-example/README.MD) demonstrate block behaviors,
+world ticks, terrain generation, and a minigame as separate crates. Extensions
+run trusted native code and remain loaded until the server exits.
 
 ## Try it
 

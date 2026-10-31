@@ -111,6 +111,12 @@ use steel_utils::Identifier;
 pub struct RegistryLock(OnceLock<Registry>);
 
 impl RegistryLock {
+    /// Whether the registry has been published and can be accessed.
+    #[must_use]
+    pub fn is_initialized(&self) -> bool {
+        self.0.get().is_some()
+    }
+
     #[expect(clippy::result_large_err)]
     pub fn init(&self, value: Registry) -> Result<(), Registry> {
         self.0.set(value)

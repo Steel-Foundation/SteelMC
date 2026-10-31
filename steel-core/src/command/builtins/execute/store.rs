@@ -179,7 +179,7 @@ fn store_storage_data(
             return;
         };
         let value = stored_value(store_result, success, result);
-        let _ = store_storage_data_value(storage, &target, &path, data_type.tag(value, scale));
+        let _ = store_storage_data_value(&storage, &target, &path, data_type.tag(value, scale));
     });
     let callback = CommandResultCallback::chain(source.callback(), callback);
     Ok(source.with_callback(callback))
@@ -200,7 +200,7 @@ fn store_score(
     store_result: bool,
 ) -> Result<CommandSource, CommandSyntaxError> {
     let scoreboard = source_scoreboard(context)?;
-    let objective = objective(context, scoreboard, "objective")?;
+    let objective = objective(context, &scoreboard, "objective")?;
     let holders = context.score_holders("targets", ScoreHolderWildcard::Tracked)?;
     let source = context.source();
     let server = Arc::clone(source.server());
@@ -211,7 +211,7 @@ fn store_score(
             return;
         };
         let value = stored_value(store_result, success, result);
-        if let Err(error) = store_score_value(scoreboard, &holders, &objective, value) {
+        if let Err(error) = store_score_value(&scoreboard, &holders, &objective, value) {
             tracing::warn!(%error, "failed to store execute result in scoreboard");
         }
     });

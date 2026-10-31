@@ -1,4 +1,5 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
+mod bots;
 mod broadcasting;
 /// Tick-polled server jobs.
 pub mod jobs;
@@ -8,10 +9,12 @@ mod pregen;
 pub mod registry_cache;
 mod run_loop;
 mod service_keys;
+pub mod temporary;
 mod tick_overload;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 mod world_tick_workers;
+use crate::worldgen::WorldGeneratorRegistry;
 /// Domain-aware loaded world map.
 pub mod worlds;
 
@@ -20,7 +23,10 @@ use crate::chunk::{
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
     status::ChunkStatus,
 };
+use crate::command::FrozenCommands;
 use crate::command::brigadier::{StringReader, SuggestionError, Suggestions};
+#[cfg(any(test, feature = "test-framework"))]
+use crate::command::create_registered_dispatcher;
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
     ExecutionStop,
@@ -31,7 +37,7 @@ use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
     CommandQueueFull, CommandRegistry, CommandRequest, CommandRequestQueue,
     PendingCommandExecutionQueue, client_permission_event, command_suggestions_packet,
-    command_tree_packet, create_registered_dispatcher,
+    command_tree_packet,
 };
 #[cfg(any(test, feature = "test-framework"))]
 use crate::config::ResolvedDomainConfig;
@@ -40,6 +46,7 @@ use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
+use crate::extension::{Extensions, RegisteredExtensions};
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -73,7 +80,6 @@ use crate::server::service_keys::ServiceKeyStore;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{PlayerMap, World, WorldConfig};
-use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use crossbeam::queue::SegQueue;
 use glam::DVec3;
@@ -192,6 +198,7 @@ pub async fn test_server_with_worlds_and_config(
     loaded_worlds: &[Arc<World>],
     player_permission_states: PermissionSubjectIndex,
     config: Arc<RuntimeConfig>,
+    startup: Option<(RegisteredExtensions, FrozenCommands)>,
 ) -> Result<Arc<Server>, String> {
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
     for world in loaded_worlds {
@@ -205,8 +212,25 @@ pub async fn test_server_with_worlds_and_config(
         .await
         .map_err(|error| format!("test command storage should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
-    let registered_commands = create_registered_dispatcher(CommandRegistry::new())
-        .map_err(|error| format!("test commands should register: {error}"))?;
+    let (registered_commands, world_generators, extensions) =
+        if let Some((extensions, commands)) = startup {
+            let hooks = Arc::new(Extensions {
+                hooks: extensions.hooks,
+            });
+            for world in loaded_worlds {
+                world
+                    .extensions
+                    .set(Arc::clone(&hooks))
+                    .map_err(|_| "test world already has extensions")?;
+            }
+            (commands.inner, extensions.generators, hooks)
+        } else {
+            (
+                create_registered_dispatcher(CommandRegistry::new()).map_err(|e| e.to_string())?,
+                WorldGeneratorRegistry::new_with_builtins()?,
+                Arc::new(Extensions::default()),
+            )
+        };
     let command_permission_keys = registered_commands
         .permissions
         .iter()
@@ -236,6 +260,9 @@ pub async fn test_server_with_worlds_and_config(
     }
 
     Ok(Arc::new(Server {
+        temporary_worlds: temporary::TemporaryWorlds::default(),
+        world_generators,
+        extensions,
         damage_history,
         config,
         permission_groups,
@@ -378,14 +405,6 @@ fn generation_settings_for_world(
     )
 }
 
-fn world_config_registries() -> Result<(WorldGeneratorRegistry, WorldStorageRegistry), String> {
-    let generator_registry = WorldGeneratorRegistry::new_with_builtins()
-        .map_err(|e| format!("failed to initialize world generator registry: {e}"))?;
-    let storage_registry = WorldStorageRegistry::new_with_builtins()
-        .map_err(|e| format!("failed to initialize world storage registry: {e}"))?;
-    Ok((generator_registry, storage_registry))
-}
-
 struct DomainPlayerState {
     world: Arc<World>,
     data: DomainPlayerData,
@@ -466,6 +485,9 @@ use jobs::teleport::{
 
 /// The main server struct.
 pub struct Server {
+    temporary_worlds: temporary::TemporaryWorlds,
+    world_generators: WorldGeneratorRegistry,
+    extensions: Arc<Extensions>,
     pub(crate) damage_history: Arc<DamageHistory>,
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
@@ -629,10 +651,6 @@ impl Server {
     }
 
     /// Creates a new server and atomically merges startup command extensions after built-ins.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "server initialization is a single cohesive flow"
-    )]
     pub async fn new_with_commands(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,
@@ -640,6 +658,33 @@ impl Server {
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
         command_registry: CommandRegistry,
+    ) -> Result<Self, String> {
+        init_globals();
+        Self::new_with_extensions(
+            chunk_runtime,
+            cancel_token,
+            config,
+            worlds_config,
+            permission_groups,
+            command_registry.freeze()?,
+            RegisteredExtensions::new_with_builtins()?,
+        )
+        .await
+    }
+
+    /// Creates a server using hooks and generator factories registered before world validation.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "server initialization keeps its ordered startup stages together"
+    )]
+    pub async fn new_with_extensions(
+        chunk_runtime: Arc<Runtime>,
+        cancel_token: CancellationToken,
+        config: RuntimeConfig,
+        worlds_config: WorldsConfig,
+        permission_groups: PermissionGroupManager,
+        commands: FrozenCommands,
+        extensions: RegisteredExtensions,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
@@ -659,7 +704,13 @@ impl Server {
 
         let registry_cache = RegistryCache::new(config.compression);
 
-        let (generator_registry, storage_registry) = world_config_registries()?;
+        let RegisteredExtensions {
+            generators: generator_registry,
+            hooks,
+        } = extensions;
+        let extensions = Arc::new(Extensions { hooks });
+        let storage_registry = WorldStorageRegistry::new_with_builtins()
+            .map_err(|error| format!("failed to initialize world storage registry: {error}"))?;
         let resolved_worlds = worlds_config
             .validate_and_resolve(&generator_registry, &storage_registry)
             .map_err(|e| format!("failed to validate worlds.toml: {e}"))?;
@@ -770,6 +821,10 @@ impl Server {
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
             world
+                .extensions
+                .set(Arc::clone(&extensions))
+                .map_err(|_| format!("extensions already installed for {}", world_entry.key))?;
+            world
                 .initialize_spawn_if_needed()
                 .await
                 .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
@@ -808,8 +863,7 @@ impl Server {
         let command_storage = DomainCommandStorage::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain command storage: {error}"))?;
-        let registered_commands = create_registered_dispatcher(command_registry)
-            .map_err(|error| format!("failed to register commands: {error}"))?;
+        let registered_commands = commands.inner;
         let command_permission_keys = registered_commands
             .permissions
             .into_iter()
@@ -823,6 +877,9 @@ impl Server {
         }
 
         Ok(Server {
+            temporary_worlds: temporary::TemporaryWorlds::default(),
+            world_generators: generator_registry,
+            extensions,
             damage_history,
             config,
             permission_groups,

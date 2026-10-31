@@ -418,7 +418,9 @@ impl Player {
 
     /// Marks whether the client has loaded into play.
     pub fn set_client_loaded(&self, client_loaded: bool) {
-        self.lifecycle.lock().set_client_loaded(client_loaded);
+        self.lifecycle
+            .lock()
+            .set_client_loaded(client_loaded || self.is_server_controlled());
     }
 
     /// Applies or buffers the client's play-loaded acknowledgement.

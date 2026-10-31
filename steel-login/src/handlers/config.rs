@@ -113,7 +113,7 @@ impl JavaTcpClient {
 
         let client_info = self.client_information.lock().await.clone();
 
-        let world = Arc::clone(self.server.overworld());
+        let world = self.server.overworld();
         let entity_id = next_entity_id();
 
         let session = Arc::new(PlayerSession::new(

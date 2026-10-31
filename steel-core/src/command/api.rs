@@ -1,6 +1,7 @@
 //! Public startup command-registration API.
 
 use std::{error::Error, fmt, sync::Arc};
+use steel_utils::locks::SyncMutex;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
@@ -82,12 +83,45 @@ impl CommandRegistration {
     }
 }
 
+type RegistrationHook = Box<dyn FnOnce(&mut CommandRegistry) + Send>;
+static REGISTRATION_HOOKS: SyncMutex<Option<Vec<RegistrationHook>>> =
+    SyncMutex::new(Some(Vec::new()));
+
+/// Complete immutable dispatcher and permissions, ready for server publication.
+pub struct FrozenCommands {
+    pub(crate) inner: super::registration::RegisteredCommandDispatcher<InternalCommandSource>,
+}
+
 /// Additional command declarations supplied before server startup.
 pub struct CommandRegistry {
     inner: CommandDispatcherBuilder<InternalCommandSource>,
 }
 
 impl CommandRegistry {
+    /// Subscribes before the command registry is finalized.
+    pub fn on_registration(hook: impl FnOnce(&mut Self) + Send + 'static) -> Result<(), String> {
+        let mut hooks = REGISTRATION_HOOKS.lock();
+        let Some(hooks) = hooks.as_mut() else {
+            return Err("command registration has already finished".into());
+        };
+        hooks.push(Box::new(hook));
+        Ok(())
+    }
+    pub(crate) fn run_registration_hooks(&mut self) {
+        let hooks = REGISTRATION_HOOKS.lock().take();
+        if let Some(hooks) = hooks {
+            for hook in hooks {
+                hook(self);
+            }
+        }
+    }
+    /// Runs registration hooks and freezes the actual dispatcher including built-ins.
+    pub fn freeze(self) -> Result<FrozenCommands, String> {
+        super::builtins::create_registered_dispatcher(self)
+            .map(|inner| FrozenCommands { inner })
+            .map_err(|e| e.to_string())
+    }
+
     /// Creates an empty extension registry. Built-in commands are added separately by the server.
     #[must_use]
     pub fn new() -> Self {
@@ -803,7 +837,7 @@ pub struct CommandParserSource<'source> {
 impl CommandParserSource<'_> {
     /// Returns configured domain names.
     #[must_use]
-    pub fn domain_names(&self) -> Vec<&str> {
+    pub fn domain_names(&self) -> Vec<String> {
         self.inner.domain_names()
     }
 

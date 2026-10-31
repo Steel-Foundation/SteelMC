@@ -1,0 +1,39 @@
+[package]
+name = "steel-extension-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+host = ["dep:steel-core", "dep:steel-registry", "dep:steel-utils", "dep:steel-worldgen", "dep:glam", "dep:toml", "dep:libloading", "dep:rayon", "dep:rand", "dep:simdnbt", "dep:text_components", "dep:uuid", "dep:serde", "dep:zip", "dep:tempfile", "dep:log"]
+
+[dependencies]
+stabby.workspace = true
+steel-core = { workspace = true, optional = true }
+steel-registry = { workspace = true, optional = true }
+steel-utils = { workspace = true, optional = true }
+steel-worldgen = { workspace = true, optional = true }
+glam = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+libloading = { version = "0.9", optional = true }
+rayon = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+simdnbt = { workspace = true, optional = true }
+
+text_components = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true }
+tempfile = { version = "3.27.0", optional = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+steel-protocol.workspace = true
+tokio-util.workspace = true
+tokio.workspace = true
+steel-core = { workspace = true, features = ["test-framework"] }

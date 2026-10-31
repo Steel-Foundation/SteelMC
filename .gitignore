@@ -17,6 +17,7 @@
 
 # Config
 /config
+/extensions
 /.tmp
 /.logs
 /world

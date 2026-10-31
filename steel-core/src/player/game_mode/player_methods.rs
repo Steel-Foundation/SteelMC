@@ -38,11 +38,7 @@ impl Player {
             self.set_flying(false);
         }
         self.send_abilities();
-        self.update_game_mode_invisibility();
-
-        let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id(), gamemode as i32);
-        self.server().broadcast_to_online(update_packet);
+        self.sync_game_mode_to_clients();
 
         self.get_world().update_sleeping_player_list();
 
@@ -72,6 +68,16 @@ impl Player {
         self.living_base.mark_effects_dirty();
 
         true
+    }
+
+    /// Synchronizes a restored mode without changing its saved previous mode or abilities.
+    pub(in crate::player) fn sync_game_mode_to_clients(&self) {
+        self.update_game_mode_invisibility();
+        self.server()
+            .broadcast_to_online(CPlayerInfoUpdate::update_game_mode(
+                self.gameprofile.id(),
+                self.game_mode() as i32,
+            ));
     }
 
     fn update_game_mode_invisibility(&self) {

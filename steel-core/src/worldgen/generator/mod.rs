@@ -1,5 +1,6 @@
 //! This module contains the `ChunkGenerator` trait, which is used to generate chunks.
 
+mod boxed;
 pub mod context;
 mod empty;
 mod flat;
@@ -121,7 +122,9 @@ pub(crate) fn worldgen_region_random_from_splitter(
     region_factory.at(center.0.x * 16, 0, center.0.y * 16)
 }
 
-pub(crate) fn xoroshiro_worldgen_region_random(world_seed: i64, center: ChunkPos) -> RandomSource {
+/// Creates vanilla's region random source for a xoroshiro-backed world generator.
+#[must_use]
+pub fn xoroshiro_worldgen_region_random(world_seed: i64, center: ChunkPos) -> RandomSource {
     let splitter = Xoroshiro::from_seed(world_seed as u64).next_positional();
     worldgen_region_random_from_splitter(&splitter, center)
 }

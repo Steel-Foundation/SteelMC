@@ -4,6 +4,28 @@
   "description": "Configuration schema for Steel Minecraft server",
   "type": "object",
   "properties": {
+    "extensions": {
+      "type": "array",
+      "description": "Trusted native libraries or ZIP packages loaded before worlds. Other ZIP packages in ./extensions are discovered automatically.",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Native library or ZIP path relative to the working directory."
+          },
+          "config": {
+            "type": "object",
+            "description": "Extension-owned initialization configuration."
+          }
+        }
+      }
+    },
     "server": {
       "type": "object",
       "description": "Server configuration",
@@ -75,7 +97,7 @@
         },
         "allow_flight": {
           "type": "boolean",
-          "description": "Whether the server allows unauthorised client flight",
+          "description": "Whether the server allows unauthorized client flight",
           "default": false
         },
         "motd": {

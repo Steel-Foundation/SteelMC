@@ -1,5 +1,6 @@
 //! Vanilla command execution context composition.
 
+use std::sync::Arc;
 mod condition;
 mod source;
 mod store;
@@ -45,7 +46,7 @@ fn command(dispatcher_root: NodeId) -> CommandNodeBuilder<CommandSource, SteelCo
 
 fn source_scoreboard(
     context: &SteelCommandContext<CommandSource>,
-) -> Result<&Scoreboard, CommandSyntaxError> {
+) -> Result<Arc<Scoreboard>, CommandSyntaxError> {
     let source = context.source();
     source
         .server()
@@ -61,7 +62,7 @@ fn source_scoreboard(
 
 fn source_command_storage(
     context: &SteelCommandContext<CommandSource>,
-) -> Result<&CommandStorage, CommandSyntaxError> {
+) -> Result<Arc<CommandStorage>, CommandSyntaxError> {
     let source = context.source();
     source
         .server()

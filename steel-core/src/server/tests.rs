@@ -211,6 +211,7 @@ async fn test_server_with_max_players(
         slice::from_ref(&world),
         player_permission_states,
         test_runtime_config_with_max_players(max_players),
+        None,
     )
     .await
 }
@@ -227,6 +228,7 @@ async fn test_server_with_worlds(
         loaded_worlds,
         player_permission_states,
         test_runtime_config(),
+        None,
     )
     .await
 }

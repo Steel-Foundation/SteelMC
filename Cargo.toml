@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["stabby"]
 members = [
     "steel",
     "steel-login",
@@ -12,6 +13,7 @@ members = [
     "steel-crypto",
     "steel-math",
     "steel-flint",
+    "steel-extension-api",
 ]
 
 [workspace.package]
@@ -31,6 +33,8 @@ steel-registry = { path = "steel-registry" }
 steel-utils = { path = "steel-utils" }
 steel-worldgen = { path = "steel-worldgen" }
 steel-math = { path = "steel-math" }
+steel-extension-api = { path = "steel-extension-api" }
+stabby = { path = "stabby/stabby" }
 
 # Async runtime
 tokio = { version = "1.54.1", features = ["macros", "sync", "io-util", "rt", "time"] }

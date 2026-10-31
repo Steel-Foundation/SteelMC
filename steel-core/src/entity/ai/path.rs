@@ -49,8 +49,11 @@ pub enum PathType {
 /// Which medium a path is being computed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PathComputationType {
+    /// Walking and other land-based navigation.
     Land,
+    /// Swimming navigation.
     Water,
+    /// Flying navigation.
     Air,
 }
 

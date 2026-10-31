@@ -854,6 +854,12 @@ impl Player {
             world.chunk_map.update_player_status(self);
         }
         self.set_velocity(velocity);
+        if self.is_server_controlled() {
+            self.set_rotation(rotation);
+            self.set_old_position_to_current();
+            self.movement.lock().reset_for_position_sync(pos);
+            return Ok(());
+        }
 
         let new_id = {
             let mut tp = self.teleport_state.lock();

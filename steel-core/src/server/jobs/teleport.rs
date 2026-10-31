@@ -233,7 +233,7 @@ impl WorldSpawnTeleportJob {
             && server
                 .worlds
                 .get(&self.target_world.key)
-                .is_some_and(|registered| Arc::ptr_eq(registered, &self.target_world))
+                .is_some_and(|registered| Arc::ptr_eq(&registered, &self.target_world))
     }
 
     fn finish_pending(&self) {

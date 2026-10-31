@@ -4,7 +4,7 @@ use std::{
     io, mem,
     path::Path,
     sync::{
-        Arc, LazyLock, Weak,
+        Arc, LazyLock, OnceLock, Weak,
         atomic::{AtomicBool, AtomicI8, Ordering},
     },
     time::Duration,
@@ -18,6 +18,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::status::ChunkStatus;
 use crate::entity::damage::DamageHistory;
+use crate::extension::Extensions;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -246,6 +247,7 @@ pub struct WorldConfig {
 
 /// A struct that represents a world.
 pub struct World {
+    pub(crate) extensions: OnceLock<Arc<Extensions>>,
     pub(crate) damage_history: Weak<DamageHistory>,
     /// The chunk map of the world.
     pub chunk_map: Arc<ChunkMap>,
@@ -432,6 +434,7 @@ impl World {
             chunk_map.start_generation_refill_loop();
 
             Self {
+                extensions: OnceLock::new(),
                 damage_history: Arc::downgrade(&config.damage_history),
                 chunk_map,
                 players: PlayerMap::new(),
@@ -673,6 +676,9 @@ impl World {
         chunk_map_timings
             .lookup_cache
             .merge(lookup_cache_scope.finish());
+        if runs_normally && let Some(extensions) = self.extensions.get() {
+            extensions.hooks.tick_world(self, tick_count);
+        }
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,

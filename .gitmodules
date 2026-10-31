@@ -1,0 +1,6 @@
+[submodule "stabby"]
+	path = stabby
+	url = https://github.com/ZettaScaleLabs/stabby
+[submodule "extension-example"]
+	path = extension-example
+	url = https://github.com/SteelExtensionExperiment/extension-example

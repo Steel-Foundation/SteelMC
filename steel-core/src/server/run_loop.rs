@@ -88,6 +88,9 @@ impl Server {
     /// processed. Callers must stop packet processing before calling this; the standalone
     /// server does so by closing its task tracker and awaiting the drain.
     pub async fn save_and_shutdown(&self) {
+        self.extensions.hooks.stop_server(self);
+        self.temporary_worlds.cleanup.close();
+        self.temporary_worlds.cleanup.wait().await;
         if let Err(error) = self.flush_known_players().await {
             log::error!("Failed to flush known player cache during shutdown: {error}");
         }
@@ -175,7 +178,7 @@ impl Server {
         reason = "the ordered tick phases and their shutdown joins remain easier to audit together"
     )]
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
-        let world_tick_workers = match WorldTickWorkers::spawn(self.worlds.values()) {
+        let mut world_tick_workers = match WorldTickWorkers::spawn(self.worlds.values()) {
             Ok(workers) => workers,
             Err(error) => {
                 log::error!("Failed to start world tick workers: {error}");
@@ -242,6 +245,16 @@ impl Server {
 
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
+            if runs_normally {
+                self.extensions.hooks.tick_server(&self, tick_count);
+            }
+            if let Err(error) =
+                world_tick_workers.synchronize(self.worlds.values(), &self.temporary_worlds.cleanup)
+            {
+                log::error!("Failed to update world tick workers: {error}");
+                cancel_token.cancel();
+                break;
+            }
             if let Err(error) = self
                 .tick_worlds_game(&world_tick_workers, tick_count, runs_normally)
                 .await
@@ -523,7 +536,7 @@ impl Server {
             world.players.iter_players(|_uuid, player| {
                 Self::send_chunks_for_player(
                     player,
-                    world,
+                    &world,
                     &mut encode_cache,
                     self.chunk_encoding_pool.as_ref(),
                 );

@@ -2,17 +2,27 @@
 //!
 //! The main library for the Steel Minecraft server.
 
+// World and server lifecycle graphs require deeper auto-trait evaluation.
+#![recursion_limit = "256"]
 use std::sync::atomic::Ordering;
 use std::{
+    collections::BTreeSet,
     error::Error,
-    fmt, io,
+    fmt, fs, io,
     net::{Ipv4Addr, SocketAddrV4},
+    path::Path,
     sync::{Arc, OnceLock},
 };
 
 use steel_core::{
-    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionGroupManager, server::Server,
+    GIT_HASH_SHORT,
+    bootstrap::init_globals,
+    command::CommandRegistry,
+    extension::{ExtensionHooks, RegisteredExtensions},
+    permission::PermissionGroupManager,
+    server::Server,
 };
+use steel_extension_api::host;
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -92,6 +102,52 @@ impl SteelServer {
     ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
+        let mut hooks = ExtensionHooks::default();
+        let mut loaded_extensions = Vec::with_capacity(steel_config.extensions.len());
+        let mut configured_paths = BTreeSet::new();
+        for extension in &steel_config.extensions {
+            configured_paths.insert(fs::canonicalize(&extension.path).map_err(|error| {
+                SteelServerError::Core(format!(
+                    "cannot resolve extension {}: {error}",
+                    extension.path.display()
+                ))
+            })?);
+            let config = toml::to_string(&extension.config).map_err(|error| {
+                SteelServerError::Core(format!("invalid extension configuration: {error}"))
+            })?;
+            // SAFETY: configured extensions are trusted native code; the loader checks
+            // both entrypoint ABIs and pins the library for every callback's lifetime.
+            let extension = unsafe { host::load(&extension.path, &config, &mut hooks) }
+                .map_err(SteelServerError::Core)?;
+            log::info!("Pre-initialized extension {}", extension.name);
+            loaded_extensions.push(extension);
+        }
+        for path in
+            host::discover_archives(Path::new("extensions")).map_err(SteelServerError::Core)?
+        {
+            let canonical = fs::canonicalize(&path)
+                .map_err(|error| SteelServerError::Core(error.to_string()))?;
+            if configured_paths.contains(&canonical) {
+                continue;
+            }
+            // SAFETY: the extensions directory is explicitly reserved for trusted
+            // administrator-installed native packages; load checks their ABI.
+            let extension =
+                unsafe { host::load(&path, "", &mut hooks) }.map_err(SteelServerError::Core)?;
+            log::info!("Pre-initialized extension {}", extension.name);
+            loaded_extensions.push(extension);
+        }
+        init_globals();
+        let mut extensions =
+            RegisteredExtensions::new_with_builtins().map_err(SteelServerError::Core)?;
+        let commands = command_registry.freeze().map_err(SteelServerError::Core)?;
+        for name in
+            host::initialize_all(loaded_extensions, &mut hooks).map_err(SteelServerError::Core)?
+        {
+            log::info!("Initialized extension {name}");
+        }
+        extensions.hooks = hooks;
+
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
@@ -104,13 +160,14 @@ impl SteelServer {
         let player_idle_timeout = steel_config.server.player_idle_timeout;
         let runtime_config = steel_config.server.into_runtime_config();
 
-        let server = Server::new_with_commands(
+        let server = Server::new_with_extensions(
             chunk_runtime,
             cancel_token.clone(),
             runtime_config,
             worlds_config,
             permission_groups,
-            command_registry,
+            commands,
+            extensions,
         )
         .await
         .map_err(SteelServerError::Core)?;

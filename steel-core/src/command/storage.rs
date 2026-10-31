@@ -1,5 +1,6 @@
 //! Persistent command storage isolated by Steel domain.
 
+use std::sync::Arc;
 use std::{
     collections::BTreeMap,
     io::{self, Cursor},
@@ -141,7 +142,7 @@ impl Default for CommandStorage {
 
 /// Loaded command storages keyed by Steel domain.
 pub(crate) struct DomainCommandStorage {
-    storages: BTreeMap<String, CommandStorage>,
+    storages: SyncRwLock<BTreeMap<String, Arc<CommandStorage>>>,
     save_lock: AsyncMutex<()>,
 }
 
@@ -152,37 +153,53 @@ impl DomainCommandStorage {
         domains.sort_unstable();
         let mut storages = BTreeMap::new();
         for domain in domains {
-            let world = domain_default_world(worlds, domain)?;
+            let world = domain_default_world(worlds, &domain)?;
             let persistent: PersistentCommandStorage = world
                 .saved_data
                 .load_or_default(saved_data_names::COMMAND_STORAGE)
                 .await
-                .map_err(|error| storage_io_error(domain, error))?;
+                .map_err(|error| storage_io_error(&domain, error))?;
             let storage = CommandStorage::from_persistent(persistent)
-                .map_err(|error| storage_io_error(domain, error))?;
-            storages.insert(domain.to_owned(), storage);
+                .map_err(|error| storage_io_error(&domain, error))?;
+            storages.insert(domain, Arc::new(storage));
         }
         Ok(Self {
-            storages,
+            storages: SyncRwLock::new(storages),
             save_lock: AsyncMutex::new(()),
         })
     }
 
     /// Returns command storage for a domain.
     #[must_use]
-    pub(crate) fn get(&self, domain: &str) -> Option<&CommandStorage> {
-        self.storages.get(domain)
+    pub(crate) fn get(&self, domain: &str) -> Option<Arc<CommandStorage>> {
+        self.storages.read().get(domain).map(Arc::clone)
+    }
+
+    pub(crate) fn insert_temporary(&self, domain: &str) {
+        self.storages
+            .write()
+            .insert(domain.to_owned(), Arc::new(CommandStorage::new()));
+    }
+    pub(crate) fn remove_temporary(&self, domain: &str) {
+        self.storages.write().remove(domain);
     }
 
     /// Saves every dirty domain storage and returns the number written.
     pub(crate) async fn save(&self, worlds: &WorldMap) -> io::Result<usize> {
         let _save_guard = self.save_lock.lock().await;
         let mut saved = 0;
-        for (domain, storage) in &self.storages {
+        // Retain primary worlds across I/O; a temporary domain can retire concurrently.
+        for world in worlds.values() {
+            if !world.level_data.read().owns_game_time() {
+                continue;
+            }
+            let domain = world.domain();
+            let Some(storage) = self.get(domain) else {
+                continue;
+            };
             let Some(snapshot) = storage.pending_save() else {
                 continue;
             };
-            let world = domain_default_world(worlds, domain)?;
             world
                 .saved_data
                 .save(saved_data_names::COMMAND_STORAGE, &snapshot.state)
@@ -195,16 +212,13 @@ impl DomainCommandStorage {
     }
 }
 
-fn domain_default_world<'a>(worlds: &'a WorldMap, domain: &str) -> io::Result<&'a World> {
-    worlds
-        .default_world(domain)
-        .map(AsRef::as_ref)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("domain '{domain}' has no loaded default world"),
-            )
-        })
+fn domain_default_world(worlds: &WorldMap, domain: &str) -> io::Result<Arc<World>> {
+    worlds.default_world(domain).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("domain '{domain}' has no loaded default world"),
+        )
+    })
 }
 
 fn storage_io_error(domain: &str, error: io::Error) -> io::Error {
@@ -306,12 +320,14 @@ mod tests {
     #[test]
     fn domains_keep_independent_command_storage() {
         let storages = DomainCommandStorage {
-            storages: [
-                ("alpha".to_owned(), CommandStorage::new()),
-                ("beta".to_owned(), CommandStorage::new()),
-            ]
-            .into_iter()
-            .collect(),
+            storages: SyncRwLock::new(
+                [
+                    ("alpha".to_owned(), Arc::new(CommandStorage::new())),
+                    ("beta".to_owned(), Arc::new(CommandStorage::new())),
+                ]
+                .into_iter()
+                .collect(),
+            ),
             save_lock: AsyncMutex::new(()),
         };
         let key = Identifier::from_steel("data");

@@ -4,6 +4,8 @@
 //! connections (`JavaConnection`) and test connections (`FlintConnection`).
 
 mod java;
+mod server_controlled;
+pub(crate) use server_controlled::ServerControlledConnection;
 
 pub use java::{
     BundleBuilder, JavaConnection, JavaNetworkReader, JavaNetworkWriter, JavaTransportRead,
@@ -75,6 +77,11 @@ impl Default for ClientInformation {
 /// `send_packet<P: ClientPacket>()` helper that handles encoding.
 #[enum_dispatch]
 pub trait NetworkConnection: Send + Sync {
+    /// Whether the host, rather than a network client, supplies player actions.
+    fn is_server_controlled(&self) -> bool {
+        false
+    }
+
     /// Returns compression info for packet encoding.
     ///
     /// Returns `None` if compression is disabled (e.g., for test connections).
@@ -122,6 +129,10 @@ pub enum PlayerConnection {
 }
 
 impl NetworkConnection for Box<dyn NetworkConnection> {
+    fn is_server_controlled(&self) -> bool {
+        (**self).is_server_controlled()
+    }
+
     fn compression(&self) -> Option<CompressionInfo> {
         (**self).compression()
     }

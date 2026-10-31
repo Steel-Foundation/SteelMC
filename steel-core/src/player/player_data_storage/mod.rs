@@ -1,5 +1,8 @@
 //! Player data storage for global and domain-scoped player state.
 
+use rustc_hash::FxHashMap;
+use std::sync::Arc;
+use steel_utils::locks::SyncRwLock;
 mod file_storage;
 mod known_players;
 mod memory_storage;
@@ -51,6 +54,8 @@ pub struct GlobalPlayerData {
 
 /// Manages player data persistence.
 pub struct PlayerDataStorage {
+    // Retired routes reject late async saves rather than falling back to disk.
+    temporary_domains: SyncRwLock<FxHashMap<String, Option<Arc<MemoryPlayerDataStorage>>>>,
     backend: PlayerDataStorageBackend,
 }
 
@@ -161,7 +166,10 @@ impl PlayerDataStorage {
     /// Creates player data storage backed by files under `save_root`.
     pub async fn on_disk(save_root: PathBuf) -> io::Result<Self> {
         let backend = PlayerDataStorageBackend::File(FilePlayerDataStorage::new(save_root).await?);
-        Ok(Self { backend })
+        Ok(Self {
+            backend,
+            temporary_domains: SyncRwLock::default(),
+        })
     }
 
     /// Creates player data storage that keeps everything in RAM.
@@ -169,6 +177,42 @@ impl PlayerDataStorage {
     pub fn in_memory() -> Self {
         Self {
             backend: PlayerDataStorageBackend::Memory(MemoryPlayerDataStorage::default()),
+            temporary_domains: SyncRwLock::default(),
+        }
+    }
+
+    pub(crate) fn register_temporary_domain(&self, domain: &str) -> io::Result<()> {
+        let mut domains = self.temporary_domains.write();
+        if domains.contains_key(domain) {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "temporary domain identity has already been used",
+            ));
+        }
+        domains.insert(
+            domain.to_owned(),
+            Some(Arc::new(MemoryPlayerDataStorage::default())),
+        );
+        Ok(())
+    }
+    pub(crate) fn retire_temporary_domain(&self, domain: &str) {
+        if let Some(route) = self.temporary_domains.write().get_mut(domain) {
+            *route = None;
+        }
+    }
+    /// Whether this domain has a temporary route, including retired identities.
+    #[must_use]
+    pub fn is_temporary_domain(&self, domain: &str) -> bool {
+        self.temporary_domains.read().contains_key(domain)
+    }
+    fn temporary_storage(&self, domain: &str) -> io::Result<Option<Arc<MemoryPlayerDataStorage>>> {
+        match self.temporary_domains.read().get(domain) {
+            Some(Some(storage)) => Ok(Some(Arc::clone(storage))),
+            Some(None) => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "temporary domain has retired",
+            )),
+            None => Ok(None),
         }
     }
 
@@ -187,6 +231,10 @@ impl PlayerDataStorage {
 
     /// Saves a player's data for a specific domain.
     pub async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
+        if let Some(storage) = self.temporary_storage(domain)? {
+            storage.save_domain(domain, player);
+            return Ok(());
+        }
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_domain(domain, player).await,
             PlayerDataStorageBackend::Memory(storage) => {
@@ -203,6 +251,10 @@ impl PlayerDataStorage {
         uuid: Uuid,
         data: &PersistentPlayerData,
     ) -> io::Result<()> {
+        if let Some(storage) = self.temporary_storage(domain)? {
+            storage.save_domain_data(domain, uuid, data);
+            return Ok(());
+        }
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => {
                 storage.save_domain_data(domain, uuid, data).await
@@ -220,6 +272,9 @@ impl PlayerDataStorage {
         domain: &str,
         uuid: Uuid,
     ) -> io::Result<Option<PersistentPlayerData>> {
+        if let Some(storage) = self.temporary_storage(domain)? {
+            return Ok(storage.load_domain(domain, uuid));
+        }
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.load_domain(domain, uuid).await,
             PlayerDataStorageBackend::Memory(storage) => Ok(storage.load_domain(domain, uuid)),
@@ -270,6 +325,10 @@ impl PlayerDataStorage {
 
     /// Saves server-wide player data.
     pub async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
+        // Reconnects always resume the last lasting domain, even if a match vanished.
+        if self.is_temporary_domain(&data.last_active_domain) {
+            return Ok(());
+        }
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_global(uuid, data).await,
             PlayerDataStorageBackend::Memory(storage) => {

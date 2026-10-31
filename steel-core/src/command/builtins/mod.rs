@@ -63,8 +63,9 @@ pub(crate) fn create_dispatcher()
 }
 
 pub(crate) fn create_registered_dispatcher(
-    extension_commands: CommandRegistry,
+    mut extension_commands: CommandRegistry,
 ) -> Result<RegisteredCommandDispatcher<CommandSource>, CommandRegistrationError> {
+    extension_commands.run_registration_hooks();
     let mut builder = CommandDispatcherBuilder::new();
     builder.declare_permission(ENTITY_SELECTOR_PERMISSION_KEY)?;
     builder.declare_permission(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY)?;

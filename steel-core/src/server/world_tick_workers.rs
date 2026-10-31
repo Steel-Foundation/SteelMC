@@ -1,8 +1,14 @@
-use std::{io, sync::Arc, thread};
+use std::{
+    borrow::Borrow,
+    io, mem,
+    sync::{Arc, Weak},
+    thread,
+};
 
 use crossbeam::channel::{self, Sender};
 use thiserror::Error;
 use tokio::sync::oneshot;
+use tokio_util::task::TaskTracker;
 
 use crate::world::{World, WorldGameTickTimings};
 
@@ -13,6 +19,7 @@ struct WorldTickRequest {
 }
 
 struct WorldTickWorker {
+    world: Weak<World>,
     world_key: Arc<str>,
     requests: Option<Sender<WorldTickRequest>>,
     thread: Option<thread::JoinHandle<()>>,
@@ -21,6 +28,7 @@ struct WorldTickWorker {
 impl WorldTickWorker {
     fn spawn(index: usize, world: Arc<World>) -> io::Result<Self> {
         let world_key = Arc::<str>::from(world.key.to_string());
+        let world_ref = Arc::downgrade(&world);
         let (request_sender, request_receiver) = channel::bounded::<WorldTickRequest>(1);
         let thread = thread::Builder::new()
             .name(format!("world-tick-{index}"))
@@ -32,6 +40,7 @@ impl WorldTickWorker {
             })?;
 
         Ok(Self {
+            world: world_ref,
             world_key,
             requests: Some(request_sender),
             thread: Some(thread),
@@ -90,12 +99,51 @@ pub(super) struct WorldTickWorkers {
 }
 
 impl WorldTickWorkers {
-    pub(super) fn spawn<'a>(worlds: impl IntoIterator<Item = &'a Arc<World>>) -> io::Result<Self> {
+    pub(super) fn spawn<W: Borrow<Arc<World>>>(
+        worlds: impl IntoIterator<Item = W>,
+    ) -> io::Result<Self> {
         let mut workers = Vec::new();
         for (index, world) in worlds.into_iter().enumerate() {
-            workers.push(WorldTickWorker::spawn(index, Arc::clone(world))?);
+            workers.push(WorldTickWorker::spawn(index, Arc::clone(world.borrow()))?);
         }
         Ok(Self { workers })
+    }
+
+    /// Runs between ticks. Idle worker joins and world destruction stay off the tick thread.
+    pub(super) fn synchronize<W: Borrow<Arc<World>>>(
+        &mut self,
+        worlds: impl IntoIterator<Item = W>,
+        retirements: &TaskTracker,
+    ) -> io::Result<()> {
+        let worlds: Vec<_> = worlds.into_iter().map(|w| Arc::clone(w.borrow())).collect();
+        let active = |worker: &WorldTickWorker| {
+            worlds
+                .iter()
+                .any(|world| worker.world.ptr_eq(&Arc::downgrade(world)))
+        };
+        if self.workers.len() == worlds.len() && self.workers.iter().all(active) {
+            return Ok(());
+        }
+        for mut worker in mem::take(&mut self.workers) {
+            if active(&worker) {
+                self.workers.push(worker);
+                continue;
+            }
+            drop(worker.requests.take());
+            retirements.spawn_blocking(move || drop(worker));
+        }
+        for world in worlds {
+            if self
+                .workers
+                .iter()
+                .any(|worker| worker.world.ptr_eq(&Arc::downgrade(&world)))
+            {
+                continue;
+            }
+            self.workers
+                .push(WorldTickWorker::spawn(self.workers.len(), world)?);
+        }
+        Ok(())
     }
 
     pub(super) async fn tick_all(
@@ -137,7 +185,7 @@ mod tests {
         let second = worlds
             .get(&steel_utils::Identifier::new_static("workers", "derived"))
             .expect("derived");
-        let Ok(workers) = WorldTickWorkers::spawn([first, second]) else {
+        let Ok(workers) = WorldTickWorkers::spawn([&first, &second]) else {
             panic!("world tick workers should start");
         };
 
@@ -165,7 +213,7 @@ mod tests {
         let derived = worlds
             .get(&steel_utils::Identifier::new_static("delayed", "derived"))
             .expect("derived");
-        let workers = WorldTickWorkers::spawn([primary, derived]).expect("workers");
+        let workers = WorldTickWorkers::spawn([&primary, &derived]).expect("workers");
         for tick in 1..=2 {
             worlds.advance_domain_game_times();
             // Holding primary level data delays its world-local time phase, while

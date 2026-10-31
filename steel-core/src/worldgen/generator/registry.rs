@@ -10,6 +10,7 @@ use steel_registry::vanilla_biomes;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
+use steel_utils::locks::SyncMutex;
 use toml::map::Map;
 
 use crate::worldgen::structure::{FixedStructureBiomeProvider, StructureGenerator};
@@ -46,6 +47,23 @@ struct WorldGeneratorFactory {
     ) -> Result<GeneratorOutput, String>,
 }
 
+/// A typed server extension providing config validation and generator creation.
+/// The normalized configuration is server configuration, not datapack data.
+pub trait CustomWorldGeneratorFactory: Send + Sync {
+    /// Resolves the dimension type without constructing or loading a world.
+    fn dimension_type(&self) -> DimensionTypeRef;
+    /// Validates and normalizes this factory's server configuration.
+    fn validate(&self, config: &toml::Value) -> Result<toml::Value, String>;
+    /// Constructs a generator using the actual persisted world seed.
+    fn create(
+        &self,
+        world_path: Option<&Path>,
+        config: &toml::Value,
+        seed: i64,
+        thread_pool: &rayon::ThreadPool,
+    ) -> Result<GeneratorOutput, String>;
+}
+
 /// Generator config after parsing, validation, and default application.
 #[derive(Debug, Clone)]
 pub struct ValidatedWorldGeneratorConfig {
@@ -71,6 +89,7 @@ impl ValidatedWorldGeneratorConfig {
             WorldGeneratorConfigData::Flat(config) => {
                 validated_dimension_type_by_key(&config.dimension_type)
             }
+            WorldGeneratorConfigData::Custom { dimension_type, .. } => dimension_type,
         }
     }
 }
@@ -80,18 +99,38 @@ enum WorldGeneratorConfigData {
     Empty,
     EmptyWorld(DimensionTypeOnlyConfig),
     Flat(FlatGeneratorConfig),
+    Custom {
+        dimension_type: DimensionTypeRef,
+        config: toml::Value,
+    },
 }
 
 /// Registry of server-side world generator factories.
 pub struct WorldGeneratorRegistry {
     factories: FxHashMap<Identifier, WorldGeneratorFactory>,
+    custom_factories: FxHashMap<Identifier, Arc<dyn CustomWorldGeneratorFactory>>,
 }
 
+type RegistrationHook = Box<dyn FnOnce(&mut WorldGeneratorRegistry) + Send>;
+static REGISTRATION_HOOKS: SyncMutex<Option<Vec<RegistrationHook>>> =
+    SyncMutex::new(Some(Vec::new()));
+
 impl WorldGeneratorRegistry {
+    /// Subscribes before initialization; the callback edits this registry after built-ins.
+    pub fn on_registration(hook: impl FnOnce(&mut Self) + Send + 'static) -> Result<(), String> {
+        let mut hooks = REGISTRATION_HOOKS.lock();
+        let Some(hooks) = hooks.as_mut() else {
+            return Err("world generator registration has already finished".into());
+        };
+        hooks.push(Box::new(hook));
+        Ok(())
+    }
+
     /// Creates a registry containing Steel's built-in generator factories.
     pub fn new_with_builtins() -> Result<Self, String> {
         let mut registry = Self {
             factories: FxHashMap::default(),
+            custom_factories: FxHashMap::default(),
         };
 
         registry.register(
@@ -130,13 +169,33 @@ impl WorldGeneratorRegistry {
             },
         )?;
 
+        let hooks = REGISTRATION_HOOKS.lock().take();
+        if let Some(hooks) = hooks {
+            for hook in hooks {
+                hook(&mut registry);
+            }
+        }
         Ok(registry)
     }
 
     fn register(&mut self, key: Identifier, factory: WorldGeneratorFactory) -> Result<(), String> {
-        if self.factories.insert(key.clone(), factory).is_some() {
+        if self.factories.contains_key(&key) || self.custom_factories.contains_key(&key) {
             return Err(format!("duplicate world generator registration {key}"));
         }
+        self.factories.insert(key, factory);
+        Ok(())
+    }
+
+    /// Registers an extension factory without replacing an existing factory.
+    pub fn register_custom(
+        &mut self,
+        key: Identifier,
+        factory: Arc<dyn CustomWorldGeneratorFactory>,
+    ) -> Result<(), String> {
+        if self.factories.contains_key(&key) || self.custom_factories.contains_key(&key) {
+            return Err(format!("duplicate world generator registration {key}"));
+        }
+        self.custom_factories.insert(key, factory);
         Ok(())
     }
 
@@ -146,6 +205,15 @@ impl WorldGeneratorRegistry {
         key: &Identifier,
         config: &toml::Value,
     ) -> Result<ValidatedWorldGeneratorConfig, String> {
+        if let Some(factory) = self.custom_factories.get(key) {
+            return Ok(ValidatedWorldGeneratorConfig {
+                generator: key.clone(),
+                data: WorldGeneratorConfigData::Custom {
+                    dimension_type: factory.dimension_type(),
+                    config: factory.validate(config)?,
+                },
+            });
+        }
         let factory = self
             .factories
             .get(key)
@@ -165,6 +233,23 @@ impl WorldGeneratorRegistry {
         seed: i64,
         thread_pool: Arc<rayon::ThreadPool>,
     ) -> Result<GeneratorOutput, String> {
+        if let Some(factory) = self.custom_factories.get(&config.generator) {
+            let WorldGeneratorConfigData::Custom {
+                config,
+                dimension_type,
+            } = &config.data
+            else {
+                return Err("validated config does not match custom world generator".to_owned());
+            };
+            let output = factory.create(world_path, config, seed, &thread_pool)?;
+            if output.dimension_type != *dimension_type || output.config != *config {
+                return Err(
+                    "custom generator changed its validated dimension type or normalized config"
+                        .to_owned(),
+                );
+            }
+            return Ok(output);
+        }
         let factory = self
             .factories
             .get(&config.generator)

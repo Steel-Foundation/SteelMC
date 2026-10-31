@@ -30,4 +30,7 @@ pub mod paletted_container;
 pub mod section;
 pub mod status;
 
+#[cfg(any(test, feature = "test-framework"))]
+pub mod test_support;
+
 pub use data::Chunk;

@@ -32,7 +32,7 @@ pub enum ChunkGeneratorType {
     Overworld(OverworldGenerator),
     Nether(NetherGenerator),
     End(EndGenerator),
-    //Custom(Box<dyn ChunkGenerator>),
+    Custom(Box<dyn ChunkGenerator>),
 }
 
 /// Context for world generation.

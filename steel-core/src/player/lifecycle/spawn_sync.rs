@@ -30,6 +30,9 @@ impl Player {
             // Damage timestamps belong to the source domain's clock.
             self.base.damage_history().clear();
         });
+        // Respawn updates the local controller, but the client also reads the
+        // persistent player-info entry and retains entity data across world changes.
+        self.sync_game_mode_to_clients();
     }
 
     fn reset_inner_after<F>(

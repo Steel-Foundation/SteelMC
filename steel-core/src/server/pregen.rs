@@ -205,7 +205,7 @@ impl Server {
         };
 
         pregen_overworld(
-            overworld,
+            &overworld,
             center_chunk,
             pregen_size,
             window_size,

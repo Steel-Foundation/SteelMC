@@ -24,21 +24,19 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
     for _ in 0..other_domain_start_time {
         second.advance_domain_game_times();
     }
-    let primary = Arc::clone(first.default_world("clock_a").expect("primary"));
-    let derived = Arc::clone(
-        first
-            .get(&steel_utils::Identifier::new_static("clock_a", "derived"))
-            .expect("derived"),
-    );
+    let primary = first.default_world("clock_a").expect("primary");
+    let derived = first
+        .get(&steel_utils::Identifier::new_static("clock_a", "derived"))
+        .expect("derived");
     let domains: Vec<_> = [&first, &second]
         .iter()
         .map(|map| ResolvedDomainConfig {
             name: map.default_domain().to_owned(),
             default_world: map.server_default_world().expect("primary").key.clone(),
-            worlds: map.keys().cloned().collect(),
+            worlds: map.keys().collect(),
         })
         .collect();
-    let loaded: Vec<_> = first.values().chain(second.values()).cloned().collect();
+    let loaded: Vec<_> = first.values().chain(second.values()).collect();
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -150,8 +148,8 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
 #[test]
 fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
     let worlds = test_domain("packets", &["primary", "derived"]);
-    let primary = worlds.default_world("packets").expect("primary");
-    let derived = worlds
+    let primary = &worlds.default_world("packets").expect("primary");
+    let derived = &worlds
         .get(&steel_utils::Identifier::new_static("packets", "derived"))
         .expect("derived");
     let runtime = Builder::new_current_thread()
@@ -244,7 +242,7 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
             let derived = server.worlds.get(&derived_key).expect("derived");
             let tick_pos = BlockPos::new(512, 64, 512);
             let chunk_pos = ChunkPos::from_block_pos(tick_pos);
-            insert_ready_full_chunk(derived, chunk_pos);
+            insert_ready_full_chunk(&derived, chunk_pos);
             derived.schedule_block_tick(tick_pos, &vanilla_blocks::STONE, 10, TickPriority::High);
             derived.schedule_fluid_tick(tick_pos, &vanilla_fluids::WATER, 14, TickPriority::Low);
             for _ in 0..ticks_before_save {

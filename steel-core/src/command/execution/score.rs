@@ -12,7 +12,7 @@ use crate::{
         execution::selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     },
     entity::Entity as _,
-    scoreboard::{ScoreHolder, Scoreboard},
+    scoreboard::ScoreHolder,
 };
 use steel_utils::translations;
 use text_components::{TextComponent, translation::Translation};
@@ -59,7 +59,7 @@ impl ScoreHolderArgument {
                     .server()
                     .scoreboards
                     .get(source.world().domain())
-                    .map_or_else(Vec::new, Scoreboard::tracked_holders),
+                    .map_or_else(Vec::new, |board| board.tracked_holders()),
             },
         };
         Ok(holders)

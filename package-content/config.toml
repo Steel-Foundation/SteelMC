@@ -1,6 +1,19 @@
 #:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/config.schema.json
 # Documentation: https://steelmc.dev/configuration/server-configuration/
 
+# ZIP packages in ./extensions are discovered automatically in filename order.
+# Only install trusted native code. To configure a ZIP or select a raw library:
+# [[extensions]]
+# path = "extensions/steel-game-of-life-extension.zip"
+# [extensions.config.life]
+# world = "minecraft:overworld"
+# x = 0
+# y = 96
+# z = 0
+# width = 5
+# depth = 5
+# interval = 10
+
 [server]
 # Server port
 server_port = 25565

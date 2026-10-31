@@ -64,10 +64,12 @@ pub mod weathering;
 #[path = "generated/skull_types.rs"]
 pub mod skull_types;
 
+pub use crate::entity::ai::path::PathComputationType;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
     BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
-    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, RailBehavior,
+    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, PickupResult,
+    RailBehavior,
 };
 pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;
@@ -94,7 +96,6 @@ use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
 
-use crate::entity::ai::path::PathComputationType;
 use crate::entity::consume_effect::{
     ApplyEffectsBehavior, ClearAllEffectsBehavior, ConsumeEffectBehavior, PlaySoundBehavior,
     RemoveEffectsBehavior, TeleportRandomlyBehavior,
@@ -108,6 +109,14 @@ use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
 pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
+
+impl BlockBehaviorLock {
+    /// Returns this table only after it has been published.
+    #[must_use]
+    pub fn get(&self) -> Option<&BlockBehaviorRegistry> {
+        self.0.get()
+    }
+}
 
 impl Deref for BlockBehaviorLock {
     type Target = BlockBehaviorRegistry;
@@ -215,6 +224,7 @@ pub fn init_behaviors() {
     BLOCK_BEHAVIORS.0.get_or_init(|| {
         let mut block_behaviors = BlockBehaviorRegistry::new();
         register_block_behaviors(&mut block_behaviors);
+        block_behaviors.run_registration_hooks();
         block_behaviors
     });
 

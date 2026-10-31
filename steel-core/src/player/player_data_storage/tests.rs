@@ -825,3 +825,54 @@ async fn in_memory_permission_subjects_round_trip() {
         subjects
     );
 }
+
+#[tokio::test]
+async fn temporary_domain_state_never_reaches_disk_and_reconnect_keeps_the_home_domain()
+-> io::Result<()> {
+    init_vanilla_registry();
+    let root = temp_storage_root("temporary_domain");
+    let storage = PlayerDataStorage::on_disk(root.clone()).await?;
+    let uuid = Uuid::new_v4();
+    let data = sample_player_file(PLAYER_DATA_VERSION).into_persistent()?;
+    storage.save_domain_data("home", uuid, &data).await?;
+    storage
+        .save_global(
+            uuid,
+            &GlobalPlayerData {
+                last_active_domain: "home".into(),
+            },
+        )
+        .await?;
+    storage.register_temporary_domain("spleef_test")?;
+    storage.save_domain_data("spleef_test", uuid, &data).await?;
+    storage
+        .save_global(
+            uuid,
+            &GlobalPlayerData {
+                last_active_domain: "spleef_test".into(),
+            },
+        )
+        .await?;
+    assert!(storage.load_domain("spleef_test", uuid).await?.is_some());
+    assert_eq!(
+        storage
+            .load_global(uuid)
+            .await?
+            .expect("home location")
+            .last_active_domain,
+        "home"
+    );
+    assert!(!fs::try_exists(root.join("spleef_test")).await?);
+    storage.retire_temporary_domain("spleef_test");
+    assert_eq!(
+        storage
+            .save_domain_data("spleef_test", uuid, &data)
+            .await
+            .expect_err("late writes must not fall through to disk")
+            .kind(),
+        io::ErrorKind::NotFound
+    );
+    assert!(storage.load_domain("home", uuid).await?.is_some());
+    assert!(!fs::try_exists(root.join("spleef_test")).await?);
+    fs::remove_dir_all(root).await
+}

@@ -3,7 +3,6 @@ use crate::entity::damage::DamageHistory;
 use crate::server::worlds::WorldMap;
 use std::cell::{Cell, RefCell};
 use std::ops::Deref;
-use std::slice;
 use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
@@ -28,11 +27,8 @@ use steel_worldgen::density_functions::{
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
-use crate::chunk::Chunk;
-use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
-use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::chunk::section::{ChunkSection, Sections};
-use crate::chunk::status::ChunkStatus;
+use crate::chunk::chunk_holder::ChunkHolder;
+pub(crate) use crate::chunk::test_support::insert_full_chunk;
 use crate::entity::{Entity, EntityBase, SharedEntity};
 use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::game_event::GameEventContext;
@@ -150,49 +146,6 @@ pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<
 
 pub(crate) fn insert_unready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
     insert_full_chunk(world, pos, false)
-}
-
-pub(crate) fn insert_full_chunk(
-    world: &Arc<World>,
-    pos: ChunkPos,
-    block_ticking_ready: bool,
-) -> Arc<ChunkHolder> {
-    let min_y = world.get_min_y();
-    let height = world.get_height();
-    let sections = (0..height / 16)
-        .map(|_| ChunkSection::new_empty())
-        .collect::<Vec<_>>()
-        .into_boxed_slice();
-    let proto = Chunk::new(
-        Sections::from_owned(sections),
-        pos,
-        min_y,
-        height,
-        Arc::downgrade(world),
-    );
-    let _ = proto.promote_to_full();
-    let holder = Arc::new(ChunkHolder::new(
-        pos,
-        ChunkTicketLevel::BLOCK_TICKING_CHUNK,
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        min_y,
-        height,
-    ));
-    holder.insert_chunk(proto, ChunkStatus::Full);
-    if block_ticking_ready {
-        assert_eq!(
-            holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
-            Some(TickingReadiness::Unready)
-        );
-    }
-    let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
-    world.on_entity_chunk_loaded(pos);
-    world.update_entity_chunk_visibility(pos, holder.entity_visibility());
-    world
-        .chunk_map
-        .activate_block_entities(slice::from_ref(&holder));
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
-    holder
 }
 
 pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {

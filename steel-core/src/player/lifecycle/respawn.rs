@@ -530,7 +530,6 @@ impl Player {
                 .worlds
                 .get(config.respawn_data.dimension())
                 .filter(|world| world.domain() == source_world.domain())
-                .cloned()
                 .map(|world| (world, config))
         })
     }

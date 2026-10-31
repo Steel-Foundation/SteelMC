@@ -316,12 +316,19 @@ impl Server {
 
     /// Returns whether capacity currently prevents this UUID from joining.
     ///
-    /// Only online players occupy slots. Final admission repeats the early login check
+    /// Only online network players occupy client slots; server-controlled actors do not.
+    /// Final admission repeats the early login check
     /// under the admissions lock after spawn preparation, matching vanilla's timing.
     #[must_use]
     pub fn is_player_limit_reached(&self, uuid: Uuid) -> bool {
-        self.online_players.len() >= self.config.max_players as usize
-            && !self.can_bypass_player_limit(uuid)
+        let mut clients = 0;
+        self.online_players.iter_players(|_, player| {
+            if !player.is_server_controlled() {
+                clients += 1;
+            }
+            true
+        });
+        clients >= self.config.max_players as usize && !self.can_bypass_player_limit(uuid)
     }
 
     /// Atomically reserves a UUID after configuration's duplicate-session recheck.
@@ -362,7 +369,7 @@ impl Server {
         }
 
         // Keep the final capacity check and insertion atomic with respect to other joins.
-        let result = if self.is_player_limit_reached(uuid) {
+        let result = if !player.is_server_controlled() && self.is_player_limit_reached(uuid) {
             Err(PlayerJoinError::ServerFull)
         } else if self.online_players.insert(player) {
             Ok(())
@@ -517,7 +524,6 @@ impl Server {
             .worlds
             .values()
             .filter(|world| world.contains_player(&player))
-            .cloned()
             .collect::<Vec<_>>();
         if !live_memberships.is_empty() {
             tracing::error!(

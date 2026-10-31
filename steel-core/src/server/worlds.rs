@@ -1,65 +1,67 @@
-//! Domain-aware loaded world map.
-
-use std::sync::Arc;
-
-use rustc_hash::FxHashMap;
-use small_map::FxSmallMap;
-use steel_utils::Identifier;
-
+//! Domain-aware loaded worlds. Readers own snapshots so worlds may retire at tick boundaries.
 use crate::config::{ResolvedDomainConfig, ResolvedWorldConfig};
 use crate::world::{DomainEntityDirectory, World};
+use rustc_hash::FxHashMap;
+use small_map::FxSmallMap;
+use std::sync::Arc;
+use steel_utils::{Identifier, locks::SyncRwLock};
 
 pub(crate) const OVERWORLD_WORLD_NAME: &str = "overworld";
 pub(crate) const NETHER_WORLD_NAME: &str = "the_nether";
 pub(crate) const END_WORLD_NAME: &str = "the_end";
 
-/// Loaded worlds plus domain defaults.
+/// Loaded worlds plus domain defaults. Mutations are published at server tick boundaries.
 pub struct WorldMap {
-    worlds: FxSmallMap<8, Identifier, Arc<World>>,
     default_domain: String,
+    state: SyncRwLock<WorldMapState>,
+}
+struct WorldMapState {
+    worlds: FxSmallMap<8, Identifier, Arc<World>>,
     default_worlds: FxHashMap<String, Identifier>,
     nether_portal_targets: FxHashMap<Identifier, Identifier>,
     end_portal_targets: FxHashMap<Identifier, Identifier>,
     entity_directories: FxHashMap<String, Arc<DomainEntityDirectory>>,
 }
-
 impl WorldMap {
     /// Creates a world map from resolved domain config.
     #[must_use]
     pub fn new(
         default_domain: String,
         domains: &[ResolvedDomainConfig],
-        world_configs: &[ResolvedWorldConfig],
+        configs: &[ResolvedWorldConfig],
     ) -> Self {
-        let mut default_worlds = FxHashMap::default();
-        for domain in domains {
-            default_worlds.insert(domain.name.clone(), domain.default_world.clone());
-        }
-        let mut nether_portal_targets = FxHashMap::default();
-        let mut end_portal_targets = FxHashMap::default();
-        for world in world_configs {
-            if let Some(target) = &world.nether_portal_target {
-                nether_portal_targets.insert(world.key.clone(), target.clone());
-            }
-            if let Some(target) = &world.end_portal_target {
-                end_portal_targets.insert(world.key.clone(), target.clone());
-            }
-        }
         Self {
-            worlds: FxSmallMap::default(),
             default_domain,
-            default_worlds,
-            nether_portal_targets,
-            end_portal_targets,
-            entity_directories: FxHashMap::default(),
+            state: SyncRwLock::new(WorldMapState {
+                worlds: FxSmallMap::default(),
+                default_worlds: domains
+                    .iter()
+                    .map(|d| (d.name.clone(), d.default_world.clone()))
+                    .collect(),
+                nether_portal_targets: configs
+                    .iter()
+                    .filter_map(|w| {
+                        w.nether_portal_target
+                            .as_ref()
+                            .map(|t| (w.key.clone(), t.clone()))
+                    })
+                    .collect(),
+                end_portal_targets: configs
+                    .iter()
+                    .filter_map(|w| {
+                        w.end_portal_target
+                            .as_ref()
+                            .map(|t| (w.key.clone(), t.clone()))
+                    })
+                    .collect(),
+                entity_directories: FxHashMap::default(),
+            }),
         }
     }
-
-    /// Verifies primary ownership and sharing before the server publishes its worlds.
     pub(crate) fn validate_game_times(&self) -> Result<(), String> {
         for domain in self.domain_names() {
             let primary = self
-                .default_world(domain)
+                .default_world(&domain)
                 .ok_or_else(|| format!("domain {domain} has no loaded primary"))?;
             if primary.domain() != domain || !primary.level_data.read().owns_game_time() {
                 return Err(format!("domain {domain} has an invalid game-time primary"));
@@ -82,161 +84,226 @@ impl WorldMap {
         }
         Ok(())
     }
-
-    /// Publishes one simulation increment for every domain before any worker dispatch.
+    /// Advances each domain's shared simulation clock before worker dispatch.
     ///
     /// # Panics
-    /// Panics if a validated domain primary world is missing from the map.
+    /// Panics if a validated domain primary is missing.
     pub fn advance_domain_game_times(&self) {
-        for key in self.default_worlds.values() {
-            let Some(primary) = self.worlds.get(key) else {
+        let state = self.state.read();
+        for key in state.default_worlds.values() {
+            let Some(primary) = state.worlds.get(key) else {
                 panic!("validated domain primary is missing: {key}");
             };
             primary.level_data.write().advance_game_time();
         }
     }
-
-    /// Inserts a loaded world.
+    /// Inserts a loaded world during initial construction.
     pub fn insert(&mut self, key: Identifier, world: Arc<World>) {
-        if let Some(replaced) = self.worlds.insert(key, Arc::clone(&world))
-            && let Some(directory) = self.entity_directories.get(replaced.domain())
+        let mut state = self.state.write();
+        Self::insert_into(&mut state, key, world);
+    }
+    fn insert_into(state: &mut WorldMapState, key: Identifier, world: Arc<World>) {
+        if let Some(replaced) = state.worlds.insert(key, Arc::clone(&world))
+            && let Some(directory) = state.entity_directories.get(replaced.domain())
         {
             directory.remove_world(&replaced);
         }
-        let directory = self
+        let directory = state
             .entity_directories
             .entry(world.domain().to_owned())
             .or_insert_with(|| Arc::new(DomainEntityDirectory::new()));
         directory.add_world(&world);
         world.set_domain_entity_directory(Arc::clone(directory));
     }
-
-    /// Returns a world by loaded world identifier.
+    pub(crate) fn publish_temporary_world(
+        &self,
+        world: Arc<World>,
+        primary: bool,
+    ) -> Result<(), String> {
+        let mut state = self.state.write();
+        if state.worlds.get(&world.key).is_some() {
+            return Err(format!("world {} already exists", world.key));
+        }
+        if primary {
+            if state.default_worlds.contains_key(world.domain()) {
+                return Err(format!("domain {} already exists", world.domain()));
+            }
+            if !world.level_data.read().owns_game_time() {
+                return Err("temporary primary must own its clock".into());
+            }
+            state
+                .default_worlds
+                .insert(world.domain().to_owned(), world.key.clone());
+        } else {
+            let key = state
+                .default_worlds
+                .get(world.domain())
+                .ok_or("domain no longer exists")?;
+            let parent = state.worlds.get(key).ok_or("domain primary is missing")?;
+            if !Arc::ptr_eq(&parent.game_time, &world.game_time) {
+                return Err("temporary world must share its domain clock".into());
+            }
+        }
+        Self::insert_into(&mut state, world.key.clone(), world);
+        Ok(())
+    }
+    pub(crate) fn remove_temporary_domain(&self, domain: &str) -> Vec<Arc<World>> {
+        let mut state = self.state.write();
+        let keys: Vec<_> = state
+            .worlds
+            .iter()
+            .filter(|(_, w)| w.domain() == domain)
+            .map(|(k, _)| k.clone())
+            .collect();
+        let mut removed = Vec::new();
+        for key in keys {
+            if let Some(world) = state.worlds.remove(&key) {
+                if let Some(directory) = state.entity_directories.get(domain) {
+                    directory.remove_world(&world);
+                }
+                removed.push(world);
+            }
+            state.nether_portal_targets.remove(&key);
+            state.end_portal_targets.remove(&key);
+        }
+        state.default_worlds.remove(domain);
+        state.entity_directories.remove(domain);
+        removed
+    }
+    /// Returns an owned reference, valid even if the world retires later.
     #[must_use]
-    pub fn get(&self, key: &Identifier) -> Option<&Arc<World>> {
-        self.worlds.get(key)
+    pub fn get(&self, key: &Identifier) -> Option<Arc<World>> {
+        self.state.read().worlds.get(key).map(Arc::clone)
     }
-
-    /// Iterates loaded world values.
-    pub fn values(&self) -> impl Iterator<Item = &Arc<World>> {
-        self.worlds.values()
+    /// Takes a snapshot of loaded worlds without retaining a map lock.
+    pub fn values(&self) -> impl Iterator<Item = Arc<World>> {
+        self.state
+            .read()
+            .worlds
+            .values()
+            .map(Arc::clone)
+            .collect::<Vec<_>>()
+            .into_iter()
     }
-
-    /// Iterates loaded world keys.
-    pub fn keys(&self) -> impl Iterator<Item = &Identifier> {
-        self.worlds.keys()
+    /// Takes a snapshot of loaded world keys.
+    pub fn keys(&self) -> impl Iterator<Item = Identifier> {
+        self.state
+            .read()
+            .worlds
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
     }
-
-    /// Iterates loaded world key/value pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &Arc<World>)> {
-        self.worlds.iter()
+    /// Takes a snapshot of loaded world entries.
+    pub fn iter(&self) -> impl Iterator<Item = (Identifier, Arc<World>)> {
+        self.state
+            .read()
+            .worlds
+            .iter()
+            .map(|(k, w)| (k.clone(), Arc::clone(w)))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
-
-    /// Returns number of loaded worlds.
+    /// Number of loaded worlds.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.worlds.len()
+        self.state.read().worlds.len()
     }
-
-    /// Returns whether there are no loaded worlds.
+    /// Whether any world is loaded.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.worlds.is_empty()
+        self.state.read().worlds.is_empty()
     }
-
-    /// Returns the default domain name.
+    /// Server's permanent default domain.
     #[must_use]
     pub fn default_domain(&self) -> &str {
         &self.default_domain
     }
-
-    /// Returns whether a domain exists.
+    /// Whether the domain is published.
     #[must_use]
     pub fn has_domain(&self, domain: &str) -> bool {
-        self.default_worlds.contains_key(domain)
+        self.state.read().default_worlds.contains_key(domain)
     }
-
-    /// Iterates domain names.
-    pub fn domain_names(&self) -> impl Iterator<Item = &str> {
-        self.default_worlds.keys().map(String::as_str)
+    /// Takes a snapshot of loaded domain names.
+    pub fn domain_names(&self) -> impl Iterator<Item = String> {
+        self.state
+            .read()
+            .default_worlds
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
     }
-
-    /// Returns a domain's default world.
+    /// Returns a domain's primary world.
     #[must_use]
-    pub fn default_world(&self, domain: &str) -> Option<&Arc<World>> {
-        self.default_worlds
-            .get(domain)
-            .and_then(|key| self.worlds.get(key))
+    pub fn default_world(&self, domain: &str) -> Option<Arc<World>> {
+        let state = self.state.read();
+        state
+            .worlds
+            .get(state.default_worlds.get(domain)?)
+            .map(Arc::clone)
     }
-
-    /// Returns the server default world.
+    /// Returns the server's permanent default world.
     #[must_use]
-    pub fn server_default_world(&self) -> Option<&Arc<World>> {
+    pub fn server_default_world(&self) -> Option<Arc<World>> {
         self.default_world(self.default_domain())
     }
-
-    /// Returns loaded worlds in the given domain.
+    /// Takes a snapshot of worlds in one domain.
     #[must_use]
     pub fn worlds_in_domain(&self, domain: &str) -> Vec<Arc<World>> {
-        self.worlds
-            .values()
-            .filter(|world| world.domain() == domain)
-            .cloned()
-            .collect()
+        self.values().filter(|w| w.domain() == domain).collect()
     }
-
-    /// Resolves a conventional portal target name in the source world's domain.
+    /// Resolves a conventional portal world in the source domain.
     #[must_use]
-    pub fn resolve_portal_target(
-        &self,
-        source_world: &World,
-        target_world_name: &str,
-    ) -> Option<Arc<World>> {
-        let key = Identifier::new(
-            source_world.domain().to_owned(),
-            target_world_name.to_owned(),
-        );
-        self.worlds.get(&key).cloned()
+    pub fn resolve_portal_target(&self, source: &World, name: &str) -> Option<Arc<World>> {
+        self.get(&Identifier::new(
+            source.domain().to_owned(),
+            name.to_owned(),
+        ))
     }
-
-    /// Resolves the vanilla Nether portal target in the source world's domain.
+    /// Resolves a Nether portal destination.
     #[must_use]
-    pub fn resolve_nether_portal_target(&self, source_world: &World) -> Option<Arc<World>> {
-        if let Some(target) = self.nether_portal_targets.get(&source_world.key) {
-            return self.worlds.get(target).cloned();
+    pub fn resolve_nether_portal_target(&self, source: &World) -> Option<Arc<World>> {
+        let target = self
+            .state
+            .read()
+            .nether_portal_targets
+            .get(&source.key)
+            .cloned();
+        if let Some(target) = target {
+            return self.get(&target);
         }
-
         self.resolve_portal_target(
-            source_world,
-            nether_portal_target_world_name(source_world.key.path.as_ref()),
+            source,
+            nether_portal_target_world_name(source.key.path.as_ref()),
         )
     }
-
-    /// Resolves the vanilla End portal target for non-End source worlds.
-    ///
-    /// End-to-respawn-world transitions depend on the source world's respawn data,
-    /// so that branch is intentionally left to the destination calculator.
+    /// Resolves an End entry portal destination.
     #[must_use]
-    pub fn resolve_end_entry_portal_target(&self, source_world: &World) -> Option<Arc<World>> {
-        if let Some(target) = self.end_portal_targets.get(&source_world.key) {
-            return self.worlds.get(target).cloned();
+    pub fn resolve_end_entry_portal_target(&self, source: &World) -> Option<Arc<World>> {
+        let target = self
+            .state
+            .read()
+            .end_portal_targets
+            .get(&source.key)
+            .cloned();
+        if let Some(target) = target {
+            return self.get(&target);
         }
-
-        end_entry_portal_target_world_name(source_world.key.path.as_ref())
-            .and_then(|target| self.resolve_portal_target(source_world, target))
+        end_entry_portal_target_world_name(source.key.path.as_ref())
+            .and_then(|name| self.resolve_portal_target(source, name))
     }
 }
-
-fn nether_portal_target_world_name(source_world_name: &str) -> &'static str {
-    if source_world_name == NETHER_WORLD_NAME {
+fn nether_portal_target_world_name(source: &str) -> &'static str {
+    if source == NETHER_WORLD_NAME {
         OVERWORLD_WORLD_NAME
     } else {
         NETHER_WORLD_NAME
     }
 }
-
-fn end_entry_portal_target_world_name(source_world_name: &str) -> Option<&'static str> {
-    if source_world_name == END_WORLD_NAME {
+fn end_entry_portal_target_world_name(source: &str) -> Option<&'static str> {
+    if source == END_WORLD_NAME {
         None
     } else {
         Some(END_WORLD_NAME)

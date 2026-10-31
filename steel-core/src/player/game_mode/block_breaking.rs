@@ -517,7 +517,7 @@ fn requires_correct_tool(state: BlockStateId) -> bool {
 /// `1.0 / (destroy_time * 30.0)` for survival with correct tool
 /// `1.0 / (destroy_time * 100.0)` for survival with wrong tool
 /// Instant break for creative mode.
-fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
+pub(in crate::player) fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
     let Some(block) = REGISTRY.blocks.by_state_id(block_state) else {
         return 0.0;
     };

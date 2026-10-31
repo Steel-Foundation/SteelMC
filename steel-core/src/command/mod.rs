@@ -14,13 +14,13 @@ pub use api::{
     CommandArgument, CommandArgumentParser, CommandContext, CommandError, CommandNode,
     CommandParserSource, CommandReader, CommandReaderCursor, CommandRegistration,
     CommandRegistrationError, CommandRegistry, CommandSource, CommandSuggestionContext,
-    CommandSuggestions, SuspendedCommand, SuspendedCommandPoll, argument, literal,
+    CommandSuggestions, FrozenCommands, SuspendedCommand, SuspendedCommandPoll, argument, literal,
 };
 pub use execution::CommandSuspensionOrder;
 
-pub(crate) use builtins::{
-    create_registered_dispatcher, gamemode::handle_client_request, player_can_change_difficulty,
-};
+#[cfg(any(test, feature = "test-framework"))]
+pub(crate) use builtins::create_registered_dispatcher;
+pub(crate) use builtins::{gamemode::handle_client_request, player_can_change_difficulty};
 pub(crate) use protocol::{command_suggestions_packet, command_tree_packet};
 pub use queue::CommandQueueFull;
 pub(crate) use queue::{

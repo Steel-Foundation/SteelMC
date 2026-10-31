@@ -69,16 +69,16 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         .expect("target world");
     let position = test_tnt_position();
     let chunk = ChunkPos::from_entity_pos(position);
-    insert_ready_full_chunk(source, chunk);
-    insert_ready_full_chunk(target, chunk);
-    let player = TestPlayerBuilder::new(Arc::clone(source), "Owner", next_entity_id()).build();
+    insert_ready_full_chunk(&source, chunk);
+    insert_ready_full_chunk(&target, chunk);
+    let player = TestPlayerBuilder::new(Arc::clone(&source), "Owner", next_entity_id()).build();
     assert!(source.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let owner: SharedEntity = player;
     let previous = Arc::new(PrimedTntEntity::primed(
         &vanilla_entities::TNT,
         next_entity_id(),
         position,
-        source,
+        &source,
         Some(owner.as_ref()),
     ));
     let previous_entity: SharedEntity = Arc::<PrimedTntEntity>::clone(&previous);
@@ -86,7 +86,7 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         .try_add_entity(Arc::clone(&previous_entity))
         .expect("source TNT should enter the loaded test chunk");
     let transition = TeleportTransition {
-        target_world: Arc::clone(target),
+        target_world: Arc::clone(&target),
         position,
         rotation: previous.rotation(),
         velocity: DVec3::ZERO,
@@ -106,7 +106,7 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         &vanilla_entities::PIG,
         next_entity_id(),
         position + DVec3::X,
-        Arc::downgrade(target),
+        Arc::downgrade(&target),
     ));
     target
         .try_add_entity(Arc::<PigEntity>::clone(&victim))

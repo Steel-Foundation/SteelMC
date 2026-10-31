@@ -18,6 +18,7 @@ pub mod command;
 pub mod config;
 pub(crate) mod enchantment_helper;
 pub mod entity;
+pub mod extension;
 pub mod fluid;
 pub mod inventory;
 pub(crate) mod java_block_pos_set;

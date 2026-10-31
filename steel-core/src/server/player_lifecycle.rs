@@ -67,7 +67,6 @@ impl Server {
         let default_world = self
             .worlds
             .default_world(target_domain)
-            .cloned()
             .ok_or_else(|| format!("domain {target_domain} has no default world"))?;
 
         match self
@@ -240,7 +239,7 @@ impl Server {
             );
             return None;
         };
-        Some(Arc::clone(saved_world))
+        Some(saved_world)
     }
 
     pub(super) fn apply_domain_player_state(player: &Arc<Player>, state: &DomainPlayerState) {
@@ -382,7 +381,7 @@ impl Server {
             );
             return None;
         }
-        Some(Arc::clone(world))
+        Some(world)
     }
 
     pub(super) fn send_login_packet(&self, player: &Player, world: &World) {
@@ -396,7 +395,7 @@ impl Server {
         player.send_packet(CLogin {
             player_id: player.id(),
             hardcore: false,
-            levels: self.worlds.keys().cloned().collect(),
+            levels: self.worlds.keys().collect(),
             max_players: self.config.max_players as i32,
             chunk_radius: self.config.view_distance.into(),
             simulation_distance: self.config.simulation_distance.into(),
@@ -509,7 +508,7 @@ impl Server {
     /// Returns the server default world or if not exists the first world.
     /// # Panics
     /// if no world exists on this server crisis is there!
-    pub fn overworld(&self) -> &Arc<World> {
+    pub fn overworld(&self) -> Arc<World> {
         self.worlds.server_default_world().unwrap_or_else(|| {
             self.worlds
                 .values()
@@ -526,7 +525,6 @@ impl Server {
         let default_world = self
             .worlds
             .default_world(domain)
-            .cloned()
             .ok_or_else(|| format!("domain {domain} has no default world"))?;
         let respawn_data = {
             let level_data = default_world.level_data.read();
@@ -537,7 +535,6 @@ impl Server {
             .worlds
             .get(respawn_data.dimension())
             .filter(|world| world.domain() == domain)
-            .cloned()
         else {
             let respawn_data = default_world
                 .world_border_adjusted_respawn_data(local_respawn_data_for_world(&default_world));
@@ -560,13 +557,11 @@ impl Server {
         let default_world = self
             .worlds
             .default_world(domain)
-            .cloned()
             .ok_or_else(|| format!("domain {domain} has no default world"))?;
         let target_world = self
             .worlds
             .get(respawn_data.dimension())
             .filter(|world| world.domain() == domain)
-            .cloned()
             .ok_or_else(|| {
                 format!(
                     "respawn dimension {} is not loaded in domain {domain}",
@@ -610,13 +605,13 @@ impl Server {
     }
 
     /// Returns the default domain's conventional nether world, if present.
-    pub fn nether(&self) -> Option<&Arc<World>> {
+    pub fn nether(&self) -> Option<Arc<World>> {
         let key = Identifier::new(self.worlds.default_domain().to_owned(), "the_nether");
         self.worlds.get(&key)
     }
 
     /// Returns the default domain's conventional end world, if present.
-    pub fn the_end(&self) -> Option<&Arc<World>> {
+    pub fn the_end(&self) -> Option<Arc<World>> {
         let key = Identifier::new(self.worlds.default_domain().to_owned(), "the_end");
         self.worlds.get(&key)
     }

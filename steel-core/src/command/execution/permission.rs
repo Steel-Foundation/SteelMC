@@ -356,11 +356,7 @@ fn suggest_context(
     };
 
     let values = match key {
-        "domain" => source
-            .domain_names()
-            .into_iter()
-            .map(str::to_owned)
-            .collect(),
+        "domain" => source.domain_names().into_iter().collect(),
         "world" => source.permission_context_world_names(),
         custom => known_contexts
             .get(custom)

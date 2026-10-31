@@ -9,8 +9,11 @@ use super::{
 
 use crate::entity::entities::FallingBlockEntity;
 
+/// Item and optional sound produced when an empty bucket picks up a block.
 pub struct PickupResult {
+    /// Bucket stack returned to the player.
     pub filled_bucket: ItemStack,
+    /// Sound to play after pickup succeeds.
     pub sound: Option<SoundEventRef>,
 }
 

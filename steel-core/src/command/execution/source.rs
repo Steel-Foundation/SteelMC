@@ -12,7 +12,6 @@ use crate::{
         PermissionRuleExpression, PermissionSet, PermissionState,
     },
     player::{DomainResidenceToken, KnownPlayer, Player},
-    scoreboard::Scoreboard,
     server::Server,
     world::World,
 };
@@ -78,7 +77,7 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
         false
     }
 
-    fn domain_names(&self) -> Vec<&str> {
+    fn domain_names(&self) -> Vec<String> {
         Vec::new()
     }
 
@@ -263,10 +262,9 @@ pub(crate) struct CommandSource {
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
         let player = sender.get_player().cloned();
-        let world = player.as_ref().map_or_else(
-            || Arc::clone(server.overworld()),
-            |player| player.get_world(),
-        );
+        let world = player
+            .as_ref()
+            .map_or_else(|| server.overworld(), |player| player.get_world());
         let entity = player
             .as_ref()
             .map(|player| Arc::clone(player) as SharedEntity);
@@ -584,7 +582,7 @@ impl CommandArgumentSource for CommandSource {
         self.server.worlds.has_domain(domain)
     }
 
-    fn domain_names(&self) -> Vec<&str> {
+    fn domain_names(&self) -> Vec<String> {
         self.server.worlds.domain_names().collect()
     }
 
@@ -597,7 +595,11 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn permission_context_world_names(&self) -> Vec<String> {
-        self.server.worlds.keys().map(ToString::to_string).collect()
+        self.server
+            .worlds
+            .keys()
+            .map(|key| key.to_string())
+            .collect()
     }
 
     fn command_storage_keys(&self) -> Vec<String> {
@@ -731,14 +733,14 @@ impl CommandArgumentSource for CommandSource {
         self.server
             .scoreboards
             .get(self.world.domain())
-            .map_or_else(Vec::new, Scoreboard::team_names)
+            .map_or_else(Vec::new, |board| board.team_names())
     }
 
     fn scoreboard_objective_names(&self) -> Vec<String> {
         self.server
             .scoreboards
             .get(self.world.domain())
-            .map_or_else(Vec::new, Scoreboard::objective_names)
+            .map_or_else(Vec::new, |board| board.objective_names())
     }
 
     fn allows_entity_selectors(&self) -> bool {

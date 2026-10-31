@@ -1,5 +1,6 @@
 use super::*;
 use crate::server::Server;
+use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 enum PlayerSelection {
@@ -439,7 +440,7 @@ impl SelectorFilter {
                     value,
                     *inverted,
                     &holder_name,
-                    scoreboard,
+                    &scoreboard,
                 ))
             }
             Self::Nbt { value, inverted } => {
@@ -448,7 +449,7 @@ impl SelectorFilter {
             Self::Scores(scores) => {
                 let holder_name = entity.scoreboard_name();
                 let scoreboard = source_scoreboard(source)?;
-                Ok(score_filter_matches(scores, &holder_name, scoreboard))
+                Ok(score_filter_matches(scores, &holder_name, &scoreboard))
             }
         }
     }
@@ -509,7 +510,7 @@ pub(super) fn score_filter_matches(
     })
 }
 
-fn source_scoreboard(source: &CommandSource) -> Result<&Scoreboard, CommandSyntaxError> {
+fn source_scoreboard(source: &CommandSource) -> Result<Arc<Scoreboard>, CommandSyntaxError> {
     source
         .server()
         .scoreboards

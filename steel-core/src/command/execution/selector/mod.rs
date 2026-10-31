@@ -3,8 +3,6 @@
 //! Vanilla's server-wide candidate scope maps to one Steel domain. Selectors
 //! never expose players, entities, teams, or scores from another domain.
 
-use std::sync::Arc;
-
 use glam::DVec3;
 use rand::seq::SliceRandom;
 use simdnbt::owned::NbtCompound;
@@ -66,7 +64,7 @@ const SELECTOR_OPTION_KEYS: &[&str] = &[
 const UNSUPPORTED_SELECTOR_OPTION_KEYS: &[&str] = &[
     // Needs player advancement progress before it can resolve faithfully.
     "advancements",
-    // Needs a real reloadable/plugin predicate registry.
+    // Needs a real reloadable/extension predicate registry.
     "predicate",
 ];
 const SET_ONCE_SELECTOR_OPTIONS: &[&str] = &[
