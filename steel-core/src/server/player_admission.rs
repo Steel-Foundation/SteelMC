@@ -3,8 +3,8 @@ use steel_utils::translations;
 use super::{
     Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
     DomainPlayerState, EncodedPacket, Entity, GlobalPlayerData, Instant, JoinSet,
-    NetworkConnection, PendingWorldChangeToken, PersistentPlayerData, Player, ResetReason,
-    SegQueue, Server, SyncMutex, Uuid, mpsc,
+    NetworkConnection, PLAYER_INFO_INIT_ACTIONS, PendingWorldChangeToken, PersistentPlayerData,
+    Player, PlayerInfoEntry, ResetReason, SegQueue, Server, SyncMutex, Uuid, mpsc,
 };
 
 pub(super) struct PendingPlayerJoin {
@@ -682,32 +682,35 @@ impl Server {
     ///
     /// Server membership mirrors vanilla `PlayerList`; world entity spawning remains
     /// owned by the per-world entity tracker.
-    fn sync_tab_list(&self, player: &Arc<Player>) {
+    pub(super) fn sync_tab_list(&self, player: &Arc<Player>) {
+        let mut entries: Vec<PlayerInfoEntry> = Vec::new();
         self.online_players.iter_players(|_, existing_player| {
             if existing_player.gameprofile.id() == player.gameprofile.id() {
                 return true;
             }
 
-            let add_existing = CPlayerInfoUpdate::create_player_initializing(
+            let mut entry = CPlayerInfoUpdate::create_player_initializing_entry(
                 existing_player.gameprofile.clone(),
                 existing_player.game_mode().into(),
                 existing_player.connection.latency(),
                 None,
                 existing_player.shows_hat(),
             );
-            player.send_packet(add_existing);
-
             if let Some(session) = existing_player.chat_session()
                 && let Ok(protocol_data) = session.as_data().to_protocol_data()
             {
-                player.send_packet(CPlayerInfoUpdate::update_chat_session(
-                    existing_player.gameprofile.id(),
-                    protocol_data,
-                ));
+                entry = entry.with_chat_session(protocol_data);
             }
-
+            entries.push(entry);
             true
         });
+
+        if !entries.is_empty() {
+            player.send_packet(CPlayerInfoUpdate {
+                actions: PLAYER_INFO_INIT_ACTIONS,
+                entries,
+            });
+        }
 
         let player_info_packet = CPlayerInfoUpdate::create_player_initializing(
             player.gameprofile.clone(),
