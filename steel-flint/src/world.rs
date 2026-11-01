@@ -155,6 +155,7 @@ impl SteelTestWorld {
                 slice::from_ref(&world),
                 PermissionSubjectIndex::default(),
                 runtime_config,
+                None,
             )
             .await
             .expect("Failed to create test server");

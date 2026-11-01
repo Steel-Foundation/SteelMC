@@ -1,0 +1,2 @@
+# Plugins cannot link Steel's host-only lock wrappers, so the repository-wide
+# disallowed std lock types do not apply here.

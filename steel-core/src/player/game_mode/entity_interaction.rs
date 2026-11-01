@@ -692,6 +692,22 @@ impl Player {
             return;
         }
 
+        let cancelled = self
+            .fire_event(
+                |events| &events.interact_entity,
+                |player| crate::extension::events::PlayerInteractEntityEvent {
+                    player,
+                    target: crate::extension::events::EntityInfo::of(target.as_ref()),
+                    hand: packet.hand,
+                    cancelled: false,
+                },
+            )
+            .is_some_and(|event| event.cancelled);
+        if cancelled {
+            self.broadcast_inventory_changes();
+            return;
+        }
+
         let animation = self.interact_animation(packet.hand);
         let result = self.interact_on(target.as_ref(), packet.hand, packet.location);
         self.swing_after_interaction(packet.hand, animation, result);

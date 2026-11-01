@@ -62,6 +62,15 @@ impl ParticleType {
     }
 }
 
+impl ParticleType {
+    /// Key of the options payload this type expects, to pick options without panicking in
+    /// [`ParticleData::new`].
+    #[must_use]
+    pub const fn options_type_key(&self) -> DowncastTypeKey {
+        self.expected_type_key
+    }
+}
+
 impl Debug for ParticleType {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter

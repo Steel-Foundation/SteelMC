@@ -14,6 +14,7 @@ pub mod food_data;
 /// Game mode specific logic for player interactions.
 pub mod game_mode;
 mod health_sync;
+pub mod hud;
 mod item_cooldowns;
 mod lifecycle;
 pub mod movement;
@@ -113,6 +114,7 @@ use crate::entity::{
     LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
     apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
+use crate::extension::events::PlayerDeathEvent;
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -789,8 +791,16 @@ impl Player {
     }
 
     /// Handles a custom payload packet.
-    #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub fn handle_custom_payload(&self, _packet: SCustomPayload) {}
+    pub fn handle_custom_payload(&self, packet: SCustomPayload) {
+        self.fire_event(
+            |events| &events.plugin_message,
+            |player| crate::extension::events::PluginMessageEvent {
+                player,
+                channel: packet.identifier,
+                data: packet.payload.0,
+            },
+        );
+    }
 
     /// Handles the end of a client tick.
     pub fn handle_client_tick_end(&self) {
@@ -934,19 +944,20 @@ impl Player {
         }
         .component();
 
+        let death_message = show_death_messages.then_some(death_message);
+        let death_message = self.fire_death_event(&world, death_message);
+
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
-            message: if show_death_messages {
-                death_message.clone()
-            } else {
-                TextComponent::const_plain("")
-            },
+            message: death_message
+                .clone()
+                .unwrap_or_else(|| TextComponent::const_plain("")),
         });
 
         // TODO: team death message visibility (ALWAYS / HIDE_FOR_OTHER_TEAMS / HIDE_FOR_OWN_TEAM)
-        if show_death_messages {
+        if let Some(content) = death_message {
             world.broadcast_system_chat(CSystemChat {
-                content: death_message,
+                content,
                 overlay: false,
             });
         }
@@ -982,6 +993,26 @@ impl Player {
         }
     }
 
+    /// Fires the death event; returns the death message to show, if any.
+    fn fire_death_event(
+        &self,
+        world: &World,
+        message: Option<TextComponent>,
+    ) -> Option<TextComponent> {
+        let Some(events) = world.events() else {
+            return message;
+        };
+        if events.death.is_empty() {
+            return message;
+        }
+        let Some(player) = self.shared() else {
+            return message;
+        };
+        let mut event = PlayerDeathEvent { player, message };
+        events.death.fire(&mut event);
+        event.message
+    }
+
     /// Returns whether the Player can eat
     pub fn can_eat(&self, can_always_eat: bool) -> bool {
         let invulnerable = { self.abilities.lock().invulnerable };
@@ -998,8 +1029,64 @@ impl Player {
         self.world.load_full()
     }
 
+    /// Fires a player event built only when the bus has subscribers; returns the event after
+    /// every handler ran, or `None` when nobody listens.
+    pub(crate) fn fire_event<E: crate::extension::Event>(
+        &self,
+        bus: impl FnOnce(&crate::extension::Events) -> &crate::extension::EventBus<E>,
+        build: impl FnOnce(Arc<Self>) -> E,
+    ) -> Option<E> {
+        let world = self.get_world();
+        let bus = bus(world.events()?);
+        if bus.is_empty() {
+            return None;
+        }
+        let mut event = build(self.shared()?);
+        bus.fire(&mut event);
+        Some(event)
+    }
+
+    /// Fires the food level event after a food change; a cancelled change restores `previous`.
+    // TODO: food gained by eating fires once item consumption is implemented.
+    fn fire_food_level_change(&self, previous: i32) {
+        let level = self.food_data.lock().food_level;
+        if level == previous {
+            return;
+        }
+        let cancelled = self
+            .fire_event(
+                |events| &events.food_level_change,
+                |player| crate::extension::events::FoodLevelChangeEvent {
+                    player,
+                    previous,
+                    level,
+                    cancelled: false,
+                },
+            )
+            .is_some_and(|event| event.cancelled);
+        if cancelled {
+            self.food_data.lock().food_level = previous;
+        }
+    }
+
+    /// Recovers this player's shared handle from its world's player index.
+    ///
+    /// Used where vanilla call chains only pass `&Player` but an owned handle must be given to
+    /// event handlers. Returns `None` while the player is detached from every world.
+    pub(crate) fn shared(&self) -> Option<Arc<Self>> {
+        self.get_world()
+            .players
+            .get_by_uuid(&self.gameprofile.id())
+            .filter(|live| std::ptr::eq(Arc::as_ptr(live), self))
+    }
+
     /// Returns the server this player belongs to.
-    pub(crate) fn server(&self) -> Arc<Server> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the player outlives its server, which the server's ownership of every
+    /// connected player rules out.
+    pub fn server(&self) -> Arc<Server> {
         self.server
             .upgrade()
             .expect("player must not outlive server")
@@ -1834,7 +1921,9 @@ impl LivingEntity for Player {
             self.update_player_attributes();
             self.advancements.lock().flush_dirty(self, true);
             self.living_base.refresh_speed_from_attributes();
+            let previous_food = self.food_data.lock().food_level;
             self.tick_food_data();
+            self.fire_food_level_change(previous_food);
 
             if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
                 self.set_sprinting(false);

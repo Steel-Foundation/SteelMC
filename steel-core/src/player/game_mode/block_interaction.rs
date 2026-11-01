@@ -77,6 +77,17 @@ impl Player {
             return;
         }
 
+        if self.fire_interact(
+            &world,
+            InteractAction::RightClickBlock,
+            packet.hand,
+            Some((pos, direction)),
+        ) {
+            self.send_block_updates(pos, direction);
+            self.send_inventory_to_remote();
+            return;
+        }
+
         let animation = self.interact_animation(packet.hand);
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
         self.swing_after_interaction(packet.hand, animation, result);
@@ -85,7 +96,46 @@ impl Player {
         self.broadcast_inventory_changes();
     }
 
+    /// Fires the interact event; returns whether a handler cancelled the click.
+    pub(super) fn fire_interact(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        action: InteractAction,
+        hand: InteractionHand,
+        target: Option<(BlockPos, Direction)>,
+    ) -> bool {
+        let Some(events) = world.events() else {
+            return false;
+        };
+        if events.interact.is_empty() {
+            return false;
+        }
+        let item = self
+            .inventory
+            .lock()
+            .get_item_in_hand(hand)
+            .item()
+            .key
+            .clone();
+        let mut event = PlayerInteractEvent {
+            player: Arc::clone(self),
+            world: Arc::clone(world),
+            action,
+            hand,
+            pos: target.map(|(pos, _)| pos),
+            face: target.map(|(_, face)| face),
+            item,
+            cancelled: false,
+        };
+        events.interact.fire(&mut event);
+        event.cancelled
+    }
+
     /// Handles a player action packet (block breaking, item dropping, etc.).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one match over every vanilla player action keeps their order explicit"
+    )]
     pub fn handle_player_action(self: &Arc<Self>, packet: SPlayerAction) {
         if !self.has_client_loaded() {
             return;
@@ -96,6 +146,19 @@ impl Player {
         let world = self.get_world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
+                if self.fire_interact(
+                    &world,
+                    InteractAction::LeftClickBlock,
+                    InteractionHand::MainHand,
+                    Some((packet.pos, packet.direction)),
+                ) {
+                    self.send_packet(CBlockUpdate {
+                        pos: packet.pos,
+                        block_state: world.get_block_state(packet.pos),
+                    });
+                    self.ack_block_changes_up_to(packet.sequence);
+                    return;
+                }
                 self.block_breaking.lock().handle_block_break_action(
                     self,
                     &world,
@@ -147,6 +210,19 @@ impl Player {
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {
+                    return;
+                }
+                if self
+                    .fire_event(
+                        |events| &events.swap_hands,
+                        |player| crate::extension::events::PlayerSwapHandsEvent {
+                            player,
+                            cancelled: false,
+                        },
+                    )
+                    .is_some_and(|event| event.cancelled)
+                {
+                    self.send_inventory_to_remote();
                     return;
                 }
 
@@ -279,12 +355,29 @@ impl Player {
             return;
         }
 
-        let mut text = sign.get_text(packet.slot);
-        for (i, line) in packet.lines.iter().enumerate() {
-            if i < 4 {
-                let stripped = strip_formatting_codes(line);
-                text.set_message(i, TextComponent::plain(stripped));
+        let mut lines: [String; 4] = Default::default();
+        for (line, text) in lines.iter_mut().zip(&packet.lines) {
+            *line = strip_formatting_codes(text);
+        }
+        if let Some(event) = self.fire_event(
+            |events| &events.sign_change,
+            |player| crate::extension::events::SignChangeEvent {
+                player,
+                pos: packet.pos,
+                front: packet.slot == SignTextSlot::Front,
+                lines: lines.clone(),
+                cancelled: false,
+            },
+        ) {
+            if event.cancelled {
+                sign.set_player_who_may_edit(None);
+                return;
             }
+            lines = event.lines;
+        }
+        let mut text = sign.get_text(packet.slot);
+        for (i, line) in lines.into_iter().enumerate() {
+            text.set_message(i, TextComponent::plain(line));
         }
 
         sign.set_text(text, packet.slot);

@@ -23,11 +23,12 @@ use steel_registry::stat::custom::CustomStatRef;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::{vanilla_custom_stats, vanilla_entities, vanilla_mob_effects};
 use steel_utils::types::GameType;
-use steel_utils::{TICKS_PER_SECOND, translations};
+use steel_utils::{BlockPos, TICKS_PER_SECOND, translations};
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
 };
+use crate::extension::events::{PlayerMoveEvent, ToggleKind};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     is_colliding_with_new_shapes, movement_error_delta,
@@ -249,17 +250,52 @@ impl Player {
         }
 
         let current_position = self.position();
+        let target = DVec3::new(
+            packet.get_x(current_position.x),
+            packet.get_y(current_position.y),
+            packet.get_z(current_position.z),
+        );
+        if self.fire_move_event(current_position, target) {
+            if let Err(error) =
+                self.teleport(current_position, current_rotation.0, current_rotation.1)
+            {
+                log::warn!(
+                    "Failed to revert cancelled movement of {}: {error}",
+                    self.id()
+                );
+            }
+            return;
+        }
         self.handle_player_position_change(
-            DVec3::new(
-                packet.get_x(current_position.x),
-                packet.get_y(current_position.y),
-                packet.get_z(current_position.z),
-            ),
+            target,
             packet.get_y_rot(current_rotation.0),
             packet.get_x_rot(current_rotation.1),
             packet.on_ground,
             packet.horizontal_collision,
         );
+    }
+
+    /// Fires the move event when the player enters a different block; returns whether a
+    /// handler cancelled the movement.
+    fn fire_move_event(self: &Arc<Self>, from: DVec3, to: DVec3) -> bool {
+        if BlockPos::from(from) == BlockPos::from(to) {
+            return false;
+        }
+        let world = self.get_world();
+        let Some(events) = world.events() else {
+            return false;
+        };
+        if events.movement.is_empty() {
+            return false;
+        }
+        let mut event = PlayerMoveEvent {
+            player: Arc::clone(self),
+            from,
+            to,
+            cancelled: false,
+        };
+        events.movement.fire(&mut event);
+        event.cancelled
     }
 
     /// Applies a client-reported position and rotation to the player.
@@ -955,7 +991,25 @@ impl Player {
 
         self.reset_last_action_time();
 
-        self.set_crouching(input.shift());
+        let sneaking = input.shift();
+        if sneaking != self.is_crouching() && self.toggle_cancelled(ToggleKind::Sneak, sneaking) {
+            return;
+        }
+        self.set_crouching(sneaking);
+    }
+
+    /// Fires the toggle event; returns whether a handler kept the previous state.
+    pub(crate) fn toggle_cancelled(&self, kind: ToggleKind, enabled: bool) -> bool {
+        self.fire_event(
+            |events| &events.toggle,
+            |player| crate::extension::events::PlayerToggleEvent {
+                player,
+                kind,
+                enabled,
+                cancelled: false,
+            },
+        )
+        .is_some_and(|event| event.cancelled)
     }
 
     /// Handles a player command packet (sprinting, elytra, leaving bed, etc).
@@ -978,10 +1032,14 @@ impl Player {
 
         match packet.action {
             PlayerCommandAction::StartSprinting => {
-                self.set_sprinting(true);
+                if !self.toggle_cancelled(ToggleKind::Sprint, true) {
+                    self.set_sprinting(true);
+                }
             }
             PlayerCommandAction::StopSprinting => {
-                self.set_sprinting(false);
+                if !self.toggle_cancelled(ToggleKind::Sprint, false) {
+                    self.set_sprinting(false);
+                }
             }
             PlayerCommandAction::StartFallFlying => {
                 if !self.try_to_start_fall_flying() {

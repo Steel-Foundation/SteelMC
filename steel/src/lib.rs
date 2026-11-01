@@ -47,7 +47,14 @@ pub struct SteelServer {
     pub server: Arc<Server>,
     /// Session id UUID state
     pub connection_session: Arc<ServerConnectionSession>,
+    /// Initialized native extensions, kept to run their shutdown callbacks.
+    pub extensions: host::InitializedExtensions,
 }
+
+/// Folder scanned for extension packages and libraries, also holding each extension's data
+/// directory (`extensions/<name>/`), relative to the working directory, like Bukkit's
+/// `plugins/`.
+pub const EXTENSION_DIRECTORY: &str = "extensions";
 
 /// Startup error for expected operational failures.
 #[derive(Debug)]
@@ -103,7 +110,8 @@ impl SteelServer {
         log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
         let mut hooks = ExtensionHooks::default();
-        let mut loaded_extensions = Vec::with_capacity(steel_config.extensions.len());
+        let data_root = Path::new(EXTENSION_DIRECTORY);
+        let mut sources = Vec::with_capacity(steel_config.extensions.len());
         let mut configured_paths = BTreeSet::new();
         for extension in &steel_config.extensions {
             configured_paths.insert(fs::canonicalize(&extension.path).map_err(|error| {
@@ -112,38 +120,55 @@ impl SteelServer {
                     extension.path.display()
                 ))
             })?);
-            let config = toml::to_string(&extension.config).map_err(|error| {
-                SteelServerError::Core(format!("invalid extension configuration: {error}"))
-            })?;
-            // SAFETY: configured extensions are trusted native code; the loader checks
-            // both entrypoint ABIs and pins the library for every callback's lifetime.
-            let extension = unsafe { host::load(&extension.path, &config, &mut hooks) }
-                .map_err(SteelServerError::Core)?;
-            log::info!("Pre-initialized extension {}", extension.name);
-            loaded_extensions.push(extension);
+            // An entry without a config table reads extensions/<name>/config.toml.
+            let config = if extension.config.is_empty() {
+                None
+            } else {
+                Some(toml::to_string(&extension.config).map_err(|error| {
+                    SteelServerError::Core(format!("invalid extension configuration: {error}"))
+                })?)
+            };
+            sources.push(host::ExtensionSource {
+                path: extension.path.clone(),
+                config,
+            });
         }
-        for path in
-            host::discover_archives(Path::new("extensions")).map_err(SteelServerError::Core)?
-        {
-            let canonical = fs::canonicalize(&path)
-                .map_err(|error| SteelServerError::Core(error.to_string()))?;
-            if configured_paths.contains(&canonical) {
-                continue;
+        // Like Bukkit's plugins/, create the folder on first start so admins see where
+        // extensions go.
+        if let Err(error) = fs::create_dir_all(data_root) {
+            log::warn!("Cannot create the {EXTENSION_DIRECTORY} folder: {error}");
+        }
+        let discovered = host::discover(data_root).map_err(SteelServerError::Core)?;
+        let folder = fs::canonicalize(data_root).unwrap_or_else(|_| data_root.to_path_buf());
+        log::info!(
+            "Found {} extension packages and libraries in {}",
+            discovered.len(),
+            folder.display()
+        );
+        for path in discovered {
+            let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !configured_paths.contains(&canonical) {
+                sources.push(host::ExtensionSource { path, config: None });
             }
-            // SAFETY: the extensions directory is explicitly reserved for trusted
-            // administrator-installed native packages; load checks their ABI.
-            let extension =
-                unsafe { host::load(&path, "", &mut hooks) }.map_err(SteelServerError::Core)?;
+        }
+        // SAFETY: extensions are trusted native code installed by the administrator; the
+        // loader checks both entrypoint ABIs and pins every library for its callbacks' lifetime.
+        let report = unsafe { host::load_all(&sources, data_root, &mut hooks) }
+            .map_err(SteelServerError::Core)?;
+        for reason in &report.skipped {
+            log::warn!("Skipped extension {reason}");
+        }
+        let loaded = report.extensions;
+        for extension in &loaded {
             log::info!("Pre-initialized extension {}", extension.name);
-            loaded_extensions.push(extension);
         }
         init_globals();
         let mut extensions =
             RegisteredExtensions::new_with_builtins().map_err(SteelServerError::Core)?;
         let commands = command_registry.freeze().map_err(SteelServerError::Core)?;
-        for name in
-            host::initialize_all(loaded_extensions, &mut hooks).map_err(SteelServerError::Core)?
-        {
+        let initialized =
+            host::initialize_all(loaded, data_root, &mut hooks).map_err(SteelServerError::Core)?;
+        for name in initialized.names() {
             log::info!("Initialized extension {name}");
         }
         extensions.hooks = hooks;
@@ -189,6 +214,7 @@ impl SteelServer {
             client_id: 0,
             server: Arc::new(server),
             connection_session: Arc::new(ServerConnectionSession::default()),
+            extensions: initialized,
         })
     }
 

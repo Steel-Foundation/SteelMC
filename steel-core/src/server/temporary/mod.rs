@@ -232,6 +232,7 @@ impl ServerJob for CreateWorldJob {
             server
                 .worlds
                 .publish_temporary_world(Arc::clone(world), self.primary)?;
+            server.fire_world_load(world);
             if let Some(ticket) = prepared.spawn_ticket.take()
                 && let Some(domain) = server
                     .temporary_worlds
@@ -320,6 +321,13 @@ impl ServerJob for DestroyDomainJob {
             return JobPoll::Pending;
         }
         let worlds = server.worlds.remove_temporary_domain(&self.domain);
+        for world in &worlds {
+            crate::extension::Events::fire_if(&server.events().world_unload, || {
+                crate::extension::events::WorldUnloadEvent {
+                    world: world.key.clone(),
+                }
+            });
+        }
         server.scoreboards.remove_temporary(&self.domain);
         server.command_storage.remove_temporary(&self.domain);
         server

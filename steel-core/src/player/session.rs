@@ -7,7 +7,7 @@ use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use super::{
     DROP_SPAM_THROTTLER_INCREMENT_STEP, DROP_SPAM_THROTTLER_THRESHOLD, Player, chat::ChatState,
-    chunk_sender::ChunkSender, spam_throttler::TickThrottler,
+    chunk_sender::ChunkSender, hud::PlayerHud, spam_throttler::TickThrottler,
 };
 
 static LAST_PLAYER_SESSION_ID: AtomicU64 = AtomicU64::new(0);
@@ -24,6 +24,8 @@ pub struct PlayerSession {
     pub(crate) chat: SyncMutex<ChatState>,
     /// Vanilla keeps creative drop throttling on the connection across respawns.
     pub(super) drop_spam_throttler: SyncMutex<TickThrottler>,
+    /// Sidebar, boss bars and tab list override; the client keeps them across respawns.
+    pub(super) hud: SyncMutex<PlayerHud>,
 }
 
 enum CurrentPlayerSlot {
@@ -60,6 +62,7 @@ impl PlayerSession {
                 DROP_SPAM_THROTTLER_INCREMENT_STEP,
                 DROP_SPAM_THROTTLER_THRESHOLD,
             )),
+            hud: SyncMutex::new(PlayerHud::default()),
         }
     }
 

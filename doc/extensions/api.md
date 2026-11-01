@@ -72,14 +72,27 @@ waiting for I/O or background work.
 
 ## Lifecycle and subscriptions
 
-Declare both entry points:
+Declare both entry points, in the short form (version `0.0.0`, no dependencies)
+or the long form:
 
 ```rust
 steel_extension_api::export_extension!("example", pre_init, init);
+
+steel_extension_api::export_extension! {
+    name: "example",
+    version: "1.0.0",
+    depends: ["worldedit"],   // must be present; initialized first
+    soft_depends: ["vault"],  // initialized first when present
+    pre_init: pre_init,
+    init: init,
+}
 ```
 
-`pre_init` has the Rust signature `fn(Hooks<'_>) -> ApiResult<()>`; `init` has
-`fn(stabby::str::Str<'_>) -> ApiResult<()>`.
+`pre_init` has the Rust signature `fn(Hooks<'_>) -> R` and `init` has
+`fn(ExtensionContext<'_>) -> R`, where `R` is `ApiResult<()>` or any
+`Result<(), E: Display>`. `ExtensionContext` gives `name()`, `version()`,
+`config()` and `data_directory()`, an absolute path to `extensions/<name>/`
+created before init.
 
 | Stage | Available work |
 | --- | --- |
@@ -88,9 +101,16 @@ steel_extension_api::export_extension!("example", pre_init, init);
 | Init | All registration events succeeded and registries are frozen. Parse configuration and resolve static values. |
 | Runtime | Commands, ticks, and explicitly emitted actions/filters call the installed handlers. |
 
-Configuration passed to `init` is the TOML serialization of that extension's
-`[extensions.config]` table. A block registration callback can access the same
-document through `Registry::config()`.
+The configuration returned by `ExtensionContext::config()` is the TOML
+serialization of that extension's `[extensions.config]` table or, without one,
+the contents of `extensions/<name>/config.toml`. A block registration callback
+can access the same document through `Registry::config()`.
+
+Steel opens every configured and discovered package or library before running any
+extension code. Files that are not extensions, were built for an older API,
+declare a name another file also declares, or miss a hard dependency are skipped
+with a warning; the rest are pre-initialized and initialized in dependency order.
+A dependency cycle or a lifecycle failure stops startup.
 
 `Hooks` provides these subscriptions:
 
@@ -103,6 +123,13 @@ document through `Registry::config()`.
 | `register_server_tick` | `extern "C" fn(Server<'_>, u64)` | On each normal server tick before world workers run. |
 | `add_action::<A>` | `extern "C" fn(&A)` | When code emits the typed action. Returns an ordering builder. |
 | `add_filter::<F>` | `extern "C" fn(&mut F)` | When code applies the typed filter. Returns an ordering builder. |
+
+`Hooks` also has closure helpers that need no exported callback: `on_commands`
+for typed command trees, `on_*`/`on_*_with` for every gameplay event (join,
+chat, block break, damage, inventory clicks, explosions and about sixty more),
+`enable_scheduler` for `scheduler::run_later`/`run_repeating`, and
+`on_shutdown`. The [API crate README](../../steel-extension-api/README.md#events)
+lists them.
 
 The three registration subscriptions return `ApiResult<()>`; the two direct tick
 subscriptions return `()`. Frozen ticks omit these gameplay callbacks.
@@ -360,8 +387,9 @@ nonempty and contain distinct nonempty literals without whitespace. Commands
 require a player source, permit access by default, and respect explicit
 permission denials. A key such as `example:arena` uses `example.command.arena`.
 The host's normal command registration detects namespace and root collisions.
-The API currently exposes literal player commands, not arbitrary argument trees
-or console command registration.
+For argument trees, console sources, aliases, per-node permissions and
+suggestions, use `command::CommandBuilder` through `Hooks::on_commands`; see the
+[API crate README](../../steel-extension-api/README.md#commands-players-and-text).
 
 | `Command<'_>` method | Use |
 | --- | --- |
@@ -424,11 +452,36 @@ restores player state, and reconnects retain the last lasting domain. See the
 reapply active intent on subsequent ticks. Movement, reach, gravity, and digging
 use the host's regular implementations.
 
+## Gameplay API
+
+Beyond the boundary described above, `steel-extension-api` exposes a gameplay
+layer built on the same checked bindings. The
+[API crate README](../../steel-extension-api/README.md) documents it in detail:
+
+| Module | Contents |
+| --- | --- |
+| `events` | Cancellable and observable events for players, blocks, inventories, entities, worlds and the server. |
+| `command` | Typed command trees with arguments, aliases, permissions and suggestions. |
+| `players` | Lookup, teleport, health, food, flight, game mode, messages, titles, permissions. |
+| `items` | `ItemSpec` stacks with names, lore, enchantments and private data; inventory slots. |
+| `menus` | Read-only chest GUIs with click handlers. |
+| `hud` | Per-player sidebar, boss bars and tab list. |
+| `effects` | Particles, sounds, potion effects, experience and speeds. |
+| `worlds` | `Server::with_world`, time, weather, item drops, entities, plugin messages. |
+| `fill` | Section-batched region fills (about ten million blocks per second). |
+| `services` | Versioned provider objects shared between extensions (see `extension-example/vault-api`). |
+| `scheduler`, `text`, `log` | Tick tasks, text components with `&` codes, tagged logging. |
+
+The ports in `extension-example` (Vault, Essentials, WorldEdit, WorldGuard) and
+the OP Prison extensions use only this public API.
+
 ## Scope and source map
 
 The combination takes checked ABI bindings, opaque handles, lifecycle stages,
-and runtime capabilities from `another-plugin-experiment`, and custom actions,
-filters, handler ordering, and archive packaging from `try-plugin`. It adapts
+and runtime capabilities from `another-plugin-experiment`, custom actions,
+filters, handler ordering, and archive packaging from `try-plugin`, and the
+gameplay API, dependency-aware loader and ports from the plugin platform
+iterations documented in `specs/`. It adapts
 those ideas to the current Steel source; it does not port every API from both
 branches. In particular, `try-plugin`'s item behavior registration is not exposed
 by the current extension API.

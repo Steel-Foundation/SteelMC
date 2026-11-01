@@ -79,14 +79,17 @@ view of what is available today.
 ## Native extensions
 
 Steel supports native Rust extensions with checked ABI bindings, startup registry
-hooks, ordered actions and filters, commands, and world generation. Libraries and
-ZIP packages can be configured through `[[extensions]]`; ZIP packages in
-`./extensions` are discovered automatically.
+hooks, ordered actions and filters, gameplay events, commands, items, menus, HUD,
+effects, fast region fills, shared services, and world generation. Libraries and
+ZIP packages can be configured through `[[extensions]]`; ZIP packages and
+libraries in `./extensions` are discovered automatically and loaded in dependency
+order.
 
 Start with [creating an extension](doc/extensions/getting-started.md) and the
 [API reference](doc/extensions/api.md). The
 [extension examples](extension-example/README.MD) demonstrate block behaviors,
-world ticks, terrain generation, and a minigame as separate crates. Extensions
+world ticks, terrain generation, and a minigame as separate crates, plus ports of
+Vault, Essentials, WorldEdit and WorldGuard and an OP Prison demo. Extensions
 run trusted native code and remain loaded until the server exits.
 
 ## Try it

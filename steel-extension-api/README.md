@@ -17,10 +17,15 @@ fails after loading; unload and reload are unsupported.
 
 ## Load and package extensions
 
-Steel loads explicitly configured `[[extensions]]` paths first, then discovers
-remaining `*.zip` packages in `./extensions` in filename order. Configured paths
-may select a raw native library or a ZIP. A loading, ABI, duplicate-name, ordering,
-or initialization error stops startup before worlds begin ticking.
+Steel takes explicitly configured `[[extensions]]` paths first, then every remaining `*.zip`
+package and native library in `./extensions` (created on first start) in filename order.
+Configured paths may select a raw native library or a ZIP. Every source is opened and its
+descriptor checked before any extension code runs: files that are not extensions, were built
+for an older API, declare a name another file also declares, or miss a hard dependency
+(transitively) are skipped with a warning. The rest are ordered so dependencies come first
+and pre-initialized in that order. A dependency cycle, a pre-init, registration or init
+failure, or loading one name twice in a process stops startup before worlds begin ticking,
+because native registrations cannot be rolled back.
 
 Each archive contains `extension.toml` and its platform libraries:
 
@@ -102,7 +107,11 @@ borrowed payloads.
 The design combines the checked bindings and lifecycle from
 [`another-plugin-experiment`](https://github.com/coco875/SteelMC/tree/another-plugin-experiment/steel-plugin-api)
 with the actions, filters, ordering, and archive packaging from
-[`try-plugin`](https://github.com/coco875/SteelMC/tree/try-plugin).
+[`try-plugin`](https://github.com/coco875/SteelMC/tree/try-plugin). The gameplay API (events,
+commands, players, items, menus, HUD, effects, worlds, bulk fill, services, scheduler), the
+dependency-aware loader and the ports in `extension-example/` come from the plugin platform
+iterations in [OPPrisonSteelMCExperiment](https://github.com/tangjuyo/OPPrisonSteelMCExperiment),
+whose `specs/` are kept in this repository.
 
 See the runnable [actions/filters example](../extension-example/hooks-and-filters/README.md)
 for two native libraries using a shared payload contract, real cross-extension
@@ -149,9 +158,10 @@ even when the physical layout remains compatible.
 ## Write an extension
 
 Depend on `steel-extension-api` without enabling `host`, build a `cdylib`, and declare
-both lifecycle entrypoints with `export_extension!("name", pre_init, init)`. The macro
-exports one `steel_extension_v2` bootstrap symbol containing their checked signatures.
-Rebuild extension libraries when moving to this lifecycle contract.
+both lifecycle entrypoints with `export_extension!` (see [Lifecycle](#lifecycle)). The
+macro exports one `steel_extension_v3` bootstrap symbol containing the extension's name,
+version, dependencies and checked entrypoint signatures. Rebuild extension libraries when
+moving to this lifecycle contract; older libraries are skipped with a rebuild message.
 
 Startup runs these stages for all configured extensions:
 
@@ -162,15 +172,16 @@ Startup runs these stages for all configured extensions:
    entries and invoke the subscribed callbacks with their actual mutable registry.
    Each setter edits that registry immediately. The constructor then publishes it.
 3. **Init:** after all registration events succeed and the registries are frozen,
-   call `init(config)`. Resolve static values and prepare runtime state here.
+   call `init(context)` in dependency order. `ExtensionContext` exposes the extension's TOML
+   configuration and its data directory. Resolve static values, load data and register
+   services here.
 
 Use the re-exported `stabby` macro to prepare callback functions. The callback mode
 checks ABI-safe argument and return types and generates the calling convention
 without exporting a separate named dynamic symbol. Registration stays explicit:
 
 ```rust
-use steel_extension_api::{stabby, ApiResult, Hooks, Registry, World};
-use stabby::str::Str;
+use steel_extension_api::{stabby, ApiResult, ExtensionContext, Hooks, Registry, World};
 
 #[stabby::export(callback)]
 fn register_blocks(mut registry: Registry<'_>) -> ApiResult<()> {
@@ -188,8 +199,8 @@ fn pre_init(mut hooks: Hooks<'_>) -> ApiResult<()> {
     hooks.register_block_registration(register_blocks)
 }
 
-fn init(config: Str<'_>) -> ApiResult<()> {
-    // Parse configuration and resolve frozen registry values here.
+fn init(context: ExtensionContext<'_>) -> ApiResult<()> {
+    // Parse context.config() and resolve frozen registry values here.
     Ok(()).into()
 }
 
@@ -365,6 +376,165 @@ client or account.
 See the [Spleef example](../extension-example/spleef/README.md) for a lobby, countdown,
 fresh arena, bots, elimination, player restoration, and complete world retirement.
 
+## Lifecycle
+
+```rust
+steel_extension_api::export_extension! {
+    name: "worldguard",          // unique; also the data directory name
+    version: "0.1.0",
+    depends: ["worldedit"],      // must be installed; initialized first
+    soft_depends: [],            // initialized first when installed
+    pre_init: pre_init,          // fn(Hooks<'_>) -> ApiResult<()> or Result<(), impl Display>
+    init: init,                  // fn(ExtensionContext<'_>) -> same
+}
+```
+
+The short form `export_extension!("name", pre_init, init)` declares version `0.0.0` and no
+dependencies. Loading follows [Load and package extensions](#load-and-package-extensions).
+Configuration comes from the `[extensions.config]` table of an `[[extensions]]` entry, or
+otherwise from `extensions/<name>/config.toml`, created empty on first start. Each extension
+gets `extensions/<name>/` (created before init) through `ExtensionContext::data_directory`.
+The descriptor records `API_VERSION`; `/extensions` (alias `/plugins`) lists the loaded
+extensions and `/extensions <name>` shows version, API version, dependencies and source.
+`hooks.on_shutdown(|server| ...)` runs once on a clean stop, in reverse order, before worlds
+are saved; the `ServerStopAction` is emitted at the same point.
+`steel_extension_api::log::{info, warn, error}` write to the server log tagged with the
+extension name.
+
+## Hello world
+
+```rust
+use steel_extension_api::{Hooks, ExtensionContext, command::{Arg, CommandBuilder, argument},
+    events::EventPriority, text::Text};
+
+fn pre_init(mut hooks: Hooks<'_>) -> Result<(), String> {
+    hooks.on_commands(|commands| {
+        commands.register(CommandBuilder::new("hello:greet").default_access().then(
+            argument("target", Arg::player()).executes(|ctx| {
+                let target = ctx.player_arg("target")?;
+                let message = Text::new("Hello!").color("gold").to_json();
+                let _ = ctx.server().send_message(target, message.as_str().into());
+                Ok(1)
+            }),
+        ))
+    })?;
+    hooks.on_block_break(EventPriority::Normal, |event| {
+        if steel_extension_api::block_key(event.state()).as_str() == "minecraft:bedrock" {
+            event.set_cancelled(true);
+        }
+    });
+    Ok(())
+}
+
+fn init(_context: ExtensionContext<'_>) -> Result<(), String> {
+    Ok(())
+}
+
+steel_extension_api::export_extension!("hello", pre_init, init);
+```
+
+## Events
+
+`steel_core::extension::events` defines owned, ABI-free events fired at vanilla decision
+points; with no subscribers gameplay is unchanged. Plugins subscribe during pre-init with
+closures (`hooks.on_chat(priority, |event| ...)`, `on_*_with(priority, ignore_cancelled, ..)`)
+or the native `subscribe_*(priority, .., extern fn, token)` form.
+
+| Event | Fired | Mutable / cancellable |
+|---|---|---|
+| `PreLoginEvent` | after authentication, before admission | `deny(reason)` |
+| `JoinEvent`, `QuitEvent` | join / leave broadcast | message |
+| `ChatEvent` | player chat | message, `set_rendered`, cancel |
+| `CommandEvent` | typed command before parsing | command line, cancel |
+| `BlockBreakEvent`, `BlockPlaceEvent` | before the block changes | cancel |
+| `InteractEvent` | left/right click on a block, right click in air | cancel |
+| `DamageEvent` | any living entity, before cooldowns and armor | amount, cancel |
+| `DeathEvent` | player death | message |
+| `MoveEvent` | player enters a different block | cancel (teleports back) |
+| `TeleportEvent` | `/tp`, extension and other server teleports | destination, cancel |
+| `RespawnEvent`, `WorldChangeEvent` | after respawn / world transition | — |
+| `GameModeChangeEvent`, `ItemHeldEvent`, `SwapHandsEvent` | before the change | cancel |
+| `ToggleEvent` | sneak, sprint, flight | cancel (flight is resynced) |
+| `DropItemEvent`, `PickupItemEvent` | item leaves / enters the inventory | cancel |
+| `InteractEntityEvent`, `SignChangeEvent` | entity click / sign edit | lines, cancel |
+| `InventoryOpenEvent`, `InventoryClickEvent`, `InventoryCloseEvent` | container menus | cancel open/click |
+| `ExpChangeEvent`, `FoodLevelChangeEvent` | experience gain / hunger change | amount, cancel |
+| `EntitySpawnEvent`, `EntityDeathEvent` | any entity added / living death | cancel, drops |
+| `ExplosionEvent`, `PistonEvent` | before blocks are destroyed / moved | block list, cancel |
+| `ChunkLoadEvent`, `ChunkUnloadEvent`, `WorldLoadEvent`, `WorldUnloadEvent`, `WeatherChangeEvent` | world lifecycle | weather cancel |
+| `ServerCommandEvent`, `ServerListPingEvent`, `PluginMessageEvent` | console/extension commands, status ping, custom payload | command, MOTD, cancel |
+
+`BlockBreakEvent::set_drop_items(false)` keeps the break but suppresses its loot (auto-sell
+plugins). Respawning creates a new player entity, so key per-player state by UUID.
+
+Handlers run in priority order (`Lowest` … `Highest`, then `Monitor`, whose setters do nothing)
+on the thread processing the action: packet workers for player actions and world threads for
+damage and death. Handlers for different players may run concurrently. `set_rendered` sends a
+complete component as system chat instead of the signed message, like Paper chat renderers;
+editing the message text relays it unsigned.
+
+## Commands, players and text
+
+`command::CommandBuilder` builds typed trees (literal, boolean, integer, long, double, word,
+string, greedy, player(s), block position, block state, item, world) with aliases, per-node
+permissions and closure suggestions. Root permissions derive from the key
+(`essentials:home` → `essentials.command.home`) unless `.permission(...)` replaces them;
+`.default_access()` allows everyone unless explicitly denied.
+
+`Server` methods address players by `PlayerId` and re-check the session on every call:
+lookup by name/UUID, location and cross-world teleport (firing `TeleportEvent`), health, food,
+flight, game mode, kick, chat/action bar/title, broadcast, permissions with tri-state results,
+permission metadata and groups, and giving named items. Text accepts vanilla JSON components or
+plain text; `text::Text` builds components and `text::legacy` converts `&` color codes.
+`World` adds height bounds and `set_block_with_flags`; `parse_block_state`,
+`block_state_string` and `block_key` convert states.
+
+`scheduler::run_later`/`run_repeating` run closures on the server tick after
+`hooks.enable_scheduler()`.
+
+## Items
+
+`items::ItemSpec` describes a stack as plain data: item key, count, name, lore (JSON or `&`
+codes through `name_legacy`/`lore_legacy`), glint, unbreakable, vanilla enchantments and
+private extension data (`with_data("myextension:key", value)`, stored in `minecraft:custom_data`, so
+it survives restarts and chests). `Server::slot`, `set_slot`, `held_slot`, `give` and
+`set_item_data` read and write vanilla inventory slots (0–8 hotbar, 9–35 main, 36–39 armor,
+40 off hand).
+
+## Game API
+
+| Module | |
+|---|---|
+| `effects` | `World::spawn_particle(Particle)` with dust/color/block options and `Particle::note(pos, pitch)`; `World::play_sound`; per-player `play_sound_to`, `add_effect`/`remove_effect`, `give_experience`/`give_levels`, `set_walk_speed`/`set_fly_speed` |
+| `hud` | per-player sidebar (diffed, up to 15 lines), boss bars by extension-chosen UUID, tab list header/footer override |
+| `menus` | read-only chest GUIs: `menus::handler(\|server, click\| ..)` once, then `server.open_menu_with(player, title, rows, items, handler)`; `set_menu_item`, `close_menu`. Clicks never move items and are routed before any container lock, so handlers may change inventories |
+| `worlds` | `Server::with_world(key, \|world\| ..)` from scheduled tasks, day time and weather, `drop_item`, `remove_entity`, `strike_lightning_effect`, `send_plugin_message` |
+| `fill` | `World::fill(FillRequest)` below |
+
+## Bulk fill
+
+`World::fill` writes cuboids, layers, spheres and shells (optionally clipped, with weighted
+patterns and `All`/`OnlyAir`/`NonAir` modes) one chunk section at a time without physics or
+block callbacks, the way Paper prison and editing plugins do. Block entities, heightmaps, light
+(propagated by the next light pass), points of interest, saving and client sync stay correct.
+The `FillReport` returns counts, timing and a histogram of replaced states, so "break this
+layer and sell it" is one call. A fill touching an unloaded chunk is refused without writing.
+In a release build, one million blocks take about 94 ms (10.6 M blocks/s, 6.8× faster than
+per-block `set_block`); see `cargo test --release -p steel-core --lib bulk_fill_benchmark --
+--ignored --nocapture`.
+
+## Services
+
+`services::register::<T>(&context, key, priority, value)` publishes a stabby value, usually a
+`stabby::dynptr!(Box<dyn Contract + Send + Sync>)`; `services::get::<T>(key)` returns the
+highest-priority provider after checking that its stabby layout report matches `T`, so
+incompatible contract versions are errors rather than undefined behavior. Contracts live in
+small shared crates such as [`vault-api`](../extension-example/vault-api/src/lib.rs); keys carry
+a version suffix (`vault:economy/v1`). See [the examples](../extension-example/README.MD).
+Services complement [actions and filters](#ordered-actions-and-filters): a service is one
+provider object queried on demand, while actions and filters fan a payload out to every
+subscribed handler.
+
 ## Check the boundary
 
 ```sh
@@ -375,12 +545,14 @@ cargo test --manifest-path stabby/Cargo.toml -p stabby-abi host::tests
 cargo test -p steel-extension-api --features host --lib
 cargo test -p steel-extension-api --doc
 cargo build --manifest-path steel-extension-api/tests/fixture/Cargo.toml
+cargo build --manifest-path steel-extension-api/tests/event-probe/Cargo.toml
 cargo build --manifest-path extension-example/wool-shearing/Cargo.toml
 cargo build --manifest-path extension-example/game-of-life/Cargo.toml
 cargo build --manifest-path extension-example/strange-terrain/Cargo.toml
-cargo test -p steel-extension-api --features host --test behavior --test native --test game_of_life --test strange_terrain --test registration_failure -- --include-ignored
-cargo build --manifest-path stabby/tests/host-api/Cargo.toml -p host-api-fixture-extension
-cargo run --manifest-path stabby/tests/host-api/Cargo.toml -p host-api-fixture-host -- stabby/tests/host-api/target/debug/libhost_api_fixture_extension.so
+cargo test -p steel-extension-api --features host --test behavior --test native --test game_of_life --test strange_terrain --test registration_failure --test package -- --include-ignored
+cargo test -p steel-extension-api --features host --test ports --test events --test folder --test prison -- --include-ignored
+cargo build --manifest-path stabby/tests/host-api/Cargo.toml -p host-api-fixture-plugin
+cargo run --manifest-path stabby/tests/host-api/Cargo.toml -p host-api-fixture-host -- stabby/tests/host-api/target/debug/libhost_api_fixture_plugin.so
 ```
 
 The fixture commands above use Linux's library name. Use the corresponding `.dll`

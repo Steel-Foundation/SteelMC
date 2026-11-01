@@ -223,6 +223,19 @@ pub(super) fn parse_block_input(
     })
 }
 
+/// Parses a complete block state string such as `minecraft:oak_stairs[facing=east]`.
+pub(crate) fn parse_block_state_text(input: &str) -> Result<BlockStateId, CommandSyntaxError> {
+    let mut reader = StringReader::new(input);
+    let parsed = parse_block_input(&mut reader)?;
+    if reader.can_read() {
+        return Err(dynamic_error(
+            &reader,
+            "Unexpected trailing block state input",
+        ));
+    }
+    Ok(parsed.state)
+}
+
 struct ParsedConcreteBlock {
     block: BlockRef,
     properties: BlockProperties,

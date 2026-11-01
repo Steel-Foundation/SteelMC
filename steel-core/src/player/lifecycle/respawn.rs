@@ -2,6 +2,7 @@ use std::ptr;
 
 use super::*;
 use crate::entity::PendingWorldChangeToken;
+use crate::extension::events::PlayerRespawnEvent;
 use crate::player::connection::NetworkConnection as _;
 use crate::{
     behavior::{
@@ -652,6 +653,13 @@ impl Player {
         self.rebind_ender_pearls_to(&replacement);
 
         server.resend_player_context(&replacement);
+        replacement.fire_event(
+            |events| &events.respawn,
+            |player| PlayerRespawnEvent {
+                player,
+                position: spawn.position,
+            },
+        );
 
         if kind == RespawnRequestKind::Death
             && let Some(pos) = spawn.anchor_deplete_sound_pos

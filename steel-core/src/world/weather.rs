@@ -48,6 +48,10 @@ impl World {
         let raining_before = self.is_raining_with_guard(&weather);
 
         // Advance the weather state machine (only if gamerule allows)
+        let flags_before = {
+            let level_data = self.level_data.read();
+            (level_data.is_raining(), level_data.is_thundering())
+        };
         {
             let mut level_data = self.level_data.write();
 
@@ -96,6 +100,8 @@ impl World {
                 }
             }
         }
+
+        self.fire_weather_change(flags_before);
 
         // Interpolate visual levels (always runs, even when ADVANCE_WEATHER is off)
         let is_thundering = self.level_data.read().is_thundering();
@@ -170,19 +176,56 @@ impl World {
     ///
     /// Vanilla owns this state at server scope. Steel intentionally owns
     /// it per world so multiple worlds in one domain can have independent weather.
-    pub(crate) fn set_weather_parameters(
+    /// Fires the weather event when rain or thunder flipped; cancelling restores `before`.
+    /// Called without the level data lock so handlers may read world state.
+    fn fire_weather_change(&self, before: (bool, bool)) {
+        let after = {
+            let level_data = self.level_data.read();
+            (level_data.is_raining(), level_data.is_thundering())
+        };
+        if after == before {
+            return;
+        }
+        let Some(events) = self.events() else {
+            return;
+        };
+        let cancelled = crate::extension::Events::fire_if(&events.weather_change, || {
+            crate::extension::events::WeatherChangeEvent {
+                world: self.key.clone(),
+                raining: after.0,
+                thundering: after.1,
+                cancelled: false,
+            }
+        })
+        .is_some_and(|event| event.cancelled);
+        if cancelled {
+            let mut level_data = self.level_data.write();
+            level_data.set_raining(before.0);
+            level_data.set_thundering(before.1);
+        }
+    }
+
+    /// Sets the weather timers and state, like `/weather`, firing the weather change event.
+    pub fn set_weather_parameters(
         &self,
         clear_time: i32,
         rain_time: i32,
         raining: bool,
         thundering: bool,
     ) {
-        let mut level_data = self.level_data.write();
-        level_data.set_clear_weather_time(clear_time);
-        level_data.set_rain_time(rain_time);
-        level_data.set_thunder_time(rain_time);
-        level_data.set_raining(raining);
-        level_data.set_thundering(thundering);
+        let before = {
+            let level_data = self.level_data.read();
+            (level_data.is_raining(), level_data.is_thundering())
+        };
+        {
+            let mut level_data = self.level_data.write();
+            level_data.set_clear_weather_time(clear_time);
+            level_data.set_rain_time(rain_time);
+            level_data.set_thunder_time(rain_time);
+            level_data.set_raining(raining);
+            level_data.set_thundering(thundering);
+        }
+        self.fire_weather_change(before);
     }
 
     /// Checks whether the rain level is high enough to be considered raining.

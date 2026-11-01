@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-exclude = ["stabby"]
+exclude = ["stabby", "stabby/stabby", "stabby/stabby-abi", "stabby/stabby-macros"]
 members = [
     "steel",
     "steel-login",

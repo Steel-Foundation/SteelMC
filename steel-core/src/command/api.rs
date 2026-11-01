@@ -7,7 +7,8 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
-use steel_utils::{DowncastType, Identifier};
+use steel_registry::item_stack::ItemStack;
+use steel_utils::{BlockPos, BlockStateId, DowncastType, Identifier};
 use text_components::TextComponent;
 
 use super::{
@@ -20,7 +21,7 @@ use super::{
         CommandArgumentSource, CommandPermissionSource, CommandResultSuspension,
         CommandResultSuspensionPoll, CommandSource as InternalCommandSource,
         CommandSuspensionOrder, SteelArgumentParser, SteelArgumentSuggestionContext,
-        SteelArgumentType, SteelCommandContext, SteelCommandRuntime,
+        SteelArgumentType, SteelCommandContext, SteelCommandRuntime, parse_block_state_text,
     },
     incorrectly_typed_argument,
     registration::{
@@ -274,6 +275,31 @@ impl CommandNode {
     }
 }
 
+impl CommandNode {
+    /// Adds suggestions from a closure that only uses public suggestion types.
+    /// The closure is retained for the process lifetime, like every startup command.
+    #[must_use]
+    pub fn suggests_with(
+        self,
+        suggestion: impl Fn(CommandSuggestionContext<'_>, &mut CommandSuggestions<'_, '_>)
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        let provider = Box::leak(Box::new(
+            move |context: &CommandSuggestionContext<'_>, builder: &mut SuggestionsBuilder<'_>| {
+                suggestion(*context, &mut CommandSuggestions { inner: builder });
+            },
+        ));
+        self.suggests(provider)
+    }
+}
+
+/// Parses a complete block state string such as `minecraft:oak_stairs[facing=east]`.
+pub fn parse_block_state(input: &str) -> Result<BlockStateId, CommandError> {
+    parse_block_state_text(input).map_err(CommandError::from)
+}
+
 /// Creates a literal command node.
 #[must_use]
 pub fn literal(name: impl Into<Box<str>>) -> CommandNode {
@@ -412,6 +438,22 @@ impl<'context> CommandContext<'context> {
     /// Resolves a single player selector.
     pub fn player(self, name: &str) -> Result<Arc<Player>, CommandError> {
         self.inner.player(name).map_err(CommandError::from)
+    }
+
+    /// Resolves a block position argument against the execution source.
+    pub fn block_pos(self, name: &str) -> Result<BlockPos, CommandError> {
+        let coordinates = self.inner.coordinates(name)?;
+        Ok(coordinates.block_pos(self.inner.source()))
+    }
+
+    /// Returns a parsed block state argument.
+    pub fn block_state(self, name: &str) -> Result<BlockStateId, CommandError> {
+        Ok(self.inner.block_input(name)?.state())
+    }
+
+    /// Returns a parsed item stack argument.
+    pub fn item_stack(self, name: &str) -> Result<&'context ItemStack, CommandError> {
+        self.inner.item_stack(name).map_err(CommandError::from)
     }
 
     /// Resolves an entity selector and requires at least one result.
@@ -643,6 +685,30 @@ impl CommandArgument {
         }
     }
 
+    /// Creates an absolute, relative (`~`) or local (`^`) block position argument.
+    #[must_use]
+    pub fn block_pos() -> Self {
+        Self {
+            inner: SteelArgumentType::block_pos(),
+        }
+    }
+
+    /// Creates a block state argument such as `minecraft:oak_log[axis=x]`.
+    #[must_use]
+    pub fn block_state() -> Self {
+        Self {
+            inner: SteelArgumentType::block_state(),
+        }
+    }
+
+    /// Creates an item stack argument such as `minecraft:diamond_sword[damage=5]`.
+    #[must_use]
+    pub fn item_stack() -> Self {
+        Self {
+            inner: SteelArgumentType::item_stack(),
+        }
+    }
+
     /// Erases a keyed extension parser without using `Any` or `TypeId`.
     #[must_use]
     pub fn custom<P>(parser: P) -> Self
@@ -835,6 +901,12 @@ pub struct CommandParserSource<'source> {
 }
 
 impl CommandParserSource<'_> {
+    /// Returns the UUID of the player completing the command, if any.
+    #[must_use]
+    pub fn player_uuid(&self) -> Option<uuid::Uuid> {
+        self.inner.player_uuid()
+    }
+
     /// Returns configured domain names.
     #[must_use]
     pub fn domain_names(&self) -> Vec<String> {

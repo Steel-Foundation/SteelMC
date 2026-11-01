@@ -245,12 +245,35 @@ impl World {
                 chunk: chunk_pos,
             });
         }
+        if entity.as_player().is_none()
+            && let Some(events) = self.events()
+            && crate::extension::Events::fire_if(&events.entity_spawn, || {
+                crate::extension::events::EntitySpawnEvent {
+                    world: self.key.clone(),
+                    entity: crate::extension::events::EntityInfo::of(entity.as_ref()),
+                    cancelled: false,
+                }
+            })
+            .is_some_and(|event| event.cancelled)
+        {
+            return Err(AddEntityError::Cancelled {
+                entity_id: entity.id(),
+            });
+        }
         self.register_loaded_entity(entity)?;
         self.mark_chunk_dirty(chunk_pos);
         Ok(())
     }
 
     pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
+        if let Some(events) = self.events() {
+            crate::extension::Events::fire_if(&events.chunk_load, || {
+                crate::extension::events::ChunkLoadEvent {
+                    world: self.key.clone(),
+                    pos,
+                }
+            });
+        }
         // Runtime entity membership follows retained chunk holders, so it
         // starts at Empty rather than waiting for full LevelChunk readiness.
         // Durable entity persistence still starts at StructureStarts; entities
@@ -294,6 +317,14 @@ impl World {
     }
 
     pub(crate) fn on_entity_chunk_unload_finalized(&self, pos: ChunkPos) {
+        if let Some(events) = self.events() {
+            crate::extension::Events::fire_if(&events.chunk_unload, || {
+                crate::extension::events::ChunkUnloadEvent {
+                    world: self.key.clone(),
+                    pos,
+                }
+            });
+        }
         self.entity_manager.finalize_chunk_unload(pos);
     }
 

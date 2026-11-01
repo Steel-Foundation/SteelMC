@@ -224,7 +224,7 @@ impl World {
     }
 
     /// Returns the total ticks of one clock in this world.
-    pub(crate) fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
+    pub fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
         self.level_data.read().world_clocks().total_ticks(clock)
     }
 
@@ -243,11 +243,8 @@ impl World {
         self.broadcast_to_all(self.time_sync_packet());
     }
 
-    pub(crate) fn set_clock_total_ticks(
-        &self,
-        clock: WorldClockRef,
-        total_ticks: i64,
-    ) -> Option<()> {
+    /// Sets the total ticks of one clock in this world and syncs players.
+    pub fn set_clock_total_ticks(&self, clock: WorldClockRef, total_ticks: i64) -> Option<()> {
         self.modify_clock(clock, |manager| manager.set_total_ticks(clock, total_ticks))
     }
 

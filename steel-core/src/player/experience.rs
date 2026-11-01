@@ -242,7 +242,16 @@ impl Player {
     }
 
     /// Gives raw experience points to this player.
-    pub(crate) fn give_experience_points(&self, points: i32) {
+    pub fn give_experience_points(&self, points: i32) {
+        let points = self
+            .fire_event(
+                |events| &events.exp_change,
+                |player| crate::extension::events::PlayerExpChangeEvent {
+                    player,
+                    amount: points,
+                },
+            )
+            .map_or(points, |event| event.amount);
         if points == 0 {
             return;
         }
@@ -259,7 +268,7 @@ impl Player {
     }
 
     /// Gives experience levels to this player.
-    pub(crate) fn give_experience_levels(&self, levels: i32) {
+    pub fn give_experience_levels(&self, levels: i32) {
         let level_up_sound = {
             let mut experience = self.experience.lock();
             experience.add_levels(levels);

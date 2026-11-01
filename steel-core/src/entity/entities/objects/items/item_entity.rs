@@ -705,6 +705,20 @@ impl Entity for ItemEntity {
     }
 
     fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
+        let cancelled = player
+            .fire_event(
+                |events| &events.pickup_item,
+                |picker| crate::extension::events::PlayerPickupItemEvent {
+                    player: picker,
+                    item: self.get_item(),
+                    entity_id: self.id(),
+                    cancelled: false,
+                },
+            )
+            .is_some_and(|event| event.cancelled);
+        if cancelled {
+            return;
+        }
         self.try_pickup(player);
     }
 

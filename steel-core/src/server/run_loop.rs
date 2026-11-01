@@ -31,6 +31,9 @@ impl Server {
 
     /// Runs gameplay packets, game ticks, and chunk sending.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
+        for world in self.worlds.values() {
+            self.fire_world_load(&world);
+        }
         self.packet_processor.open_after_tick();
         let packet_worker_count =
             worker_threads_for_available(self.config.packet_workers, available_worker_threads());
@@ -438,7 +441,32 @@ impl Server {
         command: &str,
     ) {
         let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
-        let command = command.strip_prefix('/').unwrap_or(command);
+        // Player command packets never contain the typed slash, so any remaining slash is part of
+        // the command, like WorldEdit's `//set`. Console and other senders may type one.
+        let command = if matches!(owner.sender(), CommandSender::Player(_)) {
+            command
+        } else {
+            command.strip_prefix('/').unwrap_or(command)
+        };
+        let sender_kind = match owner.sender() {
+            CommandSender::Player(_) => None,
+            CommandSender::Console => Some(crate::extension::events::CommandSenderKind::Console),
+            CommandSender::Rcon => Some(crate::extension::events::CommandSenderKind::Rcon),
+        };
+        let fired = sender_kind.and_then(|sender| {
+            crate::extension::Events::fire_if(&self.events().server_command, || {
+                crate::extension::events::ServerCommandEvent {
+                    sender,
+                    command: command.to_owned(),
+                    cancelled: false,
+                }
+            })
+        });
+        if fired.as_ref().is_some_and(|event| event.cancelled) {
+            return;
+        }
+        let rewritten = fired.map(|event| event.command);
+        let command = rewritten.as_deref().unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
             let parse = dispatcher.parse(command, source.clone());

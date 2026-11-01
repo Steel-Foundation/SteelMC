@@ -70,6 +70,7 @@ use crate::behavior::{
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::extension::events::{PlayerTeleportEvent, TeleportCause};
 use crate::fluid::{LavaFluid, get_fluid_state, get_height};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{
@@ -969,6 +970,15 @@ pub(crate) fn change_entity_world(
     entity: SharedEntity,
     teleport_transition: &TeleportTransition,
 ) -> Option<SharedEntity> {
+    change_entity_world_with_cause(entity, teleport_transition, &TeleportCause::UNKNOWN)
+}
+
+/// Like [`change_entity_world`], firing the player teleport event with `cause`.
+pub(crate) fn change_entity_world_with_cause(
+    entity: SharedEntity,
+    teleport_transition: &TeleportTransition,
+    cause: &Identifier,
+) -> Option<SharedEntity> {
     if entity.is_removed() {
         return None;
     }
@@ -992,9 +1002,10 @@ pub(crate) fn change_entity_world(
             );
             return None;
         };
+        let transition = fire_teleport_event(&player, &source_world, teleport_transition, cause)?;
         // Vanilla `ServerPlayer.teleport` keeps the live player/connection identity
         // and sends respawn/player-position packets instead of recreating from entity NBT.
-        if !player.change_world_within_domain(teleport_transition) {
+        if !player.change_world_within_domain(&transition) {
             return None;
         }
         entity
@@ -1003,6 +1014,60 @@ pub(crate) fn change_entity_world(
     };
     changed.on_teleported();
     Some(changed)
+}
+
+/// Fires the teleport event; returns the transition to apply, or `None` when cancelled.
+/// A redirected destination is applied as absolute position and rotation.
+fn fire_teleport_event(
+    player: &Arc<Player>,
+    source_world: &Arc<World>,
+    transition: &TeleportTransition,
+    cause: &Identifier,
+) -> Option<TeleportTransition> {
+    let Some(events) = source_world.events() else {
+        return Some(transition.clone());
+    };
+    if events.teleport.is_empty() {
+        return Some(transition.clone());
+    }
+    let to = transition.resolved_position(player.position());
+    let rotation = transition.resolved_rotation(player.rotation());
+    let mut event = PlayerTeleportEvent {
+        player: Arc::clone(player),
+        from_world: Arc::clone(source_world),
+        from: player.position(),
+        to_world: Arc::clone(&transition.target_world),
+        to,
+        rotation,
+        cause: cause.clone(),
+        cancelled: false,
+    };
+    events.teleport.fire(&mut event);
+    if event.cancelled {
+        return None;
+    }
+    let mut result = transition.clone();
+    let redirected = !Arc::ptr_eq(&event.to_world, &transition.target_world)
+        || event.to != to
+        || event.rotation != rotation;
+    if redirected {
+        if event.to_world.domain() != source_world.domain() {
+            tracing::warn!("Ignoring teleport redirect outside the player's domain");
+            return Some(result);
+        }
+        result.target_world = event.to_world;
+        result.position = event.to;
+        result.rotation = event.rotation;
+        result.relatives = RelativeMovement(
+            transition.relatives.0
+                & !(RelativeMovement::X
+                    | RelativeMovement::Y
+                    | RelativeMovement::Z
+                    | RelativeMovement::Y_ROT
+                    | RelativeMovement::X_ROT),
+        );
+    }
+    Some(result)
 }
 
 fn change_non_player_entity_world(

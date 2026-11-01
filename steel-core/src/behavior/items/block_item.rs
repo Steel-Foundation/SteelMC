@@ -9,7 +9,10 @@ use steel_registry::{
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
+use std::sync::Arc;
+
 use crate::entity::Entity;
+use crate::extension::events::BlockPlaceEvent;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::world::game_event::GameEventContext;
 use crate::{
@@ -123,6 +126,10 @@ impl BlockItem {
             ),
         );
         if !context.world.is_unobstructed(collision_shape, place_pos) {
+            return InteractionResult::Fail;
+        }
+
+        if fire_block_place(&context, new_state) {
             return InteractionResult::Fail;
         }
 
@@ -242,4 +249,28 @@ impl ItemBehavior for DoubleHighBlockItem {
         self.base
             .place_with(context.build_place_context(), Self::place_block)
     }
+}
+
+/// Fires the block place event for player placements; returns whether a handler cancelled it.
+/// The caller's failure path resends the affected blocks and inventory to the client.
+fn fire_block_place(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
+    let Some(events) = context.world.events() else {
+        return false;
+    };
+    if events.block_place.is_empty() {
+        return false;
+    }
+    let Some(player) = context.player().and_then(Player::shared) else {
+        return false;
+    };
+    let mut event = BlockPlaceEvent {
+        player,
+        world: Arc::clone(context.world),
+        pos: context.place_pos(),
+        state,
+        against: context.hit_pos(),
+        cancelled: false,
+    };
+    events.block_place.fire(&mut event);
+    event.cancelled
 }

@@ -1896,6 +1896,8 @@ impl FullChunkRef<'_> {
     }
 }
 
+pub(crate) mod bulk;
+
 #[cfg(test)]
 mod game_event_tests;
 

@@ -60,7 +60,7 @@ Put this complete implementation in `extension-example/hello-extension/src/lib.r
 use std::sync::OnceLock;
 
 use serde::Deserialize;
-use steel_extension_api::{ApiResult, Command, Commands, Hooks, stabby};
+use steel_extension_api::{ApiResult, Command, Commands, ExtensionContext, Hooks, stabby};
 use stabby::{slice::Slice, str::Str, string::String as ApiString};
 
 #[derive(Deserialize)]
@@ -94,8 +94,8 @@ fn pre_init(mut hooks: Hooks<'_>) -> ApiResult<()> {
     hooks.register_commands(register_commands)
 }
 
-fn init(config: Str<'_>) -> ApiResult<()> {
-    let settings = match toml::from_str::<Settings>(config.as_str()) {
+fn init(context: ExtensionContext<'_>) -> ApiResult<()> {
+    let settings = match toml::from_str::<Settings>(context.config().as_str()) {
         Ok(settings) => settings,
         Err(error) => return Err(ApiString::from(error.to_string())).into(),
     };
@@ -110,13 +110,33 @@ steel_extension_api::export_extension!("hello", pre_init, init);
 
 `pre_init` subscribes to command registration. Steel later passes the actual
 mutable command registry to `register_commands`, freezes the dispatcher, and
-calls `init` before creating worlds. `init` parses only this extension's
-configuration. The command uses the initialized settings when a player runs it.
+calls `init` before creating worlds. `init` receives an `ExtensionContext` with
+this extension's name, version, configuration and private data directory, and
+parses only its own configuration. The command uses the initialized settings
+when a player runs it.
 
 `#[stabby::export(callback)]` checks boundary types and supplies the callback's
 calling convention. `export_extension!` binds the host API and exports the
-`steel_extension_v2` descriptor. You do not need to write a loader or `unsafe`
-code for this extension.
+`steel_extension_v3` descriptor. You do not need to write a loader or `unsafe`
+code for this extension. Both entrypoints may also return any
+`Result<(), impl Display>`, so `?` works directly.
+
+This example uses the low-level command binding to show the boundary. Most
+extensions use the closure helpers instead (`hooks.on_commands`, typed
+`command::CommandBuilder` trees, `hooks.on_*` for gameplay events); see the
+[API crate README](../../steel-extension-api/README.md#hello-world). The long form of
+the macro also declares a version and dependencies:
+
+```rust
+steel_extension_api::export_extension! {
+    name: "hello",
+    version: "0.1.0",
+    depends: [],              // loaded and initialized first; missing ones skip this extension
+    soft_depends: ["vault"],  // initialized first when present
+    pre_init: pre_init,
+    init: init,
+}
+```
 
 ## Describe the package
 
@@ -165,11 +185,13 @@ path = "extensions/hello-extension.zip"
 message = "Hello from a Steel extension!"
 ```
 
-All paths are relative to the server's working directory. Explicit entries load
-in configuration order. Steel then discovers remaining ZIP packages in
-`./extensions` in filename order, skipping packages already selected by path.
-An unconfigured discovered package receives an empty configuration document;
-this example requires its configured `message`.
+All paths are relative to the server's working directory. Explicit entries come
+first in configuration order. Steel then discovers the remaining ZIP packages and
+native libraries in `./extensions` in filename order, skipping files already
+selected by path, and initializes everything in dependency order. An extension
+without an `[extensions.config]` table reads `extensions/<name>/config.toml`,
+created empty on first start; this example requires a `message`, so either add
+the table above or write `message = "..."` into `extensions/hello/config.toml`.
 
 Start Steel normally, connect as a player, and run `/hello ping`. The namespaced
 form `/hello:hello ping` is also available. This command permits players by
@@ -185,8 +207,9 @@ cargo build --manifest-path extension-example/hello-extension/Cargo.toml
 On Linux, change the configured path to
 `extension-example/hello-extension/target/debug/libhello_extension.so`. On macOS, use
 `libhello_extension.dylib`; on Windows, use `hello_extension.dll`. Keep the same
-configuration section. Move an older ZIP out of `./extensions` when selecting a
-raw library so discovery does not try to load a second copy of `hello`.
+configuration section. You can also copy the library itself into `./extensions`.
+Move an older ZIP out of `./extensions` when selecting a raw library: two files
+declaring `hello` are both skipped with a warning.
 
 ## Rebuild and troubleshoot
 
@@ -197,10 +220,12 @@ trusted. ABI checks detect incompatible boundary signatures, not malicious code.
 
 | Failure | Check |
 | --- | --- |
-| Missing `steel_extension_v2` | Build a `cdylib` and include `export_extension!`. |
+| Skipped: not a Steel extension | Build a `cdylib` and include `export_extension!`. |
+| Skipped: built for an older Steel extension API | Rebuild against the server's API checkout. |
 | Incompatible host signature | Rebuild against the server's API checkout and pinned Stabby revision, with `host` disabled. |
 | Manifest name differs from descriptor | Use `hello` in both the package manifest and `export_extension!`. |
-| Extension loaded more than once | Remove extra packages with the same descriptor name, including ZIPs discovered alongside a raw library. |
+| Skipped: another file also declares the extension | Remove extra packages or libraries with the same descriptor name, including ZIPs discovered alongside a raw library. |
+| Skipped: requires missing extension | Install the extension named in the message, or remove it from `depends`. |
 | Unsupported target or missing library | Package for the server's operating system and architecture; include the matching target entry. |
 | Configuration parsing failed | Add `[extensions.config]` with `message`; match the extension's own schema. |
 | Command unavailable | Connect as a player, check command permissions, and check startup logs for registration collisions. |

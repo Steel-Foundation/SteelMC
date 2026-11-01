@@ -1,8 +1,10 @@
 #:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/config.schema.json
 # Documentation: https://steelmc.dev/configuration/server-configuration/
 
-# ZIP packages in ./extensions are discovered automatically in filename order.
-# Only install trusted native code. To configure a ZIP or select a raw library:
+# ZIP packages and native libraries in ./extensions are discovered automatically and
+# loaded in dependency order; each reads extensions/<name>/config.toml unless an entry
+# below gives it a config table. Only install trusted native code. To configure a ZIP
+# or select a library elsewhere:
 # [[extensions]]
 # path = "extensions/steel-game-of-life-extension.zip"
 # [extensions.config.life]

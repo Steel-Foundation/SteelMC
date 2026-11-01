@@ -4,6 +4,7 @@ use super::{
     TabListTickStats, TextComponent, Uuid, client_permission_event, command_tree_packet,
     translations,
 };
+use crate::extension::events::{PlayerJoinEvent, PlayerQuitEvent};
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
@@ -66,7 +67,12 @@ impl Server {
     pub(super) fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
         let (header, footer) = Self::tab_list_components(tick_stats);
 
-        self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
+        self.online_players.iter_players(|_, player| {
+            if !player.has_tab_list_override() {
+                player.send_packet(CTabList::new(&header, &footer, player));
+            }
+            true
+        });
     }
 
     /// Broadcasts a sprint completion report to all players.
@@ -83,7 +89,7 @@ impl Server {
 
     pub(super) fn broadcast_player_join_message(
         &self,
-        player: &Player,
+        player: &Arc<Player>,
         previous_name: Option<&str>,
     ) {
         let display_name = player.display_name();
@@ -98,16 +104,28 @@ impl Server {
                 .message([display_name, TextComponent::plain(old_name.to_owned())])
                 .into()
         };
-        let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message, Some(player.gameprofile.id()));
+        let mut event = PlayerJoinEvent {
+            player: Arc::clone(player),
+            message: Some(message.color(Color::Yellow)),
+        };
+        self.events().join.fire(&mut event);
+        if let Some(message) = event.message {
+            self.broadcast_system_chat(&message, Some(player.gameprofile.id()));
+        }
     }
 
-    pub(super) fn broadcast_player_leave_message(&self, player: &Player) {
+    pub(super) fn broadcast_player_leave_message(&self, player: &Arc<Player>) {
         let message: TextComponent = translations::MULTIPLAYER_PLAYER_LEFT
             .message([player.display_name()])
             .into();
-        let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message, None);
+        let mut event = PlayerQuitEvent {
+            player: Arc::clone(player),
+            message: Some(message.color(Color::Yellow)),
+        };
+        self.events().quit.fire(&mut event);
+        if let Some(message) = event.message {
+            self.broadcast_system_chat(&message, None);
+        }
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.

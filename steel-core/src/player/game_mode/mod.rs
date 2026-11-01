@@ -39,6 +39,7 @@ use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostA
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::extension::events::{InteractAction, PlayerInteractEvent};
 use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;

@@ -276,3 +276,38 @@ fn partial_swap_overflow_is_discarded_in_creative() {
             .is_empty()
     );
 }
+
+#[test]
+fn display_chest_never_moves_items() {
+    use crate::inventory::{click::MouseButton, menu::kinds::display_chest};
+
+    init_vanilla_registry();
+    let world_fixture = fresh_test_world("display_chest_read_only");
+    let player = TestPlayerBuilder::new(Arc::clone(&world_fixture.world), "GuiTester", 1).build();
+    let container = SimpleContainer::new(9).into_shared();
+    container
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::DIAMOND_PICKAXE));
+    let mut menu = display_chest(&player.inventory, 1, Arc::clone(&container), 1);
+
+    for click in [
+        Click::Pickup {
+            slot: 0,
+            button: MouseButton::Left,
+        },
+        Click::QuickMove { slot: 0 },
+        Click::Throw {
+            slot: 0,
+            whole_stack: true,
+        },
+    ] {
+        menu.clicked(click, &player);
+    }
+
+    assert_eq!(
+        container.lock().get_item(0).item().key,
+        vanilla_items::DIAMOND_PICKAXE.key
+    );
+    assert!(menu.behavior().carried().is_empty());
+    assert!(player.inventory.lock().get_item(0).is_empty());
+}

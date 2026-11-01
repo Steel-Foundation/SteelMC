@@ -100,12 +100,12 @@ impl CommandArgumentSource for TestSource {
     fn permission_rule_suggestions(&self) -> Vec<String> {
         vec![
             "minecraft.command.gamemode".to_owned(),
-            "steel.build{extension:region=spawn}".to_owned(),
+            "steel.build{plugin:region=spawn}".to_owned(),
         ]
     }
 
     fn permission_metadata_suggestions(&self) -> Vec<String> {
-        vec!["extension:max_homes{extension:region=spawn}".to_owned()]
+        vec!["plugin:max_homes{plugin:region=spawn}".to_owned()]
     }
 
     fn user_permission_rule_suggestions(&self, _targets: &GameProfileArgument) -> Vec<String> {
@@ -113,7 +113,7 @@ impl CommandArgumentSource for TestSource {
     }
 
     fn user_permission_metadata_suggestions(&self, _targets: &GameProfileArgument) -> Vec<String> {
-        vec!["extension:user_owned".to_owned()]
+        vec!["plugin:user_owned".to_owned()]
     }
 
     fn group_permission_rule_suggestions(&self, group: &str) -> Vec<String> {
@@ -126,7 +126,7 @@ impl CommandArgumentSource for TestSource {
 
     fn group_permission_metadata_suggestions(&self, group: &str) -> Vec<String> {
         if group == "builder" {
-            vec!["extension:group_owned".to_owned()]
+            vec!["plugin:group_owned".to_owned()]
         } else {
             Vec::new()
         }

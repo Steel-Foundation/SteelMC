@@ -1,4 +1,8 @@
+use steel_registry::game_profile::GameProfile;
 use steel_utils::translations;
+use text_components::TextComponent;
+
+use crate::extension::events::PlayerPreLoginEvent;
 
 use super::{
     Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
@@ -329,6 +333,24 @@ impl Server {
             true
         });
         clients >= self.config.max_players as usize && !self.can_bypass_player_limit(uuid)
+    }
+
+    /// Fires the pre-login event for an authenticated profile and returns a deny reason.
+    ///
+    /// Runs on the login connection task, like Bukkit's asynchronous pre-login event.
+    #[must_use]
+    pub fn check_pre_login(&self, profile: &GameProfile) -> Option<TextComponent> {
+        let bus = &self.events().pre_login;
+        if bus.is_empty() {
+            return None;
+        }
+        let mut event = PlayerPreLoginEvent {
+            uuid: profile.id(),
+            name: profile.name().to_owned(),
+            denied: None,
+        };
+        bus.fire(&mut event);
+        event.denied
     }
 
     /// Atomically reserves a UUID after configuration's duplicate-session recheck.
@@ -673,13 +695,6 @@ impl Server {
         };
         self.online_players.iter_players(|_, player| {
             player.connection.send_encoded(encoded.clone());
-            true
-        });
-    }
-
-    pub(super) fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
-        self.online_players.iter_players(|_, player| {
-            player.send_packet(packet(player));
             true
         });
     }
