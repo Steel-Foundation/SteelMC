@@ -1,6 +1,32 @@
 use super::*;
 
 impl Player {
+    /// Teleports to an absolute position in any loaded world of this player's domain,
+    /// firing the teleport event with `cause`. Returns whether the teleport was applied.
+    pub fn teleport_to(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        position: DVec3,
+        rotation: (f32, f32),
+        cause: &Identifier,
+    ) -> bool {
+        if self.is_sleeping() {
+            self.stop_sleeping();
+        }
+        let transition = TeleportTransition {
+            target_world: Arc::clone(world),
+            position,
+            rotation,
+            velocity: DVec3::ZERO,
+            relatives: RelativeMovement::NONE,
+            portal_cooldown: 0,
+            as_passenger: false,
+            post_transition: TeleportPostTransition::do_nothing(),
+        };
+        let entity: SharedEntity = Arc::<Self>::clone(self);
+        crate::entity::change_entity_world_with_cause(entity, &transition, cause).is_some()
+    }
+
     fn apply_post_teleport_transition(&self, post_transition: &TeleportPostTransition) {
         for action in post_transition.actions() {
             match *action {
@@ -84,6 +110,11 @@ impl Player {
             }
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
+            let from = current_world.key.clone();
+            self.fire_event(
+                |events| &events.world_change,
+                |player| crate::extension::events::PlayerChangedWorldEvent { player, from },
+            );
         }
         self.apply_post_teleport_transition(&teleport_transition.post_transition);
         true

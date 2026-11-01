@@ -237,7 +237,7 @@ fn solo_spleef_creates_lobby_and_arena_fills_bots_restores_state_and_releases_wo
     init_globals();
     let mut extensions = RegisteredExtensions::new_with_builtins()?;
     let commands = CommandRegistry::new().freeze()?;
-    host::initialize_all(vec![extension], &mut hooks)?;
+    host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)?;
     extensions.hooks = hooks;
     let fixture = Fixture::new()?;
     let runtime = Arc::clone(&fixture.runtime);
@@ -473,4 +473,8 @@ fn solo_spleef_creates_lobby_and_arena_fills_bots_restores_state_and_releases_wo
         home.chunk_map.task_tracker.wait().await;
         Ok(())
     })
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

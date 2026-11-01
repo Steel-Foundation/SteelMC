@@ -24,6 +24,10 @@ fn loads_game_of_life_with_only_its_board_configuration() -> Result<(), String> 
     let extension = unsafe { host::load(&path, config, &mut hooks) }?;
     assert!(!REGISTRY.is_initialized());
     init_globals();
-    host::initialize_all(vec![extension], &mut hooks)?;
+    host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)?;
     Ok(())
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

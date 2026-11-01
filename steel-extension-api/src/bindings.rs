@@ -1,11 +1,14 @@
 #[stabby::host_api]
 pub mod api {
     use crate::block_behavior::{DynBlockBehavior, types::ItemStack};
-    use crate::{ApiResult, BlockChange, BlockPos, BlockState};
+    use crate::{ApiResult, BlockChange, BlockPos, BlockState, BlockUpdateFlags};
     use stabby::{slice::Slice, str::Str, string::String as ApiString, vec::Vec as ApiVec};
 
     #[cfg(feature = "host")]
-    use crate::host::{self, HookRegistration, Registration, TerrainAccess, TickHandler};
+    use crate::host::{
+        self, ExtensionContextData, HookRegistration, Registration, TerrainAccess, TickHandler,
+    };
+    use crate::{LogLevel, Server};
     #[cfg(feature = "host")]
     use std::sync::Arc;
     #[cfg(feature = "host")]
@@ -115,12 +118,59 @@ pub mod api {
                 .into()
         }
 
+        /// Runs `callback(server, token)` once on clean server stop, before worlds are saved.
+        /// Shutdown callbacks run in reverse extension initialization order.
+        pub fn register_shutdown(&mut self, callback: extern "C" fn(Server<'_>, u64), token: u64) {
+            self.host_mut().extension.add_shutdown(callback, token);
+        }
+
         /// Runs a callback at the end of every normal world tick.
         pub fn register_world_tick(&mut self, callback: extern "C" fn(World<'_>, u64)) {
             self.host_mut()
                 .hooks
                 .register_world_tick(Box::new(TickHandler(callback)));
         }
+    }
+
+    /// Extension identity, configuration and data directory, supplied only during init.
+    #[opaque]
+    pub struct ExtensionContext<'a>(&'a ExtensionContextData<'a>);
+
+    impl<'a> ExtensionContext<'a> {
+        /// Extension name from its descriptor.
+        #[must_use]
+        pub fn name(&self) -> ApiString {
+            self.host().state.name.into()
+        }
+
+        /// Extension version from its descriptor.
+        #[must_use]
+        pub fn version(&self) -> ApiString {
+            self.host().state.version.into()
+        }
+
+        /// Extension configuration from the server config, as a TOML document.
+        #[must_use]
+        pub fn config(&self) -> ApiString {
+            self.host().state.config.as_str().into()
+        }
+
+        /// Absolute path of the extension's private data directory, which already exists.
+        #[must_use]
+        pub fn data_directory(&self) -> ApiString {
+            self.host().data_directory.as_str().into()
+        }
+    }
+
+    /// Writes a message to the server log, tagged with the extension name.
+    pub fn log_message(extension: Str<'_>, level: LogLevel, message: Str<'_>) {
+        let level = match level {
+            LogLevel::Error => ::log::Level::Error,
+            LogLevel::Warn => ::log::Level::Warn,
+            LogLevel::Info => ::log::Level::Info,
+            LogLevel::Debug => ::log::Level::Debug,
+        };
+        ::log::log!(level, "[{}] {}", extension.as_str(), message.as_str());
     }
 
     /// World access borrowed only for the current callback, on its existing tick thread.
@@ -167,6 +217,31 @@ pub mod api {
         /// Changes a loaded block through normal gameplay updates.
         pub fn set_block(&self, pos: BlockPos, state: BlockState) -> ApiResult<()> {
             host::set_block(self.host(), pos, state)
+                .map_err(ApiString::from)
+                .into()
+        }
+
+        /// Lowest block Y of this world.
+        #[must_use]
+        pub fn min_y(&self) -> i32 {
+            self.host().get_min_y()
+        }
+
+        /// Highest block Y of this world (inclusive).
+        #[must_use]
+        pub fn max_y(&self) -> i32 {
+            self.host().get_max_y()
+        }
+
+        /// Changes a loaded block with explicit update behavior. Bulk editors use
+        /// [`BlockUpdateFlags::CLIENTS`] to skip neighbor and shape updates.
+        pub fn set_block_with_flags(
+            &self,
+            pos: BlockPos,
+            state: BlockState,
+            flags: BlockUpdateFlags,
+        ) -> ApiResult<()> {
+            host::set_block_with_flags(self.host(), pos, state, flags.bits)
                 .map_err(ApiString::from)
                 .into()
         }
@@ -243,10 +318,47 @@ pub mod api {
             .into()
     }
 
+    /// Parses a block state such as `minecraft:oak_stairs[facing=east]` or `stone`.
+    pub fn parse_block_state(text: Str<'_>) -> ApiResult<BlockState> {
+        host::parse_block_state(text.as_str())
+            .map_err(ApiString::from)
+            .into()
+    }
+
+    /// Formats a block state as `namespace:block[property=value,...]`.
+    #[must_use]
+    pub fn block_state_string(state: BlockState) -> ApiString {
+        host::block_state_string(state).into()
+    }
+
+    /// Key of the block a state belongs to, such as `minecraft:oak_stairs`.
+    #[must_use]
+    pub fn block_key(state: BlockState) -> ApiString {
+        host::block_key(state).into()
+    }
+
+    /// Whether a state is any kind of air.
+    #[must_use]
+    pub fn is_air(state: BlockState) -> bool {
+        host::is_air(state)
+    }
+
     /// Resolves block names from a host registry tag, preserving generated vanilla data.
     pub fn blocks_in_tag(key: Str<'_>) -> ApiResult<ApiVec<ApiString>> {
         host::blocks_in_tag(key.as_str())
             .map_err(ApiString::from)
             .into()
+    }
+}
+
+// World handles wrap a shared borrow, so copies alias read-only access like `&T` does.
+impl Copy for api::World<'_> {}
+#[expect(
+    clippy::expl_impl_clone_on_copy,
+    reason = "opaque storage is private, so Clone must copy the handle without accessing its fields"
+)]
+impl Clone for api::World<'_> {
+    fn clone(&self) -> Self {
+        *self
     }
 }

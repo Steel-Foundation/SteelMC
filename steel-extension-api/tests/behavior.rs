@@ -45,7 +45,7 @@ fn independently_compiled_extension_inherits_removes_and_replaces_native_capabil
     init_globals();
     let _generators = WorldGeneratorRegistry::new_with_builtins()?;
     assert_eq!(
-        host::initialize_all(vec![extension], &mut hooks)?,
+        host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)?.names(),
         ["behavior-boundary-fixture"]
     );
     let (original, potatoes, original_rail, original_comparator) = captured
@@ -123,4 +123,8 @@ fn independently_compiled_extension_inherits_removes_and_replaces_native_capabil
             .is_some()
     );
     Ok(())
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

@@ -216,8 +216,8 @@ fn pre_init(mut hooks: Hooks<'_>) -> ApiResult<()> {
     })();
     result.into()
 }
-fn init(config: stabby::str::Str<'_>) -> ApiResult<()> {
-    if config.as_str() == "fail_after_replacement" {
+fn init(context: steel_extension_api::ExtensionContext<'_>) -> ApiResult<()> {
+    if context.config().as_str() == "fail_after_replacement" {
         return Err(ApiString::from("init ran after failed registration")).into();
     }
     let result = (|| -> Result<(), ApiString> {

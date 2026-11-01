@@ -17,7 +17,10 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::{
-    entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
+    entity::{
+        Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world_with_cause,
+    },
+    extension::events::TeleportCause,
     portal::{TeleportPostTransition, TeleportTransition},
     world::World,
 };
@@ -277,7 +280,9 @@ fn perform_teleport(
             camera_id: player.id(),
         });
     }
-    if change_entity_world(Arc::clone(target), &transition).is_none() {
+    if change_entity_world_with_cause(Arc::clone(target), &transition, &TeleportCause::COMMAND)
+        .is_none()
+    {
         return;
     }
 

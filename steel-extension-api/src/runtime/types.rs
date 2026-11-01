@@ -12,7 +12,7 @@ pub struct PlayerId {
 }
 /// World coordinates in blocks.
 #[stabby::stabby]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Position {
     /// X coordinate.
     pub x: f64,

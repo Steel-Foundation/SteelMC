@@ -94,6 +94,9 @@ impl<'a> ServerExplosion<'a> {
         let mut random = LegacyRandom::from_seed(rand::random());
         let mut affected = self.calculate_exploded_positions(|| random.next_f32());
         self.hurt_entities();
+        if self.fire_explosion_event(&mut affected) {
+            return 0;
+        }
         if self.interacts_with_blocks() {
             self.interact_with_blocks(&mut affected, &mut random);
         }
@@ -101,6 +104,30 @@ impl<'a> ServerExplosion<'a> {
             self.create_fire(&affected, &mut random);
         }
         affected.len()
+    }
+
+    /// Lets extensions filter the destroyed blocks; returns whether the block damage is cancelled.
+    fn fire_explosion_event(&self, affected: &mut Vec<steel_utils::BlockPos>) -> bool {
+        let Some(events) = self.world.events() else {
+            return false;
+        };
+        let Some(event) = crate::extension::Events::fire_if(&events.explosion, || {
+            crate::extension::events::ExplosionEvent {
+                world: Arc::clone(self.world),
+                center: self.center,
+                radius: self.radius,
+                source: self
+                    .source
+                    .as_deref()
+                    .map(crate::extension::events::EntityInfo::of),
+                blocks: std::mem::take(affected),
+                cancelled: false,
+            }
+        }) else {
+            return false;
+        };
+        *affected = event.blocks;
+        event.cancelled
     }
 
     fn interacts_with_blocks(&self) -> bool {

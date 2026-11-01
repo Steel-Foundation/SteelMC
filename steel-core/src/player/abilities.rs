@@ -1,6 +1,7 @@
 //! Player abilities (flight, invulnerability, etc.)
 
 use steel_protocol::packets::game::{CPlayerAbilities, SPlayerAbilities, ability_flags};
+use steel_registry::vanilla_attributes;
 use steel_utils::types::GameType;
 
 use crate::player::Player;
@@ -164,6 +165,26 @@ impl Player {
         self.abilities.lock().flying_speed = speed;
     }
 
+    /// Sets the walking speed (vanilla default 0.1) and the movement speed attribute base,
+    /// then syncs abilities.
+    ///
+    /// Vanilla only copies the ability into the attribute when loading player data; this
+    /// follows Paper's `setWalkSpeed`, which applies both immediately.
+    pub fn set_walking_speed(&self, speed: f32) {
+        self.abilities.lock().walking_speed = speed;
+        self.living_base
+            .attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MOVEMENT_SPEED, f64::from(speed));
+        self.send_abilities();
+    }
+
+    /// Returns the player's walking speed.
+    #[must_use]
+    pub fn get_walking_speed(&self) -> f32 {
+        self.abilities.lock().walking_speed
+    }
+
     /// Returns a copy of the player's abilities.
     #[must_use]
     pub fn get_abilities(&self) -> Abilities {
@@ -179,6 +200,20 @@ impl Player {
     /// Handles the player abilities packet from the client.
     /// This is sent when the player starts or stops flying.
     pub fn handle_player_abilities(&self, packet: SPlayerAbilities) {
+        let (may_fly, flying) = {
+            let abilities = self.abilities.lock();
+            (abilities.may_fly, abilities.flying)
+        };
+        if may_fly
+            && flying != packet.is_flying()
+            && self.toggle_cancelled(
+                crate::extension::events::ToggleKind::Flight,
+                packet.is_flying(),
+            )
+        {
+            self.send_abilities();
+            return;
+        }
         let mut abilities = self.abilities.lock();
 
         if abilities.may_fly {

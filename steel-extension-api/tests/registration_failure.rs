@@ -26,9 +26,13 @@ fn registration_failure_prevents_the_init_entrypoint() -> Result<(), String> {
     init_globals();
     let _generators = WorldGeneratorRegistry::new_with_builtins()?;
     assert!(BLOCK_BEHAVIORS.get().is_some());
-    let error = host::initialize_all(vec![extension], &mut hooks)
+    let error = host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)
         .expect_err("failed registration must stop init");
     assert!(error.contains("fixture failed after replacing carrots"));
     assert!(!error.contains("init ran after failed registration"));
     Ok(())
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

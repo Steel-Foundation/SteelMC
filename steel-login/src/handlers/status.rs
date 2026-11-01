@@ -13,11 +13,16 @@ use crate::tcp_client::JavaTcpClient;
 impl JavaTcpClient {
     /// Handles a status request from the client.
     pub async fn handle_status_request(&self) {
+        let (description, max, online) = self.server.fire_server_list_ping(
+            self.server.config.motd.clone(),
+            self.server.config.max_players.cast_signed(),
+            self.server.player_count() as i32,
+        );
         let res_packet = CStatusResponse::new(Status {
-            description: self.server.config.motd.clone(),
+            description,
             players: Some(Players {
-                max: self.server.config.max_players.cast_signed(),
-                online: self.server.player_count() as i32,
+                max,
+                online,
                 sample: self
                     .server
                     .player_sample()

@@ -37,7 +37,8 @@ const DEFAULT_WORLDS: &str = include_str!("../../../package-content/worlds.toml"
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SteelConfig {
-    /// Explicitly configured trusted native libraries, initialized before worlds.
+    /// Extensions loaded first, in order, from packages or libraries anywhere; every package
+    /// and library inside `extensions/` also loads automatically.
     #[serde(default)]
     pub extensions: Vec<ExtensionConfig>,
     /// The full server configuration (`[server]` section)
@@ -61,7 +62,7 @@ pub struct SteelConfig {
 pub struct ExtensionConfig {
     /// Native library or ZIP path, relative to the server's working directory.
     pub path: PathBuf,
-    /// Extension-owned TOML configuration passed during initialization.
+    /// Extension-owned configuration; when empty, `extensions/<name>/config.toml` is used.
     #[serde(default)]
     pub config: BTreeMap<String, toml::Value>,
 }

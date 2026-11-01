@@ -11,6 +11,7 @@ mod signature_cache;
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
 
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
@@ -26,6 +27,7 @@ use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
+use crate::extension::events::{PlayerChatEvent, PlayerCommandEvent};
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
@@ -237,9 +239,8 @@ impl Player {
     }
 
     /// Handles a chat message from the player.
-    pub fn handle_chat(&self, packet: SChat) {
+    pub fn handle_chat(self: &Arc<Self>, packet: SChat) {
         self.reset_last_action_time();
-        let chat_message = packet.message.clone();
 
         let verification_result = if let Some(_signature) = &packet.signature {
             match self.verify_chat_signature(&packet) {
@@ -272,7 +273,13 @@ impl Player {
             }
         }
 
-        let signature = if matches!(verification_result, Some(Ok(_))) {
+        let Some((chat_message, edited)) = self.fire_chat_event(packet.message.clone()) else {
+            self.detect_chat_rate_spam();
+            return;
+        };
+
+        // An edited message no longer matches its signature, so it is relayed unsigned.
+        let signature = if !edited && matches!(verification_result, Some(Ok(_))) {
             packet.signature.map(|sig| Box::new(sig) as Box<[u8]>)
         } else {
             None
@@ -338,6 +345,50 @@ impl Player {
         }
 
         self.detect_chat_rate_spam();
+    }
+
+    /// Fires the chat event. Returns the message to relay and whether a handler edited it, or
+    /// `None` when the message was cancelled or already delivered as a rendered override.
+    fn fire_chat_event(self: &Arc<Self>, message: String) -> Option<(String, bool)> {
+        let server = self.server();
+        let bus = &server.events().chat;
+        if bus.is_empty() {
+            return Some((message, false));
+        }
+        let mut event = PlayerChatEvent {
+            player: Arc::clone(self),
+            message: message.clone(),
+            rendered: None,
+            cancelled: false,
+        };
+        bus.fire(&mut event);
+        if event.cancelled {
+            return None;
+        }
+        if let Some(rendered) = event.rendered {
+            steel_utils::chat!(self.gameprofile.name().to_owned(), "{}", event.message);
+            server.broadcast_system_chat(&rendered, None);
+            return None;
+        }
+        let edited = event.message != message;
+        Some((event.message, edited))
+    }
+
+    /// Fires the command preprocess event for a typed command (without `/`).
+    /// Returns the command to dispatch, or `None` when a handler cancelled it.
+    pub(crate) fn preprocess_command(self: &Arc<Self>, command: String) -> Option<String> {
+        let server = self.server();
+        let bus = &server.events().command;
+        if bus.is_empty() {
+            return Some(command);
+        }
+        let mut event = PlayerCommandEvent {
+            player: Arc::clone(self),
+            command,
+            cancelled: false,
+        };
+        bus.fire(&mut event);
+        (!event.cancelled).then_some(event.command)
     }
 
     /// Sends a system message to the player.

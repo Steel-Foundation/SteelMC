@@ -56,9 +56,16 @@ fn loads_a_packaged_native_extension_and_checks_its_manifest_identity() -> Resul
         let _generators = WorldGeneratorRegistry::new_with_builtins()?;
         // The fixture init also emits native filters and rejects an incompatible
         // payload, exercising both directions of the checked host boundary.
-        assert_eq!(host::initialize_all(vec![extension], &mut hooks)?, [name]);
+        assert_eq!(
+            host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)?.names(),
+            [name]
+        );
         // SAFETY: this is the same trusted archive; duplicate identities must fail.
         assert!(unsafe { host::load(&path, "", &mut hooks) }.is_err());
     }
     Ok(())
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

@@ -40,7 +40,7 @@ fn loads_wool_shearing_and_preserves_original_behavior_delegation() -> Result<()
     );
     init_globals();
     assert_eq!(
-        host::initialize_all(vec![extension], &mut hooks)?,
+        host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)?.names(),
         ["wool-shearing-example"]
     );
     let original = captured
@@ -57,4 +57,8 @@ fn loads_wool_shearing_and_preserves_original_behavior_delegation() -> Result<()
         original.fits_inside_container_items()
     );
     Ok(())
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

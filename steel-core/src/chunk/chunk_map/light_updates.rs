@@ -1,3 +1,5 @@
+use steel_utils::PackedSectionBlockPos;
+
 use super::{
     Arc, BlockPos, ChunkHolder, ChunkMap, ChunkPos, ChunkStatus, InFlightLightUpdates,
     LightCacheLayout, LightCacheSetupRadius, LightLayer, LightSectionEmptinessChange,
@@ -19,6 +21,20 @@ impl ChunkMap {
             && holder.block_changed(pos)
         {
             // First change for this chunk - add to broadcast list
+            self.chunks_to_broadcast.lock().push(holder);
+        }
+    }
+
+    /// Marks many positions of one chunk section as changed for client sync.
+    pub fn section_blocks_changed(
+        &self,
+        chunk_pos: ChunkPos,
+        section_index: usize,
+        positions: &[PackedSectionBlockPos],
+    ) {
+        if let Some(holder) = self.lookup_active_holder(chunk_pos)
+            && holder.section_blocks_changed(section_index, positions)
+        {
             self.chunks_to_broadcast.lock().push(holder);
         }
     }

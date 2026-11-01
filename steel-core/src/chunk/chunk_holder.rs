@@ -403,6 +403,27 @@ impl ChunkHolder {
         !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
     }
 
+    /// Records many changed positions of one section under a single lock, like repeated
+    /// [`Self::block_changed`] calls. Returns `true` if this is the first pending broadcast.
+    pub fn section_blocks_changed(
+        &self,
+        section_index: usize,
+        positions: &[PackedSectionBlockPos],
+    ) -> bool {
+        if positions.is_empty()
+            || !self.ticking_readiness_snapshot().is_block_ticking()
+            || section_index >= self.changed_blocks_per_section.len()
+        {
+            return false;
+        }
+        self.changed_blocks_per_section[section_index]
+            .lock()
+            .extend(positions.iter().copied());
+        self.mark_packet_content_changed();
+        self.has_changed_sections.store(true, Ordering::Release);
+        !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
+    }
+
     /// Records a light-section change for a full chunk and marks saved light data dirty.
     ///
     /// Returns `true` if this is the first pending broadcast change for the chunk holder.

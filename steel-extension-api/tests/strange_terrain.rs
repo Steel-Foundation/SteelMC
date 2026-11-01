@@ -30,7 +30,7 @@ fn loads_terrain_without_game_of_life_configuration_and_resolves_its_generator()
     assert!(!REGISTRY.is_initialized());
     init_globals();
     let registry = WorldGeneratorRegistry::new_with_builtins()?;
-    host::initialize_all(vec![extension], &mut hooks)?;
+    host::initialize_all(vec![extension], &extension_data_root(), &mut hooks)?;
     let key = "example:strange".parse().map_err(str::to_owned)?;
     let config = registry.validate_config(&key, &Value::Table(Map::new()))?;
     let pool = Arc::new(
@@ -43,4 +43,8 @@ fn loads_terrain_without_game_of_life_configuration_and_resolves_its_generator()
     let unexpected = toml::from_str("unexpected = true").map_err(|e| e.to_string())?;
     assert!(registry.validate_config(&key, &unexpected).is_err());
     Ok(())
+}
+
+fn extension_data_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("steel-extension-api-tests-{}", std::process::id()))
 }

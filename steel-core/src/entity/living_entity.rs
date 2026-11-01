@@ -7,6 +7,7 @@ use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
+use crate::extension::events::{EntityDamageEvent, EntityInfo};
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 
@@ -672,6 +673,28 @@ pub trait LivingEntity: Entity {
             || enchantment_helper::is_immune_to_damage(self, source)
     }
 
+    /// Fires the damage event; returns the (possibly changed) amount, or `None` if cancelled.
+    fn fire_damage_event(&self, world: &World, source: &DamageSource, amount: f32) -> Option<f32> {
+        let Some(events) = world.events() else {
+            return Some(amount);
+        };
+        if events.damage.is_empty() {
+            return Some(amount);
+        }
+        let mut event = EntityDamageEvent {
+            world: world.key.clone(),
+            victim: EntityInfo::of(self),
+            attacker: source
+                .causing_entity()
+                .map(|entity| EntityInfo::of(entity.as_ref())),
+            cause: source.damage_type.key.clone(),
+            amount,
+            cancelled: false,
+        };
+        events.damage.fire(&mut event);
+        (!event.cancelled).then_some(event.amount)
+    }
+
     /// Main vanilla living-entity damage entry point.
     ///
     /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
@@ -697,6 +720,9 @@ pub trait LivingEntity: Entity {
         {
             return false;
         }
+        let Some(amount) = self.fire_damage_event(world, source, amount) else {
+            return false;
+        };
         if self.is_sleeping() {
             self.stop_sleeping();
         }
@@ -1052,7 +1078,18 @@ pub trait LivingEntity: Entity {
             if source_entity.is_none_or(|entity| entity.killed_entity(&world, self_entity, source))
             {
                 self.game_event(&vanilla_game_events::ENTITY_DIE);
-                self.drop_all_death_loot(source);
+                let drop_loot = world.events().and_then(|events| {
+                    crate::extension::Events::fire_if(&events.entity_death, || {
+                        crate::extension::events::EntityDeathEvent {
+                            world: world.key.clone(),
+                            entity: EntityInfo::of(self),
+                            drop_loot: true,
+                        }
+                    })
+                });
+                if drop_loot.is_none_or(|event| event.drop_loot) {
+                    self.drop_all_death_loot(source);
+                }
                 // TODO: Create wither rose for killer
             }
         }

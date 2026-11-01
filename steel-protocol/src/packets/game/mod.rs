@@ -6,6 +6,7 @@ mod c_block_destruction;
 mod c_block_entity_data;
 mod c_block_event;
 mod c_block_update;
+mod c_boss_event;
 mod c_bundle_delimiter;
 mod c_change_difficulty;
 mod c_clear_titles;
@@ -39,6 +40,7 @@ mod c_remove_mob_effect;
 mod c_remove_player_info;
 mod c_respawn;
 mod c_rotate_head;
+mod c_scoreboard;
 mod c_section_blocks_update;
 mod c_select_advancements_tab;
 mod c_set_action_bar_text;
@@ -111,6 +113,7 @@ pub use c_block_destruction::CBlockDestruction;
 pub use c_block_entity_data::CBlockEntityData;
 pub use c_block_event::CBlockEvent;
 pub use c_block_update::CBlockUpdate;
+pub use c_boss_event::{BossBarColor, BossBarOverlay, BossEventOperation, CBossEvent};
 pub use c_bundle_delimiter::CBundleDelimiter;
 pub use c_change_difficulty::CChangeDifficulty;
 pub use c_clear_titles::CClearTitles;
@@ -157,6 +160,10 @@ pub use c_remove_mob_effect::CRemoveMobEffect;
 pub use c_remove_player_info::CRemovePlayerInfo;
 pub use c_respawn::CRespawn;
 pub use c_rotate_head::CRotateHead;
+pub use c_scoreboard::{
+    CResetScore, CSetDisplayObjective, CSetObjective, CSetScore, DisplaySlot, NumberFormat,
+    ObjectiveMethod,
+};
 pub use c_section_blocks_update::{BlockChange, CSectionBlocksUpdate};
 pub use c_select_advancements_tab::CSelectAdvancementsTab;
 pub use c_set_action_bar_text::CSetActionBarText;

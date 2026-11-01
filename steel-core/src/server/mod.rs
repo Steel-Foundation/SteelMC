@@ -46,7 +46,7 @@ use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
-use crate::extension::{Extensions, RegisteredExtensions};
+use crate::extension::{Events, Extensions, RegisteredExtensions};
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -576,6 +576,49 @@ impl Drop for GameTickTaskGuard {
 }
 
 impl Server {
+    /// Installed extensions in load order.
+    #[must_use]
+    pub fn extension_infos(&self) -> &[crate::extension::ExtensionInfo] {
+        &self.extensions.hooks.infos
+    }
+
+    /// Fires the world load event for a world that just became available.
+    pub(crate) fn fire_world_load(&self, world: &Arc<World>) {
+        crate::extension::Events::fire_if(&self.events().world_load, || {
+            crate::extension::events::WorldLoadEvent {
+                world: Arc::clone(world),
+            }
+        });
+    }
+
+    /// Fires the server list ping event and returns the possibly edited
+    /// (MOTD, max players, online count).
+    #[must_use]
+    pub fn fire_server_list_ping(
+        &self,
+        motd: String,
+        max_players: i32,
+        online_players: i32,
+    ) -> (String, i32, i32) {
+        let bus = &self.events().server_list_ping;
+        if bus.is_empty() {
+            return (motd, max_players, online_players);
+        }
+        let mut event = crate::extension::events::ServerListPingEvent {
+            motd,
+            max_players,
+            online_players,
+        };
+        bus.fire(&mut event);
+        (event.motd, event.max_players, event.online_players)
+    }
+
+    /// Gameplay event subscriptions installed at startup.
+    #[must_use]
+    pub fn events(&self) -> &Events {
+        &self.extensions.hooks.events
+    }
+
     /// Returns the current server tick number.
     pub fn current_tick(&self) -> u64 {
         self.tick_rate_manager.read().tick_count

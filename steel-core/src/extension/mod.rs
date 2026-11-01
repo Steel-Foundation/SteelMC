@@ -7,6 +7,9 @@ use crate::server::Server;
 use crate::world::World;
 use crate::worldgen::WorldGeneratorRegistry;
 
+pub mod events;
+pub use events::{Event, EventBus, EventHandler, EventPriority, Events};
+
 /// Synchronous work run at the end of each normal world game tick.
 pub trait WorldTickHandler: Send + Sync {
     /// Runs on the world's existing tick thread, without holding extension locks.
@@ -50,6 +53,24 @@ impl RegisteredExtensions {
     }
 }
 
+/// Identity of one installed extension (a native extension or an embedded mod), shown by
+/// `/extensions`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtensionInfo {
+    /// Unique name.
+    pub name: String,
+    /// Extension version.
+    pub version: String,
+    /// Version of the extension API it was built against.
+    pub api_version: String,
+    /// Required extensions.
+    pub depends: Vec<String>,
+    /// Optional extensions loaded first when present.
+    pub soft_depends: Vec<String>,
+    /// Where it was loaded from, such as a library path.
+    pub source: String,
+}
+
 /// Event subscriptions collected separately from registry changes during startup.
 #[derive(Default)]
 pub struct ExtensionHooks {
@@ -57,6 +78,10 @@ pub struct ExtensionHooks {
     server_ticks: Vec<Box<dyn ServerTickHandler>>,
     server_stops: Vec<Box<dyn ServerStopHandler>>,
     stopped: AtomicBool,
+    /// Gameplay event subscriptions.
+    pub events: Events,
+    /// Installed extensions in load order.
+    pub infos: Vec<ExtensionInfo>,
 }
 
 impl ExtensionHooks {

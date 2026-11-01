@@ -6,14 +6,17 @@
 use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
+use steel_registry::attribute::AttributeModifierOperation;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::data_components::vanilla_components::ENCHANTMENTS;
 use steel_registry::equipment::EquipmentSlot;
+use steel_registry::equipment::EquipmentSlotGroup;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, level_events, vanilla_blocks,
     vanilla_game_events,
 };
+use steel_registry::{RegistryExt, vanilla_attributes, vanilla_mob_effects};
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{GameType, InteractionHand, UpdateFlags},
@@ -22,6 +25,7 @@ use steel_utils::{
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
 use crate::block_entity::BlockEntity;
 use crate::entity::{Entity, LivingEntity};
+use crate::extension::events::BlockBreakEvent;
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -339,6 +343,10 @@ impl BlockBreakingManager {
         clippy::unused_self,
         reason = "method belongs logically to BlockBreakingManager and will use self when additional state is added"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "matches vanilla ServerPlayerGameMode.destroyBlock as one ordered sequence"
+    )]
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
@@ -356,6 +364,9 @@ impl BlockBreakingManager {
         if player.block_action_restricted(world, pos) {
             return false;
         }
+        let Some(drop_items) = fire_block_break(player, world, pos, state) else {
+            return false;
+        };
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
@@ -453,14 +464,16 @@ impl BlockBreakingManager {
                 player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
                 player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
-                drop_block_loot(
-                    player,
-                    world,
-                    pos,
-                    adjusted_state,
-                    &destroyed_with,
-                    block_entity.as_deref(),
-                );
+                if drop_items {
+                    drop_block_loot(
+                        player,
+                        world,
+                        pos,
+                        adjusted_state,
+                        &destroyed_with,
+                        block_entity.as_deref(),
+                    );
+                }
                 behavior.player_destroy(
                     world,
                     player,
@@ -487,6 +500,35 @@ pub enum BlockBreakAction {
     Stop,
     /// Player aborted breaking a block.
     Abort,
+}
+
+/// Fires the block break event; returns whether loot drops, or `None` if a handler cancelled
+/// the break.
+fn fire_block_break(
+    player: &Player,
+    world: &Arc<World>,
+    pos: BlockPos,
+    state: BlockStateId,
+) -> Option<bool> {
+    let Some(events) = world.events() else {
+        return Some(true);
+    };
+    if events.block_break.is_empty() {
+        return Some(true);
+    }
+    let Some(player) = player.shared() else {
+        return Some(true);
+    };
+    let mut event = BlockBreakEvent {
+        player,
+        world: Arc::clone(world),
+        pos,
+        state,
+        drop_items: true,
+        cancelled: false,
+    };
+    events.block_break.fire(&mut event);
+    (!event.cancelled).then_some(event.drop_items)
 }
 
 fn held_item_can_destroy_in_creative(player: &Player) -> bool {
@@ -539,26 +581,14 @@ pub(in crate::player) fn get_destroy_progress(player: &Player, block_state: Bloc
         return 1.0;
     }
 
-    // Get player's mining speed
-    let mining_speed = {
+    let (speed, has_correct_tool) = {
         let inv = player.inventory.lock();
         let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-        main_hand.get_destroy_speed(block_state)
+        (
+            player_destroy_speed(player, main_hand, block_state),
+            main_hand.is_correct_tool_for_drops(block_state),
+        )
     };
-
-    // Check if player has the correct tool
-    let has_correct_tool = {
-        let inv = player.inventory.lock();
-        let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-        main_hand.is_correct_tool_for_drops(block_state)
-    };
-
-    // Apply speed modifiers
-    let speed = mining_speed;
-
-    // TODO: Apply efficiency enchantment
-    // TODO: Apply haste/mining fatigue effects
-    // TODO: Apply underwater/in-air penalties
 
     // Calculate destroy progress per tick
     // Vanilla formula: speed / hardness / (hasCorrectTool ? 30 : 100)
@@ -569,6 +599,82 @@ pub(in crate::player) fn get_destroy_progress(player: &Player, block_state: Bloc
     };
 
     speed / destroy_time / divisor
+}
+
+/// Vanilla `Player.getDestroySpeed`: tool speed, mining efficiency, Haste or Conduit Power,
+/// Mining Fatigue, the block break speed attribute, and the underwater and airborne penalties.
+///
+/// Steel does not yet turn enchantment `minecraft:attributes` effects into attribute modifiers
+/// when equipment changes (vanilla `EnchantmentHelper.forEachModifier`), so the main-hand
+/// tool's mining efficiency effects (Efficiency gives `level² + 1`) are added here on top of
+/// the player's `mining_efficiency` attribute.
+// TODO: drop the held-tool term once enchantment attribute modifiers live in the attribute map.
+fn player_destroy_speed(player: &Player, tool: &ItemStack, state: BlockStateId) -> f32 {
+    let mut speed = tool.get_destroy_speed(state);
+    let attribute = |attribute| {
+        player
+            .attributes()
+            .lock()
+            .get_value(attribute)
+            .unwrap_or(attribute.default_value) as f32
+    };
+    if speed > 1.0 {
+        speed += attribute(vanilla_attributes::MINING_EFFICIENCY) + held_mining_efficiency(tool);
+    }
+    let haste = player
+        .mob_effect(vanilla_mob_effects::HASTE)
+        .map(|effect| effect.amplifier());
+    let conduit = player
+        .mob_effect(vanilla_mob_effects::CONDUIT_POWER)
+        .map(|effect| effect.amplifier());
+    if let Some(amplifier) = haste.max(conduit) {
+        speed *= 1.0 + (amplifier + 1) as f32 * 0.2;
+    }
+    if let Some(fatigue) = player.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
+        speed *= 0.3_f32.powi(fatigue.amplifier() + 1);
+    }
+    speed *= attribute(vanilla_attributes::BLOCK_BREAK_SPEED);
+    if player.is_eye_in_water() {
+        speed *= attribute(vanilla_attributes::SUBMERGED_MINING_SPEED);
+    }
+    if !player.on_ground() {
+        speed /= 5.0;
+    }
+    speed
+}
+
+/// Sum of the `add_value` mining efficiency effects of the tool's main-hand enchantments.
+fn held_mining_efficiency(tool: &ItemStack) -> f32 {
+    let Some(enchantments) = tool.get(ENCHANTMENTS) else {
+        return 0.0;
+    };
+    let mut total = 0.0;
+    for (key, level) in &enchantments.levels {
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let in_main_hand = enchantment.slots.iter().any(|slot| {
+            matches!(
+                slot,
+                EquipmentSlotGroup::MainHand | EquipmentSlotGroup::Hand | EquipmentSlotGroup::Any
+            )
+        });
+        if !in_main_hand {
+            continue;
+        }
+        let level = i32::try_from(*level).unwrap_or(i32::MAX);
+        total += enchantment
+            .effects
+            .attributes
+            .iter()
+            .filter(|effect| {
+                effect.attribute == vanilla_attributes::MINING_EFFICIENCY
+                    && effect.operation == AttributeModifierOperation::AddValue
+            })
+            .map(|effect| effect.amount.calculate(level))
+            .sum::<f32>();
+    }
+    total
 }
 
 /// Drops loot for a destroyed block using its loot table.

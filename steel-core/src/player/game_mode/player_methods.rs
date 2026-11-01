@@ -20,6 +20,20 @@ impl Player {
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
     pub fn set_game_mode(&self, gamemode: GameType) -> bool {
+        if gamemode != self.game_mode()
+            && self
+                .fire_event(
+                    |events| &events.game_mode_change,
+                    |player| crate::extension::events::PlayerGameModeChangeEvent {
+                        player,
+                        mode: gamemode,
+                        cancelled: false,
+                    },
+                )
+                .is_some_and(|event| event.cancelled)
+        {
+            return false;
+        }
         let was_spectator = self.game_mode() == GameType::Spectator;
         if !self.change_game_mode_state(gamemode) {
             return false;

@@ -137,6 +137,11 @@ pub enum AddEntityError {
         /// Entity network ID.
         entity_id: i32,
     },
+    /// An extension cancelled the entity's spawn event.
+    Cancelled {
+        /// Entity network ID.
+        entity_id: i32,
+    },
 }
 
 impl fmt::Display for AddEntityError {
@@ -150,6 +155,9 @@ impl fmt::Display for AddEntityError {
             }
             Self::RemovedEntity { entity_id } => {
                 write!(f, "entity {entity_id} is already removed")
+            }
+            Self::Cancelled { entity_id } => {
+                write!(f, "entity {entity_id} spawn was cancelled by an extension")
             }
         }
     }

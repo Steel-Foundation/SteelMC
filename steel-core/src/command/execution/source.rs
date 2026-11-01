@@ -69,6 +69,11 @@ impl CommandResultCallback {
 
 /// Read-only source data exposed to command argument parsers and suggestion providers.
 pub(crate) trait CommandArgumentSource: Send + Sync {
+    /// UUID of the player issuing the command, if any.
+    fn player_uuid(&self) -> Option<uuid::Uuid> {
+        None
+    }
+
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         None
     }
@@ -563,6 +568,10 @@ impl ExecutionCommandSource for CommandSource {
 }
 
 impl CommandArgumentSource for CommandSource {
+    fn player_uuid(&self) -> Option<uuid::Uuid> {
+        self.player().map(|player| player.gameprofile.id())
+    }
+
     fn entity_tag_suggestions(&self, targets: &EntitySelector) -> Vec<String> {
         targets
             .find_entities(self)

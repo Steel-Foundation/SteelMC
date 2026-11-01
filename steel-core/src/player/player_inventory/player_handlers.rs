@@ -44,6 +44,18 @@ use super::{
 };
 
 impl Player {
+    /// Container ID of the open menu (other than the player's own inventory), if any.
+    /// While a menu callback runs, this is the menu being dispatched.
+    #[must_use]
+    pub fn open_container_id(&self) -> Option<u8> {
+        let open_menu = self.open_menu.lock();
+        open_menu
+            .dispatch
+            .as_ref()
+            .map(|dispatch| dispatch.container_id)
+            .or_else(|| open_menu.menu.as_ref().map(Menu::container_id))
+    }
+
     fn take_open_menu_for_callback(
         &self,
         expected_container_id: Option<i32>,
@@ -285,6 +297,25 @@ impl Player {
             return;
         }
 
+        let cancelled = self
+            .fire_event(
+                |events| &events.inventory_click,
+                |player| crate::extension::events::InventoryClickEvent {
+                    player,
+                    container_id: packet.container_id,
+                    slot: packet.slot_num,
+                    button: packet.button_num,
+                    click: packet.click_type,
+                    cancelled: false,
+                },
+            )
+            .is_some_and(|event| event.cancelled);
+        if cancelled {
+            menu.behavior_mut()
+                .send_all_data_to_remote(&self.connection);
+            return;
+        }
+
         if !menu.still_valid(self) {
             log::debug!(
                 "Player {} interacted with invalid menu",
@@ -480,6 +511,27 @@ impl Player {
 
     /// Sets selected slot
     pub fn handle_set_carried_item(&self, packet: SSetCarriedItem) {
+        let previous = self.inventory.lock().get_selected_slot();
+        if let Ok(new) = u8::try_from(packet.slot)
+            && PlayerInventory::is_hotbar_slot(new)
+            && new != previous
+            && self
+                .fire_event(
+                    |events| &events.item_held,
+                    |player| crate::extension::events::PlayerItemHeldEvent {
+                        player,
+                        previous,
+                        new,
+                        cancelled: false,
+                    },
+                )
+                .is_some_and(|event| event.cancelled)
+        {
+            self.send_packet(steel_protocol::packets::game::CSetHeldSlot {
+                slot: i32::from(previous),
+            });
+            return;
+        }
         if self
             .inventory
             .lock()
@@ -540,11 +592,22 @@ impl Player {
         title: impl Into<TextComponent>,
         create: impl for<'a> FnOnce(MenuOpenContext<'a>) -> Menu + Send + 'static,
     ) {
-        if !self.begin_menu_open_operation() {
+        let title = title.into();
+        let cancelled = self
+            .fire_event(
+                |events| &events.inventory_open,
+                |player| crate::extension::events::InventoryOpenEvent {
+                    player,
+                    title: title.clone(),
+                    cancelled: false,
+                },
+            )
+            .is_some_and(|event| event.cancelled);
+        if cancelled || !self.begin_menu_open_operation() {
             return;
         }
         self.open_menu_inner(PendingMenuOpen {
-            title: title.into(),
+            title,
             create: Box::new(create),
         });
         self.finish_menu_open_operation();
@@ -822,8 +885,16 @@ impl Player {
                 container_id: i32::from(menu.container_id()),
             });
         }
+        let container_id = menu.container_id();
         self.remove_open_menu(&mut menu);
         self.finish_open_menu_removal();
+        self.fire_event(
+            |events| &events.inventory_close,
+            |player| crate::extension::events::InventoryCloseEvent {
+                player,
+                container_id,
+            },
+        );
     }
 
     fn remove_open_menu(&self, menu: &mut Menu) {
@@ -984,6 +1055,27 @@ impl Player {
     /// - `all`: If true, drops the entire stack (Ctrl+Q). If false, drops one item (Q).
     pub fn drop_from_selected(&self, all: bool) {
         if !self.can_drop_items() {
+            return;
+        }
+        let cancelled = self
+            .fire_event(
+                |events| &events.drop_item,
+                |player| {
+                    let item = {
+                        let inventory = player.inventory.lock();
+                        let selected = inventory.get_selected_item();
+                        selected.copy_with_count(if all { selected.count() } else { 1 })
+                    };
+                    crate::extension::events::PlayerDropItemEvent {
+                        player,
+                        item,
+                        cancelled: false,
+                    }
+                },
+            )
+            .is_some_and(|event| event.cancelled);
+        if cancelled {
+            self.send_inventory_to_remote();
             return;
         }
 

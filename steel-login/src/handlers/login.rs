@@ -50,6 +50,10 @@ impl JavaTcpClient {
         profile: GameProfile,
         reader_encryption: Option<[u8; 16]>,
     ) -> ConnectionAction {
+        if let Some(reason) = self.server.check_pre_login(&profile) {
+            self.kick(reason).await;
+            return ConnectionAction::none();
+        }
         // Reject full-server logins before evicting an existing session.
         if self.server.is_player_limit_reached(profile.id()) {
             self.kick(TextComponent::translated(

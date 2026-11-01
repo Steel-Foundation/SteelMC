@@ -15,6 +15,7 @@ pub use api::{
     CommandParserSource, CommandReader, CommandReaderCursor, CommandRegistration,
     CommandRegistrationError, CommandRegistry, CommandSource, CommandSuggestionContext,
     CommandSuggestions, FrozenCommands, SuspendedCommand, SuspendedCommandPoll, argument, literal,
+    parse_block_state,
 };
 pub use execution::CommandSuspensionOrder;
 

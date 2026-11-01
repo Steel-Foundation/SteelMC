@@ -248,6 +248,21 @@ impl PistonBaseBlock {
 
         let to_push = resolver.to_push().to_vec();
         let to_destroy = resolver.to_destroy().to_vec();
+        if let Some(events) = world.events()
+            && crate::extension::Events::fire_if(&events.piston, || {
+                crate::extension::events::PistonEvent {
+                    world: Arc::clone(world),
+                    pos: piston_pos,
+                    direction,
+                    extending,
+                    blocks: to_push.iter().chain(&to_destroy).copied().collect(),
+                    cancelled: false,
+                }
+            })
+            .is_some_and(|event| event.cancelled)
+        {
+            return false;
+        }
         let push_direction = resolver.push_direction();
         let mut delete_after_move = Vec::with_capacity(to_push.len());
         let mut pushed_states = Vec::with_capacity(to_push.len());

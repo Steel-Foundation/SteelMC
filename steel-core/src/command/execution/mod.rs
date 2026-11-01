@@ -23,7 +23,7 @@ mod world;
 pub(crate) use argument::SteelArgumentType;
 pub(crate) use argument::{SteelArgumentParser, SteelArgumentSuggestionContext};
 pub(crate) use biome::BiomeOrTag;
-pub(crate) use block::{BlockInput, BlockPredicate, placement_flags};
+pub(crate) use block::{BlockInput, BlockPredicate, parse_block_state_text, placement_flags};
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use permission::PermissionGroupName;

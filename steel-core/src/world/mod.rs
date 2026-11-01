@@ -18,7 +18,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::status::ChunkStatus;
 use crate::entity::damage::DamageHistory;
-use crate::extension::Extensions;
+use crate::extension::{Events, Extensions};
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -113,6 +113,7 @@ mod block_region;
 mod block_updates;
 mod border;
 mod broadcasts;
+pub mod bulk_fill;
 pub(crate) mod clock;
 mod domain_entity_directory;
 mod entity_management;
@@ -323,6 +324,14 @@ pub struct World {
 }
 
 impl World {
+    /// Gameplay event subscriptions, absent for worlds created without server extensions.
+    #[must_use]
+    pub fn events(&self) -> Option<&Events> {
+        self.extensions
+            .get()
+            .map(|extensions| &extensions.hooks.events)
+    }
+
     /// Creates a new world with custom configuration.
     ///
     /// This allows specifying storage backend (disk or RAM-only) and other options.

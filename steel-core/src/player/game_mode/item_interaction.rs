@@ -1,7 +1,7 @@
 use super::{
-    Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
-    World, adventure_mode, wrap_degrees,
+    Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractAction,
+    InteractionHand, InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem,
+    UseOnContext, World, adventure_mode, wrap_degrees,
 };
 use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::stat::vanilla_stat_types;
@@ -219,6 +219,12 @@ impl Player {
             inventory.get_item_in_hand(packet.hand).is_empty()
         };
         if item_stack_is_empty {
+            return;
+        }
+
+        let world = self.get_world();
+        if self.fire_interact(&world, InteractAction::RightClickAir, packet.hand, None) {
+            self.send_inventory_to_remote();
             return;
         }
 

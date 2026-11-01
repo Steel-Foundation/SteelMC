@@ -353,6 +353,7 @@ async fn run_server(
     task_tracker.close();
     task_tracker.wait().await;
 
+    steel.extensions.shutdown(&server);
     server.save_and_shutdown().await;
 
     log::info!("Server stopped");
