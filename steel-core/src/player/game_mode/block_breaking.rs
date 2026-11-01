@@ -33,6 +33,9 @@ use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContex
 
 use super::adventure_mode;
 
+mod server_mining;
+use server_mining::ServerMiningTarget;
+
 impl Player {
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
     pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
@@ -81,6 +84,7 @@ pub struct BlockBreakingManager {
     delayed_tick_start: u64,
     /// The last sent destruction progress state (0-9, or -1 for none).
     last_sent_state: i32,
+    server_mining: Option<ServerMiningTarget>,
 }
 
 impl Default for BlockBreakingManager {
@@ -103,6 +107,7 @@ impl BlockBreakingManager {
             delayed_destroy_pos: BlockPos::new(0, 0, 0),
             delayed_tick_start: 0,
             last_sent_state: -1,
+            server_mining: None,
         }
     }
 
@@ -136,7 +141,20 @@ impl BlockBreakingManager {
                 world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
                 self.last_sent_state = -1;
                 self.is_destroying_block = false;
+                self.server_mining = None;
             } else {
+                if self
+                    .server_mining
+                    .as_ref()
+                    .is_some_and(|target| !target.is_valid(player, world, self.destroy_pos, state))
+                {
+                    self.abort_destroy_block(player, world, self.destroy_pos);
+                    player.send_packet(CBlockUpdate {
+                        pos: self.destroy_pos,
+                        block_state: state,
+                    });
+                    return;
+                }
                 let ticks_spent_destroying =
                     self.game_ticks.saturating_sub(self.destroy_progress_start);
                 let event = if ticks_spent_destroying.is_multiple_of(4) {
@@ -145,13 +163,20 @@ impl BlockBreakingManager {
                     level_events::PARTICLES_DESTROY_PROGRESS
                 };
 
-                self.increment_destroy_progress(
+                let progress = self.increment_destroy_progress(
                     player,
                     world,
                     state,
                     self.destroy_pos,
                     self.destroy_progress_start,
                 );
+                // An invisible carrier such as a barrier never sends vanilla's
+                // STOP packet. Only these registered custom blocks finish here.
+                if self.server_mining.is_some() && progress >= 1.0 {
+                    self.abort_destroy_block(player, world, self.destroy_pos);
+                    self.destroy_and_ack(player, world, self.destroy_pos);
+                    return;
+                }
                 world.level_event(
                     event,
                     self.destroy_pos,
@@ -242,8 +267,19 @@ impl BlockBreakingManager {
                     return;
                 }
 
-                self.destroy_progress_start = self.game_ticks;
                 let block_state = world.get_block_state(pos);
+                if self.is_destroying_block
+                    && self.destroy_pos == pos
+                    && self
+                        .server_mining
+                        .as_ref()
+                        .is_some_and(|target| target.is_valid(player, world, pos, block_state))
+                {
+                    // Fast client carriers can predict completion and retry
+                    // while the material's server timer is still running.
+                    return;
+                }
+                self.destroy_progress_start = self.game_ticks;
 
                 if !is_air(block_state) {
                     // TODO: Call EnchantmentHelper.onHitBlock before blockState.attack.
@@ -267,6 +303,7 @@ impl BlockBreakingManager {
                         }
 
                         self.is_destroying_block = true;
+                        self.server_mining = ServerMiningTarget::new(player, world, block_state);
                         self.destroy_pos = pos;
                         self.destroy_direction = direction;
                         let state = (progress * 10.0) as i32;
@@ -277,6 +314,11 @@ impl BlockBreakingManager {
             }
 
             BlockBreakAction::Stop => {
+                if self.server_mining.is_some() && pos == self.destroy_pos {
+                    // The carrier's predicted completion time is independent of
+                    // the custom material. Completion uses the server's timer.
+                    return;
+                }
                 if pos == self.destroy_pos {
                     let ticks_spent = self.game_ticks.saturating_sub(self.destroy_progress_start);
                     let block_state = world.get_block_state(pos);
@@ -312,6 +354,7 @@ impl BlockBreakingManager {
 
     fn abort_destroy_block(&mut self, player: &Player, world: &Arc<World>, pos: BlockPos) {
         self.is_destroying_block = false;
+        self.server_mining = None;
 
         if self.destroy_pos != pos {
             log::warn!(

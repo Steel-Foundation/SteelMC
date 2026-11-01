@@ -108,7 +108,7 @@ impl ChunkMap {
             let mut chunk_sender = player.chunk_sender().lock();
             let mut chunk_send_epoch = player.chunk_send_epoch.lock();
             *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
-            chunk_sender.clear_world_chunks();
+            chunk_sender.clear_world_chunks(&player.connection);
             *player.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
         }
 

@@ -140,6 +140,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
 
+    /// Whether this instance may enter world or passenger-tree persistence.
+    /// Steel's temporary block seats override the vanilla entity-type default.
+    fn is_persistent(&self) -> bool {
+        self.entity_type().can_serialize
+    }
+
     /// Returns whether this entity ignores chunk ticking visibility.
     fn is_always_ticking(&self) -> bool {
         false
@@ -310,9 +316,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns passenger-save NBT including the entity type id.
     fn nbt_for_passenger_save(&self) -> Option<NbtCompound> {
-        if !self.removal_reason().is_none_or(RemovalReason::should_save)
-            || !self.entity_type().can_serialize
-        {
+        if !self.removal_reason().is_none_or(RemovalReason::should_save) || !self.is_persistent() {
             return None;
         }
 

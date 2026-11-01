@@ -112,11 +112,17 @@ impl RegistryCache {
         let mut tags_by_registry: TagCollection = Vec::with_capacity(10);
         macro_rules! add_tags {
             ($reg_key:expr, $field:ident) => {
+                add_tags!($reg_key, $field, |_| true);
+            };
+            ($reg_key:expr, $field:ident, $visible:expr) => {
                 let mut tags: Vec<(Identifier, Vec<VarInt>)> =
                     Vec::with_capacity(registry.$field.tag_keys().count());
                 for tag_key in registry.$field.tag_keys() {
                     let mut ids = Vec::with_capacity(registry.$field.iter_tag(tag_key).count());
                     for entry in registry.$field.iter_tag(tag_key) {
+                        if !($visible)(entry) {
+                            continue;
+                        }
                         ids.push(VarInt::from(entry.id()));
                     }
                     tags.push((tag_key.clone(), ids));
@@ -125,8 +131,12 @@ impl RegistryCache {
             };
         }
 
-        add_tags!(BLOCKS_REGISTRY, blocks);
-        add_tags!(ITEMS_REGISTRY, items);
+        add_tags!(BLOCKS_REGISTRY, blocks, |block| registry
+            .client_content
+            .is_vanilla_block(block));
+        add_tags!(ITEMS_REGISTRY, items, |item| registry
+            .client_content
+            .is_vanilla_item(item));
         add_tags!(TIMELINE_REGISTRY, timelines);
         add_tags!(DIALOG_REGISTRY, dialogs);
         add_tags!(DAMAGE_TYPE_REGISTRY, damage_types);

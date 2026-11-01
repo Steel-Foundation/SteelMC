@@ -446,7 +446,7 @@ impl EntityEntry {
                     .is_some_and(RemovalReason::should_save))
             && !self.entity.is_passenger()
             && !self.entity.has_exactly_one_player_passenger()
-            && self.entity.entity_type().can_serialize
+            && self.entity.is_persistent()
     }
 
     fn query_order(&self) -> EntityQueryOrder {

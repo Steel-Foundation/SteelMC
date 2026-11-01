@@ -230,7 +230,7 @@ pub struct ChunkMap {
     /// Serializes live and startup chunk-phase drivers.
     source_phase_guard: SyncMutex<()>,
     /// Full status completions awaiting lifecycle-boundary reconciliation.
-    full_publications: Arc<FullPublicationQueue>,
+    pub(super) full_publications: Arc<FullPublicationQueue>,
     /// Incremental radius-1/radius-2 Full-neighborhood state.
     full_neighborhood: SyncMutex<FullNeighborhoodIndex>,
     /// Readiness-driven chunk views published at lifecycle boundaries.
@@ -802,7 +802,12 @@ impl ChunkMap {
 
                     for entity_id in &tracking_players {
                         if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                            let mut sender = player.chunk_sender().lock();
+                            if !sender.is_chunk_sent(chunk_pos) {
+                                continue;
+                            }
                             player.connection.send_encoded(encoded.clone());
+                            sender.update_client_block(&player.connection, block_pos, block_state);
                         }
                     }
                     world.broadcast_block_entity_if_needed(block_pos);
@@ -827,6 +832,15 @@ impl ChunkMap {
                         "Broadcasting section block updates"
                     );
 
+                    let display_updates: Vec<_> = changes
+                        .iter()
+                        .map(|change| {
+                            (
+                                section_pos.relative_to_block_pos(change.pos),
+                                change.block_state,
+                            )
+                        })
+                        .collect();
                     let packet = CSectionBlocksUpdate {
                         section_pos,
                         changes,
@@ -843,7 +857,14 @@ impl ChunkMap {
 
                     for entity_id in &tracking_players {
                         if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                            let mut sender = player.chunk_sender().lock();
+                            if !sender.is_chunk_sent(chunk_pos) {
+                                continue;
+                            }
                             player.connection.send_encoded(encoded.clone());
+                            for &(pos, state) in &display_updates {
+                                sender.update_client_block(&player.connection, pos, state);
+                            }
                         }
                     }
                     for &packed in &changed_positions {

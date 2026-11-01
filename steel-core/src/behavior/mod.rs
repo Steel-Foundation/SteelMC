@@ -25,6 +25,7 @@
 //! ```
 
 mod block;
+use steel_registry::REGISTRY;
 pub mod blocks;
 mod consume_effect;
 mod context;
@@ -224,6 +225,15 @@ pub fn init_behaviors() {
     BLOCK_BEHAVIORS.0.get_or_init(|| {
         let mut block_behaviors = BlockBehaviorRegistry::new();
         register_block_behaviors(&mut block_behaviors);
+        for (_, block) in REGISTRY.blocks.iter() {
+            if REGISTRY
+                .client_content
+                .block(block)
+                .is_some_and(|model| model.bed.is_some())
+            {
+                block_behaviors.set_behavior(block, Box::new(blocks::BedBlock::new(block)));
+            }
+        }
         block_behaviors.run_registration_hooks();
         block_behaviors
     });
@@ -248,6 +258,13 @@ pub fn init_behaviors() {
     ITEM_BEHAVIORS.0.get_or_init(|| {
         let mut item_behaviors = ItemBehaviorRegistry::new();
         register_item_behaviors(&mut item_behaviors);
+        for (_, item) in REGISTRY.items.iter() {
+            if REGISTRY.client_content.is_custom_item(item)
+                && let Some(block) = item.block
+            {
+                item_behaviors.set_behavior(item, Box::new(items::BlockItem::new(block)));
+            }
+        }
         item_behaviors
     });
 

@@ -762,6 +762,7 @@ pub mod attribute;
 mod base;
 mod block_attached_entity;
 mod block_effects;
+pub(crate) mod block_seat;
 mod callback;
 mod combat_rules;
 pub mod consume_effect;

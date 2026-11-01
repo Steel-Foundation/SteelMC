@@ -1,6 +1,7 @@
 //! Host adapters. This module and its Steel dependencies are absent in extension builds.
 
 pub(crate) mod commands;
+pub(crate) mod content;
 pub(crate) mod effects;
 pub(crate) mod events;
 pub(crate) mod fill;
@@ -14,6 +15,7 @@ pub(crate) mod players;
 pub(crate) mod runtime;
 pub(crate) mod services;
 pub(crate) mod worlds;
+use crate::content::api as content_api;
 use crate::hooks::api as hooks_api;
 use crate::runtime::api as runtime_api;
 use lifecycle::{DependencyInfo, resolve, split_dependencies};
@@ -141,6 +143,7 @@ pub fn bootstrap(mut hook: RegistrationHook<'_>) -> RegistrationStatus {
         entity_factory::api::register_exports,
         runtime_api::register_exports,
         hooks_api::register_exports,
+        content_api::register_exports,
     ] {
         let status = register(&mut hook);
         if status != RegistrationStatus::Accepted {

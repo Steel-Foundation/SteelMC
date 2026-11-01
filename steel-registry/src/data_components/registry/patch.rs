@@ -169,4 +169,26 @@ impl DataComponentPatch {
             }
         });
     }
+
+    /// Preserves effective values while changing the prototype used by the receiver.
+    pub(crate) fn rebased(&self, source: &DataComponentMap, target: &DataComponentMap) -> Self {
+        let mut result = Self::new();
+        for (key, value) in source.iter() {
+            if target.get_raw(key) != Some(value) {
+                result
+                    .entries
+                    .insert(key.clone(), ComponentPatchEntry::Set(value.clone()));
+            }
+        }
+        for key in target.keys() {
+            if source.get_raw(key).is_none() {
+                result
+                    .entries
+                    .insert(key.clone(), ComponentPatchEntry::Removed);
+            }
+        }
+        result.apply(self);
+        result.sanitize_against(target);
+        result
+    }
 }

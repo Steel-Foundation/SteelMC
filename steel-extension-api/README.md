@@ -60,6 +60,30 @@ accidental host-feature unification. Wool shearing needs no configuration. The
 behavior, Game of Life, terrain generation, and Spleef, each with build and
 configuration instructions.
 
+## Custom content for vanilla clients
+
+Subscribe with `Hooks::register_content_registration` before registries freeze.
+`BlockDefinition::new(key)` defines an independent block with `BlockProperties`
+and `VoxelShape` box unions. It does not require a vanilla block template. Steel
+chooses the vanilla client representation automatically; unsupported shapes need
+explicit `.allow_approximation()`, retaining exact server geometry with possible
+client movement corrections. Properties/geometry can optionally be copied from
+registered vanilla data. Use `.horizontal_facing(HorizontalPlacement::Player)`
+for stair-style horizontal placement with real facing states, rotated geometry,
+and models. The furniture chair rotates its seat offset with that facing.
+
+Models support unit XYZW rotations and independent item-model keys. The default
+[furniture example](../extension-example/furniture/README.md) rotates existing
+vanilla slab models into vertical half blocks for all slab materials. Its optional
+generated resource pack supplies dedicated models and inventory icons. Resource
+packs affect visuals, not client collision.
+
+`register_bed(BedDefinition)` registers an ordinary bed state family with sleeping
+and respawn behavior. `Player::sit(anchor, offset)` supplies temporary seats.
+See [Custom items and blocks](../doc/extensions/custom-content.md) for the complete
+contract and the [lucky-block example](../extension-example/lucky-block/README.md)
+for yellow head models, random rewards, and traps.
+
 ## Ordered actions and filters
 
 Actions borrow an ABI-stable payload shared; filters borrow one exclusively and

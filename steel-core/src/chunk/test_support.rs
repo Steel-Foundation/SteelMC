@@ -20,6 +20,30 @@ pub fn insert_full_chunk(
     pos: ChunkPos,
     block_ticking_ready: bool,
 ) -> Arc<ChunkHolder> {
+    install_full_chunk(world, pos, block_ticking_ready, false)
+}
+
+/// Installs a center ready for entity simulation and its required radius-2
+/// Full neighborhood. Publications participate in normal readiness reconciliation.
+#[must_use]
+pub fn insert_entity_ticking_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
+    for x in -2..=2 {
+        for z in -2..=2 {
+            if x != 0 || z != 0 {
+                let _ =
+                    install_full_chunk(world, ChunkPos::new(pos.0.x + x, pos.0.y + z), true, false);
+            }
+        }
+    }
+    install_full_chunk(world, pos, true, true)
+}
+
+fn install_full_chunk(
+    world: &Arc<World>,
+    pos: ChunkPos,
+    block_ticking_ready: bool,
+    entity_ticking_ready: bool,
+) -> Arc<ChunkHolder> {
     let min_y = world.get_min_y();
     let height = world.get_height();
     let sections = (0..height / 16)
@@ -34,18 +58,30 @@ pub fn insert_full_chunk(
         Arc::downgrade(world),
     );
     let _ = proto.promote_to_full();
-    let holder = Arc::new(ChunkHolder::new(
+    let level = if entity_ticking_ready {
+        ChunkTicketLevel::ENTITY_TICKING_CHUNK
+    } else {
+        ChunkTicketLevel::BLOCK_TICKING_CHUNK
+    };
+    let holder = Arc::new(ChunkHolder::new_with_full_publications(
         pos,
-        ChunkTicketLevel::BLOCK_TICKING_CHUNK,
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+        level,
+        Some(level),
         min_y,
         height,
+        Arc::downgrade(&world.chunk_map.full_publications),
     ));
     holder.insert_chunk(proto, ChunkStatus::Full);
     if block_ticking_ready {
         assert_eq!(
             holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
             Some(TickingReadiness::Unready)
+        );
+    }
+    if entity_ticking_ready {
+        assert_eq!(
+            holder.transition_ticking_readiness(TickingReadiness::EntityTicking),
+            Some(TickingReadiness::BlockTicking)
         );
     }
     let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));

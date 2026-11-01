@@ -8,6 +8,7 @@ use std::{
 };
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::client_content::client_block_state;
 use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::{BlockStateId, codec::VarInt, mth::ceil_log2, serial::WriteTo};
 
@@ -17,10 +18,20 @@ mod encode;
 pub trait ToGlobalId {
     /// Converts the value to a global ID.
     fn to_global_id(&self) -> u32;
+
+    /// Distinct runtime identity used when indexing a local palette. Several
+    /// server entries may share the same client representation.
+    fn to_palette_id(&self) -> u32 {
+        self.to_global_id()
+    }
 }
 
 impl ToGlobalId for BlockStateId {
     fn to_global_id(&self) -> u32 {
+        u32::from(client_block_state(*self).0)
+    }
+
+    fn to_palette_id(&self) -> u32 {
         u32::from(self.0)
     }
 }
@@ -458,7 +469,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
 /// constant here. Matches vanilla, which sizes the global palette from the
 /// registry rather than a fixed width.
 fn block_state_global_bits() -> u8 {
-    ceil_log2(usize::from(REGISTRY.blocks.next_state_id))
+    ceil_log2(REGISTRY.client_content.vanilla_state_count())
 }
 
 /// Bits per entry for the biome global palette. See [`block_state_global_bits`].

@@ -16,8 +16,13 @@ pub struct CAwardStats {
 
 impl WriteTo for CAwardStats {
     fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        VarInt(self.stats.len() as i32).write(writer)?;
-        for (stat, count) in &self.stats {
+        let visible = || {
+            self.stats
+                .iter()
+                .filter(|(stat, _)| stat.stat_type().is_client_value(stat.stat_value_id()))
+        };
+        VarInt(visible().count() as i32).write(writer)?;
+        for (stat, count) in visible() {
             stat.write(writer)?;
             VarInt(*count).write(writer)?;
         }

@@ -133,7 +133,7 @@ impl EntityStorage {
         };
         entities
             .values()
-            .filter(|e| should_keep_for_save(e) && e.entity_type().can_serialize)
+            .filter(|e| should_keep_for_save(e) && e.is_persistent())
             .cloned()
             .collect()
     }

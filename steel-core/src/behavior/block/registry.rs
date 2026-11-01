@@ -3,6 +3,11 @@ use super::{
     RegistryEntry, RegistryExt, ScheduledTickAccess, schedule_water_tick_if_waterlogged,
 };
 use std::sync::Arc;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{
+    blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    client_content::HorizontalPlacement,
+};
 use steel_utils::locks::SyncMutex;
 
 type RegistrationHook = Box<dyn FnOnce(&mut BlockBehaviorRegistry) + Send>;
@@ -23,6 +28,18 @@ impl DefaultBlockBehavior {
 }
 
 impl BlockBehavior for DefaultBlockBehavior {
+    fn get_drops(
+        &self,
+        _state: BlockStateId,
+        _context: &super::BlockLootContext<'_>,
+    ) -> Option<Vec<ItemStack>> {
+        REGISTRY
+            .client_content
+            .block(self.block)
+            .and_then(|entry| entry.self_drop)
+            .map(|item| vec![ItemStack::new(item)])
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -36,10 +53,22 @@ impl BlockBehavior for DefaultBlockBehavior {
         state
     }
 
-    // This fallback only preserves generic block placement. Blocks with
-    // class-specific placement rules still need their own behavior.
-    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state())
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let state = self.block.default_state();
+        let Some(horizontal) = REGISTRY
+            .client_content
+            .block(self.block)
+            .and_then(|model| model.horizontal.as_ref())
+        else {
+            return Some(state);
+        };
+        let facing = match horizontal.placement {
+            HorizontalPlacement::AgainstClickedFace if context.clicked_face().is_horizontal() => {
+                context.clicked_face().opposite()
+            }
+            _ => context.horizontal_direction(),
+        };
+        Some(state.set_value(&BlockStateProperties::HORIZONTAL_FACING, facing))
     }
 }
 

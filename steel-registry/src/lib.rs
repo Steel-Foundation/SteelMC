@@ -30,6 +30,7 @@ pub mod cat_variant;
 pub mod chat_type;
 pub mod chicken_sound_variant;
 pub mod chicken_variant;
+pub mod client_content;
 pub mod consume_effect;
 pub mod cow_sound_variant;
 pub mod cow_variant;

@@ -66,7 +66,17 @@ impl ToolRule {
         REGISTRY
             .blocks
             .by_state_id(block_state_id)
-            .is_some_and(|block| self.blocks.contains(block))
+            .is_some_and(|block| {
+                self.blocks.contains(block)
+                    || REGISTRY
+                        .client_content
+                        .block(block)
+                        .is_some_and(|representation| {
+                            representation
+                                .material
+                                .is_some_and(|material| self.blocks.contains(material))
+                        })
+            })
     }
 }
 

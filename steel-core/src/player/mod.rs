@@ -4,6 +4,7 @@ pub mod advancement;
 pub mod bot;
 pub mod chat;
 pub mod chunk_sender;
+mod client_blocks;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
 mod container_counter;
@@ -1504,6 +1505,14 @@ impl Entity for Player {
         let Some(old_vehicle) = old_vehicle else {
             return;
         };
+
+        {
+            use crate::entity::block_seat::BlockSeat;
+            use steel_utils::Downcast as _;
+            if let Some(seat) = old_vehicle.downcast_ref::<BlockSeat>() {
+                seat.stand_up(self);
+            }
+        }
 
         self.remove_active_effects_for_vehicle(old_vehicle.as_ref());
         self.send_packet(CSetPassengers::new(

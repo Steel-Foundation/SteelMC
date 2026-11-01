@@ -47,6 +47,8 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
+    let names = sound_types.keys();
+    let values = sound_types.keys().map(|name| format_ident!("{}", name));
     quote!(
         //! Sound type definitions matching vanilla Minecraft's `SoundType`.
 
@@ -72,5 +74,10 @@ pub(crate) fn build() -> TokenStream {
         }
 
         #consts
+
+        /// Resolves an extracted sound type name.
+        pub fn by_name(name: &str) -> Option<SoundType> {
+            match name { #(#names => Some(#values),)* _ => None }
+        }
     )
 }

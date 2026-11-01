@@ -24,7 +24,28 @@ use steel_core::{
     },
     bootstrap::init_globals,
 };
-use steel_registry::{REGISTRY, RegistryExt, blocks::BlockRef, vanilla_blocks};
+use steel_registry::{REGISTRY, RegistryExt, blocks::BlockRef, vanilla_blocks, vanilla_items};
+
+#[test]
+fn item_creation_validates_registry_keys_and_extracted_stack_limits() -> Result<(), String> {
+    init_globals();
+    let create = |key: &str, count| {
+        super::types::ItemStack::from_key(key.into(), count)
+            .match_owned(Ok, Err)
+            .map_err(|error| error.to_string())
+    };
+    let stack = create("minecraft:diamond", 3)?.into_host();
+    assert!(stack.is(&vanilla_items::DIAMOND));
+    assert_eq!(stack.count(), 3);
+    assert!(create("minecraft:diamond", 0).is_err());
+    assert!(create("minecraft:diamond", -1).is_err());
+    assert!(create("minecraft:diamond", 65).is_err());
+    assert!(create("minecraft:diamond_sword", 2).is_err());
+    assert!(create("minecraft:air", 1).is_err());
+    assert!(create("lucky_test:missing_item", 1).is_err());
+    assert!(create("invalid key", 1).is_err());
+    Ok(())
+}
 
 #[test]
 fn block_item_stacks_preserve_each_wool_color() -> Result<(), String> {

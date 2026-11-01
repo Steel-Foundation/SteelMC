@@ -31,7 +31,7 @@ pub enum OffsetType {
 ///
 /// This contains constant properties that don't change based on game state.
 /// Dynamic behavior is handled by `BlockBehavior` in steel-core.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockConfig {
     pub has_collision: bool,
     pub can_occlude: bool,

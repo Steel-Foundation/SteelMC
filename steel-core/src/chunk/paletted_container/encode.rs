@@ -85,7 +85,7 @@ impl<'a, V: ToGlobalId> PaletteIndexTable<'a, V> {
                 .ok_or_else(|| invalid_data("palette has too many entries to index"))?;
             let slot = table
                 .slots
-                .get_mut(value.to_global_id() as usize)
+                .get_mut(value.to_palette_id() as usize)
                 .ok_or_else(|| invalid_data("palette value has an out-of-range global id"))?;
             debug_assert_eq!(*slot, EMPTY_SLOT, "palette entries must be distinct");
             *slot = index;
@@ -94,7 +94,7 @@ impl<'a, V: ToGlobalId> PaletteIndexTable<'a, V> {
     }
 
     fn index_of(&self, value: V) -> Option<u32> {
-        let index = *self.slots.get(value.to_global_id() as usize)?;
+        let index = *self.slots.get(value.to_palette_id() as usize)?;
         (index != EMPTY_SLOT).then_some(u32::from(index))
     }
 }
@@ -102,7 +102,7 @@ impl<'a, V: ToGlobalId> PaletteIndexTable<'a, V> {
 impl<V: ToGlobalId> Drop for PaletteIndexTable<'_, V> {
     fn drop(&mut self) {
         for (value, _) in self.palette {
-            if let Some(slot) = self.slots.get_mut(value.to_global_id() as usize) {
+            if let Some(slot) = self.slots.get_mut(value.to_palette_id() as usize) {
                 *slot = EMPTY_SLOT;
             }
         }

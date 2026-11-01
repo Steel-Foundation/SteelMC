@@ -130,6 +130,7 @@ pub fn init_vanilla_registry() -> bool {
     let mut published = false;
     INIT.call_once(|| {
         let mut registry = Registry::new_vanilla();
+        crate::client_content::run_registration_hooks(&mut registry);
         registry.freeze();
         published = REGISTRY.init(registry).is_ok();
     });
@@ -250,6 +251,8 @@ pub const STAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("stat_type
 pub const TICKET_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("ticket_type");
 
 pub struct Registry {
+    /// Vanilla representations for server-only content. Persistent data uses the real entries.
+    pub client_content: crate::client_content::ClientContent,
     pub attributes: AttributeRegistry,
     pub blocks: BlockRegistry,
     pub items: ItemRegistry,
@@ -459,10 +462,16 @@ impl Registry {
         vanilla_ticket_types::register_vanilla_ticket_types(&mut registry.ticket_types);
         steel_ticket_types::register_steel_ticket_types(&mut registry.ticket_types);
 
+        registry.client_content.capture_vanilla(
+            registry.items.len(),
+            registry.blocks.len(),
+            usize::from(registry.blocks.next_state_id),
+        );
         registry
     }
 
     pub fn freeze(&mut self) {
+        self.client_content.freeze();
         self.validate_references();
 
         self.attributes.freeze();
@@ -730,6 +739,7 @@ impl Registry {
     #[must_use]
     pub fn new_empty() -> Self {
         Self {
+            client_content: crate::client_content::ClientContent::default(),
             attributes: AttributeRegistry::new(),
             blocks: BlockRegistry::new(),
             data_components: DataComponentRegistry::new(),

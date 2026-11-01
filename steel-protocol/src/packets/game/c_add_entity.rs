@@ -46,7 +46,24 @@ impl WriteTo for CAddEntity {
         self.x_rot.write(writer)?;
         self.y_rot.write(writer)?;
         self.head_y_rot.write(writer)?;
-        VarInt(self.data).write(writer)
+        let data = if steel_registry::REGISTRY.is_initialized()
+            && self.entity_type
+                == steel_registry::RegistryEntry::id(
+                    &steel_registry::vanilla_entities::FALLING_BLOCK,
+                ) as i32
+        {
+            let state = u16::try_from(self.data)
+                .map_err(|_| std::io::Error::other("falling block spawn state is out of range"))?;
+            i32::from(
+                steel_registry::client_content::client_block_state(steel_utils::BlockStateId(
+                    state,
+                ))
+                .0,
+            )
+        } else {
+            self.data
+        };
+        VarInt(data).write(writer)
     }
 }
 

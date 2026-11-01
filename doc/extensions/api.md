@@ -13,7 +13,7 @@ use steel_extension_api::{ApiResult, BlockPos, BlockState, Hooks, Registry, Worl
 use steel_extension_api::stabby;
 ```
 
-Other public modules are `hooks`, `runtime`, `block_behavior`,
+Other public modules are `content`, `hooks`, `runtime`, `block_behavior`,
 `block_behavior::types`, `block_behavior::capabilities`, and
 `block_behavior::block_entity`. Methods on the opaque handles are generated from
 the binding declarations. Generate full Rust documentation, including complete
@@ -97,7 +97,7 @@ created before init.
 | Stage | Available work |
 | --- | --- |
 | Pre-init | Subscribe through `Hooks`. Registry lookups and action/filter emission are unavailable. |
-| Registration | Block, generator, and command callbacks edit their actual registries before publication. |
+| Registration | Content callbacks register item/block identities before data freezes; block behavior, generator, and command callbacks follow. |
 | Init | All registration events succeeded and registries are frozen. Parse configuration and resolve static values. |
 | Runtime | Commands, ticks, and explicitly emitted actions/filters call the installed handlers. |
 
@@ -116,6 +116,7 @@ A dependency cycle or a lifecycle failure stops startup.
 
 | Method | Callback signature | When it runs |
 | --- | --- | --- |
+| `register_content_registration` | `extern "C" fn(content::ContentRegistry<'_>) -> ApiResult<()>` | Before the item/block data registries freeze. |
 | `register_block_registration` | `extern "C" fn(Registry<'_>) -> ApiResult<()>` | During block behavior registry initialization. |
 | `register_generator_registration` | `extern "C" fn(GeneratorRegistry<'_>) -> ApiResult<()>` | During generator registry initialization. |
 | `register_commands` | `extern "C" fn(Commands<'_>) -> ApiResult<()>` | Before the command dispatcher freezes. |
@@ -131,10 +132,51 @@ chat, block break, damage, inventory clicks, explosions and about sixty more),
 `on_shutdown`. The [API crate README](../../steel-extension-api/README.md#events)
 lists them.
 
-The three registration subscriptions return `ApiResult<()>`; the two direct tick
+The four registration subscriptions return `ApiResult<()>`; the two direct tick
 subscriptions return `()`. Frozen ticks omit these gameplay callbacks.
 Registration failures prevent extension init and world creation. There is no
 rollback: earlier registry edits remain in the startup process that is failing.
+
+## Custom items and vanilla block geometry
+
+`content::ContentRegistry` provides `register_item(ItemDefinition)`,
+`register_block(BlockDefinition)`, `register_block_item(BlockItemDefinition)`,
+and `register_bed(BedDefinition)`. These register server identities
+before data freezes. Steel translates their inventory components and block
+states for vanilla clients and manages block-bound item displays.
+
+`BlockDefinition::new(key)` starts with native block defaults. Supply independent
+`BlockProperties` and `VoxelShape` box unions using vanilla 0–16 coordinates.
+`BlockShapes` exposes separate collision, support, outline, occlusion, interaction,
+and visual channels. Steel automatically chooses a vanilla client state; no
+vanilla block template is required. Exact collision matching is the default;
+`.allow_approximation()` permits a contained client approximation while preserving
+the authored server collision. Movement corrections are possible in that mode.
+Optional `of_full_copy` properties and `vanilla_geometry` conveniences copy
+registered data without inheriting dynamic behavior. Add
+`.horizontal_facing(HorizontalPlacement::Player)` for four real facing states,
+with shapes/models rotated from authored north geometry and stair-style placement.
+`AgainstClickedFace` optionally attaches the solid back to clicked walls.
+`BlockState::property(name)` reads a named state value as an optional owned string.
+
+`ContentRegistry::slab_materials()` discovers vanilla slab blocks and their placing
+items. `ItemAppearance::model` selects an item-model key independently of its
+vanilla item; custom assets require a resource pack. `ItemDisplay::rotation` is a
+unit XYZW quaternion. Models, item names, and self-drop policy remain independent
+of the chosen network carrier.
+
+`BedDefinition` instead registers a complete ordinary colored bed state family
+from a vanilla `template`, with its own `key`, placing `item`, and
+`models: Vec<BlockModel>`. Each model selects states with `properties` and supplies
+`displays`; selectors must not overlap. Steel supplies normal bed behavior and
+fixed one-item self-drops. Straw bed templates are rejected.
+
+See [Custom items and blocks](custom-content.md) for definition fields,
+coordinate conventions, mining, fixed drops, and persistence. The standalone
+[lucky-block example](../../extension-example/lucky-block/README.md) uses oak
+planks and a yellow question-mark head model with no required resource pack.
+The [furniture example](../../extension-example/furniture/README.md) adds a usable
+chair, vertical half slabs, and a bed with sleeping and respawn support.
 
 ## Actions, filters, and ordering
 
@@ -302,9 +344,9 @@ Selected value helpers:
 
 | Type | Public operations |
 | --- | --- |
-| `types::ItemStack` | `from_block(state)` creates one host-resolved block item. |
+| `types::ItemStack` | `from_block(state)` creates one host-resolved block item. `from_key(key, count)` creates a registered item with default components, rejecting air, unknown keys, and invalid stack counts. |
 | `types::Inventory<'_>` | `held_item_is(key)` and fallible `damage_item(amount, infinite_materials)`. |
-| `types::Player<'_>` | `has_infinite_materials()`. This is a borrowed behavior context, distinct from `PlayerId`. |
+| `types::Player<'_>` | `has_infinite_materials()`, `block_position()` (the block containing the player's feet), and `sit(anchor: BlockPos, offset: Position) -> ApiResult<bool>` for a temporary block-anchored seat. The offset specifies the player entity origin relative to the anchor. This is a borrowed behavior context, distinct from `PlayerId`. |
 | `types::Explosion<'_>` | World, damage source, block interaction, credited/direct entities, radius, center, and block-like-entity policy getters. |
 | `types::ExplosionDropConsumer<'_>` | `accept(stack, pos)` transfers a drop to the host collector. |
 | `types::BlockInteraction` | `Keep`, `Destroy`, `DestroyWithDecay`. |
@@ -486,15 +528,18 @@ those ideas to the current Steel source; it does not port every API from both
 branches. In particular, `try-plugin`'s item behavior registration is not exposed
 by the current extension API.
 
-The API supports replacement of existing block behaviors and custom terrain
-generators. It does not currently expose new block/item registry entries, item
-behavior registration, new block entity types, runtime datapack loading, or
-extension unloading/reloading.
+The API supports custom item entries, independent block properties and static
+shape channels with automatic vanilla projection, block-item placement, ordinary bed state
+families, temporary seats, block behavior replacement, and custom terrain
+generators. Arbitrary item behavior registration, new block entity
+types, animated display models, runtime datapack loading, and extension
+unloading/reloading are not exposed.
 
 | Area | Source |
 | --- | --- |
 | Entry points, shared values, re-exports | [lib.rs](../../steel-extension-api/src/lib.rs) |
 | Registry, world, terrain bindings | [bindings.rs](../../steel-extension-api/src/bindings.rs) |
+| Custom item/block definitions and registration | [content](../../steel-extension-api/src/content/mod.rs) |
 | Actions, filters, ordering builders | [hooks](../../steel-extension-api/src/hooks/mod.rs) |
 | Complete block callback contract | [schema.rs](../../steel-extension-api/src/block_behavior/schema.rs) |
 | Capability traits | [capabilities.rs](../../steel-extension-api/src/block_behavior/capabilities.rs) |

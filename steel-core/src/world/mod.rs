@@ -1,5 +1,8 @@
 //! This module contains the `World` struct, which represents a world.
 
+#[cfg(any(test, feature = "test-framework"))]
+pub mod test_support;
+
 use std::{
     io, mem,
     path::Path,
@@ -17,7 +20,7 @@ use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::chunk::status::ChunkStatus;
-use crate::entity::damage::DamageHistory;
+use crate::entity::{block_seat::BlockSeats, damage::DamageHistory};
 use crate::extension::{Events, Extensions};
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
@@ -299,6 +302,7 @@ pub struct World {
     domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
+    pub(crate) block_seats: BlockSeats,
     /// Physical entries retained by this world's chunk-owned game-event registries.
     game_event_listener_count: Arc<GameEventListenerCount>,
     /// Entity tracker for managing which players can see which entities.
@@ -468,6 +472,7 @@ impl World {
                 entity_manager: WorldEntityManager::new(),
                 domain_entity_directory: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
+                block_seats: BlockSeats::default(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
@@ -585,6 +590,7 @@ impl World {
             let dirty_chunks = self
                 .entity_manager
                 .tick_entities(tick_count as i32, runs_normally);
+            self.block_seats.prune();
             for chunk in dirty_chunks {
                 self.mark_chunk_dirty(chunk);
             }

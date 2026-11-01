@@ -6,6 +6,9 @@
   package its native library, and install it on a server.
 - [Extension API](extensions/api.md): lifecycle, public types, hooks, world access,
   behaviors, generators, commands, and runtime operations.
+- [Custom items and blocks](extensions/custom-content.md): vanilla client
+  representations, independent shapes/properties, automatic collision projection,
+  models, mining, and persistence.
 
 The guides describe the API in this checkout. For complete applications, see the
 [extension examples](../extension-example/README.MD) and

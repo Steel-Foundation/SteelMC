@@ -1,6 +1,8 @@
-use steel_macros::{ClientPacket, WriteTo};
+use steel_macros::ClientPacket;
 use steel_registry::packets::play::C_BLOCK_EVENT;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::BlockPos;
+use steel_utils::{codec::VarInt, serial::WriteTo};
 
 /// Sent to trigger block-specific events on the client.
 ///
@@ -12,7 +14,7 @@ use steel_utils::BlockPos;
 /// - Bells ringing
 ///
 /// Each block type interprets the `action_id` and `action_param` differently.
-#[derive(WriteTo, ClientPacket, Clone, Debug)]
+#[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_BLOCK_EVENT)]
 pub struct CBlockEvent {
     /// The position of the block.
@@ -23,8 +25,26 @@ pub struct CBlockEvent {
     pub action_param: u8,
     /// The block registry ID.
     /// Written as `VarInt`.
-    #[write(as = VarInt)]
     pub block_id: i32,
+}
+
+impl WriteTo for CBlockEvent {
+    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        self.pos.write(writer)?;
+        self.action_id.write(writer)?;
+        self.action_param.write(writer)?;
+        let block_id = if REGISTRY.is_initialized() {
+            usize::try_from(self.block_id)
+                .ok()
+                .and_then(|id| REGISTRY.blocks.by_id(id))
+                .map_or(self.block_id, |block| {
+                    steel_registry::client_content::client_block(block).id() as i32
+                })
+        } else {
+            self.block_id
+        };
+        VarInt(block_id).write(writer)
+    }
 }
 
 impl CBlockEvent {

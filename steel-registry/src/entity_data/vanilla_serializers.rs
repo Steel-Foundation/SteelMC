@@ -65,7 +65,14 @@ ser_write!(ser_float, Float);
 ser_write!(ser_component, Component);
 ser_write!(ser_item_stack, ItemStack);
 ser_write!(ser_boolean, Boolean);
-ser_write!(ser_block_state, BlockState);
+fn ser_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
+    match data {
+        EntityData::BlockState(state) => {
+            crate::client_content::client_block_state(*state).write(buf)
+        }
+        _ => Err(io::Error::other("Expected BlockState")),
+    }
+}
 
 // Plain i32 VarInt serializers
 ser_varint!(ser_int, Int);
@@ -169,7 +176,10 @@ fn ser_optional_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<
         EntityData::OptionalBlockState(v) => {
             // Vanilla encodes: 0 = absent, otherwise raw block state ID
             match v {
-                Some(state) => VarInt(i32::from(state.0)).write(buf),
+                Some(state) => VarInt(i32::from(
+                    crate::client_content::client_block_state(*state).0,
+                ))
+                .write(buf),
                 None => VarInt(0).write(buf),
             }
         }

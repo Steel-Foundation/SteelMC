@@ -12,13 +12,14 @@ use std::{
     sync::{Arc, Weak},
 };
 
+use super::client_blocks::ClientBlockDisplays;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::game::{
     CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk, CLevelChunkWithLight,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{ChunkPos, PackedChunkPos};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, PackedChunkPos};
 
 use crate::{
     chunk::{
@@ -147,6 +148,7 @@ pub struct PreparedBatch {
 pub struct EncodedChunk {
     pos: ChunkPos,
     packet: EncodedPacket,
+    client_blocks: Arc<[(BlockPos, BlockStateId)]>,
     content_revision: u64,
     holder: Weak<ChunkHolder>,
     readiness: TickingReadinessSnapshot,
@@ -174,12 +176,14 @@ pub struct ChunkSender {
     pub pending_chunks: FxHashSet<ChunkPos>,
     /// Chunks whose initial chunk packet has been queued for this client.
     sent_chunks: FxHashSet<ChunkPos>,
+    client_blocks: ClientBlockDisplays,
     pacing: ChunkBatchPacing,
 }
 
 impl ChunkSender {
     /// Clears chunk membership from the previous world while preserving connection pacing.
-    pub(crate) fn clear_world_chunks(&mut self) {
+    pub(crate) fn clear_world_chunks(&mut self, connection: &PlayerConnection) {
+        self.client_blocks.clear(connection);
         self.pending_chunks.clear();
         self.sent_chunks.clear();
     }
@@ -192,6 +196,7 @@ impl ChunkSender {
 
     /// Drops a chunk from the client's view.
     pub fn drop_chunk(&mut self, connection: &PlayerConnection, pos: ChunkPos) {
+        self.client_blocks.remove_chunk(connection, pos);
         self.pending_chunks.remove(&pos);
         if self.sent_chunks.remove(&pos) && !connection.closed() {
             Self::send_packet(
@@ -288,6 +293,7 @@ impl ChunkSender {
                         ConnectionProtocol::Play,
                     )
                     .expect("Failed to encode chunk packet");
+                    let client_blocks = ClientBlockDisplays::snapshot(chunk).into();
                     let revision_after = holder.packet_content_revision();
                     if revision_before != revision_after
                         || holder.ticking_readiness_snapshot() != prepared.readiness
@@ -298,6 +304,7 @@ impl ChunkSender {
                     Some(EncodedChunk {
                         pos,
                         packet,
+                        client_blocks,
                         content_revision: revision_after,
                         holder: Arc::downgrade(holder),
                         readiness: prepared.readiness,
@@ -356,6 +363,8 @@ impl ChunkSender {
 
         let mut sent_chunks = Vec::with_capacity(valid_chunks.len());
         for encoded in valid_chunks {
+            self.client_blocks
+                .replace_chunk(connection, encoded.pos, &encoded.client_blocks);
             self.pending_chunks.remove(&encoded.pos);
             self.sent_chunks.insert(encoded.pos);
             sent_chunks.push(encoded.pos);
@@ -444,6 +453,22 @@ impl ChunkSender {
     #[must_use]
     pub fn is_chunk_sent(&self, pos: ChunkPos) -> bool {
         self.sent_chunks.contains(&pos)
+    }
+
+    /// Updates attachments only while this connection still owns the chunk.
+    /// Queue the corresponding block packet before calling this under the same
+    /// sender lock, so it cannot race a chunk commit or unload.
+    pub fn update_client_block(
+        &mut self,
+        connection: &PlayerConnection,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) {
+        if steel_registry::REGISTRY.client_content.has_blocks()
+            && self.is_chunk_sent(ChunkPos::from_block_pos(pos))
+        {
+            self.client_blocks.update(connection, pos, state);
+        }
     }
 
     /// Returns a snapshot of all sent chunks for this player.

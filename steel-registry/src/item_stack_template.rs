@@ -298,11 +298,12 @@ impl ItemStackTemplate {
 impl WriteTo for ItemStackTemplate {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         let _depth = TemplateDepthGuard::enter()?;
-        let item_id = i32::try_from(self.item.id())
-            .map_err(|_| Error::other(format!("Item id is too large: {}", self.item.id())))?;
+        let client = crate::client_content::client_template(self)?;
+        let item_id = i32::try_from(client.item.id())
+            .map_err(|_| Error::other(format!("Item id is too large: {}", client.item.id())))?;
         VarInt(item_id).write(writer)?;
-        VarInt(self.count).write(writer)?;
-        self.components.write(writer)
+        VarInt(client.count).write(writer)?;
+        client.components.write(writer)
     }
 }
 
@@ -318,7 +319,21 @@ impl ReadFrom for ItemStackTemplate {
             .ok_or_else(|| Error::other(format!("Unknown item id: {item_id}")))?;
         let count = VarInt::read(data)?.0;
         let components = DataComponentPatch::read(data)?;
-        Self::from_stream(item, count, components)
+        // Keep explicit template patch entries on vanilla stacks. Restoring a
+        // transport envelope replaces only the represented server-only identity.
+        if !REGISTRY.client_content.is_vanilla_item(item) {
+            return Err(Error::other("client sent a server-only numeric item ID"));
+        }
+        if !crate::client_content::has_server_item(&components) {
+            return Self::from_stream(item, count, components);
+        }
+        let stack = ItemStack::with_count_and_patch(item, count, components.clone());
+        let restored = crate::client_content::restore_client_stack(stack)?;
+        if restored.item() == item {
+            Self::from_stream(item, count, components)
+        } else {
+            Self::from_stream(restored.item(), count, restored.patch().clone())
+        }
     }
 }
 

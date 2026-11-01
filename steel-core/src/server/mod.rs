@@ -188,6 +188,39 @@ fn cap_positive_thread_count(
 #[cfg(test)]
 mod tests;
 
+/// Attaches a constructed test player to both the server and its loaded world.
+#[cfg(any(test, feature = "test-framework"))]
+pub fn test_attach_player(server: &Arc<Server>, player: Arc<Player>) -> Result<(), String> {
+    use crate::player::ResetReason;
+    let world = player.get_world();
+    if !Arc::ptr_eq(server, &player.server())
+        || !server
+            .worlds
+            .get(&world.key)
+            .is_some_and(|registered| Arc::ptr_eq(&registered, &world))
+    {
+        return Err("test player must belong to this server and a loaded world".into());
+    }
+    server.apply_cached_or_default_permission_state(&player);
+    if !server.online_players.insert(Arc::clone(&player)) {
+        return Err("test player is already online".into());
+    }
+    if !world.add_player(Arc::clone(&player), ResetReason::InitialJoin) {
+        server.online_players.remove_player_sync(&player);
+        return Err("test player could not join its world".into());
+    }
+    Ok(())
+}
+
+/// Releases world/server membership installed by `test_attach_player`.
+#[cfg(any(test, feature = "test-framework"))]
+pub fn test_detach_player(server: &Server, player: &Arc<Player>) {
+    use crate::entity::Entity as _;
+    player.stop_riding();
+    player.get_world().remove_player_for_world_change(player);
+    server.online_players.remove_player_sync(player);
+}
+
 /// Builds a server around already loaded worlds without starting any server loops.
 ///
 /// Used by Steel tests and by the Flint test adapter.

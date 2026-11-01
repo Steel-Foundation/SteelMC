@@ -283,7 +283,7 @@ impl ParticleOptions for BlockParticleOption {
                 self.state.0
             )));
         }
-        self.state.write(writer)
+        crate::client_content::client_block_state(self.state).write(writer)
     }
 }
 

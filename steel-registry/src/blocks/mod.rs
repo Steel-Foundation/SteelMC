@@ -10,6 +10,9 @@ pub mod behavior;
 pub mod block_state_ext;
 pub mod properties;
 pub mod shapes;
+pub mod state_data;
+
+use state_data::BlockStateData;
 
 use std::{slice, sync::OnceLock};
 
@@ -205,19 +208,19 @@ pub struct Block {
     /// Vanilla `BlockState.isRandomlyTicking` values indexed by block-local state offset.
     pub randomly_ticking: StateBooleanData,
     /// Extracted vanilla light properties indexed by block-local state offset.
-    pub light_properties: LightPropertiesFn,
+    pub light_properties: BlockStateData<BlockLightProperties>,
     /// Function to get collision shape for a state offset
-    pub collision_shape: ShapeFn,
+    pub collision_shape: BlockStateData<shapes::VoxelShape>,
     /// Function to get block support shape for a state offset
-    pub support_shape: ShapeFn,
+    pub support_shape: BlockStateData<shapes::VoxelShape>,
     /// Function to get outline shape for a state offset
-    pub outline_shape: ShapeFn,
+    pub outline_shape: BlockStateData<shapes::VoxelShape>,
     /// Function to get occlusion shape for a state offset
-    pub occlusion_shape: ShapeFn,
+    pub occlusion_shape: BlockStateData<shapes::VoxelShape>,
     /// Function to get interaction shape for a state offset
-    pub interaction_shape: ShapeFn,
+    pub interaction_shape: BlockStateData<shapes::VoxelShape>,
     /// Function to get visual shape for a state offset
-    pub visual_shape: ShapeFn,
+    pub visual_shape: BlockStateData<shapes::VoxelShape>,
     /// Shape channels whose extracted boxes are normalized and need positional offset.
     pub shape_offsets: shapes::ShapeOffsetFlags,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
@@ -265,13 +268,13 @@ impl Block {
             redstone_conductor: StateBooleanData::TRUE,
             fluid_state: StateFluidData::EMPTY,
             randomly_ticking,
-            light_properties: opaque_full_block_light_properties,
-            collision_shape: full_block_shape,
-            support_shape: full_block_shape,
-            outline_shape: full_block_shape,
-            occlusion_shape: full_block_shape,
-            interaction_shape: empty_shape,
-            visual_shape: full_block_shape,
+            light_properties: BlockStateData::ByState(opaque_full_block_light_properties),
+            collision_shape: BlockStateData::ByState(full_block_shape),
+            support_shape: BlockStateData::ByState(full_block_shape),
+            outline_shape: BlockStateData::ByState(full_block_shape),
+            occlusion_shape: BlockStateData::ByState(full_block_shape),
+            interaction_shape: BlockStateData::ByState(empty_shape),
+            visual_shape: BlockStateData::ByState(full_block_shape),
             shape_offsets: shapes::ShapeOffsetFlags::NONE,
             id: OnceLock::new(),
         }
@@ -287,12 +290,12 @@ impl Block {
         interaction: ShapeFn,
         visual: ShapeFn,
     ) -> Self {
-        self.collision_shape = collision;
-        self.support_shape = support;
-        self.outline_shape = outline;
-        self.occlusion_shape = occlusion;
-        self.interaction_shape = interaction;
-        self.visual_shape = visual;
+        self.collision_shape = BlockStateData::ByState(collision);
+        self.support_shape = BlockStateData::ByState(support);
+        self.outline_shape = BlockStateData::ByState(outline);
+        self.occlusion_shape = BlockStateData::ByState(occlusion);
+        self.interaction_shape = BlockStateData::ByState(interaction);
+        self.visual_shape = BlockStateData::ByState(visual);
         self
     }
 
@@ -322,7 +325,7 @@ impl Block {
 
     /// Sets the extracted vanilla light properties for this block.
     pub const fn with_light_properties(mut self, light_properties: LightPropertiesFn) -> Self {
-        self.light_properties = light_properties;
+        self.light_properties = BlockStateData::ByState(light_properties);
         self
     }
 
@@ -335,42 +338,42 @@ impl Block {
     /// Gets the collision shape for a given state offset.
     #[inline]
     pub fn get_collision_shape(&self, offset: u16) -> shapes::VoxelShape {
-        (self.collision_shape)(offset)
+        self.collision_shape.value(offset)
     }
 
     /// Gets the block support shape for a given state offset.
     #[inline]
     pub fn get_support_shape(&self, offset: u16) -> shapes::VoxelShape {
-        (self.support_shape)(offset)
+        self.support_shape.value(offset)
     }
 
     /// Gets the outline shape for a given state offset.
     #[inline]
     pub fn get_outline_shape(&self, offset: u16) -> shapes::VoxelShape {
-        (self.outline_shape)(offset)
+        self.outline_shape.value(offset)
     }
 
     /// Gets the occlusion shape for a given state offset.
     #[inline]
     pub fn get_occlusion_shape(&self, offset: u16) -> shapes::VoxelShape {
-        (self.occlusion_shape)(offset)
+        self.occlusion_shape.value(offset)
     }
 
     /// Gets the interaction shape for a given state offset.
     #[inline]
     pub fn get_interaction_shape(&self, offset: u16) -> shapes::VoxelShape {
-        (self.interaction_shape)(offset)
+        self.interaction_shape.value(offset)
     }
 
     /// Gets the visual shape for a given state offset.
     #[inline]
     pub fn get_visual_shape(&self, offset: u16) -> shapes::VoxelShape {
-        (self.visual_shape)(offset)
+        self.visual_shape.value(offset)
     }
 
     #[inline]
     pub fn get_light_properties(&self, offset: u16) -> BlockLightProperties {
-        (self.light_properties)(offset)
+        self.light_properties.value(offset)
     }
 
     #[must_use]

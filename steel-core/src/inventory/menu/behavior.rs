@@ -12,6 +12,7 @@ use steel_protocol::{
     },
     utils::ConnectionProtocol,
 };
+use steel_registry::client_content::client_stack;
 use steel_registry::{
     REGISTRY, RegistryEntry, RegistryExt as _, data_components::DataComponentPatch,
     item_stack::ItemStack, menu_type::MenuTypeRef,
@@ -901,6 +902,10 @@ impl RemoteSlot {
 
 /// Checks if a hashed stack matches the given `ItemStack`.
 fn hashed_stack_matches(hash: &HashedStack, item: &ItemStack) -> bool {
+    let Ok(client_item) = client_stack(item) else {
+        return false;
+    };
+    let item = client_item.as_ref();
     match hash {
         HashedStack::Empty => {
             if !item.is_empty() {

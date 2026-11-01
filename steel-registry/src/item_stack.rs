@@ -1144,14 +1144,15 @@ impl std::fmt::Display for ItemStack {
 
 impl WriteTo for ItemStack {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        if self.is_empty() {
+        let client = crate::client_content::client_stack(self)?;
+        if client.is_empty() {
             VarInt(0).write(writer)?;
         } else {
-            VarInt(self.count).write(writer)?;
+            VarInt(client.count).write(writer)?;
             // Write item ID as VarInt
-            VarInt(self.item.id() as i32).write(writer)?;
+            VarInt(client.item.id() as i32).write(writer)?;
             // Write DataComponentPatch
-            self.patch.write(writer)?;
+            client.patch.write(writer)?;
         }
         Ok(())
     }
@@ -1175,7 +1176,7 @@ impl ReadFrom for ItemStack {
         // Read DataComponentPatch
         let patch = DataComponentPatch::read(data)?;
 
-        Ok(Self::with_count_and_patch(item, count, patch))
+        crate::client_content::restore_client_stack(Self::with_count_and_patch(item, count, patch))
     }
 }
 
@@ -1201,7 +1202,7 @@ impl ItemStack {
 
         let stack = Self::with_count_and_patch(item, count, patch);
         stack.validate_persistent_encoding()?;
-        Ok(stack)
+        crate::client_content::restore_client_stack(stack)
     }
 }
 

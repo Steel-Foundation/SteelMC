@@ -418,7 +418,10 @@ impl World {
         let loot_table = if let Some(loot_table) = block.config.loot_table {
             loot_table
         } else {
-            let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
+            let loot_key = steel_utils::Identifier::new(
+                block.key.namespace.clone(),
+                format!("blocks/{}", block.key.path),
+            );
             let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
                 return Vec::new();
             };

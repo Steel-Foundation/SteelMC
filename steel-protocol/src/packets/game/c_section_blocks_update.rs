@@ -32,7 +32,8 @@ impl WriteTo for CSectionBlocksUpdate {
         // Write each change as a packed VarLong
         for change in &self.changes {
             // Pack as: (block_state_id << 12) | packed_pos
-            let block_id = i32::from(change.block_state.0);
+            let block_id =
+                i32::from(steel_registry::client_content::client_block_state(change.block_state).0);
             let packed = i64::from(block_id) << 12 | i64::from(change.pos.as_u16());
 
             VarLong(packed).write(writer)?;

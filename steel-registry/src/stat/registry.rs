@@ -166,6 +166,22 @@ pub struct StatTypeEntry {
 }
 
 impl StatTypeEntry {
+    /// The vanilla client cannot address stats for server-only registry entries.
+    #[must_use]
+    pub fn is_client_value(&self, id: usize) -> bool {
+        if let Some(registry) = self.registry.downcast_ref::<crate::items::ItemRegistry>() {
+            return registry
+                .by_id(id)
+                .is_some_and(|item| crate::REGISTRY.client_content.is_vanilla_item(item));
+        }
+        if let Some(registry) = self.registry.downcast_ref::<crate::blocks::BlockRegistry>() {
+            return registry
+                .by_id(id)
+                .is_some_and(|block| crate::REGISTRY.client_content.is_vanilla_block(block));
+        }
+        true
+    }
+
     /// Gets the number of entries in this registry that this stat type is associated with.
     pub fn registry_len(&self) -> usize {
         self.registry.value.len()

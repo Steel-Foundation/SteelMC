@@ -6,6 +6,7 @@ mod bindings;
 pub mod block_behavior;
 mod callbacks;
 pub mod command;
+pub mod content;
 pub mod effects;
 mod entry;
 pub mod events;
@@ -65,6 +66,7 @@ pub fn bind(bootstrap: Bootstrap) -> Result<(), BindError> {
         .chain(worlds::api::imports())
         .chain(menus::api::imports())
         .chain(fill::api::imports())
+        .chain(content::api::imports())
         .copied()
         .collect();
     host_abi::bind(bootstrap, &imports)
