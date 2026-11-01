@@ -465,9 +465,13 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
         // Collect writes per (x,z) column and flush in batch to avoid per-block
         // write lock acquisition on sections.
-        let mut pending_writes: Vec<(usize, usize, usize, BlockStateId)> = Vec::new();
+        let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut prev_x: usize = usize::MAX;
         let mut prev_z: usize = usize::MAX;
+
+        let mut ocean_floor_complete = false;
+        let mut world_surface_complete = false;
+
         let mut ocean_floor_wg =
             Heightmap::new(HeightmapType::OceanFloorWg, min_y, N::Settings::HEIGHT);
         let mut world_surface_wg =
@@ -499,11 +503,13 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 // Flush when we move to a new column
                 if local_x != prev_x || local_z != prev_z {
                     if !pending_writes.is_empty() {
-                        chunk.write_block_batch(&pending_writes);
+                        chunk.write_noise_column(prev_x, prev_z, &pending_writes);
                         pending_writes.clear();
                     }
                     prev_x = local_x;
                     prev_z = local_z;
+                    ocean_floor_complete = false;
+                    world_surface_complete = false;
                 }
 
                 let relative_y = (world_y - min_y) as usize;
@@ -532,24 +538,31 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 );
                 match substance {
                     AquiferResult::Solid => {
-                        pending_writes.push((local_x, relative_y, local_z, default_block_id));
-                        ocean_floor_wg.update_for_initial_fill(
-                            local_x,
-                            world_y,
-                            local_z,
-                            default_block_id,
-                        );
-                        world_surface_wg.update_for_initial_fill(
-                            local_x,
-                            world_y,
-                            local_z,
-                            default_block_id,
-                        );
+                        pending_writes.push((relative_y, default_block_id));
+                        ocean_floor_complete = ocean_floor_complete
+                            || ocean_floor_wg.update_for_initial_fill(
+                                local_x,
+                                world_y,
+                                local_z,
+                                default_block_id,
+                            );
+                        world_surface_complete = world_surface_complete
+                            || world_surface_wg.update_for_initial_fill(
+                                local_x,
+                                world_y,
+                                local_z,
+                                default_block_id,
+                            );
                     }
                     AquiferResult::Fluid(id) => {
-                        pending_writes.push((local_x, relative_y, local_z, id));
-                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, id);
-                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, id);
+                        pending_writes.push((relative_y, id));
+                        ocean_floor_complete = ocean_floor_complete
+                            || ocean_floor_wg
+                                .update_for_initial_fill(local_x, world_y, local_z, id);
+                        world_surface_complete = world_surface_complete
+                            || world_surface_wg
+                                .update_for_initial_fill(local_x, world_y, local_z, id);
+
                         if aquifer.should_schedule_fluid_update() && id.has_fluid() {
                             chunk.mark_pos_for_postprocessing(BlockPos::new(
                                 world_x, world_y, world_z,
@@ -563,7 +576,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
         // Flush remaining writes
         if !pending_writes.is_empty() {
-            chunk.write_block_batch(&pending_writes);
+            chunk.write_noise_column(prev_x, prev_z, &pending_writes);
         }
         chunk.replace_noise_heightmaps(ocean_floor_wg, world_surface_wg);
         chunk.install_post_noise_state(N::wrap_post_noise_state(aquifer, material_ore_vein_values));
@@ -1180,7 +1193,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::chunk::{
         Chunk,
-        heightmap::HeightmapType,
+        heightmap::{ChunkHeightmaps, Heightmap, HeightmapType},
         section::{ChunkSection, Sections},
     };
     use crate::worldgen::generator::{
@@ -1270,6 +1283,22 @@ mod tests {
         for chunk in [&warm, &cold] {
             generator.create_biomes(chunk);
             generator.fill_from_noise(GenerationChunk::<TerrainPhase>::for_test(chunk), None);
+
+            let mut expected = ChunkHeightmaps::empty();
+            expected.prime_from_sections(
+                HeightmapType::worldgen_types(),
+                chunk.min_y(),
+                chunk.height(),
+                &chunk.sections().sections,
+            );
+            let actual = chunk.heightmaps.read();
+            for &heightmap_type in HeightmapType::worldgen_types() {
+                assert_eq!(
+                    actual.get(heightmap_type).map(Heightmap::raw_data),
+                    expected.get(heightmap_type).map(Heightmap::raw_data),
+                    "{heightmap_type:?} must match the generated blocks",
+                );
+            }
         }
         assert!(has_overworld_post_noise_state(&warm));
         assert!(has_overworld_post_noise_state(&cold));
