@@ -1,11 +1,15 @@
 //! Per-menu behavior hooks.
 
+use smallvec::SmallVec;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_utils::ErasedType;
 
 use crate::inventory::menu::behavior::MenuBehavior;
-use crate::{inventory::lock::ContainerLockGuard, player::Player};
+use crate::{
+    inventory::lock::{ContainerId, ContainerLockGuard},
+    player::Player,
+};
 
 use crate::inventory::click::{Click, ClickOutcome, QuickCraft};
 
@@ -18,6 +22,11 @@ use crate::inventory::click::{Click, ClickOutcome, QuickCraft};
 /// Concrete implementations must claim a unique
 /// [`steel_utils::DowncastTypeKey`] through [`steel_utils::DowncastType`].
 pub trait MenuKind: ErasedType + Send + Sync {
+    /// Chest inventories counted as open by this menu's container users.
+    /// This identity-only query runs under the player's menu-transition lock.
+    fn opened_containers(&self) -> SmallVec<[ContainerId; 2]> {
+        SmallVec::new()
+    }
     /// Recompute recipe-driven slots after a click touched a real slot.
     fn slots_changed(
         &mut self,

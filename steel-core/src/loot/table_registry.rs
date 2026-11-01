@@ -1,6 +1,18 @@
-use super::{FxHashMap, Identifier, LootTable};
+use std::sync::LazyLock;
 
-pub type LootTableRef = &'static LootTable;
+use rustc_hash::FxHashMap;
+use steel_registry::RegistryExt;
+use steel_utils::Identifier;
+
+use super::{LootTable, LootTableRef, vanilla_loot_tables};
+
+/// Registered vanilla loot-table identities, independent of their execution context.
+pub static LOOT_TABLES: LazyLock<LootTableRegistry> = LazyLock::new(|| {
+    let mut registry = LootTableRegistry::new();
+    vanilla_loot_tables::register_loot_tables(&mut registry);
+    registry.freeze();
+    registry
+});
 
 /// Registry for loot tables.
 pub struct LootTableRegistry {
@@ -10,6 +22,7 @@ pub struct LootTableRegistry {
 }
 
 impl LootTableRegistry {
+    /// Creates an empty registry accepting table registrations.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -19,6 +32,10 @@ impl LootTableRegistry {
         }
     }
 
+    /// Registers a table identity and returns its registry index.
+    ///
+    /// # Panics
+    /// Panics if the registry has been frozen.
     pub fn register(&mut self, table: LootTableRef) -> usize {
         assert!(
             self.allows_registering,
@@ -31,6 +48,7 @@ impl LootTableRegistry {
         id
     }
 
+    /// Iterates table identities in registration order.
     pub fn iter(&self) -> impl Iterator<Item = (usize, LootTableRef)> + '_ {
         self.tables_by_id
             .iter()
@@ -45,10 +63,4 @@ impl Default for LootTableRegistry {
     }
 }
 
-crate::impl_registry!(
-    LootTableRegistry,
-    LootTable,
-    tables_by_id,
-    tables_by_key,
-    loot_tables
-);
+steel_registry::impl_registry_ext!(LootTableRegistry, LootTable, tables_by_id, tables_by_key);

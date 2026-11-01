@@ -16,7 +16,7 @@ use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::{BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess};
 use crate::block_entity::entities::FurnaceKind;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
-use crate::inventory::container::calculate_redstone_signal_from_container;
+use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::furnace_menu;
 use crate::player::Player;
@@ -81,10 +81,13 @@ fn analog_output(world: &dyn LevelReader, pos: BlockPos) -> i32 {
     else {
         return 0;
     };
-    let guard = ContainerLockGuard::lock_all(&[&container]);
-    guard
-        .get(container.container_id())
-        .map_or(0, calculate_redstone_signal_from_container)
+    let Ok(guard) = ContainerLockGuard::lock_all(&[&container]) else {
+        // TODO: Handle preparation failures without reporting an empty inventory.
+        // Current furnace storage has no preparation callback; ordinary mutex
+        // contention waits instead of reaching this fallback.
+        return 0;
+    };
+    calculate_redstone_signal_from_containers(guard.get(container.container_id()))
 }
 
 macro_rules! impl_furnace_block {

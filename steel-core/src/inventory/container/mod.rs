@@ -351,46 +351,36 @@ fn matching_item_count(
     }
 }
 
-/// Calculates the redstone comparator signal strength (0-15) from a container.
+/// Calculates the redstone comparator signal strength (0-15) over container inventories.
 ///
-/// Based on Java's `AbstractContainerMenu.getRedstoneSignalFromContainer`.
-/// The signal is proportional to how full the container is:
-/// - 0 = empty
-/// - 1-14 = partially filled (linear interpolation)
-/// - 15 = completely full
-///
-/// # Arguments
-/// * `container` - The container to calculate the signal for
-///
-/// # Returns
-/// Signal strength from 0 to 15
+/// Uses the first inventory's stack limit for all slots, as vanilla compound containers do.
+/// An empty iterator or inventories without slots produce zero.
 #[must_use]
-pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i32 {
-    let size = container.get_container_size();
+pub fn calculate_redstone_signal_from_containers<'a>(
+    containers: impl IntoIterator<Item = &'a dyn Container>,
+) -> i32 {
+    let mut size = 0;
+    let mut total_percent: f32 = 0.0;
+    let mut first_limit = None;
+    for container in containers {
+        let max_stack = *first_limit.get_or_insert_with(|| container.get_max_stack_size());
+        size += container.get_container_size();
+        for item in container.items() {
+            if !item.is_empty() {
+                total_percent += item.count() as f32 / max_stack.min(item.max_stack_size()) as f32;
+            }
+        }
+    }
     if size == 0 {
         return 0;
     }
-
-    let mut total_percent: f32 = 0.0;
-
-    for i in 0..size {
-        let item = container.get_item(i);
-        if !item.is_empty() {
-            let max_stack = container.get_max_stack_size_for_item(item);
-            total_percent += item.count() as f32 / max_stack as f32;
-        }
-    }
-
     total_percent /= size as f32;
-
-    // Vanilla `Mth.lerpDiscrete(totalPercent, 0, 15)` gives every non-empty
-    // container at least one signal level, then distributes the other 14.
     (total_percent * 14.0).floor() as i32 + i32::from(total_percent > 0.0)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::array;
+    use std::{array, iter};
 
     use steel_registry::{init_vanilla_registry, vanilla_items};
 
@@ -399,12 +389,14 @@ mod tests {
 
     struct TestContainer {
         items: Vec<ItemStack>,
+        max_stack_size: i32,
     }
 
     impl TestContainer {
         fn new(size: usize) -> Self {
             Self {
                 items: (0..size).map(|_| ItemStack::empty()).collect(),
+                max_stack_size: 99,
             }
         }
     }
@@ -425,6 +417,10 @@ mod tests {
 
         fn get_container_size(&self) -> usize {
             self.items.len()
+        }
+
+        fn get_max_stack_size(&self) -> i32 {
+            self.max_stack_size
         }
 
         fn set_changed(&mut self) {}
@@ -556,12 +552,38 @@ mod tests {
         init_vanilla_registry();
         let mut container = TestContainer::new(27);
         container.set_item(0, ItemStack::new(&vanilla_items::STONE));
-        assert_eq!(calculate_redstone_signal_from_container(&container), 1);
+        assert_eq!(
+            calculate_redstone_signal_from_containers(iter::once(&container as &dyn Container)),
+            1
+        );
 
         for slot in 0..container.get_container_size() {
             container.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
         }
-        assert_eq!(calculate_redstone_signal_from_container(&container), 15);
+        assert_eq!(
+            calculate_redstone_signal_from_containers(iter::once(&container as &dyn Container)),
+            15
+        );
+    }
+
+    #[test]
+    fn comparator_signal_uses_first_container_stack_limit() {
+        init_vanilla_registry();
+        let mut first = TestContainer::new(1);
+        first.max_stack_size = 16;
+        first.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 16));
+        let mut second = TestContainer::new(1);
+        second.max_stack_size = 64;
+        second.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 16));
+
+        assert_eq!(
+            calculate_redstone_signal_from_containers([&first as &dyn Container, &second]),
+            15
+        );
+        assert_eq!(
+            calculate_redstone_signal_from_containers([&second as &dyn Container, &first]),
+            4
+        );
     }
 
     #[test]
