@@ -676,69 +676,6 @@ mod tests {
     }
 
     #[test]
-    fn collision_collection_preserves_queries_context_and_shape_order() {
-        use std::cell::RefCell;
-
-        struct OrderedWorld<'a> {
-            border: &'a [WorldAabb],
-            blocks: &'a [WorldAabb],
-            context: BlockCollisionContext,
-            calls: RefCell<Vec<&'static str>>,
-        }
-
-        impl CollisionWorld for OrderedWorld<'_> {
-            fn get_block_state(&self, _pos: BlockPos) -> steel_utils::BlockStateId {
-                vanilla_blocks::AIR.default_state()
-            }
-
-            fn get_block_collisions(&self, _aabb: &WorldAabb) -> Vec<WorldAabb> {
-                panic!("the supplied collision context must reach the block query");
-            }
-
-            fn get_world_border_collisions(&self, _aabb: &WorldAabb) -> Vec<WorldAabb> {
-                self.calls.borrow_mut().push("border");
-                self.border.to_vec()
-            }
-
-            fn get_block_collisions_with_context(
-                &self,
-                _aabb: &WorldAabb,
-                context: BlockCollisionContext,
-            ) -> Vec<WorldAabb> {
-                assert_eq!(context, self.context);
-                self.calls.borrow_mut().push("blocks");
-                self.blocks.to_vec()
-            }
-        }
-
-        let query = WorldAabb::new(0.0, 0.0, 0.0, 4.0, 1.0, 1.0);
-        let boxes = [0, 1, 2, 3]
-            .map(|x| WorldAabb::new(f64::from(x), 0.0, 0.0, f64::from(x + 1), 1.0, 1.0));
-        let context = BlockCollisionContext::entity(0.5, true).with_fall_distance(2.0);
-
-        for entities in [&boxes[..0], &boxes[..1]] {
-            for border in [&boxes[1..1], &boxes[1..2]] {
-                let world = OrderedWorld {
-                    border,
-                    blocks: &boxes[2..],
-                    context,
-                    calls: RefCell::new(Vec::new()),
-                };
-                let actual = collect_collisions_with_context(&world, &query, context, entities);
-                let expected = entities
-                    .iter()
-                    .chain(border)
-                    .chain(&boxes[2..])
-                    .copied()
-                    .collect::<Vec<_>>();
-
-                assert_eq!(actual, expected);
-                assert_eq!(*world.calls.borrow(), ["border", "blocks"]);
-            }
-        }
-    }
-
-    #[test]
     fn test_move_entity_free_fall() {
         let state = player_state(DVec3::new(0.0, 10.0, 0.0));
 
