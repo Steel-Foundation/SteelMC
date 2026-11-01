@@ -1139,7 +1139,7 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
         rval = lcg_next(rval, biome_zoom_seed);
         let fz = get_fiddle(rval);
 
-        let dist = (dx + fx).powi(2) + (dy + fy).powi(2) + (dz + fz).powi(2);
+        let dist = (dz + fz).powi(2) + (dy + fy).powi(2) + (dx + fx).powi(2);
         if min_dist > dist {
             min_i = i;
             min_dist = dist;

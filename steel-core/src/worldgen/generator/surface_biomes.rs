@@ -148,6 +148,19 @@ impl<'a> SurfaceQuartBiomes<'a> {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct BiomeCandidate {
+    y_fiddle: f64,
+    x_distance_sq: f64,
+    z_distance_sq: f64,
+}
+
+impl BiomeCandidate {
+    fn squared_distance(self, dy: f64) -> f64 {
+        self.z_distance_sq + (dy + self.y_fiddle) * (dy + self.y_fiddle) + self.x_distance_sq
+    }
+}
+
 /// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).
 pub(super) struct FuzzedBiomeColumn<'a, 'b> {
     quarts: &'a mut SurfaceQuartBiomes<'b>,
@@ -158,7 +171,7 @@ pub(super) struct FuzzedBiomeColumn<'a, 'b> {
     fract_x: f64,
     fract_z: f64,
     cached_parent_y: i32,
-    candidates: [(f64, f64); 8],
+    candidates: [BiomeCandidate; 8],
     rval_after_cx: [i64; 2],
     class_parent_y: i32,
     uniform_biome: Option<u16>,
@@ -185,7 +198,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             fract_x: f64::from(abs_x & 3) / 4.0,
             fract_z: f64::from(abs_z & 3) / 4.0,
             cached_parent_y: i32::MIN,
-            candidates: [(0.0, 0.0); 8],
+            candidates: [BiomeCandidate::default(); 8],
             rval_after_cx: [
                 lcg_next(biome_zoom_seed, i64::from(parent_x)),
                 lcg_next(biome_zoom_seed, i64::from(parent_x + 1)),
@@ -226,8 +239,11 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
                 rval = lcg_next(rval, self.biome_zoom_seed);
                 let fz = get_fiddle(rval);
 
-                let xz_partial = (dx + fx) * (dx + fx) + (dz + fz) * (dz + fz);
-                self.candidates[cx_idx * 4 + base_idx + cz_off] = (fy, xz_partial);
+                self.candidates[cx_idx * 4 + base_idx + cz_off] = BiomeCandidate {
+                    y_fiddle: fy,
+                    x_distance_sq: (dx + fx) * (dx + fx),
+                    z_distance_sq: (dz + fz) * (dz + fz),
+                };
             }
         }
     }
@@ -262,9 +278,9 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
         let mut min_i = 0usize;
         let mut min_dist = f64::INFINITY;
         for i in 0..8usize {
-            let (fy, xz_partial) = self.candidates[i];
+            let candidate = self.candidates[i];
             let dy = if (i & 2) == 0 { fract_y } else { fract_y - 1.0 };
-            let dist = xz_partial + (dy + fy) * (dy + fy);
+            let dist = candidate.squared_distance(dy);
             if min_dist > dist {
                 min_i = i;
                 min_dist = dist;
