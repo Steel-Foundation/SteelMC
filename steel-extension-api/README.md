@@ -17,10 +17,15 @@ fails after loading; unload and reload are unsupported.
 
 ## Load and package extensions
 
-Steel loads explicitly configured `[[extensions]]` paths first, then discovers
-remaining `*.zip` packages in `./extensions` in filename order. Configured paths
-may select a raw native library or a ZIP. A loading, ABI, duplicate-name, ordering,
-or initialization error stops startup before worlds begin ticking.
+Steel takes explicitly configured `[[extensions]]` paths first, then every remaining `*.zip`
+package and native library in `./extensions` (created on first start) in filename order.
+Configured paths may select a raw native library or a ZIP. Every source is opened and its
+descriptor checked before any extension code runs: files that are not extensions, were built
+for an older API, declare a name another file also declares, or miss a hard dependency
+(transitively) are skipped with a warning. The rest are ordered so dependencies come first
+and pre-initialized in that order. A dependency cycle, a pre-init, registration or init
+failure, or loading one name twice in a process stops startup before worlds begin ticking,
+because native registrations cannot be rolled back.
 
 Each archive contains `extension.toml` and its platform libraries:
 
@@ -100,9 +105,13 @@ shutdown saves. Like other native callbacks, handlers must not panic or retain
 borrowed payloads.
 
 The design combines the checked bindings and lifecycle from
-[`another-plugin-experiment`](https://github.com/coco875/SteelMC/tree/another-plugin-experiment/steel-extension-api)
+[`another-plugin-experiment`](https://github.com/coco875/SteelMC/tree/another-plugin-experiment/steel-plugin-api)
 with the actions, filters, ordering, and archive packaging from
-[`try-plugin`](https://github.com/coco875/SteelMC/tree/try-plugin).
+[`try-plugin`](https://github.com/coco875/SteelMC/tree/try-plugin). The gameplay API (events,
+commands, players, items, menus, HUD, effects, worlds, bulk fill, services, scheduler), the
+dependency-aware loader and the ports in `extension-example/` come from the plugin platform
+iterations in [OPPrisonSteelMCExperiment](https://github.com/tangjuyo/OPPrisonSteelMCExperiment),
+whose `specs/` are kept in this repository.
 
 See the runnable [actions/filters example](../extension-example/hooks-and-filters/README.md)
 for two native libraries using a shared payload contract, real cross-extension
@@ -163,7 +172,7 @@ Startup runs these stages for all configured extensions:
    entries and invoke the subscribed callbacks with their actual mutable registry.
    Each setter edits that registry immediately. The constructor then publishes it.
 3. **Init:** after all registration events succeed and the registries are frozen,
-   call `init(context)` in dependency order. `ExtensionContext` exposes the plugin's TOML
+   call `init(context)` in dependency order. `ExtensionContext` exposes the extension's TOML
    configuration and its data directory. Resolve static values, load data and register
    services here.
 
@@ -367,7 +376,7 @@ client or account.
 See the [Spleef example](../extension-example/spleef/README.md) for a lobby, countdown,
 fresh arena, bots, elimination, player restoration, and complete world retirement.
 
-## Lifecycle v3
+## Lifecycle
 
 ```rust
 steel_extension_api::export_extension! {
@@ -380,17 +389,17 @@ steel_extension_api::export_extension! {
 }
 ```
 
-The server loads every library in its `plugins/` folder (plus explicit `[[plugins]]` paths).
-The loader opens each one, skips files that are not plugins or target another API version,
-skips duplicate names and plugins whose hard dependencies are missing (transitively), orders the
-rest so dependencies come first (a cycle stops startup), then pre-initializes and initializes
-them in that order. Configuration comes from `plugins/<name>/config.toml`, created empty on
-first start. The descriptor records `API_VERSION`, shown by `/plugins <name>`. Standalone
-projects depend on this crate by git; see `plugin-template/`. Each plugin gets
-`plugins/<name>/` (created before init) through `ExtensionContext::data_directory`.
+The short form `export_extension!("name", pre_init, init)` declares version `0.0.0` and no
+dependencies. Loading follows [Load and package extensions](#load-and-package-extensions).
+Configuration comes from the `[extensions.config]` table of an `[[extensions]]` entry, or
+otherwise from `extensions/<name>/config.toml`, created empty on first start. Each extension
+gets `extensions/<name>/` (created before init) through `ExtensionContext::data_directory`.
+The descriptor records `API_VERSION`; `/extensions` (alias `/plugins`) lists the loaded
+extensions and `/extensions <name>` shows version, API version, dependencies and source.
 `hooks.on_shutdown(|server| ...)` runs once on a clean stop, in reverse order, before worlds
-are saved. `steel_extension_api::log::{info, warn, error}` write to the server log tagged with
-the plugin name.
+are saved; the `ServerStopAction` is emitted at the same point.
+`steel_extension_api::log::{info, warn, error}` write to the server log tagged with the
+extension name.
 
 ## Hello world
 
@@ -442,7 +451,7 @@ or the native `subscribe_*(priority, .., extern fn, token)` form.
 | `DamageEvent` | any living entity, before cooldowns and armor | amount, cancel |
 | `DeathEvent` | player death | message |
 | `MoveEvent` | player enters a different block | cancel (teleports back) |
-| `TeleportEvent` | `/tp`, plugin and other server teleports | destination, cancel |
+| `TeleportEvent` | `/tp`, extension and other server teleports | destination, cancel |
 | `RespawnEvent`, `WorldChangeEvent` | after respawn / world transition | — |
 | `GameModeChangeEvent`, `ItemHeldEvent`, `SwapHandsEvent` | before the change | cancel |
 | `ToggleEvent` | sneak, sprint, flight | cancel (flight is resynced) |
@@ -453,7 +462,7 @@ or the native `subscribe_*(priority, .., extern fn, token)` form.
 | `EntitySpawnEvent`, `EntityDeathEvent` | any entity added / living death | cancel, drops |
 | `ExplosionEvent`, `PistonEvent` | before blocks are destroyed / moved | block list, cancel |
 | `ChunkLoadEvent`, `ChunkUnloadEvent`, `WorldLoadEvent`, `WorldUnloadEvent`, `WeatherChangeEvent` | world lifecycle | weather cancel |
-| `ServerCommandEvent`, `ServerListPingEvent`, `PluginMessageEvent` | console/plugin commands, status ping, custom payload | command, MOTD, cancel |
+| `ServerCommandEvent`, `ServerListPingEvent`, `PluginMessageEvent` | console/extension commands, status ping, custom payload | command, MOTD, cancel |
 
 `BlockBreakEvent::set_drop_items(false)` keeps the break but suppresses its loot (auto-sell
 plugins). Respawning creates a new player entity, so key per-player state by UUID.
@@ -487,7 +496,7 @@ plain text; `text::Text` builds components and `text::legacy` converts `&` color
 
 `items::ItemSpec` describes a stack as plain data: item key, count, name, lore (JSON or `&`
 codes through `name_legacy`/`lore_legacy`), glint, unbreakable, vanilla enchantments and
-private plugin data (`with_data("myplugin:key", value)`, stored in `minecraft:custom_data`, so
+private extension data (`with_data("myextension:key", value)`, stored in `minecraft:custom_data`, so
 it survives restarts and chests). `Server::slot`, `set_slot`, `held_slot`, `give` and
 `set_item_data` read and write vanilla inventory slots (0–8 hotbar, 9–35 main, 36–39 armor,
 40 off hand).
@@ -497,7 +506,7 @@ it survives restarts and chests). `Server::slot`, `set_slot`, `held_slot`, `give
 | Module | |
 |---|---|
 | `effects` | `World::spawn_particle(Particle)` with dust/color/block options and `Particle::note(pos, pitch)`; `World::play_sound`; per-player `play_sound_to`, `add_effect`/`remove_effect`, `give_experience`/`give_levels`, `set_walk_speed`/`set_fly_speed` |
-| `hud` | per-player sidebar (diffed, up to 15 lines), boss bars by plugin UUID, tab list header/footer override |
+| `hud` | per-player sidebar (diffed, up to 15 lines), boss bars by extension-chosen UUID, tab list header/footer override |
 | `menus` | read-only chest GUIs: `menus::handler(\|server, click\| ..)` once, then `server.open_menu_with(player, title, rows, items, handler)`; `set_menu_item`, `close_menu`. Clicks never move items and are routed before any container lock, so handlers may change inventories |
 | `worlds` | `Server::with_world(key, \|world\| ..)` from scheduled tasks, day time and weather, `drop_item`, `remove_entity`, `strike_lightning_effect`, `send_plugin_message` |
 | `fill` | `World::fill(FillRequest)` below |
@@ -520,8 +529,11 @@ per-block `set_block`); see `cargo test --release -p steel-core --lib bulk_fill_
 `stabby::dynptr!(Box<dyn Contract + Send + Sync>)`; `services::get::<T>(key)` returns the
 highest-priority provider after checking that its stabby layout report matches `T`, so
 incompatible contract versions are errors rather than undefined behavior. Contracts live in
-small shared crates such as [`vault-api`](../plugin-projects/vault-api/src/lib.rs); keys carry a
-version suffix (`vault:economy/v1`). See [the plugin ports](../plugin-projects/README.md).
+small shared crates such as [`vault-api`](../extension-example/vault-api/src/lib.rs); keys carry
+a version suffix (`vault:economy/v1`). See [the examples](../extension-example/README.MD).
+Services complement [actions and filters](#ordered-actions-and-filters): a service is one
+provider object queried on demand, while actions and filters fan a payload out to every
+subscribed handler.
 
 ## Check the boundary
 

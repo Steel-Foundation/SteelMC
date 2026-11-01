@@ -51,7 +51,7 @@ pub enum Glint {
 
 /// A description of an item stack.
 #[stabby::stabby]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemSpec {
     /// Item key; `minecraft:air` for an empty stack.
     pub item: ApiString,

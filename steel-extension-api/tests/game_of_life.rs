@@ -19,7 +19,7 @@ fn loads_game_of_life_with_only_its_board_configuration() -> Result<(), String> 
         ));
     let config = "[life]\nworld = 'minecraft:overworld'\nx = -1\ny = 96\nz = -1\nwidth = 5\ndepth = 5\ninterval = 10\n";
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: this separately built trusted example supplies the checked v2
+    // SAFETY: this separately built trusted example supplies the checked v3
     // descriptor; load pins it for the lifetime of its world-tick callback.
     let extension = unsafe { host::load(&path, config, &mut hooks) }?;
     assert!(!REGISTRY.is_initialized());

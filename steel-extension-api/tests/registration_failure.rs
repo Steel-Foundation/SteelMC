@@ -19,7 +19,7 @@ fn registration_failure_prevents_the_init_entrypoint() -> Result<(), String> {
             "{DLL_PREFIX}steel_behavior_boundary_fixture{DLL_SUFFIX}"
         ));
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: this separately built fixture supplies the checked v2 descriptor;
+    // SAFETY: this separately built fixture supplies the checked v3 descriptor;
     // load pins the module before invoking any entrypoint or retaining callbacks.
     let extension = unsafe { host::load(&path, "fail_after_replacement", &mut hooks) }?;
     assert!(!REGISTRY.is_initialized());

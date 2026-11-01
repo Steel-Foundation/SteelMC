@@ -37,7 +37,7 @@ fn independently_compiled_extension_inherits_removes_and_replaces_native_capabil
         ));
     })?;
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: this separately compiled fixture honors the checked v2 descriptor;
+    // SAFETY: this separately compiled fixture honors the checked v3 descriptor;
     // load pins it before invoking pre-init or retaining any callback.
     let extension = unsafe { host::load(&path, "", &mut hooks) }?;
     assert!(!REGISTRY.is_initialized());

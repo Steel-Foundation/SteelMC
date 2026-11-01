@@ -80,7 +80,7 @@ fn held_jackhammer(player: &Player) -> Option<String> {
     clippy::too_many_lines,
     reason = "one server session walks the whole demo in order"
 )]
-#[ignore = "requires cargo build --manifest-path extension-projects/Cargo.toml"]
+#[ignore = "requires the extension-example and event-probe debug builds (see README)"]
 fn prison_bundle_resets_mines_jackhammers_layers_and_sells_into_vault() -> Result<(), String> {
     let data_root = extension_data_root();
     fs::create_dir_all(data_root.join("prison-mines")).map_err(|e| e.to_string())?;

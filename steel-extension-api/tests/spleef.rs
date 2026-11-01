@@ -225,7 +225,7 @@ fn solo_spleef_creates_lobby_and_arena_fills_bots_restores_state_and_releases_wo
         .join("../extension-example/spleef/target/debug")
         .join(format!("{DLL_PREFIX}steel_spleef_extension{DLL_SUFFIX}"));
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: the independently built example honors the checked v2 entrypoints;
+    // SAFETY: the independently built example honors the checked v3 entrypoints;
     // the loader pins it for the lifetime of every callback.
     let extension = unsafe {
         host::load(

@@ -769,8 +769,7 @@ pub mod api {
                 .event
                 .lines
                 .get(usize::from(index))
-                .map(|line| line.as_str().into())
-                .unwrap_or_default()
+                .map_or_else(ApiString::default, |line| line.as_str().into())
         }
         /// Rewrites one line (0–3).
         pub fn set_line(&mut self, index: u8, text: Str<'_>) {

@@ -29,7 +29,7 @@ fn loads_wool_shearing_and_preserves_original_behavior_delegation() -> Result<()
         *capture.lock() = Some(registry.get_behavior_shared(&vanilla_blocks::WHITE_WOOL));
     })?;
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: the example supplies the checked v2 entrypoints; load pins the library.
+    // SAFETY: the example supplies the checked v3 entrypoints; load pins the library.
     let extension = unsafe { host::load(&path, config, &mut hooks) }?;
     assert_eq!(extension.name, "wool-shearing-example");
     assert!(!REGISTRY.is_initialized());

@@ -6,7 +6,7 @@
   "properties": {
     "extensions": {
       "type": "array",
-      "description": "Trusted native libraries or ZIP packages loaded before worlds. Other ZIP packages in ./extensions are discovered automatically.",
+      "description": "Trusted native libraries or ZIP packages loaded before worlds. Other ZIP packages and native libraries in ./extensions are discovered automatically.",
       "default": [],
       "items": {
         "type": "object",
@@ -21,7 +21,7 @@
           },
           "config": {
             "type": "object",
-            "description": "Extension-owned initialization configuration."
+            "description": "Extension-owned initialization configuration; without it the extension reads extensions/<name>/config.toml."
           }
         }
       }

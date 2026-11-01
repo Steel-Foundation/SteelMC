@@ -1,12 +1,13 @@
 //! Iteration-2 events reaching a native extension through real handlers of a test peer.
 #![cfg(feature = "host")]
 #![recursion_limit = "256"]
+mod common;
+
+use common::library;
 use glam::DVec3;
 use rustc_hash::FxHashMap;
 use std::slice::from_ref;
 use std::{
-    env::consts::{DLL_PREFIX, DLL_SUFFIX},
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -217,14 +218,8 @@ async fn until(
     ))
 }
 
-fn library(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../extension-projects/target/debug")
-        .join(format!("{DLL_PREFIX}{name}{DLL_SUFFIX}"))
-}
-
 #[test]
-#[ignore = "requires cargo build --manifest-path extension-projects/Cargo.toml"]
+#[ignore = "requires the extension-example and event-probe debug builds (see README)"]
 #[expect(
     clippy::too_many_lines,
     reason = "one linear server session drives every probed binding in order"
@@ -238,7 +233,7 @@ fn iteration_two_events_reach_plugins_and_cancellation_keeps_state() -> Result<(
         config: None,
     }];
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: the probe is built from this repository against the same v4 contract.
+    // SAFETY: the probe is built from this repository against the same v3 contract.
     let report = unsafe { host::load_all(&sources, &data_root, &mut hooks) }?;
     assert!(report.skipped.is_empty(), "{:?}", report.skipped);
     init_globals();

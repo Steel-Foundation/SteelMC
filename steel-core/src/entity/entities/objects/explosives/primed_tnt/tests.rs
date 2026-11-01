@@ -61,10 +61,10 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
     init_behaviors();
     init_entities();
     let domain = test_domain("primed_tnt_recreation", &["source", "target"]);
-    let source = &domain
+    let source = domain
         .get(&Identifier::new_static("primed_tnt_recreation", "source"))
         .expect("source world");
-    let target = &domain
+    let target = domain
         .get(&Identifier::new_static("primed_tnt_recreation", "target"))
         .expect("target world");
     let position = test_tnt_position();

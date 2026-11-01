@@ -791,7 +791,6 @@ impl Player {
     }
 
     /// Handles a custom payload packet.
-    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn handle_custom_payload(&self, packet: SCustomPayload) {
         self.fire_event(
             |events| &events.plugin_message,

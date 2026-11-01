@@ -1,21 +1,15 @@
-//! Drop-in loading: a extensions folder with real libraries, junk and duplicates.
+//! Drop-in loading: an extensions folder with real libraries, junk and duplicates.
 #![cfg(feature = "host")]
-use std::{
-    env::consts::{DLL_PREFIX, DLL_SUFFIX},
-    fs,
-    path::PathBuf,
-};
+#![recursion_limit = "256"]
+mod common;
+
+use common::library;
+use std::{env::consts::DLL_SUFFIX, fs};
 use steel_core::extension::ExtensionHooks;
 use steel_extension_api::host;
 
-fn library(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../extension-projects/target/debug")
-        .join(format!("{DLL_PREFIX}{name}{DLL_SUFFIX}"))
-}
-
 #[test]
-#[ignore = "requires cargo build --manifest-path extension-projects/Cargo.toml"]
+#[ignore = "requires the extension-example and event-probe debug builds (see README)"]
 fn plugins_folder_loads_libraries_and_skips_junk_duplicates_and_missing_dependencies()
 -> Result<(), String> {
     let root = std::env::temp_dir().join(format!("steel-extension-folder-{}", std::process::id()));
@@ -47,7 +41,7 @@ fn plugins_folder_loads_libraries_and_skips_junk_duplicates_and_missing_dependen
         .map(|path| host::ExtensionSource { path, config: None })
         .collect();
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: the libraries are this repository's extension projects built for the v4 contract.
+    // SAFETY: the libraries are this repository's extension projects built for the v3 contract.
     let report = unsafe { host::load_all(&sources, &root, &mut hooks) }?;
     let loaded: Vec<_> = report
         .extensions

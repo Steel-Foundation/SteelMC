@@ -34,7 +34,7 @@ const GRANTS: [&str; 5] = [
     clippy::too_many_lines,
     reason = "the ports share one server lifecycle before process-global teardown"
 )]
-#[ignore = "requires cargo build --manifest-path extension-projects/Cargo.toml"]
+#[ignore = "requires the extension-example and event-probe debug builds (see README)"]
 fn ports_protect_edit_teleport_and_persist_through_real_commands() -> Result<(), String> {
     let data_root = extension_data_root();
     let loaded = load_extensions(

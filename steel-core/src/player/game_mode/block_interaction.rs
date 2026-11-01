@@ -132,6 +132,10 @@ impl Player {
     }
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one match over every vanilla player action keeps their order explicit"
+    )]
     pub fn handle_player_action(self: &Arc<Self>, packet: SPlayerAction) {
         if !self.has_client_loaded() {
             return;

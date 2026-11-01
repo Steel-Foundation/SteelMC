@@ -24,7 +24,7 @@ fn loads_terrain_without_game_of_life_configuration_and_resolves_its_generator()
             "{DLL_PREFIX}steel_strange_terrain_extension{DLL_SUFFIX}"
         ));
     let mut hooks = ExtensionHooks::default();
-    // SAFETY: the separately built example supplies the checked v2 descriptor;
+    // SAFETY: the separately built example supplies the checked v3 descriptor;
     // the loader pins the trusted library before retaining callbacks.
     let extension = unsafe { host::load(&path, "", &mut hooks) }?;
     assert!(!REGISTRY.is_initialized());

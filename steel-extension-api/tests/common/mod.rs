@@ -217,9 +217,18 @@ pub async fn until(
     ))
 }
 
+/// Debug build of the extension crate `name` (`event_probe` lives in `tests/event-probe`, the
+/// others in `extension-example/<crate>`); build them first, see the crate README.
 pub fn library(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../extension-projects/target/debug")
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let crate_dir = if name == "event_probe" {
+        root.join("tests/event-probe")
+    } else {
+        root.join("../extension-example")
+            .join(name.replace('_', "-"))
+    };
+    crate_dir
+        .join("target/debug")
         .join(format!("{DLL_PREFIX}{name}{DLL_SUFFIX}"))
 }
 
@@ -282,7 +291,7 @@ pub struct Loaded {
     pub order: Vec<&'static str>,
 }
 
-/// Loads `(library, config)` pairs from `extension-projects/target/debug` and initializes them.
+/// Loads `(library, config)` pairs built by their crates (see [`library`]) and initializes them.
 pub fn load_extensions(extensions: &[(&str, &str)], data_root: &Path) -> Result<Loaded, String> {
     let sources: Vec<host::ExtensionSource> = extensions
         .iter()

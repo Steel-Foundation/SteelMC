@@ -61,7 +61,7 @@ pub(crate) fn to_stack(spec: &ItemSpec) -> Result<ItemStack, String> {
     }
     if !spec.enchantments.is_empty() {
         let mut enchantments = ItemEnchantments::empty();
-        for entry in spec.enchantments.iter() {
+        for entry in &spec.enchantments {
             let key: Identifier = entry.key.as_str().parse().map_err(str::to_owned)?;
             if REGISTRY.enchantments.by_key(&key).is_none() {
                 return Err(format!("unknown enchantment {key}"));
@@ -70,7 +70,7 @@ pub(crate) fn to_stack(spec: &ItemSpec) -> Result<ItemStack, String> {
         }
         stack.set(ENCHANTMENTS, enchantments);
     }
-    for entry in spec.data.iter() {
+    for entry in &spec.data {
         write_data(&mut stack, entry.key.as_str(), entry.value.as_str())?;
     }
     Ok(stack)
@@ -275,7 +275,7 @@ mod tests {
             .enchant("minecraft:efficiency", 5)
             .with_data("prison:jackhammer", "1")
             .with_data("prison:fortune", "2");
-        let stack = to_stack(&spec).map_err(|e| e.to_string());
+        let stack = to_stack(&spec);
         let Ok(stack) = stack else {
             panic!("spec should build: {stack:?}");
         };
