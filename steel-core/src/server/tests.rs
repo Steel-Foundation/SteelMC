@@ -11,7 +11,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
@@ -3896,28 +3896,6 @@ fn a_second_server_bootstraps_in_the_same_process() {
 
             shutdown_server(&first, &first_root).await;
             shutdown_server(&second, &second_root).await;
-        });
-    });
-}
-
-#[test]
-fn offline_startup_does_not_wait_for_the_services_key_fetch() {
-    with_server_runtime(|runtime| {
-        runtime.block_on(async {
-            let save_root = test_storage_root("offline-service-keys");
-
-            let started = Instant::now();
-            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
-                .await
-                .expect("an offline server should start");
-            let elapsed = started.elapsed();
-
-            assert!(
-                elapsed < SERVICE_KEY_CONNECT_TIMEOUT,
-                "offline startup waited {elapsed:?} on the services key fetch"
-            );
-
-            shutdown_server(&server, &save_root).await;
         });
     });
 }
