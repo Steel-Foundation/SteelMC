@@ -14,10 +14,10 @@ use crate::{REGISTRY, TaggedRegistryExt};
 #[serde(deny_unknown_fields)]
 pub struct BlockStateData {
     /// Block identifier.
-    #[serde(rename = "Name")]
+    #[serde(rename = "id")]
     pub name: Identifier,
     /// String-valued block-state properties.
-    #[serde(rename = "Properties", default)]
+    #[serde(default)]
     pub properties: BTreeMap<String, String>,
 }
 
@@ -26,10 +26,10 @@ pub struct BlockStateData {
 #[serde(deny_unknown_fields)]
 pub struct FluidStateData {
     /// Fluid identifier.
-    #[serde(rename = "Name")]
+    #[serde(rename = "id")]
     pub name: Identifier,
     /// String-valued fluid-state properties.
-    #[serde(rename = "Properties", default)]
+    #[serde(default)]
     pub properties: BTreeMap<String, String>,
 }
 

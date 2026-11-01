@@ -43,7 +43,8 @@ static SIN_TABLE: LazyLock<Box<[f32; TABLE_LEN]>> = LazyLock::new(|| {
 /// table indexed by the angle's low-16-bit bucket.
 #[inline]
 #[must_use]
-pub fn sin(angle: f64) -> f32 {
+pub fn sin(angle: impl Into<f64>) -> f32 {
+    let angle = angle.into();
     let idx = (((angle * INDEX_SCALE) as i64) & TABLE_MASK) as usize;
     SIN_TABLE[idx]
 }
@@ -52,7 +53,8 @@ pub fn sin(angle: f64) -> f32 {
 /// the same table.
 #[inline]
 #[must_use]
-pub fn cos(angle: f64) -> f32 {
+pub fn cos(angle: impl Into<f64>) -> f32 {
+    let angle = angle.into();
     let idx = (((angle * INDEX_SCALE + 16_384.0) as i64) & TABLE_MASK) as usize;
     SIN_TABLE[idx]
 }

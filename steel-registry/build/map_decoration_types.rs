@@ -13,8 +13,6 @@ struct MapDecorationTypeJson {
     key: String,
     asset_id: String,
     show_on_item_frame: bool,
-    map_color: i32,
-    exploration_map_element: bool,
     track_count: bool,
 }
 
@@ -48,8 +46,6 @@ pub(crate) fn build() -> TokenStream {
         let asset_namespace = asset_id.namespace.as_ref();
         let asset_path = asset_id.path.as_ref();
         let show_on_item_frame = decoration.show_on_item_frame;
-        let map_color = decoration.map_color;
-        let exploration_map_element = decoration.exploration_map_element;
         let track_count = decoration.track_count;
 
         definitions.extend(quote! {
@@ -57,8 +53,6 @@ pub(crate) fn build() -> TokenStream {
                 Identifier::new_static(#key_namespace, #key_path),
                 Identifier::new_static(#asset_namespace, #asset_path),
                 #show_on_item_frame,
-                #map_color,
-                #exploration_map_element,
                 #track_count,
             );
         });

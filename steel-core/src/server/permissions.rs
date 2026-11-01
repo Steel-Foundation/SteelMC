@@ -43,7 +43,7 @@ impl Server {
         let state = self
             .player_permission_states
             .read()
-            .get(player.gameprofile.id)
+            .get(player.gameprofile.id())
             .cloned()
             .unwrap_or_default();
         self.apply_player_permission_state(player, state)
@@ -55,7 +55,7 @@ impl Server {
             if !self.permission_groups.contains_group(group) {
                 log::warn!(
                     "Player {} has unknown permission group {group}",
-                    player.gameprofile.name
+                    player.gameprofile.name()
                 );
             }
         }
@@ -215,7 +215,7 @@ impl Server {
     fn refresh_online_permission_groups(self: &Arc<Self>) {
         for player in self.get_players() {
             let state = self
-                .player_permission_state(player.gameprofile.id)
+                .player_permission_state(player.gameprofile.id())
                 .unwrap_or_default();
             self.apply_player_permission_state(&player, state);
             self.resend_player_permission_context(&player);

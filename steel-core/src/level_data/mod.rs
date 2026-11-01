@@ -684,6 +684,9 @@ mod tests {
         vanilla_game_rules::{KEEP_INVENTORY, RANDOM_TICK_SPEED},
         vanilla_world_clocks,
     };
+    use steel_worldgen::density_functions::{
+        nether::NetherNoiseSettings, overworld::OverworldNoiseSettings,
+    };
     use toml::map::Map;
 
     pub(super) fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
@@ -747,7 +750,10 @@ mod tests {
         let mut data = LevelData::new_with_seed(1);
 
         let adopted = data
-            .validate_generation_settings(settings("minecraft:overworld", 384))
+            .validate_generation_settings(settings(
+                "minecraft:overworld",
+                OverworldNoiseSettings::HEIGHT,
+            ))
             .expect("missing settings should be adopted");
 
         assert!(adopted);
@@ -758,10 +764,16 @@ mod tests {
     fn rejects_mismatched_generation_settings() {
         init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);
-        data.generation = Some(settings("minecraft:the_nether", 128));
+        data.generation = Some(settings(
+            "minecraft:the_nether",
+            NetherNoiseSettings::HEIGHT,
+        ));
 
         let error = data
-            .validate_generation_settings(settings("minecraft:overworld", 384))
+            .validate_generation_settings(settings(
+                "minecraft:overworld",
+                OverworldNoiseSettings::HEIGHT,
+            ))
             .expect_err("mismatched settings should be rejected");
 
         let message = error.to_string();

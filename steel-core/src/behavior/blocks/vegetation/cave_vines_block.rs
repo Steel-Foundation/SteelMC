@@ -20,7 +20,8 @@ use crate::behavior::blocks::vegetation::growing_plant_head_block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
-use crate::entity::{Entity, entity_loot_ref};
+use crate::block_entity::SharedBlockEntity;
+use crate::entity::{Entity, entity_loot_ref, loot_equipment};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -82,9 +83,10 @@ impl CaveVinesBlock {
             return InteractionResult::Pass;
         }
         let mut rng = rand::rng();
+        let equipment = loot_equipment(source_entity);
         let mut ctx = LootContext::new(&mut rng)
             .with_block_state(state)
-            .with_interacting_entity(entity_loot_ref(source_entity));
+            .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
 
         let items = vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx);
         for item in items {
@@ -154,6 +156,7 @@ impl BlockBehavior for CaveVinesBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::GLOW_BERRIES))
@@ -250,6 +253,7 @@ mod tests {
             .get_clone_item_stack(
                 &vanilla_blocks::CAVE_VINES,
                 vanilla_blocks::CAVE_VINES.default_state(),
+                None,
                 false,
             )
             .expect("cave vines have a vanilla clone item");

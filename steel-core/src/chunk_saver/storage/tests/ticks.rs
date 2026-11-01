@@ -31,7 +31,6 @@ fn persisted_proto_ticks_deduplicate_while_full_ticks_retain_saved_entries() {
         Vec::new(),
         Vec::new(),
         ChunkStorage::light_to_persistent(&ChunkLightData::for_valid_world_height(0, 16)),
-        None,
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -42,7 +41,7 @@ fn persisted_proto_ticks_deduplicate_while_full_ticks_retain_saved_entries() {
     let proto_loaded = ChunkStorage::persistent_to_chunk(
         &persistent,
         pos,
-        ChunkStatus::Carvers,
+        ChunkStatus::Terrain,
         0,
         16,
         Weak::new(),
@@ -138,9 +137,10 @@ fn forced_prepare_preserves_dirty_set_after_save_decision() {
 #[test]
 fn full_chunk_save_snapshots_chunk_owned_scheduled_ticks() {
     init_globals();
-    let world = fresh_test_world("chunk_owned_tick_save");
+    let world_fixture = fresh_test_world("chunk_owned_tick_save");
+    let world = &world_fixture.world;
     let chunk_pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    let holder = insert_ready_full_chunk(world, chunk_pos);
     let block_pos = BlockPos::new(1, 64, 2);
     let fluid_pos = BlockPos::new(3, 64, 4);
     world.schedule_block_tick(block_pos, &vanilla_blocks::STONE, 7, TickPriority::High);

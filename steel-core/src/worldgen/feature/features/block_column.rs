@@ -21,7 +21,12 @@ impl FeatureDecorationRunner {
 
         let mut next_pos = origin.relative(config.direction);
         for height in 0..total_height {
-            if !Self::test_block_predicate(region, registry, &config.allowed_placement, next_pos) {
+            if !BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                &config.allowed_placement,
+                next_pos,
+            ) {
                 Self::truncate_block_column_layers(
                     &mut layer_heights,
                     total_height,
@@ -36,7 +41,7 @@ impl FeatureDecorationRunner {
         let mut place_pos = origin;
         for (layer_index, layer) in config.layers.iter().enumerate() {
             for _ in 0..layer_heights[layer_index] {
-                let state = Self::sample_block_state_provider(
+                let state = BlockStateProviderEvaluator::sample_block_state_provider(
                     region,
                     registry,
                     random,

@@ -34,7 +34,7 @@ impl FilePlayerDataStorage {
     }
 
     pub(crate) async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
-        let uuid = player.gameprofile.id;
+        let uuid = player.gameprofile.id();
         let data = PersistentPlayerData::from_player(player);
         self.save_domain_data(domain, uuid, &data).await
     }

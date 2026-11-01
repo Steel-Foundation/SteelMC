@@ -1,7 +1,6 @@
 //! Vanilla sound playback command.
 
 use std::sync::Arc;
-
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::sound_event::SoundEventHolder;
 use steel_utils::{Identifier, translations};
@@ -15,6 +14,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+
 use crate::{entity::Entity as _, player::Player};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {

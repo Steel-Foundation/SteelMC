@@ -71,7 +71,7 @@ impl Player {
     pub(crate) fn is_operator(&self) -> bool {
         self.server
             .upgrade()
-            .is_some_and(|server| server.is_operator(self.gameprofile.id))
+            .is_some_and(|server| server.is_operator(self.gameprofile.id()))
     }
 
     /// Returns direct permission overrides.

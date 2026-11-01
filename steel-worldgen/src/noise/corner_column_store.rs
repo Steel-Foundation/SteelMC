@@ -15,11 +15,11 @@ use std::hash::BuildHasher;
 use steel_utils::locks::SyncMutex;
 
 const SHARD_COUNT: usize = 64;
-/// Upper bound on stored values across all shards (~64 MiB of `f64`).
+/// Upper bound on stored values across all shards (~32 MiB of `f32`).
 const MAX_STORED_VALUES: usize = 8 * 1024 * 1024;
 
 struct Column {
-    values: Box<[f64]>,
+    values: Box<[f32]>,
     /// Chunks sharing this column that have not yet filled it.
     remaining: u8,
 }
@@ -52,7 +52,7 @@ impl CornerColumnStore {
 
     /// If another chunk already filled column `key`, passes its values to
     /// `read` and records this chunk's use. Returns whether it was found.
-    pub fn consume(&self, key: (i32, i32), read: impl FnOnce(&[f64])) -> bool {
+    pub fn consume(&self, key: (i32, i32), read: impl FnOnce(&[f32])) -> bool {
         let mut shard = self.shard(key).lock();
         let Some(column) = shard.columns.get_mut(&key) else {
             return false;
@@ -68,7 +68,7 @@ impl CornerColumnStore {
     /// Records that this chunk filled column `key`, shared by `users` chunks in
     /// total, and keeps `values` for the others. If a concurrent chunk stored
     /// it first, only this chunk's use is recorded.
-    pub fn produce(&self, key: (i32, i32), users: u8, values: impl FnOnce() -> Box<[f64]>) {
+    pub fn produce(&self, key: (i32, i32), users: u8, values: impl FnOnce() -> Box<[f32]>) {
         debug_assert!(users > 1, "only shared columns are stored");
         let mut shard = self.shard(key).lock();
         if let Some(column) = shard.columns.get_mut(&key) {
@@ -109,7 +109,7 @@ impl Shard {
 mod tests {
     use super::CornerColumnStore;
 
-    fn read(store: &CornerColumnStore, key: (i32, i32)) -> Option<Vec<f64>> {
+    fn read(store: &CornerColumnStore, key: (i32, i32)) -> Option<Vec<f32>> {
         let mut out = None;
         store.consume(key, |values| out = Some(values.to_vec()));
         out

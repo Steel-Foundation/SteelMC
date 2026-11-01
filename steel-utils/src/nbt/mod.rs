@@ -17,7 +17,7 @@ pub use snbt::{
     parse_snbt_compound_argument, to_canonical_snbt,
 };
 
-/// Mirrors vanilla `NbtUtils.compareNbt`.
+/// Compares two NBT tags for equality, optionally allowing partial list matches.
 #[must_use]
 pub fn compare_nbt(
     expected: Option<&NbtTag>,
@@ -251,7 +251,7 @@ fn compare_lists_partially(expected: &NbtList, actual: &NbtList) -> bool {
 
 /// Returns the semantic values of a Vanilla list.
 ///
-/// Vanilla 26.2 permits heterogeneous lists and wraps non-compound elements
+/// Vanilla permits heterogeneous lists and wraps non-compound elements
 /// when serializing them through the homogeneous binary NBT format.
 #[must_use]
 pub fn nbt_list_values(list: &NbtList) -> Vec<NbtTag> {

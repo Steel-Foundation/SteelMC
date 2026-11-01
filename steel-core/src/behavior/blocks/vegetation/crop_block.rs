@@ -20,6 +20,7 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     survival_update_shape, vegetation_can_survive,
 };
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::SharedBlockEntity;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -91,7 +92,7 @@ pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: B
     }
 }
 
-pub trait CropLike {
+pub(crate) trait CropLike {
     fn block(&self) -> BlockRef;
     fn age_property(&self) -> &IntProperty;
     fn max_age(&self) -> u8;
@@ -284,6 +285,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(self.clone_item_stack())

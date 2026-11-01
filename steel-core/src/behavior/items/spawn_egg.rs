@@ -18,7 +18,7 @@ use crate::behavior::{
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
 use crate::entity::{
-    AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
+    EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
     add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
 };
 use crate::player::Player;
@@ -117,9 +117,9 @@ impl SpawnEggItem {
             }
         };
 
-        let ageable = offspring.as_ageable_mob()?;
-        ageable.set_baby(true);
-        if !AgeableMob::is_baby(ageable) {
+        let mob = offspring.as_mob()?;
+        mob.set_baby(true);
+        if !mob.is_baby() {
             return None;
         }
 
@@ -168,7 +168,7 @@ impl ItemBehavior for SpawnEggItem {
             clicked_face.relative(clicked_pos)
         };
 
-        let result = Self::spawn_mob(
+        Self::spawn_mob(
             context.world,
             context.player,
             &context.inv,
@@ -176,13 +176,7 @@ impl ItemBehavior for SpawnEggItem {
             spawn_pos,
             true,
             spawn_pos != clicked_pos && clicked_face == steel_utils::Direction::Up,
-        );
-        if result == InteractionResult::Success {
-            context
-                .player
-                .award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
-        }
-        result
+        )
     }
 
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {

@@ -18,6 +18,7 @@ use crate::behavior::{
     BlockEntityCreation, BlockHitResult, BlockLootContext, BlockPlaceContext, InteractionResult,
     InventoryAccess,
 };
+use crate::block_entity::SharedBlockEntity;
 use crate::block_entity::{BlockEntityTicker, entities::PistonMovingBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
@@ -134,6 +135,7 @@ impl BlockBehavior for MovingPistonBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::empty())
@@ -154,18 +156,19 @@ mod tests {
     #[test]
     fn moving_piston_selects_only_the_piston_block_entity_ticker() {
         init_vanilla_registry();
-        let world = fresh_test_world("moving_piston_ticker");
+        let world_fixture = fresh_test_world("moving_piston_ticker");
+        let world = &world_fixture.world;
         let behavior = MovingPistonBlock::new(&vanilla_blocks::MOVING_PISTON);
         let state = vanilla_blocks::MOVING_PISTON.default_state();
 
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::PISTON)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::PISTON)
                 .is_some()
         );
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::CHEST)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::CHEST)
                 .is_none()
         );
     }

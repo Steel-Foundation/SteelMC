@@ -315,7 +315,6 @@ impl PortalShape {
     }
 
     /// Returns `true` if the portal interior is entirely filled with portal blocks.
-    /// Matches vanilla's `PortalShape.isComplete()`.
     #[must_use]
     pub const fn is_complete(&self) -> bool {
         self.num_portal_blocks == self.width * self.height
@@ -343,7 +342,9 @@ impl PortalShape {
         }
     }
 
-    /// Returns vanilla `PortalShape.getRelativePosition`.
+    /// Returns an entity's position within the portal opening, normalized to
+    /// [0.0, 1.0] on the width and height axes, for placing it correctly
+    /// through a differently sized portal on the other side.
     #[must_use]
     pub fn get_relative_position(
         largest_rectangle_around: FoundRectangle,
@@ -379,7 +380,8 @@ impl PortalShape {
         DVec3::new(relative_right, relative_up, relative_forward)
     }
 
-    /// Returns vanilla `PortalShape.findCollisionFreePosition`.
+    /// Nudges an entity's exit position sideways to a nearby collision-free
+    /// spot in front of the portal, if the entity doesn't fit as-is.
     #[must_use]
     pub fn find_collision_free_position(
         bottom_center: DVec3,

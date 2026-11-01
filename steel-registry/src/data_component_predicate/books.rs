@@ -36,7 +36,7 @@ impl HashComponent for WritableBookPagePredicate {
 }
 
 /// Predicate over writable-book pages.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WritableBookPredicate(Option<CollectionPredicate<WritableBookPagePredicate>>);
 
 impl WritableBookPredicate {
@@ -86,7 +86,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Predicate for one written-book page.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenBookPagePredicate(TextComponent);
 
 impl WrittenBookPagePredicate {
@@ -116,7 +116,7 @@ impl HashComponent for WrittenBookPagePredicate {
 }
 
 /// Predicate over written-book metadata and pages.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenBookPredicate {
     pages: Option<CollectionPredicate<WrittenBookPagePredicate>>,
     author: Option<String>,

@@ -10,7 +10,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
 
-/// Vanilla `TheEndPortalBlockEntity`.
+/// Marker block entity for end portal blocks, with no persisted state of its own.
 pub struct EndPortalBlockEntity {
     base: BlockEntityBase,
 }

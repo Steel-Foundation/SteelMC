@@ -9,7 +9,7 @@ use crate::world::World;
 
 const DAMAGE_INTERVAL: i32 = 40;
 
-/// Mirrors vanilla `WitherMobEffect`.
+/// Wither mob effect behavior.
 pub struct WitherBehavior;
 
 impl MobEffectBehavior for WitherBehavior {

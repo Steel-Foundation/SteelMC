@@ -3,12 +3,11 @@ use std::sync::Arc;
 use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
-        EntityFallDamage, EntityFallOnContext, EntityLandingContext, InteractionResult,
-        InventoryAccess, PlacementSource,
+        InteractionResult, InventoryAccess, PlacementSource,
     },
     entity::{Entity, ai::path::PathComputationType, dismount_helper},
     player::Player,
-    world::{ScheduledTickAccess, World},
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 use glam::DVec3;
 use steel_macros::block_behavior;
@@ -16,12 +15,11 @@ use steel_registry::blocks::properties::{BedPart, BoolProperty, EnumProperty};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
 };
-use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
-use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
+use steel_registry::{vanilla_blocks, vanilla_custom_stats};
+use steel_utils::{
+    BlockPos, BlockStateId, Direction, axis::Axis, translations, types::UpdateFlags,
+};
 
-const BED_BOUNCE_SCALE: f64 = 0.660_000_026_226_043_7;
 const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
@@ -34,7 +32,7 @@ const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 /// entities exist.
 #[block_behavior]
 pub struct BedBlock {
-    block: BlockRef,
+    pub(super) block: BlockRef,
 }
 
 impl BedBlock {
@@ -44,41 +42,26 @@ impl BedBlock {
         Self { block }
     }
 
-    #[must_use]
-    fn fall_context(context: EntityFallOnContext<'_>) -> EntityFallOnContext<'_> {
-        context.with_fall_distance(context.fall_distance * 0.5)
-    }
-
-    #[must_use]
-    fn velocity_after_fall(context: EntityLandingContext) -> DVec3 {
-        if context.velocity.y >= 0.0 {
-            return context.velocity;
-        }
-
-        let entity_factor = if context.is_living_entity { 1.0 } else { 0.8 };
-        DVec3::new(
-            context.velocity.x,
-            -context.velocity.y * BED_BOUNCE_SCALE * entity_factor,
-            context.velocity.z,
-        )
-    }
-
-    fn head_state_and_pos(
+    pub(super) fn head_state_and_pos(
         &self,
         world: &Arc<World>,
         state: BlockStateId,
         pos: BlockPos,
     ) -> Option<(BlockStateId, BlockPos)> {
-        if state.get_value(BED_PART) == BedPart::Head {
-            return Some((state, pos));
+        let part = state.get_value(BED_PART);
+        let other_pos = Self::neighbor_direction(part, state.get_value(FACING)).relative(pos);
+        let other_state = world.get_block_state(other_pos);
+        if other_state.get_block() != self.block || other_state.get_value(BED_PART) == part {
+            return None;
         }
 
-        let head_pos = state.get_value(FACING).relative(pos);
-        let head_state = world.get_block_state(head_pos);
-        (head_state.get_block() == self.block).then_some((head_state, head_pos))
+        match part {
+            BedPart::Head => Some((state, pos)),
+            BedPart::Foot => Some((other_state, other_pos)),
+        }
     }
 
-    const fn neighbor_direction(part: &BedPart, facing: Direction) -> Direction {
+    const fn neighbor_direction(part: BedPart, facing: Direction) -> Direction {
         match part {
             BedPart::Foot => facing,
             BedPart::Head => facing.opposite(),
@@ -244,30 +227,6 @@ impl BlockBehavior for BedBlock {
         Some(self.block.default_state().set_value(FACING, facing))
     }
 
-    fn fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityFallOnContext<'_>,
-    ) -> Option<EntityFallDamage> {
-        self.default_fall_on(state, world, pos, Self::fall_context(context))
-    }
-
-    fn update_entity_movement_after_fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityLandingContext,
-    ) -> DVec3 {
-        if context.suppresses_bounce {
-            return self.default_update_entity_movement_after_fall_on(state, world, pos, context);
-        }
-
-        Self::velocity_after_fall(context)
-    }
-
     fn is_pathfindable(
         &self,
         _state: BlockStateId,
@@ -278,6 +237,16 @@ impl BlockBehavior for BedBlock {
 
     fn is_bed(&self) -> bool {
         true
+    }
+
+    fn get_sleep_height(
+        &self,
+        state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+    ) -> Option<f64> {
+        let shape = state.get_static_outline_shape();
+        (!shape.is_empty()).then(|| shape.max(Axis::Y))
     }
 
     fn player_will_destroy(
@@ -292,7 +261,7 @@ impl BlockBehavior for BedBlock {
         }
 
         let facing = state.get_value(FACING);
-        let head_pos = Self::neighbor_direction(&BedPart::Foot, facing).relative(pos);
+        let head_pos = Self::neighbor_direction(BedPart::Foot, facing).relative(pos);
         let head_state = world.get_block_state(head_pos);
         if head_state.get_block() != self.block || head_state.get_value(BED_PART) != BedPart::Head {
             return state;
@@ -318,7 +287,7 @@ impl BlockBehavior for BedBlock {
     ) -> BlockStateId {
         let part = state.get_value(BED_PART);
         let facing = state.get_value(FACING);
-        if direction != Self::neighbor_direction(&part, facing) {
+        if direction != Self::neighbor_direction(part, facing) {
             return state;
         }
 
@@ -341,8 +310,6 @@ impl BlockBehavior for BedBlock {
         let head_state = state.set_value(BED_PART, BedPart::Head);
 
         world.set_block(head_pos, head_state, UpdateFlags::UPDATE_ALL);
-        world.update_neighbors_at(pos, &vanilla_blocks::AIR);
-        world.update_neighbor_shapes_at(state, pos, UpdateFlags::UPDATE_ALL, World::UPDATE_LIMIT);
     }
 
     fn use_without_item(
@@ -358,7 +325,7 @@ impl BlockBehavior for BedBlock {
             return InteractionResult::Consume;
         };
 
-        if world.dimension_type.bed_rule.explodes {
+        if world.dimension_type.bed_rule.destroy_on_use {
             // TODO: When WOrld::explode foundation exists display the bedrule error remove both halves and create the bad respawn point explosion
             return InteractionResult::SuccessServer;
         }
@@ -367,86 +334,21 @@ impl BlockBehavior for BedBlock {
             // TODO: Mirror vanilla `kickVillagerOutOfBed`: find a sleeping
             // villager in this bed AABB and call `stopSleeping` once villager
             // sleeping exists.
-            player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
-                key: "block.minecraft.bed.occupied".into(),
-                fallback: None,
-                args: None,
-            }));
+            player.send_overlay_message(
+                &translations::BLOCK_MINECRAFT_BED_OCCUPIED.msg().component(),
+            );
             return InteractionResult::SuccessServer;
         }
 
-        if let Err(problem) = player.start_sleep_in_bed(head_pos)
-            && let Some(message) = problem.message()
+        if let Err(problem) = player.start_sleep_in_bed(
+            head_pos,
+            &world.dimension_type.bed_rule,
+            &vanilla_custom_stats::SLEEP_IN_BED,
+        ) && let Some(message) = problem.message()
         {
             player.send_overlay_message(message);
         }
 
         InteractionResult::SuccessServer
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use steel_registry::{sound_events, vanilla_entities};
-
-    use crate::behavior::EntityFallOnFacts;
-
-    fn landing(
-        velocity: DVec3,
-        is_living_entity: bool,
-        suppresses_bounce: bool,
-    ) -> EntityLandingContext {
-        EntityLandingContext::new(velocity, is_living_entity, suppresses_bounce)
-    }
-
-    #[test]
-    fn bed_halves_fall_distance_before_default_damage() {
-        let context = BedBlock::fall_context(EntityFallOnContext::new(
-            12.0,
-            false,
-            EntityFallOnFacts::new(
-                &vanilla_entities::PLAYER,
-                true,
-                0.6,
-                1.8,
-                (
-                    &sound_events::ENTITY_PLAYER_SMALL_FALL,
-                    &sound_events::ENTITY_PLAYER_BIG_FALL,
-                ),
-            ),
-            None,
-        ));
-
-        assert!((context.fall_distance - 6.0).abs() < f64::EPSILON);
-        assert!(!context.suppresses_bounce);
-        assert!(context.entity.is_player());
-    }
-
-    #[test]
-    fn living_entities_bounce_with_bed_factor() {
-        let velocity =
-            BedBlock::velocity_after_fall(landing(DVec3::new(1.0, -3.0, -2.0), true, false));
-
-        assert!((velocity.y - 1.980_000_078_678_131).abs() < f64::EPSILON);
-        assert!((velocity.x - 1.0).abs() < f64::EPSILON);
-        assert!((velocity.z + 2.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn non_living_entities_bounce_with_vanilla_reduction() {
-        let velocity =
-            BedBlock::velocity_after_fall(landing(DVec3::new(1.0, -3.0, -2.0), false, false));
-
-        assert!((velocity.y - 1.584_000_062_942_505).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn upward_velocity_is_not_changed_by_bounce_logic() {
-        let velocity =
-            BedBlock::velocity_after_fall(landing(DVec3::new(1.0, 0.5, -2.0), true, false));
-
-        assert_eq!(velocity, DVec3::new(1.0, 0.5, -2.0));
     }
 }

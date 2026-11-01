@@ -19,7 +19,6 @@ pub struct SoundEvent {
 }
 
 impl SoundEvent {
-    /// Vanilla `SoundEvent.getRange`.
     #[must_use]
     pub fn range(&self, volume: f32) -> f32 {
         self.fixed_range
@@ -40,7 +39,6 @@ impl SoundEvent {
 
 pub type SoundEventRef = &'static SoundEvent;
 
-/// Vanilla `Holder<SoundEvent>`.
 #[derive(Debug, Clone)]
 pub enum SoundEventHolder {
     Registry(SoundEventRef),

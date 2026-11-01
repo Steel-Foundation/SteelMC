@@ -537,10 +537,11 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world = fresh_test_world("barrel_comparator_reentry");
+        let world_fixture = fresh_test_world("barrel_comparator_reentry");
+        let world = &world_fixture.world;
         let barrel_pos = BlockPos::new(8, 64, 8);
         let comparator_pos = barrel_pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(barrel_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(barrel_pos));
         assert!(world.set_block(
             comparator_pos.below(),
             vanilla_blocks::STONE.default_state(),

@@ -279,7 +279,7 @@ fn push_permission_metadata_entries(
 
 fn toml_value<T: Serialize + ?Sized>(value: &T) -> Result<String, TomlSerializeError> {
     #[derive(Serialize)]
-    struct Field<'a, T: Serialize + ?Sized> {
+    struct Field<'a, T: ?Sized> {
         value: &'a T,
     }
 

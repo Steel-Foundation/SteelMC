@@ -323,7 +323,8 @@ mod tests {
 
     #[test]
     fn ready_chunk_still_waits_for_its_ticket_receipt_to_commit() {
-        let world = fresh_test_world("chunk_request_receipt");
+        let world_fixture = fresh_test_world("chunk_request_receipt");
+        let world = &world_fixture.world;
         let pos = ChunkPos::new(4, -7);
         let first =
             world

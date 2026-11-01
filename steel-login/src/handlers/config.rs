@@ -103,7 +103,7 @@ impl JavaTcpClient {
         };
         // Admission can reject the join; the client already expects Play disconnect packets.
         self.protocol.store(ConnectionProtocol::Play);
-        let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
+        let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id()) else {
             self.kick(TextComponent::translated(
                 translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
             ))

@@ -5,14 +5,15 @@ use uuid::Uuid;
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
-fn falling_test_world(key: &'static str) -> Arc<World> {
+fn falling_test_world(key: &'static str) -> TestWorld {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(key);
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    world
+    let world_fixture = fresh_test_world(key);
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    world_fixture
 }
 
 fn set_test_block(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
@@ -21,11 +22,11 @@ fn set_test_block(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
 
 fn tick_until_settled(entities: &[&Arc<FallingBlockEntity>]) {
     for _ in 0..240 {
-        for entity in entities {
+        for &entity in entities {
             if entity.is_alive() {
                 entity.set_old_position_to_current();
                 entity.advance_tick_count();
-                entity.tick();
+                Arc::clone(entity).tick();
             }
         }
         if entities.iter().all(|entity| entity.is_removed()) {
@@ -46,16 +47,17 @@ fn start_falling(
 
 #[test]
 fn stacked_falling_blocks_settle_in_order_without_collapsing_into_one_state() {
-    let world = falling_test_world("stacked_falling_blocks_settle");
+    let world_fixture = falling_test_world("stacked_falling_blocks_settle");
+    let world = &world_fixture.world;
     let ground = BlockPos::new(4, 64, 4);
-    set_test_block(&world, ground, vanilla_blocks::STONE.default_state());
+    set_test_block(world, ground, vanilla_blocks::STONE.default_state());
     let lower = start_falling(
-        &world,
+        world,
         BlockPos::new(4, 72, 4),
         vanilla_blocks::SAND.default_state(),
     );
     let upper = start_falling(
-        &world,
+        world,
         BlockPos::new(4, 73, 4),
         vanilla_blocks::SAND.default_state(),
     );
@@ -74,28 +76,29 @@ fn stacked_falling_blocks_settle_in_order_without_collapsing_into_one_state() {
 
 #[test]
 fn concrete_powder_distinguishes_dry_side_water_and_fast_water_entry_landings() {
-    let world = falling_test_world("concrete_powder_water_landings");
+    let world_fixture = falling_test_world("concrete_powder_water_landings");
+    let world = &world_fixture.world;
     let powder = vanilla_blocks::WHITE_CONCRETE_POWDER.default_state();
 
     let dry_ground = BlockPos::new(3, 64, 3);
     let side_ground = BlockPos::new(7, 64, 3);
     for ground in [dry_ground, side_ground] {
-        set_test_block(&world, ground, vanilla_blocks::STONE.default_state());
+        set_test_block(world, ground, vanilla_blocks::STONE.default_state());
     }
     set_test_block(
-        &world,
+        world,
         side_ground.above().relative(Direction::East),
         vanilla_blocks::WATER.default_state(),
     );
     set_test_block(
-        &world,
+        world,
         BlockPos::new(11, 70, 3),
         vanilla_blocks::WATER.default_state(),
     );
 
-    let dry = start_falling(&world, BlockPos::new(3, 78, 3), powder);
-    let beside_water = start_falling(&world, BlockPos::new(7, 78, 3), powder);
-    let enters_water = start_falling(&world, BlockPos::new(11, 78, 3), powder);
+    let dry = start_falling(world, BlockPos::new(3, 78, 3), powder);
+    let beside_water = start_falling(world, BlockPos::new(7, 78, 3), powder);
+    let enters_water = start_falling(world, BlockPos::new(11, 78, 3), powder);
     // Cross the floating one-block water source in one movement. Without the
     // vanilla fast-concrete raycast the entity ends below it and keeps falling.
     enters_water.set_velocity(DVec3::new(0.0, -8.0, 0.0));

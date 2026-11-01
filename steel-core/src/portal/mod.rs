@@ -9,7 +9,7 @@ use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
-use steel_math::DEGREE_90;
+use steel_math::{DEGREE_90, trig};
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::vanilla_game_rules::{
@@ -38,7 +38,8 @@ pub enum PortalKind {
 }
 
 impl PortalKind {
-    /// Returns vanilla `Portal.getPortalTransitionTime`.
+    /// Returns the number of ticks an entity must stand in this portal before
+    /// it triggers, accounting for whether the entity is invulnerable.
     #[must_use]
     pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
         let player_invulnerable = entity
@@ -421,14 +422,14 @@ fn resolve_velocity(
 }
 
 fn rotate_x(vec: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(radians.cos());
-    let sin = f64::from(radians.sin());
+    let cos = f64::from(trig::cos(radians));
+    let sin = f64::from(trig::sin(radians));
     DVec3::new(vec.x, vec.y * cos + vec.z * sin, vec.z * cos - vec.y * sin)
 }
 
 fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(radians.cos());
-    let sin = f64::from(radians.sin());
+    let cos = f64::from(trig::cos(radians));
+    let sin = f64::from(trig::sin(radians));
     DVec3::new(vec.x * cos + vec.z * sin, vec.y, vec.z * cos - vec.x * sin)
 }
 

@@ -1,13 +1,10 @@
 //! Sign analysis of the interpolated final-density combine.
 //!
-//! Finds interpolated channels whose non-positivity at all 8 corners of a cell
-//! proves the combined final density is not positive anywhere in that cell.
-//! Trilinear interpolation of non-positive corners stays non-positive exactly
-//! in IEEE arithmetic (`a + t * (b - a)` with `a, b <= 0`, `t` in `[0, 1]`
-//! rounds to at most `a + (-a) = 0`, since rounding is monotone), so every
-//! channel listed is `<= 0` and not NaN at each block. The rules below only
-//! propagate that through operations that provably keep it, mirroring the
-//! exact expressions the codegen emits for `combine_interpolated`.
+//! Finds interpolated channels whose non-positivity proves the combined final
+//! density is not positive. The caller checks actual block values: Vanilla's
+//! repeated f32 additions can overshoot non-positive cell endpoints. The rules
+//! below only propagate signs through operations that provably keep them,
+//! mirroring the expressions emitted for `combine_interpolated`.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,8 +55,8 @@ impl Condition {
     }
 }
 
-/// Channel indices (starting at `first_channel`) that, when `<= 0` at all
-/// cell corners, prove `final_density > 0` is false throughout the cell.
+/// Channel indices (starting at `first_channel`) that, when `<= 0` at a block,
+/// prove `final_density > 0` is false there.
 /// `None` when the tree admits no such proof.
 ///
 /// # Panics
@@ -149,7 +146,7 @@ fn walk(
                         .map(|a| a.weaken(Strength::NotPositive));
                     Condition::better(from_b, from_a)
                 }
-                TwoArgType::Mul | TwoArgType::Max => None,
+                TwoArgType::Sub | TwoArgType::Mul | TwoArgType::Div | TwoArgType::Max => None,
             }
         }
         other => {

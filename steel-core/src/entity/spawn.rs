@@ -13,7 +13,8 @@ use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
 use crate::world::World;
 
-/// Vanilla `EntitySpawnReason`.
+/// Reason an entity is being spawned, affecting spawn-time initialization
+/// such as equipment and group data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntitySpawnReason {
     Natural,

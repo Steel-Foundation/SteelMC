@@ -10,7 +10,7 @@ use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext};
 use crate::entity::Entity as _;
 use crate::player::Player;
 
-/// Behavior for vanilla `FoodOnAStickItem`.
+/// Food on a stick item behavior.
 #[item_behavior]
 pub struct FoodOnAStickItem {
     #[json_arg(vanilla_entities)]

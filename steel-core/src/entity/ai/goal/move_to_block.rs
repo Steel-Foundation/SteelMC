@@ -1,6 +1,7 @@
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::PathfinderMob;
+use crate::entity::SharedEntity;
 use crate::world::LevelReader;
 use glam::DVec3;
 use steel_utils::BlockPos;
@@ -184,9 +185,9 @@ impl Goal for MoveToBlockGoal {
         self.max_stay_ticks = rand::random_range(0..inner_bound) + STAY_TICKS;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let move_to_target = self.move_to_target();
-        if block_pos_closer_to_center_than(move_to_target, mob.position(), self.accepted_distance) {
+        if move_to_target.closer_to_center_than(mob.position(), self.accepted_distance) {
             self.reached_target = true;
             self.try_ticks -= 1;
         } else {
@@ -208,11 +209,6 @@ fn block_center_with_y(pos: BlockPos, y: i32) -> DVec3 {
         f64::from(y),
         f64::from(pos.z()) + 0.5,
     )
-}
-
-fn block_pos_closer_to_center_than(pos: BlockPos, position: DVec3, distance: f64) -> bool {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z).distance_squared(position) < distance * distance
 }
 
 fn find_nearest_block_from(
@@ -250,6 +246,8 @@ const fn next_mirrored_offset(value: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -270,9 +268,9 @@ mod tests {
     fn move_to_block_goal_requires_world_after_start_delay() {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&pig));
     }
 
     #[test]
@@ -280,9 +278,9 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         goal.next_start_tick = 2;
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&pig));
 
         assert_eq!(goal.next_start_tick, 1);
     }
@@ -316,14 +314,15 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
-        let mob = PigEntity::new(
+        let pig = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
             DVec3::new(0.5, 0.5, 0.5),
             Weak::new(),
-        );
+        ));
+        let pig_entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
 
-        goal.tick(&mob);
+        goal.tick(pig.as_ref(), &pig_entity);
 
         assert!(goal.is_reached_target());
         assert_eq!(goal.try_ticks, -1);

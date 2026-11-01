@@ -4,7 +4,8 @@ use crate::test_support::advance_test_game_time_to;
 
 #[test]
 fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
-    let world = fresh_test_world("chunk_removal_boundary");
+    let world_fixture = fresh_test_world("chunk_removal_boundary");
+    let world = &world_fixture.world;
     let pos = ChunkPos::new(9, -11);
     let ticket_level = ChunkTicketLevel::MAX;
     let addition_receipt = world
@@ -58,7 +59,7 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     let _ = world
         .chunk_map
         .release_chunk_request_leases(&[pos], ticket_level);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
@@ -100,7 +101,8 @@ fn generation_priority_orders_normal_by_load_level() {
 #[test]
 fn cancelled_generation_task_keeps_cached_holders_pinned_for_in_flight_steps() {
     init_vanilla_registry();
-    let world = fresh_test_world("pending_generation_save_dependency");
+    let world_fixture = fresh_test_world("pending_generation_save_dependency");
+    let world = &world_fixture.world;
     world.chunk_map.stop_generation_refill_loop();
 
     let center_pos = ChunkPos::new(0, 0);
@@ -184,13 +186,14 @@ fn cancelled_generation_task_keeps_cached_holders_pinned_for_in_flight_steps() {
         "dropping the cancelled task must release every cached save dependency"
     );
 
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn cached_holder_rechecks_publication_and_generation_permission() {
     init_vanilla_registry();
-    let world = fresh_test_world("cached_holder_status_recheck");
+    let world_fixture = fresh_test_world("cached_holder_status_recheck");
+    let world = &world_fixture.world;
     let pos = ChunkPos::new(4, -3);
     let load_level = ChunkTicketLevel::FULL_CHUNK;
     let min_y = world.chunk_map.world_gen_context.min_y();
@@ -224,7 +227,7 @@ fn cached_holder_rechecks_publication_and_generation_permission() {
             pos,
             min_y,
             height,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ),
         ChunkStatus::Empty,
     );
@@ -272,7 +275,8 @@ fn cached_holder_rechecks_publication_and_generation_permission() {
 fn full_publications_drive_block_and_entity_readiness_incrementally() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("full_chunk_readiness_lifecycle");
+    let world_fixture = fresh_test_world("full_chunk_readiness_lifecycle");
+    let world = &world_fixture.world;
     let center_pos = ChunkPos::new(0, 0);
     let marked_pos = BlockPos::new(
         center_pos.0.x * 16,
@@ -295,7 +299,7 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
             } else {
                 Vec::new()
             };
-            let holder = insert_active_full_holder(&world, pos, load_level, postprocessing);
+            let holder = insert_active_full_holder(world, pos, load_level, postprocessing);
             if pos == center_pos {
                 center = Some(holder);
             }
@@ -332,7 +336,7 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
                 continue;
             }
             insert_active_full_holder(
-                &world,
+                world,
                 ChunkPos::new(x, z),
                 ChunkTicketLevel::FULL_CHUNK,
                 Vec::new(),
@@ -389,8 +393,9 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 fn first_block_readiness_anchors_pending_ticks_once() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("pending_tick_readiness_anchor");
-    advance_test_game_time_to(&world, 100);
+    let world_fixture = fresh_test_world("pending_tick_readiness_anchor");
+    let world = &world_fixture.world;
+    advance_test_game_time_to(world, 100);
     let center_pos = ChunkPos::new(0, 0);
     let tick_pos = BlockPos::new(1, 64, 1);
     let mut center = None;
@@ -414,7 +419,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
                 BlockTickList::new()
             };
             let holder = insert_active_full_holder_with_ticks(
-                &world,
+                world,
                 pos,
                 load_level,
                 Vec::new(),
@@ -440,7 +445,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
         .expect("the center should remain Full");
     assert_eq!(full.scheduled_tick_snapshot().block[0].delay, 5);
 
-    advance_test_game_time_to(&world, 200);
+    advance_test_game_time_to(world, 200);
     world
         .unpack_scheduled_ticks(center_pos)
         .expect("repeated readiness unpack should remain valid");
@@ -451,15 +456,16 @@ fn first_block_readiness_anchors_pending_ticks_once() {
 fn entity_tickability_requires_simulation_and_entity_readiness() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("ticking_chunk_snapshot");
+    let world_fixture = fresh_test_world("ticking_chunk_snapshot");
+    let world = &world_fixture.world;
     let block_only_pos = ChunkPos::new(0, 0);
     let random_pos = ChunkPos::new(1, 0);
     let entity_pos = ChunkPos::new(2, 0);
 
-    insert_ready_full_chunk(&world, block_only_pos);
-    let random = insert_ready_full_chunk(&world, random_pos);
+    insert_ready_full_chunk(world, block_only_pos);
+    let random = insert_ready_full_chunk(world, random_pos);
     random.set_simulation_level(Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK));
-    let entity = insert_ready_full_chunk(&world, entity_pos);
+    let entity = insert_ready_full_chunk(world, entity_pos);
     entity.set_simulation_level(Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK));
     entity.transition_ticking_readiness(TickingReadiness::EntityTicking);
 
@@ -484,14 +490,15 @@ fn entity_tickability_requires_simulation_and_entity_readiness() {
 fn full_load_activation_uses_packed_chunk_position_order() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("packed_full_activation_order");
+    let world_fixture = fresh_test_world("packed_full_activation_order");
+    let world = &world_fixture.world;
     let first_chunk = ChunkPos::new(0, 0);
     let second_chunk = ChunkPos::new(1, 0);
     let first_sign = BlockPos::new(1, 64, 1);
     let second_sign = BlockPos::new(17, 64, 1);
 
     let second = insert_active_full_holder(
-        &world,
+        world,
         second_chunk,
         ChunkTicketLevel::FULL_CHUNK,
         Vec::new(),
@@ -501,12 +508,8 @@ fn full_load_activation_uses_packed_chunk_position_order() {
     };
     add_test_sign(second, second_sign);
 
-    let first = insert_active_full_holder(
-        &world,
-        first_chunk,
-        ChunkTicketLevel::FULL_CHUNK,
-        Vec::new(),
-    );
+    let first =
+        insert_active_full_holder(world, first_chunk, ChunkTicketLevel::FULL_CHUNK, Vec::new());
     let Some(first) = first.try_full_chunk() else {
         panic!("inserted first chunk should remain Full");
     };

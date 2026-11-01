@@ -35,7 +35,7 @@ pub(crate) fn build() -> TokenStream {
 
         /// Status type for the entity event packet.
         #[derive(WriteTo, Clone, Copy, Debug, PartialEq, Eq)]
-        #[write(as = VarInt)]
+        #[write(as = i8)]
         pub enum EntityStatus {
             #stream
         }

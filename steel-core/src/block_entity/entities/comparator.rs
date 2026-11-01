@@ -14,7 +14,8 @@ struct ComparatorState {
     output_signal: i32,
 }
 
-/// Vanilla `ComparatorBlockEntity`.
+/// Block entity for comparator blocks, storing the cached output signal
+/// strength between recalculations.
 pub struct ComparatorBlockEntity {
     base: BlockEntityBase,
     state: SyncMutex<ComparatorState>,

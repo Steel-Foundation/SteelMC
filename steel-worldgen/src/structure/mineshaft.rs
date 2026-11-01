@@ -105,7 +105,7 @@ pub struct MineshaftPieceData {
 
 /// Placement payload shared by mineshaft start generation, persistence, and
 /// feature-stage procedural placement.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MineshaftPiecePayload {
     /// Normal oak or mesa dark-oak mineshaft.
     pub mineshaft_type: MineshaftType,
@@ -122,7 +122,7 @@ impl MineshaftPiecePayload {
 }
 
 /// Piece-specific mineshaft placement state.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MineshaftPieceKind {
     /// Start room with the child entrance openings stored by vanilla.
     Room {

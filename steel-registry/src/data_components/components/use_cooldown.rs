@@ -25,7 +25,6 @@ impl UseCooldown {
         }
     }
 
-    /// Returns vanilla `UseCooldown.ticks()`.
     #[must_use]
     pub fn ticks(&self) -> i32 {
         (self.seconds * 20.0) as i32

@@ -30,7 +30,7 @@ impl JavaTcpClient {
         match self
             .server
             .disconnect_duplicate_player_and_wait(
-                profile.id,
+                profile.id(),
                 &self.cancel_token,
                 login_deadline.expires_at_tick(),
             )
@@ -51,7 +51,7 @@ impl JavaTcpClient {
         reader_encryption: Option<[u8; 16]>,
     ) -> ConnectionAction {
         // Reject full-server logins before evicting an existing session.
-        if self.server.is_player_limit_reached(profile.id) {
+        if self.server.is_player_limit_reached(profile.id()) {
             self.kick(TextComponent::translated(
                 translations::MULTIPLAYER_DISCONNECT_SERVER_FULL.msg(),
             ))
@@ -101,11 +101,13 @@ impl JavaTcpClient {
             return ConnectionAction::none();
         }
 
-        let profile = GameProfile {
-            id: offline_uuid(&requested_username),
-            name: requested_username,
-            properties: vec![],
-            profile_actions: None,
+        let Ok(profile) = GameProfile::new(
+            offline_uuid(&requested_username),
+            requested_username,
+            Vec::new(),
+        ) else {
+            self.kick("Invalid player name".into()).await;
+            return ConnectionAction::none();
         };
         self.finish_verified_login(profile, None).await
     }
@@ -178,12 +180,15 @@ impl JavaTcpClient {
                 }
             }
         } else {
-            GameProfile {
-                id: offline_uuid(&requested_username),
-                name: requested_username,
-                properties: vec![],
-                profile_actions: None,
-            }
+            let Ok(profile) = GameProfile::new(
+                offline_uuid(&requested_username),
+                requested_username,
+                Vec::new(),
+            ) else {
+                self.kick("Invalid player name".into()).await;
+                return ConnectionAction::none();
+            };
+            profile
         };
 
         self.finish_verified_login(profile, Some(secret_key)).await
@@ -233,7 +238,7 @@ impl JavaTcpClient {
     /// Sends the successful login response.
     async fn send_login_finished(&self, profile: &GameProfile) {
         self.send_bare_packet_now(CLoginFinished::new(
-            profile.into(),
+            profile,
             self.connection_session.session_id(),
         ))
         .await;

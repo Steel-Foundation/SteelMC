@@ -6,14 +6,29 @@ use rand::{RngExt, rng};
 use std::sync::Arc;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::data_components::vanilla_components::USE_EFFECTS;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
+use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_events::{ENTITY_FISHING_BOBBER_RETRIEVE, ENTITY_FISHING_BOBBER_THROW};
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{vanilla_entities, vanilla_items};
+use steel_registry::{vanilla_entities, vanilla_game_events, vanilla_items};
 
 /// Behavior for the fishing rod item.
 #[item_behavior]
 pub struct FishingRodItem;
+
+impl FishingRodItem {
+    /// Emits `event` when the rod's `use_effects` enable interaction vibrations.
+    fn cause_use_vibration(context: &UseItemContext, event: GameEventRef) {
+        let interact_vibrations = context.inv.with_item(|item| {
+            item.get(USE_EFFECTS)
+                .is_some_and(|effects| effects.interact_vibrations)
+        });
+        if interact_vibrations {
+            context.player.game_event(event);
+        }
+    }
+}
 
 impl ItemBehavior for FishingRodItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
@@ -41,13 +56,7 @@ impl ItemBehavior for FishingRodItem {
                 pitch,
                 None,
             );
-            // TODO: add vibration (Java equivalent: `ItemStack.causeVibration()`)
-            // Problem: `ItemStack` in steel currently doesn't implement any fn that elicits this behaviour
-            // Possibility: Re-Use the bone-meal exclusive implementation the bone-meal PR introduced
-            //
-            // Another Problem: If we were to do that, we'd run into a circular dependency; the existing implementation for bone-meal uses `UseItemOnContext`
-            // (better would be `UseItemContext`, if we were to re-use this for all `ItemStacks`), which resides inside `steel-core`, but `ItemStack` resides inside
-            // `steel-registry` and `steel-core` depends on `steel-registry` (I think, lmao)
+            Self::cause_use_vibration(context, &vanilla_game_events::ITEM_INTERACT_FINISH);
         } else {
             world.play_sound_at(
                 &ENTITY_FISHING_BOBBER_THROW,
@@ -80,7 +89,7 @@ impl ItemBehavior for FishingRodItem {
 
             let player_arc = world
                 .players
-                .get_by_uuid(&player.gameprofile.id)
+                .get_by_uuid(&player.gameprofile.id())
                 .expect("Failed to obtain `player_arc` for launching fishing hook: `player` must be registered in the world.");
 
             hook.shoot_from_player(&player_arc, luck as i32, lure_speed as i32);
@@ -95,7 +104,7 @@ impl ItemBehavior for FishingRodItem {
 
             player.award_stat(&vanilla_stat_types::ITEM_USED, item.item());
 
-            // TODO: add vibration, see above TODO
+            Self::cause_use_vibration(context, &vanilla_game_events::ITEM_INTERACT_START);
         }
         InteractionResult::Success
     }
@@ -104,17 +113,47 @@ impl ItemBehavior for FishingRodItem {
 #[cfg(test)]
 mod tests {
     use steel_registry::{item_stack::ItemStack, vanilla_items};
+    use steel_utils::locks::SyncMutex;
     use steel_utils::types::InteractionHand;
+    use steel_utils::{BlockPos, ChunkPos, SectionPos};
     use uuid::Uuid;
 
     use super::*;
     use crate::behavior::UseItemContext;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::world::World;
+    use crate::world::game_event::{GameEventContext, GameEventListener};
+
+    struct RecordingGameEventListener(Arc<SyncMutex<Vec<GameEventRef>>>);
+
+    impl GameEventListener for RecordingGameEventListener {
+        fn listener_pos(&self) -> Option<DVec3> {
+            Some(DVec3::new(8.5, 64.5, 8.5))
+        }
+
+        fn listener_radius(&self) -> i32 {
+            16
+        }
+
+        fn handle_game_event(
+            &self,
+            _world: &Arc<World>,
+            event: GameEventRef,
+            _context: &GameEventContext<'_>,
+            _source_pos: DVec3,
+        ) -> bool {
+            self.0.lock().push(event);
+            true
+        }
+    }
 
     #[test]
     fn retrieving_grounded_hook_does_not_relock_inventory() {
-        let world = fresh_test_world("fishing_rod_grounded_retrieve");
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), 1).build();
+        let world_fixture = fresh_test_world("fishing_rod_grounded_retrieve");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player
             .inventory
             .lock()
@@ -126,7 +165,7 @@ mod tests {
             &vanilla_entities::FISHING_BOBBER,
             2,
             DVec3::ZERO,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         ));
         hook.set_owner(&owner);
         hook.set_on_ground(true);
@@ -134,7 +173,7 @@ mod tests {
         let mut context = UseItemContext::new(
             &player,
             InteractionHand::MainHand,
-            &world,
+            world,
             Arc::clone(&player.inventory),
         );
 
@@ -148,13 +187,65 @@ mod tests {
     }
 
     #[test]
-    fn casting_fishing_rod_spawns_and_links_hook() {
-        use crate::test_support::insert_ready_full_chunk;
-        use steel_utils::ChunkPos;
+    fn use_emits_vanilla_interact_vibrations() {
+        let world_fixture = fresh_test_world("fishing_rod_vibrations");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 11)
+            .uuid(Uuid::from_u128(3))
+            .build();
+        player
+            .try_set_position(DVec3::new(8.0, 64.0, 8.0))
+            .expect("should position player in center of chunk");
+        world.players.insert(Arc::clone(&player));
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::FISHING_ROD));
 
-        let world = fresh_test_world("fishing_rod_cast");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(2), 10).build();
+        let events = Arc::new(SyncMutex::new(Vec::new()));
+        world.register_game_event_listener(
+            SectionPos::from_block_pos(BlockPos::new(8, 64, 8)),
+            Arc::new(RecordingGameEventListener(Arc::clone(&events))),
+        );
+
+        let mut context = UseItemContext::new(
+            &player,
+            InteractionHand::MainHand,
+            world,
+            Arc::clone(&player.inventory),
+        );
+
+        assert_eq!(
+            FishingRodItem.use_item(&mut context),
+            InteractionResult::Success
+        );
+        assert_eq!(
+            events.lock().as_slice(),
+            [&vanilla_game_events::ITEM_INTERACT_START]
+        );
+
+        assert_eq!(
+            FishingRodItem.use_item(&mut context),
+            InteractionResult::Success
+        );
+        assert_eq!(
+            events.lock().as_slice(),
+            [
+                &vanilla_game_events::ITEM_INTERACT_START,
+                &vanilla_game_events::ITEM_INTERACT_FINISH,
+            ]
+        );
+    }
+
+    #[test]
+    fn casting_fishing_rod_spawns_and_links_hook() {
+        let world_fixture = fresh_test_world("fishing_rod_cast");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 10)
+            .uuid(Uuid::from_u128(2))
+            .build();
         player
             .try_set_position(DVec3::new(8.0, 64.0, 8.0))
             .expect("should position player in center of chunk");
@@ -167,7 +258,7 @@ mod tests {
         let mut context = UseItemContext::new(
             &player,
             InteractionHand::MainHand,
-            &world,
+            world,
             Arc::clone(&player.inventory),
         );
 

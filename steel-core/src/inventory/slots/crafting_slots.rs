@@ -1,3 +1,4 @@
+use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
 use steel_registry::item_stack::ItemStack;
@@ -150,7 +151,7 @@ impl ResultHandler for CraftingHandler {
         self.update_result(guard);
 
         for remainder in remainder_overflow {
-            player.add_item_or_drop_with_guard(guard, remainder);
+            player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
 
         None

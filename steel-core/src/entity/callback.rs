@@ -42,8 +42,6 @@ impl RemovalReason {
 }
 
 /// Callback interface for entity lifecycle events.
-///
-/// Mirrors vanilla's `EntityInLevelCallback`.
 pub trait EntityLevelCallback: Send + Sync {
     /// Returns whether direct local position writes may bypass lifecycle callbacks.
     fn allows_local_position_update(&self) -> bool {
@@ -196,8 +194,6 @@ impl EntityLevelCallback for PlayerEntityCallback {
 }
 
 /// Callback attached to each entity for tracking chunk/section movement.
-///
-/// Mirrors vanilla's `PersistentEntitySectionManager.Callback`.
 pub struct EntityChunkCallback {
     entity_id: i32,
     world: Weak<World>,

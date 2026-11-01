@@ -139,7 +139,7 @@ impl<S> CommandRequirement<S> {
 impl<S> Clone for CommandRequirement<S> {
     fn clone(&self) -> Self {
         Self {
-            predicate: self.predicate.as_ref().map(Arc::clone),
+            predicate: self.predicate.clone(),
             kind: self.kind,
         }
     }
@@ -215,7 +215,7 @@ where
     fn clone(&self) -> Self {
         Self {
             target: self.target,
-            modifier: self.modifier.as_ref().map(Arc::clone),
+            modifier: self.modifier.clone(),
             forks: self.forks,
         }
     }
