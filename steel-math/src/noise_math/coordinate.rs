@@ -142,7 +142,7 @@ mod wrap_tests {
     fn assert_matches_vanilla(input: f64, actual: f64) {
         // GradientNoise.wrap uses nextDown(16777216), including its fast path.
         let bound = 16_777_216.0_f64.next_down();
-        let expected = if input >= -bound && input < bound {
+        let expected = if (-bound..bound).contains(&input) {
             input
         } else {
             input - (input / 33_554_432.0 + 0.5).floor() * 33_554_432.0
