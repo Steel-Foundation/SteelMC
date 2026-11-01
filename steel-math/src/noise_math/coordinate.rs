@@ -68,7 +68,7 @@ mod fast_floor_tests {
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
 const ROUND_OFF: f64 = 33_554_432.0;
-// Vanilla excludes the adjacent value whose fallback already rounds across the seam.
+
 const HALF_ROUND_OFF: f64 = (ROUND_OFF / 2.0).next_down();
 
 /// Wrap N coordinates to prevent precision loss (N-lane SIMD version of [`wrap`]).
