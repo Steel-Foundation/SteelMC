@@ -9,6 +9,7 @@ pub(crate) mod capability_host;
 mod contract;
 #[cfg(feature = "host")]
 pub(crate) mod core_types;
+pub(crate) mod living_api;
 mod results;
 pub mod types;
 mod value;

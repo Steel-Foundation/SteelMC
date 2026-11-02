@@ -1,6 +1,10 @@
 //! Typed content construction on the host side of the native boundary.
 
+mod biome;
 mod definition;
+mod fluid;
+pub(crate) use biome::register_biome;
+pub(crate) use fluid::register_fluid;
 #[cfg(test)]
 mod tests;
 

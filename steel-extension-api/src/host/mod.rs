@@ -5,6 +5,7 @@ pub(crate) mod content;
 pub(crate) mod effects;
 pub(crate) mod events;
 pub(crate) mod fill;
+pub(crate) mod fluid;
 mod generator;
 pub(crate) mod hud;
 pub(crate) mod items;
@@ -136,9 +137,13 @@ pub fn bootstrap(mut hook: RegistrationHook<'_>) -> RegistrationStatus {
         crate::worlds::api::register_exports,
         crate::menus::api::register_exports,
         crate::fill::api::register_exports,
+        crate::fill::replace_api::register_exports,
+        crate::biomes::api::register_exports,
         original::api::register_exports,
         values_api::api::register_exports,
         capability_api::api::register_exports,
+        crate::block_behavior::living_api::api::register_exports,
+        crate::fluid_behavior::api::register_exports,
         entity_api::api::register_exports,
         entity_factory::api::register_exports,
         runtime_api::register_exports,

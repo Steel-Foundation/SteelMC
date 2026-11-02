@@ -7,7 +7,7 @@ authors.workspace = true
 
 [features]
 default = []
-host = ["dep:steel-core", "dep:steel-registry", "dep:steel-utils", "dep:steel-worldgen", "dep:glam", "dep:toml", "dep:libloading", "dep:rayon", "dep:rand", "dep:simdnbt", "dep:text_components", "dep:uuid", "dep:serde", "dep:zip", "dep:tempfile", "dep:log", "dep:serde_json", "dep:steel-protocol"]
+host = ["dep:steel-core", "dep:steel-registry", "dep:steel-utils", "dep:steel-worldgen", "dep:glam", "dep:toml", "dep:libloading", "dep:rayon", "dep:rand", "dep:simdnbt", "dep:text_components", "dep:uuid", "dep:serde", "dep:zip", "dep:tempfile", "dep:log", "dep:serde_json", "dep:steel-protocol", "dep:rustc-hash"]
 
 [dependencies]
 stabby.workspace = true
@@ -21,6 +21,7 @@ toml = { workspace = true, optional = true }
 libloading = { version = "0.9", optional = true }
 rayon = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+rustc-hash = { workspace = true, optional = true }
 simdnbt = { workspace = true, optional = true }
 
 text_components = { workspace = true, optional = true }

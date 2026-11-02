@@ -23,8 +23,8 @@ persistence, gameplay rates and determinism.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create the extension crate skeleton `extension-example/toxic-wasteland/` (`Cargo.toml` with a path dependency on `../../steel-extension-api`, `[lib] crate-type = ["cdylib", "rlib"]`, `extension.toml`, `clippy.toml`, the pedantic lint table copied from `extension-example/lucky-block/Cargo.toml`, `.gitignore`, and an empty `src/lib.rs` with `export_extension!` declaring `name: "toxic-wasteland"` and `soft_depends: ["worldedit"]`)
-- [ ] T002 [P] Add the native test entry `steel-extension-api/tests/toxic_wasteland.rs` with module folder `steel-extension-api/tests/toxic_wasteland/`, register the library in the shared mapping in `steel-extension-api/tests/common/mod.rs`, and mark the tests `#[ignore]` until the library is built, as `lucky_block.rs` does
+- [x] T001 Create the extension crate skeleton `extension-example/toxic-wasteland/` (`Cargo.toml` with a path dependency on `../../steel-extension-api`, `[lib] crate-type = ["cdylib", "rlib"]`, `extension.toml`, `clippy.toml`, the pedantic lint table copied from `extension-example/lucky-block/Cargo.toml`, `.gitignore`, and an empty `src/lib.rs` with `export_extension!` declaring `name: "toxic-wasteland"` and `soft_depends: ["worldedit"]`)
+- [x] T002 [P] Add the native test entry `steel-extension-api/tests/toxic_wasteland.rs` with module folder `steel-extension-api/tests/toxic_wasteland/`, register the library in the shared mapping in `steel-extension-api/tests/common/mod.rs`, and mark the tests `#[ignore]` until the library is built, as `lucky_block.rs` does
 
 ---
 
@@ -80,11 +80,11 @@ looks green everywhere.
 
 **Independent test**: quickstart integration checks 1–4, plus the manual swim and pour steps.
 
-- [ ] T018 [P] [US1] Add the stabby `FluidDefinition` (fields and defaults exactly as in data-model.md), `ClientFluidKind`, `FluidTint`, `RegisteredFluid` and `ContentRegistry::register_fluid` to the new `steel-extension-api/src/content/fluid.rs`, re-exported from `content/mod.rs` and bound in `content/bindings.rs`.
-- [ ] T019 [US1] Add host construction and validation to the new `steel-extension-api/src/host/content/fluid.rs`, calling `register_client_fluid`. Add unit tests for every rejected field in `host/content/tests/fluid.rs`.
-- [ ] T020 [P] [US1] Add the stabby `DynFluidBehavior` trait (`entity_inside`, `random_tick`, `before_destroying_block -> bool`, `react_with_neighbors -> bool`) and `Registry::set_fluid_behavior` to the new `steel-extension-api/src/fluid_behavior.rs`, and add the host bridge that installs the callbacks into `ExtensionFluid`. Only the registering extension may set hooks for its fluid.
-- [ ] T021 [US1] Add `toxic_wasteland:sludge` (flowing `toxic_wasteland:sludge_flowing`, `client = Water`, a tint from the configured colors, `tick_delay` 15, `drop_off` 2, no source conversion, `randomly_ticking`) to the new `extension-example/toxic-wasteland/src/content.rs`. Load the config in the new `src/config.rs` (serde, hex colors, validation that names the failing field).
-- [ ] T022 [US1] Add native integration tests in `steel-extension-api/tests/toxic_wasteland/fluid.rs`:
+- [x] T018 [P] [US1] Add the stabby `FluidDefinition` (fields and defaults exactly as in data-model.md), `ClientFluidKind`, `FluidTint`, `RegisteredFluid` and `ContentRegistry::register_fluid` to the new `steel-extension-api/src/content/fluid.rs`, re-exported from `content/mod.rs` and bound in `content/bindings.rs`.
+- [x] T019 [US1] Add host construction and validation to the new `steel-extension-api/src/host/content/fluid.rs`, calling `register_client_fluid`. Add unit tests for every rejected field in `host/content/tests/fluid.rs`.
+- [x] T020 [P] [US1] Add the stabby `DynFluidBehavior` trait (`entity_inside`, `random_tick`, `before_destroying_block -> bool`, `react_with_neighbors -> bool`) and `Registry::set_fluid_behavior` to the new `steel-extension-api/src/fluid_behavior.rs`, and add the host bridge that installs the callbacks into `ExtensionFluid`. Only the registering extension may set hooks for its fluid.
+- [x] T021 [US1] Add `toxic_wasteland:sludge` (flowing `toxic_wasteland:sludge_flowing`, `client = Water`, a tint from the configured colors, `tick_delay` 15, `drop_off` 2, no source conversion, `randomly_ticking`) to the new `extension-example/toxic-wasteland/src/content.rs`. Load the config in the new `src/config.rs` (serde, hex colors, validation that names the failing field).
+- [x] T022 [US1] Add native integration tests in `steel-extension-api/tests/toxic_wasteland/fluid.rs`:
   - The registry contains the fluid pair, block and variants.
   - Spreading on flat ground reaches the configured distance and never yields `minecraft:water`.
   - A chunk containing sludge round-trips through save and load.
@@ -100,12 +100,12 @@ looks green everywhere.
 
 **Independent test**: register the biome, paint a region, observe it, and restart.
 
-- [ ] T023 [P] [US2] Add the stabby `BiomeDefinition` and `BiomeColors` (fields as in data-model.md: required sky, fog, water and water-fog colors; optional grass, foliage, dry-foliage, modifier, particle and music) and `ContentRegistry::register_biome` to the new `steel-extension-api/src/content/biome.rs`.
-- [ ] T024 [US2] Add host construction to the new `steel-extension-api/src/host/content/biome.rs`, building `steel_registry::biome::Biome` (empty features, carvers and spawners, with `// TODO:` for decorators). Validate `"colors 0x000000–0xFFFFFF"`, finite temperature and downfall, and that sound and particle keys resolve. Register it before freeze, with unit tests.
-- [ ] T025 [US2] Add core `World::fill_biome(from, to, biome) -> Result<u64, FillBiomeError>` (vanilla `/fillbiome` quart semantics; loaded chunks only; reports unloaded chunk counts) and `World::biome_at` to the new `steel-core/src/world/biomes.rs`. They mark chunks unsaved and sections biome-changed. Add tests for counts, persistence and the unloaded-chunk error.
-- [ ] T026 [US2] Expose `World::biome_at` and `World::set_biomes` in `steel-extension-api/src/worlds.rs`, with host glue in `steel-extension-api/src/host/`.
-- [ ] T027 [US2] Register `toxic_wasteland:wasteland` from the config colors (`has_precipitation = false`, `temperature 1.2`, `downfall 0.0`, ash particles) in `extension-example/toxic-wasteland/src/content.rs`.
-- [ ] T028 [US2] Add integration tests in `steel-extension-api/tests/toxic_wasteland/biome.rs`: the client registry contains the biome NBT with the configured colors; `set_biomes` changes the cells and queues one `CChunksBiomes`; painted biomes survive a save and load; a missing-key load fails with the existing error.
+- [x] T023 [P] [US2] Add the stabby `BiomeDefinition` and `BiomeColors` (fields as in data-model.md: required sky, fog, water and water-fog colors; optional grass, foliage, dry-foliage, modifier, particle and music) and `ContentRegistry::register_biome` to the new `steel-extension-api/src/content/biome.rs`.
+- [x] T024 [US2] Add host construction to the new `steel-extension-api/src/host/content/biome.rs`, building `steel_registry::biome::Biome` (empty features, carvers and spawners, with `// TODO:` for decorators). Validate `"colors 0x000000–0xFFFFFF"`, finite temperature and downfall, and that sound and particle keys resolve. Register it before freeze, with unit tests.
+- [x] T025 [US2] Add core `World::fill_biome(from, to, biome) -> Result<u64, FillBiomeError>` (vanilla `/fillbiome` quart semantics; loaded chunks only; reports unloaded chunk counts) and `World::biome_at` to the new `steel-core/src/world/biomes.rs`. They mark chunks unsaved and sections biome-changed. Add tests for counts, persistence and the unloaded-chunk error.
+- [x] T026 [US2] Expose `World::biome_at` and `World::set_biomes` in `steel-extension-api/src/worlds.rs`, with host glue in `steel-extension-api/src/host/`.
+- [x] T027 [US2] Register `toxic_wasteland:wasteland` from the config colors (`has_precipitation = false`, `temperature 1.2`, `downfall 0.0`, ash particles) in `extension-example/toxic-wasteland/src/content.rs`.
+- [x] T028 [US2] Add integration tests in `steel-extension-api/tests/toxic_wasteland/biome.rs`: the client registry contains the biome NBT with the configured colors; `set_biomes` changes the cells and queues one `CChunksBiomes`; painted biomes survive a save and load; a missing-key load fails with the existing error.
 
 ---
 
@@ -116,12 +116,12 @@ reaction.
 
 **Independent test**: the gameplay rate tests (quickstart checks 5–7).
 
-- [ ] T029 [P] [US3] Add a versioned `entity/v2` living-entity API to the new `steel-extension-api/src/block_behavior/entity_v2.rs`: `is_living`, `is_creative_or_spectator`, `position`, `hurt(damage_type, amount) -> ApiResult<bool>` and `add_effect(effect) -> ApiResult<bool>`. Host glue uses `LivingEntity::hurt` and `add_effect`, so vanilla immunity and invulnerability apply. Unknown keys return `Err`.
-- [ ] T030 [US3] Add the hazards in the new `extension-example/toxic-wasteland/src/hazards.rs`:
+- [x] T029 [P] [US3] Add a versioned `entity/v2` living-entity API to the new `steel-extension-api/src/block_behavior/entity_v2.rs`: `is_living`, `is_creative_or_spectator`, `position`, `hurt(damage_type, amount) -> ApiResult<bool>` and `add_effect(effect) -> ApiResult<bool>`. Host glue uses `LivingEntity::hurt` and `add_effect`, so vanilla immunity and invulnerability apply. Unknown keys return `Err`.
+- [x] T030 [US3] Add the hazards in the new `extension-example/toxic-wasteland/src/hazards.rs`:
   - `entity_inside`: poison (respecting immunity) plus contact damage via `minecraft:magic`, paced by `damage_interval_ticks` per entity UUID, with pruning. Creative and spectator players are exempt.
   - `random_tick`: water corruption (same level) and grass, dirt, podzol and mycelium withering to coarse dirt at the configured chances. Each can be disabled with a chance of 0.
-- [ ] T031 [US3] Implement `react_with_neighbors` in `extension-example/toxic-wasteland/src/sludge.rs`: an adjacent lava source becomes coarse dirt, flowing lava becomes cobblestone, with `minecraft:block.lava.extinguish` and the fizz level event. Use default drops in `before_destroying_block`.
-- [ ] T032 [US3] Add integration tests in `steel-extension-api/tests/toxic_wasteland/hazards.rs`: a pig gets poison and damage; a zombie gets damage but no poison; a creative player is unaffected; crops are destroyed with drops; corruption and withering hit ±10% of their configured rates over 10,000 random ticks; both lava reactions work.
+- [x] T031 [US3] Implement `react_with_neighbors` in `extension-example/toxic-wasteland/src/sludge.rs`: an adjacent lava source becomes coarse dirt, flowing lava becomes cobblestone, with `minecraft:block.lava.extinguish` and the fizz level event. Use default drops in `before_destroying_block`.
+- [x] T032 [US3] Add integration tests in `steel-extension-api/tests/toxic_wasteland/hazards.rs`: a pig gets poison and damage; a zombie gets damage but no poison; a creative player is unaffected; crops are destroyed with drops; corruption and withering hit ±10% of their configured rates over 10,000 random ticks; both lava reactions work.
 
 ---
 
@@ -131,10 +131,10 @@ reaction.
 
 **Independent test**: survival and creative pick-up and pour, nether evaporation, and persistence.
 
-- [ ] T033 [US4] Generalize `steel-core/src/behavior/items/bucket.rs` from `fluid_block == WATER` checks to the bucket's fluid. Water-like rules (evaporation, sounds, cauldrons) use `client_fluid().is_water()`; waterlogging stays real-water-only (documented deviation). The vanilla bucket tests must pass unchanged.
-- [ ] T034 [US4] When a `FluidDefinition` has a `bucket`, register its item with the core bucket behavior for that fluid and set `Fluid::bucket_item`, so `LiquidBlock::pickup_block` returns it (`steel-extension-api/src/host/content/fluid.rs`, `steel-core/src/behavior/items/mod.rs`).
-- [ ] T035 [US4] Declare the "Bucket of Toxic Sludge" (`minecraft:water_bucket` appearance, stack size 1) in `extension-example/toxic-wasteland/src/content.rs`.
-- [ ] T036 [US4] Add integration tests in `steel-extension-api/tests/toxic_wasteland/bucket.rs`: pick-up from a source only; pouring in survival empties the bucket and in creative keeps it; nether evaporation; a waterloggable target does not get waterlogged; the bucket persists in an inventory.
+- [x] T033 [US4] Generalize `steel-core/src/behavior/items/bucket.rs` from `fluid_block == WATER` checks to the bucket's fluid. Water-like rules (evaporation, sounds, cauldrons) use `client_fluid().is_water()`; waterlogging stays real-water-only (documented deviation). The vanilla bucket tests must pass unchanged.
+- [x] T034 [US4] When a `FluidDefinition` has a `bucket`, register its item with the core bucket behavior for that fluid and set `Fluid::bucket_item`, so `LiquidBlock::pickup_block` returns it (`steel-extension-api/src/host/content/fluid.rs`, `steel-core/src/behavior/items/mod.rs`).
+- [x] T035 [US4] Declare the "Bucket of Toxic Sludge" (`minecraft:water_bucket` appearance, stack size 1) in `extension-example/toxic-wasteland/src/content.rs`.
+- [x] T036 [US4] Add integration tests in `steel-extension-api/tests/toxic_wasteland/bucket.rs`: pick-up from a source only; pouring in survival empties the bucket and in creative keeps it; nether evaporation; a waterloggable target does not get waterlogged; the bucket persists in an inventory.
 
 ---
 
@@ -144,11 +144,11 @@ reaction.
 
 **Independent test**: generator determinism and lake coverage (quickstart check 8).
 
-- [ ] T037 [US5] Add the `toxic_wasteland:wasteland` terrain generator (overworld dimension type, the toxic biome, sea level 63) to the new `extension-example/toxic-wasteland/src/generator.rs`:
+- [x] T037 [US5] Add the `toxic_wasteland:wasteland` terrain generator (overworld dimension type, the toxic biome, sea level 63) to the new `extension-example/toxic-wasteland/src/generator.rs`:
   - The heightmap is three-octave seeded value noise using `base_height` and `relief`.
   - Chunk-local sludge basins appear with probability `lake_chance`, from a hash of the seed and chunk position. They never write outside the chunk.
   - Coarse dirt and gravel cover the surface over stone.
-- [ ] T038 [US5] Add integration tests in `steel-extension-api/tests/toxic_wasteland/generator.rs`: the same seed gives identical chunk bytes; every biome cell is toxic; lake coverage stays within 2–15% over 32×32 chunks.
+- [x] T038 [US5] Add integration tests in `steel-extension-api/tests/toxic_wasteland/generator.rs`: the same seed gives identical chunk bytes; every biome cell is toxic; lake coverage stays within 2–15% over 32×32 chunks.
 
 ---
 
@@ -158,14 +158,25 @@ reaction.
 
 **Independent test**: each command on a known region.
 
-- [ ] T039 [US6] Add the `/toxic` command tree (operator level 2) to the new `extension-example/toxic-wasteland/src/commands.rs`:
+- [x] T039 [US6] Add the `/toxic` command tree (operator level 2) to the new `extension-example/toxic-wasteland/src/commands.rs`:
   - The region comes from explicit corners or the `worldedit:selection/v1` service.
   - `max_volume` is enforced.
   - `paint` uses `set_biomes`; `pour` and `drain` use the bulk `World::fill` with replace filters, and `pour` schedules border fluid ticks.
   - The feedback and error texts match the contract.
-- [ ] T040 [US6] Add integration tests in `steel-extension-api/tests/toxic_wasteland/commands.rs`: paint, pour and drain counts; the volume-limit error; the missing-selection error; painting `minecraft:plains` back.
+- [x] T040 [US6] Add integration tests in `steel-extension-api/tests/toxic_wasteland/commands.rs`: paint, pour and drain counts; the volume-limit error; the missing-selection error; painting `minecraft:plains` back.
 
 ---
+
+### Implementation notes for Phases 3–8
+
+- T002/T022–T040: the native checks share one test, `steel-extension-api/tests/toxic_wasteland.rs`, because registries initialize once per process. It covers registration, liquid and fluid projection, spreading reach with no water conversion, tint projection and refresh flags, hazards and their pacing, rates within ±10% over 10,000 random ticks, both lava reactions, the bucket pickup, and persistence of sludge and painted biomes.
+  - The test calls fluid ticks and hooks directly, because the scheduler internals are crate-private.
+  - The zombie (undead) case is not tested: Steel implements no undead mob yet. Poison immunity comes from vanilla `canBeAffected` inside `add_mob_effect`.
+  - Generator determinism, coverage and containment, and command regions are unit tests in the extension crate, since they do not need a world.
+- T020: one-time hooks per fluid instead of owner checks. A second `set_fluid_behavior` for the same fluid is an error.
+- T039: `pour` replaces air and replaceable blocks, and `drain` replaces the 16 sludge states, through a new `World::replace_blocks` binding (`fill::replace_api`) backed by `World::replace_blocks` in core. The existing `fill` binding is unchanged.
+- New bindings added along the way: `World::game_time` for damage pacing, and `World::schedule_fluid_tick` so poured sludge spreads.
+- The default `world.lake_chance` is 0.3 instead of 0.12, so lakes cover 2–15% of the surface (SC-007).
 
 ## Phase 9: Polish & cross-cutting
 

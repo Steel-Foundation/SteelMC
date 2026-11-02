@@ -60,6 +60,12 @@ pub mod api {
     }
 
     impl<'a> World<'a> {
+        /// Vanilla game time: ticks this world has run, unaffected by `/time set`.
+        #[must_use]
+        pub fn game_time(&self) -> i64 {
+            self.host().game_time()
+        }
+
         /// Total ticks of the dimension's default clock (day time); 0 without one.
         #[must_use]
         pub fn day_time(&self) -> i64 {

@@ -36,6 +36,8 @@ pub static FLUID_BEHAVIORS: FluidBehaviorLock = FluidBehaviorLock(OnceLock::new(
 /// default behavior ([`EmptyFluid`]), then custom behaviors are registered.
 pub struct FluidBehaviorRegistry {
     behaviors: Vec<Box<dyn FluidBehavior>>,
+    /// Source fluid ids whose owner already attached hooks.
+    hooked: Vec<usize>,
 }
 
 impl FluidBehaviorRegistry {
@@ -50,7 +52,10 @@ impl FluidBehaviorRegistry {
             behaviors.push(Box::new(EmptyFluid));
         }
 
-        Self { behaviors }
+        Self {
+            behaviors,
+            hooked: Vec::new(),
+        }
     }
 
     /// Sets a custom behavior for a fluid.
@@ -94,9 +99,11 @@ impl FluidBehaviorRegistry {
     }
 
     /// Attaches gameplay hooks to a registered fluid, given by its source key.
+    /// Hooks can be attached once, so a second extension cannot replace them.
     ///
     /// # Errors
-    /// Returns an error if the key does not name a registered fluid.
+    /// Returns an error if the key does not name a registered fluid or the fluid
+    /// already has hooks.
     pub fn set_fluid_hooks(
         &mut self,
         source: &Identifier,
@@ -107,6 +114,11 @@ impl FluidBehaviorRegistry {
             .by_key(source)
             .and_then(|fluid| REGISTRY.client_content.fluid(fluid))
             .ok_or_else(|| format!("{source} is not a registered extension fluid"))?;
+        let id = fluid.source.id();
+        if self.hooked.contains(&id) {
+            return Err(format!("{source} already has fluid hooks"));
+        }
+        self.hooked.push(id);
         self.set_behavior(
             fluid.source,
             Box::new(ExtensionFluid::new(fluid, Some(Arc::clone(&hooks)))),

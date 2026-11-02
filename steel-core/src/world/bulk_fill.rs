@@ -264,10 +264,52 @@ impl World {
     /// Returns [`FillError`] before writing anything when the region is empty, the pattern
     /// has no states, or a touched chunk is not fully loaded.
     pub fn fill_blocks(self: &Arc<Self>, request: &FillRequest) -> Result<FillReport, FillError> {
-        let started = Instant::now();
         let mut picker = Picker::new(&request.pattern)?;
-        let (mut min, mut max) = request.shape.bounds();
-        if let Some((a, b)) = request.clip {
+        let mode = request.mode;
+        self.fill_region(
+            request.shape,
+            request.clip,
+            &mut |old| match mode {
+                FillMode::All => true,
+                FillMode::OnlyAir => old.is_air(),
+                FillMode::NonAir => !old.is_air(),
+            },
+            &mut || picker.pick(),
+        )
+    }
+
+    /// Replaces every block of the inclusive box whose state `replace` accepts with
+    /// `state`, through the same section-batched path as [`Self::fill_blocks`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FillError`] before writing anything when the box is empty or touches a
+    /// chunk that is not fully loaded.
+    pub fn replace_blocks(
+        self: &Arc<Self>,
+        min: BlockPos,
+        max: BlockPos,
+        replace: &dyn Fn(BlockStateId) -> bool,
+        state: BlockStateId,
+    ) -> Result<FillReport, FillError> {
+        self.fill_region(
+            FillShape::Cuboid { min, max },
+            None,
+            &mut |old| replace(old),
+            &mut || state,
+        )
+    }
+
+    fn fill_region(
+        self: &Arc<Self>,
+        shape: FillShape,
+        clip: Option<(BlockPos, BlockPos)>,
+        accepts: &mut dyn FnMut(BlockStateId) -> bool,
+        pick: &mut dyn FnMut() -> BlockStateId,
+    ) -> Result<FillReport, FillError> {
+        let started = Instant::now();
+        let (mut min, mut max) = shape.bounds();
+        if let Some((a, b)) = clip {
             min = BlockPos::new(
                 min.0.x.max(a.0.x.min(b.0.x)),
                 min.0.y.max(a.0.y.min(b.0.y)),
@@ -298,18 +340,11 @@ impl World {
             return Err(FillError::Unloaded(*missing));
         }
 
-        let shape = request.shape;
-        let mode = request.mode;
         let mut decide = |pos: BlockPos, old: BlockStateId| {
-            if !shape.contains(pos) {
+            if !shape.contains(pos) || !accepts(old) {
                 return None;
             }
-            let allowed = match mode {
-                FillMode::All => true,
-                FillMode::OnlyAir => old.is_air(),
-                FillMode::NonAir => !old.is_air(),
-            };
-            allowed.then(|| picker.pick())
+            Some(pick())
         };
 
         let mut report = FillReport::default();

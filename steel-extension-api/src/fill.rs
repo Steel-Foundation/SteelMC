@@ -200,6 +200,16 @@ impl FillReport {
     }
 }
 
+/// Which existing blocks [`World::replace_blocks`](crate::World::replace_blocks) replaces.
+#[stabby::stabby]
+#[derive(Debug, Clone, Default)]
+pub struct ReplaceFilter {
+    /// Exact states to replace.
+    pub states: ApiVec<BlockState>,
+    /// Also replace every state vanilla lets placement replace (air, plants, fluids).
+    pub replaceable: bool,
+}
+
 #[stabby::host_api]
 /// Fill bindings on `World`.
 pub mod api {
@@ -215,6 +225,34 @@ pub mod api {
         /// Fills a region with section-batched writes; see the [module docs](crate::fill).
         pub fn fill(&self, request: FillRequest) -> ApiResult<FillReport> {
             host::fill(self.host(), &request)
+                .map_err(ApiString::from)
+                .into()
+        }
+    }
+}
+
+#[stabby::host_api]
+/// Filtered replacement, a separate module so the `fill` binding stays unchanged.
+pub mod replace_api {
+    use super::{FillReport, ReplaceFilter};
+    use crate::{ApiResult, BlockPos, BlockState, World};
+    #[cfg(feature = "host")]
+    use stabby::string::String as ApiString;
+
+    #[cfg(feature = "host")]
+    use crate::host::fill as host;
+
+    impl<'a> World<'a> {
+        /// Replaces the blocks of the inclusive box that `filter` selects with `state`,
+        /// through the same section-batched path as [`World::fill`].
+        pub fn replace_blocks(
+            &self,
+            min: BlockPos,
+            max: BlockPos,
+            filter: ReplaceFilter,
+            state: BlockState,
+        ) -> ApiResult<FillReport> {
+            host::replace_blocks(self.host(), min, max, &filter, state)
                 .map_err(ApiString::from)
                 .into()
         }

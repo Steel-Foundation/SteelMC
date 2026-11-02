@@ -1,6 +1,6 @@
 //! Bucket item behavior implementation.
 //!
-//! Handles water buckets, lava buckets, and empty buckets.
+//! Handles empty buckets and buckets of any fluid, including registered fluids.
 //!
 //! Mirrors vanilla's `BucketItem(Fluid fluid)`: `fluid_block = None` = empty bucket,
 //! `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
@@ -12,12 +12,12 @@ use crate::behavior::{
     pickup_waterlogged_block,
 };
 use crate::entity::Entity;
-use crate::fluid::FluidStateExt;
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::client_content::client_fluid;
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
@@ -203,6 +203,11 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
     let clicked_state = context.world.get_block_state(clicked_pos);
     let is_sneaking = context.player.is_crouching();
+    let fluid = fluid_block.default_state().get_fluid_state().fluid_id;
+    // Waterlogging and liquid containers accept only real water; evaporation and
+    // sounds follow the fluid clients see, so a water-displayed fluid acts like water.
+    let is_water_bucket = fluid == &vanilla_fluids::WATER;
+    let displays_as_water = client_fluid(fluid) == &vanilla_fluids::WATER;
 
     // Define fluid placement logic as a closure to reuse for primary/secondary targets.
     // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:
@@ -222,7 +227,6 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             return false;
         }
 
-        let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let is_liquid_container = state.is_liquid_container();
         let can_place_liquid = is_water_bucket
@@ -242,7 +246,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         // Vanilla parity: in worlds where water evaporates (e.g. the Nether),
         // water buckets fizz out without placing any fluid.
         // TODO: Per-position environment attributes (vanilla uses EnvironmentAttributes.WATER_EVAPORATES per-pos)
-        if is_water_bucket && context.world.dimension_type.water_evaporates {
+        if displays_as_water && context.world.dimension_type.water_evaporates {
             context
                 .world
                 .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);
@@ -260,14 +264,12 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         // 2. Try Standard Placement (Replaceable block)
         if can_replace {
             // If same fluid already exists and is source, just consume bucket (parity)
-            let is_same_fluid = if is_water_bucket {
-                fluid_state.is_water()
-            } else {
-                fluid_state.is_lava()
-            };
+            let is_same_fluid = FLUID_BEHAVIORS
+                .get_behavior(fluid)
+                .is_same(fluid_state.fluid_id);
 
             if is_same_fluid && fluid_state.is_source() {
-                play_empty_sound_and_event(context, pos, is_water_bucket);
+                play_empty_sound_and_event(context, pos, displays_as_water);
                 return true;
             }
 
@@ -283,19 +285,14 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
                 .world
                 .set_block(pos, fluid_state_to_place, UpdateFlags::UPDATE_ALL_IMMEDIATE)
             {
-                let fluid_ref = if is_water_bucket {
-                    &vanilla_fluids::WATER
-                } else {
-                    &vanilla_fluids::LAVA
-                };
                 let tick_delay = FLUID_BEHAVIORS
-                    .get_behavior(fluid_ref)
+                    .get_behavior(fluid)
                     .tick_delay(context.world);
                 context
                     .world
-                    .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
+                    .schedule_fluid_tick_default(pos, fluid, tick_delay);
 
-                play_empty_sound_and_event(context, pos, is_water_bucket);
+                play_empty_sound_and_event(context, pos, displays_as_water);
 
                 return true;
             }
@@ -307,7 +304,6 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     // `instanceof LiquidBlockContainer && content == Fluids.WATER ? pos : directionOffsetPos`.
     // If primary fails, secondary retries at the offset pos without sneak check,
     // matching vanilla's recursive `emptyContents(hitResult=null)` fallback.
-    let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
     let primary_pos =
         filled_bucket_primary_pos(clicked_state, clicked_pos, direction, is_water_bucket);
 
@@ -331,8 +327,8 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     InteractionResult::Fail
 }
 
-fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_bucket: bool) {
-    let sound_event = if is_water_bucket {
+fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, displays_as_water: bool) {
+    let sound_event = if displays_as_water {
         &sound_events::ITEM_BUCKET_EMPTY
     } else {
         &sound_events::ITEM_BUCKET_EMPTY_LAVA

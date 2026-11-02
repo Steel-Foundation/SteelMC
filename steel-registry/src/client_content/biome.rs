@@ -8,10 +8,65 @@
 
 use steel_utils::Identifier;
 
-use crate::RegistryEntry as _;
+use crate::biome::Biome;
 use crate::biome::{BiomeRef, BiomeRegistry};
+use crate::{Registry, RegistryEntry as _, RegistryExt as _};
 
 use super::{ClientFluid, FluidTint};
+
+const MAX_COLOR: i32 = 0xFF_FFFF;
+
+impl Registry {
+    /// Registers an extension biome. It is sent to clients with the vanilla biomes
+    /// and saved in chunks by its key, like any registered biome.
+    pub fn register_client_biome(&mut self, biome: Biome) -> Result<BiomeRef, String> {
+        self.validate_content_key(&biome.key)?;
+        if self.biomes.by_key(&biome.key).is_some() {
+            return Err(format!("biome {} is already registered", biome.key));
+        }
+        if biome.id.get().is_some() {
+            return Err("a new biome must not have a cached registry ID".into());
+        }
+        let effects = &biome.effects;
+        let colors = [
+            Some(effects.fog_color),
+            Some(effects.sky_color),
+            Some(effects.water_color),
+            Some(effects.water_fog_color),
+            effects.grass_color,
+            effects.foliage_color,
+            effects.dry_foliage_color,
+        ];
+        if let Some(color) = colors
+            .into_iter()
+            .flatten()
+            .find(|color| !(0..=MAX_COLOR).contains(color))
+        {
+            return Err(format!("biome color {color:#x} is not a 24-bit RGB value"));
+        }
+        if !biome.temperature.is_finite() || !biome.downfall.is_finite() {
+            return Err("biome temperature and downfall must be finite".into());
+        }
+        if let Some(particle) = &effects.particle {
+            if self
+                .particle_types
+                .by_key(&particle.options.particle_type)
+                .is_none()
+            {
+                return Err(format!(
+                    "unknown particle type {}",
+                    particle.options.particle_type
+                ));
+            }
+            if !(0.0..=1.0).contains(&particle.probability) {
+                return Err("particle probability must be between 0 and 1".into());
+            }
+        }
+        let biome: BiomeRef = Box::leak(Box::new(biome));
+        self.biomes.register(biome);
+        Ok(biome)
+    }
+}
 
 /// One client-only tint variant.
 #[derive(Debug)]
@@ -93,7 +148,7 @@ mod tests {
     use super::*;
     use crate::Registry;
     use crate::client_content::{FluidRegistration, FluidSpread};
-    use crate::{RegistryExt as _, vanilla_fluids};
+    use crate::vanilla_fluids;
 
     fn tinted(registry: &mut Registry, name: &'static str, color: i32) -> Result<(), String> {
         registry.register_client_fluid(FluidRegistration {

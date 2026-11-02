@@ -169,19 +169,24 @@ fn mob_effect(text: &str) -> Result<MobEffectRef, String> {
         .ok_or_else(|| format!("unknown effect {key}"))
 }
 
-pub(crate) fn add_effect(
-    server: &CoreServer,
-    id: PlayerId,
-    effect: &Effect,
-) -> Result<bool, String> {
-    let instance = MobEffectInstance::with_duration(
+/// Builds the core instance for an API effect, resolving its key.
+pub(crate) fn mob_effect_instance(effect: &Effect) -> Result<MobEffectInstance, String> {
+    Ok(MobEffectInstance::with_duration(
         mob_effect(effect.key.as_str())?,
         effect.duration,
         effect.amplifier,
     )
     .with_ambient(effect.ambient)
     .with_visible(effect.particles)
-    .with_show_icon(effect.icon);
+    .with_show_icon(effect.icon))
+}
+
+pub(crate) fn add_effect(
+    server: &CoreServer,
+    id: PlayerId,
+    effect: &Effect,
+) -> Result<bool, String> {
+    let instance = mob_effect_instance(effect)?;
     Ok(find(server, id)?.add_mob_effect(instance))
 }
 

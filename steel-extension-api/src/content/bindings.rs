@@ -6,7 +6,8 @@ pub mod api {
     use crate::{
         ApiResult, BlockState,
         content::{
-            BedDefinition, BlockDefinition, BlockItemDefinition, ItemDefinition, SlabMaterial,
+            BedDefinition, BiomeDefinition, BlockDefinition, BlockItemDefinition, FluidDefinition,
+            ItemDefinition, RegisteredFluid, SlabMaterial,
         },
     };
     use stabby::{string::String as ApiString, vec::Vec as ApiVec};
@@ -45,6 +46,23 @@ pub mod api {
         /// Registers a block without a placing item or default loot table.
         pub fn register_block(&mut self, definition: BlockDefinition) -> ApiResult<BlockState> {
             content::register_block(self.host_mut().registry, definition)
+                .map_err(ApiString::from)
+                .into()
+        }
+
+        /// Registers a biome that clients receive and chunks save by key.
+        pub fn register_biome(&mut self, definition: BiomeDefinition) -> ApiResult<()> {
+            content::register_biome(self.host_mut().registry, definition)
+                .map_err(ApiString::from)
+                .into()
+        }
+
+        /// Registers a fluid pair, its 16-state liquid block, and its optional bucket.
+        pub fn register_fluid(
+            &mut self,
+            definition: FluidDefinition,
+        ) -> ApiResult<RegisteredFluid> {
+            content::register_fluid(self.host_mut().registry, definition)
                 .map_err(ApiString::from)
                 .into()
         }

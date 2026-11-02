@@ -356,7 +356,9 @@ impl World {
             .is_some_and(|height| height <= pos.y())
     }
 
-    pub(crate) fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
+    /// The biome at a block position with vanilla's zoom fuzzing (`Level.getBiome`),
+    /// or `None` if its chunk is not loaded.
+    pub fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
         let biome_zoom_seed = obfuscate_biome_seed(self.seed());
         let mut missing_chunk = false;
         let biome_id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {

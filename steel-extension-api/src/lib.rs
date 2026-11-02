@@ -3,6 +3,7 @@
 #![recursion_limit = "512"]
 
 mod bindings;
+pub mod biomes;
 pub mod block_behavior;
 mod callbacks;
 pub mod command;
@@ -11,6 +12,7 @@ pub mod effects;
 mod entry;
 pub mod events;
 pub mod fill;
+pub mod fluid_behavior;
 pub mod hooks;
 pub mod hud;
 pub mod items;
@@ -51,6 +53,7 @@ pub fn bind(bootstrap: Bootstrap) -> Result<(), BindError> {
         .chain(block_behavior::original::api::imports())
         .chain(block_behavior::values_api::api::imports())
         .chain(block_behavior::capability_api::api::imports())
+        .chain(block_behavior::living_api::api::imports())
         .chain(block_behavior::block_entity::api::api::imports())
         .chain(block_behavior::block_entity::factory::api::imports())
         .chain(runtime::api::imports())
@@ -66,6 +69,9 @@ pub fn bind(bootstrap: Bootstrap) -> Result<(), BindError> {
         .chain(worlds::api::imports())
         .chain(menus::api::imports())
         .chain(fill::api::imports())
+        .chain(fill::replace_api::imports())
+        .chain(biomes::api::imports())
+        .chain(fluid_behavior::api::imports())
         .chain(content::api::imports())
         .copied()
         .collect();

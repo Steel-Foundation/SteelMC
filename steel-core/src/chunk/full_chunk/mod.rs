@@ -1896,6 +1896,7 @@ impl FullChunkRef<'_> {
     }
 }
 
+mod biomes;
 pub(crate) mod bulk;
 
 #[cfg(test)]

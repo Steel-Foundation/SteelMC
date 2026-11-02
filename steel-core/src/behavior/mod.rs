@@ -25,7 +25,7 @@
 //! ```
 
 mod block;
-use steel_registry::REGISTRY;
+use steel_registry::{REGISTRY, RegistryExt as _};
 pub mod blocks;
 mod consume_effect;
 mod context;
@@ -274,6 +274,13 @@ pub fn init_behaviors() {
                 && let Some(block) = item.block
             {
                 item_behaviors.set_behavior(item, Box::new(items::BlockItem::new(block)));
+            }
+        }
+        for &fluid in REGISTRY.client_content.fluids() {
+            if let Some(bucket) = REGISTRY.items.by_key(&fluid.source.bucket_item)
+                && REGISTRY.client_content.is_custom_item(bucket)
+            {
+                item_behaviors.set_behavior(bucket, Box::new(BucketItem::new(Some(fluid.block))));
             }
         }
         item_behaviors

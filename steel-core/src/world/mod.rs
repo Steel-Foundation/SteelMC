@@ -110,6 +110,7 @@ use crate::{
     poi::PointOfInterestStorage,
 };
 
+pub mod biomes;
 mod block_entity_ticker;
 mod block_event;
 mod block_region;
