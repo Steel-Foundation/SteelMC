@@ -969,7 +969,9 @@ impl<N: DimensionNoises> Aquifer<N> {
                     0.0
                 };
 
-                self.cache.ensure(x, z, noises);
+                if N::aquifer_needs_column_cache() {
+                    self.cache.ensure(x, z, noises);
+                }
                 let floodedness_noise = clamp(
                     f64::from(noises.router_fluid_level_floodedness(&mut self.cache, x, y, z)),
                     -1.0,
@@ -1008,7 +1010,9 @@ impl<N: DimensionNoises> Aquifer<N> {
         let cell_middle_y = cell_y * 40 + 20;
 
         // fluid_level_spread is evaluated at grid coordinates (not block coordinates)
-        self.cache.ensure(cell_x, cell_z, noises);
+        if N::aquifer_needs_column_cache() {
+            self.cache.ensure(cell_x, cell_z, noises);
+        }
         let spread = f64::from(
             noises.router_fluid_level_spread(&mut self.cache, cell_x, cell_y, cell_z) * 10.0_f32,
         );
@@ -1031,7 +1035,9 @@ impl<N: DimensionNoises> Aquifer<N> {
             let cell_x = x.div_euclid(64);
             let cell_y = y.div_euclid(40);
             let cell_z = z.div_euclid(64);
-            self.cache.ensure(cell_x, cell_z, noises);
+            if N::aquifer_needs_column_cache() {
+                self.cache.ensure(cell_x, cell_z, noises);
+            }
             let lava_noise = f64::from(noises.router_lava(&mut self.cache, cell_x, cell_y, cell_z));
             if lava_noise.abs() > 0.3 {
                 return self.lava_id;
@@ -1097,7 +1103,9 @@ impl<N: DimensionNoises> Aquifer<N> {
         let noise_val = if !(-2.0..=2.0).contains(&gradient) {
             0.0
         } else if barrier_noise.is_nan() {
-            self.cache.ensure(x, z, noises);
+            if N::aquifer_needs_column_cache() {
+                self.cache.ensure(x, z, noises);
+            }
             let n = f64::from(noises.router_barrier(&mut self.cache, x, y, z));
             *barrier_noise = n;
             n

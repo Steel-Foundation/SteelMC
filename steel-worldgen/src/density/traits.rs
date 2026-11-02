@@ -92,6 +92,16 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     // ── Aquifer router functions ────────────────────────────────────────────
 
+    /// Whether aquifer noise lookups require a prepared column cache.
+    ///
+    /// Returning `false` promises that barrier, floodedness, spread and lava
+    /// all use their explicit coordinates without reading prepared cache values.
+    /// Custom implementations retain column-cache preparation by default.
+    #[must_use]
+    fn aquifer_needs_column_cache() -> bool {
+        true
+    }
+
     /// Barrier noise for aquifer boundaries.
     fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32;
 

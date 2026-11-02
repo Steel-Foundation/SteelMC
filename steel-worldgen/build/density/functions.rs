@@ -1360,6 +1360,11 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 router_depth(self, cache, x as f64, y as f64, z as f64)
             }
 
+            #[inline]
+            fn aquifer_needs_column_cache() -> bool {
+                AQUIFER_NEEDS_COLUMN_CACHE
+            }
+
             #optional_router_fns
 
             #[inline]
