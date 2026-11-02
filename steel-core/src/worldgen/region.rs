@@ -1227,11 +1227,6 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         } else {
             section.read()
         };
-        if section_guard.states().has_only_air() {
-            Self::record_ore_read_time(ore_profile, started_at);
-            return air;
-        }
-
         let state = section_guard.states().get(
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),

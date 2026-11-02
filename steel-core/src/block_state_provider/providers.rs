@@ -235,7 +235,7 @@ impl BlockStateProviderEvaluator {
         pos: BlockPos,
     ) -> BlockStateId {
         let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
         Self::noise_state_by_value(registry, &provider.states, noise_value)
     }
 
@@ -246,7 +246,7 @@ impl BlockStateProviderEvaluator {
         pos: BlockPos,
     ) -> BlockStateId {
         let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
         if noise_value < f64::from(provider.threshold) {
             Self::random_block_state_from_data_list(registry, random, &provider.low_states)
         } else if random.next_f32() < provider.high_chance {
@@ -290,7 +290,7 @@ impl BlockStateProviderEvaluator {
         }
 
         let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
         Self::noise_state_by_resolved_value(&possible_states, noise_value)
     }
 
