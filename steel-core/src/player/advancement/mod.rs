@@ -174,7 +174,12 @@ impl PlayerAdvancement {
                 }
             }
             self.progress_changed.clear();
-            if !progress.is_empty() || !added.is_empty() || !removed.is_empty() {
+            // even if it's empty it must be updated when switching domain
+            if self.is_first_packet
+                || !progress.is_empty()
+                || !added.is_empty()
+                || !removed.is_empty()
+            {
                 let parsed_progress: Vec<AdvancementProgressData> = progress
                     .into_iter()
                     .map(|(key, val)| AdvancementProgressData {
