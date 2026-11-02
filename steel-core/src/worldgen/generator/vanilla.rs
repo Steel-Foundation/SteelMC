@@ -66,7 +66,8 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
     /// Recovers the concrete Aquifer at a later generation stage.
     fn post_noise_aquifer(state: &mut Self::State) -> &mut Aquifer<Self>;
 
-    /// Gets the prefilled material ore density/richness values.
+    /// gets the dense material ore y prefix starting at `Settings::MIN_Y` so like its height is [`DimensionNoises::material_ore_vein_value_height`];
+    /// higher positions cannot be accepted by any material ore rule
     fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]>;
 }
 
@@ -477,20 +478,24 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         let mut world_surface_wg =
             Heightmap::new(HeightmapType::WorldSurfaceWg, min_y, N::Settings::HEIGHT);
 
-        // Surface extensions can place blocks in cells that were air during noise fill.
-        // Their material densities must still be sampled for the whole volume.
-        let unsampled_air_min_y = if N::material_ore_vein_value_count() == 0 {
-            aquifer.unsampled_air_min_y()
-        } else {
-            i32::MAX
-        };
         let material_value_count = N::material_ore_vein_value_count();
+        let material_value_height = if material_value_count == 0 {
+            0
+        } else {
+            N::material_ore_vein_value_height()
+        };
+
+        let unsampled_air_min_y = aquifer
+            .unsampled_air_min_y()
+            .max(min_y + material_value_height as i32);
+
         // An exact-length iterator allocates the retained Arc slice directly.
         let mut material_ore_vein_values: Arc<[f32]> = iter::repeat_n(
             0.0_f32,
-            16 * 16 * N::Settings::HEIGHT as usize * material_value_count,
+            16 * 16 * material_value_height * material_value_count,
         )
         .collect();
+
         let material_values = Arc::make_mut(&mut material_ore_vein_values);
         let mut material_cache = N::ColumnCache::default();
         noise_chunk.fill(
@@ -516,7 +521,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
 
-                if material_value_count != 0 {
+                if material_value_count != 0 && relative_y < material_value_height {
                     let offset =
                         (relative_y * 16 * 16 + local_z * 16 + local_x) * material_value_count;
                     noises.fill_material_ore_vein_values(

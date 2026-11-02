@@ -4,6 +4,7 @@ use steel_registry::{Registry, feature::BlockStateData};
 use steel_utils::BlockStateId;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 
+mod noise_cache;
 mod predicates;
 mod providers;
 

@@ -292,6 +292,13 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// Number of prefilled density/richness values for this dimension's material ore rules.
     fn material_ore_vein_value_count() -> usize;
 
+    /// Height of the prefilled Y prefix, starting at [`NoiseSettings::MIN_Y`].
+    /// Keep it within `HEIGHT`; every omitted ore density must be `<= 0.0`.
+    #[must_use]
+    fn material_ore_vein_value_height() -> usize {
+        Self::Settings::HEIGHT as usize
+    }
+
     /// Fill one block's material ore density/richness values.
     ///
     /// Vanilla samples these functions over the complete chunk volume before

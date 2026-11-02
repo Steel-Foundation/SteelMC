@@ -321,6 +321,13 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         debug_assert!(y_count <= MAX_CELL_HEIGHT);
         let inverse_height = f32x4::splat(1.0 / cell_height as f32);
         let channel_batches = interp_count.div_ceil(4);
+        let all_batches = (1_usize << channel_batches) - 1;
+        let proving_batches = air_channels.map_or(0, |channels| {
+            channels
+                .iter()
+                .fold(0, |mask, &channel| mask | (1 << (channel / 4)))
+        });
+
         // Reuse Z partials across X without changing vanilla's Z/X/Y arithmetic.
         let mut z_partials =
             vec![[f32x4::splat(0.0); 2]; cell_width as usize * corners_y * channel_batches];
@@ -402,31 +409,80 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 (z_in_cell as usize * corners_y + cell_y_idx) * channel_batches;
                             let mut values_by_y = [[0.0_f32; MAX_INTERP]; MAX_CELL_HEIGHT];
 
-                            // Advance Y by repeated additions, matching fillCell.
-                            for (batch, channel) in (0..interp_count).step_by(4).enumerate() {
-                                let [v00, v10] = z_partials[row + batch];
-                                let [v01, v11] = z_partials[row + channel_batches + batch];
-                                let v0 = v00 + factor_x_v * (v10 - v00);
-                                let v1 = v01 + factor_x_v * (v11 - v01);
-                                let step = (v1 - v0) * inverse_height;
-                                let mut value = v0 + step * f32x4::splat(0.0);
-                                for values in values_by_y.iter_mut().take(y_count) {
-                                    values[channel..channel + 4].copy_from_slice(&value.to_array());
-                                    value += step;
-                                }
-                            }
+                            if N::interpolated_count() <= 4 {
+                                for (batch, channel) in (0..interp_count).step_by(4).enumerate() {
+                                    let [v00, v10] = z_partials[row + batch];
+                                    let [v01, v11] = z_partials[row + channel_batches + batch];
+                                    let v0 = v00 + factor_x_v * (v10 - v00);
+                                    let v1 = v01 + factor_x_v * (v11 - v01);
+                                    let step = (v1 - v0) * inverse_height;
+                                    let mut value = v0 + step * f32x4::splat(0.0);
 
-                            // Repeated f32 additions can overshoot non-positive
-                            // endpoints, so check the actual interpolated values.
-                            if air_cells[cell_y_idx]
-                                && air_channels.is_some_and(|channels| {
-                                    Self::channels_are_nonpositive(
-                                        &values_by_y[..y_count],
-                                        channels,
-                                    )
-                                })
-                            {
-                                continue;
+                                    for values in values_by_y.iter_mut().take(y_count) {
+                                        values[channel..channel + 4]
+                                            .copy_from_slice(&value.to_array());
+                                        value += step;
+                                    }
+                                }
+
+                                if air_cells[cell_y_idx]
+                                    && air_channels.is_some_and(|channels| {
+                                        Self::channels_are_nonpositive(
+                                            &values_by_y[..y_count],
+                                            channels,
+                                        )
+                                    })
+                                {
+                                    continue;
+                                }
+                            } else {
+                                let fill_batches =
+                                    |batches: usize, values_by_y: &mut [[f32; MAX_INTERP]]| {
+                                        for (batch, channel) in
+                                            (0..interp_count).step_by(4).enumerate()
+                                        {
+                                            if batches & (1 << batch) == 0 {
+                                                continue;
+                                            }
+
+                                            let [v00, v10] = z_partials[row + batch];
+                                            let [v01, v11] =
+                                                z_partials[row + channel_batches + batch];
+                                            let v0 = v00 + factor_x_v * (v10 - v00);
+                                            let v1 = v01 + factor_x_v * (v11 - v01);
+                                            let step = (v1 - v0) * inverse_height;
+                                            let mut value = v0 + step * f32x4::splat(0.0);
+
+                                            for values in values_by_y.iter_mut().take(y_count) {
+                                                values[channel..channel + 4]
+                                                    .copy_from_slice(&value.to_array());
+                                                value += step;
+                                            }
+                                        }
+                                    };
+                                let first_batches = if air_cells[cell_y_idx] {
+                                    proving_batches
+                                } else {
+                                    all_batches
+                                };
+
+                                fill_batches(first_batches, &mut values_by_y);
+
+                                if air_cells[cell_y_idx]
+                                    && air_channels.is_some_and(|channels| {
+                                        Self::channels_are_nonpositive(
+                                            &values_by_y[..y_count],
+                                            channels,
+                                        )
+                                    })
+                                {
+                                    continue;
+                                }
+
+                                let remaining_batches = all_batches & !first_batches;
+                                if remaining_batches != 0 {
+                                    fill_batches(remaining_batches, &mut values_by_y);
+                                }
                             }
 
                             for y_in_cell in (0..cell_height).rev() {
@@ -489,9 +545,11 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     /// Pre-fills the density/richness buffers used by material ore rules.
     ///
     /// `MaterialRuleContext.getDensitiesInChunk` samples these functions over
-    /// the complete chunk volume before the surface scan begins. Keeping the
-    /// compact `f32` results instead of the full interpolation channels avoids
-    /// retaining the noise chunk across generation stages.
+    /// complete chunk volume before the surface scan begins. Steel keeps the
+    /// dense Y prefix where a rule may accept a block. Compact `f32` results
+    /// avoid retaining the noise chunk across generation stages.
+    /// The result has `256 * material_ore_vein_value_height() *
+    /// material_ore_vein_value_count()` entries, ordered by Y, Z, X, then value.
     #[must_use]
     pub fn prefill_material_ore_vein_values(
         &self,
@@ -506,7 +564,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
         let min_y = N::Settings::MIN_Y;
-        let mut values = vec![0.0; 16 * 16 * N::Settings::HEIGHT as usize * value_count];
+        let value_height = N::material_ore_vein_value_height();
+        let mut values = vec![0.0; 16 * 16 * value_height * value_count];
         let mut interpolated = [0.0_f32; MAX_INTERP];
 
         for cell_x_idx in 0..self.cell_count_xz {
@@ -564,11 +623,15 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                             for y_in_cell in (0..cell_height).rev() {
                                 let world_y =
                                     (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
+                                let relative_y = (world_y - min_y) as usize;
+                                if relative_y >= value_height {
+                                    continue;
+                                }
+
                                 interpolated[..self.interp_count].copy_from_slice(
                                     &values_by_y[y_in_cell as usize][..self.interp_count],
                                 );
 
-                                let relative_y = (world_y - min_y) as usize;
                                 let offset =
                                     (relative_y * 16 * 16 + local_z * 16 + local_x) * value_count;
                                 noises.fill_material_ore_vein_values(

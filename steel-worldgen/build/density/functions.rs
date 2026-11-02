@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::{fs, path::PathBuf};
 
 use super::surface_rules::{SurfaceRuleJson, collect_ore_veins, generate_surface_rule_function};
+use super::transpiler::material_ore;
 
 /// Parsed density function from datapack JSON.
 ///
@@ -1118,6 +1119,17 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
         .iter()
         .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
+
+    let material_ore_vein_value_height = material_ore::value_height(
+        &material_ore_veins
+            .iter()
+            .map(|rule| json_to_df(&rule.density))
+            .collect::<Vec<_>>(),
+        &registry,
+        min_y,
+        height as usize,
+    );
+
     let mut router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
     router_entries.extend(material_ore_router_entries(material_rule.as_ref()));
     let (cell_width, cell_height) = router_entries
@@ -1467,6 +1479,10 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
             fn material_ore_vein_value_count() -> usize {
                 #material_ore_vein_value_count
+            }
+
+            fn material_ore_vein_value_height() -> usize {
+                #material_ore_vein_value_height
             }
 
             fn fill_material_ore_vein_values(
