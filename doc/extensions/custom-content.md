@@ -276,3 +276,108 @@ Saved inventories and chunks contain the custom registry keys and original
 components. Transport envelopes and display entity IDs are not persistent data.
 Keep the registering extension installed when loading worlds containing its
 content; removing or renaming registry entries is not a content migration API.
+
+## Custom fluids
+
+`ContentRegistry::register_fluid(FluidDefinition)` registers a source and a
+flowing fluid, plus a liquid block with the 16 `level` states of the vanilla
+liquid named by `client` (`minecraft:water` or `minecraft:lava`). It returns the
+source `BlockState`. Saves keep the fluid's own keys. Clients receive, state by
+state, the vanilla liquid with the same level.
+
+```rust
+use steel_extension_api::content::{FluidDefinition, ItemAppearance, ItemDefinition};
+
+let sludge = FluidDefinition::water_like("demo:sludge") // also "demo:sludge_flowing"
+    .tint(0x4C_BB17, 0x2E_5E0E)  // water and underwater-fog color
+    .spread(15, 2)               // ticks per step, level lost per block
+    .randomly_ticking()
+    .bucket(ItemDefinition {
+        key: "demo:sludge_bucket".into(),
+        name: "Bucket of Sludge".into(),
+        appearance: ItemAppearance {
+            item: "minecraft:water_bucket".into(),
+            model: None.into(),
+            profile: None.into(),
+        },
+        max_stack_size: 1,
+    });
+registry.register_fluid(sludge);
+```
+
+The host runs vanilla's flowing-fluid algorithm with the definition's
+`tick_delay` (1–1200), `drop_off` (1–7), `slope_find_distance` (0–8), and
+`converts_to_source`. The fluid flows into the blocks water flows into and drops
+their items.
+
+**Movement follows the client liquid, not fluid tags.** Entities swim, float,
+drown, and get pushed exactly as in the vanilla liquid the client sees, so client
+prediction and the server agree. The fluid is *not* in `#minecraft:water`, so
+sponges, concrete powder, lava, and other water-specific rules treat it as its own
+fluid. A water-displayed fluid also puts out burning entities, as clients expect.
+Waterlogging stays real-water-only: vanilla clients would draw a waterlogged block
+in the plain water color.
+
+A `bucket` registers a filled bucket item. An empty bucket picks the fluid up from
+a source, and the filled bucket places it like a water bucket. A water-displayed
+fluid also evaporates in dimensions where water does.
+
+### Fluid hooks
+
+Gameplay hooks are attached during pre-init with
+`Hooks::register_fluid_behaviors`. The callback receives `FluidBehaviors<'_>`.
+Call `set_fluid_behavior(key, behavior)` once per fluid with a
+`fluid_behavior::FluidBehavior` implementation. Every method has a default:
+
+| Hook | Called when | Return |
+| --- | --- | --- |
+| `entity_inside(world, pos, state, entity)` | An entity's box is inside the fluid. | — |
+| `random_tick(world, pos, state)` | A random tick hits the fluid (requires `randomly_ticking`). | — |
+| `before_destroying_block(world, pos, replaced)` | The fluid flows into a replaceable block. | `true` keeps the drops. |
+| `react_with_neighbors(world, pos, state)` | The block was placed or a neighbor changed. | `false` stops spreading after converting the block. |
+
+In these hooks, the borrowed `Entity` offers `is_living`,
+`is_creative_or_spectator`, `position`, `uuid`, `hurt(damage_type, amount)`, and
+`add_effect(effect)`. Vanilla armor, immunity, and invulnerability rules apply.
+After bulk writes, `World::schedule_fluid_tick(pos)` makes a fluid spread, as
+placing it normally would.
+
+## Custom biomes
+
+`ContentRegistry::register_biome(BiomeDefinition)` adds a biome to the synced
+`worldgen/biome` registry:
+
+- Colors (sky, fog, water, water fog, and optional grass, foliage, and dry
+  foliage) are 24-bit RGB values.
+- The climate is set by temperature, downfall, and precipitation.
+- A grass color modifier, ambient particles, and music are optional.
+
+Chunks save biomes by key. Generators can use the biome by its key with
+`register_terrain_generator`. Extension biomes have no decorators yet.
+
+At runtime, `World::biome_at(pos)` reads a biome with vanilla's zoom fuzzing. It
+returns `None` for unloaded chunks. `World::set_biomes(from, to, biome)` paints
+with `/fillbiome` semantics: every 4×4×4 cell intersecting the box changes, in
+loaded chunks only (otherwise it fails without changes), and players see the
+change in the same tick without reloading chunks.
+
+## Tint projection
+
+A fluid with a `tint` is green everywhere, not only in its own biome. Biome
+colors are per 4×4×4 cell, so Steel sends clients, after the server biomes, one
+client-only variant of every biome per tinting fluid: the same biome with the
+fluid's water colors. Each section counts tinting fluid blocks per cell. When it
+writes chunk data, a cell holding the fluid carries the variant of its real biome.
+When the fluid appears in or leaves a cell, players receive one `CChunksBiomes`
+per tick for the affected chunks.
+
+The server keeps the real biome for gameplay, commands, and saves, so the
+variants never appear in `/locate` or in saved chunks. There are two visible side
+effects:
+
+- Plain water in the same cell also looks tinted.
+- The F3 screen names the variant, such as `demo:sludge_tint/minecraft/plains`.
+
+Without a tinting fluid, chunk and registry data are byte-identical to vanilla
+Steel. The [toxic-wasteland example](../../extension-example/toxic-wasteland/README.md)
+uses fluids, biomes, the tint, and a generator together.

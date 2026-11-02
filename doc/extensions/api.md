@@ -118,6 +118,7 @@ A dependency cycle or a lifecycle failure stops startup.
 | --- | --- | --- |
 | `register_content_registration` | `extern "C" fn(content::ContentRegistry<'_>) -> ApiResult<()>` | Before the item/block data registries freeze. |
 | `register_block_registration` | `extern "C" fn(Registry<'_>) -> ApiResult<()>` | During block behavior registry initialization. |
+| `register_fluid_behaviors` | `extern "C" fn(fluid_behavior::api::FluidBehaviors<'_>) -> ApiResult<()>` | During fluid behavior initialization, after block behaviors. |
 | `register_generator_registration` | `extern "C" fn(GeneratorRegistry<'_>) -> ApiResult<()>` | During generator registry initialization. |
 | `register_commands` | `extern "C" fn(Commands<'_>) -> ApiResult<()>` | Before the command dispatcher freezes. |
 | `register_world_tick` | `extern "C" fn(World<'_>, u64)` | At the end of each normal world tick, on that world's thread. |
@@ -177,6 +178,19 @@ coordinate conventions, mining, fixed drops, and persistence. The standalone
 planks and a yellow question-mark head model with no required resource pack.
 The [furniture example](../../extension-example/furniture/README.md) adds a usable
 chair, vertical half slabs, and a bed with sleeping and respawn support.
+
+Fluids and biomes are registered through the same content hook:
+`register_fluid` creates a liquid displayed as vanilla water or lava, with
+host-run spreading, a bucket, and an optional water tint, while `register_biome`
+adds a synced biome. Gameplay hooks for a fluid are attached with
+`Hooks::register_fluid_behaviors`. At runtime, `World::biome_at`,
+`World::set_biomes`, `World::replace_blocks`, `World::schedule_fluid_tick`, and
+`World::game_time` read and change worlds. Borrowed entities in hooks can be
+damaged and given effects. See [Custom fluids](custom-content.md#custom-fluids),
+[Custom biomes](custom-content.md#custom-biomes), and
+[Tint projection](custom-content.md#tint-projection); the
+[toxic-wasteland example](../../extension-example/toxic-wasteland/README.md)
+combines them.
 
 ## Actions, filters, and ordering
 

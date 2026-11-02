@@ -102,3 +102,119 @@ impl World {
         Ok(changed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use steel_registry::{REGISTRY, RegistryExt as _, init_vanilla_registry, vanilla_biomes};
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::block_entity::init_block_entities;
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
+
+    fn setup(name: &'static str, radius: i32) -> TestWorld {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+        let fixture = fresh_test_world(name);
+        for x in -radius..radius {
+            for z in -radius..radius {
+                insert_ready_full_chunk(&fixture.world, ChunkPos::new(x, z));
+            }
+        }
+        fixture
+    }
+
+    fn stored(world: &World, pos: BlockPos) -> Option<BiomeRef> {
+        let chunk_pos = ChunkPos::new(pos.0.x >> 4, pos.0.z >> 4);
+        let id = world.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            let index = ((pos.0.y - chunk.min_y()) / 16) as usize;
+            let quart = |block: i32| ((block & 15) >> 2) as usize;
+            chunk.sections().sections[index].read().biomes.get(
+                quart(pos.0.x),
+                quart(pos.0.y),
+                quart(pos.0.z),
+            )
+        })?;
+        REGISTRY.biomes.by_id(usize::from(id))
+    }
+
+    #[test]
+    fn fills_every_intersecting_cell_across_chunks_once() -> Result<(), FillBiomeError> {
+        let fixture = setup("fill_biome_cells", 1);
+        let world = &fixture.world;
+        // x -2..=5 touches quarts -1..=1 (3 cells), y 0..=3 one cell, z 0..=0 one cell.
+        let from = BlockPos::new(-2, 0, 0);
+        let to = BlockPos::new(5, 3, 0);
+        let changed = world.fill_biome(from, to, &vanilla_biomes::DESERT)?;
+        assert_eq!(changed, 3);
+        for x in [-4, 0, 7] {
+            assert_eq!(
+                stored(world, BlockPos::new(x, 2, 3)),
+                Some(&*vanilla_biomes::DESERT),
+                "x {x}"
+            );
+        }
+        assert_ne!(
+            stored(world, BlockPos::new(8, 2, 3)),
+            Some(&*vanilla_biomes::DESERT)
+        );
+        assert_eq!(
+            world.fill_biome(from, to, &vanilla_biomes::DESERT)?,
+            0,
+            "repainting changes nothing"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn refuses_unloaded_chunks_without_changes() {
+        let fixture = setup("fill_biome_unloaded", 1);
+        let world = &fixture.world;
+        let result = world.fill_biome(
+            BlockPos::new(0, 0, 0),
+            BlockPos::new(40, 3, 0),
+            &vanilla_biomes::DESERT,
+        );
+        assert_eq!(result, Err(FillBiomeError::Unloaded { count: 2 }));
+        assert_ne!(
+            stored(world, BlockPos::new(0, 0, 0)),
+            Some(&*vanilla_biomes::DESERT)
+        );
+    }
+
+    #[test]
+    fn refuses_boxes_outside_the_height_range() {
+        let fixture = setup("fill_biome_empty", 1);
+        let world = &fixture.world;
+        let above = world.get_max_y() + 10;
+        let result = world.fill_biome(
+            BlockPos::new(0, above, 0),
+            BlockPos::new(3, above + 3, 3),
+            &vanilla_biomes::DESERT,
+        );
+        assert_eq!(result, Err(FillBiomeError::Empty));
+    }
+
+    /// SC-005: painting 256×256×384 takes under two seconds. Run in release:
+    /// `cargo test --release -p steel-core --lib paints_a_large_region -- --ignored`.
+    #[test]
+    #[ignore = "timing benchmark; run in release"]
+    fn paints_a_large_region_quickly() -> Result<(), FillBiomeError> {
+        let fixture = setup("fill_biome_benchmark", 8);
+        let world = &fixture.world;
+        let started = Instant::now();
+        let changed = world.fill_biome(
+            BlockPos::new(-128, world.get_min_y(), -128),
+            BlockPos::new(127, world.get_max_y(), 127),
+            &vanilla_biomes::DESERT,
+        )?;
+        let elapsed = started.elapsed();
+        println!("painted {changed} cells in {elapsed:?}");
+        assert!(changed > 0);
+        assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
+        Ok(())
+    }
+}

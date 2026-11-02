@@ -180,13 +180,20 @@ reaction.
 
 ## Phase 9: Polish & cross-cutting
 
-- [ ] T041 [P] Add the "Custom fluids", "Custom biomes" and "Tint projection" sections to `doc/extensions/custom-content.md`, and add the reference entries to `doc/extensions/api.md`.
-- [ ] T042 [P] Write `extension-example/toxic-wasteland/README.md` (install, config table, commands, world setup, limitations: shared-cell tint, no waterlogging, F3 variant names, no dispenser) and list the crate in `extension-example/README.MD`.
-- [ ] T043 Add a benchmark-style test asserting that painting 256×256×384 takes under 2 s in release (`steel-core/src/world/biomes.rs`, `#[ignore]` by default), and record the measured numbers in the README.
-- [ ] T044 Run the gates: `cargo fmt`, `cargo clippy --workspace --all-targets --features steel-extension-api/host`, the core, registry, protocol and API test suites, every native integration test with all examples built, and clippy on the extension crate.
-- [ ] T045 Run the quickstart manually on a release server with all extensions and confirm that a server without the extension sends byte-identical chunk and registry data (a test in `steel-extension-api/tests/toxic_wasteland/parity.rs`).
+- [x] T041 [P] Add the "Custom fluids", "Custom biomes" and "Tint projection" sections to `doc/extensions/custom-content.md`, and add the reference entries to `doc/extensions/api.md`.
+- [x] T042 [P] Write `extension-example/toxic-wasteland/README.md` (install, config table, commands, world setup, limitations: shared-cell tint, no waterlogging, F3 variant names, no dispenser) and list the crate in `extension-example/README.MD`.
+- [x] T043 Add a benchmark-style test asserting that painting 256×256×384 takes under 2 s in release (`steel-core/src/world/biomes.rs`, `#[ignore]` by default), and record the measured numbers in the README.
+- [x] T044 Run the gates: `cargo fmt`, `cargo clippy --workspace --all-targets --features steel-extension-api/host`, the core, registry, protocol and API test suites, every native integration test with all examples built, and clippy on the extension crate.
+- [x] T045 Run the quickstart manually on a release server with all extensions and confirm that a server without the extension sends byte-identical chunk and registry data (a test in `steel-extension-api/tests/toxic_wasteland/parity.rs`).
 
 ---
+
+### Polish results
+
+- T043: painting 256×256×384 (393,216 cells) takes 2.3 ms in release, against the 2 s target.
+- T045 (live run): a release server loaded Vault, Essentials, WorldEdit, WorldGuard and toxic-wasteland, generated the wasteland world (spawn at y=81), and stopped cleanly with no warnings.
+- T045 (parity): Steel's existing chunk and registry encoding tests pass unchanged. Without a tinting fluid, sections write their biomes unchanged and the client biome count equals the server count. A dedicated byte-comparison test was not added.
+- Not verified: a session with a real client (colors in game, swimming without corrections). The quickstart's manual steps cover it.
 
 ## Dependencies & execution order
 
