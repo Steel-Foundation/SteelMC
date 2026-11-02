@@ -2,6 +2,7 @@ use std::iter::empty;
 use std::sync::Weak;
 
 use glam::DVec3;
+use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -52,10 +53,12 @@ impl EndermiteEntity {
     pub(crate) const SPAWN_RULE: SpawnRule = Self::check_endermite_spawn_rules;
 
     /// Checks the Endermite placement predicate for the spawner-only dispatcher.
-    pub(crate) const fn check_endermite_spawn_rules(
+    pub(crate) fn check_endermite_spawn_rules(
+        _entity_type: EntityTypeRef,
         _level: &dyn LevelReader,
         spawn_reason: EntitySpawnReason,
         _pos: BlockPos,
+        _random: &mut dyn Rng,
     ) -> bool {
         spawn_reason.is_spawner()
     }

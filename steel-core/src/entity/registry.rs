@@ -4,6 +4,7 @@ use std::ops::Deref;
 use std::sync::{OnceLock, Weak};
 
 use glam::DVec3;
+use rand::Rng;
 use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, NbtCompound as BorrowedNbtCompoundView,
 };
@@ -33,10 +34,8 @@ pub type EntityFactory = fn(EntityTypeRef, i32, DVec3, Weak<World>) -> SharedEnt
 pub type EntityLoadFactory = fn(EntityTypeRef, EntityBaseLoad) -> SharedEntity;
 
 /// Spawn placement predicate of an entity type.
-///
-/// The entity type and random source are not passed because no
-/// registered predicate reads them yet.
-pub(crate) type SpawnRule = fn(&dyn LevelReader, EntitySpawnReason, BlockPos) -> bool;
+pub(crate) type SpawnRule =
+    fn(EntityTypeRef, &dyn LevelReader, EntitySpawnReason, BlockPos, &mut dyn Rng) -> bool;
 
 /// Entity load request before the registry assigns a runtime ID.
 pub struct EntityLoadRequest {

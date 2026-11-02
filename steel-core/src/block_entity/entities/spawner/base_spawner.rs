@@ -114,6 +114,7 @@ impl SpawnerState {
             NextSpawnData::Own(data) => Some(data),
         }
     }
+
     fn get_or_create_next_spawn_data<R: Rng + ?Sized>(
         &mut self,
         random: &mut R,
@@ -131,6 +132,7 @@ impl SpawnerState {
         };
         (data, created)
     }
+
     fn replace_spawn_potentials(&mut self, potentials: Vec<WeightedSpawnData>) {
         let mut old_potentials = mem::replace(&mut self.spawn_potentials, potentials);
         if let Some(NextSpawnData::Potential(index)) = self.next_spawn_data {
@@ -427,6 +429,7 @@ impl BaseSpawner {
                 entity_type,
                 world,
                 spawn_block_pos,
+                &mut random,
             ) {
                 continue;
             }
