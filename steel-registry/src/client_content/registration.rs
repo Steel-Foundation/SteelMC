@@ -162,6 +162,7 @@ impl Registry {
                 server_mining: geometry != material,
                 bed: None,
                 horizontal: None,
+                state_family: None,
                 displays,
                 self_drop: None,
             },

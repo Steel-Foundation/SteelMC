@@ -7,9 +7,9 @@ use std::{
     sync::OnceLock,
 };
 
+use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::client_content::client_block_state;
-use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::{BlockStateId, codec::VarInt, mth::ceil_log2, serial::WriteTo};
 
 mod encode;
@@ -475,7 +475,9 @@ fn block_state_global_bits() -> u8 {
 /// Bits per entry for the biome global palette. See [`block_state_global_bits`].
 fn biome_global_bits() -> u8 {
     static BITS: OnceLock<u8> = OnceLock::new();
-    *BITS.get_or_init(|| ceil_log2(REGISTRY.biomes.len()))
+    // Clients size the global palette from the biome list they received, which
+    // includes client-only tint variants.
+    *BITS.get_or_init(|| ceil_log2(REGISTRY.client_content.client_biomes().client_count()))
 }
 
 /// A palette container for blocks.

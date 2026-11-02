@@ -202,9 +202,9 @@ pub use chat::{
     SChatCommand, SChatCommandSigned, SChatSessionUpdate,
 };
 pub use chunk::{
-    BlockEntityInfo, CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk,
-    CLevelChunkWithLight, CLightUpdate, CSetChunkCacheRadius, CSetChunkCenter, ChunkPacketData,
-    HeightmapType, Heightmaps, LightUpdatePacketData, SChunkBatchReceived,
+    BlockEntityInfo, CChunkBatchFinished, CChunkBatchStart, CChunksBiomes, CForgetLevelChunk,
+    CLevelChunkWithLight, CLightUpdate, CSetChunkCacheRadius, CSetChunkCenter, ChunkBiomeData,
+    ChunkPacketData, HeightmapType, Heightmaps, LightUpdatePacketData, SChunkBatchReceived,
 };
 pub use s_accept_teleportation::SAcceptTeleportation;
 pub use s_attack::SAttack;

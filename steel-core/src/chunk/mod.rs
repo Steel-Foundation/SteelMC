@@ -28,6 +28,7 @@ mod simulation_ticket_manager;
 pub mod full_chunk;
 pub mod paletted_container;
 pub mod section;
+pub mod section_tint;
 pub mod status;
 
 #[cfg(any(test, feature = "test-framework"))]

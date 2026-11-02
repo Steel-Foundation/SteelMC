@@ -110,6 +110,7 @@ impl Registry {
                 server_mining: true,
                 bed: None,
                 horizontal,
+                state_family: None,
                 displays,
                 self_drop: None,
             },

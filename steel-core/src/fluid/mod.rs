@@ -23,7 +23,7 @@ pub use steel_registry::fluid::{
 // Re-export specific structs/functions
 pub use flowing_fluid::FlowingFluid;
 pub use fluid_behavior::FluidBehavior;
-pub use fluids::{EmptyFluid, LavaFluid, WaterFluid};
+pub use fluids::{EmptyFluid, ExtensionFluid, FluidHooks, LavaFluid, WaterFluid};
 
 // Re-export utility functions from their respective modules
 pub use collision::{

@@ -218,25 +218,34 @@ pub static BLOCK_BEHAVIORS: BlockBehaviorLock = BlockBehaviorLock(OnceLock::new(
 /// Access behaviors directly via deref: `ITEM_BEHAVIORS.get_behavior(item)`
 pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
 
+/// Vanilla block behaviors, registered content families, then extension edits.
+fn build_block_behaviors() -> BlockBehaviorRegistry {
+    let mut block_behaviors = BlockBehaviorRegistry::new();
+    register_block_behaviors(&mut block_behaviors);
+    for (_, block) in REGISTRY.blocks.iter() {
+        if REGISTRY
+            .client_content
+            .block(block)
+            .is_some_and(|model| model.bed.is_some())
+        {
+            block_behaviors.set_behavior(block, Box::new(blocks::BedBlock::new(block)));
+        }
+    }
+    for &fluid in REGISTRY.client_content.fluids() {
+        block_behaviors.set_behavior(
+            fluid.block,
+            Box::new(blocks::LiquidBlock::new(fluid.block, fluid.source)),
+        );
+    }
+    block_behaviors.run_registration_hooks();
+    block_behaviors
+}
+
 /// Initializes the global behavior registries.
 ///
 /// This should be called after the main registry is frozen. Repeated calls are a no-op.
 pub fn init_behaviors() {
-    BLOCK_BEHAVIORS.0.get_or_init(|| {
-        let mut block_behaviors = BlockBehaviorRegistry::new();
-        register_block_behaviors(&mut block_behaviors);
-        for (_, block) in REGISTRY.blocks.iter() {
-            if REGISTRY
-                .client_content
-                .block(block)
-                .is_some_and(|model| model.bed.is_some())
-            {
-                block_behaviors.set_behavior(block, Box::new(blocks::BedBlock::new(block)));
-            }
-        }
-        block_behaviors.run_registration_hooks();
-        block_behaviors
-    });
+    BLOCK_BEHAVIORS.0.get_or_init(build_block_behaviors);
 
     FLUID_BEHAVIORS.0.get_or_init(|| {
         let mut fluid_behaviors = FluidBehaviorRegistry::new();
@@ -252,6 +261,8 @@ pub fn init_behaviors() {
         fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, lava_behavior);
         fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_LAVA, Box::new(LavaFluid));
 
+        fluid_behaviors.register_client_fluids();
+        fluid_behaviors.run_registration_hooks();
         fluid_behaviors
     });
 

@@ -466,12 +466,14 @@ impl Registry {
             registry.items.len(),
             registry.blocks.len(),
             usize::from(registry.blocks.next_state_id),
+            registry.fluids.len(),
         );
         registry
     }
 
     pub fn freeze(&mut self) {
         self.client_content.freeze();
+        self.client_content.build_client_biomes(&self.biomes);
         self.validate_references();
 
         self.attributes.freeze();

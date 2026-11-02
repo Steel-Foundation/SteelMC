@@ -72,7 +72,10 @@ impl RegistryCache {
 
         //TODO: For non vanilla entries we need to encode the data into nbt
 
-        add_registry!(BIOMES_REGISTRY, biomes);
+        packets.push(CRegistryData::new(
+            BIOMES_REGISTRY,
+            Self::client_biome_entries(registry),
+        ));
         add_registry!(CHAT_TYPE_REGISTRY, chat_types);
         add_registry!(TRIM_PATTERN_REGISTRY, trim_patterns);
         add_registry!(TRIM_MATERIAL_REGISTRY, trim_materials);
@@ -106,6 +109,26 @@ impl RegistryCache {
         add_registry!(BLOCK_TRANSFORMER_REGISTRY, block_transformers);
 
         packets
+    }
+
+    /// Server biomes in registry order, then the client-only tint variants.
+    fn client_biome_entries(registry: &Registry) -> Vec<RegistryEntry> {
+        let variants = registry.client_content.client_biomes().variants();
+        let mut entries =
+            Vec::with_capacity(registry.client_content.client_biomes().client_count());
+        entries.extend(
+            registry
+                .biomes
+                .iter()
+                .map(|(_, biome)| RegistryEntry::new(biome.key.clone(), Some(biome.to_nbt_tag()))),
+        );
+        entries.extend(variants.iter().map(|variant| {
+            let nbt = variant
+                .source
+                .to_tinted_nbt_tag(variant.tint.water_color, variant.tint.water_fog_color);
+            RegistryEntry::new(variant.key.clone(), Some(nbt))
+        }));
+        entries
     }
 
     fn build_tags_packet(registry: &Registry) -> CUpdateTags {
@@ -146,19 +169,12 @@ impl RegistryCache {
         add_tags!(PAINTING_VARIANT_REGISTRY, painting_variants);
         add_tags!(ENCHANTMENT_REGISTRY, enchantments);
 
-        // Build fluid tags
-        let mut fluid_tags: Vec<(Identifier, Vec<VarInt>)> =
-            Vec::with_capacity(registry.fluids.tag_keys().count());
-        for tag_key in registry.fluids.tag_keys() {
-            let mut fluid_ids = Vec::with_capacity(registry.fluids.iter_tag(tag_key).count());
-
-            for fluid in registry.fluids.iter_tag(tag_key) {
-                fluid_ids.push(VarInt::from(fluid.id() as i32));
-            }
-
-            fluid_tags.push((tag_key.clone(), fluid_ids));
-        }
-        tags_by_registry.push((FLUID_REGISTRY, fluid_tags));
+        add_tags!(FLUID_REGISTRY, fluids, |fluid| registry
+            .client_content
+            .is_vanilla_fluid(fluid));
+        // TODO: send `worldgen/biome` tags; vanilla clients read them for water fog
+        // distance and underwater music. Tint variants must then join every tag that
+        // contains their source biome (see `client_content::ClientBiomes`).
 
         // Build and return a CUpdateTagsPacket based on the registry data
         CUpdateTags::new(tags_by_registry)

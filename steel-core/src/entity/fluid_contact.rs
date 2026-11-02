@@ -291,7 +291,11 @@ impl EntityFluidContact {
                         && eye_y >= fluid_bottom
                         && eye_y <= fluid_top;
                     let height = fluid_top - bounds.entity_y;
-                    if fluid_state.is_water() {
+                    // Movement follows the fluid the client was sent, not fluid tags:
+                    // a custom fluid displayed as water must move entities like water,
+                    // or the client's own prediction disagrees with the server.
+                    let predicted = fluid_state.client_fluid();
+                    if predicted.is_water() {
                         contact.water_height = contact.water_height.max(height);
                         contact.eye_in_water |= eye_inside;
                         if include_current {
@@ -301,7 +305,7 @@ impl EntityFluidContact {
                             }
                             contact.water_current.accumulate(flow);
                         }
-                    } else if fluid_state.is_lava() {
+                    } else if predicted.is_lava() {
                         contact.lava_height = contact.lava_height.max(height);
                         contact.eye_in_lava |= eye_inside;
                         if include_current {

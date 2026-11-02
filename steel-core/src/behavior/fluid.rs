@@ -1,12 +1,18 @@
 //! Fluid behavior registry.
 
 use std::ops::Deref;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use steel_registry::fluid::FluidRef;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
+use steel_utils::Identifier;
+use steel_utils::locks::SyncMutex;
 
-use crate::fluid::{EmptyFluid, FluidBehavior};
+use crate::fluid::{EmptyFluid, ExtensionFluid, FluidBehavior, FluidHooks};
+
+type RegistrationHook = Box<dyn FnOnce(&mut FluidBehaviorRegistry) + Send>;
+static REGISTRATION_HOOKS: SyncMutex<Option<Vec<RegistrationHook>>> =
+    SyncMutex::new(Some(Vec::new()));
 
 /// Wrapper for the global fluid behavior registry that implements `Deref`.
 pub struct FluidBehaviorLock(pub OnceLock<FluidBehaviorRegistry>);
@@ -54,6 +60,62 @@ impl FluidBehaviorRegistry {
     pub fn set_behavior(&mut self, fluid: FluidRef, behavior: Box<dyn FluidBehavior>) {
         let id = fluid.id();
         self.behaviors[id] = behavior;
+    }
+
+    /// Installs behavior edits before the registry is published. Subscribe
+    /// before behaviors initialize, like block behavior registration.
+    ///
+    /// # Errors
+    /// Returns an error if fluid behaviors were already initialized.
+    pub fn on_registration(hook: impl FnOnce(&mut Self) + Send + 'static) -> Result<(), String> {
+        let mut hooks = REGISTRATION_HOOKS.lock();
+        let Some(hooks) = hooks.as_mut() else {
+            return Err("fluid behavior registration has already finished".into());
+        };
+        hooks.push(Box::new(hook));
+        Ok(())
+    }
+
+    pub(crate) fn run_registration_hooks(&mut self) {
+        let hooks = REGISTRATION_HOOKS.lock().take();
+        if let Some(hooks) = hooks {
+            for hook in hooks {
+                hook(self);
+            }
+        }
+    }
+
+    /// Gives every registered fluid its host-run behavior, without hooks.
+    pub(crate) fn register_client_fluids(&mut self) {
+        for &fluid in REGISTRY.client_content.fluids() {
+            self.set_behavior(fluid.source, Box::new(ExtensionFluid::new(fluid, None)));
+            self.set_behavior(fluid.flowing, Box::new(ExtensionFluid::new(fluid, None)));
+        }
+    }
+
+    /// Attaches gameplay hooks to a registered fluid, given by its source key.
+    ///
+    /// # Errors
+    /// Returns an error if the key does not name a registered fluid.
+    pub fn set_fluid_hooks(
+        &mut self,
+        source: &Identifier,
+        hooks: Arc<dyn FluidHooks>,
+    ) -> Result<(), String> {
+        let fluid = REGISTRY
+            .fluids
+            .by_key(source)
+            .and_then(|fluid| REGISTRY.client_content.fluid(fluid))
+            .ok_or_else(|| format!("{source} is not a registered extension fluid"))?;
+        self.set_behavior(
+            fluid.source,
+            Box::new(ExtensionFluid::new(fluid, Some(Arc::clone(&hooks)))),
+        );
+        self.set_behavior(
+            fluid.flowing,
+            Box::new(ExtensionFluid::new(fluid, Some(hooks))),
+        );
+        Ok(())
     }
 
     /// Gets the behavior for a fluid.

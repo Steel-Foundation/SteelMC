@@ -39,6 +39,15 @@ impl ChunkMap {
         }
     }
 
+    /// Queues a client biome refresh for a chunk, sent with this tick's block updates.
+    pub fn client_biomes_changed(&self, chunk_pos: ChunkPos) {
+        if let Some(holder) = self.lookup_active_holder(chunk_pos)
+            && holder.client_biomes_changed()
+        {
+            self.chunks_to_broadcast.lock().push(holder);
+        }
+    }
+
     /// Marks client-visible chunk packet content as changed.
     pub fn packet_content_changed(&self, chunk_pos: ChunkPos) {
         if let Some(holder) = self.lookup_active_holder(chunk_pos) {

@@ -11,9 +11,11 @@ use std::{
 };
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    BlockChange, CBlockUpdate, CLightUpdate, CSectionBlocksUpdate, CSetChunkCenter,
+    BlockChange, CBlockUpdate, CChunksBiomes, CLightUpdate, CSectionBlocksUpdate, CSetChunkCenter,
+    ChunkBiomeData,
 };
 use steel_protocol::utils::ConnectionProtocol;
+use steel_registry::REGISTRY;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -694,6 +696,8 @@ impl ChunkMap {
         };
 
         let mut world = None;
+        let tints_fluids = REGISTRY.client_content.tinting_fluid_count() > 0;
+        let mut biome_refreshes: Vec<(ChunkPos, Vec<u8>)> = Vec::new();
 
         for holder in holders {
             let chunk_pos = holder.get_pos();
@@ -708,6 +712,19 @@ impl ChunkMap {
             let changes_by_section = holder.take_changed_blocks();
             let has_publishable_light_changes =
                 !light_changes.block.is_empty() || (has_skylight && !light_changes.sky.is_empty());
+
+            // Painted biomes flag the holder; tint changes come with block changes.
+            let mut biomes_changed = holder.take_client_biomes_changed();
+            if let Some(chunk) = holder.try_chunk(ChunkStatus::Full) {
+                if tints_fluids && !changes_by_section.is_empty() {
+                    biomes_changed |= chunk.sections().take_client_biome_changes(
+                        changes_by_section.iter().map(|(index, _)| *index),
+                    );
+                }
+                if biomes_changed {
+                    biome_refreshes.push((chunk_pos, chunk.sections().client_biome_buffer()));
+                }
+            }
 
             if !has_publishable_light_changes && changes_by_section.is_empty() {
                 continue;
@@ -873,6 +890,44 @@ impl ChunkMap {
                     }
                 }
             }
+        }
+
+        if let Some(world) = world {
+            Self::broadcast_client_biomes(&world, biome_refreshes);
+        }
+    }
+
+    /// Sends each player one `CChunksBiomes` with every refreshed chunk its client has.
+    ///
+    /// Vanilla's `ChunkMap.resendBiomesForChunks` batches per player the same way.
+    fn broadcast_client_biomes(world: &World, refreshes: Vec<(ChunkPos, Vec<u8>)>) {
+        if refreshes.is_empty() {
+            return;
+        }
+        let mut per_player: FxHashMap<i32, Vec<ChunkBiomeData>> = FxHashMap::default();
+        for (chunk_pos, buffer) in refreshes {
+            for entity_id in world.get_packet_tracking_players(chunk_pos) {
+                per_player
+                    .entry(entity_id)
+                    .or_default()
+                    .push(ChunkBiomeData {
+                        pos: PackedChunkPos::from(chunk_pos),
+                        buffer: buffer.clone(),
+                    });
+            }
+        }
+        for (entity_id, mut chunks) in per_player {
+            let Some(player) = world.players.get_by_entity_id(entity_id) else {
+                continue;
+            };
+            {
+                let sender = player.chunk_sender().lock();
+                chunks.retain(|chunk| sender.is_chunk_sent(chunk.pos.to_chunk_pos()));
+            }
+            if chunks.is_empty() {
+                continue;
+            }
+            player.send_packet(CChunksBiomes { chunks });
         }
     }
 

@@ -1733,7 +1733,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 passenger: self.is_passenger(),
                 in_water: self.is_in_water(),
                 under_water: self.is_under_water(),
-                block_fluid_is_water: block_fluid.is_water(),
+                // The client decides swimming from the fluid it sees.
+                block_fluid_is_water: block_fluid.client_fluid().is_water(),
             },
         );
         self.set_shared_swimming(swimming);

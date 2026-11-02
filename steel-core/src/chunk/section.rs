@@ -17,6 +17,7 @@ use steel_registry::{vanilla_biomes, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
+use crate::chunk::section_tint::{TintCells, cell_index, state_tint_index};
 use crate::physics::{
     block_state_has_extensible_collision_behavior, block_state_may_expand_collision_cursor,
 };
@@ -436,6 +437,37 @@ fn is_stable_vanilla_air(state: BlockStateId) -> bool {
 }
 
 impl Sections {
+    /// Clears the client-biome flags of the given sections, returning whether any was set.
+    pub fn take_client_biome_changes(
+        &self,
+        section_indices: impl IntoIterator<Item = usize>,
+    ) -> bool {
+        let mut changed = false;
+        for index in section_indices {
+            if let Some(section) = self.sections.get(index) {
+                changed |= section.write().take_client_biomes_changed();
+            }
+        }
+        changed
+    }
+
+    /// The biome containers clients receive for every section, bottom to top, as
+    /// used by `CChunksBiomes`.
+    ///
+    /// # Panics
+    /// Panics if writing to the in-memory buffer fails, which cannot happen.
+    #[must_use]
+    pub fn client_biome_buffer(&self) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        for section in &self.sections {
+            section
+                .read()
+                .write_client_biomes(&mut buffer)
+                .expect("writing to a Vec cannot fail");
+        }
+        buffer
+    }
+
     /// Creates a new `Sections` from a box of owned `ChunkSection`s.
     #[must_use]
     pub fn from_owned(sections: Box<[ChunkSection]>) -> Self {
@@ -706,6 +738,10 @@ pub struct ChunkSection {
     ticking_fluid_count: u16,
     /// Conservative spatial certificate for immutable Vanilla air.
     stable_air_occupancy: StableAirOccupancy,
+    /// Tinting fluid blocks per biome cell; `None` while the section never held one.
+    tint_cells: Option<Box<TintCells>>,
+    /// Set when a cell's client tint or a biome changed since the last client refresh.
+    client_biomes_changed: bool,
 }
 
 impl ChunkSection {
@@ -723,6 +759,8 @@ impl ChunkSection {
             ticking_block_count: 0,
             ticking_fluid_count: 0,
             stable_air_occupancy: StableAirOccupancy::Unknown,
+            tint_cells: None,
+            client_biomes_changed: false,
         }
     }
 
@@ -738,6 +776,8 @@ impl ChunkSection {
             ticking_block_count: 0,
             ticking_fluid_count: 0,
             stable_air_occupancy: StableAirOccupancy::Empty,
+            tint_cells: None,
+            client_biomes_changed: false,
         }
     }
 
@@ -934,6 +974,7 @@ impl ChunkSection {
         self.ticking_block_count = ticking_blocks;
         self.ticking_fluid_count = ticking_fluids;
         self.stable_air_occupancy = stable_air_occupancy;
+        self.tint_cells = TintCells::count(&self.states).map(Box::new);
     }
 
     const fn accumulate_counter_traits(
@@ -999,9 +1040,51 @@ impl ChunkSection {
             self.apply_count_change(old_counts, new_counts);
             self.stable_air_occupancy
                 .record_change(x, y, z, old_state, new_state);
+            self.apply_tint_change(cell_index(x, y, z), old_state, new_state);
         }
 
         old_state
+    }
+
+    fn apply_tint_change(&mut self, cell: usize, old_state: BlockStateId, new_state: BlockStateId) {
+        let old_tint = state_tint_index(old_state);
+        let new_tint = state_tint_index(new_state);
+        if old_tint == new_tint {
+            return;
+        }
+        let cells = self.tint_cells.get_or_insert_default();
+        let before = cells.dominant(cell);
+        if let Some(tint) = old_tint {
+            cells.remove(tint, cell);
+        }
+        if let Some(tint) = new_tint {
+            cells.add(tint, cell);
+        }
+        if cells.dominant(cell) != before {
+            self.client_biomes_changed = true;
+        }
+    }
+
+    /// Marks the section's client biomes stale, for example after painting biomes.
+    pub const fn mark_client_biomes_changed(&mut self) {
+        self.client_biomes_changed = true;
+    }
+
+    /// Returns and clears whether clients need this section's biomes again.
+    pub const fn take_client_biomes_changed(&mut self) -> bool {
+        std::mem::replace(&mut self.client_biomes_changed, false)
+    }
+
+    /// Writes the biome container clients receive, with tint variants in the
+    /// cells that hold a tinting fluid.
+    ///
+    /// # Errors
+    /// Returns an error if the writer fails.
+    pub fn write_client_biomes(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        match &self.tint_cells {
+            Some(cells) if cells.is_tinted() => cells.project(&self.biomes).write(writer),
+            _ => self.biomes.write(writer),
+        }
     }
 
     /// Sets a block state through the raw worldgen building path.
@@ -1093,7 +1176,8 @@ impl ChunkSection {
         self.states
             .write(writer)
             .expect("Failed to write block states");
-        self.biomes.write(writer).expect("Failed to write biomes");
+        self.write_client_biomes(writer)
+            .expect("Failed to write biomes");
     }
 }
 

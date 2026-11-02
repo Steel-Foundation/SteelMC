@@ -151,6 +151,7 @@ impl Registry {
                 displays: Vec::new(),
                 self_drop: Some(item),
                 horizontal: None,
+                state_family: None,
                 bed: Some(ClientBed {
                     template,
                     models: state_models,

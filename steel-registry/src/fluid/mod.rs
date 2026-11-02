@@ -151,6 +151,16 @@ impl FluidState {
         self.fluid_id.is_source
     }
 
+    /// This state as clients see it: a custom fluid's vanilla representation, with
+    /// the same amount and falling flag. Vanilla states are returned unchanged.
+    #[must_use]
+    pub fn client_fluid(self) -> Self {
+        Self {
+            fluid_id: crate::client_content::client_fluid(self.fluid_id),
+            ..self
+        }
+    }
+
     /// Returns true if this fluid has vanilla's full amount (`8`).
     ///
     /// This intentionally does not require a source fluid type. Vanilla

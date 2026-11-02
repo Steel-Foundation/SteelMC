@@ -99,6 +99,19 @@ pub trait FluidBehavior: Send + Sync {
         0.0
     }
 
+    /// Reacts with neighboring blocks before this fluid's liquid block spreads.
+    ///
+    /// Called from `LiquidBlock::should_spread_liquid` on placement and neighbor
+    /// changes. Returns `false` if the fluid converted its block and must not
+    /// spread. Vanilla only reacts for lava (see `LavaFluid`).
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn react_with_neighbors(&self, world: &Arc<World>, pos: BlockPos) -> bool {
+        true
+    }
+
     /// Called on random tick for this fluid's block.
     /// Used for lava fire spread.
     #[expect(

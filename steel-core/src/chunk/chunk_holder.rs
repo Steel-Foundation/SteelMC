@@ -173,6 +173,8 @@ pub struct ChunkHolder {
     height: i32,
     /// Whether any sections have pending block changes.
     has_changed_sections: AtomicBool,
+    /// Clients need this chunk's biomes again (see `client_biomes_changed`).
+    client_biomes_changed: AtomicBool,
     /// Whether this holder is already queued for the next broadcast flush.
     queued_for_broadcast: AtomicBool,
     /// Monotonic revision for client-visible chunk packet content.
@@ -316,6 +318,7 @@ impl ChunkHolder {
             min_y,
             height,
             has_changed_sections: AtomicBool::new(false),
+            client_biomes_changed: AtomicBool::new(false),
             queued_for_broadcast: AtomicBool::new(false),
             packet_content_revision: AtomicU64::new(0),
             ticking_readiness: AtomicU64::new(0),
@@ -470,6 +473,22 @@ impl ChunkHolder {
         let chunk = self.data.get()?;
         chunk.mark_dirty();
         Some(status == ChunkStatus::Full && self.ticking_readiness_snapshot().is_block_ticking())
+    }
+
+    /// Records that clients need this chunk's biomes again, for example after biomes
+    /// were painted. Returns `true` if this is the first pending broadcast.
+    pub fn client_biomes_changed(&self) -> bool {
+        if !self.ticking_readiness_snapshot().is_block_ticking() {
+            return false;
+        }
+        self.mark_packet_content_changed();
+        self.client_biomes_changed.store(true, Ordering::Release);
+        !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
+    }
+
+    /// Returns and clears the pending client-biome refresh flag.
+    pub fn take_client_biomes_changed(&self) -> bool {
+        self.client_biomes_changed.swap(false, Ordering::AcqRel)
     }
 
     /// Returns whether there are pending changes to broadcast.

@@ -6,11 +6,11 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::fluid::{FluidRef, FluidState, is_lava_fluid, is_water_fluid};
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::vanilla_blocks;
+use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::FLUID_BEHAVIORS;
@@ -39,7 +39,7 @@ pub fn get_fluid_state_from_block(state: BlockStateId) -> FluidState {
 ///
 /// If `existing_state` is a waterloggable block, this sets or clears its WATERLOGGED
 /// property rather than replacing the block entirely. Otherwise it falls back to the
-/// raw fluid block (WATER/LAVA) or AIR for empty fluid.
+/// fluid's own liquid block, or AIR for empty fluid.
 #[must_use]
 pub fn fluid_state_to_block_with_existing(
     fluid_state: FluidState,
@@ -58,31 +58,16 @@ pub fn fluid_state_to_block_with_existing(
         return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     }
 
-    if is_water_fluid(fluid_id) {
-        if fluid_id == &vanilla_fluids::WATER
-            && fluid_state.is_source()
-            && existing_state
-                .try_get_value(&BlockStateProperties::WATERLOGGED)
-                .is_some()
-        {
-            // Vanilla SimpleWaterloggedBlock only accepts source WATER, not FLOWING_WATER.
-            return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
-        }
-
-        // If not waterloggable, fall back to pure water block
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
-        let level = fluid_state.to_block_level();
-        return base.set_value(&BlockStateProperties::LEVEL, level);
+    if fluid_id == &vanilla_fluids::WATER
+        && existing_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+    {
+        // Vanilla SimpleWaterloggedBlock only accepts source WATER, not FLOWING_WATER.
+        return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
     }
 
-    if is_lava_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
-        let level = fluid_state.to_block_level();
-        return base.set_value(&BlockStateProperties::LEVEL, level);
-    }
-
-    // Unknown fluid type - default to air
-    REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+    liquid_block_state(fluid_state)
 }
 
 /// Converts a `FluidState` into a `BlockStateId` directly without preserving any block.
@@ -90,22 +75,30 @@ pub fn fluid_state_to_block_with_existing(
 /// Handles LEVEL property mapping.
 #[must_use]
 pub fn fluid_state_to_block(fluid_state: FluidState) -> BlockStateId {
-    let fluid_id = fluid_state.fluid_id;
-    if fluid_id.is_empty {
-        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
-    } else if is_water_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
-        // Use FluidState's to_block_level method for proper conversion
-        let level = fluid_state.to_block_level();
-        base.set_value(&BlockStateProperties::LEVEL, level)
-    } else if is_lava_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
-        let level = fluid_state.to_block_level();
-        base.set_value(&BlockStateProperties::LEVEL, level)
-    } else {
-        // Unknown fluid type - default to air
-        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+    if fluid_state.fluid_id.is_empty {
+        return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     }
+    liquid_block_state(fluid_state)
+}
+
+/// The liquid block state owned by a non-empty fluid, at the fluid's level.
+///
+/// Vanilla's `FluidState.createLegacyBlock()` is implemented by each fluid; here the
+/// fluid's registered `block` key names its liquid block, so extension fluids resolve
+/// to their own block rather than to water or lava.
+fn liquid_block_state(fluid_state: FluidState) -> BlockStateId {
+    let fluid = fluid_state.fluid_id;
+    let Some(block) = REGISTRY.blocks.by_key(&fluid.block) else {
+        // Fluid blocks are validated when the fluid is registered.
+        panic!(
+            "fluid `{}` references missing block `{}`",
+            fluid.key, fluid.block
+        );
+    };
+    REGISTRY
+        .blocks
+        .get_default_state_id(block)
+        .set_value(&BlockStateProperties::LEVEL, fluid_state.to_block_level())
 }
 
 /// Gets the water source fluid ref from the registry.
@@ -290,6 +283,52 @@ mod tests {
 
     fn same_water(candidate: FluidState) -> bool {
         candidate.is_water()
+    }
+
+    #[test]
+    fn vanilla_fluid_states_resolve_to_their_liquid_block_at_every_level() {
+        init_vanilla_registry();
+
+        let cases = [
+            (
+                &vanilla_fluids::WATER,
+                &vanilla_fluids::FLOWING_WATER,
+                &vanilla_blocks::WATER,
+            ),
+            (
+                &vanilla_fluids::LAVA,
+                &vanilla_fluids::FLOWING_LAVA,
+                &vanilla_blocks::LAVA,
+            ),
+        ];
+        for (source, flowing, block) in cases {
+            let base = REGISTRY.blocks.get_default_state_id(block);
+            let mut states = vec![
+                (FluidState::source(source), 0),
+                (FluidState::flowing(flowing, 8, true), 8),
+            ];
+            states.extend(
+                (1..=7).map(|amount| (FluidState::flowing(flowing, amount, false), 8 - amount)),
+            );
+            for (fluid_state, level) in states {
+                let expected = base.set_value(&BlockStateProperties::LEVEL, level);
+                assert_eq!(
+                    fluid_state_to_block(fluid_state),
+                    expected,
+                    "{fluid_state:?}"
+                );
+                let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+                assert_eq!(
+                    fluid_state_to_block_with_existing(fluid_state, stone),
+                    expected,
+                    "{fluid_state:?}"
+                );
+            }
+        }
+        assert_eq!(
+            fluid_state_to_block(FluidState::EMPTY),
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+        );
     }
 
     #[test]

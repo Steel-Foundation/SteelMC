@@ -119,6 +119,19 @@ pub struct ParticleOptions {
 
 impl ToNbtTag for &Biome {
     fn to_nbt_tag(self) -> NbtTag {
+        self.encode_nbt(self.effects.water_color, self.effects.water_fog_color)
+    }
+}
+
+impl Biome {
+    /// This biome's network NBT with replaced water colors, for client-only tint
+    /// variants (see `client_content::ClientBiomes`).
+    #[must_use]
+    pub fn to_tinted_nbt_tag(&self, water_color: i32, water_fog_color: i32) -> NbtTag {
+        self.encode_nbt(water_color, water_fog_color)
+    }
+
+    fn encode_nbt(&self, water_color: i32, water_fog_color: i32) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList};
         let mut compound = NbtCompound::new();
         compound.insert("has_precipitation", self.has_precipitation);
@@ -140,8 +153,8 @@ impl ToNbtTag for &Biome {
         let mut effects = NbtCompound::new();
         effects.insert("fog_color", self.effects.fog_color);
         effects.insert("sky_color", self.effects.sky_color);
-        effects.insert("water_color", self.effects.water_color);
-        effects.insert("water_fog_color", self.effects.water_fog_color);
+        effects.insert("water_color", water_color);
+        effects.insert("water_fog_color", water_fog_color);
         if let Some(fc) = self.effects.foliage_color {
             effects.insert("foliage_color", fc);
         }
