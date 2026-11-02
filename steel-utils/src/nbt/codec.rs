@@ -1,9 +1,13 @@
-//! Numeric coercions used by vanilla's NBT-backed codecs.
+//! Numeric coercions used by vanilla's NBT-backed codecs and `ValueInput` getters.
 
 use simdnbt::{borrow::NbtTag as BorrowedNbtTag, owned::NbtTag as OwnedNbtTag};
 
-/// Decodes numeric NBT tags with the conversions performed by vanilla's
-/// `DynamicOps` number codecs.
+/// Decodes numeric NBT tags with vanilla's numeric conversions.
+///
+/// `codec_*` mirror `DynamicOps` number codecs, which truncate floating values.
+/// `*_value` mirror `NumericTag`, used by `ValueInput.get*Or`, which floors them.
+/// Floating-point reads agree, so `codec_f32`/`codec_f64` also serve
+/// `getFloatOr`/`getDoubleOr`.
 pub trait NbtNumeric {
     /// Decodes `Codec.BOOL` from any numeric NBT tag.
     fn codec_bool(&self) -> Option<bool>;
@@ -16,6 +20,19 @@ pub trait NbtNumeric {
 
     /// Decodes `Codec.DOUBLE` from any numeric NBT tag.
     fn codec_f64(&self) -> Option<f64>;
+
+    /// Converts to an integer, flooring floating values.
+    fn int_value(&self) -> Option<i32>;
+
+    /// Returns the low 16 bits of `int_value`.
+    fn short_value(&self) -> Option<i16> {
+        self.int_value().map(|value| value as i16)
+    }
+
+    /// Returns the low 8 bits of `int_value`.
+    fn byte_value(&self) -> Option<i8> {
+        self.int_value().map(|value| value as i8)
+    }
 }
 
 impl NbtNumeric for OwnedNbtTag {
@@ -66,6 +83,18 @@ impl NbtNumeric for OwnedNbtTag {
             _ => None,
         }
     }
+
+    fn int_value(&self) -> Option<i32> {
+        match self {
+            Self::Byte(value) => Some(i32::from(*value)),
+            Self::Short(value) => Some(i32::from(*value)),
+            Self::Int(value) => Some(*value),
+            Self::Long(value) => Some(*value as i32),
+            Self::Float(value) => Some(value.floor() as i32),
+            Self::Double(value) => Some(value.floor() as i32),
+            _ => None,
+        }
+    }
 }
 
 impl NbtNumeric for BorrowedNbtTag<'_, '_> {
@@ -107,6 +136,16 @@ impl NbtNumeric for BorrowedNbtTag<'_, '_> {
             .or_else(|| self.long().map(|value| value as f64))
             .or_else(|| self.float().map(f64::from))
             .or_else(|| self.double())
+    }
+
+    fn int_value(&self) -> Option<i32> {
+        self.byte()
+            .map(i32::from)
+            .or_else(|| self.short().map(i32::from))
+            .or_else(|| self.int())
+            .or_else(|| self.long().map(|value| value as i32))
+            .or_else(|| self.float().map(|value| value.floor() as i32))
+            .or_else(|| self.double().map(|value| value.floor() as i32))
     }
 }
 
