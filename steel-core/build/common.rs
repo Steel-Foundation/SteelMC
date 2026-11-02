@@ -1,12 +1,12 @@
-//! Shared types and helpers for block/item behavior code generation.
+//! Shared types and helpers for block/item/entity behavior code generation.
 //!
-//! Used by both `blocks.rs` and `items.rs` build scripts to parse `#[json_arg]`
-//! attributes and generate constructor arguments from `classes.json`.
+//! Used by the `blocks.rs`, `items.rs` and `entities.rs` build scripts to parse
+//! `#[json_arg]` attributes and generate constructor arguments from `classes.json`.
 
 use heck::ToPascalCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::{env, fs};
 
 use crate::{to_block_ident, to_item_ident};
@@ -48,11 +48,69 @@ pub(crate) struct JsonArgField {
     pub optional_sentinel: Option<String>,
 }
 
+/// Imports a generated registration file needs for its `#[json_arg]` constructor arguments.
+#[derive(Default)]
+pub(crate) struct GeneratedImports {
+    enums: BTreeMap<String, String>,
+    registry_modules: BTreeSet<String>,
+}
+
+impl GeneratedImports {
+    /// Records the imports needed by the constructor arguments of `fields`.
+    pub(crate) fn add_fields(&mut self, fields: &[JsonArgField]) {
+        for field in fields {
+            match &field.kind {
+                JsonArgKind::Enum {
+                    type_name,
+                    module_path,
+                } => {
+                    if let Some(path) = module_path {
+                        self.enums.insert(type_name.clone(), path.clone());
+                    }
+                }
+                JsonArgKind::Registry(module) => {
+                    self.registry_modules.insert(module.clone());
+                }
+                JsonArgKind::Value | JsonArgKind::IntProvider => {}
+            }
+        }
+    }
+
+    /// `use path::Enum;` for every recorded enum.
+    pub(crate) fn enum_import_tokens(&self) -> Vec<TokenStream> {
+        self.enums
+            .iter()
+            .map(|(type_name, module_path)| {
+                let type_ident = Ident::new(type_name, Span::call_site());
+                let path: syn::Path = syn::parse_str(module_path).unwrap_or_else(|_| {
+                    panic!("Invalid module path '{module_path}' for enum '{type_name}'")
+                });
+                quote! { use #path::#type_ident; }
+            })
+            .collect()
+    }
+
+    /// `, module` entries for the generated `use steel_registry::{...}` list.
+    ///
+    /// `own_module` is skipped because the template already imports it.
+    pub(crate) fn registry_import_tokens(&self, own_module: &str) -> Vec<TokenStream> {
+        self.registry_modules
+            .iter()
+            .filter(|module| module.as_str() != own_module)
+            .map(|module| {
+                let module_ident = Ident::new(module, Span::call_site());
+                quote! { , #module_ident }
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct DiscoveredObject {
     pub(crate) struct_name: String,
     pub(crate) class_name: String,
     pub(crate) fields: Vec<JsonArgField>,
+    pub(crate) spawn_rule: bool,
 }
 
 pub(crate) fn parse_object_behavior(
@@ -63,7 +121,8 @@ pub(crate) fn parse_object_behavior(
         .attrs
         .iter()
         .find(|a| path_ends_with(a.path(), attribute_name))?;
-    let class_name = extract_class_name(attr, attribute_name).unwrap_or(s.ident.to_string());
+    let args = parse_behavior_args(attr, attribute_name);
+    let class_name = args.class_name.unwrap_or(s.ident.to_string());
 
     let mut fields = Vec::new();
     if let syn::Fields::Named(ref named) = s.fields {
@@ -78,6 +137,7 @@ pub(crate) fn parse_object_behavior(
         struct_name: s.ident.to_string(),
         class_name,
         fields,
+        spawn_rule: args.spawn_rule,
     })
 }
 
@@ -346,22 +406,31 @@ pub(crate) fn generate_arg(
     }
 }
 
-pub(crate) fn extract_class_name(attr: &syn::Attribute, attribute_name: &str) -> Option<String> {
+/// Arguments of the behavior attribute itself, e.g. `#[entity_behavior(class = "Pig", spawn_rule)]`.
+#[derive(Default)]
+struct BehaviorArgs {
+    class_name: Option<String>,
+    spawn_rule: bool,
+}
+
+fn parse_behavior_args(attr: &syn::Attribute, attribute_name: &str) -> BehaviorArgs {
+    let mut args = BehaviorArgs::default();
     let syn::Meta::List(meta) = &attr.meta else {
-        return None;
+        return args;
     };
 
-    let mut class_name = None;
     meta.parse_nested_meta(|meta| {
         if meta.path.is_ident("class") {
             let value = meta.value()?;
             let lit: syn::LitStr = value.parse()?;
-            class_name = Some(lit.value());
+            args.class_name = Some(lit.value());
+        } else if meta.path.is_ident("spawn_rule") {
+            args.spawn_rule = true;
         }
         Ok(())
     })
     .unwrap_or_else(|e| panic!("Failed to parse {attribute_name} attribute: {e}"));
-    class_name
+    args
 }
 
 /// Scans behavior source files for annotated structs (e.g. `#[block_behavior]`, `#[item_behavior]`).
