@@ -1315,6 +1315,20 @@ impl Entity for Player {
         LivingEntity::base_tick_living_entity(self);
     }
 
+    fn do_water_splash_effect(&self) {
+        if !self.is_spectator() {
+            self.default_do_water_splash_effect();
+        }
+    }
+
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH
+    }
+
+    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
+    }
+
     fn scoreboard_name(&self) -> String {
         self.gameprofile.name().to_owned()
     }
@@ -1798,7 +1812,6 @@ impl LivingEntity for Player {
             self.tick_death();
         } else {
             let world = self.get_world();
-            self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
 
             self.update_player_attributes();
@@ -2029,9 +2042,7 @@ impl LivingEntity for Player {
             self.inventory.lock().set_changed();
         }
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
@@ -2098,6 +2109,11 @@ impl LivingEntity for Player {
 
         let result = self.default_ai_step(entity);
         self.set_y_head_rot(self.rotation().0);
+        // Pickup uses the simulated position; `tick_living_entity` restores the
+        // authoritative tick position after this returns.
+        if self.get_health() > 0.0 {
+            self.touch_nearby_items();
+        }
         result
     }
 

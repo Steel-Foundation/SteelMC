@@ -12,7 +12,7 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use steel_math::wrap_degrees;
+use steel_math::{trig, wrap_degrees};
 use steel_protocol::packets::game::{
     AttributeSnapshot, CDamageEvent, CEntityEvent, CSwingAnimation, CTeleportEntity,
     EquipmentSlotItem, RelativeMovement, SoundSource,
@@ -77,7 +77,7 @@ use crate::physics::{
     WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::game_event::GameEventContext;
-use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
+use crate::world::{ClipBlockShape, ClipFluid, Explosion, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
@@ -448,8 +448,8 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
         input
     } * f64::from(speed);
     let yaw = yaw_degrees.to_radians();
-    let sin = yaw.sin();
-    let cos = yaw.cos();
+    let sin = trig::sin(yaw);
+    let cos = trig::cos(yaw);
     DVec3::new(
         movement.x * f64::from(cos) - movement.z * f64::from(sin),
         movement.y,
@@ -516,7 +516,7 @@ fn apply_block_effect_segment(
     to: DVec3,
     max_iterations: i32,
     effect_collector: &mut InsideBlockEffectCollector,
-    visited_blocks: &mut FxHashSet<BlockPos>,
+    visited_blocks: &mut block_effects::VisitedBlockPositions,
 ) -> BlockEffectSegmentResult {
     let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
     if aabb.is_empty() {
@@ -653,7 +653,8 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
     apply_step_on_block(entity, &world);
 
-    let mut visited_blocks = FxHashSet::default();
+    // Deduplicates effects across every movement segment of this tick.
+    let mut visited_blocks = block_effects::VisitedBlockPositions::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
     let before_effects = BlockEffectFireSnapshot::from_entity(entity);
     for movement in movements.iter().copied() {
@@ -772,6 +773,7 @@ pub mod entities;
     reason = "the entity module mirrors vanilla's Entity class and groups its implementation"
 )]
 mod entity;
+pub mod entity_selector;
 mod fluid_contact;
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -795,6 +797,7 @@ pub mod projectile;
 mod reference;
 mod registry;
 mod spawn;
+mod spawn_placements;
 mod storage;
 mod synced_data;
 mod ticking;
@@ -819,6 +822,7 @@ pub use callback::{
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
@@ -831,11 +835,15 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
-    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
-    MobEffectSyncChange, MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
+    HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
+    LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
+    sync_dirty_mob_effects,
 };
 pub use living_entity::LivingEntity;
+pub(crate) use manager::EntityCollisionCandidates;
+#[cfg(feature = "benchmark-support")]
+pub use manager::benchmark_support as entity_manager_benchmark_support;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
@@ -857,17 +865,17 @@ pub use projectile::{
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use reference::EntityReference;
+pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
     SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, spawn_entity,
+    create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
+pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
-pub(crate) use ticking::{
-    snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
-};
+pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
 
 #[cfg(test)]
@@ -980,7 +988,7 @@ pub(crate) fn change_entity_world(
         return None;
     }
 
-    if entity.as_player().is_some() {
+    let changed = if entity.as_player().is_some() {
         let Some(player) = source_world.players.get_by_entity_id(entity.id()) else {
             tracing::error!(
                 entity_id = entity.id(),
@@ -993,10 +1001,12 @@ pub(crate) fn change_entity_world(
         if !player.change_world_within_domain(teleport_transition) {
             return None;
         }
-        return Some(entity);
-    }
-
-    change_non_player_entity_world(entity, teleport_transition)
+        entity
+    } else {
+        change_non_player_entity_world(entity, teleport_transition)?
+    };
+    changed.on_teleported();
+    Some(changed)
 }
 
 fn change_non_player_entity_world(

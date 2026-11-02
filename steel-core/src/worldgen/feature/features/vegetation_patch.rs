@@ -1,6 +1,6 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
-use super::super::vanilla_collections::JavaBlockPosSet;
+use crate::java_block_pos_set::JavaBlockPosSet;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_vegetation_patch_feature(

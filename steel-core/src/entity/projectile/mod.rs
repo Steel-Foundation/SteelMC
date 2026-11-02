@@ -418,9 +418,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         power: f32,
         uncertainty: f32,
     ) {
-        let yaw = f64::from(y_rot * DEG_TO_RAD);
-        let pitch = f64::from(x_rot * DEG_TO_RAD);
-        let pitch_offset = f64::from((x_rot + y_offset) * DEG_TO_RAD);
+        let yaw = y_rot * DEG_TO_RAD;
+        let pitch = x_rot * DEG_TO_RAD;
+        let pitch_offset = (x_rot + y_offset) * DEG_TO_RAD;
         let direction = DVec3::new(
             f64::from(-trig::sin(yaw) * trig::cos(pitch)),
             f64::from(-trig::sin(pitch_offset)),

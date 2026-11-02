@@ -8,6 +8,8 @@ pub mod float_consts;
 mod noise_math;
 mod rounding;
 pub mod trig;
+/// Vanilla `Vec3` axis rotations.
+pub mod vector;
 
 pub use crate::angle::{
     DEG_TO_RAD, DEG_TO_RAD_F64, DEGREE_90, DEGREE_180, DEGREE_270, DEGREE_360, RAD_TO_DEG,

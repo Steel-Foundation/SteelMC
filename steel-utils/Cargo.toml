@@ -80,8 +80,15 @@ harness = false
 name = "legacy_random"
 harness = false
 
+[[bench]]
+name = "variable_integer"
+harness = false
+
 [lints]
 workspace = true
 
 [features]
 fmt = ["dep:prettyplease", "dep:syn"]
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["fs"] }

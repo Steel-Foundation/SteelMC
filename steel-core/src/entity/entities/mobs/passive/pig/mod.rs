@@ -38,7 +38,7 @@ use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
     LivingEntityBase, LivingEntitySyncedData, Mob, MobBase, MoveResult, PathfinderMob,
-    SharedEntity, SpawnGroupData,
+    SharedEntity, SpawnGroupData, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -54,7 +54,7 @@ const PIG_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 );
 
 /// Vanilla pig entity.
-#[entity_behavior(class = "Pig")]
+#[entity_behavior(class = "Pig", spawn_rule)]
 pub struct PigEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -72,6 +72,9 @@ unsafe impl DowncastType for PigEntity {
 }
 
 impl PigEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = <Self as Animal>::check_animal_spawn_rules;
+
     /// Creates a new pig entity.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -202,22 +205,10 @@ impl PigEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
         }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether the stack is vanilla pig food.

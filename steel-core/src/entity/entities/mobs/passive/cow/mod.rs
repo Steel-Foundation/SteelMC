@@ -37,7 +37,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SharedEntity, SpawnGroupData,
+    PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -57,7 +57,7 @@ const COW_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 );
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 
-#[entity_behavior(class = "Cow")]
+#[entity_behavior(class = "Cow", spawn_rule)]
 /// Vanilla cow entity with synced variant and sound-variant state.
 pub struct CowEntity {
     base: EntityBase,
@@ -75,6 +75,9 @@ unsafe impl DowncastType for CowEntity {
 }
 
 impl CowEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = <Self as Animal>::check_animal_spawn_rules;
+
     /// Creates a new cow at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -180,23 +183,10 @@ impl CowEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
         }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        // Sync base entity flags from resolved effect display state in one place.
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether an item stack matches the vanilla cow food tag.
