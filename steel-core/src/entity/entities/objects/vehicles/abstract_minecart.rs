@@ -29,7 +29,6 @@ use crate::portal::portal_shape::PortalShape;
 use crate::world::{SignalGetter as _, World};
 
 const LOWERED_PASSENGER_ATTACHMENT: DVec3 = DVec3::ZERO;
-const AIR_DRAG: f32 = 0.95;
 const WATER_SLOWDOWN_FACTOR: f32 = 0.95;
 const LAVA_FALL_DISTANCE_FACTOR: f64 = 0.5;
 const MIN_PUSH_DISTANCE_SQUARED: f32 = 1.0e-4;
@@ -130,6 +129,11 @@ pub trait AbstractMinecart: VehicleEntity + AbstractMinecartEventSource {
         } else {
             DEFAULT_GRAVITY
         }
+    }
+
+    /// Returns the default air drag of this minecart.
+    fn minecart_air_drag(&self) -> f64 {
+        f64::from(0.95_f32)
     }
 
     /// Returns whether this minecart can be targeted by picking.
@@ -310,7 +314,7 @@ pub trait AbstractMinecart: VehicleEntity + AbstractMinecartEventSource {
         }
 
         if !self.on_ground() {
-            self.set_velocity(self.velocity() * f64::from(AIR_DRAG));
+            self.set_velocity(self.velocity() * self.get_air_drag());
         }
     }
 

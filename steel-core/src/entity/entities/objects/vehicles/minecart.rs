@@ -26,7 +26,7 @@ use crate::entity::{
 };
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 
 const ACTIVATOR_RAIL_DAMAGE: f32 = 50.0;
 
@@ -213,6 +213,10 @@ impl Entity for MinecartEntity {
         self.minecart_default_gravity()
     }
 
+    fn get_air_drag(&self) -> f64 {
+        self.minecart_air_drag()
+    }
+
     fn block_speed_factor(&self) -> f32 {
         self.minecart_block_speed_factor()
     }
@@ -275,6 +279,10 @@ impl Entity for MinecartEntity {
 
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         self.vehicle_hurt(world, source, amount)
+    }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        self.vehicle_ignore_explosion(explosion)
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {

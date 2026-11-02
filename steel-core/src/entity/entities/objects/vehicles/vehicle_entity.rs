@@ -1,12 +1,12 @@
 //! Shared vanilla `VehicleEntity` damage handling.
 
 use crate::entity::{DamageSource, Entity, RemovalReason};
-use crate::world::World;
+use crate::world::{Explosion, World};
 use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_game_events;
-use steel_registry::vanilla_game_rules::ENTITY_DROPS;
+use steel_registry::vanilla_game_rules::{ENTITY_DROPS, MOB_GRIEFING};
 
 const VEHICLE_DAMAGE_MULTIPLIER: f32 = 10.0;
 const VEHICLE_DESTROY_DAMAGE_THRESHOLD: f32 = 40.0;
@@ -104,7 +104,13 @@ pub trait VehicleEntity: Entity {
         10
     }
 
-    // TODO: Implement ignoreExplosion.
+    /// Returns whether this vehicle ignores the explosion.
+    fn vehicle_ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        explosion
+            .indirect_source_entity()
+            .is_some_and(|entity| entity.as_mob().is_some())
+            && !explosion.world().get_game_rule(&MOB_GRIEFING)
+    }
 }
 
 #[cfg(test)]
