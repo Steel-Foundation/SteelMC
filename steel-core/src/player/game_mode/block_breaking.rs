@@ -6,14 +6,15 @@
 use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, level_events, vanilla_blocks,
     vanilla_game_events,
 };
+use steel_registry::{vanilla_attributes, vanilla_mob_effects};
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{GameType, InteractionHand, UpdateFlags},
@@ -21,7 +22,7 @@ use steel_utils::{
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
 use crate::block_entity::BlockEntity;
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{ActiveMobEffect, Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -30,6 +31,56 @@ use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContex
 use super::adventure_mode;
 
 impl Player {
+    /// Mining speed for `state` with the held item, after attributes, effects and
+    /// position penalties.
+    fn get_destroy_speed(&self, state: BlockStateId) -> f32 {
+        let mut speed = {
+            let inv = self.inventory.lock();
+            inv.get_item_in_hand(InteractionHand::MainHand)
+                .get_destroy_speed(state)
+        };
+
+        let attributes = self.attributes().lock();
+        let attribute_value = |attribute: AttributeRef| {
+            attributes
+                .get_value(attribute)
+                .unwrap_or(attribute.default_value) as f32
+        };
+
+        // TODO: Efficiency and Aqua Affinity have no effect until the enchantment
+        // `attributes` effect (`EnchantmentHelper.runLocationChangedEffects`) installs
+        // its attribute modifiers on equipment changes.
+        if speed > 1.0 {
+            speed += attribute_value(vanilla_attributes::MINING_EFFICIENCY);
+        }
+
+        let haste = self.mob_effect(vanilla_mob_effects::HASTE);
+        let conduit_power = self.mob_effect(vanilla_mob_effects::CONDUIT_POWER);
+        let dig_speed_amplifier = haste
+            .iter()
+            .chain(conduit_power.iter())
+            .map(ActiveMobEffect::amplifier)
+            .max();
+        if let Some(amplifier) = dig_speed_amplifier {
+            speed *= 1.0 + (amplifier + 1) as f32 * 0.2;
+        }
+
+        if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
+            speed *= 0.3_f32.powi(mining_fatigue.amplifier() + 1);
+        }
+
+        speed *= attribute_value(vanilla_attributes::BLOCK_BREAK_SPEED);
+        if self.is_eye_in_water() {
+            speed *= attribute_value(vanilla_attributes::SUBMERGED_MINING_SPEED);
+        }
+
+        if !self.on_ground() {
+            speed /= 5.0;
+        }
+
+        speed
+    }
+
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
     pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
         let game_mode = self.game_mode();
@@ -539,26 +590,13 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
         return 1.0;
     }
 
-    // Get player's mining speed
-    let mining_speed = {
-        let inv = player.inventory.lock();
-        let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-        main_hand.get_destroy_speed(block_state)
-    };
+    let speed = player.get_destroy_speed(block_state);
 
-    // Check if player has the correct tool
     let has_correct_tool = {
         let inv = player.inventory.lock();
         let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
         main_hand.is_correct_tool_for_drops(block_state)
     };
-
-    // Apply speed modifiers
-    let speed = mining_speed;
-
-    // TODO: Apply efficiency enchantment
-    // TODO: Apply haste/mining fatigue effects
-    // TODO: Apply underwater/in-air penalties
 
     // Calculate destroy progress per tick
     // Vanilla formula: speed / hardness / (hasCorrectTool ? 30 : 100)
