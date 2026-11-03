@@ -17,7 +17,7 @@ pub use builder::{
     PlayerInventorySections, Section, SectionKind, SectionSource, SlotFactory,
 };
 pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
-pub use kind::MenuKind;
+pub use kind::{MenuKind, still_valid_block};
 pub(crate) use layout::MenuLayout;
 #[cfg(test)]
 use steel_utils::locks::Shared;

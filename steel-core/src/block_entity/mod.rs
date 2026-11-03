@@ -61,8 +61,8 @@ pub(crate) use storage::{
     DetachedBlockEntity, LifecycleDispatchers,
 };
 
-use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::block_entity::entities::Spawner;
+use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::lock::ContainerRef;
 use crate::player::Player;
 

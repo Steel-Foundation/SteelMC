@@ -13,7 +13,6 @@ const ENCHANTABILITY_RANDOM_DIVISOR: i32 = 4;
 const COST_VARIATION: f32 = 0.15;
 const ADDITIONAL_ENCHANTMENT_RANDOM_BOUND: i32 = 50;
 
-/// An enchantment and its level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EnchantmentInstance {
     pub enchantment: EnchantmentRef,
@@ -21,7 +20,6 @@ pub(crate) struct EnchantmentInstance {
 }
 
 impl EnchantmentInstance {
-    /// Returns the enchantment weight
     #[must_use]
     pub(crate) const fn weight(&self) -> i32 {
         self.enchantment.weight as i32
@@ -95,7 +93,6 @@ pub(crate) fn select_enchantment<R: Random>(
     results
 }
 
-/// Returns the enchantments available for the given cost and item
 fn get_available_enchantment_results(
     value: i32,
     stack: &ItemStack,
@@ -120,7 +117,6 @@ fn get_available_enchantment_results(
     results
 }
 
-/// Removes enchantments that are incompatible with `target`
 fn filter_compatible_enchantments(
     candidates: &mut Vec<EnchantmentInstance>,
     target: &EnchantmentInstance,

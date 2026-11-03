@@ -107,7 +107,6 @@ impl BlockBehavior for EnchantingTableBlock {
         false
     }
 
-    /// Opens the enchanting table menu
     fn use_without_item(
         &self,
         _state: BlockStateId,

@@ -4,7 +4,7 @@ use glam::DVec3;
 use steel_registry::data_components::vanilla_components::STORED_ENCHANTMENTS;
 use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items};
 use steel_utils::types::{GameType, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos, Downcast as _};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _};
 
 use super::{EnchantmentKind, ITEM_SLOT, LAPIS_SLOT, OFFER_COUNT, enchantment};
 use crate::behavior::blocks::EnchantingTableBlock;
@@ -32,6 +32,7 @@ const EXPECTED_ENCHANT_CLUE_DATA_START: usize = 4;
 const EXPECTED_LEVEL_CLUE_DATA_START: usize = 7;
 const EXPECTED_NO_CLUE: i32 = -1;
 
+/// A table at full power (all 32 ring positions filled) with an open menu.
 fn test_table(key: &'static str, seed: i32) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
     init_vanilla_registry();
     init_behaviors();
@@ -45,20 +46,29 @@ fn test_table(key: &'static str, seed: i32) -> (TestWorld, Arc<Player>, BlockPos
         vanilla_blocks::ENCHANTING_TABLE.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
+    set_bookshelf_ring(world, pos, vanilla_blocks::BOOKSHELF.default_state());
     let player = TestPlayerBuilder::new(Arc::clone(world), "EnchantTester", 1).build();
     player.base().set_position_local(DVec3::new(8.5, 64.0, 8.5));
     let menu = enchantment(Arc::clone(&player.inventory), 1, pos, world, seed);
     (world_fixture, player, pos, menu)
 }
 
-fn surround_with_bookshelves(world: &Arc<World>, pos: BlockPos) {
+fn set_bookshelf_ring(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
     for offset in EnchantingTableBlock::BOOKSHELF_OFFSETS {
         assert!(world.set_block(
             pos.offset(offset.x, offset.y, offset.z),
-            vanilla_blocks::BOOKSHELF.default_state(),
+            state,
             UpdateFlags::UPDATE_ALL,
         ));
     }
+}
+
+fn sword() -> ItemStack {
+    ItemStack::new(&vanilla_items::DIAMOND_SWORD)
+}
+
+fn lapis() -> ItemStack {
+    ItemStack::with_count(&vanilla_items::LAPIS_LAZULI, HIGH_OFFER_LAPIS_COST)
 }
 
 /// Puts `stack` in hotbar slot `hotbar_slot` and shift-clicks it into the table.
@@ -86,43 +96,9 @@ fn table_lapis(menu: &Menu) -> ItemStack {
     kind(menu).enchant_slots.lock().get_item(LAPIS_SLOT).clone()
 }
 
-#[test]
-fn full_bookshelf_ring_rolls_three_offers_with_clues() {
-    let (world_fixture, player, pos, mut menu) = test_table("enchant_menu_offers", SEED);
-    let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        0,
-    );
-
-    assert!(table_item(&menu).is(&vanilla_items::DIAMOND_SWORD));
-    let kind = kind(&menu);
-    assert!(kind.costs[0] >= 1);
-    assert!(
-        kind.costs[HIGH_OFFER_INDEX] >= FULL_POWER_LEVELS,
-        "third offer is at least twice the 15 bookshelves"
-    );
-    for slot in 0..OFFER_COUNT {
-        if kind.costs[slot] > 0 {
-            assert!(kind.enchant_clue[slot].is_some_and(|clue| clue >= 0));
-            assert!(kind.level_clue[slot].is_some_and(|level| level >= 1));
-        }
-        assert_eq!(
-            kind.cost_slots[slot].get(menu.behavior()),
-            EnchantmentKind::client_value(kind.costs[slot])
-        );
-    }
-    assert_eq!(
-        kind.seed_slot.get(menu.behavior()),
-        EnchantmentKind::client_value(SEED)
-    );
-
-    // Pin the absolute wire order: costs at 0..3, seed at 3, enchantment clues
-    // at 4..7, level clues at 7..10. This is the one contract the client relies
-    // on that no index-independent handle assertion above can catch.
+/// The client reads data slots by absolute index, so this pins the wire order.
+fn assert_data_slots_match_offers(menu: &Menu) {
+    let kind = kind(menu);
     let behavior = menu.behavior();
     for offer in 0..OFFER_COUNT {
         assert_eq!(
@@ -144,28 +120,38 @@ fn full_bookshelf_ring_rolls_three_offers_with_clues() {
     }
     assert_eq!(
         behavior.get_data(EXPECTED_SEED_DATA),
-        Some(EnchantmentKind::client_value(SEED))
+        Some(EnchantmentKind::client_value(kind.enchantment_seed))
     );
+}
+
+#[test]
+fn full_bookshelf_ring_rolls_three_offers_with_clues() {
+    let (_world, player, _pos, mut menu) = test_table("enchant_menu_offers", SEED);
+    place_in_table(&mut menu, &player, sword(), 0);
+
+    assert!(table_item(&menu).is(&vanilla_items::DIAMOND_SWORD));
+    let kind = kind(&menu);
+    assert!(kind.costs[0] >= 1);
+    assert!(
+        kind.costs[HIGH_OFFER_INDEX] >= FULL_POWER_LEVELS,
+        "third offer is at least twice the 15 bookshelves"
+    );
+    for slot in 0..OFFER_COUNT {
+        if kind.costs[slot] > 0 {
+            assert!(kind.enchant_clue[slot].is_some_and(|clue| clue >= 0));
+            assert!(kind.level_clue[slot].is_some_and(|level| level >= 1));
+        }
+    }
+    assert_data_slots_match_offers(&menu);
 }
 
 #[test]
 fn offers_are_identical_for_the_same_seed_and_cleared_for_unenchantable_items() {
     let (world_fixture, player, pos, mut first) = test_table("enchant_menu_same_seed", SEED);
     let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
-    place_in_table(
-        &mut first,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        0,
-    );
+    place_in_table(&mut first, &player, sword(), 0);
     let mut second = enchantment(Arc::clone(&player.inventory), 2, pos, world, SEED);
-    place_in_table(
-        &mut second,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        1,
-    );
+    place_in_table(&mut second, &player, sword(), 1);
     assert_eq!(kind(&first).costs, kind(&second).costs);
     assert_eq!(kind(&first).enchant_clue, kind(&second).enchant_clue);
     assert_eq!(kind(&first).level_clue, kind(&second).level_clue);
@@ -181,42 +167,17 @@ fn offers_are_identical_for_the_same_seed_and_cleared_for_unenchantable_items() 
     assert_eq!(kind(&stone).costs, [0; OFFER_COUNT]);
     assert_eq!(kind(&stone).enchant_clue, [None; OFFER_COUNT]);
     assert_eq!(kind(&stone).level_clue, [None; OFFER_COUNT]);
-    for offer in 0..OFFER_COUNT {
-        assert_eq!(
-            stone
-                .behavior()
-                .get_data(EXPECTED_ENCHANT_CLUE_DATA_START + offer),
-            Some(EXPECTED_NO_CLUE as i16)
-        );
-        assert_eq!(
-            stone
-                .behavior()
-                .get_data(EXPECTED_LEVEL_CLUE_DATA_START + offer),
-            Some(EXPECTED_NO_CLUE as i16)
-        );
-    }
+    assert_data_slots_match_offers(&stone);
 }
 
 #[test]
 fn button_is_rejected_without_lapis_or_levels() {
-    let (world_fixture, player, pos, mut menu) = test_table("enchant_menu_rejections", SEED);
-    let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        0,
-    );
+    let (_world, player, _pos, mut menu) = test_table("enchant_menu_rejections", SEED);
+    place_in_table(&mut menu, &player, sword(), 0);
     player.experience.lock().set_levels(FULL_POWER_LEVELS);
 
     assert!(!menu.click_menu_button(0, &player), "no lapis");
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::with_count(&vanilla_items::LAPIS_LAZULI, HIGH_OFFER_LAPIS_COST),
-        1,
-    );
+    place_in_table(&mut menu, &player, lapis(), 1);
     player.experience.lock().set_levels(0);
     assert!(!menu.click_menu_button(0, &player), "no levels");
     assert!(
@@ -233,26 +194,13 @@ fn button_is_rejected_without_lapis_or_levels() {
 fn offers_only_reroll_when_the_table_slots_change() {
     let (world_fixture, player, pos, mut menu) = test_table("enchant_menu_unrelated_clicks", SEED);
     let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        0,
-    );
+    place_in_table(&mut menu, &player, sword(), 0);
     let full_ring_costs = kind(&menu).costs;
     assert!(full_ring_costs[HIGH_OFFER_INDEX] >= FULL_POWER_LEVELS);
 
-    // Vanilla only recomputes from `enchantSlots.setChanged`, so a click that
-    // touches nothing but the player inventory keeps the stale offers even
-    // after the bookshelves are gone.
-    for offset in EnchantingTableBlock::BOOKSHELF_OFFSETS {
-        assert!(world.set_block(
-            pos.offset(offset.x, offset.y, offset.z),
-            vanilla_blocks::AIR.default_state(),
-            UpdateFlags::UPDATE_ALL,
-        ));
-    }
+    // Vanilla only recomputes on `enchantSlots.setChanged`, so a player-inventory
+    // click keeps the stale offers even after the bookshelves are gone.
+    set_bookshelf_ring(world, pos, vanilla_blocks::AIR.default_state());
     player
         .inventory
         .lock()
@@ -266,14 +214,7 @@ fn offers_only_reroll_when_the_table_slots_change() {
     );
     assert_eq!(kind(&menu).costs, full_ring_costs);
 
-    // Moving lapis into the table changes `enchantSlots`, which rerolls against
-    // the now-empty ring.
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::with_count(&vanilla_items::LAPIS_LAZULI, HIGH_OFFER_LAPIS_COST),
-        2,
-    );
+    place_in_table(&mut menu, &player, lapis(), 2);
     assert!(
         kind(&menu).costs[HIGH_OFFER_INDEX] <= NO_BOOKSHELVES_MAX_COST,
         "no bookshelves caps the third offer"
@@ -282,21 +223,9 @@ fn offers_only_reroll_when_the_table_slots_change() {
 
 #[test]
 fn enchanting_spends_levels_and_lapis_and_rerolls_the_seed() {
-    let (world_fixture, player, pos, mut menu) = test_table("enchant_menu_enchant", SEED);
-    let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        0,
-    );
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::with_count(&vanilla_items::LAPIS_LAZULI, HIGH_OFFER_LAPIS_COST),
-        1,
-    );
+    let (_world, player, _pos, mut menu) = test_table("enchant_menu_enchant", SEED);
+    place_in_table(&mut menu, &player, sword(), 0);
+    place_in_table(&mut menu, &player, lapis(), 1);
     player.experience.lock().set_levels(FULL_POWER_LEVELS);
 
     assert!(menu.click_menu_button(HIGH_OFFER_INDEX as i32, &player));
@@ -311,31 +240,20 @@ fn enchanting_spends_levels_and_lapis_and_rerolls_the_seed() {
     let rerolled_seed = experience.enchantment_seed();
     drop(experience);
     let kind = kind(&menu);
-    // Vanilla draws the new seed with `random.nextInt()`, which may repeat the
-    // old value, so only the hand-off from player to menu is asserted.
+    // The new seed may repeat the old one, so only the hand-off to the menu is checked.
     assert_eq!(kind.enchantment_seed, rerolled_seed);
     assert_eq!(
         kind.costs, [0; OFFER_COUNT],
         "an enchanted item has no further offers"
     );
-    assert_eq!(
-        kind.seed_slot.get(menu.behavior()),
-        EnchantmentKind::client_value(kind.enchantment_seed)
-    );
+    assert_data_slots_match_offers(&menu);
 }
 
 #[test]
 fn creative_players_skip_lapis_but_still_spend_levels() {
-    let (world_fixture, player, pos, mut menu) = test_table("enchant_menu_creative", SEED);
-    let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
+    let (_world, player, _pos, mut menu) = test_table("enchant_menu_creative", SEED);
     player.restore_game_modes(GameType::Creative, None);
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::new(&vanilla_items::DIAMOND_SWORD),
-        0,
-    );
+    place_in_table(&mut menu, &player, sword(), 0);
     player.experience.lock().set_levels(FULL_POWER_LEVELS);
 
     assert!(menu.click_menu_button(0, &player));
@@ -345,16 +263,9 @@ fn creative_players_skip_lapis_but_still_spend_levels() {
 
 #[test]
 fn books_become_enchanted_books_with_stored_enchantments() {
-    let (world_fixture, player, pos, mut menu) = test_table("enchant_menu_book", SEED);
-    let world = &world_fixture.world;
-    surround_with_bookshelves(world, pos);
+    let (_world, player, _pos, mut menu) = test_table("enchant_menu_book", SEED);
     place_in_table(&mut menu, &player, ItemStack::new(&vanilla_items::BOOK), 0);
-    place_in_table(
-        &mut menu,
-        &player,
-        ItemStack::with_count(&vanilla_items::LAPIS_LAZULI, HIGH_OFFER_LAPIS_COST),
-        1,
-    );
+    place_in_table(&mut menu, &player, lapis(), 1);
     player.experience.lock().set_levels(FULL_POWER_LEVELS);
 
     assert!(menu.click_menu_button(HIGH_OFFER_INDEX as i32, &player));

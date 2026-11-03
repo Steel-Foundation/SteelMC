@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
-    REGISTRY, RegistryEntry, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
-    item_stack::ItemStack, sound_events, vanilla_blocks, vanilla_custom_stats,
-    vanilla_enchantment_tags::EnchantmentTag, vanilla_items, vanilla_menu_types,
+    REGISTRY, RegistryEntry, TaggedRegistryExt, item_stack::ItemStack, sound_events,
+    vanilla_blocks, vanilla_custom_stats, vanilla_enchantment_tags::EnchantmentTag, vanilla_items,
+    vanilla_menu_types,
 };
 use steel_utils::random::Random as _;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -14,13 +14,11 @@ use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, locks::Shared};
 
 use crate::behavior::blocks::EnchantingTableBlock;
 use crate::enchantment_helper::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
-use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::prelude::*;
 use crate::inventory::slots::EnchantItemSlot;
 use crate::player::player_inventory::{PlayerInventory, Prediction};
 use crate::world::World;
 
-/// Number of selectable offers.
 const OFFER_COUNT: usize = 3;
 /// Index of the item to enchant within `enchant_slots`.
 const ITEM_SLOT: usize = 0;
@@ -134,7 +132,6 @@ impl EnchantmentKind {
         i16::from_le_bytes([low, high])
     }
 
-    /// Creates the offer RNG from the player's enchantment seed
     fn seeded_random(seed: i32) -> LegacyRandom {
         LegacyRandom::from_seed(i64::from(seed).cast_unsigned())
     }
@@ -240,13 +237,13 @@ impl EnchantmentKind {
 }
 
 impl MenuKind for EnchantmentKind {
-    /// Requires the table to remain in place and within reach.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        self.world.get_block_state(self.block_pos).get_block() == &vanilla_blocks::ENCHANTING_TABLE
-            && player.is_within_block_interaction_range_with_buffer(
-                self.block_pos,
-                f64::from(DEFAULT_DISTANCE_BUFFER),
-            )
+        still_valid_block(
+            &self.world,
+            self.block_pos,
+            &vanilla_blocks::ENCHANTING_TABLE,
+            player,
+        )
     }
 
     /// Rerolls offers only when the table slots change, ignoring player-inventory clicks.
