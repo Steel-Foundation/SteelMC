@@ -19,7 +19,7 @@ use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
     damage::DamageSource,
-    entities::{EndermiteEntity, ItemEntity},
+    entities::{EndermiteEntity, ItemEntity, PigEntity},
     next_entity_id,
 };
 use crate::inventory::{
@@ -46,11 +46,11 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-use steel_registry::packets::play::C_REMOVE_ENTITIES;
+use steel_registry::packets::play::{C_REMOVE_ENTITIES, C_SOUND};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
+    sound_events, vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
     vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
     vanilla_world_clocks,
 };
@@ -236,6 +236,20 @@ fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
         entity_ids.push(entity_id.0);
     }
     entity_ids
+}
+
+fn sound_packet_ids(packets: &[EncodedPacket]) -> Vec<i32> {
+    packets
+        .iter()
+        .filter_map(|packet| {
+            let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+            VarInt::read(&mut cursor).ok()?;
+            if VarInt::read(&mut cursor).ok()?.0 != C_SOUND {
+                return None;
+            }
+            Some(VarInt::read(&mut cursor).ok()?.0)
+        })
+        .collect()
 }
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
@@ -1823,5 +1837,88 @@ fn sword_does_not_destroy_blocks_in_creative() {
         world.get_block_state(pos),
         dirt,
         "swords should not destroy blocks when player is in creative mode."
+    );
+}
+
+#[test]
+fn player_melee_attack_plays_sound_packets() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("player_melee_attack_sounds");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let attacker = TestPlayerBuilder::new(Arc::clone(world), "Attacker", next_entity_id())
+        .connection(connection)
+        .build();
+    attacker.set_client_loaded(true);
+    assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    let pig_target: SharedEntity = Arc::<PigEntity>::clone(&pig);
+
+    // 1. Weak attack (freshly reset attack strength ticker, scale <= 0.9)
+    attacker.reset_attack_strength_ticker();
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_WEAK.packet_holder_id()]
+    );
+
+    // 2. Strong attack (fully charged ticker, scale > 0.9)
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id()]
+    );
+
+    // 3. Sprinting strong attack (triggers knockback sound + strong sound)
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    attacker.set_sprinting(true);
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![
+            sound_events::ENTITY_PLAYER_ATTACK_KNOCKBACK.packet_holder_id(),
+            sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id(),
+        ]
+    );
+    attacker.set_sprinting(false);
+
+    // 4. Attack with no damage dealt / target cannot be hurt
+    let dead_pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    dead_pig.set_health(0.0);
+    let dead_target: SharedEntity = Arc::<PigEntity>::clone(&dead_pig);
+    sent_packets.lock().clear();
+    assert!(!attacker.attack(&dead_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE.packet_holder_id()]
     );
 }
