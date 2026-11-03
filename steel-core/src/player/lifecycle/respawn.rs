@@ -283,10 +283,7 @@ impl ServerJob for PlayerRespawnJob {
                     self.phase = PlayerRespawnJobPhase::Searching(fallback_search);
                 }
                 PlayerRespawnJobPhase::Searching(search) => {
-                    match search.poll_with_ready_candidate_budget(
-                        &self.target_world,
-                        RESPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                    ) {
+                    match search.poll_with_time_budget(&self.target_world, POLL_TIME_BUDGET) {
                         PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
                         PlayerSpawnSearchPoll::Cancelled => {
                             self.finish_pending();

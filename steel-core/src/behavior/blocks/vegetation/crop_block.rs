@@ -47,7 +47,11 @@ const AGE: &IntProperty = &BlockStateProperties::AGE_7;
 ///
 /// Stems use the same farmland and neighboring-crop calculation as crops, but
 /// have different survival and mature-growth behavior.
-pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: BlockPos) -> f32 {
+pub(super) fn crop_growth_speed(
+    block: BlockRef,
+    world: &(impl LevelReader + ?Sized),
+    pos: BlockPos,
+) -> f32 {
     let mut speed = 1.0_f32;
     let below = pos.below();
 
