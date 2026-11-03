@@ -440,6 +440,7 @@ impl Menu {
                     unreachable!("the explicitly locked player inventory must be present");
                 };
                 inventory.set_item(inventory_slot, target_item.clone());
+                target_slot.on_swap_craft(target_item.count);
                 target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                     player.add_item_or_drop_with_guard(

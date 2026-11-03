@@ -5,14 +5,16 @@ use crate::{
     behavior::init_behaviors,
     entity::{Entity as _, entities::ItemEntity},
     inventory::{
-        click::{Click, MouseButton},
+        click::{Click, MouseButton, SwapTarget},
         container::Container as _,
     },
+    player::Player,
     test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
 };
 use glam::DVec3;
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_entities, vanilla_items,
+    init_vanilla_registry, item_stack::ItemStack, items::Item, stat::vanilla_stat_types,
+    vanilla_blocks, vanilla_entities, vanilla_items,
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, WorldAabb};
@@ -90,4 +92,76 @@ fn partial_result_overflow_uses_the_default_drop_policy() {
     assert!(item.get_item().is(&vanilla_items::OAK_PLANKS));
     assert_eq!(item.get_item().count(), 3);
     assert_eq!(item.get_thrower(), None);
+}
+
+fn crafted_count(player: &Player, item: &'static Item) -> i32 {
+    let crafted = vanilla_stat_types::ITEM_CRAFTED.get(item);
+    player
+        .stats()
+        .into_iter()
+        .find_map(|(stat, count)| (stat == crafted).then_some(count))
+        .unwrap_or(0)
+}
+
+#[test]
+fn taking_the_result_awards_item_crafted() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("crafting_menu_item_crafted");
+    let world = &world_fixture.world;
+    let pos = BlockPos::new(0, 64, 0);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::CRAFTING_TABLE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Crafter", 1).build();
+    player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
+    let mut menu = crafting(Arc::clone(&player.inventory), 1, pos);
+
+    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::OAK_LOG);
+    menu.clicked(
+        Click::Pickup {
+            slot: 1,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+    menu.clicked(
+        Click::Pickup {
+            slot: 0,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+    assert_eq!(crafted_count(&player, &vanilla_items::OAK_PLANKS), 4);
+
+    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::OAK_LOG);
+    menu.clicked(
+        Click::Pickup {
+            slot: 1,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+    menu.clicked(
+        Click::Swap {
+            slot: 0,
+            with: SwapTarget::Hotbar(0),
+        },
+        &player,
+    );
+    assert_eq!(crafted_count(&player, &vanilla_items::OAK_PLANKS), 8);
+
+    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::OAK_LOG);
+    menu.clicked(
+        Click::Pickup {
+            slot: 1,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+    menu.clicked(Click::QuickMove { slot: 0 }, &player);
+    assert_eq!(crafted_count(&player, &vanilla_items::OAK_PLANKS), 12);
 }
