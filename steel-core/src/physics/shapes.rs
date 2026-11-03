@@ -338,7 +338,6 @@ fn project_offset_shape_onto_grid(
 }
 
 #[cfg(test)]
-#[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
 mod tests {
     use super::*;
 

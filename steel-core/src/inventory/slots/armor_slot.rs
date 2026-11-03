@@ -61,30 +61,15 @@ impl Slot for ArmorSlot {
         self.base.set_item(guard, stack);
     }
 
-    fn set_by_player(
-        &self,
-        guard: &mut ContainerLockGuard,
-        stack: ItemStack,
-        previous: &ItemStack,
-    ) {
-        // TODO: Call player.onEquipItem(equipmentSlot, previous, stack) here
-        let _ = previous;
-        self.set_item(guard, stack);
-    }
-
     fn may_place(&self, stack: &ItemStack) -> bool {
         stack.is_equippable_in_slot(self.slot)
     }
 
     fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
         let item = self.get_item(guard);
-        if !item.is_empty()
-            && !player.has_infinite_materials()
-            && item.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
-        {
-            return false;
-        }
-        true
+        item.is_empty()
+            || player.has_infinite_materials()
+            || !item.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
     }
 
     fn get_max_stack_size(&self, _guard: &ContainerLockGuard) -> i32 {

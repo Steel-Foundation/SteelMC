@@ -18,11 +18,12 @@ use crate::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
-            crop_block::crop_growth_speed,
+            crop_block::{CROP_GROWTH_CHANCE_BASE, crop_growth_speed},
             default_surviving_state,
             vegetation_block::{survival_update_shape, vegetation_can_survive},
         },
     },
+    block_entity::SharedBlockEntity,
     world::{LevelAccessor, LevelReader, ScheduledTickAccess, World},
 };
 
@@ -83,7 +84,7 @@ impl StemBlock {
         }
 
         let growth_speed = crop_growth_speed(self.block, world, pos);
-        let growth_chance = (25.0 / growth_speed) as u32 + 1;
+        let growth_chance = (CROP_GROWTH_CHANCE_BASE / growth_speed) as u32 + 1;
         if rng.random_range(0..growth_chance) != 0 {
             return;
         }
@@ -170,6 +171,7 @@ impl BlockBehavior for StemBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(self.seed))
@@ -449,6 +451,7 @@ mod tests {
             .get_clone_item_stack(
                 &vanilla_blocks::PUMPKIN_STEM,
                 vanilla_blocks::PUMPKIN_STEM.default_state(),
+                None,
                 false,
             )
             .expect("pumpkin stem has a clone item");
@@ -456,6 +459,7 @@ mod tests {
             .get_clone_item_stack(
                 &vanilla_blocks::MELON_STEM,
                 vanilla_blocks::MELON_STEM.default_state(),
+                None,
                 false,
             )
             .expect("melon stem has a clone item");

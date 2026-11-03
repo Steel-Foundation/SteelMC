@@ -13,10 +13,7 @@ fn parsed_coordinates(
 ) -> Result<Coordinates, CommandSyntaxError> {
     let parse = dispatcher.parse(input, TestSource::new());
     let chain = dispatcher.context_chain(parse)?;
-    chain
-        .top_context()
-        .coordinates("value")
-        .ok_or_else(|| CommandSyntaxError::dynamic("coordinates were not retained"))
+    chain.top_context().coordinates("value")
 }
 
 #[test]
@@ -54,6 +51,38 @@ fn vec3_centers_absolute_integer_x_and_z_components() {
             WorldCoordinate::new(false, 3.0),
         )))
     );
+}
+
+#[test]
+fn vec2_centers_absolute_integer_components_and_preserves_source_y() {
+    let dispatcher = coordinate_dispatcher(SteelArgumentType::vec2(true));
+
+    assert_eq!(
+        parsed_coordinates(&dispatcher, "coordinates 1 ~-3"),
+        Ok(Coordinates::World(WorldCoordinates::new(
+            WorldCoordinate::new(false, 1.5),
+            WorldCoordinate::new(true, 0.0),
+            WorldCoordinate::new(true, -3.0),
+        )))
+    );
+    assert!(parsed_coordinates(&dispatcher, "coordinates 1").is_err());
+    assert!(parsed_coordinates(&dispatcher, "coordinates ^1 ^2").is_err());
+}
+
+#[test]
+fn vec2_suggestions_stop_after_two_components() {
+    let dispatcher = coordinate_dispatcher(SteelArgumentType::vec2(true));
+    let parse = dispatcher.parse("coordinates ", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("coordinate suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+
+    assert_eq!(suggestions, ["~", "~ ~"]);
 }
 
 #[test]

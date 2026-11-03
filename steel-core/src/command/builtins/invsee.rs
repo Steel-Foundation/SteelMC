@@ -36,9 +36,8 @@ pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, Comma
             source,
         }
     })?;
-    let command_modify = modify_permission.clone();
     Ok(
-        CommandRegistration::new(id, move |_| command(command_modify))
+        CommandRegistration::new(id, move |_| command(modify_permission))
             .permission(access_permission),
     )
 }

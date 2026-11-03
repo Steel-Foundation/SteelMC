@@ -45,8 +45,7 @@ impl CommandArgumentParser<String> for OpaqueArgument {
         let suggestion = match self {
             Self::SourceWord => context.source().as_str(),
             Self::PreviousWord { argument } => {
-                let Some(OpaqueArgumentValue::SourceWord(value)) = context.argument(argument)
-                else {
+                let Ok(OpaqueArgumentValue::SourceWord(value)) = context.argument(argument) else {
                     return;
                 };
                 value
@@ -101,14 +100,14 @@ fn parsing_uses_the_runtime_argument_representation() {
 
     assert_eq!(
         parse.context().argument("value"),
-        Some(&OpaqueArgumentValue::SourceWord("source:input".into()))
+        Ok(&OpaqueArgumentValue::SourceWord("source:input".into()))
     );
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("runtime argument command should form a context chain");
     };
     assert_eq!(
         chain.top_context().argument("prefix"),
-        Some(&OpaqueArgumentValue::SourceWord("source:first".into()))
+        Ok(&OpaqueArgumentValue::SourceWord("source:first".into()))
     );
 
     let suggestion_parse = dispatcher.parse("run first so", "source".to_owned());

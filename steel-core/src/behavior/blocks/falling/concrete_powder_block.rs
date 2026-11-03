@@ -12,7 +12,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::FallingBlock;
 
-/// Vanilla `ConcretePowderBlock` behavior.
+/// Concrete powder block behavior.
 #[block_behavior]
 pub struct ConcretePowderBlock {
     falling: FallingBlock,

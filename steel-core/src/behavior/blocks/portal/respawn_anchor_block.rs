@@ -19,6 +19,7 @@ use steel_utils::{
 
 use crate::entity::dismount_helper;
 use crate::{
+    behavior::blocks::redstone::MAX_REDSTONE_SIGNAL,
     behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
     entity::Entity,
     level_data::RespawnData,
@@ -147,14 +148,8 @@ impl RespawnAnchorBlock {
         item_stack.is(&vanilla_items::GLOWSTONE)
     }
 
-    const fn consume_respawn_fuel(item_stack: &mut ItemStack, has_infinite_materials: bool) {
-        if !has_infinite_materials {
-            item_stack.shrink(1);
-        }
-    }
-
     fn analog_output_signal(charges: u8) -> i32 {
-        i32::from(charges) * 15 / i32::from(Self::MAX_CHARGES)
+        i32::from(charges) * MAX_REDSTONE_SIGNAL / i32::from(Self::MAX_CHARGES)
     }
 
     fn player_offhand_has_respawn_fuel(player: &Player) -> bool {
@@ -205,7 +200,7 @@ impl BlockBehavior for RespawnAnchorBlock {
             Self::charge(Some(player), world, pos, state);
             let has_infinite_materials = player.has_infinite_materials();
             inv.with_item(|item_stack| {
-                Self::consume_respawn_fuel(item_stack, has_infinite_materials);
+                item_stack.consume_one(has_infinite_materials);
             });
             return InteractionResult::Success;
         }
@@ -282,8 +277,7 @@ impl BlockBehavior for RespawnAnchorBlock {
 mod tests {
     use super::*;
     use steel_registry::blocks::block_state_ext::BlockStateExt;
-    use steel_registry::item_stack::ItemStack;
-    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     #[test]
@@ -337,19 +331,6 @@ mod tests {
         assert!(RespawnAnchorBlock::can_be_charged(partial));
         assert!(RespawnAnchorBlock::has_charge(full));
         assert!(!RespawnAnchorBlock::can_be_charged(full));
-    }
-
-    #[test]
-    fn consuming_respawn_fuel_respects_infinite_materials() {
-        init_vanilla_registry();
-
-        let mut survival_fuel = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
-        RespawnAnchorBlock::consume_respawn_fuel(&mut survival_fuel, false);
-        assert_eq!(survival_fuel.count(), 1);
-
-        let mut creative_fuel = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
-        RespawnAnchorBlock::consume_respawn_fuel(&mut creative_fuel, true);
-        assert_eq!(creative_fuel.count(), 2);
     }
 
     #[test]

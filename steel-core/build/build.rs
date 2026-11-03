@@ -7,7 +7,7 @@
 use heck::ToShoutySnakeCase;
 use proc_macro2::Span;
 use serde::Deserialize;
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, process::Command};
 use syn::Ident;
 
 mod blocks;
@@ -15,7 +15,7 @@ mod candle_cakes;
 mod common;
 mod entities;
 mod items;
-mod strippables;
+mod skull_type;
 mod waxables;
 mod weathering;
 
@@ -58,18 +58,60 @@ pub fn main() {
         weathering::build(),
     );
     write_if_changed(
-        format!("{behavior_out_dir}/strippables.rs"),
-        strippables::build(),
-    );
-    write_if_changed(
         format!("{entity_out_dir}/entities.rs"),
         entities::build(&classes.entities),
+    );
+    write_if_changed(
+        format!("{behavior_out_dir}/skull_types.rs"),
+        skull_type::build(),
     );
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/items");
     println!("cargo:rerun-if-changed={manifest_dir}/src/entity/entities");
+
+    let git_hash = git_output(["rev-parse", "HEAD"]);
+    let git_hash_short = git_output(["rev-parse", "--short=7", "HEAD"]);
+    println!("cargo:rustc-env=GIT_HASH={git_hash}");
+    println!("cargo:rustc-env=GIT_HASH_SHORT={git_hash_short}");
+    // Git resolves metadata correctly for normal checkouts, submodules, and worktrees.
+    // Watch refs as a directory to catch loose refs created from previously packed refs.
+    for git_path in ["HEAD", "refs", "packed-refs"] {
+        let resolved = git_output([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            git_path,
+        ]);
+        if Path::new(&resolved).exists() {
+            println!("cargo:rerun-if-changed={resolved}");
+        }
+    }
+}
+
+fn git_output<const N: usize>(args: [&str; N]) -> String {
+    Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).map_err(|e| e.to_string())
+            } else {
+                Err(format!("exited with {}", output.status))
+            }
+        })
+        .map_or_else(
+            |e| {
+                println!(
+                    "cargo:warning=git {} failed, using \"unknown\": {e}",
+                    args.join(" ")
+                );
+                "unknown".to_owned()
+            },
+            |stdout| stdout.trim().to_owned(),
+        )
 }
 
 /// Items use `SCREAMING_SNAKE_CASE` statics (`vanilla_items::STONE`)

@@ -11,7 +11,7 @@ use steel_registry::blocks::properties::{
 };
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{sound_events, vanilla_game_events};
+use steel_registry::{sound_events, vanilla_custom_stats, vanilla_game_events};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -88,7 +88,7 @@ impl NoteBlock {
         );
     }
 
-    /// Vanilla `NoteBlock.getPitchFromNote`.
+    /// Calculates the pitch for the given note index.
     #[must_use]
     pub fn pitch_from_note(note: u8) -> f32 {
         2.0_f64.powf((f64::from(note) - 12.0) / 12.0) as f32
@@ -212,13 +212,13 @@ impl BlockBehavior for NoteBlock {
         let tuned_state = Self::cycle_note(state);
         world.set_block(pos, tuned_state, UpdateFlags::UPDATE_ALL);
         self.play_note(Some(player), tuned_state, world, pos);
-        // The tune-noteblock stat awaits Steel's shared statistics foundation.
+        player.award_custom_stat(&vanilla_custom_stats::TUNE_NOTEBLOCK);
         InteractionResult::Success
     }
 
     fn attack(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {
         self.play_note(Some(player), state, world, pos);
-        // The play-noteblock stat awaits Steel's shared statistics foundation.
+        player.award_custom_stat(&vanilla_custom_stats::PLAY_NOTEBLOCK);
     }
 
     fn trigger_event(
@@ -294,10 +294,11 @@ mod tests {
     fn redstone_updates_powered_state_on_both_edges() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("note_block_redstone_edges");
+        let world_fixture = fresh_test_world("note_block_redstone_edges");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let power_pos = pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(
             pos,
             vanilla_blocks::NOTE_BLOCK.default_state(),

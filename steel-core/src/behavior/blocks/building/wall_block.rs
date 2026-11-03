@@ -11,11 +11,9 @@ use steel_registry::blocks::properties::{
 };
 use steel_registry::blocks::shapes::{OffsetVoxelShape, offset_face_rectangles_cover};
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_fluids;
-use steel_registry::vanilla_fluids::WATER;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::building::FenceGateBlock;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
@@ -127,10 +125,7 @@ impl BlockBehavior for WallBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let water = &vanilla_fluids::WATER;
-            world.schedule_fluid_tick_default(pos, water, world.fluid_tick_delay(&WATER));
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         match direction {
             // Base behavior: nothing below changes a wall's shape.
@@ -154,8 +149,6 @@ fn is_connected(state: BlockStateId, side: &EnumProperty<WallSide>) -> bool {
     state.get_value(side) != WallSide::None
 }
 
-/// Vanilla `WallBlock.connectsTo`.
-///
 /// `face_solid` is whether the neighbor has a sturdy face pointing back at
 /// the wall; `direction` is that same (opposite-to-neighbor) direction.
 fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direction) -> bool {
@@ -170,7 +163,6 @@ fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direct
         || connected_fence_gate
 }
 
-/// Vanilla `WallBlock.topUpdate`.
 fn top_update(state: BlockStateId, top_pos: BlockPos, top_neighbor: BlockStateId) -> BlockStateId {
     let north = is_connected(state, NORTH);
     let east = is_connected(state, EAST);
@@ -179,7 +171,6 @@ fn top_update(state: BlockStateId, top_pos: BlockPos, top_neighbor: BlockStateId
     update_wall_state(state, top_pos, top_neighbor, north, east, south, west)
 }
 
-/// Vanilla `WallBlock.sideUpdate`.
 fn side_update(
     world: &dyn ScheduledTickAccess,
     pos: BlockPos,
@@ -240,7 +231,6 @@ fn update_wall_state(
     sides.set_value(UP, should_raise_post(sides, top_neighbor, above_shape))
 }
 
-/// Vanilla `WallBlock.updateSides`.
 #[expect(
     clippy::fn_params_excessive_bools,
     reason = "mirrors vanilla WallBlock north/east/south/west signature"
@@ -300,7 +290,6 @@ fn update_sides(
         )
 }
 
-/// Vanilla `WallBlock.makeWallState`.
 fn make_wall_state(
     connects_to_side: bool,
     above_shape: OffsetVoxelShape,
@@ -319,7 +308,6 @@ fn make_wall_state(
     }
 }
 
-/// Vanilla `WallBlock.shouldRaisePost`.
 fn should_raise_post(
     state: BlockStateId,
     top_neighbor: BlockStateId,
@@ -360,8 +348,6 @@ fn should_raise_post(
         || is_covered(above_shape, POST_X_MIN, POST_X_MAX, POST_Z_MIN, POST_Z_MAX)
 }
 
-/// Vanilla `WallBlock.isCovered`.
-///
 /// Checks whether the block above's collision shape fully covers a test
 /// rectangle on its DOWN face.
 fn is_covered(

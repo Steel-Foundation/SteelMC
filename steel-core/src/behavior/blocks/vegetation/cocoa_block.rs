@@ -18,12 +18,13 @@ use crate::{
     behavior::{
         BlockBehavior, blocks::vegetation::bonemealable::Bonemealable, context::BlockPlaceContext,
     },
+    block_entity::SharedBlockEntity,
     entity::ai::path::PathComputationType,
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
 const MAX_AGE: u8 = 2;
-const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_2;
+const AGE: &IntProperty = &BlockStateProperties::AGE_2;
 const FACING_PROPERTY: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 /// Cocoa Block behavior
@@ -40,11 +41,11 @@ impl CocoaBlock {
     }
 
     fn age(state: BlockStateId) -> u8 {
-        state.get_value(AGE_PROPERTY)
+        state.get_value(AGE)
     }
 
     fn with_age(state: BlockStateId, age: u8) -> BlockStateId {
-        state.set_value(AGE_PROPERTY, age)
+        state.set_value(AGE, age)
     }
 }
 
@@ -123,6 +124,7 @@ impl BlockBehavior for CocoaBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::COCOA_BEANS))

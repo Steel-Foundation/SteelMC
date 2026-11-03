@@ -78,7 +78,7 @@ mod tests {
         let world = fresh_test_world("composter_analog_output");
         let state = vanilla_blocks::COMPOSTER
             .default_state()
-            .set_value(LEVEL_COMPOSTER, 8);
+            .set_value(LEVEL_COMPOSTER, LEVEL_COMPOSTER.max);
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
 
         assert!(behavior.has_analog_output_signal(state));
@@ -89,7 +89,7 @@ mod tests {
                 BlockPos::ZERO,
                 Direction::North,
             ),
-            8,
+            i32::from(LEVEL_COMPOSTER.max),
         );
     }
 }

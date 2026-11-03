@@ -18,7 +18,12 @@ impl FeatureDecorationRunner {
             origin = origin.below();
         }
 
-        if !Self::test_block_predicate(region, registry, &config.can_place_on, origin) {
+        if !BlockStateProviderEvaluator::test_block_predicate(
+            region,
+            registry,
+            &config.can_place_on,
+            origin,
+        ) {
             return false;
         }
 
@@ -29,7 +34,8 @@ impl FeatureDecorationRunner {
             origin = origin.above_n(10 + random.next_i32_bounded(30));
         }
 
-        let spike_state = Self::block_state_from_data(registry, &config.state);
+        let spike_state =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.state);
         Self::place_spike_body(
             region,
             registry,
@@ -118,7 +124,7 @@ impl FeatureDecorationRunner {
                 while cursor.y() > 50 {
                     let state = region.block_state(cursor);
                     if !state.is_air()
-                        && !Self::test_block_predicate(
+                        && !BlockStateProviderEvaluator::test_block_predicate(
                             region,
                             registry,
                             &config.can_replace,
@@ -149,7 +155,13 @@ impl FeatureDecorationRunner {
         spike_state: BlockStateId,
     ) {
         let state = region.block_state(pos);
-        if state.is_air() || Self::test_block_predicate(region, registry, &config.can_replace, pos)
+        if state.is_air()
+            || BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                &config.can_replace,
+                pos,
+            )
         {
             let _ = region.set_block_state(pos, spike_state, UpdateFlags::UPDATE_ALL);
         }

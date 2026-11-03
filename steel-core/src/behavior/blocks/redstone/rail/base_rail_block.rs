@@ -6,9 +6,10 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, EnumProperty, RailShape,
 };
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{vanilla_block_tags::BlockTag, vanilla_fluids};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 
@@ -73,10 +74,7 @@ impl BaseRailBlock {
         level: &dyn ScheduledTickAccess,
         pos: BlockPos,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = level.fluid_tick_delay(&vanilla_fluids::WATER);
-            level.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, level, pos);
         state
     }
 

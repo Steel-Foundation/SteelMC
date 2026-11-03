@@ -13,6 +13,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::evaluator::DefaultRedstoneWireEvaluator;
+use crate::behavior::blocks::redstone::MIN_REDSTONE_SIGNAL;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess,
@@ -28,7 +29,7 @@ use crate::world::{
 /// Signal suppression is carried by [`SignalQueryContext`] instead of mutating
 /// vanilla's process-global `shouldSignal` field.
 #[block_behavior]
-pub struct RedStoneWireBlock {
+pub struct RedstoneWireBlock {
     block: BlockRef,
     cross_state: BlockStateId,
     evaluator: DefaultRedstoneWireEvaluator,
@@ -42,7 +43,7 @@ const POWER: &IntProperty = &BlockStateProperties::POWER;
 const SOUTH_REDSTONE: &EnumProperty<RedstoneSide> = &BlockStateProperties::SOUTH_REDSTONE;
 const WEST_REDSTONE: &EnumProperty<RedstoneSide> = &BlockStateProperties::WEST_REDSTONE;
 
-impl RedStoneWireBlock {
+impl RedstoneWireBlock {
     /// Creates the ordinary redstone-wire behavior and its persistent evaluator.
     #[must_use]
     pub fn new(block: BlockRef) -> Self {
@@ -59,6 +60,7 @@ impl RedStoneWireBlock {
         }
     }
 
+    /// Rust equivalent of vanilla's `PROPERTY_BY_DIRECTION` map.
     const fn property_for_direction(
         direction: Direction,
     ) -> Option<&'static EnumProperty<RedstoneSide>> {
@@ -71,6 +73,7 @@ impl RedStoneWireBlock {
         }
     }
 
+    /// Rust equivalent of vanilla's `RedstoneSide.isConnected()`.
     fn is_connected(side: RedstoneSide) -> bool {
         side != RedstoneSide::None
     }
@@ -167,6 +170,7 @@ impl RedStoneWireBlock {
         self.get_connecting_side_with_up(level, pos, direction, can_connect_up)
     }
 
+    /// Translation of vanilla's four-argument `getConnectingSide` overload.
     fn get_connecting_side_with_up(
         &self,
         level: &dyn LevelReader,
@@ -280,7 +284,7 @@ impl RedStoneWireBlock {
     }
 }
 
-impl BlockBehavior for RedStoneWireBlock {
+impl BlockBehavior for RedstoneWireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.get_connection_state(
             context.world.as_ref(),
@@ -427,6 +431,8 @@ impl BlockBehavior for RedStoneWireBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
+        // `BlockBehavior` names vanilla's `neighborChanged` callback
+        // `handle_neighbor_changed` to distinguish it from update dispatch.
         if self.can_survive(state, world.as_ref(), pos) {
             self.evaluator.update_power_strength(world, pos, state);
         } else {
@@ -481,6 +487,7 @@ impl BlockBehavior for RedStoneWireBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
+        // `BlockBehavior::get_own_signal` is vanilla's `ownSignal` hook.
         i32::from(state.get_value(POWER))
     }
 
@@ -493,19 +500,19 @@ impl BlockBehavior for RedStoneWireBlock {
         context: SignalQueryContext,
     ) -> i32 {
         if !context.wire_signals_enabled() || direction == Direction::Down {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         }
 
         let power = self.get_own_signal(state, world, pos, context);
-        if power == 0 {
-            return 0;
+        if power == MIN_REDSTONE_SIGNAL {
+            return MIN_REDSTONE_SIGNAL;
         }
         if direction == Direction::Up {
             return power;
         }
 
         let Some(property) = Self::property_for_direction(direction.opposite()) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         if Self::is_connected(
             self.get_connection_state(world, state, pos)
@@ -513,7 +520,7 @@ impl BlockBehavior for RedStoneWireBlock {
         ) {
             power
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -528,7 +535,7 @@ impl BlockBehavior for RedStoneWireBlock {
         if context.wire_signals_enabled() {
             self.get_signal(state, world, pos, direction, context)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -544,10 +551,10 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
 
-    fn wire() -> RedStoneWireBlock {
+    fn wire() -> RedstoneWireBlock {
         init_vanilla_registry();
         init_behaviors();
-        RedStoneWireBlock::new(&vanilla_blocks::REDSTONE_WIRE)
+        RedstoneWireBlock::new(&vanilla_blocks::REDSTONE_WIRE)
     }
 
     #[test]
@@ -566,8 +573,8 @@ mod tests {
             pos,
         );
 
-        assert!(RedStoneWireBlock::is_cross(cross));
-        assert!(RedStoneWireBlock::is_dot(dot));
+        assert!(RedstoneWireBlock::is_cross(cross));
+        assert!(RedstoneWireBlock::is_dot(dot));
     }
 
     #[test]

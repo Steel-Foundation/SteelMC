@@ -7,6 +7,75 @@ use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
 use steel_registry::init_vanilla_registry;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_entities;
+use steel_registry::vanilla_items;
+
+use crate::behavior::init_behaviors;
+
+#[test]
+fn default_spawn_rule_requires_full_up_support_and_low_light_emission() {
+    init_vanilla_registry();
+    init_behaviors();
+    let level = TestLevel::default();
+    let pos = BlockPos::new(3, 64, 5);
+    let entity_type = &vanilla_entities::ZOMBIE;
+
+    let stone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::STONE);
+    assert!(stone.is_valid_spawn(
+        vanilla_blocks::STONE.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+
+    let glowstone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::GLOWSTONE);
+    assert!(!glowstone.is_valid_spawn(
+        vanilla_blocks::GLOWSTONE.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+
+    let torch = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TORCH);
+    assert!(!torch.is_valid_spawn(
+        vanilla_blocks::TORCH.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+}
+
+#[test]
+fn clone_item_stack_uses_registered_block_item_association() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    for (block, expected_item) in [
+        (&vanilla_blocks::REDSTONE_WIRE, &*vanilla_items::REDSTONE),
+        (&vanilla_blocks::WALL_TORCH, &*vanilla_items::TORCH),
+        (
+            &vanilla_blocks::BIG_DRIPLEAF_STEM,
+            &*vanilla_items::BIG_DRIPLEAF,
+        ),
+    ] {
+        let clone_item = BLOCK_BEHAVIORS
+            .get_behavior(block)
+            .get_clone_item_stack(block, block.default_state(), None, false)
+            .map(|stack| stack.item());
+
+        assert_eq!(clone_item, Some(expected_item));
+    }
+
+    let block = &vanilla_blocks::FIRE;
+    let clone_item = BLOCK_BEHAVIORS.get_behavior(block).get_clone_item_stack(
+        block,
+        block.default_state(),
+        None,
+        false,
+    );
+
+    assert!(clone_item.is_some_and(|stack| stack.is_empty()));
+}
 
 #[test]
 fn drained_waterlogged_state_clears_waterlogged_property() {

@@ -1,0 +1,30 @@
+{
+  "skeleton": {
+    "block": "skeleton_skull",
+    "wall_block": "skeleton_wall_skull"
+  },
+  "wither_skeleton": {
+    "block": "wither_skeleton_skull",
+    "wall_block": "wither_skeleton_wall_skull"
+  },
+  "zombie": {
+    "block": "zombie_head",
+    "wall_block": "zombie_wall_head"
+  },
+  "player": {
+    "block": "player_head",
+    "wall_block": "player_wall_head"
+  },
+  "creeper": {
+    "block": "creeper_head",
+    "wall_block": "creeper_wall_head"
+  },
+  "dragon": {
+    "block": "dragon_head",
+    "wall_block": "dragon_wall_head"
+  },
+  "piglin": {
+    "block": "piglin_head",
+    "wall_block": "piglin_wall_head"
+  }
+}

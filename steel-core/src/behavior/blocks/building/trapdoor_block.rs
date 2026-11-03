@@ -5,10 +5,10 @@
 use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
+        block::schedule_water_tick_if_waterlogged,
         blocks::{WeatherState, WeatheringCopper},
     },
-    entity::Entity,
-    entity::ai::path::PathComputationType,
+    entity::{Entity, ai::path::PathComputationType},
     player::Player,
     world::{ScheduledTickAccess, SignalGetter as _, World, game_event::GameEventContext},
 };
@@ -81,7 +81,7 @@ impl TrapDoorBlock {
         } else {
             self.sound_close
         };
-        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        let pitch = rand::random_range(0.9..1.0);
         world.play_block_sound(sound, pos, 1.0, pitch, player.map(Entity::id));
         world.game_event(
             if open {
@@ -104,10 +104,8 @@ impl TrapDoorBlock {
     fn toggle(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {
         let block_state = state.set_value(OPEN, !state.get_value(OPEN));
         world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
-        if block_state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
+
         self.play_sound(Some(player), world, pos, block_state.get_value(OPEN));
     }
 }
@@ -158,10 +156,7 @@ impl BlockBehavior for TrapDoorBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
         state
     }
 
@@ -357,17 +352,18 @@ mod tests {
     fn redundant_redstone_notification_does_not_schedule_water_tick() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("trapdoor_redundant_redstone");
+        let world_fixture = fresh_test_world("trapdoor_redundant_redstone");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let power_pos = pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::OAK_TRAPDOOR
             .default_state()
             .set_value(WATERLOGGED, true);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::OAK_TRAPDOOR);
 
-        behavior.handle_neighbor_changed(state, &world, pos, &vanilla_blocks::STONE, false);
+        behavior.handle_neighbor_changed(state, world, pos, &vanilla_blocks::STONE, false);
         assert!(!world.has_scheduled_fluid_tick(pos, &vanilla_fluids::WATER));
 
         assert!(world.set_block(
@@ -375,13 +371,7 @@ mod tests {
             vanilla_blocks::REDSTONE_BLOCK.default_state(),
             UpdateFlags::UPDATE_NONE,
         ));
-        behavior.handle_neighbor_changed(
-            state,
-            &world,
-            pos,
-            &vanilla_blocks::REDSTONE_BLOCK,
-            false,
-        );
+        behavior.handle_neighbor_changed(state, world, pos, &vanilla_blocks::REDSTONE_BLOCK, false);
         let powered = world.get_block_state(pos);
         assert!(powered.get_value(POWERED));
         assert!(powered.get_value(OPEN));

@@ -84,9 +84,7 @@ pub(super) fn positioned_operation() -> Builder {
                 |context: &SteelCommandContext<CommandSource>| {
                     let source = context.source();
                     let position = source.position();
-                    let heightmap = context
-                        .heightmap("heightmap")
-                        .ok_or_else(|| missing_argument("heightmap"))?;
+                    let heightmap = context.heightmap("heightmap")?;
                     let Some(height) = source.world().height_at(
                         heightmap,
                         position.x.floor() as i32,
@@ -134,9 +132,7 @@ pub(super) fn facing_operation() -> Builder {
                 argument("anchor", SteelArgumentType::entity_anchor()).forks(
                     EXECUTE_ROOT,
                     |context| {
-                        let anchor = context
-                            .entity_anchor("anchor")
-                            .ok_or_else(|| missing_argument("anchor"))?;
+                        let anchor = context.entity_anchor("anchor")?;
                         Ok(context
                             .optional_entities("targets")?
                             .into_iter()
@@ -166,9 +162,7 @@ pub(super) fn align_operation() -> Builder {
         argument("axes", SteelArgumentType::swizzle()).redirects_with(
             EXECUTE_ROOT,
             |context: &SteelCommandContext<CommandSource>| {
-                let axes = context
-                    .swizzle("axes")
-                    .ok_or_else(|| missing_argument("axes"))?;
+                let axes = context.swizzle("axes")?;
                 Ok(context
                     .source()
                     .with_position(axes.align(context.source().position())))
@@ -182,9 +176,7 @@ pub(super) fn anchored_operation() -> Builder {
         argument("anchor", SteelArgumentType::entity_anchor()).redirects_with(
             EXECUTE_ROOT,
             |context: &SteelCommandContext<CommandSource>| {
-                let anchor = context
-                    .entity_anchor("anchor")
-                    .ok_or_else(|| missing_argument("anchor"))?;
+                let anchor = context.entity_anchor("anchor")?;
                 Ok(context.source().with_anchor(anchor))
             },
         ),
@@ -197,8 +189,7 @@ pub(super) fn in_operation() -> Builder {
             EXECUTE_ROOT,
             |context: &SteelCommandContext<CommandSource>| {
                 let world = context
-                    .world_argument("dimension")
-                    .ok_or_else(|| missing_argument("dimension"))?
+                    .world_argument("dimension")?
                     .resolve(context.source())?;
                 context.source().with_world(world)
             },
@@ -211,9 +202,7 @@ pub(super) fn summon_operation() -> Builder {
         argument("entity", SteelArgumentType::summonable_entity()).redirects_with(
             EXECUTE_ROOT,
             |context| {
-                let entity_type = context
-                    .entity_type("entity")
-                    .ok_or_else(|| missing_argument("entity"))?;
+                let entity_type = context.entity_type("entity")?;
                 let entity =
                     summon::create_entity(context, entity_type, context.source().position())?;
                 Ok(context.source().with_entity(entity))
@@ -264,13 +253,5 @@ fn required_coordinates(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<super::super::super::execution::Coordinates, CommandSyntaxError> {
-    context
-        .coordinates(name)
-        .ok_or_else(|| missing_argument(name))
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
+    context.coordinates(name)
 }

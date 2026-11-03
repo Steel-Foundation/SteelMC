@@ -38,7 +38,7 @@ impl CustomCommandExecutor<CommandSource> for ReturnValue {
         _modifiers: ChainModifiers,
         control: &mut ExecutionControl<'_, CommandSource>,
     ) {
-        let Some(value) = chain.top_context().integer("value") else {
+        let Ok(value) = chain.top_context().integer("value") else {
             unreachable!("the return value executor always follows its integer argument")
         };
         source.callback().on_result(true, value);

@@ -52,15 +52,11 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
             "This command can only be used by a player",
         ));
     };
-    let Some(world) = context.world_argument("world") else {
-        return Err(CommandSyntaxError::dynamic(
-            "Parsed world is missing from the command context",
-        ));
-    };
+    let world = context.world_argument("world")?;
     let world = world.resolve(source)?;
     source
         .server()
-        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world))
+        .queue_player_world_selection(Arc::clone(player), &world)
         .map_err(CommandSyntaxError::dynamic)?;
 
     source.send_success(
@@ -140,7 +136,7 @@ fn domain_menu(
 
     b.build(DomainMenuKind {
         map,
-        server: server.clone(),
+        server: Arc::clone(server),
         player,
     })
 }
@@ -211,7 +207,7 @@ impl MenuKind for DomainMenuKind {
 
         if let Err(error) = self
             .server
-            .queue_player_world_selection(Arc::clone(&self.player), Arc::clone(world))
+            .queue_player_world_selection(Arc::clone(&self.player), world)
         {
             tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
         }

@@ -7,6 +7,8 @@ use super::{
     WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
 };
 
+use crate::entity::EntityCollisionCandidates;
+
 pub(super) struct NavigatingMobTracker {
     ids: SyncMutex<FxHashSet<i32>>,
 }
@@ -110,7 +112,7 @@ impl World {
     ) -> Result<(), AddEntityError> {
         let lifecycle = self
             .entity_manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)?;
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)?;
         self.attach_managed_entity_callback(&entity);
         self.apply_entity_lifecycle_changes(lifecycle);
         Ok(())
@@ -248,6 +250,52 @@ impl World {
         Ok(())
     }
 
+    /// Adds a fresh vehicle/passenger tree only after every member has passed
+    /// chunk and identity validation.
+    pub(crate) fn try_add_fresh_entity_with_passengers(
+        self: &Arc<Self>,
+        root: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        let mut entities = Vec::new();
+        let mut seen_ids = FxHashSet::default();
+        Self::collect_fresh_entity_tree(&root, &mut seen_ids, &mut entities)?;
+
+        let mut dirty_chunks = FxHashSet::default();
+        for entity in &entities {
+            let chunk = ChunkPos::from_entity_pos(entity.position());
+            if !self.entity_manager.is_chunk_loaded(chunk) {
+                return Err(AddEntityError::ChunkNotLoaded {
+                    entity_id: entity.id(),
+                    chunk,
+                });
+            }
+            dirty_chunks.insert(chunk);
+        }
+
+        self.register_loaded_entity_tree(&entities)?;
+        for chunk in dirty_chunks {
+            self.mark_chunk_dirty(chunk);
+        }
+        Ok(())
+    }
+
+    fn collect_fresh_entity_tree(
+        entity: &SharedEntity,
+        seen_ids: &mut FxHashSet<i32>,
+        entities: &mut Vec<SharedEntity>,
+    ) -> Result<(), AddEntityError> {
+        if !seen_ids.insert(entity.id()) {
+            return Err(AddEntityError::DuplicateId {
+                entity_id: entity.id(),
+            });
+        }
+        entities.push(Arc::clone(entity));
+        for passenger in entity.passengers() {
+            Self::collect_fresh_entity_tree(&passenger, seen_ids, entities)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
         // Runtime entity membership follows retained chunk holders, so it
         // starts at Empty rather than waiting for full LevelChunk readiness.
@@ -301,11 +349,7 @@ impl World {
     ///
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
-        // Default ItemEntity velocity: random horizontal scatter + upward pop
-        let vx = rand::random::<f64>() * 0.2 - 0.1;
-        let vy = 0.2;
-        let vz = rand::random::<f64>() * 0.2 - 0.1;
-        self.spawn_item_with_velocity(pos, item, DVec3::new(vx, vy, vz))
+        self.spawn_item_with_velocity(pos, item, ItemEntity::default_spawn_velocity())
     }
 
     /// Spawns an item entity at the given position with initial velocity.
@@ -332,7 +376,7 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        if let Err(error) = self.try_add_entity(entity.clone()) {
+        if let Err(error) = self.try_add_entity(Arc::<ItemEntity>::clone(&entity)) {
             log::warn!("Failed to spawn item entity: {error}");
             return None;
         }
@@ -364,9 +408,9 @@ impl World {
         let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
 
         // Random offset within block (vanilla: nextDouble(-0.25, 0.25))
-        let x = f64::from(pos.x()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
-        let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
-        let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
+        let x = f64::from(pos.x()) + 0.5 + rand::random_range(-0.25..0.25);
+        let y = f64::from(pos.y()) + 0.5 + rand::random_range(-0.25..0.25) - half_height;
+        let z = f64::from(pos.z()) + 0.5 + rand::random_range(-0.25..0.25);
 
         let entity = self.spawn_item(DVec3::new(x, y, z), item)?;
         entity.set_default_pickup_delay();
@@ -408,6 +452,10 @@ impl World {
             return None;
         }
 
+        if !self.get_game_rule(&BLOCK_DROPS) {
+            return None;
+        }
+
         let half_width = f64::from(vanilla_entities::ITEM.dimensions.width) / 2.0;
         let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
 
@@ -417,14 +465,14 @@ impl World {
         let x = f64::from(pos.x())
             + 0.5
             + if step_x == 0 {
-                (rand::random::<f64>() - 0.5) * 0.5
+                rand::random_range(-0.25..0.25)
             } else {
                 f64::from(step_x) * (0.5 + half_width)
             };
         let y = f64::from(pos.y())
             + 0.5
             + if step_y == 0 {
-                (rand::random::<f64>() - 0.5) * 0.5
+                rand::random_range(-0.25..0.25)
             } else {
                 f64::from(step_y) * (0.5 + half_height)
             }
@@ -432,24 +480,24 @@ impl World {
         let z = f64::from(pos.z())
             + 0.5
             + if step_z == 0 {
-                (rand::random::<f64>() - 0.5) * 0.5
+                rand::random_range(-0.25..0.25)
             } else {
                 f64::from(step_z) * (0.5 + half_width)
             };
 
         // Velocity in direction of face
         let delta_x = if step_x == 0 {
-            (rand::random::<f64>() - 0.5) * 0.2
+            rand::random_range(-0.1..0.1)
         } else {
             f64::from(step_x) * 0.1
         };
         let delta_y = if step_y == 0 {
-            rand::random::<f64>() * 0.1
+            rand::random_range(0.0..0.1)
         } else {
             f64::from(step_y) * 0.1 + 0.1
         };
         let delta_z = if step_z == 0 {
-            (rand::random::<f64>() - 0.5) * 0.2
+            rand::random_range(-0.1..0.1)
         } else {
             f64::from(step_z) * 0.1
         };
@@ -549,6 +597,30 @@ impl World {
             .get_entity_bounding_boxes_in_aabb_matching(aabb, predicate)
     }
 
+    /// Gets entity shapes for movement collision through the selected conservative broad phase.
+    #[must_use]
+    pub(crate) fn get_movement_collision_boxes_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<WorldAabb> {
+        self.entity_manager
+            .get_movement_collision_boxes_in_aabb_matching(aabb, candidates, predicate)
+    }
+
+    /// Returns whether the selected movement-collision broad phase has a matching entity.
+    #[must_use]
+    pub(crate) fn has_movement_collision_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> bool {
+        self.entity_manager
+            .has_movement_collision_in_aabb_matching(aabb, candidates, predicate)
+    }
+
     /// Gets the nearest entity intersecting the given bounding box and matching `predicate`.
     ///
     /// Only returns entities in loaded chunks.
@@ -581,7 +653,7 @@ impl World {
                         .as_ref()
                         .is_none_or(|(_, current)| distance_sqr < *current)
                 {
-                    nearest = Some((player.clone(), distance_sqr));
+                    nearest = Some((Arc::clone(player), distance_sqr));
                 }
             }
             true

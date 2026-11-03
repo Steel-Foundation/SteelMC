@@ -1,7 +1,6 @@
 #![expect(
     clippy::unwrap_used,
-    clippy::float_cmp,
-    reason = "test assertions: unwrap panics on parse failures, float equality is the check"
+    reason = "test assertions: unwrap panics on parse failures"
 )]
 
 use super::*;
@@ -9,9 +8,13 @@ use crate::random::{Random, legacy_random::LegacyRandom};
 
 #[test]
 fn vertical_anchor_resolve() {
-    assert_eq!(VerticalAnchor::Absolute(42).resolve_y(-64, 384), 42);
-    assert_eq!(VerticalAnchor::AboveBottom(8).resolve_y(-64, 384), -56);
-    assert_eq!(VerticalAnchor::BelowTop(1).resolve_y(0, 128), 126);
+    assert_eq!(VerticalAnchor::Absolute(42).resolve_y(-64, 384, 63), 42);
+    assert_eq!(VerticalAnchor::AboveBottom(8).resolve_y(-64, 384, 63), -56);
+    assert_eq!(VerticalAnchor::BelowTop(1).resolve_y(0, 128, 32), 126);
+    assert_eq!(
+        VerticalAnchor::RelativeToSeaLevel(-2).resolve_y(0, 128, 32),
+        30
+    );
 }
 
 #[test]
@@ -301,7 +304,7 @@ fn height_provider_uniform_sample_matches_vanilla() {
     let height = 384;
     let mut rng = LegacyRandom::from_seed(42);
     let mut rng_ref = LegacyRandom::from_seed(42);
-    let sample = hp.sample(&mut rng, min_y, height);
+    let sample = hp.sample(&mut rng, min_y, height, 63);
     // min_y + 8 = -56, absolute 180
     let expected = rng_ref.next_i32_between(-56, 180);
     assert_eq!(sample, expected);

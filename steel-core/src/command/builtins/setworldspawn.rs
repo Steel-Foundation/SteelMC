@@ -1,6 +1,6 @@
 //! Default world spawn command.
 
-use steel_utils::{BlockPos, Identifier, translations};
+use steel_utils::{BlockPos, Identifier, java::float_to_string, translations};
 use text_components::TextComponent;
 
 use super::super::{
@@ -35,21 +35,17 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 .then(
                     argument("rotation", SteelArgumentType::rotation()).executes(|context| {
                         let position = spawnable_position(context)?;
-                        let Some(rotation) = context.coordinates("rotation") else {
-                            return Err(missing_argument("rotation"));
-                        };
+                        let rotation = context.coordinates("rotation")?;
                         set_spawn(context, position, rotation.rotation(context.source()))
                     }),
                 ),
         )
 }
 
-fn spawnable_position(
+pub(super) fn spawnable_position(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<BlockPos, CommandSyntaxError> {
-    let Some(coordinates) = context.coordinates("pos") else {
-        return Err(missing_argument("pos"));
-    };
+    let coordinates = context.coordinates("pos")?;
     let position = coordinates.block_pos(context.source());
     if !World::is_in_spawnable_bounds(position) {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -73,24 +69,18 @@ fn set_spawn(
         .set_respawn_data(respawn_data)
         .map_err(CommandSyntaxError::dynamic)?;
 
-    let message = translations::COMMANDS_SETWORLDSPAWN_SUCCESS_NEW
+    let message = translations::COMMANDS_SETWORLDSPAWN_SUCCESS
         .message([
             position.x().to_string(),
             position.y().to_string(),
             position.z().to_string(),
-            yaw.to_string(),
-            pitch.to_string(),
+            float_to_string(yaw),
+            float_to_string(pitch),
             source.world().key.to_string(),
         ])
         .component();
     source.send_success(&message, true);
     Ok(1)
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

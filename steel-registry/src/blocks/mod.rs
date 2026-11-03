@@ -11,7 +11,7 @@ pub mod block_state_ext;
 pub mod properties;
 pub mod shapes;
 
-use std::sync::OnceLock;
+use std::{slice, sync::OnceLock};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
@@ -21,7 +21,7 @@ use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
 use crate::fluid::{FluidRef, FluidState};
 use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
@@ -464,11 +464,43 @@ pub struct BlockRegistry {
     pub next_state_id: u16,
 }
 
+// SAFETY: This Steel-owned key uniquely identifies the block registry.
+unsafe impl DowncastType for BlockRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/block");
+}
+
 impl Default for BlockRegistry {
     fn default() -> Self {
         Self::new()
     }
 }
+
+struct StateProperties {
+    properties: slice::Iter<'static, &'static dyn Property>,
+    offset: u16,
+    stride: u16,
+}
+
+impl Iterator for StateProperties {
+    type Item = (&'static str, &'static str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let property = *self.properties.next()?;
+        let count = property.value_count() as u16;
+        self.stride /= count;
+        let value_index = usize::from(self.offset / self.stride % count);
+        Some((
+            property.get_name(),
+            property.value_name_from_index(value_index),
+        ))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.properties.size_hint()
+    }
+}
+
+impl ExactSizeIterator for StateProperties {}
 
 impl BlockRegistry {
     // Creates a new, empty registry.
@@ -564,27 +596,67 @@ impl BlockRegistry {
             .copied()
     }
 
-    #[must_use]
-    pub fn get_properties(&self, id: BlockStateId) -> Vec<(&'static str, &'static str)> {
-        let block = self.by_state_id(id).expect("Invalid state ID");
-
-        // If block has no properties, return empty vec
+    /// Iterates over property names and values in the block property order without allocating
+    ///
+    /// # Panics
+    /// Panics if the state ID is invalid
+    #[inline]
+    pub fn properties(
+        &self,
+        id: BlockStateId,
+    ) -> impl ExactSizeIterator<Item = (&'static str, &'static str)> + '_ {
+        let Some(block) = self.by_state_id(id) else {
+            panic!("Invalid state ID");
+        };
         if block.properties.is_empty() {
-            return Vec::new();
+            return StateProperties {
+                properties: block.properties.iter(),
+                offset: 0,
+                stride: 1,
+            };
         }
-
-        // Get the base state ID for this block (O(1) lookup)
         let block_id = self.state_to_block_id[id.0 as usize];
         let base_state_id = self.block_to_base_state[block_id];
-
-        // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
+        StateProperties {
+            properties: block.properties.iter(),
+            offset: relative_index,
+            stride: block.state_count(),
+        }
+    }
 
-        Self::decode_property_indices(block, relative_index)
-            .into_iter()
-            .zip(block.properties)
-            .map(|(value_index, prop)| (prop.get_name(), prop.value_name_from_index(value_index)))
-            .collect()
+    /// Gets a named property serialized value without decoding the other property values
+    ///
+    /// # Panics
+    /// Panics if the state ID is invalid
+    #[must_use]
+    #[inline]
+    pub fn get_property_str(&self, id: BlockStateId, name: &str) -> Option<&'static str> {
+        let Some(block) = self.by_state_id(id) else {
+            panic!("Invalid state ID");
+        };
+        if block.properties.is_empty() {
+            return None;
+        }
+        self.find_property_str(block, id, name)
+    }
+
+    fn find_property_str(
+        &self,
+        block: BlockRef,
+        id: BlockStateId,
+        name: &str,
+    ) -> Option<&'static str> {
+        let property_index = block
+            .properties
+            .iter()
+            .position(|property| property.get_name() == name)?;
+        let property = block.properties[property_index];
+        let block_id = self.state_to_block_id[id.0 as usize];
+        let relative_index = id.0 - self.block_to_base_state[block_id];
+        let stride = Self::property_stride(block, property_index);
+        let value_index = usize::from(relative_index / stride % property.value_count() as u16);
+        Some(property.value_name_from_index(value_index))
     }
 
     /// Gets the state ID for a block with the given properties.
@@ -646,6 +718,40 @@ impl BlockRegistry {
         ))
     }
 
+    /// Applies one dynamically named property value to an existing state.
+    ///
+    /// Returns `None` when the state is invalid or the state's block does not
+    /// define the named property/value pair. This mirrors Vanilla's
+    /// `StateHolder.trySetValue` path used by parsed command block inputs.
+    #[must_use]
+    pub fn try_set_property_by_name(
+        &self,
+        id: BlockStateId,
+        name: &str,
+        value: &str,
+    ) -> Option<BlockStateId> {
+        let block = self.by_state_id(id)?;
+        let block_id = *self.state_to_block_id.get(id.0 as usize)?;
+        let base_state_id = *self.block_to_base_state.get(block_id)?;
+        let property_index = block
+            .properties
+            .iter()
+            .position(|property| property.get_name() == name)?;
+        let property = block.properties[property_index];
+        let new_value_index = (0..property.value_count())
+            .find(|&index| property.value_name_from_index(index) == value)?;
+        let relative_index = id.0.checked_sub(base_state_id)?;
+        let stride = Self::property_stride(block, property_index);
+        let old_value_index = usize::from(relative_index / stride % property.value_count() as u16);
+        let new_relative_index = if new_value_index >= old_value_index {
+            relative_index.checked_add((new_value_index - old_value_index) as u16 * stride)?
+        } else {
+            relative_index.checked_sub((old_value_index - new_value_index) as u16 * stride)?
+        };
+
+        Some(BlockStateId(base_state_id + new_relative_index))
+    }
+
     /// Returns every state id of `block` whose properties match all `(name, value)` pairs
     /// in `filter`. An empty filter yields all states of the block (vanilla's
     /// `getStatesOfBlock`); a non-empty filter keeps only matching states (vanilla's
@@ -658,10 +764,9 @@ impl BlockRegistry {
         (0..block.state_count())
             .map(|offset| BlockStateId(base_state_id + offset))
             .filter(|&state_id| {
-                let properties = self.get_properties(state_id);
                 filter
                     .iter()
-                    .all(|(name, value)| properties.iter().any(|(n, v)| n == name && v == value))
+                    .all(|(name, value)| self.get_property_str(state_id, name) == Some(*value))
             })
             .collect()
     }
@@ -888,7 +993,6 @@ impl BlockRegistry {
         self.static_shape_for_state(state_id, Block::get_collision_shape)
     }
 
-    /// Returns vanilla `BlockState.isSuffocating`.
     #[must_use]
     pub fn is_suffocating(&self, state_id: BlockStateId) -> bool {
         let Some((block, offset)) = self.block_and_state_offset(state_id) else {
@@ -1040,14 +1144,41 @@ impl BlockRegistry {
     }
 
     pub fn copy_matching_properties(&self, source: BlockStateId, target: BlockRef) -> BlockStateId {
-        let props = self.get_properties(source);
-        let matching: Vec<(&str, &str)> = props
-            .iter()
-            .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
-            .copied()
-            .collect();
-        self.state_id_from_block_defaulted_properties(target, matching)
-            .unwrap_or_else(|| self.get_default_state_id(target))
+        self.with_properties_of(self.get_default_state_id(target), source)
+    }
+
+    /// Copies matching properties preserving other target values
+    #[must_use]
+    pub fn with_properties_of(&self, target: BlockStateId, source: BlockStateId) -> BlockStateId {
+        let Some((target_block, target_offset)) = self.block_and_state_offset(target) else {
+            panic!("cannot copy properties onto invalid block state {target:?}");
+        };
+
+        let Some((source_block, source_offset)) = self.block_and_state_offset(source) else {
+            panic!("cannot copy properties from invalid block state {source:?}");
+        };
+
+        let mut target_indices = Self::decode_property_indices(target_block, target_offset);
+        let source_indices = Self::decode_property_indices(source_block, source_offset);
+
+        for (target_index, target_property) in target_block.properties.iter().enumerate() {
+            let Some(source_index) = source_block.properties.iter().position(|source_property| {
+                source_property.get_name() == target_property.get_name()
+                    && source_property.value_count() == target_property.value_count()
+                    && (0..target_property.value_count()).all(|index| {
+                        source_property.value_name_from_index(index)
+                            == target_property.value_name_from_index(index)
+                    })
+            }) else {
+                continue;
+            };
+
+            target_indices[target_index] = source_indices[source_index];
+        }
+
+        BlockStateId(
+            target.0 - target_offset + Self::encode_property_indices(target_block, &target_indices),
+        )
     }
 }
 
@@ -1178,14 +1309,42 @@ mod tests {
     }
 
     #[test]
-    fn test_get_properties_default_state() {
+    fn property_iterator_preserves_mixed_radix_values_when_skipping() {
+        let registry = create_test_registry();
+        let block = registry
+            .by_key(&Identifier::vanilla_static("oak_stairs"))
+            .expect("oak_stairs should exist");
+        let base = registry.get_base_state_id(block);
+
+        for offset in 0..block.state_count() {
+            let state = BlockStateId(base.0 + offset);
+            let indices = BlockRegistry::decode_property_indices(block, offset);
+            let expected = block
+                .properties
+                .iter()
+                .zip(indices)
+                .map(|(property, index)| {
+                    (property.get_name(), property.value_name_from_index(index))
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(registry.properties(state).collect::<Vec<_>>(), expected);
+            for (skip, &value) in expected.iter().enumerate() {
+                assert_eq!(registry.properties(state).nth(skip), Some(value));
+            }
+            assert_eq!(registry.properties(state).last(), expected.last().copied());
+        }
+    }
+
+    #[test]
+    fn test_properties_default_state() {
         let registry = create_test_registry();
         let redstone_wire = registry
             .by_key(&Identifier::vanilla_static("redstone_wire"))
             .expect("redstone_wire should exist");
 
         let default_state = registry.get_default_state_id(redstone_wire);
-        let properties = registry.get_properties(default_state);
+        let properties = registry.properties(default_state).collect::<Vec<_>>();
 
         // Default state should have all sides "none" and power 0
         assert_eq!(properties.len(), 5);
@@ -1222,7 +1381,7 @@ mod tests {
             .expect("Should find state");
 
         // Get properties back and verify
-        let retrieved = registry.get_properties(state_id);
+        let retrieved = registry.properties(state_id).collect::<Vec<_>>();
         assert_eq!(retrieved.len(), 5);
 
         for (name, value) in &properties {
@@ -1246,7 +1405,7 @@ mod tests {
             .state_id_from_properties(&key, &partial_props)
             .expect("Should find state");
 
-        let retrieved = registry.get_properties(state_id);
+        let retrieved = registry.properties(state_id).collect::<Vec<_>>();
 
         // Verify specified properties
         let power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
@@ -1261,6 +1420,30 @@ mod tests {
     }
 
     #[test]
+    fn dynamically_named_property_update_preserves_other_state_values() {
+        let registry = create_test_registry();
+        let wire = registry
+            .state_id_from_block_defaulted_properties(
+                &vanilla_blocks::REDSTONE_WIRE,
+                [("east", "side"), ("power", "7")],
+            )
+            .expect("redstone wire state should exist");
+
+        let updated = registry
+            .try_set_property_by_name(wire, "east", "up")
+            .expect("dynamic property should update");
+
+        let properties = registry.properties(updated).collect::<Vec<_>>();
+        assert!(properties.contains(&("east", "up")));
+        assert!(properties.contains(&("power", "7")));
+        assert!(
+            registry
+                .try_set_property_by_name(updated, "missing", "value")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn test_state_id_from_block_defaulted_properties_keeps_missing_defaults() {
         let registry = create_test_registry();
         let key = Identifier::vanilla_static("redstone_wire");
@@ -1270,7 +1453,7 @@ mod tests {
             .state_id_from_block_defaulted_properties(block, [("power", "10")])
             .expect("Should find state");
 
-        let retrieved = registry.get_properties(state_id);
+        let retrieved = registry.properties(state_id).collect::<Vec<_>>();
 
         let power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
         assert_eq!(power.1, "10");
@@ -1291,7 +1474,7 @@ mod tests {
             .state_id_from_properties(&key, &[])
             .expect("Should find state");
 
-        let retrieved = registry.get_properties(state_id);
+        let retrieved = registry.properties(state_id).collect::<Vec<_>>();
 
         // All should be at index 0
         for (name, value) in &retrieved {
@@ -1397,8 +1580,8 @@ mod tests {
             .state_id_from_properties(&key, &[])
             .expect("Should find state");
 
-        let retrieved = registry.get_properties(state_id);
-        assert!(retrieved.is_empty());
+        let retrieved = registry.properties(state_id).collect::<Vec<_>>();
+        assert_eq!(retrieved.len(), 0);
     }
 
     #[test]
@@ -1415,7 +1598,7 @@ mod tests {
                 .state_id_from_properties(&key, &props)
                 .unwrap_or_else(|| panic!("Should find state for power {power}"));
 
-            let retrieved = registry.get_properties(state_id);
+            let retrieved = registry.properties(state_id).collect::<Vec<_>>();
             let found_power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
             assert_eq!(
                 found_power.1,

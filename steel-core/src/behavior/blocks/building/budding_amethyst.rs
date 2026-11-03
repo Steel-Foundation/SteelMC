@@ -150,7 +150,9 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let falling_full_water = vanilla_blocks::WATER.default_state().set_value(LEVEL, 8);
+        let falling_full_water = vanilla_blocks::WATER
+            .default_state()
+            .set_value(LEVEL, LEVEL.max);
 
         assert!(BuddingAmethystBlock::can_cluster_grow_at_state(
             falling_full_water,

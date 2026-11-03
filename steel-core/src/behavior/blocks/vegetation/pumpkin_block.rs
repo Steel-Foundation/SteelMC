@@ -13,6 +13,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::items::item::BlockHitResult;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
 };
@@ -53,22 +54,22 @@ impl BlockBehavior for PumpkinBlock {
     ) -> InteractionResult {
         let mut rng = rand::rng();
 
-        let Some(drops) = inv.with_item(|item_stack| {
-            if !item_stack.is(&vanilla_items::SHEARS) {
-                return None;
-            }
-
-            Some(drop_from_block_interact_loot_table(
-                &vanilla_loot_tables::CARVE_PUMPKIN,
-                state,
-                world.get_block_entity(pos),
-                Some(item_stack),
-                Some(player),
-                &mut rng,
-            ))
+        let Some(shears) = inv.with_item(|item_stack| {
+            item_stack
+                .is(&vanilla_items::SHEARS)
+                .then(|| item_stack.clone())
         }) else {
             return InteractionResult::TryEmptyHandInteraction;
         };
+
+        let drops = drop_from_block_interact_loot_table(
+            &vanilla_loot_tables::CARVE_PUMPKIN,
+            state,
+            world.get_block_entity(pos),
+            Some(&shears),
+            Some(player),
+            &mut rng,
+        );
 
         let clicked_direction = hit_result.direction;
         let direction = if clicked_direction.axis() == Axis::Y {
@@ -91,9 +92,9 @@ impl BlockBehavior for PumpkinBlock {
                 ),
                 drop,
                 DVec3::new(
-                    0.05 * x_offset + rng.random::<f64>() * 0.02,
+                    rng.random_range(0.05 * x_offset..0.05 * x_offset + 0.02),
                     0.05,
-                    0.05 * z_offset + rng.random::<f64>() * 0.02,
+                    rng.random_range(0.05 * z_offset..0.05 * z_offset + 0.02),
                 ),
             );
         }
@@ -103,7 +104,6 @@ impl BlockBehavior for PumpkinBlock {
             pos,
             vanilla_blocks::CARVED_PUMPKIN
                 .default_state()
-                // TODO: Once CarvedPumpkinBlock is implemented, replace HORIZONTAL_FACING with FACING of CarvedPumpkinBlock.
                 .set_value(HORIZONTAL_FACING, direction),
             UpdateFlags::UPDATE_IMMEDIATE
                 | UpdateFlags::UPDATE_CLIENTS
@@ -118,8 +118,101 @@ impl BlockBehavior for PumpkinBlock {
             &GameEventContext::new(Some(player), None),
         );
 
-        // TODO: Award statistic ITEM_USED with SHEARS.
+        player.award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::SHEARS);
 
         InteractionResult::Success
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use steel_registry::item_stack::ItemStack;
+    use steel_utils::{ChunkPos, Downcast as _};
+
+    use super::*;
+    use crate::bootstrap::init_globals;
+    use crate::entity::entities::ItemEntity;
+    use crate::test_support::{
+        DROPPED_ITEM_SEARCH_SIZE, TestPlayerBuilder, dropped_items, fresh_test_world,
+        insert_ready_full_chunk,
+    };
+
+    const CARVE_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[test]
+    fn carving_with_shears_drops_seeds_and_damages_shears() {
+        init_globals();
+        let world_fixture = fresh_test_world("pumpkin_carving");
+        let world = &world_fixture.world;
+        let pos = BlockPos::new(8, 64, 8);
+        let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+        let state = vanilla_blocks::PUMPKIN.default_state();
+        assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
+        let player =
+            TestPlayerBuilder::new(Arc::clone(world), "PumpkinCarver".to_owned(), 1).build();
+        player.inventory.lock().set_item_in_hand(
+            InteractionHand::MainHand,
+            ItemStack::new(&vanilla_items::SHEARS),
+        );
+
+        let (sender, receiver) = mpsc::channel();
+        {
+            let world = Arc::clone(world);
+            let player = Arc::clone(&player);
+            thread::spawn(move || {
+                let mut inv =
+                    InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
+                let hit_result = BlockHitResult {
+                    location: DVec3::new(8.5, 64.5, 8.0),
+                    direction: Direction::North,
+                    block_pos: pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                };
+                let result = PumpkinBlock::new(&vanilla_blocks::PUMPKIN).use_item_on(
+                    state,
+                    &world,
+                    pos,
+                    &player,
+                    InteractionHand::MainHand,
+                    &hit_result,
+                    &mut inv,
+                );
+                let _ = sender.send(result);
+            });
+        }
+        let Ok(result) = receiver.recv_timeout(CARVE_TIMEOUT) else {
+            panic!("carving a pumpkin should not deadlock on the player's inventory lock");
+        };
+
+        assert_eq!(result, InteractionResult::Success);
+        let carved = world.get_block_state(pos);
+        assert_eq!(carved.get_block(), &vanilla_blocks::CARVED_PUMPKIN);
+        assert_eq!(carved.get_value(HORIZONTAL_FACING), Direction::North);
+        assert_eq!(
+            player
+                .inventory
+                .lock()
+                .get_item_in_hand(InteractionHand::MainHand)
+                .get_damage_value(),
+            1
+        );
+
+        let dropped = dropped_items(
+            world,
+            DVec3::new(8.5, 64.0 + DROPPED_ITEM_SEARCH_SIZE / 2.0, 8.5),
+        );
+        assert_eq!(dropped.len(), 1);
+        let Some(seeds) = dropped[0].downcast_ref::<ItemEntity>() else {
+            panic!("carved pumpkin drop should be an item entity");
+        };
+        let seeds = seeds.get_item();
+        assert!(seeds.is(&vanilla_items::PUMPKIN_SEEDS));
+        assert_eq!(seeds.count, 4);
     }
 }

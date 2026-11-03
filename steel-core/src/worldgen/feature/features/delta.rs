@@ -9,8 +9,9 @@ impl FeatureDecorationRunner {
         config: &DeltaFeatureConfiguration,
         origin: BlockPos,
     ) -> bool {
-        let contents = Self::block_state_from_data(registry, &config.contents);
-        let rim = Self::block_state_from_data(registry, &config.rim);
+        let contents =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.contents);
+        let rim = BlockStateProviderEvaluator::block_state_from_data(registry, &config.rim);
         let spawn_rim = random.next_f64() < 0.9;
         let rim_x = if spawn_rim {
             config.rim_size.sample(random)

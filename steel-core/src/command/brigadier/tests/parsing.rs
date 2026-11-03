@@ -2,6 +2,7 @@ use super::super::{
     ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement,
     CommandSyntaxErrorKind, NodeId, StringRange, argument, literal, node::CommandNode,
 };
+use crate::command::missing_argument;
 
 #[derive(Debug)]
 struct TestSource {
@@ -41,7 +42,7 @@ fn parses_literal_commands_and_tracks_ranges() {
     let parse = dispatcher.parse("ping", TestSource { allowed: true });
 
     assert!(!parse.reader().can_read());
-    assert!(parse.errors().is_empty());
+    assert_eq!(parse.errors(), []);
     assert!(parse.context().is_executable());
     assert_eq!(parse.context().range(), StringRange::between(0, 4));
     assert_eq!(parsed_names(&dispatcher, parse.context().nodes()), ["ping"]);
@@ -68,7 +69,7 @@ fn literal_ranges_and_failure_cursors_use_utf16_units() {
 
     let failed = dispatcher.parse("say \u{1f603}", TestSource { allowed: true });
     assert_eq!(failed.reader().cursor(), 4);
-    assert!(failed.errors().is_empty());
+    assert_eq!(failed.errors(), []);
 }
 
 #[test]
@@ -85,8 +86,8 @@ fn requirements_hide_unavailable_nodes_from_parsing() {
 
     let denied = dispatcher.parse("secure", TestSource { allowed: false });
     assert_eq!(denied.reader().cursor(), 0);
-    assert!(denied.context().nodes().is_empty());
-    assert!(denied.errors().is_empty());
+    assert_eq!(denied.context().nodes(), []);
+    assert_eq!(denied.errors(), []);
 
     let allowed = dispatcher.parse("secure", TestSource { allowed: true });
     assert!(!allowed.reader().can_read());
@@ -147,7 +148,7 @@ fn unknown_subcommands_keep_the_last_successful_context() {
     assert_eq!(parse.reader().remaining(), "baz");
     assert_eq!(parsed_names(&dispatcher, parse.context().nodes()), ["foo"]);
     assert!(parse.context().is_executable());
-    assert!(parse.errors().is_empty());
+    assert_eq!(parse.errors(), []);
 }
 
 #[test]
@@ -161,12 +162,18 @@ fn parses_boolean_and_bounded_integer_arguments() {
     );
 
     let boolean = dispatcher.parse("set true", TestSource { allowed: true });
-    assert_eq!(boolean.context().boolean("enabled"), Some(true));
-    assert_eq!(boolean.context().integer("count"), None);
+    assert_eq!(boolean.context().boolean("enabled"), Ok(true));
+    assert_eq!(
+        boolean.context().integer("count"),
+        Err(missing_argument("count"))
+    );
 
     let integer = dispatcher.parse("set 7", TestSource { allowed: true });
-    assert_eq!(integer.context().integer("count"), Some(7));
-    assert_eq!(integer.context().boolean("enabled"), None);
+    assert_eq!(integer.context().integer("count"), Ok(7));
+    assert_eq!(
+        integer.context().boolean("enabled"),
+        Err(missing_argument("enabled"))
+    );
 }
 
 #[test]
@@ -243,9 +250,12 @@ fn complete_potential_wins_over_an_incomplete_sibling() {
         parsed_names(&dispatcher, parse.context().nodes()),
         ["test", "first", "second"]
     );
-    assert_eq!(parse.context().integer("short"), None);
-    assert_eq!(parse.context().integer("first"), Some(1));
-    assert_eq!(parse.context().integer("second"), Some(2));
+    assert_eq!(
+        parse.context().integer("short"),
+        Err(missing_argument("short"))
+    );
+    assert_eq!(parse.context().integer("first"), Ok(1));
+    assert_eq!(parse.context().integer("second"), Ok(2));
 }
 
 #[test]
@@ -266,7 +276,10 @@ fn matching_literals_take_priority_over_argument_siblings() {
         parsed_names(&dispatcher, parse.context().nodes()),
         ["choose", "1"]
     );
-    assert_eq!(parse.context().integer("number"), None);
+    assert_eq!(
+        parse.context().integer("number"),
+        Err(missing_argument("number"))
+    );
 }
 
 #[test]

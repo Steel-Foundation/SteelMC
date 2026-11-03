@@ -4,6 +4,7 @@ use crate::behavior::blocks::FireBlock;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use steel_macros::item_behavior;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -49,7 +50,7 @@ impl ItemBehavior for FlintAndSteelItem {
             &sound_events::ITEM_FLINTANDSTEEL_USE,
             fire_pos,
             1.0,
-            rand::random::<f32>() * 0.4 + 0.8,
+            rand::random_range(0.8..1.2),
             Some(context.player.id()),
         );
 
@@ -61,7 +62,7 @@ impl ItemBehavior for FlintAndSteelItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             click_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
@@ -88,7 +89,7 @@ impl ItemBehavior for FireChargeItem {
             &sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(ItemStack::shrink_one);
             return InteractionResult::Success;
         }
 
@@ -115,10 +116,10 @@ impl ItemBehavior for FireChargeItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             fire_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(ItemStack::shrink_one);
 
         InteractionResult::Success
     }
@@ -146,7 +147,7 @@ fn try_light_block(
     context.world.game_event(
         &vanilla_game_events::BLOCK_CHANGE,
         pos,
-        &GameEventContext::new(Some(context.player), None),
+        &GameEventContext::new(Some(context.player.as_ref()), None),
     );
 
     true
@@ -173,7 +174,7 @@ fn can_light(state: BlockStateId) -> bool {
 }
 
 fn flint_and_steel_pitch() -> f32 {
-    rand::random::<f32>() * 0.4 + 0.8
+    rand::random_range(0.8..1.2)
 }
 
 fn fire_charge_pitch() -> f32 {

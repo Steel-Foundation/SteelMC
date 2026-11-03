@@ -97,6 +97,7 @@ mod tests {
     use super::*;
     use steel_registry::fluid::FluidRef;
     use steel_registry::init_vanilla_registry;
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     struct EmptyLevel;
 
@@ -110,11 +111,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 

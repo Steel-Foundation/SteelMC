@@ -3,6 +3,7 @@
 use std::{slice, sync::Arc};
 
 use glam::DVec3;
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{CSetCamera, RelativeMovement};
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::TextComponent;
@@ -113,9 +114,7 @@ fn teleport_targets_facing_entity_feet(
 fn teleport_targets_facing_entity_anchor(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(anchor) = context.entity_anchor("facingAnchor") else {
-        return Err(missing_argument("facingAnchor"));
-    };
+    let anchor = context.entity_anchor("facingAnchor")?;
     teleport_targets_facing_entity(context, anchor)
 }
 
@@ -175,9 +174,7 @@ fn required_coordinates(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<Coordinates, CommandSyntaxError> {
-    context
-        .coordinates(name)
-        .ok_or_else(|| missing_argument(name))
+    context.coordinates(name)
 }
 
 fn teleport_to_entity(
@@ -418,15 +415,6 @@ fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
     (wrap_degrees(yaw), wrap_degrees(pitch))
 }
 
-fn wrap_degrees(value: f32) -> f32 {
-    let wrapped = value.rem_euclid(360.0);
-    if wrapped >= 180.0 {
-        wrapped - 360.0
-    } else {
-        wrapped
-    }
-}
-
 fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], destination: &dyn Entity) {
     let message = if let [target] = targets {
         translations::COMMANDS_TELEPORT_SUCCESS_ENTITY_SINGLE
@@ -477,12 +465,6 @@ fn send_position_success(source: &CommandSource, targets: &[SharedEntity], posit
 fn target_count(targets: &[SharedEntity]) -> Result<i32, CommandSyntaxError> {
     i32::try_from(targets.len())
         .map_err(|_| CommandSyntaxError::dynamic("Target count exceeds the command result range"))
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

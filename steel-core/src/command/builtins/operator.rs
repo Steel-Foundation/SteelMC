@@ -79,10 +79,7 @@ fn start_operation(
     context: &SteelCommandContext<CommandSource>,
     action: OperatorAction,
 ) -> Result<OperatorCommandSuspension, CommandSyntaxError> {
-    let argument = context
-        .game_profile_argument("targets")
-        .cloned()
-        .ok_or_else(|| CommandSyntaxError::dynamic("Missing game profile argument 'targets'"))?;
+    let argument = context.game_profile_argument("targets").cloned()?;
     let source = context.source().clone();
     let task_source = source.clone();
     let (sender, receiver) = oneshot::channel();

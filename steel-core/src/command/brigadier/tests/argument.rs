@@ -21,7 +21,7 @@ fn parses_bounded_long_arguments() {
     let parse = dispatcher.parse("long -7", ());
 
     assert!(!parse.reader().can_read());
-    assert_eq!(parse.context().long("value"), Some(-7));
+    assert_eq!(parse.context().long("value"), Ok(-7));
     assert!(parse.context().is_executable());
 }
 
@@ -69,10 +69,10 @@ fn parses_bounded_float_and_double_arguments() {
     );
 
     let float = dispatcher.parse("float -.5", ());
-    assert_eq!(float.context().float("value"), Some(-0.5));
+    assert_eq!(float.context().float("value"), Ok(-0.5));
 
     let double = dispatcher.parse("double 1.25", ());
-    assert_eq!(double.context().double("value"), Some(1.25));
+    assert_eq!(double.context().double("value"), Ok(1.25));
 }
 
 #[test]
@@ -126,16 +126,16 @@ fn parses_word_quotable_and_greedy_strings() {
     );
 
     let word = dispatcher.parse("word hello", ());
-    assert_eq!(word.context().string("value"), Some("hello"));
+    assert_eq!(word.context().string("value"), Ok("hello"));
 
     let quoted = dispatcher.parse("string \"hello world\"", ());
-    assert_eq!(quoted.context().string("value"), Some("hello world"));
+    assert_eq!(quoted.context().string("value"), Ok("hello world"));
 
     let single_quoted = dispatcher.parse("string 'hello world'", ());
-    assert_eq!(single_quoted.context().string("value"), Some("hello world"));
+    assert_eq!(single_quoted.context().string("value"), Ok("hello world"));
 
     let greedy = dispatcher.parse("greedy hello world", ());
-    assert_eq!(greedy.context().string("value"), Some("hello world"));
+    assert_eq!(greedy.context().string("value"), Ok("hello world"));
     assert!(!greedy.reader().can_read());
 }
 
@@ -167,7 +167,7 @@ fn empty_quoted_strings_are_valid_arguments() {
 
     let parse = dispatcher.parse("string \"\"", ());
 
-    assert_eq!(parse.context().string("value"), Some(""));
+    assert_eq!(parse.context().string("value"), Ok(""));
     assert!(parse.context().is_executable());
 }
 

@@ -1,0 +1,90 @@
+name: PR auto-labeler
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync labels from "Type of change" checklist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Maps the PR template's "Type of change" checkbox text to a label.
+            // If the label doesn't exist in the repo yet, it's created on first use.
+            const TYPE_LABELS = [
+              { text: "Block implementation",     label: "Block",           color: "1d76db" },
+              { text: "Item implementation",       label: "Item",            color: "1d76db" },
+              { text: "Command implementation",    label: "Command",         color: "1d76db" },
+              { text: "Mob implementation",     label: "Mob",          color: "1d76db" },
+              { text: "Entity implementation",     label: "Entity",          color: "1d76db" },
+              { text: "Bug fix",                   label: "Bug",             color: "d73a4a" },
+              { text: "New feature",               label: "Enhancement",     color: "a2eeef" },
+              { text: "Breaking change",           label: "Breaking change", color: "b60205" },
+              { text: "Refactor / code cleanup",   label: "Refactor",        color: "cfd3d7" },
+              { text: "Performance improvement",   label: "Performance",     color: "fbca04" },
+              { text: "Chore / tooling",           label: "Chore",           color: "cccccc" },
+            ];
+
+            // Case-insensitive key so a repo's actual label spelling (e.g. a stale
+            // lowercase "bug") still matches and can still be synced/removed.
+            const norm = s => s.trim().toLowerCase();
+
+            const body = context.payload.pull_request.body || "";
+
+            // Matches "- [x] Some text" (case-insensitive on the x) checklist lines.
+            const checked = new Set();
+            for (const line of body.split("\n")) {
+              const m = line.match(/^\s*-\s*\[\s*[xX]\s*\]\s*(.+?)\s*$/);
+              if (m) checked.add(m[1].trim());
+            }
+
+            const wantedLabels = new Set(
+              TYPE_LABELS.filter(t => checked.has(t.text)).map(t => norm(t.label))
+            );
+            const managedLabels = new Set(TYPE_LABELS.map(t => norm(t.label)));
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            const current = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner, repo, issue_number,
+            });
+            // Keep the repo's actual spelling around for removeLabel calls.
+            const currentByNorm = new Map(current.map(l => [norm(l.name), l.name]));
+
+            const toAdd = [...wantedLabels].filter(l => !currentByNorm.has(l));
+            const toRemove = [...currentByNorm.keys()].filter(
+              l => managedLabels.has(l) && !wantedLabels.has(l)
+            );
+
+            for (const key of toAdd) {
+              const meta = TYPE_LABELS.find(t => norm(t.label) === key);
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: meta.label });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner, repo, name: meta.label, color: meta.color,
+                  });
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+            if (toAdd.length) {
+              const names = toAdd.map(key => TYPE_LABELS.find(t => norm(t.label) === key).label);
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: names });
+            }
+            for (const key of toRemove) {
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number, name: currentByNorm.get(key),
+              });
+            }

@@ -211,10 +211,11 @@ fn proto_pending_scheduling_is_linearized_with_full_promotion() {
 fn chunk_snapshot_does_not_wait_for_world_scheduler_metadata() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("chunk_tick_snapshot_lock_scope");
+    let world_fixture = fresh_test_world("chunk_tick_snapshot_lock_scope");
+    let world = &world_fixture.world;
     let chunk_pos = ChunkPos::new(0, 0);
     let tick_pos = BlockPos::new(1, 64, 1);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    let holder = insert_ready_full_chunk(world, chunk_pos);
     world.schedule_block_tick(tick_pos, test_block(), 5, TickPriority::Normal);
 
     let metadata = world.scheduled_ticks.state.lock();
@@ -677,7 +678,7 @@ fn only_popped_containers_report_a_persistence_change() {
     let pending_pos = ChunkPos::new(1, 0);
     let scheduler = scheduler_with_block_lists([(empty_pos, empty), (pending_pos, pending)]);
     let before_deadline = begin_block_tick_at(&scheduler, 1, &[empty_pos, pending_pos], 1);
-    assert!(before_deadline.changed_containers.is_empty());
+    assert_eq!(before_deadline.changed_containers.len(), 0);
     let selected = begin_block_tick_at(&scheduler, 3, &[empty_pos, pending_pos], 1);
     assert_eq!(selected.changed_containers, vec![1]);
 }

@@ -444,5 +444,5 @@ fn sky_light_changes_skip_missing_center_chunk() {
         panic!("dynamic sky changes should skip a missing center chunk");
     };
 
-    assert!(result.updated_sections.is_empty());
+    assert_eq!(result.updated_sections.len(), 0);
 }

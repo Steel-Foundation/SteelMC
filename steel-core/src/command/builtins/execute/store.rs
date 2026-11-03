@@ -168,10 +168,7 @@ fn store_storage_data(
     store_result: bool,
 ) -> Result<CommandSource, CommandSyntaxError> {
     source_command_storage(context)?;
-    let target = context
-        .identifier("target")
-        .ok_or_else(|| missing_argument("target"))?
-        .clone();
+    let target = context.identifier("target")?.clone();
     let path = parsed_path(context)?;
     let scale = parsed_scale(context)?;
     let source = context.source();
@@ -191,22 +188,11 @@ fn store_storage_data(
 fn parsed_path(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<NbtPath, CommandSyntaxError> {
-    context
-        .nbt_path("path")
-        .cloned()
-        .ok_or_else(|| missing_argument("path"))
+    context.nbt_path("path").cloned()
 }
 
 fn parsed_scale(context: &SteelCommandContext<CommandSource>) -> Result<f64, CommandSyntaxError> {
-    context
-        .double("scale")
-        .ok_or_else(|| missing_argument("scale"))
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
+    context.double("scale")
 }
 
 fn store_score(

@@ -1,5 +1,5 @@
 use super::*;
-use crate::chunk::Chunk;
+use crate::chunk::{Chunk, gameplay_chunk_lookup_cache::LocalFullChunkHolderCache};
 
 mod neighbor_updater;
 
@@ -26,6 +26,22 @@ impl World {
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
+    /// Gets a live block state while locally retaining Full holder identity when the enclosing
+    /// gameplay lookup scope guarantees stable active-map membership.
+    pub(crate) fn get_block_state_with_local_holder_cache(
+        &self,
+        pos: BlockPos,
+        cache: &mut LocalFullChunkHolderCache,
+    ) -> BlockStateId {
+        if !self.is_in_valid_bounds(pos) {
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
+        }
+
+        cache
+            .block_state(&self.chunk_map, pos)
+            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
     ///Vanilla equivalent: `level.getBrightness()`
     pub fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
         if layer == LightLayer::Sky && !self.dimension_type.has_skylight {
@@ -47,6 +63,11 @@ impl World {
     pub(crate) fn is_entity_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
         self.chunk_map
             .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
+    }
+
+    pub(crate) fn is_block_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .is_block_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
     }
 
     pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
@@ -387,6 +408,33 @@ impl World {
             .update_neighbors_at_except_from_facing(self, pos, source_block, None);
     }
 
+    /// Runs Vanilla's deferred command-placement neighbor notifications.
+    ///
+    /// `/fill`, `/setblock`, and `/clone` suppress ordinary neighbor updates
+    /// while mutating their regions, then replay this operation in a stable
+    /// second pass.
+    pub(crate) fn update_neighbors_on_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+    ) {
+        let state = self.get_block_state(pos);
+        let block = state.get_block();
+        if old_state.get_block() != block {
+            BLOCK_BEHAVIORS
+                .get_behavior(old_state.get_block())
+                .affect_neighbors_after_removal(old_state, self, pos, false);
+        }
+
+        self.update_neighbors_at(pos, block);
+        if BLOCK_BEHAVIORS
+            .get_behavior(block)
+            .has_analog_output_signal(state)
+        {
+            self.update_neighbor_for_output_signal(pos, block);
+        }
+    }
+
     /// Updates all neighbors except the one in `skip_direction`.
     ///
     /// Mirrors vanilla `Level.updateNeighborsAtExceptFromFacing` without the
@@ -424,7 +472,6 @@ impl World {
 
     /// Updates comparators that can read analog output from `pos`.
     ///
-    /// Mirrors vanilla `Level.updateNeighbourForOutputSignal`.
     /// Steel intentionally never synchronously loads the second neighbor chunk:
     /// block-ticking chunks have a radius-one Full-chunk safety border, while
     /// other call sites retain the game-tick no-blocking policy.
@@ -481,7 +528,7 @@ impl World {
     }
 
     /// Recomputes a state against all neighbors in vanilla shape-update order.
-    pub(crate) fn update_from_neighbor_shapes(
+    pub fn update_from_neighbor_shapes(
         self: &Arc<Self>,
         state: BlockStateId,
         pos: BlockPos,
@@ -582,29 +629,6 @@ impl World {
                 flags & !UpdateFlags::UPDATE_SUPPRESS_DROPS,
                 recursion_left,
             );
-        }
-    }
-
-    /// Called when a block changed with a command (setblock, fill, ...)
-    ///
-    /// This is the Rust equivalent of vanilla's `ServerLevel.updateNeighborsOnBlockSet()`.
-    pub(crate) fn update_neighbour_on_block_set(
-        self: &Arc<Self>,
-        pos: BlockPos,
-        old_state: BlockStateId,
-    ) {
-        let block_state = self.get_block_state(pos);
-        // For block behaviors
-        let behavior = BLOCK_BEHAVIORS.get_behavior(old_state.get_block());
-
-        if old_state != block_state {
-            behavior.affect_neighbors_after_removal(old_state, self, pos, false);
-        }
-
-        self.update_neighbors_at(pos, block_state.get_block());
-
-        if behavior.has_analog_output_signal(block_state) {
-            self.update_neighbor_for_output_signal(pos, block_state.get_block());
         }
     }
 

@@ -1,4 +1,6 @@
-use crate::data_components::vanilla_components::INSTRUMENT;
+use crate::data_components::vanilla_components::{ENCHANTMENTS, INSTRUMENT, ItemEnchantments};
+use crate::equipment::EquipmentSlot;
+use crate::items::ItemRef;
 use crate::vanilla_instrument_tags::InstrumentTag;
 use crate::vanilla_items;
 use crate::{init_vanilla_registry, vanilla_loot_tables};
@@ -107,6 +109,7 @@ fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
         custom_name: None,
         sheep_color: None,
         sheep_sheared: None,
+        chicken_variant: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
@@ -160,6 +163,78 @@ fn shearing_sheep_table_parses_the_flat_type_specific_sheep_key() {
 }
 
 #[test]
+fn chicken_lay_branches_carry_the_chicken_variant_component() {
+    init_test_registries();
+
+    let table = &vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY;
+    let pool = table.pools.first().expect("chicken_lay should have a pool");
+    let LootEntry::Alternatives { children, .. } = pool
+        .entries
+        .first()
+        .expect("chicken_lay should start with alternatives")
+    else {
+        panic!("chicken_lay should use an alternatives entry");
+    };
+
+    let variants = children
+        .iter()
+        .filter_map(|child| {
+            let LootEntry::Item { conditions, .. } = child else {
+                return None;
+            };
+            let Some(LootCondition::EntityProperties { predicate, .. }) = conditions.first() else {
+                return None;
+            };
+            predicate
+                .chicken_variant
+                .as_ref()
+                .map(|id| id.path.as_ref())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        variants,
+        ["temperate", "warm", "cold"],
+        "each egg branch should match its chicken variant"
+    );
+}
+
+#[test]
+fn chicken_lay_drops_the_egg_matching_the_chicken_variant() {
+    init_test_registries();
+
+    for (variant, expected_egg) in [
+        (&crate::vanilla_chicken_variants::TEMPERATE.key, "egg"),
+        (&crate::vanilla_chicken_variants::WARM.key, "brown_egg"),
+        (&crate::vanilla_chicken_variants::COLD.key, "blue_egg"),
+    ] {
+        let mut rng = test_rng();
+        let chicken = EntityRef {
+            entity_type: Some(&Identifier::vanilla_static("chicken")),
+            flags: EntityRefFlags::default(),
+            equipment: None,
+            custom_name: None,
+            sheep_color: None,
+            sheep_sheared: None,
+            chicken_variant: Some(variant),
+        };
+
+        let mut ctx = LootContext::new(&mut rng).with_this_entity(chicken);
+        let items = vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY.get_random_items(&mut ctx);
+
+        assert_eq!(
+            items.len(),
+            1,
+            "a {variant} chicken should lay exactly one egg"
+        );
+        assert_eq!(
+            items[0].item.key,
+            Identifier::vanilla_static(expected_egg),
+            "a {variant} chicken should lay {expected_egg}"
+        );
+    }
+}
+
+#[test]
 fn sheared_predicate_rejects_non_sheep_entities() {
     init_test_registries();
     let mut rng = test_rng();
@@ -171,6 +246,7 @@ fn sheared_predicate_rejects_non_sheep_entities() {
         custom_name: None,
         sheep_color: None,
         sheep_sheared: None,
+        chicken_variant: None,
     };
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
 
@@ -182,6 +258,7 @@ fn sheared_predicate_rejects_non_sheep_entities() {
             equipment: None,
             sheep_color: None,
             sheep_sheared: Some(false),
+            chicken_variant: None,
         },
     };
     assert!(
@@ -205,6 +282,7 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         custom_name: None,
         sheep_color: None,
         sheep_sheared: None,
+        chicken_variant: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
@@ -216,6 +294,190 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         Identifier::vanilla_static("cooked_porkchop")
     );
     assert!((1..=3).contains(&items[0].count));
+}
+
+fn enchanted_item(item: ItemRef, enchantment: &'static str, level: u32) -> ItemStack {
+    let mut enchantments = ItemEnchantments::empty();
+    enchantments.set(Identifier::vanilla_static(enchantment), level);
+    let mut stack = ItemStack::new(item);
+    stack.set(ENCHANTMENTS, enchantments);
+    stack
+}
+
+fn equipment_with(slot: EquipmentSlot, stack: ItemStack) -> EntityEquipmentSlots {
+    let mut slots = EntityEquipmentSlots::default();
+    slots[slot.index()] = stack;
+    slots
+}
+
+fn living_entity_ref<'a>(
+    entity_type: &'a Identifier,
+    equipment: &'a EntityEquipmentSlots,
+) -> EntityRef<'a> {
+    EntityRef {
+        entity_type: Some(entity_type),
+        flags: EntityRefFlags::default(),
+        equipment: Some(EntityEquipmentRef::new(equipment)),
+        custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+        chicken_variant: None,
+    }
+}
+
+fn roll_killed_by_player(
+    table: &LootTable,
+    victim: &'static str,
+    player_equipment: &EntityEquipmentSlots,
+    rolls: u64,
+) -> Vec<ItemStack> {
+    init_test_registries();
+    let victim_key = Identifier::vanilla_static(victim);
+    let player_key = Identifier::vanilla_static("player");
+    let victim_equipment = EntityEquipmentSlots::default();
+    let victim = living_entity_ref(&victim_key, &victim_equipment);
+    let player = living_entity_ref(&player_key, player_equipment);
+
+    (0..rolls)
+        .flat_map(|seed| {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let mut ctx = LootContext::new(&mut rng)
+                .with_killed_by_player(true)
+                .with_this_entity(victim)
+                .with_killer_entity(player)
+                .with_direct_killer_entity(player);
+            table.get_random_items(&mut ctx)
+        })
+        .collect()
+}
+
+fn roll_pig_killed_by_player(
+    player_equipment: &EntityEquipmentSlots,
+    rolls: u64,
+) -> Vec<ItemStack> {
+    roll_killed_by_player(
+        &vanilla_loot_tables::ENTITIES_PIG,
+        "pig",
+        player_equipment,
+        rolls,
+    )
+}
+
+#[test]
+fn pig_loot_smelts_when_direct_attacker_holds_fire_aspect() {
+    let sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "fire_aspect", 1);
+    let items = roll_pig_killed_by_player(&equipment_with(EquipmentSlot::MainHand, sword), 1);
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        items[0].item.key,
+        Identifier::vanilla_static("cooked_porkchop")
+    );
+}
+
+#[test]
+fn pig_loot_stays_raw_when_direct_attacker_holds_plain_sword() {
+    let sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    let items = roll_pig_killed_by_player(&equipment_with(EquipmentSlot::MainHand, sword), 1);
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].item.key, Identifier::vanilla_static("porkchop"));
+}
+
+#[test]
+fn pig_loot_count_uses_attacker_looting_level() {
+    let sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "looting", 3);
+    let items = roll_pig_killed_by_player(&equipment_with(EquipmentSlot::MainHand, sword), 200);
+
+    assert!(items.iter().all(|item| (1..=6).contains(&item.count)));
+    assert!(items.iter().any(|item| item.count > 3));
+}
+
+#[test]
+fn pig_loot_ignores_looting_outside_its_enchantment_slots() {
+    let helmet = enchanted_item(&vanilla_items::DIAMOND_HELMET, "looting", 3);
+    let items = roll_pig_killed_by_player(&equipment_with(EquipmentSlot::Head, helmet), 200);
+
+    assert!(items.iter().all(|item| (1..=3).contains(&item.count)));
+}
+
+#[test]
+fn enchanted_count_increase_limit_caps_the_stack_not_the_bonus() {
+    let sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "looting", 3);
+    let tipped_arrow = Identifier::vanilla_static("tipped_arrow");
+    let arrows: Vec<ItemStack> = roll_killed_by_player(
+        &vanilla_loot_tables::ENTITIES_STRAY,
+        "stray",
+        &equipment_with(EquipmentSlot::MainHand, sword),
+        200,
+    )
+    .into_iter()
+    .filter(|item| item.item.key == tipped_arrow)
+    .collect();
+
+    assert_ne!(arrows, Vec::<ItemStack>::new());
+    assert!(arrows.iter().all(|item| item.count == 1));
+}
+
+#[test]
+fn random_chance_with_enchanted_bonus_reads_attacker_not_tool() {
+    init_test_registries();
+    let condition = LootCondition::RandomChanceWithEnchantedBonus {
+        enchantment: Identifier::vanilla_static("looting"),
+        unenchanted_chance: 0.0,
+        enchanted_chance: EnchantedChance::Constant(1.0),
+    };
+    let player_key = Identifier::vanilla_static("player");
+    let looting_sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "looting", 3);
+    let looting_equipment = equipment_with(EquipmentSlot::MainHand, looting_sword.clone());
+    let empty_equipment = EntityEquipmentSlots::default();
+
+    let mut rng = test_rng();
+    let mut tool_only = LootContext::new(&mut rng)
+        .with_tool(&looting_sword)
+        .with_killer_entity(living_entity_ref(&player_key, &empty_equipment));
+    assert!(!condition.test(&mut tool_only));
+
+    let mut rng = test_rng();
+    let mut attacker_only = LootContext::new(&mut rng)
+        .with_killer_entity(living_entity_ref(&player_key, &looting_equipment));
+    assert!(condition.test(&mut attacker_only));
+}
+
+#[test]
+fn equipment_enchantment_level_ignores_empty_stacks() {
+    init_test_registries();
+    let mut empty_sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "looting", 3);
+    empty_sword.count = 0;
+    let equipment = equipment_with(EquipmentSlot::MainHand, empty_sword);
+
+    assert_eq!(
+        EntityEquipmentRef::new(&equipment)
+            .get_enchantment_level(&Identifier::vanilla_static("looting")),
+        0
+    );
+}
+
+#[test]
+fn enchanted_count_increase_rounds_like_java_math_round() {
+    init_test_registries();
+    let function = LootFunction::EnchantedCountIncrease {
+        enchantment: Identifier::vanilla_static("looting"),
+        count: NumberProvider::Constant(-0.5),
+        limit: 0,
+    };
+    let player_key = Identifier::vanilla_static("player");
+    let sword = enchanted_item(&vanilla_items::DIAMOND_SWORD, "looting", 1);
+    let equipment = equipment_with(EquipmentSlot::MainHand, sword);
+    let mut item = ItemStack::with_count(&vanilla_items::PORKCHOP, 2);
+
+    let mut rng = test_rng();
+    let mut ctx =
+        LootContext::new(&mut rng).with_killer_entity(living_entity_ref(&player_key, &equipment));
+    function.apply(&mut item, &mut ctx);
+
+    // Java `Math.round(-0.5f)` is 0, where Rust's `f32::round` gives -1.
+    assert_eq!(item.count, 2);
 }
 
 #[test]

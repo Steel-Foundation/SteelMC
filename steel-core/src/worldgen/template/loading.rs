@@ -1,11 +1,33 @@
+use std::sync::{Arc, LazyLock};
+
+use rustc_hash::FxHashMap;
+use steel_utils::locks::SyncRwLock;
+
 use super::*;
 
+/// Process-wide cache of parsed vanilla structure templates.
+///
+/// Bundled template NBT is immutable, so each template is decompressed and
+/// parsed at most once; every placement afterwards shares the parsed result.
+static VANILLA_TEMPLATE_CACHE: LazyLock<SyncRwLock<FxHashMap<Identifier, Arc<StructureTemplate>>>> =
+    LazyLock::new(|| SyncRwLock::new(FxHashMap::default()));
+
 impl StructureTemplate {
-    pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Self, String> {
-        let Some(bytes) = vanilla_template_pools::vanilla_template_nbt_bytes(key) else {
-            return Err(format!("vanilla structure template {key} is not bundled"));
-        };
-        Self::load_gzip_nbt(registry, bytes, &key.to_string())
+    pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Arc<Self>, String> {
+        if let Some(template) = VANILLA_TEMPLATE_CACHE.read().get(key) {
+            return Ok(Arc::clone(template));
+        }
+
+        let mut cache = VANILLA_TEMPLATE_CACHE.write();
+        if let Some(template) = cache.get(key) {
+            return Ok(Arc::clone(template));
+        }
+
+        let bytes = vanilla_template_pools::vanilla_template_nbt_bytes(key)
+            .ok_or_else(|| format!("vanilla structure template {key} is not bundled"))?;
+        let template = Arc::new(Self::load_gzip_nbt(registry, bytes, &key.to_string())?);
+        cache.insert(key.clone(), Arc::clone(&template));
+        Ok(template)
     }
 
     pub(super) fn load_gzip_nbt(
@@ -122,16 +144,16 @@ impl StructureTemplate {
     ) -> Result<Vec<BlockStateId>, String> {
         let mut states = Vec::with_capacity(entries.len());
         for entry in entries.clone() {
-            let Some(name) = entry.string("Name") else {
+            let Some(name) = entry.string("id") else {
                 return Err(format!(
-                    "structure template {context} has palette entry without Name"
+                    "structure template {context} has palette entry without id"
                 ));
             };
             let name = Identifier::from_str(name.to_str().as_ref()).map_err(|err| {
                 format!("structure template {context} has invalid block identifier: {err}")
             })?;
             let mut properties = BTreeMap::new();
-            if let Some(props) = entry.compound("Properties") {
+            if let Some(props) = entry.compound("properties") {
                 for (key, value) in props.iter() {
                     let Some(value) = value.string() else {
                         return Err(format!(
@@ -317,13 +339,12 @@ impl StructureTemplate {
     pub(super) fn read_entity_tags(nbt: &BorrowedNbtCompound<'_, '_>) -> BTreeSet<String> {
         nbt.list("Tags")
             .and_then(|list| list.strings())
-            .map(|tags| {
+            .map_or_default(|tags| {
                 tags.iter()
                     .take(MAX_ENTITY_TAGS)
                     .map(|tag| tag.to_str().into_owned())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     pub(super) fn strip_entity_base_fields(nbt: &mut NbtCompound) {

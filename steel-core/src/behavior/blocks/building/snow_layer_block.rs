@@ -105,12 +105,7 @@ impl BlockBehavior for SnowLayerBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let pos = if context.replaces_clicked_block() {
-            context.hit_pos()
-        } else {
-            context.place_pos()
-        };
-        let state = context.world.get_block_state(pos);
+        let state = context.world.get_block_state(context.place_pos());
         if state.get_block() == self.block {
             let layers = state.get_value(LAYERS);
             return Some(state.set_value(LAYERS, MAX_SNOW_LAYERS.min(layers + 1)));

@@ -57,6 +57,8 @@ pub struct TranspilerInput {
     /// Cell width in blocks (XZ direction). Determines the `FlatCache` grid size:
     /// `grid_side = (16 / cell_width) + 1`, total entries = `grid_side²`.
     pub cell_width: i32,
+    /// Cell height in blocks (Y direction), for `Interpolated` markers.
+    pub cell_height: i32,
     /// Whether this dimension uses Java's LCG random (`true`) or Xoroshiro (`false`).
     ///
     /// When `true`, vanilla's `RandomState` intercepts noise creation:
@@ -91,9 +93,12 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     // Imports are emitted here so each dimension's output is self-contained
     // when wrapped in a module by the caller.
     quote! {
-        use std::simd::f64x4;
+        use std::simd::Simd;
         use std::simd::Select;
+        use std::simd::cmp::SimdOrd;
+        use std::simd::cmp::SimdPartialEq;
         use std::simd::cmp::SimdPartialOrd;
+        use std::simd::num::SimdInt;
         use std::simd::num::SimdFloat;
 
         use steel_worldgen::density::spline_eval;

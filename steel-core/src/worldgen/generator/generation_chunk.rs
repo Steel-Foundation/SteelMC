@@ -6,16 +6,9 @@ use crate::chunk::Chunk;
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::heightmap::{Heightmap, HeightmapType};
 use crate::chunk::status::ChunkStatus;
-use crate::worldgen::carving_mask::CarvingMask;
 
-/// Marker for the Noise generation operation.
-pub enum NoisePhase {}
-
-/// Marker for the Surface generation operation.
-pub enum SurfacePhase {}
-
-/// Marker for the Carvers generation operation.
-pub enum CarversPhase {}
+/// Marker for vanilla's atomic Terrain generation operation.
+pub enum TerrainPhase {}
 
 /// Stage-scoped access to the center chunk being generated.
 ///
@@ -25,10 +18,11 @@ pub enum CarversPhase {}
 /// them.
 ///
 /// ```compile_fail
-/// use steel_core::worldgen::generator::{GenerationChunk, NoisePhase};
+/// use steel_core::chunk::Chunk;
+/// use steel_core::worldgen::generator::{GenerationChunk, TerrainPhase};
 ///
-/// fn write_surface_column_during_noise(chunk: GenerationChunk<'_, NoisePhase>) {
-///     chunk.write_column(0, 0, &[]);
+/// fn forge_generation_access(chunk: &Chunk) -> GenerationChunk<'_, TerrainPhase> {
+///     GenerationChunk::from_chunk(chunk)
 /// }
 /// ```
 #[repr(transparent)]
@@ -116,19 +110,19 @@ impl<'a, Phase> GenerationChunk<'a, Phase> {
     }
 }
 
-impl GenerationChunk<'_, NoisePhase> {
-    pub(crate) fn acquire(holder: &ChunkHolder) -> GenerationChunk<'_, NoisePhase> {
+impl GenerationChunk<'_, TerrainPhase> {
+    pub(crate) fn acquire(holder: &ChunkHolder) -> GenerationChunk<'_, TerrainPhase> {
         GenerationChunk::acquire_input(holder, ChunkStatus::Biomes)
     }
 
-    /// Writes a Noise-stage block batch using the published Biomes semantics.
+    /// Writes a terrain block batch using the published Biomes semantics.
     #[inline]
     pub fn write_block_batch(self, blocks: &[(usize, usize, usize, BlockStateId)]) {
         self.chunk
             .write_block_batch_for_generation(ChunkStatus::Biomes, blocks);
     }
 
-    /// Replaces the two heightmaps initialized directly by terrain noise filling.
+    /// Replaces the two heightmaps initialized directly by noise filling.
     ///
     /// # Panics
     ///
@@ -144,7 +138,7 @@ impl GenerationChunk<'_, NoisePhase> {
         heightmaps.replace(world_surface);
     }
 
-    /// Installs generator-owned state for reuse by Surface and Carvers.
+    /// Installs generator-owned state for reuse by the remaining terrain work.
     pub fn install_post_noise_state<T>(self, state: T)
     where
         T: DowncastType + Send + Sync,
@@ -175,20 +169,13 @@ impl GenerationChunk<'_, NoisePhase> {
             state,
         );
     }
-}
-
-impl GenerationChunk<'_, SurfacePhase> {
-    pub(crate) fn acquire(holder: &ChunkHolder) -> GenerationChunk<'_, SurfacePhase> {
-        GenerationChunk::acquire_input(holder, ChunkStatus::Noise)
-    }
-
     /// Ensures the world-surface worldgen heightmap exists.
     pub fn prime_world_surface_heightmap(self) {
         self.chunk
             .prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
     }
 
-    /// Borrows generator-owned state retained after Noise.
+    /// Borrows generator-owned state retained after noise filling.
     pub fn with_post_noise_state_mut<T, R>(self, f: impl FnOnce(&mut T) -> R) -> Option<R>
     where
         T: DowncastType + Send + Sync,
@@ -218,13 +205,17 @@ impl GenerationChunk<'_, SurfacePhase> {
             .generation_height_at(HeightmapType::WorldSurfaceWg, local_x, local_z)
     }
 
-    /// Writes one Surface-stage column and applies its Noise-input heightmap effects.
+    /// Writes one terrain column and applies its Biomes-input heightmap effects.
     #[inline]
     pub fn write_column(self, local_x: usize, local_z: usize, blocks: &[(usize, BlockStateId)]) {
-        self.chunk
-            .write_column_blocks_for_generation(ChunkStatus::Noise, local_x, local_z, blocks);
+        self.chunk.write_column_blocks_for_generation(
+            ChunkStatus::Biomes,
+            local_x,
+            local_z,
+            blocks,
+        );
         self.chunk.update_heightmaps_after_direct_column_writes(
-            ChunkStatus::Noise,
+            ChunkStatus::Biomes,
             local_x,
             local_z,
             blocks,
@@ -232,42 +223,12 @@ impl GenerationChunk<'_, SurfacePhase> {
         self.chunk.mark_dirty();
     }
 
-    /// Writes one block using the published Noise semantics.
-    #[inline]
-    pub fn set_relative_block(
-        self,
-        relative_x: usize,
-        relative_y: usize,
-        relative_z: usize,
-        state: BlockStateId,
-    ) {
-        self.chunk.set_relative_block_for_generation(
-            ChunkStatus::Noise,
-            relative_x,
-            relative_y,
-            relative_z,
-            state,
-        );
-    }
-}
-
-impl GenerationChunk<'_, CarversPhase> {
-    pub(crate) fn acquire(holder: &ChunkHolder) -> GenerationChunk<'_, CarversPhase> {
-        GenerationChunk::acquire_input(holder, ChunkStatus::Surface)
-    }
-
-    /// Ensures the world-surface worldgen heightmap exists.
-    pub fn prime_world_surface_heightmap(self) {
-        self.chunk
-            .prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
-    }
-
-    /// Drops retained generator state without running Carvers.
+    /// Drops retained generator state after terrain generation.
     pub fn clear_post_noise_state(self) {
         self.chunk.clear_transient_generation_state();
     }
 
-    /// Consumes generator-owned state retained after Noise.
+    /// Consumes generator-owned state retained after noise filling.
     pub fn consume_post_noise_state<T, R>(self, f: impl FnOnce(Option<&mut T>) -> R) -> R
     where
         T: DowncastType + Send + Sync,
@@ -275,17 +236,11 @@ impl GenerationChunk<'_, CarversPhase> {
         self.chunk.consume_transient_generation_state(f)
     }
 
-    /// Runs `f` with the chunk's lazily initialized carving mask.
-    pub fn with_carving_mask<R>(self, f: impl FnOnce(&mut CarvingMask) -> R) -> R {
-        let mut mask = self.chunk.get_or_create_carving_mask();
-        f(&mut mask)
-    }
-
-    /// Sets one carved block using the published Surface semantics.
+    /// Sets one carved block using the published Biomes semantics.
     #[inline]
     pub fn set_block_state(self, pos: BlockPos, state: BlockStateId) {
         let _ = self.chunk.set_block_state_for_generation(
-            ChunkStatus::Surface,
+            ChunkStatus::Biomes,
             pos,
             state,
             UpdateFlags::empty(),
@@ -304,12 +259,6 @@ impl GenerationChunk<'_, CarversPhase> {
         let heightmaps = self.chunk.generation_heightmaps();
         heightmaps.get(HeightmapType::WorldSurfaceWg).map(f)
     }
-
-    /// Marks a position for Vanilla generation postprocessing.
-    #[inline]
-    pub fn mark_pos_for_postprocessing(self, pos: BlockPos) {
-        self.chunk.mark_pos_for_postprocessing(pos);
-    }
 }
 
 #[cfg(test)]
@@ -319,7 +268,7 @@ mod tests {
     use steel_registry::init_vanilla_registry;
     use steel_utils::ChunkPos;
 
-    use super::{GenerationChunk, NoisePhase, SurfacePhase};
+    use super::{GenerationChunk, TerrainPhase};
     use crate::chunk::Chunk;
     use crate::chunk::chunk_holder::ChunkHolder;
     use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
@@ -350,15 +299,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "generation capability requires the exact published input status")]
     fn capability_rejects_the_wrong_published_input() {
-        let holder = holder_at(ChunkStatus::Biomes);
-        let _ = GenerationChunk::<SurfacePhase>::acquire(&holder);
+        let holder = holder_at(ChunkStatus::StructureReferences);
+        let _ = GenerationChunk::<TerrainPhase>::acquire(&holder);
     }
 
     #[test]
     #[should_panic(expected = "generation capability requires the exact published input status")]
     fn capability_rejects_an_advanced_published_input() {
-        let holder = holder_at(ChunkStatus::Surface);
-        let _ = GenerationChunk::<NoisePhase>::acquire(&holder);
+        let holder = holder_at(ChunkStatus::Terrain);
+        let _ = GenerationChunk::<TerrainPhase>::acquire(&holder);
     }
 }
 
@@ -368,7 +317,7 @@ pub mod benchmark_support {
     use glam::IVec3;
     use steel_worldgen::noise::Beardifier;
 
-    use super::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
+    use super::{GenerationChunk, TerrainPhase};
     use crate::chunk::Chunk;
     use crate::worldgen::generator::ChunkGenerator;
 
@@ -377,7 +326,10 @@ pub mod benchmark_support {
     where
         G: ChunkGenerator + ?Sized,
     {
-        generator.fill_from_noise(GenerationChunk::<NoisePhase>::from_chunk(chunk), beardifier);
+        generator.fill_from_noise(
+            GenerationChunk::<TerrainPhase>::from_chunk(chunk),
+            beardifier,
+        );
     }
 
     /// Calls Surface directly for a Criterion benchmark.
@@ -386,7 +338,7 @@ pub mod benchmark_support {
         G: ChunkGenerator + ?Sized,
     {
         generator.build_surface(
-            GenerationChunk::<SurfacePhase>::from_chunk(chunk),
+            GenerationChunk::<TerrainPhase>::from_chunk(chunk),
             neighbor_biomes,
         );
     }
@@ -396,6 +348,6 @@ pub mod benchmark_support {
     where
         G: ChunkGenerator + ?Sized,
     {
-        generator.apply_carvers(GenerationChunk::<CarversPhase>::from_chunk(chunk));
+        generator.apply_carvers(GenerationChunk::<TerrainPhase>::from_chunk(chunk));
     }
 }

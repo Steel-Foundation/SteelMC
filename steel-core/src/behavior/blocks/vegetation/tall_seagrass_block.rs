@@ -13,6 +13,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::SharedBlockEntity;
 use crate::fluid::get_fluid_state_from_block;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
 
@@ -111,6 +112,7 @@ impl BlockBehavior for TallSeagrassBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::SEAGRASS))
@@ -202,7 +204,9 @@ mod tests {
         let lower = vanilla_blocks::TALL_SEAGRASS
             .default_state()
             .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
-        let falling_full_water = vanilla_blocks::WATER.default_state().set_value(LEVEL, 8);
+        let falling_full_water = vanilla_blocks::WATER
+            .default_state()
+            .set_value(LEVEL, LEVEL.max);
         let level = tall_seagrass_level(vanilla_blocks::DIRT.default_state(), falling_full_water);
 
         assert!(behavior.can_survive(lower, &level, BlockPos::ZERO));

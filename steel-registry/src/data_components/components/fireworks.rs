@@ -119,6 +119,17 @@ impl FireworkExplosion {
         self.has_twinkle
     }
 
+    #[must_use]
+    pub fn with_fade_colors(&self, fade_colors: Vec<i32>) -> Self {
+        Self {
+            shape: self.shape,
+            colors: self.colors.clone(),
+            fade_colors,
+            has_trail: self.has_trail,
+            has_twinkle: self.has_twinkle,
+        }
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert("shape", self.shape.serialized_name());

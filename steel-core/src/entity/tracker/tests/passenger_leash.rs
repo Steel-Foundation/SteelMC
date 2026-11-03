@@ -42,7 +42,7 @@ fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
-    let passenger: SharedEntity = passenger_typed.clone();
+    let passenger: SharedEntity = Arc::<PairingTestEntity>::clone(&passenger_typed);
     vehicle_typed.add_passenger(&passenger);
     let vehicle: SharedEntity = vehicle_typed;
     passenger_typed.set_vehicle(&vehicle);
@@ -59,7 +59,7 @@ fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
-    let passenger: SharedEntity = passenger_typed.clone();
+    let passenger: SharedEntity = Arc::<PairingTestEntity>::clone(&passenger_typed);
     vehicle_typed.add_passenger(&passenger);
     let vehicle: SharedEntity = vehicle_typed;
     passenger_typed.set_vehicle(&vehicle);
@@ -125,7 +125,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
             entity_link: |entity_id, packet| updates.push((entity_id, packet)),
         },
     );
-    assert!(updates.is_empty());
+    assert_eq!(updates.len(), 0);
 
     assert!(pig_mob.set_leashed_to(&holder));
     tracker.send_changes(
@@ -159,7 +159,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
             entity_link: |entity_id, packet| updates.push((entity_id, packet)),
         },
     );
-    assert!(updates.is_empty());
+    assert_eq!(updates.len(), 0);
 
     pig_mob.remove_leash_state();
     tracker.send_changes(
@@ -185,7 +185,7 @@ fn send_changes_broadcasts_passenger_changes_once() {
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
-    let vehicle: SharedEntity = vehicle_typed.clone();
+    let vehicle: SharedEntity = Arc::<PairingTestEntity>::clone(&vehicle_typed);
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
     let passenger: SharedEntity = passenger_typed;
     track_entity_for_player(&tracker, &vehicle, 99);
@@ -272,7 +272,7 @@ fn send_changes_broadcasts_passenger_changes_once() {
     assert_eq!(updates.len(), 1);
     assert_eq!(updates[0].0, 99);
     assert_eq!(updates[0].1.vehicle_id, 1);
-    assert!(updates[0].1.passenger_ids.is_empty());
+    assert_eq!(updates[0].1.passenger_ids.len(), 0);
 }
 
 #[test]
@@ -311,5 +311,5 @@ fn send_changes_removes_untracked_passenger_from_vehicle_packet() {
     assert_eq!(updates.len(), 1);
     assert_eq!(updates[0].0, 99);
     assert_eq!(updates[0].1.vehicle_id, 1);
-    assert!(updates[0].1.passenger_ids.is_empty());
+    assert_eq!(updates[0].1.passenger_ids.len(), 0);
 }

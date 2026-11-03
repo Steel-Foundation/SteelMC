@@ -67,9 +67,7 @@ fn set_target_flight(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
-    let Some(allowed) = context.boolean("value") else {
-        return Err(missing_argument("value"));
-    };
+    let allowed = context.boolean("value")?;
     set_flight(&targets, allowed);
     Ok(1)
 }
@@ -119,9 +117,7 @@ fn source_player(
 }
 
 fn required_speed(context: &SteelCommandContext<CommandSource>) -> Result<f32, CommandSyntaxError> {
-    context
-        .float("speed")
-        .ok_or_else(|| missing_argument("speed"))
+    context.float("speed")
 }
 
 fn toggle_flight(targets: &[Arc<Player>]) {
@@ -160,7 +156,7 @@ fn set_flying_speed(source: &CommandSource, targets: &[Arc<Player>], multiplier:
         source.send_success(
             &TextComponent::plain(format!(
                 "Set flying speed for player '{}' to {multiplier:.1}x ({speed:.3})",
-                target.gameprofile.name
+                target.gameprofile.name()
             )),
             true,
         );
@@ -174,7 +170,7 @@ fn query_flying_speed(source: &CommandSource, targets: &[Arc<Player>]) {
         source.send_success(
             &TextComponent::plain(format!(
                 "Current flying speed for player '{}': {multiplier:.1}x ({speed:.3})",
-                target.gameprofile.name
+                target.gameprofile.name()
             )),
             false,
         );
@@ -183,12 +179,6 @@ fn query_flying_speed(source: &CommandSource, targets: &[Arc<Player>]) {
 
 fn speed_from_multiplier(multiplier: f32) -> f32 {
     multiplier * DEFAULT_FLYING_SPEED
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

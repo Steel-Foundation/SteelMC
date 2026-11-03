@@ -63,15 +63,22 @@ pub struct CompressionInfo {
     pub level: i32,
 }
 
+impl CompressionInfo {
+    /// Vanilla default compression threshold in bytes.
+    pub const DEFAULT_THRESHOLD: u32 = 256;
+    /// Steel's default zlib compression level.
+    pub const DEFAULT_LEVEL: i32 = 4;
+}
+
 impl Default for CompressionInfo {
     #[expect(
         clippy::unwrap_used,
-        reason = "256 is a known nonzero compression threshold"
+        reason = "the default threshold is a known nonzero compression threshold"
     )]
     fn default() -> Self {
         Self {
-            threshold: NonZeroU32::new(256).unwrap(),
-            level: 4,
+            threshold: NonZeroU32::new(Self::DEFAULT_THRESHOLD).unwrap(),
+            level: Self::DEFAULT_LEVEL,
         }
     }
 }
@@ -142,7 +149,7 @@ impl EncodedPacket {
         let data_len = packet_data.len();
         // We dont need any more size check to convert to i32 as MAX_PACKET_DATA_SIZE < i32::MAX
         if data_len + VarInt::MAX_SIZE * 2 > MAX_PACKET_DATA_SIZE {
-            Err(PacketError::TooLong(data_len))?;
+            return Err(PacketError::TooLong(data_len));
         }
 
         if data_len >= compression.threshold.get() as _ {

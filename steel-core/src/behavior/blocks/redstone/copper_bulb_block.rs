@@ -10,6 +10,7 @@ use steel_registry::sound_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::blocks::{WeatherState, WeatheringCopper};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{SignalGetter as _, World};
@@ -68,9 +69,9 @@ impl CopperBulbBlock {
 
     fn analog_output(world: &World, pos: BlockPos) -> i32 {
         if world.get_block_state(pos).get_value(LIT) {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }
@@ -196,10 +197,11 @@ mod tests {
     fn bulb_toggles_lit_only_on_rising_edges() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("copper_bulb_edges");
+        let world_fixture = fresh_test_world("copper_bulb_edges");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let power_pos = pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(
             power_pos,
             vanilla_blocks::REDSTONE_BLOCK.default_state(),
@@ -216,7 +218,7 @@ mod tests {
         assert!(first_rise.get_value(LIT));
         let behavior = BLOCK_BEHAVIORS.get_behavior(first_rise.get_block());
         assert_eq!(
-            behavior.get_analog_output_signal(first_rise, &world, pos, Direction::North),
+            behavior.get_analog_output_signal(first_rise, world.as_ref(), pos, Direction::North),
             15
         );
 

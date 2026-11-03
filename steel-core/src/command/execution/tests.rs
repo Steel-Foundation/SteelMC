@@ -130,7 +130,7 @@ fn queue_runs_standard_commands_with_the_runtime_source_callback() {
                         .invocations
                         .lock()
                         .push(context.source().name);
-                    let Some(value) = context.integer("value") else {
+                    let Ok(value) = context.integer("value") else {
                         panic!("parsed integer should be available to the executor");
                     };
                     Ok(value)

@@ -26,6 +26,15 @@ pub struct MenuOpenContext<'a> {
     pub world: &'a Arc<World>,
 }
 
+/// Whether the client already predicted a side effect such as the drop swing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Prediction {
+    /// The client predicted it; only tracking players need the update.
+    Predicted,
+    /// Only the server knows; the acting player needs the update too.
+    ServerOnly,
+}
+
 /// Whether a terminal menu removal completed synchronously.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[must_use]

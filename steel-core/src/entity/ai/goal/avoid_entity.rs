@@ -4,6 +4,7 @@ use super::random_pos::default_random_pos_away;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::entity_selector;
 use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
@@ -23,7 +24,7 @@ impl AvoidEntityGoal {
             max_dist,
             walk_speed_modifier,
             sprint_speed_modifier,
-            |target, _| no_creative_or_spectator(target),
+            |target, _| entity_selector::no_creative_or_spectator(target.as_entity_event_source()),
         )
     }
 
@@ -103,7 +104,7 @@ impl Goal for AvoidEntityGoal {
         self.path = None;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(to_avoid) = &self.to_avoid else {
             return;
         };
@@ -118,12 +119,6 @@ impl Goal for AvoidEntityGoal {
             .lock()
             .set_speed_modifier(speed_modifier);
     }
-}
-
-fn no_creative_or_spectator(target: &dyn LivingEntity) -> bool {
-    target
-        .as_player()
-        .is_none_or(|player| !target.is_spectator() && !player.has_infinite_materials())
 }
 
 #[cfg(test)]
@@ -148,7 +143,7 @@ mod tests {
         init_vanilla_registry();
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(no_creative_or_spectator(&pig));
+        assert!(entity_selector::no_creative_or_spectator(&pig));
     }
 
     #[test]
@@ -164,7 +159,13 @@ mod tests {
     fn avoid_entity_goal_sprints_when_close_to_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         goal.to_avoid = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
@@ -172,7 +173,7 @@ mod tests {
             Weak::new(),
         )));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(
             mob.mob_base()
@@ -188,7 +189,13 @@ mod tests {
     fn avoid_entity_goal_walks_when_far_from_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
         goal.to_avoid = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             2,
@@ -196,7 +203,7 @@ mod tests {
             Weak::new(),
         )));
 
-        goal.tick(&mob);
+        goal.tick(mob.as_ref(), &mob_entity);
 
         assert_eq!(
             mob.mob_base()

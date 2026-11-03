@@ -25,7 +25,6 @@ impl SpreadType {
     pub fn evaluate(self, rng: &mut LegacyRandom, limit: i32) -> i32 {
         match self {
             Self::Linear => rng.next_i32_bounded(limit),
-            // Vanilla: `(nextInt(limit) + nextInt(limit)) / 2`.
             #[expect(
                 clippy::manual_midpoint,
                 reason = "midpoint would change overflow vs vanilla"
@@ -577,7 +576,7 @@ mod tests {
     #[test]
     fn test_load_vanilla_structure_sets() {
         let sets = load_vanilla_structure_sets();
-        assert_eq!(sets.len(), 20);
+        assert_eq!(sets.len(), 21);
 
         // Verify villages loaded correctly from datapack
         let (key, villages) = sets
@@ -704,7 +703,7 @@ mod tests {
         let positions = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
         >(0, 32, 3, 0, None, &thread_pool);
-        assert!(positions.is_empty());
+        assert_eq!(positions.len(), 0);
     }
 
     #[test]

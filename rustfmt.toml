@@ -1,5 +1,6 @@
 edition = "2024"
 style_edition = "2024"
+newline_style = "Unix"
 
 ignore = [
     "steel-core/src/behavior/generated",

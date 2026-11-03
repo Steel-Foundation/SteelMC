@@ -13,6 +13,7 @@ use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext, PlacementSource};
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -20,7 +21,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
 const WIRE_DISTANCE_MAX: usize = 42;
 const RECHECK_PERIOD: i32 = 10;
 
-/// Vanilla `TripWireHookBlock` behavior.
+/// Tripwire hook block behavior.
 #[block_behavior]
 pub struct TripWireHookBlock {
     block: BlockRef,
@@ -78,7 +79,7 @@ impl TripWireHookBlock {
         } else if !attached && was_attached {
             (
                 &sound_events::BLOCK_TRIPWIRE_DETACH,
-                1.2 / rand::random::<f32>().mul_add(0.2, 0.9),
+                1.2 / rand::random_range(0.9f32..1.1),
                 &vanilla_game_events::BLOCK_DETACH,
             )
         } else {
@@ -302,7 +303,11 @@ impl BlockBehavior for TripWireHookBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED) { 15 } else { 0 }
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 
     fn get_direct_signal(
@@ -314,9 +319,9 @@ impl BlockBehavior for TripWireHookBlock {
         _context: SignalQueryContext,
     ) -> i32 {
         if state.get_value(POWERED) && state.get_value(HORIZONTAL_FACING) == direction {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }
@@ -334,10 +339,11 @@ mod tests {
     fn line_attachment_power_and_disarming_match_vanilla() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("tripwire_line");
+        let world_fixture = fresh_test_world("tripwire_line");
+        let world = &world_fixture.world;
         let left = BlockPos::new(5, 64, 8);
         let right = BlockPos::new(9, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(left));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(left));
         assert!(world.set_block(
             left.west(),
             vanilla_blocks::STONE.default_state(),
@@ -364,7 +370,7 @@ mod tests {
             ));
         }
 
-        TripWireHookBlock::calculate_state(&world, left, left_state, false, false, -1, None);
+        TripWireHookBlock::calculate_state(world, left, left_state, false, false, -1, None);
         assert!(world.get_block_state(left).get_value(ATTACHED));
         assert!(world.get_block_state(right).get_value(ATTACHED));
 
@@ -372,7 +378,7 @@ mod tests {
             .get_block_state(left.relative_n(Direction::East, 2))
             .set_value(POWERED, true);
         TripWireHookBlock::calculate_state(
-            &world,
+            world,
             left,
             world.get_block_state(left),
             false,
@@ -384,7 +390,7 @@ mod tests {
         assert!(world.get_block_state(right).get_value(POWERED));
 
         TripWireHookBlock::calculate_state(
-            &world,
+            world,
             left,
             world.get_block_state(left),
             false,

@@ -10,6 +10,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::base::BasePressurePlateBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -58,9 +59,9 @@ impl WeightedPressurePlateBlock {
     fn signal_for_count(count: i32, max_weight: i32) -> i32 {
         let count = count.min(max_weight);
         if count <= 0 {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         }
-        (((count as f32) / (max_weight as f32)) * 15.0).ceil() as i32
+        (((count as f32) / (max_weight as f32)) * MAX_REDSTONE_SIGNAL as f32).ceil() as i32
     }
 
     fn signal_strength(&self, world: &World, pos: BlockPos) -> i32 {

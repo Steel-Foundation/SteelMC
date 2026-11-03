@@ -46,7 +46,7 @@ pub enum PathType {
     BigMobsCloseToDanger,
 }
 
-/// Vanilla `PathComputationType`.
+/// Which medium a path is being computed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PathComputationType {
     Land,
@@ -344,7 +344,7 @@ impl Default for PathfindingMalus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathTypeCache {
     positions: Box<[i64]>,
     path_types: Box<[Option<PathType>]>,
@@ -458,6 +458,7 @@ const fn fastutil_mix(value: u64) -> u64 {
 mod tests {
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::{
         PATH_TYPE_CACHE_MASK, Path, PathType, PathTypeCache, PathTypeSet, PathfindingContext,
@@ -480,11 +481,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 

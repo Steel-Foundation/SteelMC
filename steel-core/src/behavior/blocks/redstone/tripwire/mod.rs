@@ -1,5 +1,5 @@
 mod block;
 mod hook;
 
-pub use block::TripWireBlock;
-pub use hook::TripWireHookBlock;
+pub use block::*;
+pub use hook::*;

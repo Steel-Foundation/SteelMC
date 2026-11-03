@@ -8,7 +8,7 @@ use steel_registry::{
         properties::{BlockStateProperties, EnumProperty},
     },
     items::item::BlockHitResult,
-    vanilla_blocks,
+    vanilla_blocks, vanilla_custom_stats,
 };
 use steel_utils::{BlockStateId, Direction, translations};
 use text_components::TextComponent;
@@ -75,11 +75,12 @@ impl BlockBehavior for AnvilBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let inventory = player.inventory.clone();
+        let inventory = Arc::clone(&player.inventory);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_REPAIR.msg()),
             move |context| anvil(inventory, context.container_id, pos, context.world),
         );
+        player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_ANVIL);
         InteractionResult::Success
     }
 }

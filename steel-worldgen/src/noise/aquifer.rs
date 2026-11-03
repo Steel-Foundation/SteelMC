@@ -292,8 +292,8 @@ fn is_deep_dark_region<N: DimensionNoises>(
     z: i32,
 ) -> bool {
     cache.ensure(x, z, noises);
-    let erosion = noises.router_erosion(cache, x, y, z);
-    let depth = noises.router_depth(cache, x, y, z);
+    let erosion = f64::from(noises.router_erosion(cache, x, y, z));
+    let depth = f64::from(noises.router_depth(cache, x, y, z));
     erosion < -0.225 && depth > 0.9
 }
 
@@ -899,7 +899,7 @@ impl<N: DimensionNoises> Aquifer<N> {
 
                 self.cache.ensure(x, z, noises);
                 let floodedness_noise = clamp(
-                    noises.router_fluid_level_floodedness(&mut self.cache, x, y, z),
+                    f64::from(noises.router_fluid_level_floodedness(&mut self.cache, x, y, z)),
                     -1.0,
                     1.0,
                 );
@@ -937,8 +937,9 @@ impl<N: DimensionNoises> Aquifer<N> {
 
         // fluid_level_spread is evaluated at grid coordinates (not block coordinates)
         self.cache.ensure(cell_x, cell_z, noises);
-        let spread =
-            noises.router_fluid_level_spread(&mut self.cache, cell_x, cell_y, cell_z) * 10.0;
+        let spread = f64::from(
+            noises.router_fluid_level_spread(&mut self.cache, cell_x, cell_y, cell_z) * 10.0_f32,
+        );
         let spread_quantized = quantize(spread, 3);
         let target = cell_middle_y + spread_quantized;
 
@@ -959,7 +960,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             let cell_y = y.div_euclid(40);
             let cell_z = z.div_euclid(64);
             self.cache.ensure(cell_x, cell_z, noises);
-            let lava_noise = noises.router_lava(&mut self.cache, cell_x, cell_y, cell_z);
+            let lava_noise = f64::from(noises.router_lava(&mut self.cache, cell_x, cell_y, cell_z));
             if lava_noise.abs() > 0.3 {
                 return self.lava_id;
             }
@@ -1025,7 +1026,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             0.0
         } else if barrier_noise.is_nan() {
             self.cache.ensure(x, z, noises);
-            let n = noises.router_barrier(&mut self.cache, x, y, z);
+            let n = f64::from(noises.router_barrier(&mut self.cache, x, y, z));
             *barrier_noise = n;
             n
         } else {

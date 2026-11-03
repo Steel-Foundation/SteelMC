@@ -9,7 +9,7 @@ use steel_registry::{
     },
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_items,
+    vanilla_blocks, vanilla_items,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -21,14 +21,14 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         blocks::{CakeBlock, CandleBlock},
     },
-    entity::{Entity, projectile::Projectile},
+    block_entity::SharedBlockEntity,
+    entity::projectile::Projectile,
     player::Player,
     world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for Candle Cakes
 /// TODO:
-/// - [ ] animation ticks
 /// - [ ] onExplosion
 #[block_behavior]
 pub struct CandleCakeBlock {
@@ -81,15 +81,7 @@ impl BlockBehavior for CandleCakeBlock {
             && is_empty
             && state.get_value(LIT)
         {
-            world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
-            // TODO: particles!
-            world.play_block_sound(
-                &sound_events::BLOCK_CANDLE_EXTINGUISH,
-                pos,
-                1.0,
-                1.0,
-                Some(player.id()),
-            );
+            CandleBlock::extinguish(Some(player), state, world, pos);
             return InteractionResult::Success;
         }
         InteractionResult::TryEmptyHandInteraction
@@ -149,6 +141,7 @@ impl BlockBehavior for CandleCakeBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::CAKE))

@@ -1,11 +1,26 @@
 use super::{
     BorrowedNbtTag, Component, ComponentData, ComponentHasher, ComponentPatchEntry,
-    DataComponentPatch, DataComponentType, DowncastType, EmbeddedNbtCodec, FromNbtTag,
-    HashComponent, HashEntry, Identifier, NbtCompound, OwnedNbtTag, Result, ToNbtTag,
+    DataComponentMap, DataComponentPatch, DataComponentType, DowncastType, EmbeddedNbtCodec,
+    FromNbtTag, HashComponent, HashEntry, Identifier, NbtCompound, OwnedNbtTag, Result, ToNbtTag,
     sort_map_entries,
 };
 
 impl DataComponentPatch {
+    /// Computes the persistent map hash for one build-time validated component
+    /// without consulting the not-yet-published global registry.
+    pub(crate) fn compute_single_extracted_hash<T: HashComponent>(
+        key: &Identifier,
+        value: &T,
+    ) -> i32 {
+        let entry = hash_entry(key.to_string().compute_hash(), value.compute_hash());
+        let mut hasher = ComponentHasher::new();
+        hasher.start_map();
+        hasher.put_raw_bytes(&entry.key_bytes);
+        hasher.put_raw_bytes(&entry.value_bytes);
+        hasher.end_map();
+        hasher.finish()
+    }
+
     /// Computes Vanilla's `HashOps` value for the persistent patch codec.
     pub fn compute_persistent_hash(&self) -> Result<i32> {
         use crate::{REGISTRY, RegistryExt};
@@ -107,9 +122,32 @@ impl DataComponentPatch {
     pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
         let (tag, errors) = self.encode_nbt(false);
         for error in errors {
-            log::warn!("Item component serialization error: {error}");
+            log::warn!("Data component serialization error: {error}");
         }
         tag
+    }
+}
+
+impl DataComponentMap {
+    fn as_patch(&self) -> DataComponentPatch {
+        DataComponentPatch {
+            entries: self
+                .map
+                .iter()
+                .map(|(key, value)| (key.clone(), ComponentPatchEntry::Set(value.clone())))
+                .collect(),
+        }
+    }
+
+    /// Strictly encodes this component map through its persistent codecs.
+    pub fn try_to_nbt_tag_ref(&self) -> Result<OwnedNbtTag> {
+        self.as_patch().try_to_nbt_tag_ref()
+    }
+
+    /// Encodes this component map while reporting and omitting invalid values.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
+        self.as_patch().to_nbt_tag_ref()
     }
 }
 
@@ -168,6 +206,20 @@ impl FromNbtTag for DataComponentPatch {
         }
 
         Some(patch)
+    }
+}
+
+impl FromNbtTag for DataComponentMap {
+    fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
+        let patch = DataComponentPatch::from_nbt_tag(tag)?;
+        let mut map = rustc_hash::FxHashMap::default();
+        for (key, entry) in patch.entries {
+            let ComponentPatchEntry::Set(value) = entry else {
+                return None;
+            };
+            map.insert(key, value);
+        }
+        Some(Self { map })
     }
 }
 

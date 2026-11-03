@@ -20,15 +20,10 @@ impl Player {
         });
     }
 
-    /// Triggers arm swing animation and broadcasts it to tracking players.
-    pub fn swing(&self, hand: InteractionHand, update_self: bool) {
-        LivingEntity::swing(self, hand, update_self);
-    }
-
     /// Handles the use of an item on a block.
     ///
     /// Implements the logic from Java's `ServerGamePacketListenerImpl.handleUseItemOn()`.
-    pub fn handle_use_item_on(&self, packet: SUseItemOn) {
+    pub fn handle_use_item_on(self: &Arc<Self>, packet: SUseItemOn) {
         if !self.has_client_loaded() {
             return;
         }
@@ -55,7 +50,7 @@ impl Player {
         if !location_is_valid {
             log::warn!(
                 "Rejecting UseItemOnPacket from {}: location {:?} too far from block {:?}",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 location,
                 pos
             );
@@ -63,14 +58,15 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         let world = self.get_world();
 
         if pos.y() >= world.max_build_height() {
-            // TODO: Send "build.tooHigh" message to player
+            self.send_build_limit_too_high_message(world.get_max_y());
             self.send_block_updates(pos, direction);
             return;
         }
-
         if self.is_awaiting_teleport() {
             self.send_block_updates(pos, direction);
             return;
@@ -81,21 +77,21 @@ impl Player {
             return;
         }
 
+        let animation = self.interact_animation(packet.hand);
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
-
-        if result.should_swing_server() {
-            self.swing(packet.hand, true);
-        }
+        self.swing_after_interaction(packet.hand, animation, result);
 
         self.send_block_updates(pos, direction);
         self.broadcast_inventory_changes();
     }
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
-    pub fn handle_player_action(&self, packet: SPlayerAction) {
+    pub fn handle_player_action(self: &Arc<Self>, packet: SPlayerAction) {
         if !self.has_client_loaded() {
             return;
         }
+
+        self.reset_last_action_time();
 
         let world = self.get_world();
         match packet.action {
@@ -105,6 +101,16 @@ impl Player {
                     &world,
                     packet.pos,
                     BlockBreakAction::Start,
+                    packet.direction,
+                );
+                self.ack_block_changes_up_to(packet.sequence);
+            }
+            PlayerAction::ChangeDestroyDirection => {
+                self.block_breaking.lock().handle_block_break_action(
+                    self,
+                    &world,
+                    packet.pos,
+                    BlockBreakAction::ChangeDirection,
                     packet.direction,
                 );
                 self.ack_block_changes_up_to(packet.sequence);
@@ -136,7 +142,8 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                self.release_using_item();
+                let player: SharedEntity = Arc::<Player>::clone(self);
+                self.release_using_item(&player);
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {
@@ -179,7 +186,9 @@ impl Player {
             return;
         }
 
-        let state = self.get_world().get_block_state(packet.pos);
+        let world = self.get_world();
+
+        let state = world.get_block_state(packet.pos);
         if state.is_air() {
             return;
         }
@@ -188,9 +197,13 @@ impl Player {
         let block_behaviors = &*BLOCK_BEHAVIORS;
         let behavior = block_behaviors.get_behavior(block);
 
+        let block_entity = world.get_block_entity(packet.pos);
+
         let include_data = self.has_infinite_materials() && packet.include_data;
 
-        let Some(item_stack) = behavior.get_clone_item_stack(block, state, include_data) else {
+        let Some(item_stack) =
+            behavior.get_clone_item_stack(block, state, block_entity, include_data)
+        else {
             return;
         };
 
@@ -202,18 +215,27 @@ impl Player {
 
         let mut inventory = self.inventory.lock();
 
-        let slot_with_item = inventory.find_slot_matching_item(&item_stack);
+        match inventory.find_slot_matching_item_with_same_components(&item_stack) {
+            Some(slot_with_item) => {
+                if PlayerInventory::is_hotbar_slot(slot_with_item) {
+                    inventory.set_selected_slot(slot_with_item);
+                } else {
+                    let slot = inventory.get_suitable_hotbar_slot();
 
-        if slot_with_item != -1 {
-            if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
-                inventory.set_selected_slot(slot_with_item as u8);
-            } else {
-                inventory.pick_slot(slot_with_item);
+                    inventory.set_selected_slot(slot);
+                    inventory.pick_slot(slot_with_item);
+                }
             }
-        } else if self.has_infinite_materials() {
-            inventory.add_and_pick_item(item_stack);
-        } else {
-            return;
+            None => {
+                if self.has_infinite_materials() {
+                    let slot = inventory.get_suitable_hotbar_slot();
+
+                    inventory.set_selected_slot(slot);
+                    inventory.add_and_pick_item(item_stack);
+                } else {
+                    return;
+                }
+            }
         }
 
         self.send_packet(CSetHeldSlot {
@@ -233,6 +255,8 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         let world = self.get_world();
 
         let Some(block_entity) = world.get_block_entity(packet.pos) else {
@@ -247,15 +271,15 @@ impl Player {
             return;
         }
 
-        if sign.get_player_who_may_edit() != Some(self.gameprofile.id) {
+        if sign.get_player_who_may_edit() != Some(self.gameprofile.id()) {
             log::warn!(
                 "Player {} tried to edit sign they're not allowed to edit",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
 
-        let mut text = sign.get_text(packet.is_front_text);
+        let mut text = sign.get_text(packet.slot);
         for (i, line) in packet.lines.iter().enumerate() {
             if i < 4 {
                 let stripped = strip_formatting_codes(line);
@@ -263,7 +287,7 @@ impl Player {
             }
         }
 
-        sign.set_text(text, packet.is_front_text);
+        sign.set_text(text, packet.slot);
         sign.set_player_who_may_edit(None);
         sign.set_changed();
 
@@ -280,14 +304,14 @@ impl Player {
     ///
     /// # Arguments
     /// * `pos` - Position of the sign block
-    /// * `is_front_text` - Whether to edit front (true) or back (false) text
-    pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
+    /// * `slot` - Which side of the sign to edit
+    pub fn open_sign_editor(&self, pos: BlockPos, slot: SignTextSlot) {
         let world = self.get_world();
 
         if let Some(block_entity) = world.get_block_entity(pos)
             && let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>()
         {
-            sign.set_player_who_may_edit(Some(self.gameprofile.id));
+            sign.set_player_who_may_edit(Some(self.gameprofile.id()));
         }
 
         let state = world.get_block_state(pos);
@@ -296,7 +320,7 @@ impl Player {
             block_state: state,
         });
 
-        self.send_packet(COpenSignEditor { pos, is_front_text });
+        self.send_packet(COpenSignEditor { pos, slot });
     }
 }
 
@@ -305,7 +329,7 @@ impl Player {
 /// This is equivalent to vanilla's `ChatFormatting.stripFormatting()`.
 fn strip_formatting_codes(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
+    let mut chars = text.chars();
 
     while let Some(c) = chars.next() {
         if c == '§' {
@@ -320,21 +344,20 @@ fn strip_formatting_codes(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::vanilla_items;
-    use steel_utils::ChunkPos;
-    use uuid::Uuid;
-
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::player::connection::NetworkConnection as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use steel_registry::vanilla_items;
+    use steel_utils::ChunkPos;
 
     #[test]
     fn use_item_on_rejects_non_finite_hit_locations() {
-        let world = fresh_test_world("use_item_on_non_finite_hit_location");
-        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_test_world("use_item_on_non_finite_hit_location");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         init_behaviors();
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

@@ -11,6 +11,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
     pickup_waterlogged_block,
 };
+use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
@@ -21,6 +22,7 @@ use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::sound_events;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_game_events;
@@ -68,7 +70,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     let (start, end) = context.player.get_ray_endpoints();
 
     // Raytrace: stop on source fluids
-    let (hit_block, _) = context.world.raytrace(start, end, |pos, world| {
+    let (hit_block, hit_direction) = context.world.raytrace(start, end, |pos, world| {
         let state = world.get_block_state(pos);
         let block = state.get_block();
 
@@ -89,9 +91,17 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     });
 
     // Vanilla returns PASS when raytrace misses (allows other handlers to try)
-    let Some(hit_pos) = hit_block else {
+    let (Some(hit_pos), Some(direction)) = (hit_block, hit_direction) else {
         return InteractionResult::Pass;
     };
+
+    let item = context.inv.with_item(|item| item.clone());
+    if !context
+        .player
+        .may_use_item_at(direction.relative(hit_pos), direction, &item)
+    {
+        return InteractionResult::Fail;
+    }
 
     let hit_state = context.world.get_block_state(hit_pos);
     let block_behavior = BLOCK_BEHAVIORS.get_behavior(hit_state.get_block());
@@ -99,11 +109,15 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     if let Some(result) =
         block_behavior.pickup_block(context.world, hit_pos, hit_state, Some(context.player))
     {
+        context.inv.with_item(|item| {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
         // Apply sound
         if let Some(sound) = result.sound {
-            context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+            // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
+            context.player.play_sound(sound, 1.0, 1.0);
         }
 
         // Give filled bucket
@@ -111,7 +125,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             hit_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         return InteractionResult::Success;
@@ -125,17 +139,21 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         hit_state,
         Some(context.player),
     ) {
-        if let Some(sound) = result.sound {
+        context.inv.with_item(|item| {
             context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
+        if let Some(sound) = result.sound {
+            // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
+            context.player.play_sound(sound, 1.0, 1.0);
         }
 
         create_filled_result(context, result.filled_bucket, true);
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             hit_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         return InteractionResult::Success;
@@ -172,6 +190,14 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
     // If the block is out of bounds, return fail
     if !context.world.is_in_valid_bounds(clicked_pos) {
+        return InteractionResult::Fail;
+    }
+
+    let item = context.inv.with_item(|item| item.clone());
+    if !context
+        .player
+        .may_use_item_at(direction.relative(clicked_pos), direction, &item)
+    {
         return InteractionResult::Fail;
     }
 
@@ -311,13 +337,18 @@ fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_
     } else {
         &sound_events::ITEM_BUCKET_EMPTY_LAVA
     };
-    context
-        .world
-        .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+    context.world.play_block_sound(
+        sound_event,
+        pos,
+        1.0,
+        1.0,
+        // Vanilla `BucketItem.playEmptySound`: `level.playSound(user, pos, ...)` excludes the placing player.
+        Some(context.player.id()),
+    );
     context.world.game_event(
         &vanilla_game_events::FLUID_PLACE,
         pos,
-        &GameEventContext::new(Some(context.player), None),
+        &GameEventContext::new(Some(context.player.as_ref()), None),
     );
 }
 
@@ -336,8 +367,27 @@ fn filled_bucket_primary_pos(
 
 #[cfg(test)]
 mod tests {
-    use crate::behavior::init_behaviors;
-    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use crate::{
+        behavior::init_behaviors,
+        player::game_mode::use_item,
+        test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    };
+    use glam::DVec3;
+    use std::sync::Arc;
+    use steel_registry::{
+        RegistryHolderSet,
+        data_component_predicate::DataComponentMatchers,
+        data_components::{
+            AdventureModePredicate, BlockPredicate, vanilla_components::CAN_PLACE_ON,
+        },
+        init_vanilla_registry,
+        item_stack::ItemStack,
+        vanilla_blocks, vanilla_items,
+    };
+    use steel_utils::{
+        BlockPos, ChunkPos,
+        types::{GameType, InteractionHand, UpdateFlags},
+    };
 
     use super::*;
 
@@ -355,6 +405,79 @@ mod tests {
         assert_eq!(
             filled_bucket_primary_pos(kelp, BlockPos::ZERO, Direction::North, false),
             Direction::North.relative(BlockPos::ZERO)
+        );
+    }
+
+    #[test]
+    fn adventure_buckets_require_can_place_on_and_fail_when_denied() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world_fixture = fresh_test_world("adventure_bucket_restriction");
+        let world = &world_fixture.world;
+        let pos = BlockPos::new(0, 65, 2);
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::WATER.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1).build();
+        player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
+        player.set_rotation((0.0, 0.0));
+        player.restore_game_modes(GameType::Adventure, None);
+        player
+            .abilities
+            .lock()
+            .update_for_game_mode(GameType::Adventure);
+
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::BUCKET));
+        assert_eq!(
+            use_item(&player, world, InteractionHand::MainHand),
+            InteractionResult::Fail
+        );
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::WATER.default_state()
+        );
+
+        let predicate = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::WATER])),
+            None,
+            None,
+            DataComponentMatchers::ANY,
+        );
+        let mut allowed_bucket = ItemStack::new(&vanilla_items::BUCKET);
+        allowed_bucket.set(
+            CAN_PLACE_ON,
+            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid"),
+        );
+        player.inventory.lock().set_selected_item(allowed_bucket);
+        assert!(use_item(&player, world, InteractionHand::MainHand).consumes_action());
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::AIR.default_state()
+        );
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
+        assert_eq!(
+            use_item(&player, world, InteractionHand::MainHand),
+            InteractionResult::Fail
+        );
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::STONE.default_state()
         );
     }
 }

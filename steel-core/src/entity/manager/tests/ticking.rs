@@ -1,4 +1,69 @@
+use std::mem;
+
 use super::*;
+
+#[derive(Default)]
+enum RelationshipTickAction {
+    #[default]
+    None,
+    StopRiding,
+}
+
+struct RelationshipTickTestEntity {
+    base: EntityBase,
+    events: Arc<SyncMutex<Vec<(i32, &'static str)>>>,
+    action: SyncMutex<RelationshipTickAction>,
+}
+
+impl RelationshipTickTestEntity {
+    fn shared(id: i32, events: &Arc<SyncMutex<Vec<(i32, &'static str)>>>) -> Arc<Self> {
+        Arc::new(Self {
+            base: EntityBase::with_uuid(
+                id,
+                Uuid::from_u128(id as u128),
+                DVec3::new(1.0, 64.0, 1.0),
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+            ),
+            events: Arc::clone(events),
+            action: SyncMutex::new(RelationshipTickAction::None),
+        })
+    }
+
+    fn set_action(&self, action: RelationshipTickAction) {
+        *self.action.lock() = action;
+    }
+
+    fn run_action(&self) {
+        let action = mem::take(&mut *self.action.lock());
+        match action {
+            RelationshipTickAction::None => {}
+            RelationshipTickAction::StopRiding => self.stop_riding(),
+        }
+    }
+}
+
+crate::entity::impl_test_downcast_type!(RelationshipTickTestEntity);
+
+impl Entity for RelationshipTickTestEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn tick(self: Arc<Self>) {
+        self.events.lock().push((self.id(), "tick"));
+        self.run_action();
+    }
+
+    fn ride_tick(self: Arc<Self>) {
+        self.events.lock().push((self.id(), "ride_tick"));
+        self.run_action();
+    }
+}
 
 #[test]
 fn tick_entities_skips_external_entities() {
@@ -10,12 +75,12 @@ fn tick_entities_skips_external_entities() {
     let external = entity(2, 2, DVec3::new(2.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(manager_owned.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&manager_owned), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(external.clone(), EntityOwnership::External)
+            .add_live_entity(Arc::clone(&external), EntityOwnership::External)
             .is_ok()
     );
 
@@ -32,7 +97,7 @@ fn tick_entities_ticks_external_always_ticking_entities_without_dirtying_chunks(
     let entity =
         ManagerTestEntity::shared_always_ticking(1, Uuid::from_u128(1), DVec3::new(1.0, 64.0, 1.0));
 
-    let changes = match manager.add_live_entity(entity.clone(), EntityOwnership::External) {
+    let changes = match manager.add_live_entity(Arc::clone(&entity), EntityOwnership::External) {
         Ok(changes) => changes,
         Err(error) => panic!("always-ticking external entity should register: {error}"),
     };
@@ -62,7 +127,7 @@ fn chunk_unload_retention_preserves_external_always_ticking_passenger() {
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::External)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::External)
             .is_ok()
     );
 
@@ -85,11 +150,11 @@ fn tick_entities_uses_start_of_tick_snapshot_for_added_entities() {
         Uuid::from_u128(1),
         DVec3::new(1.0, 64.0, 1.0),
         Arc::clone(&manager),
-        late_entity.clone(),
+        Arc::clone(&late_entity),
     );
     assert!(
         manager
-            .add_live_entity(adder.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&adder), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -116,7 +181,7 @@ fn tick_entities_checks_despawn_for_ticking_entities() {
         DespawnOnCheckTestEntity::shared(1, Uuid::from_u128(1), DVec3::new(17.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -135,7 +200,8 @@ fn tick_entities_skips_despawn_for_tracked_non_ticking_entities() {
 
     let entity =
         DespawnOnCheckTestEntity::shared(1, Uuid::from_u128(1), DVec3::new(1.0, 64.0, 1.0));
-    let changes = match manager.add_live_entity(entity.clone(), EntityOwnership::ManagerOwned) {
+    let changes = match manager.add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+    {
         Ok(changes) => changes,
         Err(error) => panic!("entity should register in tracked chunk: {error}"),
     };
@@ -157,7 +223,7 @@ fn tick_entities_skips_pending_world_change_entities() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     let Some(pending_token) = entity.begin_pending_world_change() else {
@@ -190,12 +256,12 @@ fn tick_entities_skips_passengers_of_pending_world_change_vehicles_before_despaw
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     let Some(pending_token) = vehicle.begin_pending_world_change() else {
@@ -227,12 +293,12 @@ fn tick_entities_skips_frozen_entities_and_despawn_checks() {
         DespawnOnCheckTestEntity::shared(2, Uuid::from_u128(2), DVec3::new(17.0, 64.0, 1.0));
     assert!(
         manager
-            .add_live_entity(ticked.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&ticked), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(despawn.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&despawn), EntityOwnership::ManagerOwned)
             .is_ok()
     );
 
@@ -259,12 +325,12 @@ fn tick_entities_ticks_player_passenger_vehicle_while_frozen() {
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     assert!(
         manager
-            .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&vehicle), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(
         manager
-            .add_live_entity(passenger.clone(), EntityOwnership::External)
+            .add_live_entity(Arc::clone(&passenger), EntityOwnership::External)
             .is_ok()
     );
 
@@ -273,4 +339,72 @@ fn tick_entities_ticks_player_passenger_vehicle_while_frozen() {
     assert!(dirty_chunks.contains(&chunk));
     assert_eq!(vehicle.tick_count(), 1);
     assert_eq!(passenger.tick_count(), 1);
+}
+
+#[test]
+fn passenger_detached_during_ride_tick_ticks_again_at_later_root_slot() {
+    let manager = WorldEntityManager::new();
+    let chunk = ChunkPos::new(0, 0);
+    load_chunk(&manager, chunk);
+
+    let events = Arc::new(SyncMutex::new(Vec::new()));
+    let vehicle = RelationshipTickTestEntity::shared(1, &events);
+    let passenger = RelationshipTickTestEntity::shared(2, &events);
+    let vehicle_entity: SharedEntity = Arc::<RelationshipTickTestEntity>::clone(&vehicle);
+    let passenger_entity: SharedEntity = Arc::<RelationshipTickTestEntity>::clone(&passenger);
+    EntityBase::restore_passenger_relationship(&vehicle_entity, &passenger_entity);
+    passenger.set_action(RelationshipTickAction::StopRiding);
+
+    assert!(
+        manager
+            .add_live_entity(vehicle_entity, EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+    assert!(
+        manager
+            .add_live_entity(passenger_entity, EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    manager.tick_entities(0, true);
+
+    assert_eq!(
+        *events.lock(),
+        vec![(1, "tick"), (2, "ride_tick"), (2, "tick")]
+    );
+    assert_eq!(vehicle.tick_count(), 1);
+    assert_eq!(passenger.tick_count(), 2);
+    assert!(!passenger.is_passenger());
+}
+
+#[test]
+fn stable_passenger_tree_ticks_once_in_vehicle_depth_first_order() {
+    let manager = WorldEntityManager::new();
+    let chunk = ChunkPos::new(0, 0);
+    load_chunk(&manager, chunk);
+
+    let events = Arc::new(SyncMutex::new(Vec::new()));
+    let vehicle = RelationshipTickTestEntity::shared(1, &events);
+    let passenger = RelationshipTickTestEntity::shared(2, &events);
+    let vehicle_entity: SharedEntity = Arc::<RelationshipTickTestEntity>::clone(&vehicle);
+    let passenger_entity: SharedEntity = Arc::<RelationshipTickTestEntity>::clone(&passenger);
+    EntityBase::restore_passenger_relationship(&vehicle_entity, &passenger_entity);
+
+    assert!(
+        manager
+            .add_live_entity(vehicle_entity, EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+    assert!(
+        manager
+            .add_live_entity(passenger_entity, EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    manager.tick_entities(0, true);
+
+    assert_eq!(*events.lock(), vec![(1, "tick"), (2, "ride_tick")]);
+    assert_eq!(vehicle.tick_count(), 1);
+    assert_eq!(passenger.tick_count(), 1);
+    assert!(passenger.is_passenger());
 }

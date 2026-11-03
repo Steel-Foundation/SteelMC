@@ -1,42 +1,44 @@
 //! Vanilla-shaped mob foundations.
 
-mod leash;
 mod pathfinder;
 
-pub use leash::LeashAttachment;
-use leash::{
-    DELAYED_LEASH_DROP_TICKS, LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, LEASH_STIFFNESS,
-    LEASH_TORSIONAL_ELASTICITY, LeashData, axis_specific_leash_elasticity,
-    compute_elastic_interaction, leash_bounding_box_center, leash_holder_movement,
-};
+use crate::entity::leash::{LeashData, Leashable};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
 
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::fast_floor;
-use steel_protocol::packets::game::SoundSource;
+use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, RAD_TO_DEG, fast_floor, wrap_degrees};
+use steel_protocol::packets::game::CTakeItemEntity;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::components::ItemEnchantments;
+use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
-    REGISTRY, RegistryExt, sound_events, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_game_events, vanilla_items,
+    REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
+    vanilla_game_rules, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{
+    BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
+};
 
+use crate::behavior::items::SpawnEggItem;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
@@ -48,13 +50,15 @@ use crate::entity::ai::path::{PathType, PathfindingContext, PathfindingMalus};
 use crate::entity::ai::sensing::Sensing;
 use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
+use crate::entity::conversion::{AfterConversion, convert_to as convert_mob};
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::LeashFenceKnotEntity;
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
-    Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
-    SpawnGroupData, WeakEntity,
+    ConversionParams, Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason,
+    SharedEntity, SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
+use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
@@ -63,8 +67,11 @@ const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
 const MOB_FLAG_AGGRESSIVE: i8 = 4;
 const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
-const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
+const MOVE_CONTROL_MAX_TURN: f32 = DEGREE_90;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
+/// Vanilla bias subtracted from the roll before comparing against a slot's drop
+/// chance when a mob swaps out worn gear it picked something better up over.
+const REPLACED_EQUIPMENT_DROP_BIAS: f32 = 0.1;
 const PRESERVE_ITEM_DROP_CHANCE_THRESHOLD: f32 = 1.0;
 const PRESERVE_ITEM_DROP_CHANCE: f32 = 2.0;
 const BODY_ROTATION_MOVING_DISTANCE_SQR: f64 = 2.500_000_3e-7;
@@ -74,6 +81,17 @@ const DEFAULT_ATTACK_REACH_OFFSET: f32 = 0.6;
 const RANDOM_SPAWN_BONUS_ID: Identifier = Identifier::vanilla_static("random_spawn_bonus");
 const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
 const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
+/// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
+/// box is inflated by when a mob looks for nearby dropped items to collect.
+const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
+const SUN_BURN_IGNITE_SECONDS: f32 = 8.0;
+const SUN_BURN_IGNITE_TICKS: i32 = (SUN_BURN_IGNITE_SECONDS * TICKS_PER_SECOND as f32) as i32;
+/// Brightness threshold shared by daylight burning and monster idle-time growth.
+pub(crate) const LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE: f32 = 0.5;
+const SUN_BURN_RANDOM_SCALE: f32 = 30.0;
+const SUN_BURN_LIGHT_OFFSET: f32 = 0.4;
+const SUN_BURN_LIGHT_GAIN: f32 = 2.0;
+const SUN_BURN_DURABILITY_ROLL_BOUND: i32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -329,14 +347,33 @@ impl Default for MobBase {
     }
 }
 
-pub trait Mob: LivingEntity {
+pub trait Mob: LivingEntity + Leashable {
     fn mob_base(&self) -> &MobBase;
 
     fn mob_flags(&self) -> i8;
 
     fn set_mob_flags(&self, flags: i8);
 
-    /// Returns vanilla `Mob.isSaddled`.
+    /// Returns whether the entity-specific spawn predicate accepts this spawn.
+    fn check_spawn_rules(&self, _world: &Arc<World>, _reason: EntitySpawnReason) -> bool {
+        true
+    }
+
+    /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
+    /// mobs derive it from their start age, and other mobs override as needed.
+    fn set_baby(&self, baby: bool) {
+        let Some(ageable) = self.as_ageable_mob() else {
+            return;
+        };
+        let age = if baby {
+            ageable.get_baby_start_age()
+        } else {
+            0
+        };
+        ageable.set_age(age);
+    }
+
+    /// Returns whether this mob has a saddle equipped.
     fn is_saddled(&self) -> bool {
         let mut is_saddled = false;
         self.with_equipment_slot(EquipmentSlot::Saddle, &mut |item_stack| {
@@ -345,12 +382,20 @@ pub trait Mob: LivingEntity {
         is_saddled
     }
 
+    /// Checks line of sight using this mob sensing cache
+    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+        self.mob_base()
+            .sensing()
+            .lock()
+            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
+    }
+
     fn custom_server_ai_step(&self) {}
 
     /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
     fn ate(&self) {}
 
-    fn tick_goal_selectors(&self) {}
+    fn tick_goal_selectors(&self, _entity: &SharedEntity) {}
 
     fn xp_reward(&self) -> i32 {
         self.mob_base().xp_reward()
@@ -360,7 +405,7 @@ pub trait Mob: LivingEntity {
         self.mob_base().set_xp_reward(xp_reward);
     }
 
-    /// Returns vanilla `Mob.getTarget`.
+    /// Returns this mob's current attack target, if it's still a valid one.
     fn target(&self) -> Option<SharedEntity> {
         self.mob_base()
             .target(|target| self.is_valid_target(target))
@@ -385,7 +430,8 @@ pub trait Mob: LivingEntity {
         Mob::can_attack(self, target)
     }
 
-    /// Returns vanilla `Mob.canAttack`.
+    /// Returns whether this mob may attack the target; excludes ghasts, which
+    /// mobs never target directly.
     fn can_attack(&self, target: &dyn LivingEntity) -> bool {
         target.entity_type() != &vanilla_entities::GHAST && LivingEntity::can_attack(self, target)
     }
@@ -434,7 +480,7 @@ pub trait Mob: LivingEntity {
             .set_ambient_sound_time(-self.ambient_sound_interval());
     }
 
-    /// Runs vanilla `Mob.baseTick`.
+    /// Runs the shared living-entity base tick, then mob-specific per-tick behavior.
     fn base_tick_mob(&self) {
         self.base_tick_living_entity();
         self.mob_base_tick();
@@ -491,7 +537,61 @@ pub trait Mob: LivingEntity {
         group_data
     }
 
-    /// Handles vanilla `Mob.interact`.
+    /// Creates a replacement or split mob and transfers state according to `params`.
+    /// The callback finalizes mob-specific state. Returns `None` without changing
+    /// the source if it is removed or world, difficulty, factory, mob-type, or
+    /// insertion checks fail.
+    fn convert_to(
+        &self,
+        entity_type: EntityTypeRef,
+        params: ConversionParams,
+        after_conversion: Option<&AfterConversion<'_>>,
+    ) -> Option<SharedEntity>
+    where
+        Self: Sized,
+    {
+        convert_mob(self, entity_type, params, after_conversion)
+    }
+
+    /// Requires the block below to accept the spawn via
+    /// [`BlockBehavior::is_valid_spawn`](crate::behavior::BlockBehavior::is_valid_spawn),
+    /// unless a spawner bypasses the surface check.
+    fn check_mob_spawn_rules(
+        entity_type: EntityTypeRef,
+        level: &dyn LevelReader,
+        spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+    ) -> bool
+    where
+        Self: Sized,
+    {
+        if spawn_reason.is_spawner() {
+            return true;
+        }
+
+        let below = pos.below();
+        let state = level.get_block_state(below);
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_valid_spawn(state, level, below, entity_type)
+    }
+
+    fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
+        let aabb = self.bounding_box();
+        if aabb_contains_any_liquid(world, aabb) {
+            return false;
+        }
+
+        !world.has_entity_in_aabb_matching(&aabb, |entity| {
+            entity.id() != self.id()
+                && !entity.is_removed()
+                && !entity.is_spectator()
+                && entity.blocks_building()
+                && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
+        })
+    }
+
+    /// Dispatches held-item, entity, and mob-specific interactions in order.
     fn interact_mob(
         &self,
         player: &Player,
@@ -502,37 +602,90 @@ pub trait Mob: LivingEntity {
             return InteractionResult::Pass;
         }
 
-        // TODO: Handle name tags and spawn eggs once item-on-entity behavior exists.
+        let important_interaction = self.check_and_handle_important_interactions(player, hand);
+        if important_interaction.consumes_action() {
+            if let Some(world) = self.level() {
+                world.game_event(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    self.block_position(),
+                    &GameEventContext::new(Some(player), None),
+                );
+            }
+            return important_interaction;
+        }
+
         let interaction_result = self.interact_entity(player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
         }
 
         let interaction_result = self.mob_interact(player, hand);
-        if interaction_result.consumes_action()
-            && let Some(world) = self.level()
-        {
-            world.game_event(
-                &vanilla_game_events::ENTITY_INTERACT,
-                self.block_position(),
-                &GameEventContext::new(Some(player), None),
-            );
+        if interaction_result.consumes_action() {
+            self.game_event_with_source_entity(&vanilla_game_events::ENTITY_INTERACT, Some(player));
         }
 
         interaction_result
     }
 
-    /// Handles vanilla `Mob.mobInteract`.
+    /// Handles interactions that take priority over normal behavior: renaming
+    /// with a name tag and spawning with a spawn egg.
+    fn check_and_handle_important_interactions(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        let Some(living_entity) = self.as_living_entity() else {
+            return InteractionResult::Pass;
+        };
+
+        let item = {
+            let inventory = player.inventory.lock();
+            inventory.get_item_in_hand(hand).item()
+        };
+
+        if item.key == vanilla_items::NAME_TAG.key {
+            let name_tag_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                ITEM_BEHAVIORS.get_behavior(item).interact_living_entity(
+                    item_stack,
+                    player,
+                    living_entity,
+                    hand,
+                )
+            };
+            if name_tag_result.consumes_action() {
+                return name_tag_result;
+            }
+        }
+
+        if ITEM_BEHAVIORS.get_behavior(item).as_spawn_egg().is_some() {
+            let spawn_egg_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                SpawnEggItem::interact_with_mob(item_stack, player, self)
+            };
+            if spawn_egg_result.consumes_action() {
+                return spawn_egg_result;
+            }
+        }
+
+        InteractionResult::Pass
+    }
+
+    /// Mob-specific interaction hook for concrete mobs to override; does
+    /// nothing by default.
     fn mob_interact(&self, _player: &Player, _hand: InteractionHand) -> InteractionResult {
         InteractionResult::Pass
     }
 
-    /// Returns vanilla `Mob.canShearEquipment`.
+    /// Returns whether this mob's equipment can be sheared; false while
+    /// something is riding it.
     fn can_shear_equipment(&self, _player: &Player) -> bool {
         !self.is_vehicle()
     }
 
-    /// Applies vanilla `Mob.usePlayerItem`.
+    /// Consumes one of the player's held item after this mob uses it in an interaction.
     fn use_player_item(&self, player: &Player, hand: InteractionHand) {
         player.inventory.lock().shrink_item_in_hand(hand, 1);
         // TODO: Apply USE_REMAINDER components once item use-remainder support exists.
@@ -555,7 +708,12 @@ pub trait Mob: LivingEntity {
         *self.mob_base().persistence_required().lock() = true;
     }
 
-    /// Returns vanilla `Mob.canPickUpLoot`.
+    /// Returns whether this mob can be leashed, before its leash state is considered.
+    fn mob_can_be_leashed(&self) -> bool {
+        !self.is_enemy()
+    }
+
+    /// Returns whether this mob is allowed to pick up dropped items.
     fn can_pick_up_loot(&self) -> bool {
         *self.mob_base().can_pick_up_loot().lock()
     }
@@ -568,6 +726,13 @@ pub trait Mob: LivingEntity {
         self.mob_base().drop_chances().lock().by_equipment(slot)
     }
 
+    fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) {
+        self.mob_base()
+            .drop_chances()
+            .lock()
+            .set_equipment_chance(slot, chance);
+    }
+
     fn is_equipment_drop_preserved(&self, slot: EquipmentSlot) -> bool {
         self.mob_base().drop_chances().lock().is_preserved(slot)
     }
@@ -577,6 +742,307 @@ pub trait Mob: LivingEntity {
             .drop_chances()
             .lock()
             .set_guaranteed_drop(slot);
+    }
+
+    /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search
+    /// box is inflated by. Overridable so mobs with a longer reach can widen it.
+    fn get_pickup_reach(&self) -> DVec3 {
+        ITEM_PICKUP_REACH
+    }
+
+    /// Vanilla `Mob.wantsToPickUp`: whether this mob wants to collect the item it
+    /// just walked over. Defaults to whatever the mob is willing to hold.
+    fn wants_to_pick_up(&self, item_stack: &ItemStack) -> bool {
+        self.can_hold_item(item_stack)
+    }
+
+    /// Vanilla `Mob.canHoldItem`: whether this mob is willing to hold the item.
+    /// The base mob holds anything; specific mobs narrow this down.
+    fn can_hold_item(&self, _item_stack: &ItemStack) -> bool {
+        true
+    }
+
+    /// Vanilla `Mob.pickUpItem`: take a dropped item into this mob's equipment.
+    ///
+    /// Delegates the slot routing and gear-swap decision to
+    /// [`equip_item_if_possible`](Self::equip_item_if_possible), then shrinks the
+    /// source stack by however much was equipped, only removing the item entity
+    /// once nothing is left.
+    fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
+        let equipped = self.equip_item_if_possible(item_entity.get_item());
+        if equipped.is_empty() {
+            return;
+        }
+
+        let count = equipped.count();
+        // TODO(advancements): vanilla calls LivingEntity.onItemPickup here, before
+        // the take packet, which fires the THROWN_ITEM_PICKED_UP_BY_ENTITY criterion.
+        // Add that once Steel has the advancement-criteria foundation.
+        let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
+        world.broadcast_to_nearby(
+            chunk_pos,
+            CTakeItemEntity::new(item_entity.id(), self.id(), count),
+            None,
+        );
+
+        let mut remaining = item_entity.get_item();
+        remaining.shrink(count);
+        if remaining.is_empty() {
+            item_entity.set_removed(RemovalReason::Discarded);
+        } else {
+            item_entity.set_item(remaining);
+        }
+    }
+
+    /// Vanilla `Mob.equipItemIfPossible`: route `item_stack` to the slot its
+    /// equippable component asks for (main hand otherwise), swap up when the
+    /// target slot already holds worse gear, and drop the replaced piece by its
+    /// drop chance. Returns the stack that was equipped, or empty when nothing
+    /// was taken.
+    fn equip_item_if_possible(&self, mut item_stack: ItemStack) -> ItemStack {
+        let mut slot = self.get_equipment_slot_for_item(&item_stack);
+        if !self.is_equippable_in_slot(&item_stack, slot) {
+            return ItemStack::empty();
+        }
+
+        let mut current = self.equipment_in_slot(slot);
+        let mut can_replace = self.can_replace_current_item(&item_stack, &current, slot);
+        // Armor that would not be an upgrade still gets a chance to be carried in
+        // the main hand instead, provided that hand is free.
+        if slot.is_armor() && !can_replace {
+            slot = EquipmentSlot::MainHand;
+            current = self.equipment_in_slot(slot);
+            can_replace = current.is_empty();
+        }
+
+        if !can_replace || !self.can_hold_item(&item_stack) {
+            return ItemStack::empty();
+        }
+
+        let drop_chance = self.equipment_drop_chance(slot);
+        if !current.is_empty()
+            && (rand::random::<f32>() - REPLACED_EQUIPMENT_DROP_BIAS).max(0.0) < drop_chance
+        {
+            self.spawn_at_location(current, 0.0);
+        }
+
+        let to_equip = slot.limit(&mut item_stack);
+        let equipped = to_equip.copy_with_count(to_equip.count());
+        self.living_base().equipment().lock().set(slot, to_equip);
+        self.set_guaranteed_drop(slot);
+        self.set_persistence_required();
+        equipped
+    }
+
+    /// Vanilla `LivingEntity.getEquipmentSlotForItem`: the slot an item wants to
+    /// occupy, falling back to the main hand when it is not equippable or the mob
+    /// cannot use that slot.
+    fn get_equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+        match item_stack.get_equippable() {
+            Some(equippable) if self.can_use_slot(equippable.slot) => equippable.slot,
+            _ => EquipmentSlot::MainHand,
+        }
+    }
+
+    /// Returns a copy of whatever this mob currently holds in `slot`.
+    fn equipment_in_slot(&self, slot: EquipmentSlot) -> ItemStack {
+        let equipment = self.living_base().equipment().lock();
+        let stack = equipment.get_ref(slot);
+        stack.copy_with_count(stack.count())
+    }
+
+    /// Vanilla `Mob.canReplaceCurrentItem`: whether the freshly picked-up item
+    /// should displace what is already in `slot`.
+    fn can_replace_current_item(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if current_item_stack.is_empty() {
+            true
+        } else if slot.is_armor() {
+            self.compare_armor(new_item_stack, current_item_stack, slot)
+        } else if slot == EquipmentSlot::MainHand {
+            self.compare_weapons(new_item_stack, current_item_stack, slot)
+        } else {
+            false
+        }
+    }
+
+    /// Vanilla `Mob.compareArmor`: prefer the piece granting more armor, then
+    /// more toughness, then the equal-item tiebreak, unless the worn piece is
+    /// protected against removal.
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla compares approximate attribute values for exact equality"
+    )]
+    fn compare_armor(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if current_item_stack.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
+        {
+            return false;
+        }
+
+        let new_defense =
+            self.approximate_attribute_with(new_item_stack, vanilla_attributes::ARMOR, slot);
+        let old_defense =
+            self.approximate_attribute_with(current_item_stack, vanilla_attributes::ARMOR, slot);
+        if new_defense != old_defense {
+            return new_defense > old_defense;
+        }
+
+        let new_toughness = self.approximate_attribute_with(
+            new_item_stack,
+            vanilla_attributes::ARMOR_TOUGHNESS,
+            slot,
+        );
+        let old_toughness = self.approximate_attribute_with(
+            current_item_stack,
+            vanilla_attributes::ARMOR_TOUGHNESS,
+            slot,
+        );
+        if new_toughness == old_toughness {
+            self.can_replace_equal_item(new_item_stack, current_item_stack)
+        } else {
+            new_toughness > old_toughness
+        }
+    }
+
+    /// Vanilla `Mob.getPreferredWeaponType`: the item tag a mob favors for its
+    /// main hand regardless of raw damage (a skeleton keeps its bow over a
+    /// stronger sword). The base mob has no preference; specific mobs override it.
+    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
+        None
+    }
+
+    /// Vanilla `Mob.compareWeapons`: keep a piece of the mob's preferred weapon
+    /// type over one that is not, otherwise prefer more attack damage, then the
+    /// equal-item tiebreak.
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla compares approximate attribute values for exact equality"
+    )]
+    fn compare_weapons(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if let Some(preferred_weapon_type) = self.get_preferred_weapon_type() {
+            let current_is_preferred = REGISTRY
+                .items
+                .is_in_tag(current_item_stack.item(), &preferred_weapon_type);
+            let new_is_preferred = REGISTRY
+                .items
+                .is_in_tag(new_item_stack.item(), &preferred_weapon_type);
+            if current_is_preferred && !new_is_preferred {
+                return false;
+            }
+            if !current_is_preferred && new_is_preferred {
+                return true;
+            }
+        }
+
+        let new_attack_damage = self.approximate_attribute_with(
+            new_item_stack,
+            vanilla_attributes::ATTACK_DAMAGE,
+            slot,
+        );
+        let old_attack_damage = self.approximate_attribute_with(
+            current_item_stack,
+            vanilla_attributes::ATTACK_DAMAGE,
+            slot,
+        );
+        if new_attack_damage == old_attack_damage {
+            self.can_replace_equal_item(new_item_stack, current_item_stack)
+        } else {
+            new_attack_damage > old_attack_damage
+        }
+    }
+
+    /// Vanilla `Mob.getApproximateAttributeWith`: the value of `attribute` this
+    /// mob would have in `slot` while wearing `item_stack`, taking the mob's base
+    /// value (zero when it lacks the attribute) and folding in the item's
+    /// attribute modifiers.
+    fn approximate_attribute_with(
+        &self,
+        item_stack: &ItemStack,
+        attribute: AttributeRef,
+        slot: EquipmentSlot,
+    ) -> f64 {
+        let base_value = self
+            .attributes()
+            .lock()
+            .get_base_value(attribute)
+            .unwrap_or(0.0);
+        item_stack
+            .get_attribute_modifiers()
+            .map_or(base_value, |modifiers| {
+                modifiers.compute(attribute, base_value, slot)
+            })
+    }
+
+    /// Vanilla `Mob.canReplaceEqualItem`: the tiebreak when two pieces grade out
+    /// equally, favoring more enchantments, then less damage, then a custom name.
+    fn can_replace_equal_item(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+    ) -> bool {
+        let new_enchantments = new_item_stack
+            .get_enchantments()
+            .map_or(0, ItemEnchantments::len);
+        let current_enchantments = current_item_stack
+            .get_enchantments()
+            .map_or(0, ItemEnchantments::len);
+        if new_enchantments != current_enchantments {
+            return new_enchantments > current_enchantments;
+        }
+
+        let new_damage = new_item_stack.get_damage_value();
+        let current_damage = current_item_stack.get_damage_value();
+        if new_damage == current_damage {
+            new_item_stack.has(CUSTOM_NAME) && !current_item_stack.has(CUSTOM_NAME)
+        } else {
+            new_damage < current_damage
+        }
+    }
+
+    /// Vanilla `Mob.aiStep` looting loop: while this mob may pick up loot and the
+    /// `mobGriefing` game rule allows it, collect nearby dropped items in reach.
+    fn tick_looting(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        if !self.can_pick_up_loot()
+            || !Entity::is_alive(self)
+            || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+        {
+            return;
+        }
+
+        let reach = self.get_pickup_reach();
+        let search_box = self.bounding_box().inflate_xyz(reach.x, reach.y, reach.z);
+        for entity in world.get_entities_in_aabb(&search_box) {
+            let Some(item_entity) = entity.downcast_ref::<ItemEntity>() else {
+                continue;
+            };
+            let item = item_entity.get_item();
+            if item_entity.is_removed()
+                || item.is_empty()
+                || item_entity.has_pickup_delay()
+                || !self.wants_to_pick_up(&item)
+            {
+                continue;
+            }
+
+            self.pick_up_item(&world, item_entity);
+        }
     }
 
     fn drop_custom_death_loot_mob(&self, _source: &DamageSource, killed_by_player: bool) {
@@ -633,6 +1099,7 @@ pub trait Mob: LivingEntity {
     }
 
     fn save_mob(&self, nbt: &mut NbtCompound) {
+        self.save_equipment(nbt);
         nbt.insert("CanPickUpLoot", i8::from(self.can_pick_up_loot()));
         nbt.insert(
             "PersistenceRequired",
@@ -670,6 +1137,7 @@ pub trait Mob: LivingEntity {
     }
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        self.load_equipment(nbt);
         self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
         *self.mob_base().persistence_required().lock() = nbt
             .byte("PersistenceRequired")
@@ -725,278 +1193,6 @@ pub trait Mob: LivingEntity {
 
     fn clear_custom_death_loot_table(&self) {
         *self.mob_base().death_loot_table().lock() = None;
-    }
-
-    fn is_leashed(&self) -> bool {
-        self.leash_holder().is_some()
-    }
-
-    fn may_be_leashed(&self) -> bool {
-        self.mob_base().leash_data().lock().is_some()
-    }
-
-    fn leash_holder(&self) -> Option<SharedEntity> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .as_ref()
-            .and_then(LeashData::holder)
-    }
-
-    fn leash_attachment(&self) -> Option<LeashAttachment> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .as_ref()
-            .map(LeashData::saved_attachment)
-    }
-
-    fn set_delayed_leash_attachment(&self, attachment: LeashAttachment) {
-        *self.mob_base().leash_data().lock() = Some(LeashData::from_delayed_attachment(attachment));
-    }
-
-    fn can_be_leashed(&self) -> bool {
-        // TODO: Return false for enemy mobs once hostile mob foundations exist.
-        true
-    }
-
-    fn leash_distance_to(&self, holder: &dyn Entity) -> f64 {
-        leash_bounding_box_center(self.as_entity_event_source())
-            .distance(leash_bounding_box_center(holder))
-    }
-
-    fn leash_snap_distance(&self) -> f64 {
-        LEASH_SNAP_DISTANCE
-    }
-
-    fn leash_elastic_distance(&self) -> f64 {
-        LEASH_ELASTIC_DISTANCE
-    }
-
-    fn when_leashed_to(&self, holder: &dyn Entity) {
-        holder.notify_leash_holder(self.as_entity_event_source());
-    }
-
-    fn leash_too_far_behaviour(&self) {
-        self.drop_leash();
-    }
-
-    fn on_elastic_leash_pull(&self) {
-        self.check_fall_distance_accumulation();
-    }
-
-    fn close_range_leash_behaviour(&self, _holder: &dyn Entity) {}
-
-    fn check_elastic_interactions(&self, holder: &dyn Entity) -> bool {
-        let Some(wrench) = compute_elastic_interaction(
-            self.as_entity_event_source(),
-            holder,
-            self.leash_elastic_distance(),
-        ) else {
-            return false;
-        };
-
-        {
-            let mut leash_data = self.mob_base().leash_data().lock();
-            let Some(leash_data) = leash_data.as_mut() else {
-                return false;
-            };
-            leash_data.angular_momentum += LEASH_TORSIONAL_ELASTICITY * wrench.torque;
-        }
-
-        let relative_velocity_to_leasher =
-            leash_holder_movement(holder) - leash_holder_movement(self.as_entity_event_source());
-        self.push_impulse(
-            axis_specific_leash_elasticity(wrench.force)
-                + relative_velocity_to_leasher * LEASH_STIFFNESS,
-        );
-        true
-    }
-
-    fn apply_leash_angular_momentum(&self) -> bool {
-        let angular_friction = self.leash_angular_friction();
-        let angular_momentum = {
-            let mut leash_data = self.mob_base().leash_data().lock();
-            let Some(leash_data) = leash_data.as_mut() else {
-                return false;
-            };
-            let angular_momentum = leash_data.angular_momentum;
-            leash_data.angular_momentum *= angular_friction;
-            angular_momentum
-        };
-        self.rotate_by_leash_angular_momentum(angular_momentum);
-        true
-    }
-
-    fn rotate_by_leash_angular_momentum(&self, angular_momentum: f64) {
-        let (yaw, pitch) = self.rotation();
-        self.set_rotation((yaw - angular_momentum as f32, pitch));
-    }
-
-    fn leash_angular_momentum(&self) -> Option<f64> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .as_ref()
-            .map(|leash_data| leash_data.angular_momentum)
-    }
-
-    fn leash_angular_friction(&self) -> f64 {
-        if self.on_ground() {
-            let Some(world) = self.level() else {
-                return 0.91;
-            };
-            let Some(pos) = self.block_pos_below_that_affects_movement() else {
-                return 0.91;
-            };
-            return f64::from(world.get_block_state(pos).get_block().config.friction * 0.91);
-        }
-
-        if self.is_in_water() || self.is_in_lava() {
-            return 0.8;
-        }
-
-        0.91
-    }
-
-    fn can_have_a_leash_attached_to(&self, holder: &dyn Entity) -> bool {
-        self.id() != holder.id()
-            && self.leash_distance_to(holder) <= self.leash_snap_distance()
-            && self.can_be_leashed()
-    }
-
-    fn set_leashed_to(&self, holder: &SharedEntity) -> bool {
-        if self.id() == holder.id() {
-            return false;
-        }
-
-        let old_holder = self.leash_holder();
-        {
-            let mut leash_data = self.mob_base().leash_data().lock();
-            if let Some(leash_data) = leash_data.as_mut() {
-                leash_data.set_holder(holder);
-            } else {
-                *leash_data = Some(LeashData::from_entity(holder));
-            }
-        }
-
-        if self.is_passenger() {
-            self.stop_riding();
-        }
-        if let Some(old_holder) = old_holder
-            && old_holder.id() != holder.id()
-        {
-            old_holder.notify_leashee_removed(self.as_entity_event_source());
-        }
-        true
-    }
-
-    fn tick_leash(&self) {
-        if let Some(holder) = self.leash_holder() {
-            if !self.can_interact_with_level() || !holder.can_interact_with_level() {
-                if let Some(world) = self.level()
-                    && world.get_game_rule(&ENTITY_DROPS)
-                {
-                    self.drop_leash();
-                } else {
-                    self.remove_leash();
-                }
-                return;
-            }
-
-            let distance_to = self.leash_distance_to(holder.as_ref());
-            self.when_leashed_to(holder.as_ref());
-            let angular_momentum_before_distance_action = self.leash_angular_momentum();
-            if distance_to > self.leash_snap_distance() {
-                if let Some(world) = self.level() {
-                    world.play_sound_at(
-                        &sound_events::ITEM_LEAD_BREAK,
-                        SoundSource::Neutral,
-                        holder.position(),
-                        1.0,
-                        1.0,
-                        None,
-                    );
-                }
-                self.leash_too_far_behaviour();
-            } else if distance_to
-                > self.leash_elastic_distance()
-                    - f64::from(holder.base().dimensions().width)
-                    - f64::from(self.base().dimensions().width)
-                && self.check_elastic_interactions(holder.as_ref())
-            {
-                self.on_elastic_leash_pull();
-            } else {
-                self.close_range_leash_behaviour(holder.as_ref());
-            }
-            if !self.apply_leash_angular_momentum()
-                && let Some(angular_momentum) = angular_momentum_before_distance_action
-            {
-                self.rotate_by_leash_angular_momentum(angular_momentum);
-            }
-            return;
-        }
-
-        let Some(attachment) = self.leash_attachment() else {
-            return;
-        };
-
-        let Some(world) = self.level() else {
-            return;
-        };
-
-        match attachment {
-            LeashAttachment::Entity(uuid) => {
-                if let Some(holder) = world.get_entity_by_uuid(&uuid) {
-                    let _ = self.set_leashed_to(&holder);
-                    return;
-                }
-
-                if self.tick_count() > DELAYED_LEASH_DROP_TICKS {
-                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-                    self.remove_leash_state();
-                }
-            }
-            LeashAttachment::FenceKnot(pos) => {
-                if let Some(holder) = LeashFenceKnotEntity::get_or_create_knot(&world, pos) {
-                    let _ = self.set_leashed_to(&holder);
-                    return;
-                }
-
-                if self.tick_count() > DELAYED_LEASH_DROP_TICKS {
-                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-                    self.remove_leash_state();
-                }
-            }
-        }
-    }
-
-    fn drop_leash(&self) {
-        if self.leash_holder().is_none() {
-            return;
-        }
-
-        let holder = self.remove_leash_state();
-        let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-        if let Some(holder) = holder {
-            holder.notify_leashee_removed(self.as_entity_event_source());
-        }
-    }
-
-    fn remove_leash(&self) {
-        if self.leash_holder().is_some()
-            && let Some(holder) = self.remove_leash_state()
-        {
-            holder.notify_leashee_removed(self.as_entity_event_source());
-        }
-    }
-
-    fn remove_leash_state(&self) -> Option<SharedEntity> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .take()
-            .and_then(|leash_data| leash_data.holder())
     }
 
     fn is_within_home(&self) -> bool {
@@ -1097,7 +1293,7 @@ pub trait Mob: LivingEntity {
         self.mob_base().pathfinding_malus().lock().get(path_type)
     }
 
-    /// Vanilla `Entity.getMaxFallDistance` baseline.
+    /// Blocks a mob can fall before taking fall damage; concrete mobs may raise this.
     fn max_fall_distance(&self) -> i32 {
         3
     }
@@ -1129,19 +1325,21 @@ pub trait Mob: LivingEntity {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
     }
 
-    /// Returns vanilla `Mob.getMaxHeadXRot`.
+    /// Maximum degrees the head may pitch up or down independently of the body.
     fn max_head_x_rot(&self) -> f32 {
         40.0
     }
 
-    /// Returns vanilla `Mob.getMaxHeadYRot`.
+    /// Maximum degrees the head may yaw left or right independently of the body.
     fn max_head_y_rot(&self) -> f32 {
         75.0
     }
 
-    /// Handles vanilla `Mob.doHurtTarget`.
+    /// Performs this mob's melee attack against `target`: computes weapon
+    /// damage and knockback, applies enchantment effects, and returns whether
+    /// the target was hurt.
     #[must_use]
-    fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
+    fn do_hurt_target(&self, entity: &SharedEntity, world: &World, target: &SharedEntity) -> bool {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
             return false;
         };
@@ -1156,7 +1354,7 @@ pub trait Mob: LivingEntity {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = self.mob_attack_damage_source(&weapon_item, attacker);
+        let damage_source = self.mob_attack_damage_source(&weapon_item, entity);
         let enchantment_context = EnchantmentDamageContext::new(
             target.entity_type(),
             Some(self.entity_type()),
@@ -1189,12 +1387,7 @@ pub trait Mob: LivingEntity {
                     );
                 }
             });
-            let post_attack_context = EnchantmentPostAttackContext::new(
-                target.as_ref(),
-                Some(self.as_entity_event_source()),
-                Some(self.as_entity_event_source()),
-                &damage_source,
-            );
+            let post_attack_context = EnchantmentPostAttackContext::new(target, &damage_source);
             enchantment_helper::do_post_attack_effects_from_item(
                 world,
                 &weapon_item,
@@ -1210,11 +1403,13 @@ pub trait Mob: LivingEntity {
         was_hurt
     }
 
-    /// Returns the damage source used by vanilla `ItemStack.getDamageSource`.
+    /// Builds the damage source for this mob's melee attack: the weapon's
+    /// custom damage type if set, else its behavior's item damage source,
+    /// else the default mob-attack type.
     fn mob_attack_damage_source(
         &self,
         weapon_item: &ItemStack,
-        attacker: &dyn LivingEntity,
+        attacker: &SharedEntity,
     ) -> DamageSource {
         let damage_source = if let Some(damage_type) = weapon_item.get_damage_type() {
             DamageSource::environment(damage_type)
@@ -1226,12 +1421,12 @@ pub trait Mob: LivingEntity {
         };
 
         damage_source
-            .with_causing_entity(self.id())
-            .with_direct_entity(self.id())
-            .with_source_position(self.position())
+            .with_causing_entity(Arc::clone(attacker))
+            .with_direct_entity(Arc::clone(attacker))
     }
 
-    /// Returns vanilla `LivingEntity.getKnockback` for mob attacks.
+    /// Computes attack knockback strength from the attack-knockback attribute
+    /// and the weapon's knockback enchantments.
     fn get_attack_knockback(
         &self,
         target: &dyn Entity,
@@ -1256,7 +1451,8 @@ pub trait Mob: LivingEntity {
         f64::from(modified) / 2.0
     }
 
-    /// Applies vanilla `LivingEntity.causeExtraKnockback`.
+    /// Knocks the target back in this mob's facing direction and dampens
+    /// this mob's own horizontal velocity.
     fn cause_extra_knockback(
         &self,
         target: &dyn Entity,
@@ -1271,18 +1467,18 @@ pub trait Mob: LivingEntity {
         };
 
         let yaw_radians = self.rotation().0.to_radians();
-        let yaw_sin = f64::from(yaw_radians.sin());
-        let yaw_cos = f64::from(yaw_radians.cos());
+        let yaw_sin = f64::from(trig::sin(yaw_radians));
+        let yaw_cos = f64::from(trig::cos(yaw_radians));
         living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
 
         let velocity = self.velocity();
         self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
     }
 
-    /// Plays vanilla `LivingEntity.playAttackSound`.
+    /// Plays this mob's attack sound; does nothing by default.
     fn play_attack_sound(&self) {}
 
-    /// Returns vanilla `Mob.isWithinMeleeAttackRange`.
+    /// Returns whether `target` is within this mob's melee attack range.
     fn is_within_melee_attack_range(&self, target: &dyn LivingEntity) -> bool {
         // TODO: Use the held item's ATTACK_RANGE component once it has typed component data.
         let max_range = default_attack_reach();
@@ -1296,7 +1492,8 @@ pub trait Mob: LivingEntity {
                     .intersects(target_hitbox))
     }
 
-    /// Returns vanilla `Mob.getAttackBoundingBox`.
+    /// Returns the bounding box used for melee range checks, expanded
+    /// horizontally and extended to cover a ridden vehicle.
     fn attack_bounding_box(&self, horizontal_expansion: f64) -> WorldAabb {
         let own_aabb = self.bounding_box();
         let base = if let Some(vehicle) = self.vehicle() {
@@ -1368,18 +1565,106 @@ pub trait Mob: LivingEntity {
         ));
     }
 
-    fn mob_server_ai_step(&self) {
+    fn mob_server_ai_step(&self, entity: &SharedEntity) {
         self.increment_no_action_time();
         self.mob_base().sensing().lock().tick();
         if self.tick_count() % 5 == 0 {
             self.update_control_flags();
         }
-        self.tick_goal_selectors();
+        self.tick_goal_selectors(entity);
         self.tick_path_navigation();
         self.custom_server_ai_step();
         self.tick_move_control();
         self.tick_look_control();
         self.tick_jump_control();
+    }
+
+    /// Rolls the daylight-burning chance when `MONSTERS_BURN` is enabled.
+    /// Water, rain, and powder snow prevent burning.
+    fn is_sun_burn_tick(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+        if !world.monsters_burn() {
+            return false;
+        }
+
+        let eye_pos = BlockPos::new(
+            fast_floor(self.position().x),
+            fast_floor(self.get_eye_y()),
+            fast_floor(self.position().z),
+        );
+        let brightness = world.light_level_dependent_magic_value(eye_pos);
+        // Rain at either the feet or bounding-box top prevents burning.
+        let feet_pos = self.block_position();
+        let in_rain = world.is_raining_at(feet_pos)
+            || world.is_raining_at(BlockPos::new(
+                feet_pos.x(),
+                fast_floor(self.bounding_box().max_y()),
+                feet_pos.z(),
+            ));
+        let in_non_burnable_block =
+            self.is_in_water() || in_rain || self.is_in_powder_snow() || self.was_in_powder_snow();
+        brightness > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE
+            && rand::random::<f32>() * SUN_BURN_RANDOM_SCALE
+                < (brightness - SUN_BURN_LIGHT_OFFSET) * SUN_BURN_LIGHT_GAIN
+            && !in_non_burnable_block
+            && world.can_see_sky(eye_pos)
+    }
+
+    fn sun_protection_slot(&self) -> EquipmentSlot {
+        EquipmentSlot::Head
+    }
+
+    /// Damages sun-protective gear on a successful burn roll, or ignites
+    /// the mob if the slot is empty.
+    fn tick_daylight_burning(&self) {
+        if !LivingEntity::is_alive(self) || !self.is_sun_burn_tick() {
+            return;
+        }
+
+        let slot = self.sun_protection_slot();
+        let has_infinite_materials = self.has_infinite_materials();
+        let mut broke_sun_blocker: Option<ItemRef> = None;
+        {
+            let mut equipment = self.living_base().equipment().lock();
+            if equipment.get_ref(slot).is_empty() {
+                drop(equipment);
+                self.ignite_for_ticks(SUN_BURN_IGNITE_TICKS);
+                return;
+            }
+            if equipment.get_ref(slot).is_damageable_item() {
+                let item = equipment.get_ref(slot).item();
+                let sun_blocker = equipment.get_mut(slot);
+                if sun_blocker.hurt_and_break(
+                    rand::random_range(0..SUN_BURN_DURABILITY_ROLL_BOUND),
+                    has_infinite_materials,
+                ) {
+                    broke_sun_blocker = Some(item);
+                }
+            }
+        }
+
+        let Some(item) = broke_sun_blocker else {
+            return;
+        };
+        self.on_equipped_item_broken(item, slot);
+    }
+
+    /// Runs movement, daylight burning, and item pickup.
+    ///
+    /// Burning and pickup belong here, outside the `serverAiStep` AI gate,
+    /// so mobs with `NoAI` still burn and collect loot as in vanilla.
+    fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = self.default_ai_step(entity);
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::BURN_IN_DAYLIGHT)
+        {
+            self.tick_daylight_burning();
+        }
+        self.tick_looting();
+        result
     }
 
     fn tick_path_navigation(&self) {
@@ -1442,7 +1727,7 @@ pub trait Mob: LivingEntity {
             return;
         }
 
-        let y_rot = (zd.atan2(xd) as f32 * 180.0 / PI) - 90.0;
+        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -1478,9 +1763,9 @@ pub trait Mob: LivingEntity {
         distance = speed / distance;
         let xa = strafe_forward * distance;
         let za = strafe_right * distance;
-        let yaw_radians = self.rotation().0 * PI / 180.0;
-        let sin = yaw_radians.sin();
-        let cos = yaw_radians.cos();
+        let yaw_radians = self.rotation().0 * DEG_TO_RAD;
+        let sin = trig::sin(yaw_radians);
+        let cos = trig::cos(yaw_radians);
         let dx = xa.mul_add(cos, -(za * sin));
         let dz = za.mul_add(cos, xa * sin);
         if !self.is_strafe_walkable(dx, dz) {
@@ -1538,12 +1823,12 @@ pub trait Mob: LivingEntity {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * 180.0 / PI;
+                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = (zd.atan2(xd) as f32 * 180.0 / PI) - 90.0;
+                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
@@ -1616,6 +1901,47 @@ pub trait Mob: LivingEntity {
     }
 }
 
+// Blanket implementation for all mobs to implement `Leashable`
+impl<T: Mob> Leashable for T {
+    fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
+        self.mob_base().leash_data()
+    }
+
+    /// Rejects enemies by default; concrete mobs may override the type-level rule.
+    fn can_be_leashed(&self) -> bool {
+        self.mob_can_be_leashed()
+    }
+
+    fn on_leash_removed(&self) {
+        if self.leash_holder().is_none() {
+            self.clear_home();
+        }
+    }
+
+    /// Drops the leash and disables MOVE until re-leashed at close range.
+    fn leash_too_far_behaviour(&self) {
+        self.drop_leash();
+        self.mob_base()
+            .goal_selector()
+            .lock()
+            .disable_control(GoalControl::Move);
+    }
+
+    fn when_leashed_to(&self, holder: &dyn Entity) {
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.when_leashed_to_pathfinder(holder);
+        } else {
+            holder.notify_leash_holder(self.as_entity_event_source());
+        }
+    }
+
+    fn close_range_leash_behaviour(&self, holder: &dyn Entity) {
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.close_range_leash_behaviour_pathfinder(holder);
+        }
+    }
+}
+
 fn can_attempt_equipment_drop(drop_chance: f32, preserve: bool, killed_by_player: bool) -> bool {
     drop_chance != 0.0 && (killed_by_player || preserve)
 }
@@ -1654,14 +1980,14 @@ fn position_shape_top(pos: BlockPos, local_y: f64) -> f64 {
     f64::from(pos.y()) + local_y
 }
 
-fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
+pub fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
     let dx = f64::from(a.x() - b.x());
     let dy = f64::from(a.y() - b.y());
     let dz = f64::from(a.z() - b.z());
     dx.mul_add(dx, dy.mul_add(dy, dz * dz))
 }
 
-fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
+pub fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
     let (x, y, z) = pos.get_center();
     DVec3::new(x, y, z).distance_squared(target)
 }
@@ -1682,22 +2008,11 @@ fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
 
     let mut result = a + diff;
     if result < 0.0 {
-        result += 360.0;
-    } else if result > 360.0 {
-        result -= 360.0;
+        result += DEGREE_360;
+    } else if result > DEGREE_360 {
+        result -= DEGREE_360;
     }
     result
-}
-
-fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]

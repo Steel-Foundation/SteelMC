@@ -1,3 +1,10 @@
+use std::{
+    cmp::Ordering as CmpOrdering,
+    io::{self, Cursor},
+    sync::{Arc, Weak, atomic::Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::full_chunk::FullChunkRef;
 use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
@@ -7,26 +14,17 @@ use crate::chunk::light::{
 use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk::{Chunk, status::ChunkStatus};
-use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
+use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices_from_iter, unpack_indices};
 use crate::entity::{
     ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
     MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
 };
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
-use crate::worldgen::carving_mask::CarvingMask;
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
-use std::cmp::Ordering as CmpOrdering;
-use std::io::Cursor;
-use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{
-    io,
-    sync::{Arc, Weak},
-};
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };
@@ -69,9 +67,6 @@ mod ticks;
 
 #[cfg(test)]
 mod tests;
-
-const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
-const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
 /// -1 = none, 0 = south, 1 = west, 2 = north, 3 = east.
@@ -407,7 +402,7 @@ impl<'a> ChunkBuilder<'a> {
             .blocks
             .by_state_id(block_id)
             .expect("Invalid block state ID");
-        let properties = self.registry.blocks.get_properties(block_id);
+        let properties = self.registry.blocks.properties(block_id).collect();
 
         let persistent = PersistentBlockState {
             name: block.key.clone(),
@@ -544,21 +539,14 @@ impl ChunkStorage {
         }
     }
 
-    /// Saves a chunk to the appropriate region.
-    ///
-    /// The chunk is serialized, compressed, and written to disk immediately.
-    /// If the region was already open (has loaded chunks), the header update is
-    /// deferred. If this call opened the region, it will be closed after saving.
-    ///
-    /// If the chunk is not dirty and `force` is false, this is a no-op.
-    /// Returns `Ok(true)` if the chunk was saved.
     /// Prepares chunk data and its authoritative persisted status for saving.
-    /// Call this during the holder's snapshot-preparation phase, then pass the result to
-    /// `save_chunk_data` after ending that phase.
+    /// Call during the holder's snapshot-preparation phase; end it before `save_chunk_data`.
+    ///
+    /// Returns `None` if nothing needs saving or promotion invalidated `status`; retry later.
     ///
     /// # Panics
     ///
-    /// Panics if `status` does not match whether Full runtime state is initialized.
+    /// Panics if `status` is Full but the chunk has no Full runtime state.
     #[must_use]
     #[expect(
         clippy::similar_names,
@@ -574,25 +562,21 @@ impl ChunkStorage {
         runtime_entities: &[SharedEntity],
         force: bool,
     ) -> Option<PreparedChunkSave> {
-        assert_eq!(
-            status == ChunkStatus::Full,
-            chunk.full_runtime().is_some(),
-            "persisted chunk status must match its Full runtime state"
+        let has_full_runtime = chunk.full_runtime().is_some();
+        assert!(
+            status != ChunkStatus::Full || has_full_runtime,
+            "a chunk persisted as Full must have its Full runtime state initialized"
         );
-        if !force && !chunk.is_dirty() {
+        if status != ChunkStatus::Full && has_full_runtime {
+            tracing::debug!(
+                chunk = ?chunk.pos(),
+                ?status,
+                "Abandoning chunk save preparation: the chunk was promoted while it was snapshotted"
+            );
             return None;
         }
-
-        // Finalize any sections still in worldgen Building mode. Proto chunks
-        // can be saved before being upgraded by `Chunk::promote_to_full`
-        // (which is where `recalculate_counts` normally runs and implicitly
-        // finalizes). Without this, `section_to_persistent` would panic on
-        // the Building variant.
-        for section_holder in &chunk.sections().sections {
-            let mut guard = section_holder.write();
-            if matches!(&guard.states, PalettedContainer::Building(_)) {
-                guard.recalculate_counts();
-            }
+        if !force && !chunk.is_dirty() {
+            return None;
         }
 
         let pos = chunk.pos();
@@ -656,7 +640,12 @@ impl ChunkStorage {
             // Proto ticks are pending, so Vanilla ignores the current game
             // time when serializing their already-relative delays.
             let Some(snapshot) = chunk.scheduled_ticks.snapshot(0) else {
-                panic!("Proto chunk scheduled-tick container was finalized before saving");
+                tracing::debug!(
+                    chunk = ?pos,
+                    "Abandoning chunk save preparation: the proto scheduled-tick container was \
+                     finalized while the chunk was snapshotted"
+                );
+                return None;
             };
             let bt = Self::block_ticks_to_persistent(snapshot.block, pos);
             let ft = Self::fluid_ticks_to_persistent(snapshot.fluid, pos);
@@ -680,19 +669,7 @@ impl ChunkStorage {
             Self::structure_references_to_persistent(&chunk.structure_references());
 
         // Collect POI occupancy data from world storage
-        let pois = full
-            .map(|full| Self::pois_to_persistent(full, pos))
-            .unwrap_or_default();
-
-        let carving_mask = if full.is_some() {
-            None
-        } else {
-            chunk
-                .carving_mask
-                .read()
-                .as_ref()
-                .map(CarvingMask::to_packed_u64s)
-        };
+        let pois = full.map_or_default(|full| Self::pois_to_persistent(full, pos));
 
         let postprocessing = if let Some(full) = full {
             full.postprocessing_for_serialization()
@@ -709,7 +686,6 @@ impl ChunkStorage {
             fluid_ticks,
             heightmaps,
             light,
-            carving_mask,
             postprocessing,
             structure_starts,
             structure_references,
@@ -765,7 +741,6 @@ impl ChunkStorage {
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
         light: PersistentLightData,
-        carving_mask: Option<Vec<u64>>,
         postprocessing: Vec<Vec<u16>>,
         structure_starts: Vec<PersistentStructureStart>,
         structure_references: Vec<PersistentStructureReference>,
@@ -828,7 +803,6 @@ impl ChunkStorage {
             fluid_ticks,
             heightmaps,
             light,
-            carving_mask,
             postprocessing,
             structure_starts,
             structure_references,

@@ -20,10 +20,17 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     survival_update_shape, vegetation_can_survive,
 };
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::SharedBlockEntity;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 const MOISTURE: &IntProperty = &BlockStateProperties::MOISTURE;
+
+pub(super) const MIN_CROP_LIGHT_LEVEL: u8 = 8;
+const MIN_CROP_GROWTH_LIGHT_LEVEL: u8 = 9;
+pub(super) const CROP_GROWTH_CHANCE_BASE: f32 = 25.0;
+pub(super) const ADJACENT_FARMLAND_SPEED_DIVISOR: f32 = 4.0;
+pub(super) const CROWDED_CROP_SPEED_DIVISOR: f32 = 2.0;
 
 /// Behavior for crop blocks (wheat, carrots, potatoes).
 ///
@@ -34,7 +41,7 @@ pub struct CropBlock {
     block: BlockRef,
 }
 
-const AGE_7: &IntProperty = &BlockStateProperties::AGE_7;
+const AGE: &IntProperty = &BlockStateProperties::AGE_7;
 
 /// Calculates Vanilla crop growth speed for the supplied crop block.
 ///
@@ -60,7 +67,7 @@ pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: B
             speed += if dx == 0 && dz == 0 {
                 block_speed
             } else {
-                block_speed / 4.0
+                block_speed / ADJACENT_FARMLAND_SPEED_DIVISOR
             };
         }
     }
@@ -78,10 +85,14 @@ pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: B
             .into_iter()
             .any(same_block_at);
 
-    if crowded { speed / 2.0 } else { speed }
+    if crowded {
+        speed / CROWDED_CROP_SPEED_DIVISOR
+    } else {
+        speed
+    }
 }
 
-pub trait CropLike {
+pub(crate) trait CropLike {
     fn block(&self) -> BlockRef;
     fn age_property(&self) -> &IntProperty;
     fn max_age(&self) -> u8;
@@ -107,11 +118,11 @@ pub trait CropLike {
     }
 
     fn has_sufficient_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        world.raw_brightness(pos, 0) >= 8
+        world.raw_brightness(pos, 0) >= MIN_CROP_LIGHT_LEVEL
     }
 
     fn has_sufficient_growth_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        world.raw_brightness(pos, 0) >= 9
+        world.raw_brightness(pos, 0) >= MIN_CROP_GROWTH_LIGHT_LEVEL
     }
 
     /// Calculates the growth speed based on surrounding farmland.
@@ -135,7 +146,7 @@ pub trait CropLike {
 
             // Random chance to grow based on growth speed
             // Vanilla formula: random.nextInt((int)(25.0F / growthSpeed) + 1) == 0
-            let growth_chance = (25.0 / growth_speed) as u32 + 1;
+            let growth_chance = (CROP_GROWTH_CHANCE_BASE / growth_speed) as u32 + 1;
 
             if rand::random::<u32>().is_multiple_of(growth_chance) {
                 let new_state = self.get_state_for_age(age + 1);
@@ -176,7 +187,7 @@ impl CropLike for CropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        AGE_7
+        AGE
     }
 
     fn max_age(&self) -> u8 {
@@ -274,6 +285,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(self.clone_item_stack())

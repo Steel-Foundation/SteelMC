@@ -13,6 +13,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, WorldAabb};
 
 use super::base::DiodeBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext,
     InteractionResult, InventoryAccess, PlacementSource,
@@ -48,19 +49,19 @@ impl ComparatorBlock {
 
     fn output_signal(level: &dyn LevelReader, pos: BlockPos) -> i32 {
         let Some(block_entity) = level.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         block_entity
             .downcast_ref::<ComparatorBlockEntity>()
-            .map_or(0, ComparatorBlockEntity::output_signal)
+            .map_or(MIN_REDSTONE_SIGNAL, ComparatorBlockEntity::output_signal)
     }
 
     fn set_output_signal(world: &Arc<World>, pos: BlockPos, output_signal: i32) -> i32 {
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let Some(comparator) = block_entity.downcast_ref::<ComparatorBlockEntity>() else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let old_output = comparator.output_signal();
         comparator.set_output_signal(output_signal);
@@ -105,7 +106,9 @@ impl ComparatorBlock {
             );
         }
 
-        if result >= 15 || !is_redstone_conductor(world.as_ref(), target_state, target_pos) {
+        if result >= MAX_REDSTONE_SIGNAL
+            || !is_redstone_conductor(world.as_ref(), target_state, target_pos)
+        {
             return result;
         }
 
@@ -135,8 +138,8 @@ impl ComparatorBlock {
     }
 
     const fn calculate_output_signal(input: i32, alternate: i32, mode: ComparatorMode) -> i32 {
-        if input == 0 || alternate > input {
-            return 0;
+        if input == MIN_REDSTONE_SIGNAL || alternate > input {
+            return MIN_REDSTONE_SIGNAL;
         }
         match mode {
             ComparatorMode::Compare => input,
@@ -151,7 +154,7 @@ impl ComparatorBlock {
     }
 
     const fn should_turn_on_from_signals(input: i32, alternate: i32, mode: ComparatorMode) -> bool {
-        input != 0
+        input != MIN_REDSTONE_SIGNAL
             && (input > alternate
                 || (input == alternate && matches!(mode, ComparatorMode::Compare)))
     }
@@ -479,16 +482,17 @@ mod tests {
     #[test]
     fn item_frame_signal_uses_item_frame_capability() {
         init_vanilla_registry();
-        let world = fresh_test_world("comparator_item_frame_capability");
+        let world_fixture = fresh_test_world("comparator_item_frame_capability");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let frame: SharedEntity = Arc::new(TestItemFrame {
             base: EntityBase::new(
                 9_001,
                 DVec3::new(8.5, 64.25, 8.5),
                 vanilla_entities::ITEM_FRAME.dimensions,
-                Arc::downgrade(&world),
+                Arc::downgrade(world),
             ),
             direction: Direction::North,
             analog_output: 6,

@@ -149,7 +149,44 @@ impl Iterator for SpiralAround {
         Some(self.cursor)
     }
 }
+/// Iterator returned by [`BlockPos::between_closed`].
+#[derive(Debug, Clone)]
+pub struct BetweenClosed {
+    min_x: i32,
+    min_y: i32,
+    min_z: i32,
+    width: i32,
+    height: i32,
+    index: i32,
+    end: i32,
+}
 
+impl Iterator for BetweenClosed {
+    type Item = BlockPos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.end {
+            return None;
+        }
+
+        let x = self.index % self.width;
+        let slice = self.index / self.width;
+        let y = slice % self.height;
+        let z = slice / self.height;
+        self.index += 1;
+
+        Some(BlockPos::new(
+            self.min_x + x,
+            self.min_y + y,
+            self.min_z + z,
+        ))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.end - self.index).max(0) as usize;
+        (remaining, Some(remaining))
+    }
+}
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {
         BlockPos(IVec3 {
@@ -194,6 +231,15 @@ impl BlockPos {
     #[must_use]
     pub const fn z(&self) -> i32 {
         self.0.z
+    }
+
+    /// Returns vanilla `Vec3i.hashCode`, which orders Java `HashSet<BlockPos>` iteration.
+    #[must_use]
+    pub const fn java_hash_code(&self) -> i32 {
+        self.y()
+            .wrapping_add(self.z().wrapping_mul(31))
+            .wrapping_mul(31)
+            .wrapping_add(self.x())
     }
 
     /// Returns the position one block above (Y + 1).
@@ -305,7 +351,8 @@ impl BlockPos {
         }
     }
 
-    /// Returns vanilla `BlockPos.spiralAround`.
+    /// Returns an iterator over positions in an outward square spiral around
+    /// `center`, alternating between `first_direction` and `second_direction`.
     ///
     /// # Panics
     ///
@@ -392,6 +439,13 @@ impl BlockPos {
         )
     }
 
+    /// Returns whether this block's center is closer than `distance` to `position`.
+    #[must_use]
+    pub fn closer_to_center_than(&self, position: DVec3, distance: f64) -> bool {
+        let (x, y, z) = self.get_center();
+        DVec3::new(x, y, z).distance_squared(position) < distance * distance
+    }
+
     /// Creates a `BlockPos` containing the given floating-point coordinates.
     #[must_use]
     pub const fn containing(x: f64, y: f64, z: f64) -> Self {
@@ -433,8 +487,51 @@ impl BlockPos {
             done: false,
         }
     }
+    /// Returns vanilla `BlockPos.betweenClosed(BlockPos, BlockPos)`.
+    ///
+    /// Iterates all positions in the closed box spanned by `a` and `b`,
+    /// regardless of their relative min/max ordering.
+    #[must_use]
+    pub const fn between_closed(a: Self, b: Self) -> BetweenClosed {
+        Self::between_closed_coords(
+            a.0.x.min(b.0.x),
+            a.0.y.min(b.0.y),
+            a.0.z.min(b.0.z),
+            a.0.x.max(b.0.x),
+            a.0.y.max(b.0.y),
+            a.0.z.max(b.0.z),
+        )
+    }
 
-    /// Returns vanilla `BlockPos.findClosestMatch`.
+    /// Returns vanilla `BlockPos.betweenClosed(int, int, int, int, int, int)`.
+    ///
+    /// Iterates all positions in `[min_x, max_x] x [min_y, max_y] x [min_z, max_z]`.
+    #[must_use]
+    pub const fn between_closed_coords(
+        min_x: i32,
+        min_y: i32,
+        min_z: i32,
+        max_x: i32,
+        max_y: i32,
+        max_z: i32,
+    ) -> BetweenClosed {
+        let width = max_x - min_x + 1;
+        let height = max_y - min_y + 1;
+        let depth = max_z - min_z + 1;
+
+        BetweenClosed {
+            min_x,
+            min_y,
+            min_z,
+            width,
+            height,
+            index: 0,
+            end: width * height * depth,
+        }
+    }
+
+    /// Returns the closest position within the given search radii for which
+    /// `predicate` returns true, or `None` if no position matches.
     #[must_use]
     pub fn find_closest_match(
         self,
@@ -656,5 +753,19 @@ impl ReadFrom for SectionPos {
 impl WriteTo for SectionPos {
     fn write(&self, writer: &mut impl Write) -> io::Result<()> {
         PackedSectionPos::from(*self).write(writer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::BlockPos;
+
+    #[test]
+    fn closer_to_center_than_uses_block_center() {
+        let pos = BlockPos::new(0, 0, 0);
+        assert!(pos.closer_to_center_than(DVec3::new(0.5, 0.5, 0.5), 1.0));
+        assert!(!pos.closer_to_center_than(DVec3::new(1.5, 0.5, 0.5), 1.0));
     }
 }

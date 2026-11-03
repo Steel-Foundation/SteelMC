@@ -110,6 +110,7 @@ fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str)> {
         "villager_data" => ("VillagerData", "VillagerData"),
         "optional_unsigned_int" => ("Option<u32>", "OptionalUnsignedInt"),
         "pose" => ("EntityPose", "Pose"),
+        "dye_color" => ("crate::dye_color::DyeColor", "DyeColor"),
         "cat_variant" => (
             "RegistryReference<crate::cat_variant::CatVariant>",
             "CatVariant",
@@ -408,6 +409,11 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             let dir_ident = Ident::new(&dir_str.to_upper_camel_case(), Span::call_site());
             quote! { Direction::#dir_ident }
         }
+        "dye_color" => {
+            let color_str = required_string(default, serializer);
+            let color_ident = Ident::new(&color_str.to_upper_camel_case(), Span::call_site());
+            quote! { crate::dye_color::DyeColor::#color_ident }
+        }
         "rotations" => {
             let obj = required_object(default, serializer);
             let x = required_object_f32(obj, serializer, "x");
@@ -635,7 +641,7 @@ fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
         }
         // BlockStateId and Direction are Copy
         "block_state" | "direction" | "pose" | "sniffer_state" | "armadillo_state"
-        | "humanoid_arm" => {
+        | "humanoid_arm" | "dye_color" => {
             quote! { EntityData::#variant_ident(*self.#field_ident.get()) }
         }
         // Clone types
@@ -679,6 +685,7 @@ fn data_struct_ident(simple_name: &str) -> Ident {
 fn sanitize_field_name(name: &str) -> String {
     let field_name = name.trim_end_matches("_id").to_snake_case();
     match field_name.as_str() {
+        "player_mode_customisation" => "player_mode_customization".to_string(),
         "type" => "variant_type".to_string(),
         "self" => "self_ref".to_string(),
         "super" => "super_ref".to_string(),

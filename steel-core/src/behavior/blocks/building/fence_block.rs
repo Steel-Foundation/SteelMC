@@ -4,8 +4,11 @@
 
 use std::sync::Arc;
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::items::LeadItem;
+use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -13,8 +16,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for fence blocks.
@@ -31,15 +34,15 @@ pub struct FenceBlock {
 
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 /// North connection property.
-pub const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+pub(crate) const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
 /// East connection property.
-pub const EAST: &BoolProperty = &BlockStateProperties::EAST;
+pub(crate) const EAST: &BoolProperty = &BlockStateProperties::EAST;
 /// South connection property.
-pub const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+pub(crate) const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
 /// West connection property.
-pub const WEST: &BoolProperty = &BlockStateProperties::WEST;
+pub(crate) const WEST: &BoolProperty = &BlockStateProperties::WEST;
 /// Waterlogged property.
-pub const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+pub(crate) const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl FenceBlock {
     /// Creates a new fence block behavior for the given block.
@@ -150,10 +153,7 @@ impl BlockBehavior for FenceBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         // Only update for horizontal directions
         match direction {
@@ -181,11 +181,23 @@ impl BlockBehavior for FenceBlock {
             Direction::Up | Direction::Down => state,
         }
     }
+
+    fn use_without_item(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        LeadItem::bind_player_mobs(player, world, pos)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
     use steel_utils::BlockPos;
 
     use crate::test_support::TestLevel;

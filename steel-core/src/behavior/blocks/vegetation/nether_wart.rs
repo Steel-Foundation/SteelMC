@@ -21,10 +21,11 @@ use crate::{
             vegetation_block::{survival_update_shape, vegetation_can_survive},
         },
     },
+    block_entity::SharedBlockEntity,
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
-const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_3;
+const AGE: &IntProperty = &BlockStateProperties::AGE_3;
 
 /// Behavior for Nether Warts
 #[block_behavior]
@@ -70,14 +71,14 @@ impl BlockBehavior for NetherWartBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let age = state.get_value(AGE_PROPERTY);
-        if age > 2 || rand::random_range(0..10) != 0 {
+        let age = state.get_value(AGE);
+        if age >= AGE.max || rand::random_range(0..10) != 0 {
             return;
         }
 
         world.set_block(
             pos,
-            state.set_value(AGE_PROPERTY, age + 1),
+            state.set_value(AGE, age + 1),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -86,6 +87,7 @@ impl BlockBehavior for NetherWartBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::NETHER_WART))

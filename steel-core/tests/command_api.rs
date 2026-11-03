@@ -74,7 +74,7 @@ fn downstream_commands_can_register_primitive_keyed_and_suspended_nodes() {
             .then(
                 argument("value", CommandArgument::custom(NegatedBooleanParser)).executes(
                     |context| {
-                        let Some(value) = context.value::<NegatedBoolean>("value") else {
+                        let Ok(value) = context.value::<NegatedBoolean>("value") else {
                             return Err(CommandError::from("missing parsed negated boolean"));
                         };
                         context.source().send_success(

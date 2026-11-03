@@ -232,9 +232,7 @@ fn clear_targets(context: &SteelCommandContext<CommandSource>) -> Result<i32, Co
 fn required_amount(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    context.integer("amount").ok_or_else(|| {
-        CommandSyntaxError::dynamic("Parsed experience amount is missing from the command context")
-    })
+    context.integer("amount")
 }
 
 fn player_count_result(players: &[Arc<Player>]) -> Result<i32, CommandSyntaxError> {

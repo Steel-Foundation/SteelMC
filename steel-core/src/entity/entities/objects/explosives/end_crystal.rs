@@ -1,5 +1,6 @@
 //! Minimal End Crystal entity implementation for End spike worldgen.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -11,7 +12,7 @@ use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -74,23 +75,6 @@ impl EndCrystalEntity {
         *self.entity_data.lock().show_bottom.get()
     }
 
-    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the active world entity manager rejects the snap position. This is an invariant
-    /// failure for loaded end crystals.
-    pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
-        if let Err(error) = self.base.try_set_position(position) {
-            panic!(
-                "failed to commit end crystal {} snap position: {error}",
-                self.base.id()
-            );
-        }
-        self.base.set_rotation((yaw, pitch));
-        self.set_old_position_to_current();
-    }
-
     const fn nbt_bool(value: bool) -> i8 {
         if value { 1 } else { 0 }
     }
@@ -105,7 +89,11 @@ impl Entity for EndCrystalEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
+    fn tick(self: Arc<Self>) {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
 

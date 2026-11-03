@@ -7,6 +7,7 @@ use crate::random::{
 /// Feature decoration always constructs `WorldgenRandom(new XoroshiroRandomSource(...))`.
 /// Sampling then goes through `BitRandomSource.next*`, so it does not match raw
 /// `XoroshiroRandomSource` for `nextInt`, bounded ints, doubles, longs, or gaussians.
+#[derive(Clone)]
 pub struct WorldgenRandom {
     source: Xoroshiro,
     next_gaussian: Option<f64>,
@@ -153,10 +154,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "gaussian cache parity must match vanilla exactly"
-    )]
     fn feature_seed_preserves_pending_gaussian() {
         let mut random = WorldgenRandom::from_seed(123);
         let _ = random.next_gaussian();

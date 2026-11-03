@@ -135,16 +135,6 @@ impl Abilities {
 }
 
 impl Player {
-    /// Restores the fresh player abilities Vanilla applies after a death respawn
-    pub(super) fn reset_abilities_for_death_respawn(&self) {
-        {
-            let mut abilities = self.abilities.lock();
-            *abilities = Abilities::default();
-            abilities.update_for_game_mode(self.game_mode());
-        }
-        self.send_abilities();
-    }
-
     /// Sends the player abilities packet to the client.
     /// This tells the client about flight, invulnerability, speeds, etc.
     pub fn send_abilities(&self) {
@@ -178,6 +168,12 @@ impl Player {
     #[must_use]
     pub fn get_abilities(&self) -> Abilities {
         self.abilities.lock().clone()
+    }
+
+    /// Whether this player's own block-breaking should skip normal item drops
+    /// (creative-mode instant-build).
+    pub fn prevents_block_drops(&self) -> bool {
+        self.abilities.lock().instabuild
     }
 
     /// Handles the player abilities packet from the client.

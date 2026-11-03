@@ -10,13 +10,15 @@ impl FeatureDecorationRunner {
         config: &SimpleBlockConfiguration,
         origin: BlockPos,
     ) -> bool {
-        let Some(state_to_place) = Self::sample_block_state_provider_optional(
-            region,
-            registry,
-            random,
-            &config.to_place,
-            origin,
-        ) else {
+        let Some(state_to_place) =
+            BlockStateProviderEvaluator::sample_block_state_provider_optional(
+                region,
+                registry,
+                random,
+                &config.to_place,
+                origin,
+            )
+        else {
             return false;
         };
         let behavior = BLOCK_BEHAVIORS.get_behavior(state_to_place.get_block());
@@ -25,7 +27,11 @@ impl FeatureDecorationRunner {
         }
 
         if Self::is_double_plant_block(state_to_place.get_block()) {
-            if !region.block_state(origin.above()).is_air() {
+            let above_state = region.block_state(origin.above());
+            if !above_state.is_air()
+                && (state_to_place.get_fluid_state() != above_state.get_fluid_state()
+                    || !above_state.is_replaceable())
+            {
                 return false;
             }
             Self::place_double_plant(region, state_to_place, origin);
@@ -50,6 +56,7 @@ impl FeatureDecorationRunner {
             || block == &vanilla_blocks::PEONY
             || block == &vanilla_blocks::TALL_GRASS
             || block == &vanilla_blocks::LARGE_FERN
+            || block == &vanilla_blocks::TALL_SEAGRASS
             || block == &vanilla_blocks::PITCHER_PLANT
             || block == &vanilla_blocks::SMALL_DRIPLEAF
     }
@@ -81,7 +88,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn copy_waterlogged_from(
-        region: &WorldGenRegion<'_>,
+        region: &impl LevelReader,
         pos: BlockPos,
         state: BlockStateId,
     ) -> BlockStateId {
@@ -92,7 +99,7 @@ impl FeatureDecorationRunner {
             return state;
         }
 
-        let waterlogged = get_fluid_state_from_block(region.block_state(pos)).is_water();
+        let waterlogged = get_fluid_state_from_block(region.get_block_state(pos)).is_water();
         state.set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
     }
 

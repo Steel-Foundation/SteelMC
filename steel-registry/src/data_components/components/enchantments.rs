@@ -15,7 +15,7 @@ use crate::{REGISTRY, RegistryExt};
 /// and the `minecraft:stored_enchantments` component (on enchanted books).
 ///
 /// Vanilla moved tooltip visibility to the separate `TOOLTIP_DISPLAY` component.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemEnchantments {
     pub levels: FxHashMap<Identifier, u32>,
 }
