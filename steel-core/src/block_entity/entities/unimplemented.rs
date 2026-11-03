@@ -38,22 +38,25 @@ impl UnimplementedBlockEntity {
         pos: BlockPos,
         state: BlockStateId,
     ) -> Self {
-        Self::with_data(block_entity_type, level, pos, state, NbtCompound::new())
+        Self {
+            base: BlockEntityBase::new(block_entity_type, level, pos, state),
+            state: SyncMutex::new(UnimplementedBlockEntityState {
+                data: NbtCompound::new(),
+            }),
+        }
     }
 
-    /// Creates an unimplemented block entity with already-owned additional NBT.
-    #[must_use]
+    /// Loads an unimplemented block entity from owned NBT, including stored components.
     pub fn with_data(
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
         data: NbtCompound,
-    ) -> Self {
-        Self {
-            base: BlockEntityBase::new(block_entity_type, level, pos, state),
-            state: SyncMutex::new(UnimplementedBlockEntityState { data }),
-        }
+    ) -> Result<Self, simdnbt::Error> {
+        let entity = Self::new(block_entity_type, level, pos, state);
+        entity.load_with_owned_components(&data)?;
+        Ok(entity)
     }
 }
 
@@ -64,7 +67,9 @@ impl BlockEntity for UnimplementedBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
-        self.state.lock().data = nbt_view.to_owned();
+        let mut data = nbt_view.to_owned();
+        while data.remove("components").is_some() {}
+        self.state.lock().data = data;
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -76,6 +81,7 @@ impl BlockEntity for UnimplementedBlockEntity {
 mod tests {
     use std::sync::Weak;
 
+    use steel_registry::data_components::{DataComponentMap, vanilla_components::REPAIR_COST};
     use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
 
     use super::*;
@@ -87,13 +93,17 @@ mod tests {
         data.insert("id", "minecraft:chest");
         data.insert("x", 100_i32);
         data.insert("custom", 7_i32);
+        let mut components = DataComponentMap::new();
+        components.set(REPAIR_COST, Some(3));
+        data.insert("components", components.to_nbt_tag_ref());
         let entity = UnimplementedBlockEntity::with_data(
             &vanilla_block_entity_types::BARREL,
             Weak::new(),
             BlockPos::new(2, 70, -4),
             vanilla_blocks::BARREL.default_state(),
             data,
-        );
+        )
+        .expect("fallback block entity should load owned NBT");
 
         let saved = entity.save_with_full_metadata();
         let custom = entity.save_custom_only();
@@ -106,8 +116,10 @@ mod tests {
         assert_eq!(saved.int("y"), Some(70));
         assert_eq!(saved.int("z"), Some(-4));
         assert_eq!(saved.int("custom"), Some(7));
+        assert_eq!(entity.collect_components().get(REPAIR_COST), Some(3));
         assert!(!custom.contains("id"));
         assert!(!custom.contains("x"));
+        assert!(!custom.contains("components"));
         assert_eq!(custom.int("custom"), Some(7));
     }
 

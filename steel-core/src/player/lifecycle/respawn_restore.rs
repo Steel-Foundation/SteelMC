@@ -94,6 +94,10 @@ impl Player {
                 self.restore_inventory_experience_and_score_from(old_player);
             }
         }
+
+        let enchantment_seed = old_player.experience.lock().enchantment_seed();
+        let mut experience = self.experience.lock();
+        *experience = experience.with_enchantment_seed(enchantment_seed);
     }
 
     fn restore_all_respawn_state_from(&self, old_player: &Self) {
@@ -220,6 +224,45 @@ mod tests {
         assert!(old_player.session.is_current_player(&old_player));
         assert!(!old_player.session.is_current_player(&replacement));
         assert!(!target_world.contains_player(&replacement));
+    }
+
+    #[test]
+    fn respawn_preserves_enchantment_seed_independently_of_experience_transfer() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world_fixture = fresh_test_world("respawn_restore_enchantment_seed");
+        let world = &world_fixture.world;
+        let old_player = TestPlayerBuilder::new(Arc::clone(world), "Enchant", ENTITY_ID).build();
+
+        for seed in [0, 0x1234_5678, i32::MIN] {
+            *old_player.experience.lock() =
+                Experience::from_parts(8, 0.25, 91).with_enchantment_seed(seed);
+
+            for (restore_all, transfer_inventory) in [(false, false), (false, true), (true, false)]
+            {
+                let replacement = old_player.new_respawn_replacement(
+                    Arc::clone(world),
+                    restore_all,
+                    transfer_inventory,
+                    false,
+                );
+                let experience = replacement.experience.lock();
+                assert_eq!(
+                    experience.enchantment_seed(),
+                    seed,
+                    "restore_all={restore_all}, transfer_inventory={transfer_inventory}"
+                );
+                assert_eq!(
+                    experience.level(),
+                    if restore_all || transfer_inventory {
+                        8
+                    } else {
+                        0
+                    }
+                );
+            }
+            assert_eq!(old_player.experience.lock().enchantment_seed(), seed);
+        }
     }
 
     #[test]

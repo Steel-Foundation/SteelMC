@@ -5,9 +5,9 @@ use crate::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
         InteractionResult, InventoryAccess, PlacementSource,
     },
-    entity::{Entity, ai::path::PathComputationType, dismount_helper},
+    entity::{Entity, ai::path::PathComputationType, damage::DamageSource, dismount_helper},
     player::Player,
-    world::{LevelReader, ScheduledTickAccess, World},
+    world::{ExplosionInteraction, ExplosionOptions, LevelReader, ScheduledTickAccess, World},
 };
 use glam::DVec3;
 use steel_macros::block_behavior;
@@ -15,7 +15,7 @@ use steel_registry::blocks::properties::{BedPart, BoolProperty, EnumProperty};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
 };
-use steel_registry::{vanilla_blocks, vanilla_custom_stats};
+use steel_registry::{vanilla_blocks, vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::{
     BlockPos, BlockStateId, Direction, axis::Axis, translations, types::UpdateFlags,
 };
@@ -23,11 +23,10 @@ use steel_utils::{
 const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
+const EXPLOSION_RADIUS: f32 = 5.0;
+
 /// Behavior for beds
 ///
-/// TODO: Mirror vanilla `BedBlock.useWithoutItem` invalid-dimension explosion
-/// once Steel has a strict `World::explode` foundation: show the bed-rule error
-/// message, remove both bed halves, and use bad-respawn-point explosion damage.
 /// TODO: Mirror vanilla `BedBlock.kickVillagerOutOfBed` once villager sleeping
 /// entities exist.
 #[block_behavior]
@@ -59,6 +58,26 @@ impl BedBlock {
             BedPart::Head => Some((state, pos)),
             BedPart::Foot => Some((other_state, other_pos)),
         }
+    }
+
+    /// Removes both halves and explodes at the head, used when the bed rule destroys beds on use.
+    fn destroy_on_use(&self, head_state: BlockStateId, world: &Arc<World>, head_pos: BlockPos) {
+        world.remove_block(head_pos, false);
+        let foot_pos = head_state.get_value(FACING).opposite().relative(head_pos);
+        if world.get_block_state(foot_pos).get_block() == self.block {
+            world.remove_block(foot_pos, false);
+        }
+
+        let (x, y, z) = head_pos.get_center();
+        let center = DVec3::new(x, y, z);
+        let mut options =
+            ExplosionOptions::new(center, EXPLOSION_RADIUS, ExplosionInteraction::Block);
+        options.damage_source = Some(
+            DamageSource::environment(&vanilla_damage_types::BAD_RESPAWN_POINT)
+                .with_source_position(center),
+        );
+        options.fire = true;
+        world.explode(options);
     }
 
     const fn neighbor_direction(part: BedPart, facing: Direction) -> Direction {
@@ -325,8 +344,12 @@ impl BlockBehavior for BedBlock {
             return InteractionResult::Consume;
         };
 
-        if world.dimension_type.bed_rule.destroy_on_use {
-            // TODO: When WOrld::explode foundation exists display the bedrule error remove both halves and create the bad respawn point explosion
+        let bed_rule = &world.dimension_type.bed_rule;
+        if bed_rule.destroy_on_use {
+            if let Some(message) = bed_rule.error_message {
+                player.send_overlay_message(&message());
+            }
+            self.destroy_on_use(head_state, world, head_pos);
             return InteractionResult::SuccessServer;
         }
 
@@ -340,11 +363,9 @@ impl BlockBehavior for BedBlock {
             return InteractionResult::SuccessServer;
         }
 
-        if let Err(problem) = player.start_sleep_in_bed(
-            head_pos,
-            &world.dimension_type.bed_rule,
-            &vanilla_custom_stats::SLEEP_IN_BED,
-        ) && let Some(message) = problem.message()
+        if let Err(problem) =
+            player.start_sleep_in_bed(head_pos, bed_rule, &vanilla_custom_stats::SLEEP_IN_BED)
+            && let Some(message) = problem.message()
         {
             player.send_overlay_message(message);
         }

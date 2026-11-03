@@ -52,7 +52,10 @@ impl SignedMessageLink {
     }
 
     /// Updates signature data with this link's information
-    pub fn update_signature(&self, output: &mut dyn SignatureOutput) -> Result<(), CryptError> {
+    pub fn update_signature(
+        &self,
+        output: &mut (impl SignatureOutput + ?Sized),
+    ) -> Result<(), CryptError> {
         // Sender UUID (16 bytes, as u128 big-endian)
         output.update(&self.sender.as_u128().to_be_bytes())?;
 
@@ -132,7 +135,10 @@ impl SignedMessageBody {
     }
 
     /// Updates signature data with this body's information
-    pub fn update_signature(&self, output: &mut dyn SignatureOutput) -> Result<(), CryptError> {
+    pub fn update_signature(
+        &self,
+        output: &mut (impl SignatureOutput + ?Sized),
+    ) -> Result<(), CryptError> {
         // Salt (8 bytes, i64 big-endian)
         output.update(&self.salt.to_be_bytes())?;
 
@@ -161,7 +167,7 @@ impl SignedMessageBody {
 /// Helper to update signature with last seen messages
 fn update_last_seen_signature(
     last_seen: &LastSeen,
-    output: &mut dyn SignatureOutput,
+    output: &mut (impl SignatureOutput + ?Sized),
 ) -> Result<(), CryptError> {
     // Number of signatures (4 bytes, i32 big-endian)
     output.update(&(last_seen.len() as i32).to_be_bytes())?;
