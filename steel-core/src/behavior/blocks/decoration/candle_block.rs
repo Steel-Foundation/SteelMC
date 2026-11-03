@@ -77,7 +77,7 @@ impl CandleBlock {
     pub fn extinguish(
         player: Option<&Player>,
         state: steel_utils::BlockStateId,
-        level: &dyn LevelAccessor,
+        level: &(impl LevelAccessor + ?Sized),
         pos: BlockPos,
     ) {
         level.set_block_state(

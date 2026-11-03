@@ -290,7 +290,7 @@ impl PathNavigation {
 
     fn trim_path_for_avoid_sun(
         &self,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         mob_position: DVec3,
         path: &mut Path,
     ) {
@@ -315,12 +315,12 @@ impl PathNavigation {
         }
     }
 
-    fn trim_path(&self, level: &dyn LevelReader, mob_position: DVec3, path: &mut Path) {
+    fn trim_path(&self, level: &(impl LevelReader + ?Sized), mob_position: DVec3, path: &mut Path) {
         Self::trim_path_for_cauldrons(level, path);
         self.trim_path_for_avoid_sun(level, mob_position, path);
     }
 
-    fn trim_path_for_cauldrons(level: &dyn LevelReader, path: &mut Path) {
+    fn trim_path_for_cauldrons(level: &(impl LevelReader + ?Sized), path: &mut Path) {
         for index in 0..path.node_count() {
             let Some(node) = path.node(index).cloned() else {
                 continue;
@@ -350,7 +350,7 @@ impl PathNavigation {
 
     pub fn move_to(
         &mut self,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         mut path: Path,
         speed_modifier: f64,
         mob_position: DVec3,
@@ -388,7 +388,7 @@ impl PathNavigation {
 
     pub fn reuse_current_path_to_targets(
         &mut self,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         targets: &[BlockPos],
         speed_modifier: f64,
         mob_position: DVec3,

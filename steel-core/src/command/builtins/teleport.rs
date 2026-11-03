@@ -397,7 +397,7 @@ fn packet_rotation(
     ))
 }
 
-fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], destination: &dyn Entity) {
+fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], &destination: &(impl Entity + ?Sized)) {
     let message = if let [target] = targets {
         translations::COMMANDS_TELEPORT_SUCCESS_ENTITY_SINGLE
             .message([

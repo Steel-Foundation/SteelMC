@@ -360,7 +360,11 @@ impl PathTypeCache {
     }
 
     #[must_use]
-    pub fn get_or_compute(&mut self, level: &dyn LevelReader, pos: BlockPos) -> PathType {
+    pub fn get_or_compute(
+        &mut self,
+        level: &(impl LevelReader + ?Sized),
+        pos: BlockPos,
+    ) -> PathType {
         let key = PackedBlockPos::from(pos).as_raw();
         let index = Self::index(key);
         if self.positions[index] == key
